@@ -1,0 +1,41 @@
+[GLOBAL]
+pants_version = "2.29.0"
+level = "info"
+colors = true
+
+# Enable Python backends
+backend_packages = [
+  "pants.backend.python",
+  "pants.backend.python.lint.black",
+  "pants.backend.docker",
+]
+
+[source]
+# Tell Pants where to find Python code
+root_patterns = [
+  "/",
+]
+
+[python]
+# Python version constraints
+interpreter_constraints = ["==3.12.*"]
+
+# Use single resolve for simplicity
+enable_resolves = true
+default_resolve = "python-default"
+
+[python.resolves]
+python-default = "python-default.lock"
+
+[python-infer]
+# Enable automatic import inference
+imports = true
+init_files = "always"
+
+[black]
+# Code formatting
+args = ["--line-length=100"]
+
+[pytest]
+# Testing configuration
+args = ["-v"]

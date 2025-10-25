@@ -1,12 +1,8 @@
-# Python byte-compiled / optimized / DLL files
+# Python
 __pycache__/
 *.py[cod]
 *$py.class
-
-# C extensions
 *.so
-
-# Distribution / packaging
 .Python
 build/
 develop-eggs/
@@ -18,88 +14,51 @@ lib/
 lib64/
 parts/
 sdist/
+var/
 wheels/
-share/python-wheels/
 *.egg-info/
 .installed.cfg
 *.egg
 MANIFEST
 
-# PyInstaller
-*.manifest
-*.spec
-
-# Installer logs
-pip-log.txt
-pip-delete-this-directory.txt
-
-# Unit test / coverage reports
-htmlcov/
-.tox/
-.nox/
-.coverage
-.coverage.*
-.cache
-nosetests.xml
-coverage.xml
-*.cover
-*.py,cover
-.hypothesis/
-.pytest_cache/
-
-# Type checkers / linters
-.mypy_cache/
-.dmypy.json
-.dmypy/
-.pyre/
-.pytype/
-.ruff_cache/
-.pylint.d/
-
-# Jupyter
-.ipynb_checkpoints
-
-# Environments
+# Virtual Environments
 .env
-.env.*
-!.env.example
 .venv
-venv/
 env/
+venv/
 ENV/
-.venv*/
+env.bak/
+venv.bak/
 
-# IDE/editor
+# Pants
+/.pants.d/
+/dist/export/
+/dist/apps.*/
+/.pids/
+# Keep the lock file in version control
+# /python-default.lock
+
+# IDEs
 .vscode/
 .idea/
 *.swp
 *.swo
+*~
+.DS_Store
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Environment
+.env.local
+.env.*.local
 
 # Logs
-logs/
 *.log
-
-# SQLite / local DBs
-*.sqlite
-*.db
-
-# OS / misc
-.DS_Store
-Thumbs.db
-
-# FastAPI / Uvicorn
-uvicorn.log
-
-# Poetry / PDM
-.poetry/
-.pdm.toml
-.pdm-python
-__pypackages__/
-
-# Docker
-*.orig
-*.rej
-
-# HTTP clients
-*.http
-*.rest
+logs/
