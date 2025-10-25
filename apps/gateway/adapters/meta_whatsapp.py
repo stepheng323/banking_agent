@@ -2,7 +2,7 @@ from typing import Dict, List
 import hmac
 import hashlib
 from fastapi import Request
-from bot.core.config import settings
+from apps.gateway.core.config import settings
 
 
 def parse_payload(payload: Dict) -> List[Dict]:
