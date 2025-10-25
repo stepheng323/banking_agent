@@ -1,0 +1,57 @@
+version: '3.8'
+
+services:
+  gateway:
+    build: 
+      context: .
+      dockerfile: gateway/Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - REDIS_URL=redis://redis:6379
+      - CORE_SERVICE_URL=http://core:8001
+      - META_VERIFY_TOKEN=${META_VERIFY_TOKEN}
+      - META_ACCESS_TOKEN=${META_ACCESS_TOKEN}
+      - META_PHONE_NUMBER_ID=${META_PHONE_NUMBER_ID}
+    depends_on:
+      - redis
+      - core
+    volumes:
+      - ./gateway:/app
+      - ./shared:/shared
+
+  core:
+    build:
+      context: .
+      dockerfile: core/Dockerfile
+    ports:
+      - "8001:8001"
+    environment:
+      - DATABASE_URL=postgresql://user:pass@db:5432/banking_agent
+      - REDIS_URL=redis://redis:6379
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+    depends_on:
+      - db
+      - redis
+    volumes:
+      - ./core:/app
+      - ./shared:/shared
+
+  db:
+    image: postgres:15
+    environment:
+      - POSTGRES_DB=banking_agent
+      - POSTGRES_USER=user
+      - POSTGRES_PASSWORD=pass
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+volumes:
+  postgres_data:

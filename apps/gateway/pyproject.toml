@@ -1,0 +1,23 @@
+[tool.poetry]
+name = "gateway-service"
+version = "0.1.0"
+description = "WhatsApp Gateway Service"
+
+[tool.poetry.dependencies]
+python = "^3.11"
+fastapi = "^0.104.0"
+uvicorn = "^0.24.0"
+pydantic = "^2.5.0"
+pydantic-settings = "^2.5.0"
+python-multipart = "^0.0.6"
+shared = {path = "../shared", develop = true}
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^7.4.0"
+pytest-asyncio = "^0.21.0"
+black = "^23.0.0"
+ruff = "^0.1.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
