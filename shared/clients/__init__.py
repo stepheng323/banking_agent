@@ -1,1 +1,3 @@
-# Shared clients (WhatsApp, Redis, Database)
+from shared.clients.whatsapp_client import WhatsAppClient
+
+__all__ = ["WhatsAppClient"]

@@ -35,9 +35,6 @@ class WhatsAppMessage(BaseModel):
     message_type: MessageType = Field(..., description="Type of message")
     text: Optional[str] = Field(None, description="Text content")
     timestamp: datetime = Field(default_factory=datetime.utcnow)
-    metadata: Dict[str, Any] = Field(
-        default_factory=dict, description="Additional metadata"
-    )
 
     priority: MessagePriority = Field(default=MessagePriority.NORMAL)
     retry_count: int = Field(default=0, description="Number of processing attempts")

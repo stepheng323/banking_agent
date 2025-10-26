@@ -57,7 +57,6 @@ class RedisQueue:
         if result:
             message_json, priority = result[0]
             message = json.loads(message_json)
-            print(f"📥 Dequeued message from {queue_name} (priority: {priority})")
             return message
 
         return None
@@ -75,7 +74,6 @@ class RedisQueue:
         if result:
             _, message_json = result
             message = json.loads(message_json)
-            print(f"📥 Dequeued message from {queue_name}")
             return message
 
         return None

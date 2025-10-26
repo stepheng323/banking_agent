@@ -3,6 +3,11 @@ pants_version = "2.29.0"
 level = "info"
 colors = true
 
+# Performance optimizations
+[run_shell_command]
+workdir = "."
+use_integrated_shell = true
+
 # Enable Python backends
 backend_packages = [
   "pants.backend.python",
@@ -11,16 +16,13 @@ backend_packages = [
 ]
 
 [source]
-# Tell Pants where to find Python code
 root_patterns = [
   "/",
 ]
 
 [python]
-# Python version constraints
 interpreter_constraints = ["==3.12.*"]
 
-# Use single resolve for simplicity
 enable_resolves = true
 default_resolve = "python-default"
 
@@ -28,14 +30,20 @@ default_resolve = "python-default"
 python-default = "python-default.lock"
 
 [python-infer]
-# Enable automatic import inference
 imports = true
 init_files = "always"
 
 [black]
-# Code formatting
 args = ["--line-length=100"]
 
 [pytest]
-# Testing configuration
 args = ["-v"]
+
+[python.resolve]
+# Enable pip resolver for faster dependency resolution
+interpreter_constraints = ["==3.12.*"]
+
+[engine]
+# Enable local caching for faster builds
+targets_dir = ".pants.d/targets"
+workdir = ".pants.d/workdir"
