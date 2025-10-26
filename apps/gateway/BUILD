@@ -13,7 +13,7 @@ python_sources(
 pex_binary(
     name="bin",
     entry_point="uvicorn",
-    args=["apps.gateway.main:app", "--host=0.0.0.0", "--port=8000"],
+    args=["apps.gateway.main:app", "--host=0.0.0.0", "--port=8000", "--reload"],
     dependencies=[":gateway"],
 )
 

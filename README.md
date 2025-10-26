@@ -1,275 +1,245 @@
 # Banking Agent - WhatsApp Banking Chatbot
 
-A Python monorepo for a WhatsApp-based banking agent with LLM processing and automatic receipt generation.
+A Python monorepo for a WhatsApp-based banking agent with LLM processing and automatic receipt generation, built with Pants.
 
 ## 🏗️ Architecture
 
-This is a **Python monorepo** managed with **Pants**, containing two services:
+**Python Monorepo** managed with **Pants** build system:
 
-1. **Gateway Service** (`apps/gateway/`) - WhatsApp webhook ingestion + LangGraph LLM agent
-2. **Core Service** (`apps/core/`) - Banking operations + Receipt generation
-3. **Shared Library** (`shared/`) - Common models, utilities, and clients
-
-## 📋 Prerequisites
-
-- Python 3.12
-- Pants (installed automatically via bootstrap script)
-- Docker & Docker Compose (for local development)
-- PostgreSQL 16 (via Docker)
-- Redis 7 (via Docker)
+- **Gateway Service** (`apps/gateway/`) - WhatsApp webhook + LangGraph LLM agent
+- **Core Service** (`apps/core/`) - Banking operations + Receipt generation
+- **Shared Library** (`shared/`) - Common models, utilities, and clients
 
 ## 🚀 Quick Start
 
-### 1. Clone and Install
+### 1. Setup
 
 ```bash
-# Clone the repository
-cd /home/abiodun/dev/banking_agent
-
-# Pants will bootstrap automatically on first use
-# Generate lock file (first time only)
+# Generate dependency lock file
 make setup
-```
 
-### 2. Configure Environment
-
-```bash
-# Copy example env file
+# Configure environment variables
 cp .env.example .env
-
-# Edit .env with your credentials
-# - META_VERIFY_TOKEN
-# - META_ACCESS_TOKEN
-# - OPENAI_API_KEY
-# - AWS credentials
+# Edit .env with your WhatsApp and OpenAI credentials
 ```
 
-### 3. Run with Docker Compose (Recommended)
+### 2. Run Services
+
+**Option A: Docker (Recommended)**
 
 ```bash
-# Start all services (gateway, core, db, redis)
-make docker-up
-
-# View logs
-make docker-logs
-
-# Stop services
-make docker-down
+make docker-up        # Start all services
+make docker-logs      # View logs
+make docker-down      # Stop services
 ```
 
-Services will be available at:
-
-- **Gateway Service**: http://localhost:8000
-- **Core Service**: http://localhost:8001
-- **PostgreSQL**: localhost:5432
-- **Redis**: localhost:6379
-
-### 4. Run Locally (Development)
+**Option B: Local Development**
 
 ```bash
-# Terminal 1 - Start database and redis
-docker-compose up db redis
-
-# Terminal 2 - Run Gateway service
-make dev-gateway
-
-# Terminal 3 - Run Core service
-make dev-core
+make dev-gateway      # Gateway on port 8000
+make dev-core         # Core on port 8001
 ```
 
-## 🛠️ Development Commands
+**Services:**
+
+- Gateway: http://localhost:8000
+- Core: http://localhost:8001
+- PostgreSQL: localhost:5432
+- Redis: localhost:6379
+
+## 🛠️ Development
+
+### Common Commands
 
 ```bash
-# Show all available commands
-make help
-
-# Run tests
-make test
-
-# Format code
-make format
-
-# Lint code
-make lint
-
-# Run format, lint, and tests
-make check
-
-# List all Pants targets
-make list
-
-# Clean Pants cache
-make clean
+make help             # Show all commands
+make format           # Format code with Black
+make test             # Run tests
+make check            # Format, lint, and test
+make clean            # Clean Pants cache
 ```
 
-## 📦 Pants Commands
+### Pants Commands
 
 ```bash
-# List all targets in the repo
+# List targets
 pants list ::
 
-# Run a specific service
+# Run services
 pants run apps/gateway:bin
 pants run apps/core:bin
 
-# Run tests for a specific service
-pants test apps/gateway::
-pants test apps/core::
-
-# Format specific files
-pants fmt apps/gateway/main.py
-
-# Package as PEX binary
+# Package as PEX binaries
 pants package apps/gateway:bin
 pants package apps/core:bin
+
+# Run tests
+pants test ::
+pants test apps/gateway::
 ```
 
-## 🏢 Project Structure
+## 📁 Project Structure
 
 ```
 banking_agent/
 ├── apps/
-│   ├── gateway/                  # WhatsApp Gateway Service
-│   │   ├── main.py              # FastAPI entry point
-│   │   ├── api/                 # API routes (webhook)
-│   │   ├── adapters/            # WhatsApp, LLM adapters
-│   │   ├── core/                # Business logic
-│   │   ├── BUILD                # Pants build config
-│   │   ├── Dockerfile           # Container image
-│   │   └── requirements.txt     # Service dependencies
-│   │
-│   └── core/                     # Core Banking Service
+│   ├── gateway/              # WhatsApp + LangGraph
+│   │   ├── main.py
+│   │   ├── api/             # FastAPI routes
+│   │   ├── adapters/        # WhatsApp, sender
+│   │   ├── core/            # Config
+│   │   └── BUILD
+│   └── core/                # Banking + Receipts
 │       ├── src/
-│       │   └── main.py          # FastAPI entry point
-│       ├── BUILD                # Pants build config
-│       ├── Dockerfile           # Container image
-│       └── requirements.txt     # Service dependencies
-│
-├── shared/                       # Shared library
-│   ├── __init__.py
-│   ├── models/                  # Pydantic models
-│   ├── config/                  # Configuration
-│   ├── clients/                 # AWS, DB clients
-│   ├── utils/                   # Utilities
-│   └── BUILD                    # Pants build config
-│
-├── pants.toml                    # Pants configuration
-├── BUILD                         # Root build file
-├── requirement.txt               # Project dependencies
-├── python-default.lock           # Pants lock file
-├── docker-compose.yml            # Docker orchestration
-├── Makefile                      # Development commands
-└── README.md                     # This file
+│       │   └── main.py
+│       └── BUILD
+├── shared/                  # Shared library
+│   ├── models/
+│   ├── config/
+│   ├── clients/
+│   └── utils/
+├── pants.toml              # Pants config
+├── requirement.txt         # Dependencies
+├── python-default.lock     # Lock file
+├── docker-compose.yml      # Docker setup
+└── Makefile               # Dev commands
 ```
 
-## 🔄 Service Communication
+## 🔄 Data Flow
 
 ```
-WhatsApp → Gateway Service → Core Service → Banking API
-              ↓                    ↓
-          LangGraph             Receipt Gen
-              ↓                    ↓
-           Redis ←────────────────┘
+WhatsApp → Gateway (Port 8000) → LangGraph Agent
+              ↓
+         Redis Queue
+              ↓
+    Core Service (Port 8001) → Banking API
+              ↓
+       Receipt Generation
               ↓
          PostgreSQL
+```
+
+## 📦 Managing Dependencies
+
+```bash
+# 1. Add to requirement.txt
+echo "new-package==1.0.0" >> requirement.txt
+
+# 2. Regenerate lock file
+pants generate-lockfiles --resolve=python-default
+
+# 3. Export for IDE (optional)
+pants export --resolve=python-default
+```
+
+## 🐳 Docker Deployment
+
+### Build & Deploy
+
+```bash
+# Build images
+make docker-build
+
+# Push to AWS ECR
+aws ecr get-login-password --region us-east-1 | \
+  docker login --username AWS --password-stdin <ecr-url>
+docker tag banking_agent-gateway:latest <ecr-url>/gateway:latest
+docker push <ecr-url>/gateway:latest
+```
+
+### Run PEX Binaries
+
+```bash
+# Package services
+pants package ::
+
+# Run standalone binaries
+./dist/apps.gateway/bin.pex
+./dist/apps.core/bin.pex
 ```
 
 ## 🧪 Testing
 
 ```bash
-# Run all tests
+# All tests
 pants test ::
 
-# Run tests for specific service
+# Specific service
 pants test apps/gateway::
-pants test apps/core::
 
-# Run with coverage
+# With coverage
 pants test --coverage ::
 ```
 
-## 📝 Adding Dependencies
-
-1. Add dependency to `requirement.txt`
-2. Regenerate lock file:
-   ```bash
-   pants generate-lockfiles --resolve=python-default
-   ```
-
-## 🐳 Docker Deployment
-
-### Build Images
-
-```bash
-# Build all services
-make docker-build
-
-# Or manually
-docker-compose build
-```
-
-### Deploy to AWS
-
-1. **Push images to ECR**:
-
-   ```bash
-   aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin <ecr-url>
-   docker tag banking_agent-gateway:latest <ecr-url>/gateway:latest
-   docker push <ecr-url>/gateway:latest
-   ```
-
-2. **Deploy to ECS/App Runner** (configure via AWS Console or Terraform)
-
 ## 🔧 Troubleshooting
 
-### Pants Issues
+### Pants Cache Issues
 
 ```bash
-# Clean cache and restart
 pants clean-all
 rm -rf .pants.d
-
-# Regenerate lock file
 pants generate-lockfiles --resolve=python-default
 ```
 
-### DNS Issues in WSL2
-
-If you get "Could not resolve host: github.com":
+### WSL2 DNS Issues
 
 ```bash
-# Fix DNS
 sudo sh -c 'echo "nameserver 8.8.8.8" > /etc/resolv.conf'
 sudo sh -c 'echo "nameserver 1.1.1.1" >> /etc/resolv.conf'
 ```
 
-### Docker Issues
+### WhatsApp 401 Errors
+
+Your `META_ACCESS_TOKEN` may be expired:
+
+1. Go to https://developers.facebook.com/
+2. Select your app → WhatsApp → API Setup
+3. Generate new access token
+4. Update `.env` and restart service
+
+### IDE Setup
 
 ```bash
-# Reset Docker
-make docker-down
-docker system prune -af
-make docker-up
+# Export virtualenv for IDE
+pants export --resolve=python-default
+
+# Point IDE to:
+# dist/export/python/virtualenvs/python-default/3.12.3/bin/python
 ```
 
 ## 📚 Tech Stack
 
-- **Build System**: Pants
+- **Build System**: Pants 2.29
 - **Language**: Python 3.12
-- **Web Framework**: FastAPI
-- **LLM Framework**: LangChain + LangGraph
+- **Web**: FastAPI + Uvicorn
+- **LLM**: LangChain + LangGraph + OpenAI
 - **Database**: PostgreSQL 16
-- **Cache/Queue**: Redis 7
-- **Cloud**: AWS (S3, SES, RDS, etc.)
-- **Containerization**: Docker
+- **Cache**: Redis 7
+- **Cloud**: AWS (S3, SES, RDS)
+- **Container**: Docker + Docker Compose
+
+## 🎯 Key Features
+
+- ✅ **Monorepo**: Single codebase, independent services
+- ✅ **Type Safe**: Pydantic models throughout
+- ✅ **Fast Builds**: Pants caching and dependency inference
+- ✅ **Production Ready**: PEX binaries or Docker images
+- ✅ **LLM Agent**: LangGraph for conversational banking
+- ✅ **Auto Receipts**: Automatic receipt generation
+- ✅ **Scalable**: Easy to add more services
 
 ## 🤝 Contributing
 
-1. Create a feature branch
+1. Create feature branch: `git checkout -b feature/my-feature`
 2. Make changes
-3. Run checks: `make check`
-4. Create pull request
+3. Format & test: `make check`
+4. Commit: `git commit -m "feat: add feature"`
+5. Push & create PR
 
 ## 📄 License
 
 MIT License
+
+---
+
+**Built with ❤️ using Pants Build System**

@@ -22,6 +22,7 @@
 //     "python-dotenv==1.0.1",
 //     "python-jose[cryptography]==3.3.0",
 //     "python-multipart==0.0.9",
+//     "redis==5.0.1",
 //     "requests==2.31.0",
 //     "uvicorn[standard]==0.27.1"
 //   ],
@@ -2461,6 +2462,32 @@
           "artifacts": [
             {
               "algorithm": "sha256",
+              "hash": "ed4802971884ae19d640775ba3b03aa2e7bd5e8fb8dfaed2decce4d0fc48391f",
+              "url": "https://files.pythonhosted.org/packages/0b/34/a01250ac1fc9bf9161e07956d2d580413106ce02d5591470130a25c599e3/redis-5.0.1-py3-none-any.whl"
+            },
+            {
+              "algorithm": "sha256",
+              "hash": "0dab495cd5753069d3bc650a0dde8a8f9edde16fc5691b689a566eda58100d0f",
+              "url": "https://files.pythonhosted.org/packages/4a/4c/3c3b766f4ecbb3f0bec91ef342ee98d179e040c25b6ecc99e510c2570f2a/redis-5.0.1.tar.gz"
+            }
+          ],
+          "project_name": "redis",
+          "requires_dists": [
+            "async-timeout>=4.0.2; python_full_version <= \"3.11.2\"",
+            "cryptography>=36.0.1; extra == \"ocsp\"",
+            "hiredis>=1.0.0; extra == \"hiredis\"",
+            "importlib-metadata>=1.0; python_version < \"3.8\"",
+            "pyopenssl==20.0.1; extra == \"ocsp\"",
+            "requests>=2.26.0; extra == \"ocsp\"",
+            "typing-extensions; python_version < \"3.8\""
+          ],
+          "requires_python": ">=3.7",
+          "version": "5.0.1"
+        },
+        {
+          "artifacts": [
+            {
+              "algorithm": "sha256",
               "hash": "44383bc0c933388516c2692c9a7503e1f4a67e982f20b9a29d2fb70c6494f147",
               "url": "https://files.pythonhosted.org/packages/f3/b4/b49b88b4fea2f14dc73e5b5842755e782fc2e52f74423d6f4adc130d5880/regex-2025.10.23-cp312-cp312-musllinux_1_2_x86_64.whl"
             },
@@ -3279,6 +3306,7 @@
     "python-dotenv==1.0.1",
     "python-jose[cryptography]==3.3.0",
     "python-multipart==0.0.9",
+    "redis==5.0.1",
     "requests==2.31.0",
     "uvicorn[standard]==0.27.1"
   ],

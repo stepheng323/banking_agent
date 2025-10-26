@@ -13,7 +13,7 @@ python_sources(
 pex_binary(
     name="bin",
     entry_point="uvicorn",
-    args=["apps.core.src.main:app", "--host=0.0.0.0", "--port=8001"],
+    args=["apps.core.src.main:app", "--host=0.0.0.0", "--port=8001", "--reload"],
     dependencies=[":core"],
 )
 

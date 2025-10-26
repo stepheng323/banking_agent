@@ -54,7 +54,7 @@ services:
       - ./apps/gateway:/app/apps/gateway
       - ./shared:/app/shared
 
-  # Core Service (Banking + Receipts)
+  # Core Service (Banking + Receipts API)
   core:
     build:
       context: .
@@ -75,6 +75,28 @@ services:
     volumes:
       - ./apps/core:/app/apps/core
       - ./shared:/app/shared
+
+  # Core Consumer (Message Queue Worker)
+  consumer:
+    build:
+      context: .
+      dockerfile: apps/core/Dockerfile
+    command: python apps/core/src/consumer.py
+    environment:
+      - DATABASE_URL=postgresql://banking_user:banking_pass@db:5432/banking_db
+      - REDIS_URL=redis://redis:6379
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - AWS_REGION=${AWS_REGION:-us-east-1}
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./apps/core:/app/apps/core
+      - ./shared:/app/shared
+    restart: unless-stopped
 
 volumes:
   postgres_data:
