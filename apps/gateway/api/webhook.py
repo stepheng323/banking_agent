@@ -4,11 +4,14 @@ from apps.gateway.adapters.meta_whatsapp import parse_payload, verify_meta_signa
 from apps.gateway.adapters.sender import send_text
 from shared.queue.redis_queue import RedisQueue
 from shared.models.messages import WhatsAppMessage, MessageType, MessagePriority
+from shared.clients.whatsapp_client import WhatsAppClient
 from datetime import datetime
 
 router = APIRouter()
 
 queue = RedisQueue(redis_url=settings.redis_url)
+whatsapp_client = WhatsAppClient()
+
 
 @router.get("/webhook/whatsapp")
 async def verify_webhook(request: Request) -> Response:
@@ -46,7 +49,6 @@ async def whatsapp_webhook(request: Request) -> Response:
                     text=text,
                     timestamp=datetime.utcnow(),
                     priority=MessagePriority.NORMAL,
-                    metadata={"raw": msg},
                 )
                 try:
                     await queue.enqueue_simple(
@@ -54,6 +56,12 @@ async def whatsapp_webhook(request: Request) -> Response:
                         message=whatsapp_msg.model_dump(mode="json"),
                     )
                     print(f" ✅ Message enqueued for processing")
+
+                    try:
+                        await whatsapp_client.send_typing_indicator(message_id=message_id)
+                    except Exception as typing_error:
+                        print(f"   ⚠️  Could not send typing indicator: {typing_error}")
+
                 except Exception as queue_error:
                     print(f"   ❌ Failed to enqueue message: {queue_error}")
                     await send_text(
