@@ -1,48 +1,57 @@
 .PHONY: help dev test format lint docker-build docker-up docker-down clean
 
-help: ## Show this help message
+help: 
 	@echo 'Usage: make [target]'
 	@echo ''
 	@echo 'Available targets:'
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}'
 
-setup: ## Generate lock files and set up environment
+setup: 
 	pants generate-lockfiles --resolve=python-default
 
-dev-gateway: ## Run gateway service in development mode
-	pants run apps/gateway:bin -- -m uvicorn apps.gateway.main:app --reload --host 0.0.0.0 --port 8000
+dev-gateway: 
+	PANTS_CONCURRENT=True pants run apps/gateway:bin
 
-dev-core: ## Run core service in development mode
-	pants run apps/core:bin -- -m uvicorn apps.core.src.main:app --reload --host 0.0.0.0 --port 8001
+dev-core:
+	PANTS_CONCURRENT=True pants run apps/core:bin
 
-test: ## Run all tests
+dev:
+	PANTS_CONCURRENT=True pants run apps/gateway:bin &
+	PANTS_CONCURRENT=True pants run apps/core:bin &
+	@echo "🚀 Both services starting..."
+	@echo "   Gateway: http://localhost:8000"
+	@echo "   Core: http://localhost:8001"
+	@echo "   Press Ctrl+C to stop all services"
+	wait
+
+test:
 	pants test ::
 
-format: ## Format all code with Black
+format:
 	pants fmt ::
 
-lint: ## Lint all code
+lint:
 	pants lint ::
 
-check: ## Run format, lint, and tests
+check:
 	pants fmt :: && pants lint :: && pants test ::
 
-docker-build: ## Build Docker images
+docker-build:
 	docker-compose build
 
-docker-up: ## Start services with Docker Compose
+docker-up:
 	docker-compose up -d
 
-docker-down: ## Stop Docker Compose services
+docker-down: 
 	docker-compose down
 
-docker-logs: ## Show Docker logs
+docker-logs:
 	docker-compose logs -f
 
-clean: ## Clean Pants cache
+clean:
 	pants clean-all
 
-list: ## List all targets
+list:
 	pants list ::
 
 .DEFAULT_GOAL := help

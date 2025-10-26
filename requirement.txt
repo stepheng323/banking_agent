@@ -15,6 +15,9 @@ aioboto3==12.3.0
 # Database
 psycopg2-binary==2.9.9
 
+# Queue and Cache
+redis==5.0.1
+
 # Auth and Security
 python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4
