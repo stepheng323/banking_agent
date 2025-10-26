@@ -24,6 +24,24 @@ dev:
 	@echo "   Press Ctrl+C to stop all services"
 	wait
 
+# Fast development mode (skips Pants, instant startup)
+dev-fast-gateway:
+	@echo "🚀 Starting Gateway (fast mode)..."
+	uvicorn apps.gateway.main:app --reload --host 0.0.0.0 --port 8000
+
+dev-fast-core:
+	@echo "🚀 Starting Core (fast mode)..."
+	uvicorn apps.core.src.main:app --reload --host 0.0.0.0 --port 8001
+
+dev-fast:
+	@echo "🚀 Starting both services (fast mode - no Pants)..."
+	uvicorn apps.gateway.main:app --reload --host 0.0.0.0 --port 8000 &
+	uvicorn apps.core.src.main:app --reload --host 0.0.0.0 --port 8001 &
+	@echo "   Gateway: http://localhost:8000"
+	@echo "   Core: http://localhost:8001"
+	@echo "   Press Ctrl+C to stop all services"
+	wait
+
 test:
 	pants test ::
 
@@ -53,6 +71,27 @@ clean:
 
 list:
 	pants list ::
+
+db-init:
+	@python3 scripts/init_db.py
+
+db-migrate-init:
+	@bash scripts/migrate.sh init
+
+db-migrate:
+	@bash scripts/migrate.sh upgrade
+
+db-migrate-create: 
+	@bash scripts/migrate.sh create $(MESSAGE)
+
+db-current:
+	@bash scripts/migrate.sh current
+
+db-history:
+	@bash scripts/migrate.sh history
+
+db-drop:
+	@python scripts/drop_db.py
 
 .DEFAULT_GOAL := help
 

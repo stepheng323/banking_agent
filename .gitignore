@@ -62,3 +62,9 @@ dmypy.json
 # Logs
 *.log
 logs/
+
+# Pants exported environment
+.venv-pants/
+
+# Old migration venv (deprecated)
+.venv-migrations/
