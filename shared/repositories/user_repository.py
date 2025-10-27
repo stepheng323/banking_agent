@@ -42,6 +42,7 @@ class UserRepository(BaseRepository[User]):
             phone_number=user_data.phone_number,
             full_name=user_data.full_name,
             email=user_data.email,
+            onboarding_status=user_data.onboarding_status,
             extra_data=user_data.extra_data or {},
         )
 

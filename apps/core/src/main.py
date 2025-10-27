@@ -6,6 +6,9 @@ from apps.core.src.services.message_handler import MessageHandler
 from shared.database.connection import init_db
 import os
 
+from shared.repositories.user_repository import UserRepository
+from shared.database.connection import get_db_session
+
 
 def setup_dependencies():
     from shared.clients.whatsapp_client import WhatsAppClient
@@ -16,10 +19,12 @@ def setup_dependencies():
     # Initialize dependencies
     whatsapp_client = WhatsAppClient()
     redis_queue = RedisQueue(redis_url=redis_url)
+    user_repository = UserRepository(db=get_db_session())
 
     # Create message handler with injected dependencies
     message_handler = MessageHandler(
         whatsapp_client=whatsapp_client,
+        user_repository=user_repository,
     )
 
     consumer = MessageConsumer(redis_queue=redis_queue, handler=message_handler)

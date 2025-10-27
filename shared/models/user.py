@@ -3,8 +3,6 @@
 from pydantic import BaseModel, Field
 from typing import Optional, Dict, Any
 
-from shared.database.models import UserOnboardingStatusEnum
-
 
 class UserResponse(BaseModel):
     """Response model for user data."""
@@ -22,9 +20,7 @@ class UserCreate(BaseModel):
     phone_number: str
     full_name: Optional[str] = None
     email: Optional[str] = None
-    onboarding_status: Optional[UserOnboardingStatusEnum] = Field(
-        default=None,
-    )
+    onboarding_status: Optional[str] = Field(default=None)
     extra_data: Dict[str, Any] = Field(default_factory=dict)
 
 
@@ -33,7 +29,5 @@ class UserUpdate(BaseModel):
 
     full_name: Optional[str] = None
     email: Optional[str] = None
-    onboarding_status: Optional[UserOnboardingStatusEnum] = Field(
-        default=None,
-    )
+    onboarding_status: Optional[str] = Field(default=None)
     extra_data: Optional[Dict[str, Any]] = None
