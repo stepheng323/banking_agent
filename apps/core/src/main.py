@@ -8,10 +8,21 @@ import os
 
 
 def setup_dependencies():
+    from shared.clients.whatsapp_client import WhatsAppClient
+    from shared.queue.redis_queue import RedisQueue
+
     redis_url = os.getenv("REDIS_URL", "redis://localhost:6379")
 
-    message_handler = MessageHandler()
-    consumer = MessageConsumer(redis_url=redis_url, handler=message_handler)
+    # Initialize dependencies
+    whatsapp_client = WhatsAppClient()
+    redis_queue = RedisQueue(redis_url=redis_url)
+
+    # Create message handler with injected dependencies
+    message_handler = MessageHandler(
+        whatsapp_client=whatsapp_client,
+    )
+
+    consumer = MessageConsumer(redis_queue=redis_queue, handler=message_handler)
 
     return consumer
 

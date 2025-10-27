@@ -1,1 +1,1 @@
-# Shared utilities and helpers
+# Shared utilities module

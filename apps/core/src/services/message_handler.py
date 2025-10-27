@@ -1,18 +1,18 @@
 from shared.models.messages import WhatsAppMessage
 from apps.core.src.services.onboarding.handler import OnboardingHandler
-from apps.core.src.services.user_registry import UserRegistry
+from shared.clients.whatsapp_client import WhatsAppClient
 from typing import Dict, Any
 
 
 class MessageHandler:
-    def __init__(self):
-        self.user_registry = UserRegistry()
-        self.onboarding_handler = OnboardingHandler(self.user_registry)
+    def __init__(
+        self,
+        whatsapp_client: WhatsAppClient,
+    ):
+        self.whatsapp_client = whatsapp_client
+        self.onboarding_handler = OnboardingHandler(whatsapp_client)
 
     async def handle_message(self, message: WhatsAppMessage) -> Dict[str, Any]:
         user_id = message.from_number
-        
-        if not self.user_registry.is_registered(user_id):
-            return await self.onboarding_handler.handle_message(message)
-            
-          
+        # TODO: Check if user is registered
+        return await self.onboarding_handler.handle_onboarding(message)

@@ -51,8 +51,11 @@ format:
 lint:
 	pants lint ::
 
+typecheck:
+	pants typecheck ::
+
 check:
-	pants fmt :: && pants lint :: && pants test ::
+	pants fmt :: && pants lint :: && pants typecheck :: && pants test ::
 
 docker-build:
 	docker-compose build

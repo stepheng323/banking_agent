@@ -2,7 +2,7 @@ from logging.config import fileConfig
 from sqlalchemy import engine_from_config
 from sqlalchemy import pool
 from alembic import context
-from shared.models.user import Base
+from shared.database.models import Base
 import os
 import sys
 
@@ -10,12 +10,16 @@ project_root = os.path.dirname(os.path.dirname(__file__))
 sys.path.insert(0, project_root)
 
 
-
 config = context.config
 
 database_url = os.getenv("DATABASE_URL")
 if database_url:
     config.set_main_option("sqlalchemy.url", database_url)
+else:
+    section = config.get_section(config.config_ini_section, {})
+    if "sqlalchemy.url" not in section:
+        print("⚠️  DATABASE_URL environment variable not set")
+        print("   Set DATABASE_URL or configure it in alembic.ini")
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
@@ -45,10 +49,12 @@ def run_migrations_online() -> None:
     """
     configuration = config.get_section(config.config_ini_section, {})
 
-    if "url" not in configuration:
+    if "url" not in configuration or not configuration.get("url"):
         database_url = os.getenv("DATABASE_URL")
         if database_url:
             configuration["url"] = database_url
+        else:
+            raise ValueError("DATABASE_URL environment variable is not set")
 
     connectable = engine_from_config(
         configuration,

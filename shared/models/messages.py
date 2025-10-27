@@ -16,6 +16,7 @@ class MessageType(str, Enum):
     VIDEO = "video"
     LOCATION = "location"
     CONTACT = "contact"
+    FLOW = "flow"
 
 
 class MessagePriority(int, Enum):
@@ -34,6 +35,7 @@ class WhatsAppMessage(BaseModel):
     from_number: str = Field(..., description="Sender's phone number")
     message_type: MessageType = Field(..., description="Type of message")
     text: Optional[str] = Field(None, description="Text content")
+    flow_data: Optional[Dict[str, Any]] = Field(None, description="Flow response data")
     timestamp: datetime = Field(default_factory=datetime.utcnow)
 
     priority: MessagePriority = Field(default=MessagePriority.NORMAL)

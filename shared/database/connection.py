@@ -6,14 +6,34 @@ import os
 
 DATABASE_URL = os.getenv("DATABASE_URL", "")
 
-engine = create_engine(DATABASE_URL, echo=False)
+# Lazy engine initialization - only create when actually needed
+_engine = None
+_SessionLocal = None
 
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+def get_engine():
+    global _engine
+    if _engine is None:
+        if not DATABASE_URL:
+            raise ValueError("DATABASE_URL environment variable is not set")
+        _engine = create_engine(DATABASE_URL, echo=False)
+    return _engine
+
+
+def get_session_local():
+    global _SessionLocal
+    if _SessionLocal is None:
+        _SessionLocal = sessionmaker(
+            autocommit=False, autoflush=False, bind=get_engine()
+        )
+    return _SessionLocal
+
 
 Base = declarative_base()
 
 
 def get_db() -> Generator[Session, None, None]:
+    SessionLocal = get_session_local()
     db = SessionLocal()
     try:
         yield db
@@ -22,14 +42,14 @@ def get_db() -> Generator[Session, None, None]:
 
 
 def get_db_session() -> Session:
-    return SessionLocal()
+    return get_session_local()()
 
 
 def init_db():
     try:
-        from shared.models.user import User
+        from shared.database.models import User
 
-        Base.metadata.create_all(bind=engine)
+        Base.metadata.create_all(bind=get_engine())
         print("✅ Database tables initialized")
     except Exception as e:
         print(f"⚠️  Database initialization error: {e}")
@@ -37,5 +57,5 @@ def init_db():
 
 
 def drop_db():
-    Base.metadata.drop_all(bind=engine)
+    Base.metadata.drop_all(bind=get_engine())
     print("🗑️  Database tables dropped")

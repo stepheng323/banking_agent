@@ -5,8 +5,8 @@ from apps.core.src.services.message_handler import MessageHandler
 
 
 class MessageConsumer:
-    def __init__(self, redis_url: str, handler: MessageHandler):
-        self.queue = RedisQueue(redis_url)
+    def __init__(self, redis_queue: RedisQueue, handler: MessageHandler):
+        self.queue = redis_queue
         self.handler = handler
         self.running = False
 

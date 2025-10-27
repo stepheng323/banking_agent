@@ -8,11 +8,9 @@ GRAPH_API_BASE = "https://graph.facebook.com/v21.0"
 
 
 class WhatsAppClient:
-    def __init__(self):
-        pass
-
-    access_token = os.getenv("META_ACCESS_TOKEN")
-    phone_number_id = os.getenv("META_PHONE_NUMBER_ID")
+    def __init__(self, access_token: str = None, phone_number_id: str = None):
+        self.access_token = access_token or os.getenv("META_ACCESS_TOKEN")
+        self.phone_number_id = phone_number_id or os.getenv("META_PHONE_NUMBER_ID")
 
     async def _send(
         self, url: str, payload: Dict[str, Any], max_retries: int = 3
@@ -45,6 +43,12 @@ class WhatsAppClient:
                     print(
                         f"❌ Max retries reached. Final error: {e.response.status_code}"
                     )
+                    # Print error response for debugging
+                    try:
+                        error_body = e.response.json()
+                        print(f"   Error response: {error_body}")
+                    except:
+                        print(f"   Error response: {e.response.text}")
                     raise
 
             except Exception as e:
@@ -134,7 +138,7 @@ class WhatsAppClient:
                     "name": "flow",
                     "parameters": {
                         "flow_message_version": "3",
-                        "flow_token": flow_token,
+                        "flow_token": flow_token or "",
                         "flow_id": flow_id,
                         "flow_cta": flow_cta,
                         "flow_action": "navigate",
@@ -146,9 +150,15 @@ class WhatsAppClient:
         }
 
         try:
+            import json
+
+            print(f"📤 Sending flow payload: {json.dumps(payload, indent=2)}")
             result = await self._send(url, payload)
             print(f"✅ Flow sent to {to} (Flow ID: {flow_id})")
             return result
         except Exception as e:
             print(f"❌ Failed to send flow: {e}")
+            import json
+
+            print(f"   Payload was: {json.dumps(payload, indent=2)}")
             raise
