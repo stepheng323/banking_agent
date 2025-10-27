@@ -151,10 +151,7 @@ class WhatsAppClient:
 
         try:
             import json
-
-            print(f"📤 Sending flow payload: {json.dumps(payload, indent=2)}")
             result = await self._send(url, payload)
-            print(f"✅ Flow sent to {to} (Flow ID: {flow_id})")
             return result
         except Exception as e:
             print(f"❌ Failed to send flow: {e}")

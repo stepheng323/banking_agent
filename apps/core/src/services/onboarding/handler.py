@@ -20,16 +20,17 @@ class OnboardingHandler:
         """Handle onboarding messages - start flow."""
         phone_number = message.from_number
         await self.send_onboarding_flow(phone_number)
-        
+
         # Track onboarding start - use UnitOfWork to ensure commit
         from shared.repositories.unit_of_work import UnitOfWork
+
         with UnitOfWork() as uow:
             user_data = UserCreate(
                 phone_number=phone_number,
                 onboarding_status=UserOnboardingStatusEnum.ONBOARDING_STARTED.value,
             )
             uow.users.register_user(user_data)
-        
+
         return None
 
     async def send_onboarding_flow(self, phone_number: str) -> None:
