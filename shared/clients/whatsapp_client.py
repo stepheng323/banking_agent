@@ -11,6 +11,7 @@ class WhatsAppClient:
     def __init__(self, access_token: str = None, phone_number_id: str = None):
         self.access_token = access_token or os.getenv("META_ACCESS_TOKEN")
         self.phone_number_id = phone_number_id or os.getenv("META_PHONE_NUMBER_ID")
+        self._validate_config()
 
     async def _send(
         self, url: str, payload: Dict[str, Any], max_retries: int = 3
@@ -51,6 +52,17 @@ class WhatsAppClient:
                         print(f"   Error response: {e.response.text}")
                     raise
 
+            except httpx.ConnectError as e:
+                last_error = e
+                if attempt < max_retries:
+                    print(
+                        f"⚠️  Connection failed (attempt {attempt}/{max_retries}): Network unreachable"
+                    )
+
+                    await asyncio.sleep(2 * attempt)
+                else:
+                    print(f"❌ Max retries reached. Connection failed: {e}")
+                    raise
             except Exception as e:
                 last_error = e
                 if attempt < max_retries:
@@ -63,6 +75,30 @@ class WhatsAppClient:
         if last_error:
             raise last_error
         return {}
+
+    def _validate_config(self) -> None:
+        """Validate WhatsApp client configuration."""
+        errors = []
+
+        if not self.access_token:
+            errors.append("META_ACCESS_TOKEN is not set")
+        elif self.access_token == "development_access_token":
+            print(
+                "⚠️  Using development META_ACCESS_TOKEN - messages will fail in production"
+            )
+
+        if not self.phone_number_id:
+            errors.append("META_PHONE_NUMBER_ID is not set")
+        elif self.phone_number_id == "development_phone_id":
+            print(
+                "⚠️  Using development META_PHONE_NUMBER_ID - messages will fail in production"
+            )
+
+        if errors:
+            error_msg = "WhatsApp client configuration errors:\n" + "\n".join(
+                f"  - {error}" for error in errors
+            )
+            raise ValueError(error_msg)
 
     def _get_headers(self) -> Dict[str, str]:
         return {
@@ -151,6 +187,7 @@ class WhatsAppClient:
 
         try:
             import json
+
             result = await self._send(url, payload)
             return result
         except Exception as e:
