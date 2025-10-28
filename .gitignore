@@ -59,6 +59,10 @@ dmypy.json
 .env.local
 .env.*.local
 
+# WhatsApp Flow Keys (PRIVATE - never commit!)
+whatsapp_flow_private_key.pem
+whatsapp_flow_public_key.pem
+
 # Logs
 *.log
 logs/

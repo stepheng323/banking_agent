@@ -1,6 +1,7 @@
 from typing import Dict, List
 import hmac
 import hashlib
+import json
 from fastapi import Request
 from apps.gateway.core.config import settings
 
@@ -12,13 +13,31 @@ def parse_payload(payload: Dict) -> List[Dict]:
             value = change.get("value", {})
             for message in value.get("messages", []) or []:
                 text = ""
-                if message.get("type") == "text":
+                message_type = message.get("type", "")
+                flow_data = None
+
+                if message_type == "text":
                     text = message.get("text", {}).get("body", "")
+                elif message_type == "interactive":
+                    interactive = message.get("interactive", {})
+                    interactive_type = interactive.get("type")
+
+                    if interactive_type == "flow_completion_message":
+                        # Extract flow response data
+                        flow_response = interactive.get("flow_response_payload", {})
+                        response_json = flow_response.get("response_json", "{}")
+                        try:
+                            flow_data = json.loads(response_json)
+                        except json.JSONDecodeError:
+                            flow_data = {"raw": response_json}
+
                 results.append(
                     {
                         "id": message.get("id"),
                         "from": message.get("from"),
                         "text": text,
+                        "type": message_type,
+                        "flow_data": flow_data,
                         "raw": message,
                     }
                 )

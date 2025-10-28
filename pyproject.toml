@@ -1,0 +1,15 @@
+[tool.pyright]
+reportMissingImports = true
+reportMissingModuleSource = false
+reportMissingTypeStubs = false
+reportUnusedVariable = "warning"
+reportUnusedImport = "warning"
+reportUntypedFunctionDecorator = "warning"
+reportUnknownMemberType = true
+reportUnknownParameterType = true
+reportUnknownVariableType = true
+typeCheckingMode = "basic"
+strictListInference = true
+strictDictionaryInference = true
+strictSetInference = true
+

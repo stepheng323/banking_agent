@@ -1,35 +1,37 @@
 from apps.core.src.services.onboarding.onboarding_service import OnboardingService
+from shared.database.models import UserOnboardingStatusEnum
 from shared.models.messages import WhatsAppMessage
 from typing import Dict, Any
 from shared.clients.whatsapp_client import WhatsAppClient
-
-
-ONBOARDING_FLOW_ID = "1212187900453009"
-
+from shared.models.user import UserCreate
+from shared.repositories.user_repository import UserRepository
+from shared.repositories.unit_of_work import UnitOfWork
 
 class OnboardingHandler:
 
-    def __init__(self, user_registry):
-        self.user_registry = user_registry
-        self.onboarding_service = OnboardingService()
-        self.whatsapp_client = WhatsAppClient()
+    def __init__(
+        self,
+        whatsapp_client: WhatsAppClient,
+        user_repository: UserRepository,
+        onboarding_service: OnboardingService
+    ):
+        self.whatsapp_client = whatsapp_client
+        self.user_repository = user_repository
+        self.onboarding_service = onboarding_service
 
-    async def handle_message(self, message: WhatsAppMessage) -> Dict[str, Any]:
-        """Handle onboarding message - start the interactive flow."""
-        user_id = message.from_number
-        text = message.text.strip().lower() if message.text else ""
 
-        try:
-            await self.whatsapp_client.send_flow(
-                to=user_id,
-                flow_cta="Start Onboarding",
-                flow_id=ONBOARDING_FLOW_ID,
-                screen_name="RECOMMEND",
-                header="Welcome to Fusepay",
-                text_body="Hi, I'm Fusepay an AI banking assistant that can help you with your banking needs. To get started, please complete the onboarding form below.",
+    async def handle_onboarding(self, message: WhatsAppMessage) -> Dict[str, Any]:
+        """Handle onboarding messages - start flow."""
+        phone_number = message.from_number
+        await self.onboarding_service.send_onboarding_flow(phone_number)
+
+
+        with UnitOfWork() as uow:
+            user_data = UserCreate(
+                phone_number=phone_number,
+                onboarding_status=UserOnboardingStatusEnum.ONBOARDING_STARTED.value,
             )
-        except Exception as e:
-            print(f"❌ Failed to send onboarding flow: {e}")
-            raise e
+            uow.users.register_user(user_data)
 
         return None
+

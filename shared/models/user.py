@@ -1,28 +1,25 @@
-from sqlalchemy import Column, Integer, String, DateTime, Boolean, JSON
-from sqlalchemy.ext.declarative import declarative_base
-from datetime import datetime
+"""Pydantic models for user-related data."""
 
-Base = declarative_base()
+from pydantic import BaseModel, Field
+from typing import Optional, Dict, Any
 
 
-class User(Base):
-    __tablename__ = "users"
+class UserCreate(BaseModel):
+    """Model for creating a new user."""
 
-    id = Column(Integer, primary_key=True, index=True)
+    phone_number: str
+    full_name: Optional[str] = None
+    email: Optional[str] = None
+    onboarding_status: Optional[str] = Field(default=None)
+    transaction_pin: Optional[str] = None
+    extra_data: Dict[str, Any] = Field(default_factory=dict)
 
-    phone_number = Column(String, unique=True, index=True, nullable=False)
-    whatsapp_id = Column(String, unique=True, index=True, nullable=True)
 
-    full_name = Column(String, nullable=True)
-    email = Column(String, unique=True, index=True, nullable=True)
+class UserUpdate(BaseModel):
+    """Model for updating user data."""
 
-    is_active = Column(Boolean, default=True)
-    is_verified = Column(Boolean, default=False)
-
-    registered_at = Column(DateTime, default=datetime.utcnow)
-    last_active = Column(DateTime, default=datetime.utcnow)
-
-    extra_data = Column(JSON, default={})
-
-    def __repr__(self):
-        return f"<User(id={self.id}, phone={self.phone_number}, name={self.full_name})>"
+    full_name: Optional[str] = None
+    email: Optional[str] = None
+    transaction_pin: Optional[str] = None
+    onboarding_status: Optional[str] = Field(default=None)
+    extra_data: Optional[Dict[str, Any]] = None

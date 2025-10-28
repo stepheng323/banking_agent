@@ -45,6 +45,7 @@ services:
       - META_VERIFY_TOKEN=${META_VERIFY_TOKEN}
       - META_ACCESS_TOKEN=${META_ACCESS_TOKEN}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - WHATSAPP_FLOW_PRIVATE_KEY_PATH=/app/whatsapp_flow_private_key.pem
     depends_on:
       db:
         condition: service_healthy
@@ -53,6 +54,7 @@ services:
     volumes:
       - ./apps/gateway:/app/apps/gateway
       - ./shared:/app/shared
+      - ./whatsapp_flow_private_key.pem:/app/whatsapp_flow_private_key.pem:ro
 
   # Core Service (Banking + Receipts API)
   core:

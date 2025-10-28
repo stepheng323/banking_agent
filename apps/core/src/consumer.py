@@ -1,22 +1,24 @@
 import asyncio
+from typing import Any, Coroutine
+
 from shared.queue.redis_queue import RedisQueue
 from shared.models.messages import WhatsAppMessage, ProcessedMessage
 from apps.core.src.services.message_handler import MessageHandler
 
 
 class MessageConsumer:
-    def __init__(self, redis_url: str, handler: MessageHandler):
-        self.queue = RedisQueue(redis_url)
+    def __init__(self, redis_queue: RedisQueue, handler: MessageHandler):
+        self.queue = redis_queue
         self.handler = handler
         self.running = False
 
-    async def process_message(self, message_data: dict) -> ProcessedMessage:
+    async def process_message(self, message_data: dict) -> None:
         try:
             msg = WhatsAppMessage(**message_data)
             await self.handler.handle_message(msg)
 
         except Exception as e:
-            print(f"   ❌ Processing failed: {e}")
+            print(f"❌ Processing failed: {e}")
             raise e
 
     async def start(self, queue_name: str = "banking:messages"):

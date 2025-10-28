@@ -3,35 +3,29 @@ pants_version = "2.29.0"
 level = "info"
 colors = true
 
-# Performance optimizations
-[run_shell_command]
-workdir = "."
-use_integrated_shell = true
-
 # Enable Python backends
 backend_packages = [
   "pants.backend.python",
   "pants.backend.python.lint.black",
+  "pants.backend.python.typecheck.mypy",
   "pants.backend.docker",
 ]
 
 [source]
-root_patterns = [
-  "/",
-]
+root_patterns = ["/"]
 
 [python]
 interpreter_constraints = ["==3.12.*"]
-
 enable_resolves = true
 default_resolve = "python-default"
-
-[python.resolves]
-python-default = "python-default.lock"
 
 [python-infer]
 imports = true
 init_files = "always"
+
+[python.resolves]
+python-default = "python-default.lock"
+
 
 [black]
 args = ["--line-length=100"]
@@ -39,11 +33,15 @@ args = ["--line-length=100"]
 [pytest]
 args = ["-v"]
 
-[python.resolve]
-# Enable pip resolver for faster dependency resolution
-interpreter_constraints = ["==3.12.*"]
-
-[engine]
-# Enable local caching for faster builds
-targets_dir = ".pants.d/targets"
-workdir = ".pants.d/workdir"
+[mypy]
+args = [
+  "--strict",
+  "--ignore-missing-imports",
+  "--disallow-untyped-defs",
+  "--disallow-incomplete-defs",
+  "--check-untyped-defs",
+  "--no-implicit-optional",
+  "--warn-return-any",
+  "--warn-unused-configs",
+  "--warn-redundant-casts"
+]
