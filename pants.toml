@@ -34,4 +34,14 @@ args = ["--line-length=100"]
 args = ["-v"]
 
 [mypy]
-args = ["--strict", "--ignore-missing-imports"]
+args = [
+  "--strict",
+  "--ignore-missing-imports",
+  "--disallow-untyped-defs",
+  "--disallow-incomplete-defs",
+  "--check-untyped-defs",
+  "--no-implicit-optional",
+  "--warn-return-any",
+  "--warn-unused-configs",
+  "--warn-redundant-casts"
+]
