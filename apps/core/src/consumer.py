@@ -1,4 +1,6 @@
 import asyncio
+from typing import Any, Coroutine
+
 from shared.queue.redis_queue import RedisQueue
 from shared.models.messages import WhatsAppMessage, ProcessedMessage
 from apps.core.src.services.message_handler import MessageHandler
@@ -10,7 +12,7 @@ class MessageConsumer:
         self.handler = handler
         self.running = False
 
-    async def process_message(self, message_data: dict) -> ProcessedMessage:
+    async def process_message(self, message_data: dict) -> None:
         try:
             msg = WhatsAppMessage(**message_data)
             await self.handler.handle_message(msg)

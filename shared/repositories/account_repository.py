@@ -34,14 +34,11 @@ class AccountRepository(BaseRepository[Account]):
         create_account: CreateAccount,
     ) -> Account:
         """Create a bank account."""
-        account = Account(
-            user_id=create_account.user_id,
-            bank_name=create_account.bank_name,
-            account_number=create_account.account_number,
-            account_name=create_account.account_name,
-            extra_data=create_account.extra_data or {},
-        )
+        account_dict = create_account.model_dump(exclude_unset=True)
+        if "extra_data" not in account_dict or account_dict["extra_data"] is None:
+            account_dict["extra_data"] = {}
 
+        account = Account(**account_dict)
         self.db.add(account)
         self.db.flush()
         return account

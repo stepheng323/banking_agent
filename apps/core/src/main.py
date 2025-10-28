@@ -15,7 +15,6 @@ import os
 
 
 def setup_dependencies():
-
     redis_url = os.getenv("REDIS_URL", "redis://localhost:6379")
 
     # Initialize dependencies
@@ -35,9 +34,7 @@ def setup_dependencies():
     )
 
     consumer = MessageConsumer(redis_queue=redis_queue, handler=message_handler)
-
     return consumer
-
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):

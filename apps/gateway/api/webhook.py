@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Request, Response, HTTPException, status
+from fastapi import APIRouter, Request, Response, HTTPException, status, Depends
 from apps.gateway.core.config import settings
 from apps.gateway.adapters.meta_whatsapp import parse_payload, verify_meta_signature
 from apps.gateway.adapters.sender import send_text
@@ -9,8 +9,24 @@ from datetime import datetime
 
 router = APIRouter()
 
-queue = RedisQueue(redis_url=settings.redis_url)
-whatsapp_client = WhatsAppClient()
+_redis_queue_instance = None
+_whatsapp_client_instance = None
+
+
+def get_redis_queue() -> RedisQueue:
+    """Dependency factory for Redis queue with lazy initialization."""
+    global _redis_queue_instance
+    if _redis_queue_instance is None:
+        _redis_queue_instance = RedisQueue(redis_url=settings.redis_url)
+    return _redis_queue_instance
+
+
+def get_whatsapp_client() -> WhatsAppClient:
+    """Dependency factory for WhatsApp client with lazy initialization."""
+    global _whatsapp_client_instance
+    if _whatsapp_client_instance is None:
+        _whatsapp_client_instance = WhatsAppClient()
+    return _whatsapp_client_instance
 
 
 @router.get("/webhook/whatsapp")
@@ -25,7 +41,11 @@ async def verify_webhook(request: Request) -> Response:
 
 
 @router.post("/webhook/whatsapp")
-async def whatsapp_webhook(request: Request) -> Response:
+async def whatsapp_webhook(
+    request: Request,
+    queue: RedisQueue = Depends(get_redis_queue),
+    whatsapp_client: WhatsAppClient = Depends(get_whatsapp_client),
+) -> Response:
     try:
         await verify_meta_signature(request)
         payload = await request.json()

@@ -6,7 +6,6 @@ from sqlalchemy.ext.declarative import declarative_base
 from datetime import datetime
 import uuid
 from enum import Enum
-from sqlalchemy import Enum as SQLEnum
 
 Base = declarative_base()
 
@@ -29,6 +28,7 @@ class User(Base):
     onboarding_status = Column(String, nullable=True)
     last_active = Column(DateTime, default=datetime.utcnow)
     extra_data = Column(JSON, default={})
+    transaction_pin = Column(String, nullable=True)
     created_at = Column(DateTime, server_default=func.now(), nullable=False)
     updated_at = Column(
         DateTime, server_default=func.now(), onupdate=func.now(), nullable=False
@@ -45,7 +45,10 @@ class Account(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
     user_id = Column(
-        UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True
+        UUID(as_uuid=True),
+        ForeignKey("users.id", name="fk_accounts_user_id"),
+        nullable=False,
+        index=True,
     )
     account_id = Column(String, nullable=False, unique=True)
     bank_name = Column(String, nullable=False)

@@ -3,17 +3,37 @@ Flow Webhook for handling WhatsApp Flow data exchange.
 This endpoint handles BVN and OTP verification during the flow.
 """
 
-import datetime
-from fastapi import APIRouter, Request, HTTPException
+from fastapi import APIRouter, Request, Depends
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
 from typing import Dict, Any, Optional
 import json
+from shared.models import UserCreate, CreateAccount
+from shared.models import UserUpdate
 from shared.repositories.unit_of_work import UnitOfWork
-from shared.utils.flow_decryption import decrypt_flow_data, is_encrypted
-from shared.utils.flow_encryption import encrypt_flow_response
+from shared.utils import (
+    decrypt_flow_data,
+    is_encrypted,
+    encrypt_flow_response,
+    hash_plaintext,
+    is_valid_pin_format,
+)
+from shared.clients.whatsapp_client import WhatsAppClient
 
 router = APIRouter()
+
+_whatsapp_client_instance = None
+
+
+def get_whatsapp_client() -> WhatsAppClient:
+    """
+    Dependency factory for WhatsApp client.
+    Uses lazy initialization and singleton pattern for efficiency.
+    """
+    global _whatsapp_client_instance
+    if _whatsapp_client_instance is None:
+        _whatsapp_client_instance = WhatsAppClient()
+    return _whatsapp_client_instance
 
 
 class FlowDataExchangeRequest(BaseModel):
@@ -38,7 +58,9 @@ verification_storage = {}
 
 
 @router.post("/webhook/flow")
-async def flow_webhook(req: Request):
+async def flow_webhook(
+    req: Request, whatsapp_client: WhatsAppClient = Depends(get_whatsapp_client)
+):
     """
     Handle WhatsApp Flow data exchange.
     This is called when user interacts with flow screens or for health checks.
@@ -112,7 +134,11 @@ async def flow_webhook(req: Request):
                 print(f"✅ BVN verified successfully")
                 response = {
                     "screen": "OTP_VERIFICATION",
-                    "data": {"screen_0_BVN_0": bvn},
+                    "data": {
+                        "bvn": str(bvn),
+                        "show_error": False,
+                        "error_message": "",
+                    },
                 }
 
                 if request_was_encrypted:
@@ -127,7 +153,9 @@ async def flow_webhook(req: Request):
                 response = {
                     "screen": "BVN_ENTRY",
                     "data": {
-                        "error_message": "Invalid BVN. Please check and enter a valid 11-digit BVN."
+                        "bvn": str(bvn) if bvn else "",
+                        "show_error": True,
+                        "error_message": "Invalid BVN. Please check and enter a valid 11-digit BVN.",
                     },
                 }
 
@@ -215,10 +243,20 @@ async def flow_webhook(req: Request):
             else:
                 print(f"❌ OTP verification failed")
 
+                # Get BVN from storage or current data for error response
+                stored_bvn = (
+                    verification_storage.get(flow_token, {}).get("bvn")
+                    if flow_token
+                    else None
+                )
+                current_bvn = stored_bvn or bvn or ""
+
                 response = {
                     "screen": "OTP_VERIFICATION",
                     "data": {
-                        "error_message": "Invalid OTP. Please check and enter the correct 6-digit OTP."
+                        "bvn": str(current_bvn),
+                        "show_error": True,
+                        "error_message": "Invalid OTP. Please check and enter the correct 6-digit OTP.",
                     },
                 }
 
@@ -237,38 +275,11 @@ async def flow_webhook(req: Request):
 
             print(f"🔍 Verification data: {verification_data}")
 
-            # Todo: save the accounts with all relevant data to the database
-            # send message to the user about success acount linking
-
-            with UnitOfWork() as uow:
-                user = uow.users.register_user(
-                    phone_number=verification_data.get("phone_number"),
-                    full_name=verification_data.get("full_name"),
-                    email=verification_data.get("email"),
-                    extra_data=verification_data,
-                )
-
-                for account in accounts:
-                    uow.accounts.create_account(
-                        user_id=user.id,
-                        account_number=account.get("account_number"),
-                        account_name=account.get("account_name"),
-                        bank_name=account.get("bank_name"),
-                        extra_data=account,
-                    )
-
             response = {
-                "screen": "SUCCESS",
+                "screen": "PIN_ENTRY",
                 "data": {
-                    "extension_message_response": {
-                        "params": {
-                            "flow_token": flow_token or "completed",
-                            "bvn": verification_data.get("bvn"),
-                            "otp": verification_data.get("otp"),
-                            "accounts": accounts,
-                            "success": True,
-                        }
-                    }
+                    "show_error": False,
+                    "error_message": "",
                 },
             }
 
@@ -279,6 +290,141 @@ async def flow_webhook(req: Request):
                 return Response(content=encrypted_response, media_type="text/plain")
 
             return JSONResponse(content=response)
+
+        elif screen == "PIN_ENTRY":
+            pin = data.get("pin")
+            if not pin:
+                return JSONResponse(
+                    content={"error": "PIN is required"}, status_code=400
+                )
+
+            is_valid = is_valid_pin_format(pin)
+            print(f"🔍 Is valid: {is_valid}")
+
+            if is_valid:
+                verification_data = verification_storage.get(flow_token, {})
+                selected_accounts = verification_data.get("selected_accounts", [])
+
+                hashed_pin = hash_plaintext(pin)
+                print(f"🔍 Hashed PIN: {hashed_pin}")
+                with UnitOfWork() as uow:
+                    phone_number = verification_data.get("phone_number")
+
+                    existing_user = uow.users.get_by_phone(phone_number)
+
+                    if existing_user:
+                        user_update = UserUpdate(
+                            full_name=verification_data.get("full_name"),
+                            email=verification_data.get("email"),
+                            transaction_pin=hashed_pin,
+                            onboarding_status="onboarding_completed",
+                            extra_data=verification_data,
+                        )
+                        user = uow.users.update_user(str(existing_user.id), user_update)
+                    else:
+                        user = uow.users.register_user(
+                            UserCreate(
+                                phone_number=phone_number,
+                                full_name=verification_data.get("full_name"),
+                                email=verification_data.get("email"),
+                                transaction_pin=hashed_pin,
+                                onboarding_status="onboarding_completed",
+                                extra_data=verification_data,
+                            )
+                        )
+                        print(f"🔍 Registering new user: {user}")
+
+                    for account_id in selected_accounts:
+                        account_data = None
+                        mock_accounts = [
+                            {
+                                "id": "acc_001",
+                                "account_number": "0760505261",
+                                "bank_name": "Access Bank",
+                                "account_name": "John Doe Access Account",
+                            },
+                            {
+                                "id": "acc_002",
+                                "account_number": "0123456789",
+                                "bank_name": "GTBank",
+                                "account_name": "John Doe GTB Account",
+                            },
+                            {
+                                "id": "acc_003",
+                                "account_number": "9876543210",
+                                "bank_name": "Zenith Bank",
+                                "account_name": "John Doe Zenith Account",
+                            },
+                        ]
+
+                        for acc in mock_accounts:
+                            if acc["id"] == account_id:
+                                account_data = acc
+                                break
+
+                        if account_data:
+                            existing_account = uow.accounts.get_by_account_id(
+                                account_data["id"]
+                            )
+
+                            if existing_account and existing_account.user_id == user.id:
+                                pass
+                            else:
+                                uow.accounts.create_account(
+                                    CreateAccount(
+                                        user_id=str(user.id),
+                                        account_id=account_data["id"],
+                                        account_number=account_data["account_number"],
+                                        account_name=account_data["account_name"],
+                                        bank_name=account_data["bank_name"],
+                                        extra_data=account_data,
+                                    )
+                                )
+
+                response = {
+                    "screen": "SUCCESS",
+                    "data": {
+                        "extension_message_response": {
+                            "params": {
+                                "flow_token": flow_token or "completed",
+                                "bvn": verification_data.get("bvn"),
+                                "otp": verification_data.get("otp"),
+                                "pin": pin,
+                                "accounts_count": len(selected_accounts),
+                                "success": True,
+                            }
+                        }
+                    },
+                }
+
+                if request_was_encrypted:
+                    encrypted_response = encrypt_flow_response(
+                        response, aes_key_bytes, iv_bytes
+                    )
+                    return Response(content=encrypted_response, media_type="text/plain")
+
+                await whatsapp_client.send_text(
+                    to=phone_number,
+                    text="🎉 Welcome to Fusepay! Your onboarding is complete. you can now start using the app to send and receive money."
+                )
+                return JSONResponse(content=response)
+            else:
+                print(f"❌ PIN verification failed")
+                response = {
+                    "screen": "PIN_ENTRY",
+                    "data": {
+                        "show_error": True,
+                        "error_message": "Invalid PIN. Please enter a 4 or 6-digit numeric PIN.",
+                    },
+                }
+
+                if request_was_encrypted:
+                    encrypted_response = encrypt_flow_response(
+                        response, aes_key_bytes, iv_bytes
+                    )
+                    return Response(content=encrypted_response, media_type="text/plain")
+
+                return JSONResponse(content=response)
 
         print(f" 🏥 Health check (unknown screen: {screen})")
         health_response = {"data": {"status": "active"}}

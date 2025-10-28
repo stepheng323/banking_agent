@@ -2,17 +2,27 @@ from logging.config import fileConfig
 from sqlalchemy import engine_from_config
 from sqlalchemy import pool
 from alembic import context
-from shared.database.models import Base
 import os
 import sys
 
 project_root = os.path.dirname(os.path.dirname(__file__))
 sys.path.insert(0, project_root)
 
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv()
+except ImportError:
+    pass
+
+from shared.database.models import Base
+from shared.config import settings
+
 
 config = context.config
 
-database_url = os.getenv("DATABASE_URL")
+database_url = settings.database_url
+print(f"Database URL: {database_url}")
 if database_url:
     config.set_main_option("sqlalchemy.url", database_url)
 else:

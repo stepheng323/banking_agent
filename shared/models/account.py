@@ -7,6 +7,7 @@ class CreateAccount(BaseModel):
     """Model for creating a bank account."""
 
     user_id: str
+    account_id: str
     bank_name: str
     account_number: str
     account_name: Optional[str] = None

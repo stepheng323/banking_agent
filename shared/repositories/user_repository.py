@@ -3,7 +3,7 @@
 from typing import Optional, List
 from sqlalchemy.orm import Session
 from shared.database.models import User
-from shared.models.user import UserCreate
+from shared.models.user import UserCreate, UserUpdate
 from shared.repositories.base import BaseRepository
 from datetime import datetime
 import uuid
@@ -38,15 +38,24 @@ class UserRepository(BaseRepository[User]):
         if existing_user:
             return existing_user
 
-        user = User(
-            phone_number=user_data.phone_number,
-            full_name=user_data.full_name,
-            email=user_data.email,
-            onboarding_status=user_data.onboarding_status,
-            extra_data=user_data.extra_data or {},
-        )
+        user_dict = user_data.model_dump(exclude_unset=True)
+        if "extra_data" not in user_dict or user_dict["extra_data"] is None:
+            user_dict["extra_data"] = {}
 
+        user = User(**user_dict)
         self.db.add(user)
+        self.db.flush()
+        return user
+
+    def update_user(self, user_id: str, user_data: UserUpdate) -> User:
+        """Update an existing user."""
+        user = self.get_by_id(user_id)
+        if not user:
+            raise ValueError(f"User with ID {user_id} not found")
+
+        for field, value in user_data.model_dump(exclude_unset=True).items():
+            setattr(user, field, value)
+
         self.db.flush()
         return user
 
