@@ -3,16 +3,18 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from apps.core.src.consumer import MessageConsumer
 from apps.core.src.services.message_handler import MessageHandler
+from apps.core.src.services.onboarding.handler import OnboardingHandler
+from apps.core.src.services.onboarding.onboarding_service import OnboardingService
 from shared.database.connection import init_db
-import os
-
+from shared.clients.whatsapp_client import WhatsAppClient
+from shared.queue.redis_queue import RedisQueue
 from shared.repositories.user_repository import UserRepository
 from shared.database.connection import get_db_session
+import os
+
 
 
 def setup_dependencies():
-    from shared.clients.whatsapp_client import WhatsAppClient
-    from shared.queue.redis_queue import RedisQueue
 
     redis_url = os.getenv("REDIS_URL", "redis://localhost:6379")
 
@@ -20,11 +22,16 @@ def setup_dependencies():
     whatsapp_client = WhatsAppClient()
     redis_queue = RedisQueue(redis_url=redis_url)
     user_repository = UserRepository(db=get_db_session())
+    onboarding_service = OnboardingService(whatsapp_client)
+    onboarding_handler = OnboardingHandler(
+        whatsapp_client, user_repository, onboarding_service
+    )
 
     # Create message handler with injected dependencies
     message_handler = MessageHandler(
         whatsapp_client=whatsapp_client,
         user_repository=user_repository,
+        onboarding_handler=onboarding_handler,
     )
 
     consumer = MessageConsumer(redis_queue=redis_queue, handler=message_handler)

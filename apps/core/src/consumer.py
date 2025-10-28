@@ -16,7 +16,7 @@ class MessageConsumer:
             await self.handler.handle_message(msg)
 
         except Exception as e:
-            print(f"   ❌ Processing failed: {e}")
+            print(f"❌ Processing failed: {e}")
             raise e
 
     async def start(self, queue_name: str = "banking:messages"):
