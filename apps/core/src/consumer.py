@@ -1,9 +1,8 @@
 import asyncio
-from typing import Any, Coroutine
 
-from shared.queue.redis_queue import RedisQueue
-from shared.models.messages import WhatsAppMessage, ProcessedMessage
 from apps.core.src.services.message_handler import MessageHandler
+from shared.models.messages import WhatsAppMessage
+from shared.queue.redis_queue import RedisQueue
 
 
 class MessageConsumer:
@@ -28,9 +27,7 @@ class MessageConsumer:
         await self.queue.connect()
         while self.running:
             try:
-                message_data = await self.queue.dequeue_blocking(
-                    queue_name=queue_name, timeout=5
-                )
+                message_data = await self.queue.dequeue_blocking(queue_name=queue_name, timeout=5)
                 if message_data:
                     await self.process_message(message_data)
                 else:

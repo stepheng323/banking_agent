@@ -1,9 +1,10 @@
 """Redis-based message queue for inter-service communication."""
 
 import json
-import redis.asyncio as redis
-from typing import Dict, Any, Optional
 from datetime import datetime
+from typing import Any, Dict, Optional
+
+import redis.asyncio as redis
 
 
 class RedisQueue:
@@ -24,9 +25,7 @@ class RedisQueue:
             self._redis = None
             print("🔌 Disconnected from Redis")
 
-    async def enqueue(
-        self, queue_name: str, message: Dict[str, Any], priority: int = 0
-    ) -> None:
+    async def enqueue(self, queue_name: str, message: Dict[str, Any], priority: int = 0) -> None:
         """Add a message to the queue.
 
         Args:
@@ -46,9 +45,7 @@ class RedisQueue:
 
         print(f"📤 Enqueued message to {queue_name} (priority: {priority})")
 
-    async def dequeue(
-        self, queue_name: str, block_timeout: int = 5
-    ) -> Optional[Dict[str, Any]]:
+    async def dequeue(self, queue_name: str, block_timeout: int = 5) -> Optional[Dict[str, Any]]:
         if not self._redis:
             await self.connect()
 
@@ -61,9 +58,7 @@ class RedisQueue:
 
         return None
 
-    async def dequeue_blocking(
-        self, queue_name: str, timeout: int = 0
-    ) -> Optional[Dict[str, Any]]:
+    async def dequeue_blocking(self, queue_name: str, timeout: int = 0) -> Optional[Dict[str, Any]]:
 
         if not self._redis:
             await self.connect()
@@ -91,7 +86,6 @@ class RedisQueue:
         await self._redis.lpush(list_name, json.dumps(enriched_message))
         print(f"📤 Enqueued message to {queue_name}")
 
-
         if not self._redis:
             await self.connect()
 
@@ -99,5 +93,3 @@ class RedisQueue:
         list_len = await self._redis.llen(f"{queue_name}:list") or 0
 
         return zset_len + list_len
-
-

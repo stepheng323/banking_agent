@@ -8,21 +8,11 @@ class Settings:
 
     def __init__(self):
         # WhatsApp/Meta settings
-        self.meta_verify_token: str = os.getenv(
-            "META_VERIFY_TOKEN", "development_token"
-        )
-        self.meta_access_token: str = os.getenv(
-            "META_ACCESS_TOKEN", "development_access_token"
-        )
-        self.meta_phone_number_id: str = os.getenv(
-            "META_PHONE_NUMBER_ID", "development_phone_id"
-        )
-        self.whatsapp_flow_private_key_path: str = os.getenv(
-            "WHATSAPP_FLOW_PRIVATE_KEY_PATH", ""
-        )
-        self.onboarding_flow_id: str = os.getenv(
-            "ONBOARDING_FLOW_ID", "1212187900453009"
-        )
+        self.meta_verify_token: str = os.getenv("META_VERIFY_TOKEN", "development_token")
+        self.meta_access_token: str = os.getenv("META_ACCESS_TOKEN", "development_access_token")
+        self.meta_phone_number_id: str = os.getenv("META_PHONE_NUMBER_ID", "development_phone_id")
+        self.whatsapp_flow_private_key_path: str = os.getenv("WHATSAPP_FLOW_PRIVATE_KEY_PATH", "")
+        self.onboarding_flow_id: str = os.getenv("ONBOARDING_FLOW_ID", "1212187900453009")
 
         # Application settings
         self.app_env: str = os.getenv("APP_ENV", "dev")
@@ -46,22 +36,16 @@ class Settings:
             warnings.append("META_ACCESS_TOKEN is not set - using development default")
 
         if self.meta_phone_number_id == "development_phone_id":
-            warnings.append(
-                "META_PHONE_NUMBER_ID is not set - using development default"
-            )
+            warnings.append("META_PHONE_NUMBER_ID is not set - using development default")
 
         if not self.onboarding_flow_id or self.onboarding_flow_id == "1212187900453009":
-            warnings.append(
-                "ONBOARDING_FLOW_ID is using default - update with your actual Flow ID"
-            )
+            warnings.append("ONBOARDING_FLOW_ID is using default - update with your actual Flow ID")
 
         if warnings and self.app_env != "dev":
             print("⚠️  Configuration warnings:")
             for warning in warnings:
                 print(f"   - {warning}")
-            print(
-                "   Create a .env file with proper WhatsApp credentials to fix these warnings."
-            )
+            print("   Create a .env file with proper WhatsApp credentials to fix these warnings.")
 
 
 # Global settings instance
