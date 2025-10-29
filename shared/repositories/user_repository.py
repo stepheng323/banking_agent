@@ -1,12 +1,13 @@
 """Repository for User model."""
 
-from typing import Optional, List
+from datetime import datetime
+from typing import Optional
+
 from sqlalchemy.orm import Session
+
 from shared.database.models import User
 from shared.models.user import UserCreate, UserUpdate
 from shared.repositories.base import BaseRepository
-from datetime import datetime
-import uuid
 
 
 class UserRepository(BaseRepository[User]):
@@ -62,8 +63,8 @@ class UserRepository(BaseRepository[User]):
     def update_last_active(self, user_id: str) -> None:
         """Update user's last active timestamp (doesn't commit)."""
         user = self.get_by_id(user_id)
-        if user:
-            user.last_active = datetime.utcnow()
+        if user is not None:
+            setattr(user, "last_active", datetime.utcnow())
 
     def mark_verified(self, user_id: str) -> User:
         """Mark user as verified (doesn't commit)."""

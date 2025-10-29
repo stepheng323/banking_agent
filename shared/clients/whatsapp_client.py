@@ -1,8 +1,8 @@
-import httpx
-from typing import Dict, Any
-import os
 import asyncio
+import os
+from typing import Any, Dict
 
+import httpx
 
 GRAPH_API_BASE = "https://graph.facebook.com/v21.0"
 
@@ -32,8 +32,8 @@ class WhatsAppClient:
             except httpx.HTTPStatusError as e:
                 last_error = e
                 if e.response.status_code == 401:
-                    print(f"❌ WhatsApp API Authentication Failed (401)")
-                    print(f"   Check your META_ACCESS_TOKEN")
+                    print("❌ WhatsApp API Authentication Failed (401)")
+                    print("   Check your META_ACCESS_TOKEN")
                     raise
                 elif attempt < max_retries:
                     print(
@@ -41,9 +41,7 @@ class WhatsAppClient:
                     )
                     await asyncio.sleep(1 * attempt)
                 else:
-                    print(
-                        f"❌ Max retries reached. Final error: {e.response.status_code}"
-                    )
+                    print(f"❌ Max retries reached. Final error: {e.response.status_code}")
                     # Print error response for debugging
                     try:
                         error_body = e.response.json()
@@ -83,16 +81,12 @@ class WhatsAppClient:
         if not self.access_token:
             errors.append("META_ACCESS_TOKEN is not set")
         elif self.access_token == "development_access_token":
-            print(
-                "⚠️  Using development META_ACCESS_TOKEN - messages will fail in production"
-            )
+            print("⚠️  Using development META_ACCESS_TOKEN - messages will fail in production")
 
         if not self.phone_number_id:
             errors.append("META_PHONE_NUMBER_ID is not set")
         elif self.phone_number_id == "development_phone_id":
-            print(
-                "⚠️  Using development META_PHONE_NUMBER_ID - messages will fail in production"
-            )
+            print("⚠️  Using development META_PHONE_NUMBER_ID - messages will fail in production")
 
         if errors:
             error_msg = "WhatsApp client configuration errors:\n" + "\n".join(
@@ -109,9 +103,7 @@ class WhatsAppClient:
     def _get_url(self) -> str:
         return f"{GRAPH_API_BASE}/{self.phone_number_id}/messages"
 
-    async def send_text(
-        self, to: str, text: str, preview_url: bool = False
-    ) -> Dict[str, Any]:
+    async def send_text(self, to: str, text: str, preview_url: bool = False) -> Dict[str, Any]:
         url = self._get_url()
 
         payload = {
@@ -178,8 +170,7 @@ class WhatsAppClient:
                         "flow_id": flow_id,
                         "flow_cta": flow_cta,
                         "flow_action": "navigate",
-                        "flow_action_payload": flow_action_payload
-                        or {"screen": screen_name},
+                        "flow_action_payload": flow_action_payload or {"screen": screen_name},
                     },
                 },
             },

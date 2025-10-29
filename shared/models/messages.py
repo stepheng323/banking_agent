@@ -1,9 +1,10 @@
 """Message models for queue communication."""
 
-from pydantic import BaseModel, Field
-from typing import Optional, Dict, Any
 from datetime import datetime
 from enum import Enum
+from typing import Any, Dict, Optional
+
+from pydantic import BaseModel, Field
 
 
 class MessageType(str, Enum):
@@ -42,7 +43,8 @@ class WhatsAppMessage(BaseModel):
     retry_count: int = Field(default=0, description="Number of processing attempts")
 
     class Config:
-        json_encoders = {datetime: lambda v: v.isoformat()}
+        """Pydantic config."""
+        json_encoders = {datetime: lambda v: v.isoformat()}  # type: ignore
 
 
 class ProcessedMessage(BaseModel):
@@ -59,4 +61,5 @@ class ProcessedMessage(BaseModel):
     error: Optional[str] = None
 
     class Config:
-        json_encoders = {datetime: lambda v: v.isoformat()}
+        """Pydantic config."""
+        json_encoders = {datetime: lambda v: v.isoformat()}  # type: ignore

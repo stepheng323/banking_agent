@@ -12,14 +12,37 @@ echo "🗄️  Running database migrations..."
 echo "   Database: $DATABASE_URL"
 echo ""
 
-# Setup Pants exported environment for Alembic
-VENV_PATH="dist/export/python/virtualenvs/python-default/3.12.3"
-if [ ! -d "$VENV_PATH" ]; then
-    echo "📦 Exporting Pants environment..."
+VENV_BASE="dist/export/python/virtualenvs/python-default"
+
+if [ ! -d "$VENV_BASE" ]; then
+    echo "📦 Exporting Pants environment (first time setup)..."
     pants export --resolve=python-default
 fi
 
-# Use Python from Pants environment with Alembic module
+PYTHON_VERSION=$(find "$VENV_BASE" -mindepth 1 -maxdepth 1 -type d -name "3.*" 2>/dev/null | head -n 1 | xargs -r basename)
+
+if [ -z "$PYTHON_VERSION" ]; then
+    echo "📦 Re-exporting Pants environment..."
+    pants export --resolve=python-default
+    PYTHON_VERSION=$(find "$VENV_BASE" -mindepth 1 -maxdepth 1 -type d -name "3.*" 2>/dev/null | head -n 1 | xargs -r basename)
+fi
+
+if [ -z "$PYTHON_VERSION" ]; then
+    echo "❌ Failed to find Python environment"
+    echo "   Ensure you have Python 3.12+ installed and run:"
+    echo "   pants export --resolve=python-default"
+    exit 1
+fi
+
+VENV_PATH="$VENV_BASE/$PYTHON_VERSION"
+
+if [ ! -f "$VENV_PATH/bin/python" ]; then
+    echo "❌ Python environment incomplete at $VENV_PATH"
+    echo "   Re-exporting..."
+    pants export --resolve=python-default
+    exit 1
+fi
+
 PYTHON_CMD="$VENV_PATH/bin/python -m alembic"
 
 case "$1" in
@@ -62,17 +85,4 @@ case "$1" in
         echo "  history        - Show migration history"
         exit 1
         ;;
-    *)
-        echo "Usage: $0 {init|upgrade|downgrade|create|current|history}"
-        echo ""
-        echo "Commands:"
-        echo "  init           - Create initial migration from models"
-        echo "  upgrade        - Apply all pending migrations"
-        echo "  downgrade      - Rollback last migration"
-        echo "  create <msg>   - Create new migration with message"
-        echo "  current        - Show current migration version"
-        echo "  history        - Show migration history"
-        exit 1
-        ;;
 esac
-

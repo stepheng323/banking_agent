@@ -1,9 +1,9 @@
-from shared.database.models import UserOnboardingStatusEnum
-from shared.models.messages import WhatsAppMessage
+from typing import Any, Dict
+
 from apps.core.src.services.onboarding.handler import OnboardingHandler
 from shared.clients.whatsapp_client import WhatsAppClient
-from typing import Dict, Any
-
+from shared.database.models import UserOnboardingStatusEnum
+from shared.models.messages import WhatsAppMessage
 from shared.repositories.user_repository import UserRepository
 
 
@@ -22,10 +22,7 @@ class MessageHandler:
         phone_number = message.from_number
         user = self.user_repository.get_by_phone(phone_number)
 
-        if (
-            user is None
-            or user.onboarding_status != UserOnboardingStatusEnum.ONBOARDING_COMPLETED
-        ):
+        if user is None or user.onboarding_status != UserOnboardingStatusEnum.ONBOARDING_COMPLETED:
             return await self.onboarding_handler.handle_onboarding(message)
 
         # TODO: Implement banking message handling

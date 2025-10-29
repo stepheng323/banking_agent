@@ -1,4 +1,4 @@
-.PHONY: help dev test format lint docker-build docker-up docker-down clean
+.PHONY: help dev test format lint fix docker-build docker-up docker-down clean
 
 help: 
 	@echo 'Usage: make [target]'
@@ -50,6 +50,9 @@ format:
 
 lint:
 	pants lint ::
+
+fix: ## Auto-fix linting and formatting issues
+	pants fix ::
 
 typecheck:
 	pants typecheck ::

@@ -1,17 +1,17 @@
 import asyncio
+import os
 from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
+
 from apps.core.src.consumer import MessageConsumer
 from apps.core.src.services.message_handler import MessageHandler
 from apps.core.src.services.onboarding.handler import OnboardingHandler
 from apps.core.src.services.onboarding.onboarding_service import OnboardingService
-from shared.database.connection import init_db
 from shared.clients.whatsapp_client import WhatsAppClient
+from shared.database.connection import get_db_session, init_db
 from shared.queue.redis_queue import RedisQueue
 from shared.repositories.user_repository import UserRepository
-from shared.database.connection import get_db_session
-import os
-
 
 
 def setup_dependencies():
@@ -22,9 +22,7 @@ def setup_dependencies():
     redis_queue = RedisQueue(redis_url=redis_url)
     user_repository = UserRepository(db=get_db_session())
     onboarding_service = OnboardingService(whatsapp_client)
-    onboarding_handler = OnboardingHandler(
-        whatsapp_client, user_repository, onboarding_service
-    )
+    onboarding_handler = OnboardingHandler(whatsapp_client, user_repository, onboarding_service)
 
     # Create message handler with injected dependencies
     message_handler = MessageHandler(
@@ -35,6 +33,7 @@ def setup_dependencies():
 
     consumer = MessageConsumer(redis_queue=redis_queue, handler=message_handler)
     return consumer
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):

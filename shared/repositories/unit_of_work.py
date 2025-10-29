@@ -1,10 +1,12 @@
 """Unit of Work pattern for managing database transactions."""
 
 from typing import Optional
+
 from sqlalchemy.orm import Session
+
 from shared.database.connection import get_db_session
-from shared.repositories.user_repository import UserRepository
 from shared.repositories.account_repository import AccountRepository
+from shared.repositories.user_repository import UserRepository
 
 
 class UnitOfWork:

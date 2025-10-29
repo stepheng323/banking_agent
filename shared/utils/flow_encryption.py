@@ -6,7 +6,8 @@ Encrypts flow responses using AES-GCM with flipped IV as per Meta's spec.
 
 import base64
 import json
-from typing import Dict, Any
+from typing import Any, Dict
+
 from Crypto.Cipher import AES
 
 

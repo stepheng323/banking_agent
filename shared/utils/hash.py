@@ -1,41 +1,46 @@
 """
 Generic security utilities for hashing and verification.
+
+Uses bcrypt for secure password/PIN hashing via passlib.
+bcrypt is designed to be computationally expensive to resist brute force attacks.
 """
 
-import hashlib
-import secrets
+from passlib.context import CryptContext
+
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
-def hash_plaintext(value: str, algorithm: str = "sha256") -> str:
-    if algorithm not in hashlib.algorithms_available:
-        raise ValueError(f"Unsupported algorithm: {algorithm}")
+def hash_plaintext(value: str, algorithm: str = "bcrypt") -> str:
+    """
+    Hash a plaintext value using bcrypt.
 
-    salt = secrets.token_hex(16)
+    Args:
+        value: The plaintext string to hash (e.g., PIN, password)
+        algorithm: Ignored for backward compatibility, always uses bcrypt
 
-    hash_obj = hashlib.new(algorithm, (salt + value).encode("utf-8"))
-    value_hash = hash_obj.hexdigest()
-
-    return f"{algorithm}${salt}${value_hash}"
+    Returns:
+        Bcrypt hash string (contains algorithm, cost, salt, and hash)
+    """
+    return pwd_context.hash(value)
 
 
 def verify_hash(value: str, stored_hash: str) -> bool:
+    """
+    Verify a plaintext value against a stored bcrypt hash.
+
+    Args:
+        value: The plaintext string to verify
+        stored_hash: The stored bcrypt hash string
+
+    Returns:
+        True if the value matches the hash, False otherwise
+    """
     try:
-        parts = stored_hash.split("$")
-        if len(parts) != 3:
-            return False
-
-        algorithm, salt, expected_hash = parts
-
-        if algorithm not in hashlib.algorithms_available:
-            return False
-
-        hash_obj = hashlib.new(algorithm, (salt + value).encode("utf-8"))
-        actual_hash = hash_obj.hexdigest()
-
-        return actual_hash == expected_hash
+        return pwd_context.verify(value, stored_hash)
     except (ValueError, TypeError):
         return False
 
 
 def is_valid_pin_format(pin: str) -> bool:
-    return pin and len(pin) == 4 and pin.isdigit()
+    """A PIN is valid if it is a string of exactly 4 digits."""
+    return isinstance(pin, str) and len(pin) == 4 and pin.isdigit()

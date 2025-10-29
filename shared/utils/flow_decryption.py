@@ -3,19 +3,21 @@ WhatsApp Flow Decryption Utilities
 
 Handles decryption of WhatsApp Flow encrypted data using RSA-OAEP and AES-GCM.
 
-According to Meta docs: https://developers.facebook.com/docs/whatsapp/flows/guides/implementingyourflowendpoint
+According to Meta docs:
+ https://developers.facebook.com/docs/whatsapp/flows/guides/implementingyourflowendpoint
 - RSA-OAEP with SHA256 for AES key encryption
 - AES-GCM (Galois/Counter Mode) for data encryption
 - 128-bit nonce (IV) for GCM mode
 """
 
 import base64
-import os
 import json
-from typing import Dict, Any
+import os
+from typing import Any, Dict, Tuple
+
 from Crypto.Cipher import AES, PKCS1_OAEP
-from Crypto.PublicKey import RSA
 from Crypto.Hash import SHA256
+from Crypto.PublicKey import RSA
 
 
 def get_private_key_from_env() -> str:
@@ -32,18 +34,22 @@ def get_private_key_from_env() -> str:
     )
 
     if not key_path:
-        return None
+        raise FileNotFoundError(
+            "Environment variable WHATSAPP_FLOW_PRIVATE_KEY_PATH not set or empty"
+        )
 
     if not os.path.exists(key_path):
-        return None
+        raise FileNotFoundError(
+            f"Private key file not found at: {key_path}"
+        )
 
-    with open(key_path, "r") as f:
+    with open(key_path, encoding="utf-8") as f:
         return f.read()
 
 
 def decrypt_flow_data(
-    encrypted_data: str, encrypted_key: str, iv: str, private_key_pem: str = None
-) -> tuple[Dict[str, Any], bytes, bytes]:
+    encrypted_data: str, encrypted_key: str, iv: str, private_key_pem: str = ""
+) -> Tuple[Dict[str, Any], bytes, bytes] | None:
     """
     Decrypt WhatsApp Flow encrypted data.
 
@@ -65,9 +71,10 @@ def decrypt_flow_data(
             private_key_pem = get_private_key_from_env()
 
         if not private_key_pem:
-            print(f" ⚠️  No private key configured for flow decryption")
-            print(f" Set WHATSAPP_FLOW_PRIVATE_KEY_PATH environment variable")
-            return None
+            raise FileNotFoundError(
+                "No private key configured for flow decryption. "
+                "Set WHATSAPP_FLOW_PRIVATE_KEY_PATH environment variable."
+            )
 
         private_key = RSA.import_key(private_key_pem)
         encrypted_key_bytes = base64.b64decode(encrypted_key)
@@ -84,7 +91,7 @@ def decrypt_flow_data(
         ciphertext = encrypted_data_bytes[:-16]
         auth_tag = encrypted_data_bytes[-16:]
 
-        gcm_cipher = AES.new(aes_key, AES.MODE_GCM, nonce=iv_bytes)
+        gcm_cipher = AES.new(aes_key, AES.MODE_GCM, nonce=iv_bytes)  # type: ignore[call-overload]
         plaintext = gcm_cipher.decrypt_and_verify(ciphertext, auth_tag)
 
         flow_data = json.loads(plaintext.decode("utf-8"))
@@ -92,7 +99,7 @@ def decrypt_flow_data(
 
     except ValueError as ve:
         if "Incorrect decryption" in str(ve):
-            print(f"   ❌ RSA decryption failed")
+            print("   ❌ RSA decryption failed")
         else:
             print(f"   ❌ Decryption error: {ve}")
         import traceback

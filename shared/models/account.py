@@ -1,5 +1,6 @@
-from typing import Dict
-from typing import Any, Optional
+"""Account models for data validation and serialization."""
+from typing import Any, Dict, Optional
+
 from pydantic import BaseModel, Field
 
 

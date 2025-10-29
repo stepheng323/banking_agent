@@ -1,8 +1,8 @@
 # Core dependencies
-fastapi==0.110.0
+fastapi>=0.110.0  # Allow newer versions for Python 3.13 compatibility
 uvicorn[standard]==0.27.1
-pydantic==2.6.1
-pydantic-settings==2.1.0
+pydantic>=2.9.0  # Python 3.13 support requires pydantic 2.9+ (pydantic-core 2.23+)
+pydantic-settings>=2.5.0  # Updated for compatibility with newer pydantic
 
 # LLM and AI
 langchain==0.1.20
@@ -13,7 +13,7 @@ langchain-openai==0.0.8
 aioboto3==12.3.0
 
 # Database
-psycopg2-binary==2.9.9
+psycopg[binary]>=3.1.0  # Modern replacement for psycopg2-binary, supports Python 3.13
 alembic==1.13.0
 sqlalchemy==2.0.44
 

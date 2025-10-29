@@ -1,5 +1,5 @@
-from shared.config import settings
 from shared.clients.whatsapp_client import WhatsAppClient
+from shared.config import settings
 
 
 class OnboardingService:
