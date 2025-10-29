@@ -22,6 +22,9 @@ from shared.config import settings
 config = context.config
 
 database_url = settings.database_url
+if database_url:
+    # Convert postgresql:// to postgresql+psycopg:// for psycopg3 support
+    database_url = database_url.replace("postgresql://", "postgresql+psycopg://", 1)
 print(f"Database URL: {database_url}")
 if database_url:
     config.set_main_option("sqlalchemy.url", database_url)
@@ -62,6 +65,8 @@ def run_migrations_online() -> None:
     if "url" not in configuration or not configuration.get("url"):
         database_url = os.getenv("DATABASE_URL")
         if database_url:
+            # Convert postgresql:// to postgresql+psycopg:// for psycopg3 support
+            database_url = database_url.replace("postgresql://", "postgresql+psycopg://", 1)
             configuration["url"] = database_url
         else:
             raise ValueError("DATABASE_URL environment variable is not set")
