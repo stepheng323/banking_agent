@@ -1,7 +1,9 @@
 """Repository for Account model."""
 
-from typing import Optional, List
+from typing import List, Optional
+
 from sqlalchemy.orm import Session
+
 from shared.database.models import Account
 from shared.models.account import CreateAccount
 from shared.repositories.base import BaseRepository
