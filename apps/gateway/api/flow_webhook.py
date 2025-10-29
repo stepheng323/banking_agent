@@ -3,22 +3,24 @@ Flow Webhook for handling WhatsApp Flow data exchange.
 This endpoint handles BVN and OTP verification during the flow.
 """
 
-from fastapi import APIRouter, Request, Depends
+import json
+import uuid
+from typing import Any, Dict, Optional
+
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
-from typing import Dict, Any, Optional
-import json
-from shared.models import UserCreate, CreateAccount
-from shared.models import UserUpdate
+
+from shared.clients.whatsapp_client import WhatsAppClient
+from shared.models import CreateAccount, UserCreate, UserUpdate
 from shared.repositories.unit_of_work import UnitOfWork
 from shared.utils import (
     decrypt_flow_data,
-    is_encrypted,
     encrypt_flow_response,
     hash_plaintext,
+    is_encrypted,
     is_valid_pin_format,
 )
-from shared.clients.whatsapp_client import WhatsAppClient
 
 router = APIRouter()
 
@@ -54,7 +56,7 @@ class FlowAction(BaseModel):
 
 
 # In-memory storage for verification state (use Redis in production)
-verification_storage = {}
+verification_storage: Dict[str, Dict[str, Any]] = {}
 
 
 @router.post("/webhook/flow")
@@ -67,7 +69,7 @@ async def flow_webhook(
     """
     try:
         body = await req.json()
-        print(f"📥 Flow webhook received")
+        print("📥 Flow webhook received")
 
         request_was_encrypted = is_encrypted(body)
         aes_key_bytes = None
@@ -83,7 +85,7 @@ async def flow_webhook(
             print(f"🔍 Result: {result}")
 
             if not result:
-                print(f"   ❌ Decryption failed - returning HTTP 421 per Meta spec")
+                print("   ❌ Decryption failed - returning HTTP 421 per Meta spec")
                 error_response = {
                     "errors": [
                         {
@@ -107,7 +109,7 @@ async def flow_webhook(
             screen = body.get("screen")
             data = body.get("data", {})
             flow_token = body.get("flow_token")
-            print(f"   ℹ️  Unencrypted request - will return plain JSON")
+            print("   ℹ️  Unencrypted request - will return plain JSON")
 
         print(f"   Screen: {screen}")
         print(f"   Data: {data}")
@@ -116,9 +118,10 @@ async def flow_webhook(
         if screen == "BVN_ENTRY":
             bvn = data.get("bvn")
             if not bvn:
-                return JSONResponse(
-                    content={"error": "BVN is required"}, status_code=400
-                )
+                return JSONResponse(content={"error": "BVN is required"}, status_code=400)
+
+            if not flow_token:
+                return JSONResponse(content={"error": "flow_token is required"}, status_code=400)
 
             print(f"🔍 Verifying BVN: {bvn}")
 
@@ -131,7 +134,7 @@ async def flow_webhook(
                     "bvn_verified": True,
                 }
 
-                print(f"✅ BVN verified successfully")
+                print("✅ BVN verified successfully")
                 response = {
                     "screen": "OTP_VERIFICATION",
                     "data": {
@@ -142,39 +145,43 @@ async def flow_webhook(
                 }
 
                 if request_was_encrypted:
+                    if aes_key_bytes is None or iv_bytes is None:
+                        return JSONResponse(
+                            content={"error": "Encryption keys missing"}, status_code=500
+                        )
                     encrypted_response = encrypt_flow_response(
-                        response, aes_key_bytes, iv_bytes
-                    )
+                        response, aes_key_bytes, iv_bytes)
                     return Response(content=encrypted_response, media_type="text/plain")
 
                 return JSONResponse(content=response)
-            else:
-                print(f"❌ BVN verification failed")
-                response = {
-                    "screen": "BVN_ENTRY",
-                    "data": {
-                        "bvn": str(bvn) if bvn else "",
-                        "show_error": True,
-                        "error_message": "Invalid BVN. Please check and enter a valid 11-digit BVN.",
-                    },
-                }
 
-                if request_was_encrypted:
-                    encrypted_response = encrypt_flow_response(
-                        response, aes_key_bytes, iv_bytes
+            print("❌ BVN verification failed")
+            response = {
+                "screen": "BVN_ENTRY",
+                "data": {
+                    "bvn": str(bvn) if bvn else "",
+                    "show_error": True,
+                    "error_message": "Invalid BVN. Please check and enter a valid 11-digit BVN.",
+                },
+            }
+
+            if request_was_encrypted:
+                if aes_key_bytes is None or iv_bytes is None:
+                    return JSONResponse(
+                        content={"error": "Encryption keys missing"}, status_code=500
                     )
-                    return Response(content=encrypted_response, media_type="text/plain")
+                encrypted_response = encrypt_flow_response(
+                    response, aes_key_bytes, iv_bytes)
+                return Response(content=encrypted_response, media_type="text/plain")
 
-                return JSONResponse(content=response)
+            return JSONResponse(content=response)
 
         elif screen == "OTP_VERIFICATION":
             otp = data.get("otp")
             bvn = data.get("bvn")
 
             if not otp:
-                return JSONResponse(
-                    content={"error": "OTP is required"}, status_code=400
-                )
+                return JSONResponse(content={"error": "OTP is required"}, status_code=400)
 
             print(f"🔍 Verifying OTP: {otp}")
 
@@ -185,23 +192,23 @@ async def flow_webhook(
                     verification_storage[flow_token]["otp_verified"] = True
                     verification_storage[flow_token]["otp"] = otp
 
-                print(f"✅ OTP verified successfully")
+                print("✅ OTP verified successfully")
 
                 # Fetch user's bank accounts (mock data for now)
                 # In production, fetch from your banking API using BVN
                 accounts_full = [
                     {
-                        "id": "acc_001",
+                        "id": str(uuid.uuid4()),
                         "account_number": "0760505261",
                         "account_name": "Access Bank",
                     },
                     {
-                        "id": "acc_002",
+                        "id": str(uuid.uuid4()),
                         "account_number": "0123456789",
                         "account_name": "GTBank",
                     },
                     {
-                        "id": "acc_003",
+                        "id": str(uuid.uuid4()),
                         "account_number": "9876543210",
                         "account_name": "Zenith Bank",
                     },
@@ -217,9 +224,8 @@ async def flow_webhook(
 
                 # Get BVN from storage or current data
                 stored_bvn = (
-                    verification_storage.get(flow_token, {}).get("bvn")
-                    if flow_token
-                    else None
+                    verification_storage.get(flow_token, {}).get(
+                        "bvn") if flow_token else None
                 )
                 current_bvn = stored_bvn or bvn or ""
 
@@ -234,41 +240,48 @@ async def flow_webhook(
                 }
 
                 if request_was_encrypted:
+                    if aes_key_bytes is None or iv_bytes is None:
+                        return JSONResponse(
+                            content={"error": "Encryption keys missing"}, status_code=500
+                        )
                     encrypted_response = encrypt_flow_response(
-                        response, aes_key_bytes, iv_bytes
-                    )
+                        response, aes_key_bytes, iv_bytes)
                     return Response(content=encrypted_response, media_type="text/plain")
 
                 return JSONResponse(content=response)
-            else:
-                print(f"❌ OTP verification failed")
 
-                # Get BVN from storage or current data for error response
-                stored_bvn = (
-                    verification_storage.get(flow_token, {}).get("bvn")
-                    if flow_token
-                    else None
-                )
-                current_bvn = stored_bvn or bvn or ""
+            print("❌ OTP verification failed")
 
-                response = {
-                    "screen": "OTP_VERIFICATION",
-                    "data": {
-                        "bvn": str(current_bvn),
-                        "show_error": True,
-                        "error_message": "Invalid OTP. Please check and enter the correct 6-digit OTP.",
-                    },
-                }
+            # Get BVN from storage or current data for error response
+            stored_bvn = (
+                verification_storage.get(flow_token, {}).get(
+                    "bvn") if flow_token else None
+            )
+            current_bvn = stored_bvn or bvn or ""
 
-                if request_was_encrypted:
-                    encrypted_response = encrypt_flow_response(
-                        response, aes_key_bytes, iv_bytes
+            response = {
+                "screen": "OTP_VERIFICATION",
+                "data": {
+                    "bvn": str(current_bvn),
+                    "show_error": True,
+                    "error_message": "Invalid OTP. Please check and enter the correct 6-digit OTP.",
+                },
+            }
+
+            if request_was_encrypted:
+                if aes_key_bytes is None or iv_bytes is None:
+                    return JSONResponse(
+                        content={"error": "Encryption keys missing"}, status_code=500
                     )
-                    return Response(content=encrypted_response, media_type="text/plain")
+                encrypted_response = encrypt_flow_response(
+                    response, aes_key_bytes, iv_bytes)
+                return Response(content=encrypted_response, media_type="text/plain")
 
-                return JSONResponse(content=response)
+            return JSONResponse(content=response)
 
         elif screen == "ACCOUNT_SELECTION":
+            if not flow_token:
+                return JSONResponse(content={"error": "flow_token is required"}, status_code=400)
             accounts = data.get("selected_accounts", [])
             verification_data = verification_storage.get(flow_token, {})
             verification_data.update({"selected_accounts": accounts})
@@ -284,9 +297,12 @@ async def flow_webhook(
             }
 
             if request_was_encrypted:
+                if aes_key_bytes is None or iv_bytes is None:
+                    return JSONResponse(
+                        content={"error": "Encryption keys missing"}, status_code=500
+                    )
                 encrypted_response = encrypt_flow_response(
-                    response, aes_key_bytes, iv_bytes
-                )
+                    response, aes_key_bytes, iv_bytes)
                 return Response(content=encrypted_response, media_type="text/plain")
 
             return JSONResponse(content=response)
@@ -294,21 +310,32 @@ async def flow_webhook(
         elif screen == "PIN_ENTRY":
             pin = data.get("pin")
             if not pin:
-                return JSONResponse(
-                    content={"error": "PIN is required"}, status_code=400
-                )
+                return JSONResponse(content={"error": "PIN is required"}, status_code=400)
 
             is_valid = is_valid_pin_format(pin)
             print(f"🔍 Is valid: {is_valid}")
 
             if is_valid:
+                if not flow_token:
+                    return JSONResponse(
+                        content={"error": "flow_token is required"}, status_code=400
+                    )
                 verification_data = verification_storage.get(flow_token, {})
-                selected_accounts = verification_data.get("selected_accounts", [])
+                selected_accounts = verification_data.get(
+                    "selected_accounts", [])
 
                 hashed_pin = hash_plaintext(pin)
                 print(f"🔍 Hashed PIN: {hashed_pin}")
                 with UnitOfWork() as uow:
+                    if not uow.users or not uow.accounts:
+                        return JSONResponse(
+                            content={"error": "Database error"}, status_code=500
+                        )
                     phone_number = verification_data.get("phone_number")
+                    if not phone_number:
+                        return JSONResponse(
+                            content={"error": "Phone number missing"}, status_code=400
+                        )
 
                     existing_user = uow.users.get_by_phone(phone_number)
 
@@ -320,7 +347,8 @@ async def flow_webhook(
                             onboarding_status="onboarding_completed",
                             extra_data=verification_data,
                         )
-                        user = uow.users.update_user(str(existing_user.id), user_update)
+                        user = uow.users.update_user(
+                            str(existing_user.id), user_update)
                     else:
                         user = uow.users.register_user(
                             UserCreate(
@@ -364,12 +392,18 @@ async def flow_webhook(
 
                         if account_data:
                             existing_account = uow.accounts.get_by_account_id(
-                                account_data["id"]
-                            )
+                                account_data["id"])
 
-                            if existing_account and existing_account.user_id == user.id:
-                                pass
-                            else:
+                            # Check if account exists and belongs to this user (convert UUIDs to strings for comparison)
+                            should_create = True
+                            if existing_account is not None:
+                                existing_user_id = str(
+                                    existing_account.user_id)
+                                current_user_id = str(user.id)
+                                if existing_user_id == current_user_id:
+                                    should_create = False
+
+                            if should_create:
                                 uow.accounts.create_account(
                                     CreateAccount(
                                         user_id=str(user.id),
@@ -398,41 +432,50 @@ async def flow_webhook(
                 }
 
                 if request_was_encrypted:
+                    if aes_key_bytes is None or iv_bytes is None:
+                        return JSONResponse(
+                            content={"error": "Encryption keys missing"}, status_code=500
+                        )
                     encrypted_response = encrypt_flow_response(
-                        response, aes_key_bytes, iv_bytes
-                    )
+                        response, aes_key_bytes, iv_bytes)
                     return Response(content=encrypted_response, media_type="text/plain")
 
                 await whatsapp_client.send_text(
                     to=phone_number,
-                    text="🎉 Welcome to Fusepay! Your onboarding is complete. you can now start using the app to send and receive money."
+                    text="🎉 Welcome to Fusepay! Your onboarding is complete. you can now start using the app to send and receive money.",
                 )
                 return JSONResponse(content=response)
-            else:
-                print(f"❌ PIN verification failed")
-                response = {
-                    "screen": "PIN_ENTRY",
-                    "data": {
-                        "show_error": True,
-                        "error_message": "Invalid PIN. Please enter a 4 or 6-digit numeric PIN.",
-                    },
-                }
 
-                if request_was_encrypted:
-                    encrypted_response = encrypt_flow_response(
-                        response, aes_key_bytes, iv_bytes
+            print("❌ PIN verification failed")
+            response = {
+                "screen": "PIN_ENTRY",
+                "data": {
+                    "show_error": True,
+                    "error_message": "Invalid PIN. Please enter a 4 or 6-digit numeric PIN.",
+                },
+            }
+
+            if request_was_encrypted:
+                if aes_key_bytes is None or iv_bytes is None:
+                    return JSONResponse(
+                        content={"error": "Encryption keys missing"}, status_code=500
                     )
-                    return Response(content=encrypted_response, media_type="text/plain")
+                encrypted_response = encrypt_flow_response(
+                    response, aes_key_bytes, iv_bytes)
+                return Response(content=encrypted_response, media_type="text/plain")
 
-                return JSONResponse(content=response)
+            return JSONResponse(content=response)
 
         print(f" 🏥 Health check (unknown screen: {screen})")
         health_response = {"data": {"status": "active"}}
 
         if request_was_encrypted:
+            if aes_key_bytes is None or iv_bytes is None:
+                return JSONResponse(
+                    content={"error": "Encryption keys missing"}, status_code=500
+                )
             encrypted_response = encrypt_flow_response(
-                health_response, aes_key_bytes, iv_bytes
-            )
+                health_response, aes_key_bytes, iv_bytes)
             return Response(content=encrypted_response, media_type="text/plain")
 
         return Response(content=json.dumps(health_response), media_type="text/plain")
