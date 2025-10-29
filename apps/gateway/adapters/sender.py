@@ -1,4 +1,5 @@
 import httpx
+
 from apps.gateway.core.config import settings
 
 GRAPH_BASE = "https://graph.facebook.com/v21.0"
@@ -25,9 +26,9 @@ async def send_text(to: str, text: str) -> None:
             print(f"✅ Message sent successfully to {to}")
     except httpx.HTTPStatusError as e:
         if e.response.status_code == 401:
-            print(f"❌ WhatsApp API Authentication Failed (401)")
-            print(f"   Check your META_ACCESS_TOKEN in .env")
-            print(f"   Token may be expired or invalid")
+            print("❌ WhatsApp API Authentication Failed (401)")
+            print("   Check your META_ACCESS_TOKEN in .env")
+            print("   Token may be expired or invalid")
         else:
             print(f"❌ WhatsApp API Error: {e.response.status_code}")
             print(f"   Response: {e.response.text}")

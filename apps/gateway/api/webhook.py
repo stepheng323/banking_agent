@@ -1,11 +1,13 @@
-from fastapi import APIRouter, Request, Response, HTTPException, status, Depends
-from apps.gateway.core.config import settings
+from datetime import datetime
+
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from shared.clients.whatsapp_client import WhatsAppClient
+from shared.models.messages import MessagePriority, MessageType, WhatsAppMessage
+from shared.queue.redis_queue import RedisQueue
+
 from apps.gateway.adapters.meta_whatsapp import parse_payload, verify_meta_signature
 from apps.gateway.adapters.sender import send_text
-from shared.queue.redis_queue import RedisQueue
-from shared.models.messages import WhatsAppMessage, MessageType, MessagePriority
-from shared.clients.whatsapp_client import WhatsAppClient
-from datetime import datetime
+from apps.gateway.core.config import settings
 
 router = APIRouter()
 
@@ -50,7 +52,7 @@ async def whatsapp_webhook(
         await verify_meta_signature(request)
         payload = await request.json()
 
-        print(f"📥 Received webhook payload")
+        print("📥 Received webhook payload")
 
         messages = parse_payload(payload)
 
@@ -75,6 +77,7 @@ async def whatsapp_webhook(
                     from_number=from_id,
                     message_type=MessageType.TEXT,
                     text=text,
+                    flow_data=flow_data,
                     timestamp=datetime.utcnow(),
                     priority=MessagePriority.NORMAL,
                 )
@@ -83,12 +86,10 @@ async def whatsapp_webhook(
                         queue_name="banking:messages",
                         message=whatsapp_msg.model_dump(mode="json"),
                     )
-                    print(f" ✅ Text message enqueued for processing")
+                    print(" ✅ Text message enqueued for processing")
 
                     try:
-                        await whatsapp_client.send_typing_indicator(
-                            message_id=message_id
-                        )
+                        await whatsapp_client.send_typing_indicator(message_id=message_id)
                     except Exception as typing_error:
                         print(f"   ⚠️  Could not send typing indicator: {typing_error}")
 
@@ -115,7 +116,7 @@ async def whatsapp_webhook(
                         queue_name="banking:messages",
                         message=whatsapp_msg.model_dump(mode="json"),
                     )
-                    print(f" ✅ Flow response enqueued for processing")
+                    print(" ✅ Flow response enqueued for processing")
                 except Exception as queue_error:
                     print(f"   ❌ Failed to enqueue flow message: {queue_error}")
                     await send_text(
