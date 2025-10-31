@@ -10,7 +10,21 @@ from passlib.context import CryptContext
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
-def hash_plaintext(value: str, algorithm: str = "bcrypt") -> str:
+def _bcrypt_truncate(value: str) -> str:
+    """Ensure plaintext fits bcrypt's 72-byte input limit.
+
+    Bcrypt only considers the first 72 bytes of the input. We explicitly
+    truncate to 72 bytes on UTF-8 boundaries to avoid ValueError from the
+    underlying library and to make behavior explicit and consistent
+    across hash and verify.
+    """
+    data = value.encode("utf-8")
+    if len(data) <= 72:
+        return value
+    return data[:72].decode("utf-8", errors="ignore")
+
+
+def hash_plaintext(value: str, algorithm: str = "bcrypt") -> str:  # noqa: ARG001
     """
     Hash a plaintext value using bcrypt.
 
@@ -21,7 +35,8 @@ def hash_plaintext(value: str, algorithm: str = "bcrypt") -> str:
     Returns:
         Bcrypt hash string (contains algorithm, cost, salt, and hash)
     """
-    return pwd_context.hash(value)
+    safe_value = _bcrypt_truncate(value)
+    return pwd_context.hash(safe_value)
 
 
 def verify_hash(value: str, stored_hash: str) -> bool:
@@ -36,7 +51,8 @@ def verify_hash(value: str, stored_hash: str) -> bool:
         True if the value matches the hash, False otherwise
     """
     try:
-        return pwd_context.verify(value, stored_hash)
+        safe_value = _bcrypt_truncate(value)
+        return pwd_context.verify(safe_value, stored_hash)
     except (ValueError, TypeError):
         return False
 

@@ -3,8 +3,10 @@ Flow Webhook for handling WhatsApp Flow data exchange.
 This endpoint handles BVN and OTP verification during the flow.
 """
 
+import traceback
 import json
 import uuid
+import asyncio
 from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Depends, Request
@@ -200,24 +202,33 @@ async def flow_webhook(
                     {
                         "id": str(uuid.uuid4()),
                         "account_number": "0760505261",
-                        "account_name": "Access Bank",
+                        "bank_name": "Access Bank",
+                        "account_name": "John Doe",
                     },
                     {
                         "id": str(uuid.uuid4()),
                         "account_number": "0123456789",
-                        "account_name": "GTBank",
+                        "bank_name": "GTBank",
+                        "account_name": "John Doe",
                     },
                     {
                         "id": str(uuid.uuid4()),
                         "account_number": "9876543210",
-                        "account_name": "Zenith Bank",
+                        "bank_name": "Zenith Bank",
+                        "account_name": "John Doe",
                     },
                 ]
+
+                # Persist accounts for later steps so IDs remain consistent
+                if flow_token:
+                    verification_storage.setdefault(flow_token, {})[
+                        "accounts_full"
+                    ] = accounts_full
 
                 accounts_flow = [
                     {
                         "id": acc["id"],
-                        "title": f"{acc['account_name']} - {acc['account_number']}",
+                        "title": f"{acc['bank_name']} - {acc['account_number']}",
                     }
                     for acc in accounts_full
                 ]
@@ -252,7 +263,6 @@ async def flow_webhook(
 
             print("❌ OTP verification failed")
 
-            # Get BVN from storage or current data for error response
             stored_bvn = (
                 verification_storage.get(flow_token, {}).get(
                     "bvn") if flow_token else None
@@ -323,6 +333,7 @@ async def flow_webhook(
                 verification_data = verification_storage.get(flow_token, {})
                 selected_accounts = verification_data.get(
                     "selected_accounts", [])
+                persisted_accounts = verification_data.get("accounts_full", [])
 
                 hashed_pin = hash_plaintext(pin)
                 print(f"🔍 Hashed PIN: {hashed_pin}")
@@ -331,7 +342,8 @@ async def flow_webhook(
                         return JSONResponse(
                             content={"error": "Database error"}, status_code=500
                         )
-                    phone_number = verification_data.get("phone_number")
+                    phone_number = flow_token.split("-")[-1]
+                    print(f"🔍 Phone number: {phone_number}")
                     if not phone_number:
                         return JSONResponse(
                             content={"error": "Phone number missing"}, status_code=400
@@ -363,57 +375,35 @@ async def flow_webhook(
                         print(f"🔍 Registering new user: {user}")
 
                     for account_id in selected_accounts:
-                        account_data = None
-                        mock_accounts = [
-                            {
-                                "id": "acc_001",
-                                "account_number": "0760505261",
-                                "bank_name": "Access Bank",
-                                "account_name": "John Doe Access Account",
-                            },
-                            {
-                                "id": "acc_002",
-                                "account_number": "0123456789",
-                                "bank_name": "GTBank",
-                                "account_name": "John Doe GTB Account",
-                            },
-                            {
-                                "id": "acc_003",
-                                "account_number": "9876543210",
-                                "bank_name": "Zenith Bank",
-                                "account_name": "John Doe Zenith Account",
-                            },
-                        ]
-
-                        for acc in mock_accounts:
-                            if acc["id"] == account_id:
-                                account_data = acc
-                                break
+                        account_data = next(
+                            (acc for acc in persisted_accounts if acc.get(
+                                "id") == account_id),
+                            None,
+                        )
 
                         if account_data:
                             existing_account = uow.accounts.get_by_account_id(
                                 account_data["id"])
 
-                            # Check if account exists and belongs to this user (convert UUIDs to strings for comparison)
                             should_create = True
                             if existing_account is not None:
-                                existing_user_id = str(
-                                    existing_account.user_id)
-                                current_user_id = str(user.id)
-                                if existing_user_id == current_user_id:
+                                if getattr(existing_account, "user_id", None) == str(user.id):
                                     should_create = False
 
                             if should_create:
-                                uow.accounts.create_account(
+                                new_account = uow.accounts.create_account(
                                     CreateAccount(
                                         user_id=str(user.id),
                                         account_id=account_data["id"],
-                                        account_number=account_data["account_number"],
-                                        account_name=account_data["account_name"],
-                                        bank_name=account_data["bank_name"],
+                                        account_number=account_data.get(
+                                            "account_number", ""),
+                                        bank_name=account_data.get(
+                                            "bank_name", ""),
+                                        account_name=account_data.get(
+                                            "account_name", ""),
                                         extra_data=account_data,
-                                    )
-                                )
+                                    ))
+                                print(f"Created account: {new_account}")
 
                 response = {
                     "screen": "SUCCESS",
@@ -440,9 +430,11 @@ async def flow_webhook(
                         response, aes_key_bytes, iv_bytes)
                     return Response(content=encrypted_response, media_type="text/plain")
 
-                await whatsapp_client.send_text(
-                    to=phone_number,
-                    text="🎉 Welcome to Fusepay! Your onboarding is complete. you can now start using the app to send and receive money.",
+                asyncio.create_task(
+                    whatsapp_client.send_text(
+                        to=phone_number,
+                        text="🎉 Welcome to Fusepay! Your onboarding is complete. you can now start using the app to send and receive money.",
+                    )
                 )
                 return JSONResponse(content=response)
 
@@ -482,7 +474,6 @@ async def flow_webhook(
 
     except Exception as e:
         print(f"❌ Error in flow webhook: {e}")
-        import traceback
 
         traceback.print_exc()
         return JSONResponse(content={"error": "Internal server error"}, status_code=500)

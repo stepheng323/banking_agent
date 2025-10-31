@@ -7,7 +7,6 @@ class Settings:
     """Application settings loaded from environment variables and .env file."""
 
     def __init__(self):
-        # WhatsApp/Meta settings
         self.meta_verify_token: str = os.getenv("META_VERIFY_TOKEN", "development_token")
         self.meta_access_token: str = os.getenv("META_ACCESS_TOKEN", "development_access_token")
         self.meta_phone_number_id: str = os.getenv("META_PHONE_NUMBER_ID", "development_phone_id")
@@ -24,6 +23,9 @@ class Settings:
 
         # Redis settings
         self.redis_url: str = os.getenv("REDIS_URL", "redis://localhost:6379")
+
+        # LangGraph settings
+        self.openai_api_key: str = os.getenv("OPENAI_API_KEY", "")
 
         # Validate critical settings
         self._validate_whatsapp_config()
@@ -48,5 +50,4 @@ class Settings:
             print("   Create a .env file with proper WhatsApp credentials to fix these warnings.")
 
 
-# Global settings instance
 settings = Settings()
