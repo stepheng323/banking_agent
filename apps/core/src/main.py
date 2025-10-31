@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
+from apps.core.src.agent.orchestrator import OrchestratorAgent
 from apps.core.src.consumer import MessageConsumer
 from apps.core.src.services.message_handler import MessageHandler
 from apps.core.src.services.onboarding.handler import OnboardingHandler
@@ -21,17 +22,24 @@ def setup_dependencies():
     whatsapp_client = WhatsAppClient()
     redis_queue = RedisQueue(redis_url=redis_url)
     user_repository = UserRepository(db=get_db_session())
+
+    # Initialize orchestrator with specialized agents
+    orchestrator = OrchestratorAgent()
+
     onboarding_service = OnboardingService(whatsapp_client)
-    onboarding_handler = OnboardingHandler(whatsapp_client, user_repository, onboarding_service)
+    onboarding_handler = OnboardingHandler(
+        whatsapp_client, user_repository, onboarding_service)
 
     # Create message handler with injected dependencies
     message_handler = MessageHandler(
         whatsapp_client=whatsapp_client,
         user_repository=user_repository,
         onboarding_handler=onboarding_handler,
+        orchestrator=orchestrator,
     )
 
-    consumer = MessageConsumer(redis_queue=redis_queue, handler=message_handler)
+    consumer = MessageConsumer(
+        redis_queue=redis_queue, handler=message_handler)
     return consumer
 
 
