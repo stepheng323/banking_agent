@@ -104,4 +104,5 @@ class TransferAgent(BaseAgent):
 
         config = self._get_config(phone_number, message_id)
         result = await self.graph.ainvoke(initial_state, config)
+        print(result)
         return result.get("response", "I'm sorry, I couldn't process your transfer request.")

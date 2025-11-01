@@ -2,6 +2,7 @@
 # pyright: reportGeneralTypeIssues=false, reportUnknownMemberType=false, reportUnknownArgumentType=false, reportUnknownVariableType=false, reportUnknownParameterType=false, reportMissingTypeStubs=false, reportOptionalOperand=false, reportOptionalMemberAccess=false, reportTypedDictNotRequiredAccess=false
 """Intent parsing nodes for the transfer agent."""
 import json
+import traceback
 from typing import Any
 
 from langchain_core.messages import HumanMessage
@@ -28,13 +29,13 @@ class IntentNodes:
 
         try:
             response = await self.llm.ainvoke(messages)
-            
+
             # Handle response content safely
             if hasattr(response, "content") and isinstance(response.content, str):
                 response_text = response.content
             else:
                 raise ValueError("LLM response has no valid content")
-            
+
             if "```json" in response_text:
                 response_text = response_text.split(
                     "```json")[1].split("```")[0].strip()
@@ -44,7 +45,8 @@ class IntentNodes:
 
             parsed_intent = json.loads(response_text)
 
-            if "transfer_details" not in state:
+            # Initialize transfer_details if missing or None
+            if "transfer_details" not in state or state.get("transfer_details") is None:
                 state["transfer_details"] = {
                     "recipient": {"is_new_beneficiary": True},
                     "amount": {"currency": "NGN", "needs_calculation": False},
@@ -53,15 +55,25 @@ class IntentNodes:
                     "notes": None,
                 }
 
-            if "recipient" in parsed_intent:
+            # Ensure nested dicts exist
+            if "recipient" not in state["transfer_details"] or state["transfer_details"]["recipient"] is None:
+                state["transfer_details"]["recipient"] = {
+                    "is_new_beneficiary": True}
+            if "amount" not in state["transfer_details"] or state["transfer_details"]["amount"] is None:
+                state["transfer_details"]["amount"] = {
+                    "currency": "NGN", "needs_calculation": False}
+            if "source_account" not in state["transfer_details"] or state["transfer_details"]["source_account"] is None:
+                state["transfer_details"]["source_account"] = {}
+
+            if "recipient" in parsed_intent and parsed_intent["recipient"]:
                 state["transfer_details"]["recipient"].update(
                     parsed_intent["recipient"])
 
-            if "amount" in parsed_intent:
+            if "amount" in parsed_intent and parsed_intent["amount"]:
                 state["transfer_details"]["amount"].update(
                     parsed_intent["amount"])
 
-            if "source_account" in parsed_intent:
+            if "source_account" in parsed_intent and parsed_intent["source_account"]:
                 state["transfer_details"]["source_account"].update(
                     parsed_intent["source_account"])
 
@@ -74,6 +86,7 @@ class IntentNodes:
 
         except Exception as e:
             print(f"❌ Error parsing intent: {e}")
+            print(f"Traceback: {traceback.format_exc()}")
             if "transfer_details" not in state:
                 state["transfer_details"] = {
                     "recipient": {"is_new_beneficiary": True},
@@ -89,4 +102,3 @@ class IntentNodes:
 
         state["conversation_stage"] = "enriching"
         return state
-
