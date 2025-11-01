@@ -30,7 +30,6 @@ class IntentNodes:
         try:
             response = await self.llm.ainvoke(messages)
 
-            # Handle response content safely
             if hasattr(response, "content") and isinstance(response.content, str):
                 response_text = response.content
             else:
@@ -45,7 +44,6 @@ class IntentNodes:
 
             parsed_intent = json.loads(response_text)
 
-            # Initialize transfer_details if missing or None
             if "transfer_details" not in state or state.get("transfer_details") is None:
                 state["transfer_details"] = {
                     "recipient": {"is_new_beneficiary": True},
@@ -55,7 +53,6 @@ class IntentNodes:
                     "notes": None,
                 }
 
-            # Ensure nested dicts exist
             if "recipient" not in state["transfer_details"] or state["transfer_details"]["recipient"] is None:
                 state["transfer_details"]["recipient"] = {
                     "is_new_beneficiary": True}

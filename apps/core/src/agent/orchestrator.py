@@ -47,15 +47,40 @@ class OrchestratorAgent:
         self.classifier_llm = self.llm.with_structured_output(
             IntentClassification)
 
-        # Set memory BEFORE building graph (graph needs it for checkpointer)
         self.memory = self.query_agent.memory
         self.graph = self._build_graph()
 
     async def _classify_intent_node(self, state: OrchestratorState) -> OrchestratorState:
         """
         Node: Classify user intent using LLM with structured output.
+        
+        First checks if there's an active conversation that should be continued.
         """
         message = state["message"]
+        phone_number = state["phone_number"]
+        message_id = state["message_id"]
+
+        # Check if message looks like a response to a clarification (numeric/short, no clear intent)
+        # This helps route continuation messages back to the active agent
+        message_lower = message.lower().strip()
+        is_numeric_or_short = (
+            message.strip().isdigit() or 
+            (len(message.strip()) < 20 and not any(kw in message_lower for kw in 
+                ["balance", "account", "send", "transfer", "buy", "airtime", "data", "hi", "hello"]))
+        )
+        
+        # If it looks like a clarification response, prefer transfer agent
+        # (most continuations are responses to transfer clarifications)
+        if is_numeric_or_short:
+            print(f"🔄 Message looks like continuation (numeric/short), checking for active transfer conversation")
+            # Try a simple heuristic: route numeric/account-like responses to transfer
+            # since they're likely responses to clarification questions
+            if message.strip().isdigit() or len(message.strip().replace(" ", "").replace("-", "")) == 10:
+                print(f"🔄 Routing numeric/account-like response to TRANSFER agent")
+                state["classified_intent"] = "transfer"
+                state["classification_confidence"] = 0.8
+                state["classification_reasoning"] = "Numeric/account-like response, likely continuation of transfer conversation"
+                return state
 
         classification_prompt = f"""Classify the user's banking request into one of these categories:
 

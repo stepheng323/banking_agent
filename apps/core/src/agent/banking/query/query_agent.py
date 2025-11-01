@@ -87,6 +87,11 @@ class QueryAgent(BaseAgent):
                 tool_call_id = getattr(tool_call, "id", None)
                 args = getattr(tool_call, "args", None)
 
+                # Skip if no valid tool_call_id (required by OpenAI API)
+                if not tool_call_id:
+                    print(f"⚠️ Skipping tool call without ID: {tool_name}")
+                    continue
+
                 if isinstance(args, str):
                     try:
                         args = json.loads(args)
@@ -104,7 +109,7 @@ class QueryAgent(BaseAgent):
 
                 tool_message = ToolMessage(
                     content=json.dumps(result, default=str),
-                    tool_call_id=tool_call_id or tool_name or "unknown",
+                    tool_call_id=tool_call_id,
                 )
                 messages.append(tool_message)
 
