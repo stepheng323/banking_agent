@@ -28,8 +28,13 @@ class IntentNodes:
 
         try:
             response = await self.llm.ainvoke(messages)
-            response_text = response.content
-
+            
+            # Handle response content safely
+            if hasattr(response, "content") and isinstance(response.content, str):
+                response_text = response.content
+            else:
+                raise ValueError("LLM response has no valid content")
+            
             if "```json" in response_text:
                 response_text = response_text.split(
                     "```json")[1].split("```")[0].strip()

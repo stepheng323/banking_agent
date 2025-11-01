@@ -37,7 +37,10 @@ class ClarificationNodes:
                 prompt = CLARIFICATION_PROMPTS["ambiguous_recipient"].format(
                     options=options_text)
                 response = await self.llm.ainvoke([HumanMessage(content=prompt)])
-                question = response.content
+                if hasattr(response, "content") and isinstance(response.content, str):
+                    question = response.content
+                else:
+                    question = f"Which recipient did you mean from these options?\n{options_text}"
 
                 state["pending_clarification"] = {
                     "type": "ambiguous_recipient", "options": options}
@@ -52,14 +55,20 @@ class ClarificationNodes:
                 prompt = CLARIFICATION_PROMPTS["recipient.account_number"].format(
                     recipient_name=recipient_name)
                 response = await self.llm.ainvoke([HumanMessage(content=prompt)])
-                question = response.content
+                if hasattr(response, "content") and isinstance(response.content, str):
+                    question = response.content
+                else:
+                    question = f"I don't have '{recipient_name}' saved. What's their account number?"
                 state["pending_clarification"] = {
                     "type": "recipient.account_number"}
 
             elif missing_slot == "recipient.bank_code":
                 prompt = CLARIFICATION_PROMPTS["recipient.bank_code"]
                 response = await self.llm.ainvoke([HumanMessage(content=prompt)])
-                question = response.content
+                if hasattr(response, "content") and isinstance(response.content, str):
+                    question = response.content
+                else:
+                    question = "Which bank is this account with?"
                 state["pending_clarification"] = {
                     "type": "recipient.bank_code"}
 
@@ -69,7 +78,10 @@ class ClarificationNodes:
                 prompt = CLARIFICATION_PROMPTS["amount.value"].format(
                     recipient_name=recipient_name)
                 response = await self.llm.ainvoke([HumanMessage(content=prompt)])
-                question = response.content
+                if hasattr(response, "content") and isinstance(response.content, str):
+                    question = response.content
+                else:
+                    question = f"How much would you like to send to {recipient_name}?"
                 state["pending_clarification"] = {"type": "amount.value"}
 
             elif missing_slot == "source_account.account_id":
@@ -81,7 +93,10 @@ class ClarificationNodes:
                 prompt = CLARIFICATION_PROMPTS["source_account.account_id"].format(
                     accounts=accounts_text)
                 response = await self.llm.ainvoke([HumanMessage(content=prompt)])
-                question = response.content
+                if hasattr(response, "content") and isinstance(response.content, str):
+                    question = response.content
+                else:
+                    question = f"Which account should I send from?\n{accounts_text}"
                 state["pending_clarification"] = {
                     "type": "source_account.account_id", "options": accounts}
 
@@ -116,8 +131,13 @@ User response: "{user_response}"
 Extract the selected option index (0-based). Return JSON: {{"selected_index": <number>}}
 Return only valid JSON."""
             response = await self.llm.ainvoke([HumanMessage(content=parse_prompt)])
+            
+            # Handle response content safely
+            if not hasattr(response, "content") or not isinstance(response.content, str):
+                print(f"Error: Invalid response from LLM")
+                return state
             response_text = response.content
-
+            
             if "```json" in response_text:
                 response_text = response_text.split(
                     "```json")[1].split("```")[0].strip()
@@ -147,7 +167,13 @@ Return only valid JSON."""
             parse_prompt = f"""Extract the account number from: "{user_response}"
 Account numbers are typically 10 digits. Return JSON: {{"account_number": "<number>"}}"""
             response = await self.llm.ainvoke([HumanMessage(content=parse_prompt)])
+            
+            # Handle response content safely
+            if not hasattr(response, "content") or not isinstance(response.content, str):
+                print(f"Error: Invalid response from LLM")
+                return state
             response_text = response.content
+            
             if "```json" in response_text:
                 response_text = response_text.split(
                     "```json")[1].split("```")[0].strip()
@@ -185,7 +211,13 @@ Account numbers are typically 10 digits. Return JSON: {{"account_number": "<numb
             parse_prompt = f"""Extract amount from: "{user_response}"
 Handle formats like: "₦5000", "5000", "5k", "5,000". Return JSON: {{"amount": <number>}}"""
             response = await self.llm.ainvoke([HumanMessage(content=parse_prompt)])
+            
+            # Handle response content safely
+            if not hasattr(response, "content") or not isinstance(response.content, str):
+                print(f"Error: Invalid response from LLM")
+                return state
             response_text = response.content
+            
             if "```json" in response_text:
                 response_text = response_text.split(
                     "```json")[1].split("```")[0].strip()
@@ -204,7 +236,13 @@ Handle formats like: "₦5000", "5000", "5k", "5,000". Return JSON: {{"amount": 
 Options: {json.dumps(options, indent=2)}
 Return JSON: {{"selected_index": <number>}}"""
             response = await self.llm.ainvoke([HumanMessage(content=parse_prompt)])
+            
+            # Handle response content safely
+            if not hasattr(response, "content") or not isinstance(response.content, str):
+                print(f"Error: Invalid response from LLM")
+                return state
             response_text = response.content
+            
             if "```json" in response_text:
                 response_text = response_text.split(
                     "```json")[1].split("```")[0].strip()
