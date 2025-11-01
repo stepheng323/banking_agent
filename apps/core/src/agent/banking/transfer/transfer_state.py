@@ -4,22 +4,23 @@ from typing import Literal, List, Optional, TypedDict, NotRequired
 
 class RecipientDetails(TypedDict):
     """Recipient information for transfer."""
-    name: NotRequired[Optional[str]]  # "mummy", "John Doe"
-    matched_beneficiary_id: NotRequired[Optional[str]]  # Internal ID if found
+    name: NotRequired[Optional[str]]
+    matched_beneficiary_id: NotRequired[Optional[str]]
     account_number: NotRequired[Optional[str]]
     bank_code: NotRequired[Optional[str]]
     bank_name: NotRequired[Optional[str]]
-    confidence_score: NotRequired[Optional[float]]  # Match confidence 0-100
+    resolved_account_name: NotRequired[Optional[str]]
+    confidence_score: NotRequired[Optional[float]]
     is_new_beneficiary: NotRequired[bool]
 
 
 class AmountDetails(TypedDict):
     """Amount information for transfer."""
     value: NotRequired[Optional[float]]
-    currency: NotRequired[str]  # "NGN"
-    needs_calculation: NotRequired[bool]  # True for "5% of balance"
-    calculation_expression: NotRequired[Optional[str]]  # "balance * 0.05"
-    source_data: NotRequired[Optional[dict]]  # Data needed for calculation
+    currency: NotRequired[str]
+    needs_calculation: NotRequired[bool]
+    calculation_expression: NotRequired[Optional[str]]
+    source_data: NotRequired[Optional[dict]]
 
 
 class SourceAccountDetails(TypedDict):
@@ -34,50 +35,45 @@ class TransferDetails(TypedDict):
     recipient: NotRequired[RecipientDetails]
     amount: NotRequired[AmountDetails]
     source_account: NotRequired[SourceAccountDetails]
-    purpose: NotRequired[Optional[str]]  # "allowance", "rent", "tithe"
+    purpose: NotRequired[Optional[str]]
     notes: NotRequired[Optional[str]]
 
 
 class TransferState(TypedDict):
     """State for the transfer agent graph."""
-    # User context
     phone_number: str
     message: str
     message_id: str
-    messages: NotRequired[List]  # LangChain message history
+    messages: NotRequired[List]
 
-    # Transfer details (slots to fill)
     transfer_details: NotRequired[TransferDetails]
-
-    # Conversation management
     conversation_stage: NotRequired[
         Literal[
-            "parsing",  # Extracting intent
-            "enriching",  # Loading context
-            "gathering",  # Asking for missing info
-            "planning",  # Creating execution plan
-            "validating",  # Checking business rules
-            "confirming",  # Waiting for user approval
-            "executing",  # Performing transfer
-            "completed",  # Done
+            "parsing",
+            "enriching",
+            "gathering",
+            "planning",
+            "validating",
+            "confirming",
+            "executing",
+            "completed",
         ]
     ]
 
-    missing_slots: NotRequired[List[str]]  # ["recipient.account_number", "amount.value"]
-    clarifications_needed: NotRequired[List[dict]]  # [{"type": "ambiguous_recipient", "options": [...]}]
-    execution_plan: NotRequired[Optional[List[dict]]]  # [{"step": "check_balance", "tool": "get_account_balance"}]
-    validation_result: NotRequired[Optional[dict]]  # {"valid": bool, "errors": [...]}
-    dependencies: NotRequired[List[str]]  # ["check_balance"]
+    missing_slots: NotRequired[List[str]]
+    clarifications_needed: NotRequired[List[dict]]
+    execution_plan: NotRequired[Optional[List[dict]]]
+    validation_result: NotRequired[Optional[dict]]
+    dependencies: NotRequired[List[str]]
 
-    # User context (cached for session)
     user_accounts: NotRequired[Optional[List[dict]]]
     user_beneficiaries: NotRequired[Optional[List[dict]]]
 
-    # Conversation control
     pending_clarification: NotRequired[Optional[dict]]
     waiting_for_user_response: NotRequired[bool]
     waiting_for_confirmation: NotRequired[bool]
 
-    # Final response
-    response: NotRequired[Optional[str]]
+    awaiting_clarification: NotRequired[Optional[bool]]
+    clarification_type: NotRequired[Optional[str]]
 
+    response: NotRequired[Optional[str]]

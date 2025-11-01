@@ -5,6 +5,7 @@ from apps.core.src.agent.banking.transfer.nodes.validation_nodes import Validati
 from apps.core.src.agent.banking.transfer.nodes.clarification_nodes import ClarificationNodes
 from apps.core.src.agent.banking.transfer.nodes.execution_nodes import ExecutionNodes
 from apps.core.src.agent.banking.transfer.nodes.confirmation_nodes import ConfirmationNodes
+from apps.core.src.agent.banking.transfer.nodes.resolution_nodes import ResolutionNodes
 from apps.core.src.agent.banking.transfer.nodes.transaction_nodes import TransactionNodes
 from apps.core.src.agent.banking.transfer.nodes.routing import (
     route_after_slot_validation,
@@ -19,9 +20,9 @@ __all__ = [
     "ClarificationNodes",
     "ExecutionNodes",
     "ConfirmationNodes",
+    "ResolutionNodes",
     "TransactionNodes",
     "route_after_slot_validation",
     "route_after_validation",
     "route_after_confirmation",
 ]
-

@@ -31,9 +31,13 @@ class AgentState(TypedDict):
     pin_attempts: NotRequired[int]
 
     faq_context: NotRequired[str]
-    messages: Annotated[list, add_messages] 
+    messages: Annotated[list, add_messages]
     awating_confirmation: NotRequired[bool]
     clarification_needed: NotRequired[Optional[str]]
+
+    # Orchestrator conversation tracking
+    awaiting_clarification: NotRequired[Optional[bool]]
+    clarification_type: NotRequired[Optional[str]]
 
     response: NotRequired[str]
     response_type: NotRequired[Literal["text", "flow", "confirmation"]]

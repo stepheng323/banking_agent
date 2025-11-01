@@ -34,6 +34,14 @@ class UtilityState(TypedDict):
 
     missing_slots: NotRequired[List[str]]
 
+    # Conversation control
+    pending_clarification: NotRequired[Optional[dict]]
+    waiting_for_user_response: NotRequired[bool]
+    waiting_for_confirmation: NotRequired[bool]
+
+    # Orchestrator conversation tracking
+    awaiting_clarification: NotRequired[Optional[bool]]
+    clarification_type: NotRequired[Optional[str]]
+
     # Final response
     response: NotRequired[Optional[str]]
-

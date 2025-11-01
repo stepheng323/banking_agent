@@ -38,6 +38,8 @@ class UtilityAgent(BaseAgent):
         async def placeholder_node(state: UtilityState) -> UtilityState:
             state["response"] = "Utility agent not yet implemented. Coming soon!"
             state["conversation_stage"] = "completed"
+            state["awaiting_clarification"] = False
+            state["clarification_type"] = None
             return state
 
         graph.add_node("placeholder", placeholder_node)

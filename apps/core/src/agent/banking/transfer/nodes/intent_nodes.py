@@ -1,5 +1,3 @@
-# ruff: noqa
-# pyright: reportGeneralTypeIssues=false, reportUnknownMemberType=false, reportUnknownArgumentType=false, reportUnknownVariableType=false, reportUnknownParameterType=false, reportMissingTypeStubs=false, reportOptionalOperand=false, reportOptionalMemberAccess=false, reportTypedDictNotRequiredAccess=false
 """Intent parsing nodes for the transfer agent."""
 import json
 import traceback
@@ -56,28 +54,42 @@ class IntentNodes:
             if "recipient" not in state["transfer_details"] or state["transfer_details"]["recipient"] is None:
                 state["transfer_details"]["recipient"] = {
                     "is_new_beneficiary": True}
+            elif not state["transfer_details"]["recipient"]:
+                state["transfer_details"]["recipient"] = {
+                    "is_new_beneficiary": True}
+
             if "amount" not in state["transfer_details"] or state["transfer_details"]["amount"] is None:
                 state["transfer_details"]["amount"] = {
                     "currency": "NGN", "needs_calculation": False}
+            elif not state["transfer_details"]["amount"]:
+                state["transfer_details"]["amount"] = {
+                    "currency": "NGN", "needs_calculation": False}
+
             if "source_account" not in state["transfer_details"] or state["transfer_details"]["source_account"] is None:
+                state["transfer_details"]["source_account"] = {}
+            elif not state["transfer_details"]["source_account"]:
                 state["transfer_details"]["source_account"] = {}
 
             if "recipient" in parsed_intent and parsed_intent["recipient"]:
-                state["transfer_details"]["recipient"].update(
-                    parsed_intent["recipient"])
+                for key, value in parsed_intent["recipient"].items():
+                    if value is not None and value != "":
+                        state["transfer_details"]["recipient"][key] = value
 
             if "amount" in parsed_intent and parsed_intent["amount"]:
-                state["transfer_details"]["amount"].update(
-                    parsed_intent["amount"])
+                for key, value in parsed_intent["amount"].items():
+                    if value is not None and value != "":
+                        state["transfer_details"]["amount"][key] = value
 
             if "source_account" in parsed_intent and parsed_intent["source_account"]:
-                state["transfer_details"]["source_account"].update(
-                    parsed_intent["source_account"])
+                for key, value in parsed_intent["source_account"].items():
+                    if value is not None and value != "":
+                        state["transfer_details"]["source_account"][key] = value
 
             if "purpose" in parsed_intent:
                 state["transfer_details"]["purpose"] = parsed_intent["purpose"]
 
-            state["dependencies"] = parsed_intent.get("dependencies", [])
+            # Initialize dependencies list, handling None from checkpoint state
+            state["dependencies"] = parsed_intent.get("dependencies") or []
 
             print(f"✅ Parsed intent: {json.dumps(parsed_intent, indent=2)}")
 
@@ -93,7 +105,8 @@ class IntentNodes:
                     "notes": None,
                 }
 
-        if "messages" not in state:
+        # Initialize messages list, handling None from checkpoint state
+        if not state.get("messages"):
             state["messages"] = []
         state["messages"].append(HumanMessage(content=user_message))
 

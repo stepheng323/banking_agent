@@ -44,7 +44,6 @@ class EnrichmentNodes:
                 },
             ]
 
-            # Case-insensitive partial match
             name_lower = name.lower()
             matches = [
                 b for b in beneficiaries if name_lower in b["name"].lower()]
@@ -67,7 +66,6 @@ class EnrichmentNodes:
 
         phone_number = state["phone_number"]
 
-        # Load user accounts
         if not state.get("user_accounts"):
             accounts_result = get_user_accounts.invoke(
                 {"phone_number": phone_number})
@@ -75,7 +73,6 @@ class EnrichmentNodes:
                 state["user_accounts"] = accounts_result.get("accounts", [])
                 print(f"📊 Loaded {len(state['user_accounts'])} accounts")
 
-        # Load beneficiaries
         if not state.get("user_beneficiaries"):
             beneficiary_result = self._find_recipient_by_name(phone_number, "")
             if beneficiary_result.get("success"):
@@ -84,14 +81,12 @@ class EnrichmentNodes:
                 print(
                     f"👥 Loaded {len(state['user_beneficiaries'])} beneficiaries")
 
-        # Match recipient if name provided
         recipient_name = state["transfer_details"]["recipient"].get("name")
         if recipient_name and not state["transfer_details"]["recipient"].get("matched_beneficiary_id"):
             beneficiaries = state.get("user_beneficiaries", []) or []
             matches = match_beneficiaries(recipient_name, beneficiaries)
 
             if len(matches) == 1 and matches[0]["confidence_score"] >= 90:
-                # High confidence single match
                 matched = matches[0]
                 state["transfer_details"]["recipient"].update({
                     "matched_beneficiary_id": matched["id"],
@@ -105,9 +100,9 @@ class EnrichmentNodes:
                     f"✅ Auto-matched beneficiary: {matched['name']} ({matched['confidence_score']}%)")
 
             elif len(matches) > 1:
-                # Multiple matches
-                state["clarifications_needed"] = state.get(
-                    "clarifications_needed", [])
+                # Initialize clarifications_needed list, handling None from checkpoint state
+                if not state.get("clarifications_needed"):
+                    state["clarifications_needed"] = []
                 state["clarifications_needed"].append({
                     "type": "ambiguous_recipient",
                     "options": matches[:5],
@@ -118,7 +113,6 @@ class EnrichmentNodes:
                 state["transfer_details"]["recipient"]["is_new_beneficiary"] = True
                 print(f"🆕 No match found - treating as new beneficiary")
 
-        # Load balance if calculation needed
         if state["transfer_details"]["amount"].get("needs_calculation"):
             accounts = state.get("user_accounts", []) or []
             if len(accounts) == 1:

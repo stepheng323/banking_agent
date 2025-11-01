@@ -23,7 +23,6 @@ class ClarificationNodes:
 
         question = "I need more information to complete your transfer."
 
-        # Handle clarifications first
         if state.get("clarifications_needed"):
             clarification = state["clarifications_needed"][0]
 
@@ -45,7 +44,6 @@ class ClarificationNodes:
                 state["pending_clarification"] = {
                     "type": "ambiguous_recipient", "options": options}
 
-        # Handle missing slots
         elif state.get("missing_slots"):
             missing_slot = state["missing_slots"][0]
 
@@ -100,12 +98,20 @@ class ClarificationNodes:
                 state["pending_clarification"] = {
                     "type": "source_account.account_id", "options": accounts}
 
-        if "messages" not in state:
+        # Initialize messages list, handling None from checkpoint state
+        if not state.get("messages"):
             state["messages"] = []
         state["messages"].append(AIMessage(content=question))
         state["response"] = question
         state["conversation_stage"] = "gathering"
         state["waiting_for_user_response"] = True
+
+        # Set orchestrator conversation tracking flags
+        pending_clarification = state.get("pending_clarification")
+        clarification_type = pending_clarification.get(
+            "type") if isinstance(pending_clarification, dict) else None
+        state["awaiting_clarification"] = True
+        state["clarification_type"] = clarification_type
 
         print(f"💬 Question: {question}")
         return state
@@ -118,8 +124,8 @@ class ClarificationNodes:
         pending = state.get("pending_clarification", {})
         clarification_type = pending.get("type")
 
-        # Add user message to history
-        if "messages" not in state:
+        # Initialize messages list, handling None from checkpoint state
+        if not state.get("messages"):
             state["messages"] = []
         state["messages"].append(HumanMessage(content=user_response))
 
@@ -131,13 +137,12 @@ User response: "{user_response}"
 Extract the selected option index (0-based). Return JSON: {{"selected_index": <number>}}
 Return only valid JSON."""
             response = await self.llm.ainvoke([HumanMessage(content=parse_prompt)])
-            
-            # Handle response content safely
+
             if not hasattr(response, "content") or not isinstance(response.content, str):
                 print(f"Error: Invalid response from LLM")
                 return state
             response_text = response.content
-            
+
             if "```json" in response_text:
                 response_text = response_text.split(
                     "```json")[1].split("```")[0].strip()
@@ -167,13 +172,12 @@ Return only valid JSON."""
             parse_prompt = f"""Extract the account number from: "{user_response}"
 Account numbers are typically 10 digits. Return JSON: {{"account_number": "<number>"}}"""
             response = await self.llm.ainvoke([HumanMessage(content=parse_prompt)])
-            
-            # Handle response content safely
+
             if not hasattr(response, "content") or not isinstance(response.content, str):
                 print(f"Error: Invalid response from LLM")
                 return state
             response_text = response.content
-            
+
             if "```json" in response_text:
                 response_text = response_text.split(
                     "```json")[1].split("```")[0].strip()
@@ -186,7 +190,6 @@ Account numbers are typically 10 digits. Return JSON: {{"account_number": "<numb
                 print(f"Error parsing account number: {e}")
 
         elif clarification_type == "recipient.bank_code":
-            # Simplified bank matching
             bank_map = {
                 "gtb": "058", "gtbank": "058",
                 "first": "011", "first bank": "011",
@@ -211,13 +214,12 @@ Account numbers are typically 10 digits. Return JSON: {{"account_number": "<numb
             parse_prompt = f"""Extract amount from: "{user_response}"
 Handle formats like: "₦5000", "5000", "5k", "5,000". Return JSON: {{"amount": <number>}}"""
             response = await self.llm.ainvoke([HumanMessage(content=parse_prompt)])
-            
-            # Handle response content safely
+
             if not hasattr(response, "content") or not isinstance(response.content, str):
                 print(f"Error: Invalid response from LLM")
                 return state
             response_text = response.content
-            
+
             if "```json" in response_text:
                 response_text = response_text.split(
                     "```json")[1].split("```")[0].strip()
@@ -236,13 +238,12 @@ Handle formats like: "₦5000", "5000", "5k", "5,000". Return JSON: {{"amount": 
 Options: {json.dumps(options, indent=2)}
 Return JSON: {{"selected_index": <number>}}"""
             response = await self.llm.ainvoke([HumanMessage(content=parse_prompt)])
-            
-            # Handle response content safely
+
             if not hasattr(response, "content") or not isinstance(response.content, str):
                 print(f"Error: Invalid response from LLM")
                 return state
             response_text = response.content
-            
+
             if "```json" in response_text:
                 response_text = response_text.split(
                     "```json")[1].split("```")[0].strip()
@@ -263,5 +264,7 @@ Return JSON: {{"selected_index": <number>}}"""
 
         state["pending_clarification"] = None
         state["waiting_for_user_response"] = False
-        return state
 
+        state["awaiting_clarification"] = False
+        state["clarification_type"] = None
+        return state

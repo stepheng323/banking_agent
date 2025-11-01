@@ -174,7 +174,7 @@ class TransactionNodes:
 📋 Reference: {result.get('transaction_id', 'N/A')}
 💰 New balance: ₦{result.get('new_balance', 0):,.2f}{saved_msg}"""
 
-                if "messages" not in state:
+                if not state.get("messages"):
                     state["messages"] = []
                 state["messages"].append(AIMessage(content=success_message))
                 state["response"] = success_message
@@ -182,7 +182,7 @@ class TransactionNodes:
             else:
                 error_message = f"""❌ Transfer failed: {result.get('error', 'Unknown error')}
 Please try again or contact support if the problem persists."""
-                if "messages" not in state:
+                if not state.get("messages"):
                     state["messages"] = []
                 state["messages"].append(AIMessage(content=error_message))
                 state["response"] = error_message
@@ -191,10 +191,12 @@ Please try again or contact support if the problem persists."""
             print(f"❌ Exception during transfer: {e}")
             error_message = f"""❌ An error occurred: {str(e)}
 Please try again or contact support if the problem persists."""
-            if "messages" not in state:
+            if not state.get("messages"):
                 state["messages"] = []
             state["messages"].append(AIMessage(content=error_message))
             state["response"] = error_message
 
         state["conversation_stage"] = "completed"
+        state["awaiting_clarification"] = False
+        state["clarification_type"] = None
         return state

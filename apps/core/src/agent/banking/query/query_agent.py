@@ -82,15 +82,28 @@ class QueryAgent(BaseAgent):
 
         last_message = messages[-1]
         if hasattr(last_message, "tool_calls") and last_message.tool_calls:
+            tool_messages_created = 0
+            valid_tool_calls = []
+
+            # Filter out tool calls without IDs before processing
             for tool_call in last_message.tool_calls:
+                tool_call_id = getattr(tool_call, "id", None)
+                if tool_call_id:
+                    valid_tool_calls.append(tool_call)
+                else:
+                    tool_name = getattr(tool_call, "name", None)
+                    print(f"⚠️ Skipping tool call without ID: {tool_name}")
+
+            # Only process if we have valid tool calls
+            if not valid_tool_calls:
+                state["response"] = "I encountered an issue processing your request. Please try again."
+                print("⚠️ No valid tool calls to process")
+                return state
+
+            for tool_call in valid_tool_calls:
                 tool_name = getattr(tool_call, "name", None)
                 tool_call_id = getattr(tool_call, "id", None)
                 args = getattr(tool_call, "args", None)
-
-                # Skip if no valid tool_call_id (required by OpenAI API)
-                if not tool_call_id:
-                    print(f"⚠️ Skipping tool call without ID: {tool_name}")
-                    continue
 
                 if isinstance(args, str):
                     try:
@@ -112,12 +125,33 @@ class QueryAgent(BaseAgent):
                     tool_call_id=tool_call_id,
                 )
                 messages.append(tool_message)
+                tool_messages_created += 1
 
-            # Get final response with tool results
+            # Check if we processed all valid tool calls
+            if tool_messages_created != len(valid_tool_calls):
+                # Should not happen, but handle gracefully
+                state["response"] = "I encountered an issue processing your request. Please try again."
+                print(
+                    f"⚠️ Mismatch: processed {tool_messages_created} of {len(valid_tool_calls)} tool calls")
+                # Don't update messages to avoid corruption
+                return state
+
+            # Ensure all tool_calls in last_message have corresponding ToolMessages
+            # before invoking LLM (OpenAI requirement)
+            total_tool_calls = len(last_message.tool_calls) if hasattr(
+                last_message, "tool_calls") and last_message.tool_calls else 0
+            if total_tool_calls > len(valid_tool_calls):
+                # There were invalid tool_calls - we can't safely call LLM with incomplete responses
+                state["response"] = "I encountered an issue processing your request. Please try again."
+                print(
+                    f"⚠️ Invalid tool calls detected: {total_tool_calls} total, {len(valid_tool_calls)} valid")
+                # Don't update messages - let it retry with fresh state
+                return state
+
+            # All tool calls processed, get final response with tool results
             final_response = await self.llm.ainvoke(messages)
             if hasattr(final_response, "content") and isinstance(final_response.content, str):
                 state["response"] = final_response.content
-
             state["messages"] = messages
 
         return state
