@@ -1,28 +1,112 @@
+# Python project configuration
+[project]
+name = "banking-agent"
+version = "0.1.0"
+requires-python = ">=3.11"
+
+# Pyright (type checking) configuration
 [tool.pyright]
+typeCheckingMode = "basic"  # Changed from "off" to "basic"
 reportMissingImports = true
-reportMissingModuleSource = false
 reportMissingTypeStubs = false
 reportUnusedVariable = "warning"
 reportUnusedImport = "warning"
+reportGeneralTypeIssues = "warning"  # Changed from false
+reportOptionalMemberAccess = "warning"  # Changed from false
+reportOptionalSubscript = "warning"  # Changed from false
 reportUntypedFunctionDecorator = false
 reportUnknownMemberType = false
 reportUnknownParameterType = false
 reportUnknownVariableType = false
-reportGeneralTypeIssues = false
 reportUnknownArgumentType = false
 reportUntypedBaseClass = false
 reportUntypedClassDecorator = false
-reportUntypedFunctionDecorator = false
 reportUntypedNamedTuple = false
 reportPrivateUsage = false
 reportTypedDictNotRequiredAccess = false
-reportOptionalSubscript = false
-reportOptionalMemberAccess = false
 reportOptionalOperand = false
 reportOptionalIterable = false
 reportOptionalContextManager = false
-typeCheckingMode = "off"
 strictListInference = false
 strictDictionaryInference = false
 strictSetInference = false
+
+# Ruff (linting) configuration
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+exclude = [
+    ".git",
+    ".venv",
+    "venv",
+    "__pycache__",
+    "*.egg-info",
+    ".pytest_cache",
+    ".mypy_cache",
+    ".ruff_cache",
+    "build",
+    "dist",
+]
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "N",   # pep8-naming
+    "UP",  # pyupgrade
+    "B",   # flake8-bugbear
+    "C4",  # flake8-comprehensions
+    "SIM", # flake8-simplify
+]
+ignore = [
+    "E501",  # line too long (handled by formatter)
+    "B008",  # do not perform function calls in argument defaults
+    "B904",  # raise from exception
+    "N805",  # first argument should be self
+]
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["F401"]  # Allow unused imports in __init__.py files
+"**/tests/**" = ["B", "SIM"]  # Ignore some rules in tests
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+# MyPy configuration
+[tool.mypy]
+python_version = "3.12"
+warn_return_any = true
+warn_unused_configs = true
+warn_unused_ignores = true
+no_implicit_optional = true
+check_untyped_defs = true
+ignore_missing_imports = true
+
+# Disable strict checks that are too noisy
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+disallow_any_generics = false
+
+# Per-module overrides can be added here
+# [[tool.mypy.overrides]]
+# module = "apps.core.src.agent.*"
+# disallow_untyped_defs = true
+
+# Pytest configuration
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+python_files = ["test_*.py", "*_test.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = [
+    "-v",
+    "--strict-markers",
+    "--tb=short",
+    "--cov=apps",
+    "--cov-report=term-missing",
+]
 

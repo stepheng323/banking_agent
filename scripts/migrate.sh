@@ -12,38 +12,20 @@ echo "🗄️  Running database migrations..."
 echo "   Database: $DATABASE_URL"
 echo ""
 
-VENV_BASE="dist/export/python/virtualenvs/python-default"
-
-if [ ! -d "$VENV_BASE" ]; then
-    echo "📦 Exporting Pants environment (first time setup)..."
-    pants export --resolve=python-default
-fi
-
-PYTHON_VERSION=$(find "$VENV_BASE" -mindepth 1 -maxdepth 1 -type d -name "3.*" 2>/dev/null | head -n 1 | xargs -r basename)
-
-if [ -z "$PYTHON_VERSION" ]; then
-    echo "📦 Re-exporting Pants environment..."
-    pants export --resolve=python-default
-    PYTHON_VERSION=$(find "$VENV_BASE" -mindepth 1 -maxdepth 1 -type d -name "3.*" 2>/dev/null | head -n 1 | xargs -r basename)
-fi
-
-if [ -z "$PYTHON_VERSION" ]; then
-    echo "❌ Failed to find Python environment"
-    echo "   Ensure you have Python 3.12+ installed and run:"
-    echo "   pants export --resolve=python-default"
+# Use .venv if it exists, otherwise use system python
+if [ -d ".venv" ] && [ -f ".venv/bin/python" ]; then
+    PYTHON_CMD=".venv/bin/python -m alembic"
+    echo "✅ Using virtual environment: .venv"
+elif command -v python3 &> /dev/null; then
+    PYTHON_CMD="python3 -m alembic"
+    echo "✅ Using system Python: $(python3 --version)"
+else
+    echo "❌ No Python found. Please:"
+    echo "   1. Create virtual environment: python3 -m venv .venv"
+    echo "   2. Activate it: source .venv/bin/activate"
+    echo "   3. Install dependencies: pip install -r requirements.txt"
     exit 1
 fi
-
-VENV_PATH="$VENV_BASE/$PYTHON_VERSION"
-
-if [ ! -f "$VENV_PATH/bin/python" ]; then
-    echo "❌ Python environment incomplete at $VENV_PATH"
-    echo "   Re-exporting..."
-    pants export --resolve=python-default
-    exit 1
-fi
-
-PYTHON_CMD="$VENV_PATH/bin/python -m alembic"
 
 case "$1" in
     init)

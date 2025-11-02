@@ -1,25 +1,29 @@
-FROM python:3.11-slim
+FROM python:3.13-slim
 
 WORKDIR /app
 
-# Install Poetry
-RUN pip install poetry
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    gcc \
+    postgresql-client \
+    && rm -rf /var/lib/apt/lists/*
 
-# Copy service-specific pyproject.toml
-COPY apps/core/pyproject.toml /app/pyproject.toml
+# Copy requirements first for better caching
+COPY requirements.txt /app/requirements.txt
 
-# Configure Poetry
-RUN poetry config virtualenvs.create false
+# Install Python dependencies
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
 
-# Install dependencies
-RUN poetry install --only=main
+# Copy application code
+COPY apps/core/ /app/apps/core/
+COPY shared/ /app/shared/
 
-# Copy service code
-COPY apps/core/ /app/
-COPY shared/ /shared/
+# Set Python path
+ENV PYTHONPATH=/app
 
 # Expose port
 EXPOSE 8001
 
 # Run the service
-CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8001"]
+CMD ["uvicorn", "apps.core.src.main:app", "--host", "0.0.0.0", "--port", "8001"]
