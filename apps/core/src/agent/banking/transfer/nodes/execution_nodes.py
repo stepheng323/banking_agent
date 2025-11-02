@@ -139,6 +139,8 @@ class ExecutionNodes:
                 "\n".join(f"• {e}" for e in errors)
             state["response"] = error_message
             state["conversation_stage"] = "completed"
+            state["awaiting_clarification"] = False
+            state["clarification_type"] = None
         else:
             print("✅ Validation passed")
             state["conversation_stage"] = "confirming"

@@ -36,5 +36,9 @@ class BaseAgent(ABC):
         raise NotImplementedError("Subclasses must implement invoke")
 
     def _get_config(self, phone_number: str, message_id: str) -> dict[str, Any]:
-        """Get standard config for graph invocation."""
-        return {"configurable": {"thread_id": phone_number, "thread_ts": message_id}}
+        """Get standard config for graph invocation.
+
+        Uses only thread_id for checkpoint continuity across messages.
+        thread_ts would create a new checkpoint per message, breaking conversation continuity.
+        """
+        return {"configurable": {"thread_id": phone_number}}
