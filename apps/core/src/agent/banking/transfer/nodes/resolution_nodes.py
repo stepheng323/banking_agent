@@ -1,32 +1,29 @@
-"""Account resolution nodes for verifying recipient bank accounts via Flutterwave."""
+"""Account resolution nodes for verifying recipient bank accounts via payment service providers."""
 from apps.core.src.agent.banking.transfer.transfer_state import TransferState
-from apps.core.src.agent.banking.tools.flutterwave_client import FlutterwaveClient
+from shared.clients.payment_provider_factory import PaymentProviderFactory
 
 
 class ResolutionNodes:
     """Nodes for resolving and verifying bank account details."""
 
     def __init__(self):
-        """Initialize resolution nodes with Flutterwave client."""
-        try:
-            self.flutterwave_client = FlutterwaveClient()
-        except ValueError as e:
-            print(f"⚠️  Warning: Flutterwave client not initialized: {e}")
-            self.flutterwave_client = None
+        """Initialize resolution nodes with payment service provider."""
+        self.payment_provider = PaymentProviderFactory.get_provider_for_service(
+            "resolve_account")
 
     async def account_resolver_node(self, state: TransferState) -> TransferState:
         """
-        Resolve recipient account details via Flutterwave API.
+        Resolve recipient account details via payment service provider.
 
         This node:
         1. Takes account_number and bank_code from transfer_details
-        2. Calls Flutterwave Account Resolution API
+        2. Calls payment service Account Resolution API (e.g., Flutterwave, Paystack)
         3. Stores resolved account name in transfer_details
         4. Handles errors and routes accordingly
         """
         print("🔍 ACCOUNT RESOLVER: Verifying recipient account details...")
 
-        if not self.flutterwave_client:
+        if not self.payment_provider:
             error_msg = "Account verification service is not configured. Please contact support."
             state["response"] = error_msg
             state["conversation_stage"] = "completed"
@@ -36,7 +33,13 @@ class ResolutionNodes:
             return state
 
         transfer_details = state.get("transfer_details", {})
-        recipient = transfer_details.get("recipient", {})
+        recipients = transfer_details.get("recipients") or []
+        current_index = transfer_details.get("current_recipient_index", 0)
+        recipient = (
+            recipients[current_index]
+            if recipients and 0 <= current_index < len(recipients)
+            else transfer_details.get("recipient", {}) or {}
+        )
 
         account_number = recipient.get("account_number")
         bank_code = recipient.get("bank_code")
@@ -54,8 +57,8 @@ class ResolutionNodes:
             state["conversation_stage"] = "planning"
             return state
 
-        # Call Flutterwave API
-        result = await self.flutterwave_client.resolve_account(
+        # Call payment service provider API
+        result = await self.payment_provider.resolve_account(
             account_number=account_number, bank_code=bank_code
         )
 
@@ -65,6 +68,9 @@ class ResolutionNodes:
                 # Store resolved account name
                 recipient["resolved_account_name"] = resolved_name
                 transfer_details["recipient"] = recipient
+                if recipients and 0 <= current_index < len(recipients):
+                    recipients[current_index] = recipient
+                    transfer_details["recipients"] = recipients
                 state["transfer_details"] = transfer_details
 
                 print(f"✅ Account resolved: {resolved_name}")
@@ -103,6 +109,9 @@ class ResolutionNodes:
             recipient.pop("bank_code", None)
             recipient.pop("resolved_account_name", None)
             transfer_details["recipient"] = recipient
+            if recipients and 0 <= current_index < len(recipients):
+                recipients[current_index] = recipient
+                transfer_details["recipients"] = recipients
             state["transfer_details"] = transfer_details
 
             # Add to missing slots
