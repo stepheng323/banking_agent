@@ -1,7 +1,8 @@
 """Intent parsing nodes for the transfer agent."""
 import json
+import re
 import traceback
-from typing import Any
+from typing import Any, Dict, List, Optional
 
 from langchain_core.messages import HumanMessage
 
@@ -15,6 +16,101 @@ class IntentNodes:
     def __init__(self, llm: Any) -> None:
         """Initialize with LLM instance."""
         self.llm = llm
+
+    @staticmethod
+    def _normalize_amount_value(value: Any) -> Optional[float]:
+        """Normalize numeric amount values to float."""
+        if value is None:
+            return None
+        try:
+            if isinstance(value, (int, float)):
+                return float(value)
+            if isinstance(value, str):
+                cleaned = value.strip().lower().replace(",", "")
+                multiplier = 1.0
+                if cleaned.endswith("k"):
+                    cleaned = cleaned[:-1]
+                    multiplier = 1000.0
+                if cleaned.startswith("₦"):
+                    cleaned = cleaned[1:]
+                cleaned = cleaned.strip()
+                if not cleaned:
+                    return None
+                return float(cleaned) * multiplier
+        except (ValueError, TypeError):
+            return None
+        return None
+
+    @staticmethod
+    def _extract_recipients(parsed_intent: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Derive a list of recipients from parsed intent data."""
+        explicit_recipients = parsed_intent.get("recipients") or []
+        recipients: List[Dict[str, Any]] = []
+
+        seen_names: set[str] = set()
+
+        for recipient in explicit_recipients:
+            if not isinstance(recipient, dict):
+                continue
+            cleaned = {k: v for k, v in recipient.items() if v not in (None, "", [])}
+            name = cleaned.get("name")
+            if name:
+                normalized = str(name).strip()
+                if normalized:
+                    cleaned["name"] = normalized
+                    if normalized.lower() in seen_names:
+                        continue
+                    seen_names.add(normalized.lower())
+            recipients.append(cleaned)
+
+        primary_recipient = parsed_intent.get("recipient") or {}
+        name = primary_recipient.get("name")
+
+        if name:
+            # Only split names when multiple recipients are implied
+            name_segment = re.split(r"\bthen\b", str(name), flags=re.IGNORECASE)[0]
+            if not recipients:
+                split_candidates = re.split(
+                    r"\s*(?:and|&|,|\+|\band\b|\bplus\b)\s*", name_segment, flags=re.IGNORECASE
+                )
+                split_names = [
+                    candidate.strip()
+                    for candidate in split_candidates
+                    if candidate.strip()
+                ]
+                if len(split_names) > 1:
+                    for candidate in split_names:
+                        if candidate.lower() in seen_names:
+                            continue
+                        seen_names.add(candidate.lower())
+                        recipients.append({"name": candidate})
+                else:
+                    recipients.append({k: v for k, v in primary_recipient.items()
+                                       if v not in (None, "", [])})
+            else:
+                # Ensure the primary recipient is included when explicit list exists
+                recipients.insert(
+                    0, {k: v for k, v in primary_recipient.items()
+                        if v not in (None, "", [])}
+                )
+
+        if not recipients and primary_recipient:
+            recipients.append(
+                {k: v for k, v in primary_recipient.items() if v not in (None, "", [])}
+            )
+
+        # Deduplicate while preserving order
+        deduped: List[Dict[str, Any]] = []
+        seen_names: set[str] = set()
+        for recipient in recipients:
+            name = str(recipient.get("name", "")).strip()
+            if name and name.lower() in seen_names:
+                continue
+            if name:
+                seen_names.add(name.lower())
+            deduped.append(recipient)
+
+        return deduped
 
     async def intent_parser_node(self, state: TransferState) -> TransferState:
         """Extract structured transfer information from user message."""
@@ -75,10 +171,73 @@ class IntentNodes:
                     if value is not None and value != "":
                         state["transfer_details"]["recipient"][key] = value
 
+            recipients = self._extract_recipients(parsed_intent)
+            if recipients:
+                # Ensure recipient dict references the active recipient
+                state["transfer_details"]["recipients"] = recipients
+                state["transfer_details"]["current_recipient_index"] = 0
+                state["transfer_details"]["recipient"] = recipients[0]
+                parsed_intent["recipient"] = recipients[0]
+            else:
+                # Fall back to single-recipient workflow
+                single_recipient = state["transfer_details"].get("recipient") or {}
+                state["transfer_details"]["recipients"] = [single_recipient]
+                state["transfer_details"]["current_recipient_index"] = 0
+
             if "amount" in parsed_intent and parsed_intent["amount"]:
                 for key, value in parsed_intent["amount"].items():
                     if value is not None and value != "":
                         state["transfer_details"]["amount"][key] = value
+
+            # Normalize amount metadata for multi-recipient transfers
+            amount_details = state["transfer_details"]["amount"]
+            participants = len(state["transfer_details"]["recipients"])
+            if participants > 1:
+                expression = str(
+                    amount_details.get("calculation_expression") or ""
+                ).lower()
+                amount_value = self._normalize_amount_value(amount_details.get("value"))
+
+                if amount_value is not None:
+                    amount_details["total_value"] = amount_value
+
+                if any(keyword in expression for keyword in ["equal", "even", "each", "between", "among", "split"]):
+                    amount_details["split_strategy"] = "equal"
+                    amount_details["participants"] = participants
+                    if amount_value is not None:
+                        per_value = round(amount_value / participants, 2)
+                        # Adjust final participant to absorb rounding remainder
+                        residual = round(amount_value - per_value * (participants - 1), 2)
+                        amount_details["per_recipient_value"] = per_value
+                        amount_details["value"] = per_value
+                        amount_details["needs_calculation"] = False
+                        updated_recipients: List[Dict[str, Any]] = [
+                            {
+                                **recipient,
+                                "allocated_amount": residual if index == participants - 1 else per_value,
+                            }
+                            for index, recipient in enumerate(state["transfer_details"]["recipients"])
+                        ]
+                        state["transfer_details"]["recipients"] = updated_recipients
+                        current_index = state["transfer_details"].get("current_recipient_index", 0)
+                        state["transfer_details"]["recipient"] = updated_recipients[
+                            min(current_index, len(updated_recipients) - 1)
+                        ]
+                else:
+                    amount_details["participants"] = participants
+                    if amount_value is not None and "total_value" not in amount_details:
+                        amount_details["total_value"] = amount_value
+
+            else:
+                amount_value = self._normalize_amount_value(
+                    state["transfer_details"]["amount"].get("value")
+                )
+                if amount_value is not None:
+                    state["transfer_details"]["amount"]["value"] = amount_value
+                    state["transfer_details"]["amount"]["total_value"] = amount_value
+                    if state["transfer_details"]["recipients"]:
+                        state["transfer_details"]["recipients"][0]["allocated_amount"] = amount_value
+                        state["transfer_details"]["recipient"] = state["transfer_details"]["recipients"][0]
 
             if "source_account" in parsed_intent and parsed_intent["source_account"]:
                 for key, value in parsed_intent["source_account"].items():

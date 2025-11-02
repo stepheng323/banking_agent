@@ -38,6 +38,9 @@ class ConversationContext:
 
     def switch_agent(self, new_agent: Literal["query", "transfer", "utility"]) -> None:
         """Switch to a new active agent."""
+        # Only clear awaiting_clarification if actually switching to a different agent
+        # If staying on the same agent (e.g., continuing a conversation), preserve the flag
+        if self.active_agent != new_agent:
+            self.clear_awaiting_clarification()
         self.active_agent = new_agent
-        self.clear_awaiting_clarification()
         self.update_activity()

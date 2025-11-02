@@ -52,8 +52,19 @@ class TransferAgent(BaseAgent):
 
     def _route_entry(self, state: TransferState) -> str:
         """Conditional entry point: check if continuing a conversation or starting new."""
-        if state.get("awaiting_clarification") and state.get("pending_clarification"):
+        awaiting = state.get("awaiting_clarification")
+        pending = state.get("pending_clarification")
+        
+        print(f"🚦 TRANSFER ROUTE ENTRY:")
+        print(f"   awaiting_clarification: {awaiting}")
+        print(f"   pending_clarification: {pending}")
+        print(f"   message: {state.get('message', '')[:50]}...")
+        
+        if awaiting and pending:
+            print(f"   ✅ Routing to: parse_clarification")
             return "parse_clarification"
+        
+        print(f"   ✅ Routing to: intent_parser")
         return "intent_parser"
 
     def _build_graph(self) -> Any:

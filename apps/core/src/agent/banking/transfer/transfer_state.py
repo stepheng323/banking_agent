@@ -12,6 +12,7 @@ class RecipientDetails(TypedDict):
     resolved_account_name: NotRequired[Optional[str]]
     confidence_score: NotRequired[Optional[float]]
     is_new_beneficiary: NotRequired[bool]
+    allocated_amount: NotRequired[Optional[float]]
 
 
 class AmountDetails(TypedDict):
@@ -21,6 +22,10 @@ class AmountDetails(TypedDict):
     needs_calculation: NotRequired[bool]
     calculation_expression: NotRequired[Optional[str]]
     source_data: NotRequired[Optional[dict]]
+    total_value: NotRequired[Optional[float]]
+    per_recipient_value: NotRequired[Optional[float]]
+    split_strategy: NotRequired[Optional[str]]
+    participants: NotRequired[Optional[int]]
 
 
 class SourceAccountDetails(TypedDict):
@@ -33,6 +38,8 @@ class SourceAccountDetails(TypedDict):
 class TransferDetails(TypedDict):
     """Complete transfer details."""
     recipient: NotRequired[RecipientDetails]
+    recipients: NotRequired[List[RecipientDetails]]
+    current_recipient_index: NotRequired[int]
     amount: NotRequired[AmountDetails]
     source_account: NotRequired[SourceAccountDetails]
     purpose: NotRequired[Optional[str]]
