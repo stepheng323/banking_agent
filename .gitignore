@@ -30,13 +30,10 @@ ENV/
 env.bak/
 venv.bak/
 
-# Pants
-/.pants.d/
-/dist/export/
-/dist/apps.*/
-/.pids/
-# Keep the lock file in version control
-# /python-default.lock
+# Build artifacts
+dist/
+build/
+*.egg-info/
 
 # IDEs
 .vscode/
@@ -66,9 +63,3 @@ whatsapp_flow_public_key.pem
 # Logs
 *.log
 logs/
-
-# Pants exported environment
-.venv-pants/
-
-# Old migration venv (deprecated)
-.venv-migrations/

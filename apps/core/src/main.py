@@ -2,7 +2,11 @@ import asyncio
 import os
 from contextlib import asynccontextmanager
 
+from dotenv import load_dotenv
 from fastapi import FastAPI
+
+# Load environment variables from .env file
+load_dotenv()
 
 from apps.core.src.agent.orchestrator import OrchestratorAgent
 from apps.core.src.consumer import MessageConsumer

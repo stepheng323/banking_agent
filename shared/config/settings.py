@@ -1,6 +1,10 @@
 """Shared application configuration."""
 
 import os
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 
 class Settings:
@@ -29,8 +33,11 @@ class Settings:
 
         self.openai_api_key: str = os.getenv("OPENAI_API_KEY", "")
 
-        self.flutterwave_secret_key: str = os.getenv(
-            "FLUTTERWAVE_SECRET_KEY", "")
+        # Flutterwave OAuth2 credentials (required)
+        self.flutterwave_client_id: str = os.getenv(
+            "FLUTTERWAVE_CLIENT_ID", "")
+        self.flutterwave_client_secret: str = os.getenv(
+            "FLUTTERWAVE_CLIENT_SECRET", "")
         self.flutterwave_use_sandbox: bool = os.getenv(
             "FLUTTERWAVE_USE_SANDBOX", "false").lower() == "true"
 

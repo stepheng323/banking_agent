@@ -4,12 +4,50 @@
 Banking tools for account operations.
 """
 
-from typing import Optional, Dict, Any
+import asyncio
+from typing import Optional, Dict, Any, List, TypedDict, Union
 from langchain.tools import tool
 
 
+class AccountDict(TypedDict):
+    """Account information dictionary."""
+    id: str
+    account_id: str
+    account_number: str
+    account_name: str
+    bank_name: str
+    bank_code: str
+    balance: float
+    account_type: str
+    currency: str
+    is_active: bool
+
+
+class UserAccountsSuccess(TypedDict):
+    """Success response for get_user_accounts."""
+    success: bool
+    accounts: List[AccountDict]
+    total_accounts: int
+
+
+class UserAccountsError(TypedDict):
+    """Error response for get_user_accounts."""
+    success: bool
+    error: str
+    accounts: List[AccountDict]
+
+
+# Try to import payment provider factory, but don't fail if not available
+try:
+    from shared.clients.payment_provider_factory import PaymentProviderFactory
+    PAYMENT_SERVICE_AVAILABLE = True
+except (ImportError, ValueError):
+    PAYMENT_SERVICE_AVAILABLE = False
+    PaymentProviderFactory = None
+
+
 @tool
-def get_user_accounts(phone_number: str) -> Dict[str, Any]:
+def get_user_accounts(phone_number: str) -> Union[UserAccountsSuccess, UserAccountsError]:
     """
     Get all active bank accounts for a user.
 
@@ -17,14 +55,11 @@ def get_user_accounts(phone_number: str) -> Dict[str, Any]:
         phone_number: User's phone number (e.g., "+2348012345678")
 
     Returns:
-        Dictionary containing:
-        - success: bool
-        - accounts: list of account dictionaries
-        - error: str (if failed)
+        UserAccountsSuccess: On success, containing:
+            - success: True
+            - accounts: List[AccountDict] - List of account dictionaries
+            - total_accounts: int - Total number of accounts
 
-    Example:
-        >>> get_user_accounts("+2348012345678")
-        {"success": True, "accounts": [{"id": "acc_001", ...}]}
     """
     # TODO: Replace with actual database implementation
     # from shared.repositories.account_repository import AccountRepository
@@ -103,7 +138,6 @@ def get_account_balance(
         accounts = accounts_result["accounts"]
 
         if account_id:
-            # Return specific account balance
             account = next(
                 (a for a in accounts if a["id"] == account_id), None)
             if not account:
@@ -122,7 +156,6 @@ def get_account_balance(
                 "account_type": account["account_type"]
             }
 
-        # Return all balances
         total_balance = sum(a["balance"] for a in accounts)
 
         return {
@@ -210,29 +243,77 @@ def verify_account_number(
     bank_code: str
 ) -> Dict[str, Any]:
     """
-    Verify and get account name for an account number.
+    Verify and get account name for an account number using payment service provider.
+
+    Uses the best available payment provider (Flutterwave, Paystack, etc.) to resolve
+    bank account details and verify the account holder name.
 
     Args:
         account_number: 10-digit account number
-        bank_code: Bank code (e.g., "058" for GTBank)
+        bank_code: Bank code (e.g., "058" for GTBank, "011" for First Bank)
 
     Returns:
-        Dictionary with account details
+        Dictionary with:
+            - success: bool
+            - account_name: str (verified account holder name) if successful
+            - account_number: str
+            - bank_code: str
+            - bank_name: str ("Verified")
+            - error: str (if failed)
     """
-    # TODO: Integrate with bank verification API (e.g., Paystack, Flutterwave)
-
-    try:
-        # Placeholder implementation
-        return {
-            "success": True,
-            "account_number": account_number,
-            "account_name": "Jane Doe",
-            "bank_code": bank_code,
-            "bank_name": "GTBank"
-        }
-    except Exception as e:
+    if not PAYMENT_SERVICE_AVAILABLE or not PaymentProviderFactory:
         return {
             "success": False,
-            "error": f"Verification failed: {str(e)}"
+            "error": "Payment service not available",
+            "account_number": account_number,
+            "bank_code": bank_code,
         }
 
+    try:
+        provider = PaymentProviderFactory.get_provider_for_service(
+            "resolve_account")
+
+        if not provider:
+            return {
+                "success": False,
+                "error": "No payment provider available for account resolution",
+                "account_number": account_number,
+                "bank_code": bank_code,
+            }
+
+        result = asyncio.run(
+            provider.resolve_account(account_number, bank_code))
+
+        if result.get("success"):
+            return {
+                "success": True,
+                "account_number": result.get("account_number", account_number),
+                "account_name": result.get("account_name", ""),
+                "bank_code": result.get("bank_code", bank_code),
+                "bank_name": "Verified",
+                "provider": result.get("provider", "unknown"),
+            }
+
+        return {
+            "success": False,
+            "error": result.get("error", "Verification failed"),
+            "account_number": account_number,
+            "bank_code": bank_code,
+            "provider": result.get("provider"),
+        }
+
+    except ValueError as e:
+        return {
+            "success": False,
+            "error": str(e),
+            "account_number": account_number,
+            "bank_code": bank_code,
+        }
+    except Exception as e:
+        print(f"⚠️  Account resolution failed: {e}")
+        return {
+            "success": False,
+            "error": f"Account resolution service error: {str(e)}",
+            "account_number": account_number,
+            "bank_code": bank_code,
+        }

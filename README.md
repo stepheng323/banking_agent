@@ -1,10 +1,10 @@
 # Banking Agent - WhatsApp Banking Chatbot
 
-A Python monorepo for a WhatsApp-based banking agent with LLM processing and automatic receipt generation, built with Pants.
+A Python monorepo for a WhatsApp-based banking agent with LLM processing and automatic receipt generation.
 
 ## 🏗️ Architecture
 
-**Python Monorepo** managed with **Pants** build system:
+**Python Monorepo** with standard Python tooling:
 
 - **Gateway Service** (`apps/gateway/`) - WhatsApp webhook + LangGraph LLM agent
 - **Core Service** (`apps/core/`) - Banking operations + Receipt generation
@@ -15,8 +15,16 @@ A Python monorepo for a WhatsApp-based banking agent with LLM processing and aut
 ### 1. Setup
 
 ```bash
-# Generate dependency lock file
-make setup
+# Run setup script (creates venv, installs deps)
+bash scripts/setup.sh
+
+# Or manually:
+python3 -m venv .venv
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+pip install -r requirements.txt
+
+# Set PYTHONPATH for monorepo imports
+export PYTHONPATH=$(pwd):$PYTHONPATH
 
 # Configure environment variables
 cp .env.example .env
@@ -36,8 +44,8 @@ make docker-down      # Stop services
 **Option B: Local Development**
 
 ```bash
-make dev-gateway      # Gateway on port 8000
-make dev-core         # Core on port 8001
+make run-gateway      # Gateway on port 8000
+make run-core         # Core on port 8001
 ```
 
 **Services:**
@@ -53,29 +61,33 @@ make dev-core         # Core on port 8001
 
 ```bash
 make help             # Show all commands
-make format           # Format code with Black
-make test             # Run tests
-make check            # Format, lint, and test
-make clean            # Clean Pants cache
+make format           # Format code with ruff
+make lint             # Lint code with ruff
+make test             # Run tests with pytest
+make check-all        # Run all checks (lint + type-check + format)
+make clean            # Clean Python caches
 ```
 
-### Pants Commands
+### Running Services
 
 ```bash
-# List targets
-pants list ::
+# Start gateway service
+make run-gateway      # uvicorn apps.gateway.main:app --reload
 
-# Run services
-pants run apps/gateway:bin
-pants run apps/core:bin
+# Start core service
+make run-core         # uvicorn apps.core.src.main:app --reload
 
-# Package as PEX binaries
-pants package apps/gateway:bin
-pants package apps/core:bin
+# Or run directly
+uvicorn apps.gateway.main:app --reload --port 8000
+uvicorn apps.core.src.main:app --reload --port 8001
+```
 
-# Run tests
-pants test ::
-pants test apps/gateway::
+### Testing
+
+```bash
+make test             # Run all tests
+make test-file FILE=tests/test_agent.py  # Run specific test
+make test-coverage    # Run tests with coverage
 ```
 
 ## 📁 Project Structure
@@ -87,22 +99,20 @@ banking_agent/
 │   │   ├── main.py
 │   │   ├── api/             # FastAPI routes
 │   │   ├── adapters/        # WhatsApp, sender
-│   │   ├── core/            # Config
-│   │   └── BUILD
+│   │   └── core/            # Config
 │   └── core/                # Banking + Receipts
-│       ├── src/
-│       │   └── main.py
-│       └── BUILD
+│       └── src/
+│           └── main.py
 ├── shared/                  # Shared library
 │   ├── models/
 │   ├── config/
 │   ├── clients/
 │   └── utils/
-├── pants.toml              # Pants config
-├── requirement.txt         # Dependencies
-├── python-default.lock     # Lock file
+├── requirements.txt         # Python dependencies
 ├── docker-compose.yml      # Docker setup
-└── Makefile               # Dev commands
+├── Makefile               # Development commands
+└── scripts/               # Utility scripts
+    └── setup.sh           # Setup script
 ```
 
 ## 🔄 Data Flow
@@ -122,14 +132,14 @@ WhatsApp → Gateway (Port 8000) → LangGraph Agent
 ## 📦 Managing Dependencies
 
 ```bash
-# 1. Add to requirement.txt
-echo "new-package==1.0.0" >> requirement.txt
+# 1. Add to requirements.txt
+echo "new-package==1.0.0" >> requirements.txt
 
-# 2. Regenerate lock file
-pants generate-lockfiles --resolve=python-default
+# 2. Install new dependency
+pip install new-package==1.0.0
 
-# 3. Export for IDE (optional)
-pants export --resolve=python-default
+# 3. (Optional) Update requirements.txt with exact versions
+pip freeze > requirements.txt
 ```
 
 ## 🐳 Docker Deployment
@@ -147,38 +157,51 @@ docker tag banking_agent-gateway:latest <ecr-url>/gateway:latest
 docker push <ecr-url>/gateway:latest
 ```
 
-### Run PEX Binaries
+### Deployment Options
 
-```bash
-# Package services
-pants package ::
-
-# Run standalone binaries
-./dist/apps.gateway/bin.pex
-./dist/apps.core/bin.pex
-```
+The Dockerfiles use `requirements.txt` and work with any container platform:
+- AWS ECS/Fargate
+- Google Cloud Run
+- Azure Container Instances
+- Kubernetes
+- Railway, Fly.io, Render, etc.
 
 ## 🧪 Testing
 
 ```bash
 # All tests
-pants test ::
+make test
+# or: pytest
 
-# Specific service
-pants test apps/gateway::
+# Specific test file
+make test-file FILE=tests/test_agent.py
+# or: pytest tests/test_agent.py
 
 # With coverage
-pants test --coverage ::
+make test-coverage
+# or: pytest --cov=apps --cov=shared --cov-report=term-missing
 ```
 
 ## 🔧 Troubleshooting
 
-### Pants Cache Issues
+### Python Import Errors
+
+If you get `ModuleNotFoundError` when importing from `shared` or `apps`:
 
 ```bash
-pants clean-all
-rm -rf .pants.d
-pants generate-lockfiles --resolve=python-default
+# Set PYTHONPATH (add to your .env or shell profile)
+export PYTHONPATH=$(pwd):$PYTHONPATH
+
+# Or activate virtual environment with PYTHONPATH
+source .venv/bin/activate
+export PYTHONPATH=$(pwd):$PYTHONPATH
+```
+
+### Clean Python Caches
+
+```bash
+make clean
+# Removes __pycache__, .pytest_cache, .mypy_cache, etc.
 ```
 
 ### WSL2 DNS Issues
@@ -200,33 +223,39 @@ Your `META_ACCESS_TOKEN` may be expired:
 ### IDE Setup
 
 ```bash
-# Export virtualenv for IDE
-pants export --resolve=python-default
+# Create/activate virtual environment
+python3 -m venv .venv
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+pip install -r requirements.txt
 
 # Point IDE to:
-# dist/export/python/virtualenvs/python-default/3.12.3/bin/python
+# .venv/bin/python  (or .venv\Scripts\python.exe on Windows)
+
+# Set PYTHONPATH in IDE settings:
+# PYTHONPATH=/path/to/banking_agent
 ```
 
 ## 📚 Tech Stack
 
-- **Build System**: Pants 2.29
-- **Language**: Python 3.12
+- **Language**: Python 3.13
 - **Web**: FastAPI + Uvicorn
 - **LLM**: LangChain + LangGraph + OpenAI
 - **Database**: PostgreSQL 16
 - **Cache**: Redis 7
 - **Cloud**: AWS (S3, SES, RDS)
 - **Container**: Docker + Docker Compose
+- **Tooling**: Ruff (linting), MyPy (type checking), Pytest (testing)
 
 ## 🎯 Key Features
 
 - ✅ **Monorepo**: Single codebase, independent services
 - ✅ **Type Safe**: Pydantic models throughout
-- ✅ **Fast Builds**: Pants caching and dependency inference
-- ✅ **Production Ready**: PEX binaries or Docker images
+- ✅ **Fast Development**: Instant startup, hot reload
+- ✅ **Production Ready**: Docker images for easy deployment
 - ✅ **LLM Agent**: LangGraph for conversational banking
 - ✅ **Auto Receipts**: Automatic receipt generation
 - ✅ **Scalable**: Easy to add more services
+- ✅ **Standard Tooling**: Uses standard Python tools (pip, pytest, ruff)
 
 ## 🤝 Contributing
 
@@ -242,4 +271,4 @@ MIT License
 
 ---
 
-**Built with ❤️ using Pants Build System**
+**Built with ❤️ using Python and FastAPI**

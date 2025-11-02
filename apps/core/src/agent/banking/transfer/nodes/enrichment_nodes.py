@@ -4,8 +4,8 @@
 from typing import Any, Dict
 
 from apps.core.src.agent.banking.transfer.transfer_state import TransferState
-from apps.core.src.agent.utils.beneficiary_matcher import match_beneficiaries
 from apps.core.src.agent.banking.tools.account_tools import get_user_accounts, get_account_balance
+from apps.core.src.agent.banking.tools.transfer_tools import search_beneficiaries
 
 
 class EnrichmentNodes:
@@ -65,6 +65,15 @@ class EnrichmentNodes:
         print("🔍 CONTEXT ENRICHER: Loading user data...")
 
         phone_number = state["phone_number"]
+        transfer_details = state.get("transfer_details", {})
+        recipients = transfer_details.get("recipients") or []
+        current_index = transfer_details.get("current_recipient_index", 0)
+
+        active_recipient = (
+            recipients[current_index]
+            if recipients and 0 <= current_index < len(recipients)
+            else transfer_details.get("recipient", {}) or {}
+        )
 
         if not state.get("user_accounts"):
             accounts_result = get_user_accounts.invoke(
@@ -81,54 +90,74 @@ class EnrichmentNodes:
                 print(
                     f"👥 Loaded {len(state['user_beneficiaries'])} beneficiaries")
 
-        recipient_name = state["transfer_details"]["recipient"].get("name")
-        if recipient_name and not state["transfer_details"]["recipient"].get("matched_beneficiary_id"):
-            beneficiaries = state.get("user_beneficiaries", []) or []
-            matches = match_beneficiaries(recipient_name, beneficiaries)
+        recipient_name = active_recipient.get("name")
+        if recipient_name and not active_recipient.get("matched_beneficiary_id"):
+            search_result = search_beneficiaries.invoke({
+                "phone_number": phone_number,
+                "search_term": recipient_name
+            })
 
-            if len(matches) == 1 and matches[0]["confidence_score"] >= 90:
-                matched = matches[0]
-                state["transfer_details"]["recipient"].update({
-                    "matched_beneficiary_id": matched["id"],
-                    "account_number": matched["account_number"],
-                    "bank_code": matched["bank_code"],
-                    "bank_name": matched["bank_name"],
-                    "confidence_score": matched["confidence_score"],
-                    "is_new_beneficiary": False,
-                })
-                print(
-                    f"✅ Auto-matched beneficiary: {matched['name']} ({matched['confidence_score']}%)")
+            if search_result.get("success"):
+                matches = search_result.get("matches", [])
+                best_match = matches[0] if matches else None
+                confidence_threshold = 85 if len(matches) == 1 else 90
 
-            elif len(matches) > 1:
-                # Initialize clarifications_needed list, handling None from checkpoint state
-                if not state.get("clarifications_needed"):
-                    state["clarifications_needed"] = []
-                state["clarifications_needed"].append({
-                    "type": "ambiguous_recipient",
-                    "options": matches[:5],
-                })
-                print(f"⚠️ Found {len(matches)} potential matches")
+                if best_match and best_match["confidence_score"] >= confidence_threshold:
+                    matched = best_match
+                    active_recipient.update({
+                        "matched_beneficiary_id": matched["id"],
+                        "account_number": matched["account_number"],
+                        "bank_code": matched["bank_code"],
+                        "bank_name": matched["bank_name"],
+                        "confidence_score": matched["confidence_score"],
+                        "is_new_beneficiary": False,
+                    })
+                    print(
+                        f"✅ Auto-matched beneficiary: {matched['name']} ({matched['confidence_score']}% confidence)")
 
-            elif len(matches) == 0:
-                state["transfer_details"]["recipient"]["is_new_beneficiary"] = True
-                print(f"🆕 No match found - treating as new beneficiary")
+                elif len(matches) > 1:
+                    if not state.get("clarifications_needed"):
+                        state["clarifications_needed"] = []
+                    state["clarifications_needed"].append({
+                        "type": "ambiguous_recipient",
+                        "options": matches[:5],
+                    })
+                    print(f"⚠️ Found {len(matches)} potential matches")
 
-        if state["transfer_details"]["amount"].get("needs_calculation"):
+                elif len(matches) == 0:
+                    active_recipient["is_new_beneficiary"] = True
+                    print(f"🆕 No match found - treating as new beneficiary")
+
+        if recipients and 0 <= current_index < len(recipients):
+            recipients[current_index] = active_recipient
+            transfer_details["recipients"] = recipients
+            transfer_details["recipient"] = active_recipient
+        else:
+            transfer_details["recipient"] = active_recipient
+
+        amount_details = transfer_details.get("amount") or {}
+        if amount_details.get("needs_calculation"):
             accounts = state.get("user_accounts", []) or []
             if len(accounts) == 1:
                 account_id = accounts[0]["id"]
-            elif state["transfer_details"]["source_account"].get("account_id"):
-                account_id = state["transfer_details"]["source_account"]["account_id"]
+            elif transfer_details.get("source_account", {}).get("account_id"):
+                account_id = transfer_details["source_account"]["account_id"]
             else:
                 account_id = None
 
             if account_id:
                 balance_result = get_account_balance.invoke(
-                    {"account_id": account_id})
+                    {
+                        "phone_number": phone_number,
+                        "account_id": account_id,
+                    }
+                )
                 if balance_result.get("success"):
-                    state["transfer_details"]["amount"]["source_data"] = balance_result
+                    amount_details["source_data"] = balance_result
                     print(
                         f"💰 Loaded balance: ₦{balance_result.get('balance', 0):,.2f}")
 
+        transfer_details["amount"] = amount_details
+        state["transfer_details"] = transfer_details
         state["conversation_stage"] = "gathering"
         return state
