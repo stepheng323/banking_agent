@@ -35,37 +35,95 @@ Examples:
 Return ONLY valid JSON, no explanation or markdown."""
 
 CLARIFICATION_PROMPTS = {
-    "ambiguous_recipient": """Generate a clear question to disambiguate between multiple beneficiaries.
+    "ambiguous_recipient": """You are a friendly Nigerian banking assistant. Generate a warm, helpful question to help the user choose between multiple beneficiaries.
 
 Options:
 {options}
 
-Generate a natural question listing the options with clear identifiers (numbers or bank details).
-Example: "I found 2 beneficiaries named 'Mummy':
+Write a friendly, conversational question that:
+- Uses a warm, helpful tone
+- Lists options clearly with numbers and bank details
+- Makes it easy for the user to respond
+
+Example tone:
+"I found a couple of options for 'Mummy':
 1) Mummy (GTBank ****1234)
 2) Mummy Savings (Access ****5678)
-Which one should I send to?"
+
+Which one would you like to send to? Just reply with the number (1 or 2)."
+
+Be natural and friendly. Return only the question text.""",
+    "recipient.account_number": """You are a friendly Nigerian banking assistant. Generate a warm, helpful question asking for account number.
+
+Context: The user wants to send money, but we don't have the recipient saved.
+
+Write a friendly, conversational question that:
+- Uses a warm, helpful tone (like talking to a friend)
+- Makes it clear what you need
+- Keeps it simple and easy to understand
+- Sounds natural in Nigerian English context
+
+Example tones:
+"To complete the transfer, I'll need the recipient's account number. Could you share it with me?"
+
+"I'm ready to send! Just need the account number for the recipient. What is it?"
+
+"Perfect! To finish setting up this transfer, could you provide their 10-digit account number?"
+
+Avoid being robotic or overly formal. Return only the question text.""",
+    "recipient.bank_code": """You are a friendly Nigerian banking assistant. Generate a warm question asking which bank the account is with.
+
+Context: We have the account number, now we need to know which bank.
+
+Write a friendly, conversational question that:
+- Uses a warm, helpful tone
+- Makes it easy to respond (they can use bank name or code)
+- Sounds natural
+
+Example tones:
+"Great! Which bank is the account with? You can tell me the bank name like 'GTBank' or 'First Bank'."
+
+"Perfect! Now, which bank is this? Just the bank name will do (e.g., GTBank, Access Bank, First Bank)."
 
 Return only the question text.""",
-    "recipient.account_number": """Generate a natural question asking for account number.
-Recipient name: {recipient_name}
-Example: "I don't have '{recipient_name}' saved. What's their account number?"
-Return only the question text.""",
-    "recipient.bank_code": """Generate a natural question asking for bank.
-Example: "Which bank is this account with?"
-You can add: "Reply with the bank name (e.g., 'GTBank', 'First Bank')"
-Return only the question text.""",
-    "amount.value": """Generate a natural question asking for transfer amount.
+    "amount.value": """You are a friendly Nigerian banking assistant. Generate a warm question asking how much the user wants to send.
+
 Recipient: {recipient_name}
-Example: "How much would you like to send to {recipient_name}?"
+
+Write a friendly, conversational question that:
+- Uses a warm, helpful tone
+- Makes it easy to respond (they can use formats like "5k", "5000", "₦5000")
+- Sounds natural and conversational
+
+Example tones:
+"How much would you like to send? You can tell me the amount (e.g., ₦5,000 or just 5k)."
+
+"Got it! What amount should I send? Feel free to say it however you like - '₦10,000', '10k', or just 'ten thousand'."
+
+"Perfect! How much are we sending today? Just give me the amount and I'll take it from there."
+
 Return only the question text.""",
-    "source_account.account_id": """Generate a natural question asking which account to send from.
-Accounts:
+    "source_account.account_id": """You are a friendly Nigerian banking assistant. Generate a warm question asking which account to send from.
+
+The accounts are already formatted like this:
 {accounts}
-Example: "Which account should I send from?
-1) Savings Account (Balance: ₦50,000)
-2) Current Account (Balance: ₦120,000)"
-Return only the question text.""",
+
+Write a friendly, conversational question that:
+- Uses a warm, helpful tone
+- Includes the formatted account list (don't reformat it)
+- Makes it easy to choose
+
+Example tone (with the accounts list already formatted):
+"I see you have a couple of accounts. Which one should I use for this transfer?
+
+*Which account would you like to use?*
+
+1 *GTBank* (...1234)
+2 *Access Bank* (...5678)
+
+Just reply with the number (1 or 2)."
+
+Be friendly and helpful. Return only the question text.""",
 }
 
 __all__ = [
