@@ -1,35 +1,30 @@
-# Core dependencies
-fastapi>=0.110.0  # Allow newer versions for Python 3.13 compatibility
+fastapi>=0.110.0  
 uvicorn[standard]==0.27.1
 pydantic>=2.9.0
-pydantic-settings>=2.5.0  # Updated for compatibility with newer pydantic
+pydantic-settings>=2.5.0
 
-# LLM and AI
-langchain==0.1.20
-langgraph==0.0.30
-langchain-openai==0.0.8
+langchain==0.3.14
+langchain-community==0.3.13
+langgraph==0.2.60
+langchain-openai==0.2.14
+langgraph-checkpoint-postgres==2.0.11
 
-# AWS - Use aioboto3 which includes compatible boto3
+
 aioboto3==12.3.0
 
-# Database
 psycopg[binary]>=3.1.0
 alembic==1.13.0
 sqlalchemy==2.0.44
 
-# Queue and Cache
 redis==5.0.1
 
-# Auth and Security
 python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4
 bcrypt==4.0.1
 
-# HTTP and Utilities
 httpx==0.26.0
 requests==2.31.0
 python-multipart==0.0.9
 python-dotenv==1.0.1
 
-# Cryptography for WhatsApp Flow encryption
 pycryptodome==3.20.0

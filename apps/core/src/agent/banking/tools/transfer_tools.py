@@ -1,54 +1,86 @@
 """
 Transfer-specific tools for the LLM-driven transfer agent.
 """
-from typing import Dict, Any, List
-from datetime import datetime
+from typing import Dict, Any, List, Optional
+import re
 from langchain.tools import tool
+from sqlalchemy.orm import Session
 
-from apps.core.src.agent.banking.tools.account_tools import get_user_accounts, get_account_balance
+from apps.core.src.agent.banking.tools.account_tools import get_account_balance
 from apps.core.src.agent.utils.beneficiary_matcher import match_beneficiaries
+from shared.repositories import UnitOfWork
+from shared.repositories.user_repository import UserRepository
+from shared.repositories import BeneficiaryRepository
 
 
-def _get_saved_beneficiaries(phone_number: str) -> List[Dict[str, Any]]:
+
+def _get_saved_beneficiaries(phone_number: str, db_session: Optional[Session] = None) -> List[Dict[str, Any]]:
     """
-    Get saved beneficiaries for a user.
+    Get saved beneficiaries for a user from the database.
 
-    TODO: Replace with actual database query.
+    Args:
+        phone_number: User's phone number
+        db_session: Optional existing session to reuse
+
+    Returns:
+        List of beneficiary dictionaries
     """
-    # Placeholder implementation
-    return [
-        {
-            "id": "ben_001",
-            "name": "Mum",
-            "nickname": "mummy",
-            "account_number": "1234567890",
-            "bank_name": "GTBank",
-            "bank_code": "058",
-            "frequency": 10
-        },
-        {
-            "id": "ben_002",
-            "name": "Dad",
-            "nickname": "father",
-            "account_number": "0987654321",
-            "bank_name": "FirstBank",
-            "bank_code": "011",
-            "frequency": 5
-        },
-        {
-            "id": "ben_003",
-            "name": "Sister",
-            "nickname": "sissy",
-            "account_number": "1111222233",
-            "bank_name": "Access Bank",
-            "bank_code": "044",
-            "frequency": 3
-        },
-    ]
+    owns_session = db_session is None
+
+    try:
+        if owns_session:
+           # Create new UnitOfWork
+            with UnitOfWork() as uow:
+                user = uow.users.get_by_phone(phone_number)
+
+                if not user:
+                    return []
+
+                beneficiaries = uow.beneficiaries.get_all_for_user(
+                    str(user.id))
+
+                result = []
+                for ben in beneficiaries:
+                    result.append({
+                        "id": str(ben.id),
+                        "name": ben.account_name,
+                        "nickname": ben.alias or ben.account_name,
+                        "account_number": ben.account_number,
+                        "bank_name": ben.bank_name,
+                        "bank_code": ben.bank_code,
+                        "frequency": 0  # TODO: Add frequency tracking to Beneficiary model if needed
+                    })
+                return result
+        else:
+
+            user_repo = UserRepository(db_session)
+            user = user_repo.get_by_phone(phone_number)
+
+            if not user:
+                return []
+
+            beneficiary_repo = BeneficiaryRepository(db_session)
+            beneficiaries = beneficiary_repo.get_all_for_user(str(user.id))
+
+            result = []
+            for ben in beneficiaries:
+                result.append({
+                    "id": str(ben.id),
+                    "name": ben.account_name,
+                    "nickname": ben.alias or ben.account_name,
+                    "account_number": ben.account_number,
+                    "bank_name": ben.bank_name,
+                    "bank_code": ben.bank_code,
+                    "frequency": 0
+                })
+            return result
+    except Exception as e:
+        print(f"⚠️  Error loading beneficiaries: {e}")
+        return []
 
 
 @tool
-def search_beneficiaries(phone_number: str, search_term: str) -> dict[str, Any]:
+def search_beneficiaries(phone_number: str, search_term: str, db_session: Optional[Session] = None) -> dict[str, Any]:
     """
     Search for saved beneficiaries using fuzzy matching.
 
@@ -57,6 +89,7 @@ def search_beneficiaries(phone_number: str, search_term: str) -> dict[str, Any]:
     Args:
         phone_number: User's phone number
         search_term: Name or nickname to search for (e.g., "mum", "mummy", "mother")
+        db_session: Optional existing database session to reuse
 
     Returns:
         Dictionary with:
@@ -65,7 +98,7 @@ def search_beneficiaries(phone_number: str, search_term: str) -> dict[str, Any]:
         - count: number of matches
     """
     try:
-        beneficiaries = _get_saved_beneficiaries(phone_number)
+        beneficiaries = _get_saved_beneficiaries(phone_number, db_session)
         matches = match_beneficiaries(search_term, beneficiaries)
 
         return {
@@ -86,7 +119,7 @@ def search_beneficiaries(phone_number: str, search_term: str) -> dict[str, Any]:
 def calculate_amount(
     expression: str,
     phone_number: str,
-    account_id: str = None
+    account_id: str = ""
 ) -> Dict[str, Any]:
     """
     Calculate transfer amount from natural language expressions.
@@ -105,18 +138,16 @@ def calculate_amount(
     Returns:
         Dictionary with calculated amount and details.
     """
-    import re
 
     try:
-        # Clean expression
         expr = expression.lower().strip()
 
-        # Handle fixed amounts first using regex to capture leading numbers
         split_hint = None
         if any(keyword in expr for keyword in ["equal", "even", "each", "between", "among", "share", "split"]):
             split_hint = "equal"
 
-        numeric_match = re.search(r"(\d[\d,]*(?:\.\d+)?)\s*(k|thousand)?", expr)
+        numeric_match = re.search(
+            r"(\d[\d,]*(?:\.\d+)?)\s*(k|thousand)?", expr)
         if numeric_match:
             number = numeric_match.group(1).replace(",", "")
             multiplier_hint = numeric_match.group(2)
@@ -134,13 +165,11 @@ def calculate_amount(
             except ValueError:
                 pass
 
-        # Handle percentage of balance
         if "%" in expr or "percent" in expr or "percentage" in expr:
             match = re.search(r"(\d+(?:\.\d+)?)\s*%", expr)
             if match:
                 percentage = float(match.group(1))
 
-                # Get balance
                 if account_id:
                     balance_result = get_account_balance.invoke({
                         "phone_number": phone_number,
@@ -164,7 +193,6 @@ def calculate_amount(
                         "split_hint": split_hint,
                     }
 
-        # Handle "half", "third", "quarter" etc.
         if "half" in expr:
             percentage = 50
         elif "third" in expr:
@@ -175,7 +203,6 @@ def calculate_amount(
             percentage = None
 
         if percentage:
-            # Get balance
             if account_id:
                 balance_result = get_account_balance.invoke({
                     "phone_number": phone_number,
@@ -199,7 +226,6 @@ def calculate_amount(
                     "split_hint": split_hint,
                 }
 
-        # Handle subtraction: "₦10000 minus ₦5000"
         if "minus" in expr or "less" in expr:
             parts = re.split(r"(minus|less)", expr)
             if len(parts) >= 3:
@@ -211,7 +237,7 @@ def calculate_amount(
                     amount = amount1 - amount2
                     return {
                         "success": True,
-                        "amount": max(0, amount),  # Don't allow negative
+                        "amount": max(0, amount),
                         "components": {"amount1": amount1, "amount2": amount2},
                         "currency": "NGN",
                         "expression": expression,
@@ -220,7 +246,6 @@ def calculate_amount(
                 except (ValueError, IndexError):
                     pass
 
-        # If we can't parse, return error
         return {
             "success": False,
             "error": f"Could not parse amount expression: '{expression}'. Please specify a clear amount like '5000' or '5k'.",
@@ -241,7 +266,8 @@ def save_beneficiary(
     name: str,
     account_number: str,
     bank_code: str,
-    bank_name: str = None
+    bank_name: str = "",
+    db_session: Optional[Session] = None
 ) -> Dict[str, Any]:
     """
     Save a new beneficiary for future transfers.
@@ -252,26 +278,114 @@ def save_beneficiary(
         account_number: 10-digit account number
         bank_code: Bank code (e.g., "058" for GTBank)
         bank_name: Optional bank name (e.g., "GTBank")
+        db_session: Optional existing database session to reuse
 
     Returns:
         Dictionary with saved beneficiary details.
     """
+    owns_session = db_session is None
+
     try:
-        # TODO: Replace with actual database save
-        # For now, just return success
+        if owns_session:
+            # Create new UnitOfWork with transaction management
+            with UnitOfWork() as uow:
+                user = uow.users.get_by_phone(phone_number)
 
-        beneficiary_id = f"ben_{int(datetime.now().timestamp())}"
+                if not user:
+                    return {
+                        "success": False,
+                        "error": "User not found. Please complete onboarding first."
+                    }
 
-        return {
-            "success": True,
-            "beneficiary_id": beneficiary_id,
-            "name": name,
-            "account_number": account_number,
-            "bank_code": bank_code,
-            "bank_name": bank_name or "Unknown",
-            "message": f"{name} has been saved as a beneficiary for future transfers"
-        }
+                # Check if beneficiary already exists
+                from shared.database.models import Beneficiary
+                existing = uow.db.query(Beneficiary).filter(
+                    Beneficiary.user_id == user.id,
+                    Beneficiary.account_number == account_number,
+                    Beneficiary.bank_code == bank_code
+                ).first()
+
+                if existing:
+                    return {
+                        "success": True,
+                        "beneficiary_id": str(existing.id),
+                        "name": existing.account_name,
+                        "account_number": existing.account_number,
+                        "bank_code": existing.bank_code,
+                        "bank_name": existing.bank_name,
+                        "message": f"{existing.account_name} is already saved as a beneficiary"
+                    }
+
+                beneficiary = uow.beneficiaries.create(
+                    user_id=user.id,
+                    account_name=name,
+                    alias=None,
+                    account_number=account_number,
+                    bank_code=bank_code,
+                    bank_name=bank_name or "Unknown"
+                )
+
+                uow.commit()
+
+                return {
+                    "success": True,
+                    "beneficiary_id": str(beneficiary.id),
+                    "name": beneficiary.account_name,
+                    "account_number": beneficiary.account_number,
+                    "bank_code": beneficiary.bank_code,
+                    "bank_name": beneficiary.bank_name,
+                    "message": f"{name} has been saved as a beneficiary for future transfers"
+                }
+        else:
+            user_repo = UserRepository(db_session)
+            user = user_repo.get_by_phone(phone_number)
+
+            if not user:
+                return {
+                    "success": False,
+                    "error": "User not found. Please complete onboarding first."
+                }
+
+            existing = db_session.query(Beneficiary).filter(
+                Beneficiary.user_id == user.id,
+                Beneficiary.account_number == account_number,
+                Beneficiary.bank_code == bank_code
+            ).first()
+
+            if existing:
+                return {
+                    "success": True,
+                    "beneficiary_id": str(existing.id),
+                    "name": existing.account_name,
+                    "account_number": existing.account_number,
+                    "bank_code": existing.bank_code,
+                    "bank_name": existing.bank_name,
+                    "message": f"{existing.account_name} is already saved as a beneficiary"
+                }
+
+            beneficiary_repo = BeneficiaryRepository(db_session)
+            beneficiary = beneficiary_repo.create(
+                user_id=user.id,
+                account_name=name,
+                alias=None,
+                account_number=account_number,
+                bank_code=bank_code,
+                bank_name=bank_name or "Unknown"
+            )
+
+            db_session.flush()
+
+            return {
+                "success": True,
+                "beneficiary_id": str(beneficiary.id),
+                "name": beneficiary.account_name,
+                "account_number": beneficiary.account_number,
+                "bank_code": beneficiary.bank_code,
+                "bank_name": beneficiary.bank_name,
+                "message": f"{name} has been saved as a beneficiary for future transfers"
+            }
     except Exception as e:
+        print(f"⚠️  Error saving beneficiary: {e}")
         return {
             "success": False,
             "error": f"Failed to save beneficiary: {str(e)}"

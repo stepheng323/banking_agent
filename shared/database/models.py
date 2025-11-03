@@ -69,3 +69,27 @@ class Account(Base):
 
     def __repr__(self):
         return f"<Account(id={self.id}, bank={self.bank_name}, number={self.account_number})>"
+
+
+class Beneficiary(Base):
+    """Beneficiary database model."""
+
+    __tablename__ = "beneficiaries"
+
+    id = Column(UUID(as_uuid=True), primary_key=True,
+                default=uuid.uuid4, index=True)
+    user_id = Column(UUID(as_uuid=True),
+                     ForeignKey("users.id", name="fk_beneficiaries_user_id"),
+                     nullable=False, index=True)
+    account_name = Column(String, nullable=False)
+    alias = Column(String, nullable=True)
+    account_number = Column(String, nullable=False)
+    bank_code = Column(String, nullable=False)
+    bank_name = Column(String, nullable=False)
+    created_at = Column(DateTime, server_default=text("now()"), nullable=False)
+    updated_at = Column(
+        DateTime, server_default=text("now()"), onupdate=datetime.utcnow, nullable=False
+    )
+
+    def __repr__(self):
+        return f"<Beneficiary(id={self.id}, name={self.name}, account_number={self.account_number}, bank_code={self.bank_code}, bank_name={self.bank_name})>"

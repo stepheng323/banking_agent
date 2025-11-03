@@ -47,7 +47,7 @@ class QueryAgent(BaseAgent):
             },
         )
         graph.add_edge("tools", "llm")
-        return graph.compile(checkpointer=self.memory)
+        return graph  # Return uncompiled - will be compiled in _ensure_checkpointer()
 
     async def _call_llm(self, state: AgentState) -> AgentState:
         """Call LLM with conversation for queries."""
@@ -168,6 +168,9 @@ class QueryAgent(BaseAgent):
 
     async def invoke(self, phone_number: str, message: str, message_id: str) -> str:
         """Invoke the query agent."""
+        # Ensure checkpointer is ready
+        await self._ensure_checkpointer()
+        
         initial_state: AgentState = {
             "phone_number": phone_number,
             "message": message,

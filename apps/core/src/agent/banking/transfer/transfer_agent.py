@@ -27,8 +27,10 @@ class TransferAgent(BaseAgent):
     def __init__(self, llm: ChatOpenAI | None = None) -> None:
         temp_llm = llm or ChatOpenAI(model="gpt-4o-mini", temperature=0)
 
+        # Pass None for beneficiary_repo - will be created per-request with fresh session
         self.intent_nodes = IntentNodes(temp_llm)
-        self.enrichment_nodes = EnrichmentNodes(temp_llm)
+        self.enrichment_nodes = EnrichmentNodes(
+            temp_llm, beneficiary_repo=None)
         self.validation_nodes = ValidationNodes(temp_llm)
         self.clarification_nodes = ClarificationNodes(temp_llm)
         self.execution_nodes = ExecutionNodes(temp_llm)
@@ -50,21 +52,49 @@ class TransferAgent(BaseAgent):
         if hasattr(self.confirmation_nodes, 'llm'):
             self.confirmation_nodes.llm = self.llm
 
+    def _trim_message_history(self, state: TransferState, max_messages: int = 10) -> None:
+        """
+        Trim message history to prevent context bloat.
+
+        Keeps only the most recent N messages (default 10 = 5 conversation turns).
+        This reduces LLM costs and improves response times.
+        """
+        messages = state.get("messages", [])
+        if messages and len(messages) > max_messages:
+            # Keep only the last N messages
+            state["messages"] = messages[-max_messages:]
+            print(
+                f"   ✂️  Trimmed message history: {len(messages)} → {len(state['messages'])} messages")
+
     def _route_entry(self, state: TransferState) -> str:
         """Conditional entry point: check if continuing a conversation or starting new."""
+        # Trim message history to prevent context bloat
+        self._trim_message_history(state, max_messages=10)
+
         awaiting = state.get("awaiting_clarification")
         pending = state.get("pending_clarification")
-        
-        print(f"🚦 TRANSFER ROUTE ENTRY:")
+        transfer_details = state.get("transfer_details", {})
+        has_recipient_data = bool(transfer_details.get(
+            "recipient", {}).get("account_number"))
+
+        print("🚦 TRANSFER ROUTE ENTRY:")
         print(f"   awaiting_clarification: {awaiting}")
         print(f"   pending_clarification: {pending}")
+        print(f"   has_recipient_data: {has_recipient_data}")
+        print(f"   message_count: {len(state.get('messages', []))}")
         print(f"   message: {state.get('message', '')[:50]}...")
-        
+
+        # If we're awaiting clarification AND have pending clarification data, parse the response
         if awaiting and pending:
-            print(f"   ✅ Routing to: parse_clarification")
+            print("   ✅ Routing to: parse_clarification (continuation)")
             return "parse_clarification"
-        
-        print(f"   ✅ Routing to: intent_parser")
+
+        # If we already have transfer details with recipient data, skip intent parsing
+        if has_recipient_data and transfer_details:
+            print("   ✅ Routing to: slot_validator (has existing data)")
+            return "slot_validator"
+
+        print("   ✅ Routing to: intent_parser (new conversation)")
         return "intent_parser"
 
     def _build_graph(self) -> Any:
@@ -92,14 +122,14 @@ class TransferAgent(BaseAgent):
         graph.set_conditional_entry_point(
             self._route_entry,
             {
-                "intent_parser": "intent_parser",
+                "intent_parser": "context_enricher",
                 "parse_clarification": "parse_clarification",
             }
         )
 
-        graph.add_edge("intent_parser", "context_enricher")
+        graph.add_edge("context_enricher", "intent_parser")
+        graph.add_edge("intent_parser", "slot_validator")
         graph.add_edge("parse_clarification", "slot_validator")
-        graph.add_edge("context_enricher", "slot_validator")
         graph.add_conditional_edges(
             "slot_validator",
             route_after_slot_validation,
@@ -121,10 +151,13 @@ class TransferAgent(BaseAgent):
             },
         )
         graph.add_edge("confirmation_agent", END)
-        return graph.compile(checkpointer=self.memory)
+        return graph  # Return uncompiled - will be compiled in _ensure_checkpointer()
 
     async def invoke(self, phone_number: str, message: str, message_id: str) -> str:
         """Invoke the transfer agent."""
+        # Ensure checkpointer is ready
+        await self._ensure_checkpointer()
+
         initial_state: TransferState = {
             "phone_number": phone_number,
             "message": message,

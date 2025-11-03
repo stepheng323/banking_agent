@@ -1,64 +1,88 @@
 # ruff: noqa
 # pyright: reportGeneralTypeIssues=false, reportUnknownMemberType=false, reportUnknownArgumentType=false, reportUnknownVariableType=false, reportUnknownParameterType=false, reportMissingTypeStubs=false, reportOptionalOperand=false, reportOptionalMemberAccess=false, reportTypedDictNotRequiredAccess=false, reportUnknownVariableType=false
 """Context enrichment nodes for the transfer agent."""
-from typing import Any, Dict
+from typing import Any, Dict, Optional
+
+from sqlalchemy.orm import Session
 
 from apps.core.src.agent.banking.transfer.transfer_state import TransferState
 from apps.core.src.agent.banking.tools.account_tools import get_user_accounts, get_account_balance
 from apps.core.src.agent.banking.tools.transfer_tools import search_beneficiaries
 
+from shared.repositories import UnitOfWork, UserRepository, BeneficiaryRepository
+
+
+
 
 class EnrichmentNodes:
     """Nodes for loading user context and matching beneficiaries."""
 
-    def __init__(self, llm: Any) -> None:
-        """Initialize with LLM instance."""
+    def __init__(self, llm: Any, beneficiary_repo: Optional[Any] = None) -> None:  # noqa: ARG002
+        """Initialize with LLM instance.
+
+        Args:
+            llm: LLM instance for context enrichment
+            beneficiary_repo: Deprecated, kept for backward compatibility
+        """
         self.llm = llm
 
-    def _find_recipient_by_name(self, phone_number: str, name: str) -> Dict[str, Any]:
-        """Find saved recipients/beneficiaries by name."""
-        # TODO: Query from database
+    def _get_all_beneficiaries(self, phone_number: str, db_session: Optional[Session] = None) -> Dict[str, Any]:
+        """Get all saved beneficiaries for a user.
+
+        Args:
+            phone_number: User's phone number
+            db_session: Optional existing session to reuse. If None, creates a UnitOfWork.
+        """
+        owns_session = db_session is None
+
         try:
-            # Placeholder - saved beneficiaries
-            beneficiaries = [
-                {
-                    "id": "ben_001",
-                    "name": "Mum",
-                    "account_number": "1234567890",
-                    "bank_name": "GTBank",
-                    "bank_code": "058"
-                },
-                {
-                    "id": "ben_002",
-                    "name": "Dad",
-                    "account_number": "0987654321",
-                    "bank_name": "FirstBank",
-                    "bank_code": "011"
-                },
-                {
-                    "id": "ben_003",
-                    "name": "Sister",
-                    "account_number": "1111222233",
-                    "bank_name": "Access Bank",
-                    "bank_code": "044"
-                },
-            ]
+            if owns_session:
+               # Create new UnitOfWork for this operation
+                with UnitOfWork() as uow:
+                    user = uow.users.get_by_phone(phone_number)
 
-            name_lower = name.lower()
-            matches = [
-                b for b in beneficiaries if name_lower in b["name"].lower()]
+                    if not user:
+                        return {"success": True, "matches": [], "count": 0}
 
-            if not matches:
-                return {
-                    "success": False,
-                    "error": f"No recipient found matching '{name}'",
-                    "suggestion": "Try using their full name or add them as a beneficiary first"
-                }
+                    beneficiaries = uow.beneficiaries.get_all_for_user(
+                        str(user.id))
+                    beneficiaries_list = []
+                    for ben in beneficiaries:
+                        beneficiaries_list.append({
+                            "id": str(ben.id),
+                            "name": ben.account_name,
+                            "nickname": ben.alias or ben.account_name,
+                            "account_number": ben.account_number,
+                            "bank_name": ben.bank_name,
+                            "bank_code": ben.bank_code,
+                        })
 
-            return {"success": True, "matches": matches, "count": len(matches)}
+                    return {"success": True, "matches": beneficiaries_list, "count": len(beneficiaries_list)}
+            else:
 
+                user_repo = UserRepository(db_session)
+                beneficiary_repo = BeneficiaryRepository(db_session)
+
+                user = user_repo.get_by_phone(phone_number)
+
+                if not user:
+                    return {"success": True, "matches": [], "count": 0}
+
+                beneficiaries = beneficiary_repo.get_all_for_user(str(user.id))
+                beneficiaries_list = []
+                for ben in beneficiaries:
+                    beneficiaries_list.append({
+                        "id": str(ben.id),
+                        "name": ben.account_name,
+                        "nickname": ben.alias or ben.account_name,
+                        "account_number": ben.account_number,
+                        "bank_name": ben.bank_name,
+                        "bank_code": ben.bank_code,
+                    })
+
+                return {"success": True, "matches": beneficiaries_list, "count": len(beneficiaries_list)}
         except Exception as e:
-            return {"success": False, "error": f"Search failed: {str(e)}"}
+            return {"success": False, "error": f"Failed to load beneficiaries: {str(e)}", "matches": [], "count": 0}
 
     async def context_enricher_node(self, state: TransferState) -> TransferState:
         """Load user context and match beneficiaries."""
@@ -68,6 +92,13 @@ class EnrichmentNodes:
         transfer_details = state.get("transfer_details", {})
         recipients = transfer_details.get("recipients") or []
         current_index = transfer_details.get("current_recipient_index", 0)
+
+        all_beneficiaries_result = self._get_all_beneficiaries(phone_number)
+        if all_beneficiaries_result.get("success"):
+            state["all_beneficiaries"] = all_beneficiaries_result.get(
+                "matches", [])
+            print(
+                f"   📋 Loaded {len(state['all_beneficiaries'])} saved beneficiaries for context")
 
         active_recipient = (
             recipients[current_index]
@@ -83,7 +114,9 @@ class EnrichmentNodes:
                 print(f"📊 Loaded {len(state['user_accounts'])} accounts")
 
         if not state.get("user_beneficiaries"):
-            beneficiary_result = self._find_recipient_by_name(phone_number, "")
+            db_session = state.get("_db_session")
+            beneficiary_result = self._get_all_beneficiaries(
+                phone_number, db_session)
             if beneficiary_result.get("success"):
                 state["user_beneficiaries"] = beneficiary_result.get(
                     "matches", [])
@@ -126,7 +159,7 @@ class EnrichmentNodes:
 
                 elif len(matches) == 0:
                     active_recipient["is_new_beneficiary"] = True
-                    print(f"🆕 No match found - treating as new beneficiary")
+                    print("""🆕 No match found - treating as new beneficiary""")
 
         if recipients and 0 <= current_index < len(recipients):
             recipients[current_index] = active_recipient

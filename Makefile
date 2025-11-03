@@ -203,6 +203,28 @@ deps-check: ## Check for outdated dependencies
 	@echo "$(BLUE)🔍 Checking for outdated dependencies...$(RESET)"
 	@pip list --outdated || echo "$(YELLOW)No updates available$(RESET)"
 
+rebuild-venv: ## Rebuild virtual environment from scratch
+	@echo "$(YELLOW)🔄 Rebuilding virtual environment...$(RESET)"
+	@rm -rf .venv
+	@python3.13 -m venv .venv
+	@.venv/bin/pip install --upgrade pip
+	@.venv/bin/pip install -r requirements.txt
+	@echo "$(GREEN)✅ Virtual environment rebuilt successfully!$(RESET)"
+	@echo "$(YELLOW)Run 'source .venv/bin/activate' to activate it$(RESET)"
+
+test-venv: ## Test virtual environment setup
+	@echo "$(BLUE)🧪 Testing virtual environment...$(RESET)"
+	@.venv/bin/python -c "import sys; print('Python:', sys.executable)"
+	@.venv/bin/python -c "import sys; sp=[p for p in sys.path if 'site-packages' in p and '.venv' in p]; print('Site packages:', sp[0] if sp else 'NOT FOUND')"
+	@.venv/bin/python -c "from Crypto.Cipher import AES; print('✅ Crypto module OK')"
+	@.venv/bin/python -c "from langgraph.checkpoint.postgres import PostgresSaver; print('✅ PostgresSaver OK')"
+	@echo "$(GREEN)✅ Virtual environment is working correctly!$(RESET)"
+
+init-checkpoints: ## Initialize LangGraph checkpoint tables in PostgreSQL
+	@echo "$(BLUE)🔄 Initializing checkpoint tables...$(RESET)"
+	@.venv/bin/python -m shared.database.init_checkpoints
+	@echo "$(GREEN)✅ Checkpoint tables initialized!$(RESET)"
+
 # ============================================================================
 # UTILITIES & CLEANUP
 # ============================================================================

@@ -1,10 +1,12 @@
 """Shared application configuration."""
 
 import os
+from pathlib import Path
 from dotenv import load_dotenv
 
-# Load environment variables from .env file
-load_dotenv()
+
+_env_path = Path(__file__).parent.parent.parent / ".env"
+load_dotenv(dotenv_path=_env_path, override=True)
 
 
 class Settings:

@@ -4,6 +4,7 @@
 import os
 from collections.abc import Generator
 
+from langgraph.checkpoint.postgres import PostgresSaver
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -22,7 +23,16 @@ def get_engine():
             raise ValueError("DATABASE_URL environment variable is not set")
         db_url = DATABASE_URL.replace(
             "postgresql://", "postgresql+psycopg://", 1)
-        _engine = create_engine(db_url, echo=False)
+        _engine = create_engine(
+            db_url,
+            echo=False,
+            pool_size=20,
+            max_overflow=10,
+            pool_pre_ping=True,
+            pool_recycle=3600,
+            pool_timeout=30
+        )
+        print("✅ Database connection pool initialized (size=20, max_overflow=10)")
     return _engine
 
 
@@ -48,12 +58,33 @@ def get_db_session() -> Session:
 
 
 def init_db():
+    """Initialize application database tables."""
     try:
         Base.metadata.create_all(bind=get_engine())
         print("✅ Database tables initialized")
     except Exception as e:
         print(f"⚠️  Database initialization error: {e}")
         raise
+
+
+def init_checkpoint_tables():
+    """Initialize LangGraph checkpoint tables for persistent conversation state."""
+    try:
+
+        db_url = os.getenv("DATABASE_URL", "")
+        if not db_url:
+            print("⚠️  DATABASE_URL not set, skipping checkpoint table initialization")
+            return
+
+        print("🔄 Initializing LangGraph checkpoint tables...")
+        # PostgresSaver.from_conn_string() returns a context manager
+        with PostgresSaver.from_conn_string(conn_string=db_url) as checkpointer:
+            checkpointer.setup()
+        print("✅ LangGraph checkpoint tables initialized")
+    except Exception as e:
+        print(f"⚠️  Checkpoint table initialization error: {e}")
+        # Don't raise - checkpoint tables are optional for basic functionality
+        print("   Conversations will not persist across restarts")
 
 
 def drop_db():
