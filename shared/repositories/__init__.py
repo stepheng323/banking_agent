@@ -3,9 +3,11 @@
 from shared.repositories.account_repository import AccountRepository
 from shared.repositories.unit_of_work import UnitOfWork
 from shared.repositories.user_repository import UserRepository
+from shared.repositories.beneficiary_repository import BeneficiaryRepository
 
 __all__ = [
     "UserRepository",
     "AccountRepository",
     "UnitOfWork",
+    "BeneficiaryRepository",
 ]

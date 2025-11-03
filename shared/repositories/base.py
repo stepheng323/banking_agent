@@ -20,16 +20,16 @@ class BaseRepository(Generic[ModelType]):
         """Get a record by ID."""
         return self.db.query(self.model).filter(self.model.id == record_id).first()  # type: ignore[attr-defined]
 
-    def get_all(self, skip: int = 0, limit: int = 100) -> List[ModelType]:
+    def get_all(self, skip: int = 0, limit: int = 20) -> List[ModelType]:
         """Get all records with pagination."""
         return self.db.query(self.model).offset(skip).limit(limit).all()
 
     def create(self, **kwargs: Any) -> ModelType:
         """Create a new record (doesn't commit - handled by UnitOfWork)."""
-        instance = self.model(**kwargs)  # type: ignore[misc]
+        instance = self.model(**kwargs)
         self.db.add(instance)
-        self.db.flush() 
-        return instance  # type: ignore[return-value]
+        self.db.flush()
+        return instance
 
     def update(self, instance: ModelType, **kwargs: Any) -> ModelType:
         """Update an existing record (doesn't commit - handled by UnitOfWork)."""

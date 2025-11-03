@@ -52,7 +52,8 @@ class IntentNodes:
         for recipient in explicit_recipients:
             if not isinstance(recipient, dict):
                 continue
-            cleaned = {k: v for k, v in recipient.items() if v not in (None, "", [])}
+            cleaned = {k: v for k, v in recipient.items()
+                       if v not in (None, "", [])}
             name = cleaned.get("name")
             if name:
                 normalized = str(name).strip()
@@ -68,7 +69,8 @@ class IntentNodes:
 
         if name:
             # Only split names when multiple recipients are implied
-            name_segment = re.split(r"\bthen\b", str(name), flags=re.IGNORECASE)[0]
+            name_segment = re.split(
+                r"\bthen\b", str(name), flags=re.IGNORECASE)[0]
             if not recipients:
                 split_candidates = re.split(
                     r"\s*(?:and|&|,|\+|\band\b|\bplus\b)\s*", name_segment, flags=re.IGNORECASE
@@ -118,7 +120,22 @@ class IntentNodes:
 
         user_message = state["message"]
 
-        prompt = INTENT_PARSER_PROMPT.format(user_message=user_message)
+        all_beneficiaries = state.get("all_beneficiaries", [])
+        beneficiary_context = ""
+
+        if all_beneficiaries:
+            beneficiary_names = [
+                f"- {b.get('nickname', b.get('name', 'Unknown'))} ({b.get('bank_name', 'Bank')})"
+                for b in all_beneficiaries[:5]
+            ]
+            beneficiary_context = f"""Saved beneficiaries (match names even with typos):
+{chr(10).join(beneficiary_names)}
+"""
+
+        prompt = INTENT_PARSER_PROMPT.format(
+            user_message=user_message,
+            beneficiary_context=beneficiary_context
+        )
         messages = [HumanMessage(content=prompt)]
 
         try:
@@ -171,8 +188,38 @@ class IntentNodes:
                     if value is not None and value != "":
                         state["transfer_details"]["recipient"][key] = value
 
+                # Auto-normalize bank_name to bank_code if bank_name exists but bank_code doesn't
+                recipient_data = state["transfer_details"]["recipient"]
+                bank_name = recipient_data.get("bank_name")
+                bank_code = recipient_data.get("bank_code")
+
+                if bank_name and not bank_code:
+                    from apps.core.src.agent.banking.transfer.utils import normalize_bank_name
+
+                    normalized = normalize_bank_name(bank_name)
+                    if normalized.get("code"):
+                        print(
+                            f"   🏦 Auto-normalized '{bank_name}' → code={normalized['code']}")
+                        recipient_data["bank_code"] = normalized["code"]
+                        recipient_data["bank_name"] = normalized.get(
+                            "normalized", bank_name)
+
             recipients = self._extract_recipients(parsed_intent)
             if recipients:
+                # Normalize bank names for all recipients
+                from apps.core.src.agent.banking.transfer.utils import normalize_bank_name
+
+                for recipient in recipients:
+                    bank_name = recipient.get("bank_name")
+                    bank_code = recipient.get("bank_code")
+
+                    if bank_name and not bank_code:
+                        normalized = normalize_bank_name(bank_name)
+                        if normalized.get("code"):
+                            recipient["bank_code"] = normalized["code"]
+                            recipient["bank_name"] = normalized.get(
+                                "normalized", bank_name)
+
                 # Ensure recipient dict references the active recipient
                 state["transfer_details"]["recipients"] = recipients
                 state["transfer_details"]["current_recipient_index"] = 0
@@ -180,7 +227,8 @@ class IntentNodes:
                 parsed_intent["recipient"] = recipients[0]
             else:
                 # Fall back to single-recipient workflow
-                single_recipient = state["transfer_details"].get("recipient") or {}
+                single_recipient = state["transfer_details"].get(
+                    "recipient") or {}
                 state["transfer_details"]["recipients"] = [single_recipient]
                 state["transfer_details"]["current_recipient_index"] = 0
 
@@ -196,7 +244,8 @@ class IntentNodes:
                 expression = str(
                     amount_details.get("calculation_expression") or ""
                 ).lower()
-                amount_value = self._normalize_amount_value(amount_details.get("value"))
+                amount_value = self._normalize_amount_value(
+                    amount_details.get("value"))
 
                 if amount_value is not None:
                     amount_details["total_value"] = amount_value
@@ -207,7 +256,8 @@ class IntentNodes:
                     if amount_value is not None:
                         per_value = round(amount_value / participants, 2)
                         # Adjust final participant to absorb rounding remainder
-                        residual = round(amount_value - per_value * (participants - 1), 2)
+                        residual = round(
+                            amount_value - per_value * (participants - 1), 2)
                         amount_details["per_recipient_value"] = per_value
                         amount_details["value"] = per_value
                         amount_details["needs_calculation"] = False
@@ -219,7 +269,8 @@ class IntentNodes:
                             for index, recipient in enumerate(state["transfer_details"]["recipients"])
                         ]
                         state["transfer_details"]["recipients"] = updated_recipients
-                        current_index = state["transfer_details"].get("current_recipient_index", 0)
+                        current_index = state["transfer_details"].get(
+                            "current_recipient_index", 0)
                         state["transfer_details"]["recipient"] = updated_recipients[
                             min(current_index, len(updated_recipients) - 1)
                         ]

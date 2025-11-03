@@ -121,3 +121,42 @@ class PaymentProvider(ABC):
     def supports_status_checks(self) -> bool:
         """Check if the provider supports transaction status checks."""
         return False
+
+    @property
+    def supports_bank_list(self) -> bool:
+        """Check if the provider supports fetching bank lists."""
+        return False
+
+    async def fetch_banks(self, country: str = "NG") -> Dict[str, Any]:
+        """
+        Fetch list of supported banks from the provider.
+
+        Args:
+            country: Country code (e.g., "NG" for Nigeria, "GH" for Ghana)
+
+        Returns:
+            Dictionary with:
+                - success: bool
+                - banks: List[Dict[str, str]] with id, code, and name
+                - count: int (number of banks)
+                - error: str (if failed)
+                - provider: str
+
+        Raises:
+            NotImplementedError: If provider doesn't support bank list fetching
+        """
+        raise NotImplementedError(
+            f"{self.provider_name} does not support bank list fetching")
+
+    async def warm_up_token(self) -> None:
+        """
+        Proactively fetch and cache authentication tokens at startup.
+        Providers that use OAuth or other token-based auth should implement this.
+        """
+        pass  # Default implementation does nothing
+
+    async def shutdown(self) -> None:
+        """
+        Gracefully shutdown the provider, cleaning up resources and background tasks.
+        """
+        pass  # Default implementation does nothing

@@ -1,18 +1,33 @@
 """Prompts for the transfer agent."""
 
 INTENT_PARSER_PROMPT = """You are an intent parser for a banking system.
- Extract transfer information from the user's message.
+Extract transfer information from the user's message. Be tolerant of typos, misspellings, and variations.
 
 User message: "{user_message}"
+
+{beneficiary_context}
+
+TYPO TOLERANCE RULES:
+- Handle common typos in names: "mumm"→"mum", "jhon"→"john", "mumie"→"mummy"
+- Normalize bank names: "GTB", "GT Bank", "GTBank" all mean "GTBank"
+- Handle bank typos: "acces bank"→"Access Bank", "firs bank"→"First Bank", "zeneth"→"Zenith"
+- Parse amounts flexibly: "5k"/"5000"/"five thousand" all mean 5000
+- Match saved beneficiaries with fuzzy matching (names don't need to be exact)
+
+Common Nigerian Banks (normalize to these):
+- GTBank, Access Bank, First Bank, Zenith Bank, UBA, Fidelity Bank, Stanbic IBTC, Union Bank
+- Polaris Bank, Wema Bank, Sterling Bank, FCMB, Ecobank, Keystone Bank
 
 Extract and return JSON with this structure:
 
 {{
     "intent": "money_transfer",
     "recipient": {{
-        "name": "extracted name or alias (e.g., 'mummy', 'John', 'church')",
+        "name": "corrected/normalized name (match to saved beneficiary if similar)",
+        "original_input": "keep original for audit",
         "account_number": "if explicitly mentioned",
-        "bank_name": "if explicitly mentioned"
+        "bank_name": "normalized bank name if mentioned",
+        "confidence": "high|medium|low"
     }},
     "amount": {{
         "value": numeric_value or null,
@@ -27,10 +42,10 @@ Extract and return JSON with this structure:
 }}
 
 Examples:
-- "Send ₦5000 to mummy" → {{"amount": {{"value": 5000}}, "recipient": {{"name": "mummy"}}}}
+- "Send ₦5000 to mumm" → {{"amount": {{"value": 5000}}, "recipient": {{"name": "mum", "original_input": "mumm", "confidence": "high"}}}}
+- "Transfer 10k to jhon GTB" → {{"amount": {{"value": 10000}}, "recipient": {{"name": "john", "original_input": "jhon", "bank_name": "GTBank", "confidence": "high"}}}}
+- "Send to acces bank 0123456789" → {{"recipient": {{"account_number": "0123456789", "bank_name": "Access Bank"}}}}
 - "Pay my tithe" → {{"recipient": {{"name": "tithe"}}, "amount": {{"needs_calculation": true, "calculation_expression": "10% of income"}}}}
-- "Send 5% of my balance to brother" → {{"amount": {{"needs_calculation": true, "calculation_expression": "5% of balance"}}, "recipient": {{"name": "brother"}}, "dependencies": ["check_balance"]}}
-- "Transfer ₦10k to 0123456789 GTBank" → {{"amount": {{"value": 10000}}, "recipient": {{"account_number": "0123456789", "bank_name": "GTBank"}}}}
 
 Return ONLY valid JSON, no explanation or markdown."""
 
@@ -77,13 +92,14 @@ Context: We have the account number, now we need to know which bank.
 
 Write a friendly, conversational question that:
 - Uses a warm, helpful tone
-- Makes it easy to respond (they can use bank name or code)
+- Makes it easy to respond (they can use bank name, abbreviation, or even with typos)
+- Mention common banks to help them
 - Sounds natural
 
 Example tones:
-"Great! Which bank is the account with? You can tell me the bank name like 'GTBank' or 'First Bank'."
+"Great! Which bank is the account with? You can tell me the bank name like 'GTBank', 'First Bank', 'Access', etc."
 
-"Perfect! Now, which bank is this? Just the bank name will do (e.g., GTBank, Access Bank, First Bank)."
+"Perfect! Now, which bank is this? Just tell me the bank - GTBank, Access Bank, First Bank, Zenith, UBA, or any other. Don't worry about spelling!"
 
 Return only the question text.""",
     "amount.value": """You are a friendly Nigerian banking assistant. Generate a warm question asking how much the user wants to send.

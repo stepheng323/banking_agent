@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from shared.database.connection import get_db_session
 from shared.repositories.account_repository import AccountRepository
 from shared.repositories.user_repository import UserRepository
+from shared.repositories.beneficiary_repository import BeneficiaryRepository
 
 
 class UnitOfWork:
@@ -16,6 +17,7 @@ class UnitOfWork:
         self.db: Optional[Session] = None
         self.users: Optional[UserRepository] = None
         self.accounts: Optional[AccountRepository] = None
+        self.beneficiaries: Optional[BeneficiaryRepository] = None
         self._rolled_back = False
 
     def __enter__(self):
@@ -23,6 +25,7 @@ class UnitOfWork:
         self.db = get_db_session()
         self.users = UserRepository(self.db)
         self.accounts = AccountRepository(self.db)
+        self.beneficiaries = BeneficiaryRepository(self.db)
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):

@@ -6,11 +6,12 @@ from apps.core.src.agent.orchestrator.state import OrchestratorState
 class TaskExecutorNode:
     """Executes planned tasks by routing to specialized agents."""
 
-    def __init__(self, execute_task_plan_func, get_context_func, get_graph_func=None):
+    def __init__(self, execute_task_plan_func, get_context_func, get_orchestrator_func=None):
         """Initialize with task execution and context functions."""
         self._execute_task_plan = execute_task_plan_func
         self._get_context = get_context_func
-        self._get_graph = get_graph_func  # Optional: to restore task_plan from checkpoint
+        # Optional: to restore task_plan from checkpoint
+        self._get_orchestrator = get_orchestrator_func
 
     async def __call__(self, state: OrchestratorState) -> OrchestratorState:
         """Execute planned tasks by routing to specialized agents."""
@@ -28,10 +29,14 @@ class TaskExecutorNode:
         print(f"   Context active_agent: {context.active_agent}")
 
         # If task_plan is empty but we're continuing, try to restore from checkpoint
-        if not task_plan and context.awaiting_clarification and self._get_graph:
+        if not task_plan and context.awaiting_clarification and self._get_orchestrator:
             try:
+                # Ensure the orchestrator's checkpointer is initialized
+                orchestrator = self._get_orchestrator()
+                await orchestrator._ensure_checkpointer()
+
                 config = {"configurable": {"thread_id": phone_number}}
-                existing_state = await self._get_graph().aget_state(config)
+                existing_state = await orchestrator.graph.aget_state(config)
                 if existing_state and existing_state.values:
                     checkpointed_plan = existing_state.values.get("task_plan")
                     if checkpointed_plan:

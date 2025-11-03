@@ -131,14 +131,12 @@ class ClarificationNodes:
             elif missing_slot == "source_account.account_id":
                 accounts = state.get("user_accounts", []) or []
 
-                # Format accounts list according to specification
                 lines = ["*Which account would you like to use?*", ""]
                 for index, account in enumerate(accounts):
                     account_number = account.get("account_number", "")
                     bank_name = account.get("bank_name", account.get(
                         "account_name", "Unknown Bank"))
 
-                    # Get last 4 digits
                     last_four_digits = account_number[-4:] if len(
                         account_number) >= 4 else "****"
                     masked_account_number = f"(...{last_four_digits})"
@@ -194,11 +192,9 @@ class ClarificationNodes:
             transfer_details.get("current_recipient_index", 0),
         )
 
-        # Get active recipient - ensure we're working with existing data, not creating new dict
         if recipients and 0 <= current_index < len(recipients):
             active_recipient = recipients[current_index]
         else:
-            # Ensure we have a reference to the actual recipient dict in transfer_details
             if "recipient" not in transfer_details or not transfer_details["recipient"]:
                 transfer_details["recipient"] = {}
             active_recipient = transfer_details["recipient"]
@@ -247,8 +243,6 @@ Return only valid JSON."""
                 print(f"Error parsing selection: {exc}")
 
         elif clarification_type == "recipient.account_number":
-            # Comprehensive extraction: user might provide ALL details at once
-            # e.g., "0760505261 access bank 5000" or "0760505261 GTBank ₦10,000"
             missing_slots = state.get("missing_slots", [])
             accounts = state.get("user_accounts", []) or []
 
@@ -304,10 +298,8 @@ Return ONLY valid JSON, no explanation."""
             try:
                 parsed = json.loads(response_text)
 
-                # Extract account number
                 if parsed.get("account_number"):
                     active_recipient["account_number"] = parsed["account_number"]
-                    # Sync with recipients list if it exists
                     if recipients and 0 <= current_index < len(recipients):
                         recipients[current_index]["account_number"] = parsed["account_number"]
                     if "recipient.account_number" in missing_slots:
@@ -316,14 +308,12 @@ Return ONLY valid JSON, no explanation."""
                         print(
                             f"✅ Account number extracted: {parsed['account_number']}")
 
-                # Extract bank information
                 if parsed.get("bank_name") or parsed.get("bank_code"):
                     if parsed.get("bank_code"):
                         active_recipient["bank_code"] = parsed["bank_code"]
                     if parsed.get("bank_name"):
                         active_recipient["bank_name"] = parsed["bank_name"]
 
-                    # Sync with recipients list if it exists
                     if recipients and 0 <= current_index < len(recipients):
                         if parsed.get("bank_code"):
                             recipients[current_index]["bank_code"] = parsed["bank_code"]
@@ -336,10 +326,8 @@ Return ONLY valid JSON, no explanation."""
                         print(
                             f"✅ Bank information also extracted: {parsed.get('bank_name', parsed.get('bank_code', ''))}")
 
-                # Extract amount if provided
                 amount_data = parsed.get("amount", {})
                 if amount_data.get("value") or amount_data.get("expression"):
-                    # Use calculate_amount tool for intelligent parsing
                     phone_number = state["phone_number"]
                     account_id = accounts[0]["id"] if len(
                         accounts) == 1 else None
@@ -379,7 +367,6 @@ Return ONLY valid JSON, no explanation."""
                 traceback.print_exc()
 
         elif clarification_type == "recipient.bank_code":
-            # Check if user also provided amount or other info
             missing_slots = state.get("missing_slots", [])
             accounts = state.get("user_accounts", []) or []
 
@@ -395,7 +382,6 @@ Return ONLY valid JSON, no explanation."""
                 if key in response_lower:
                     active_recipient["bank_code"] = value
                     active_recipient["bank_name"] = key.title() + " Bank"
-                    # Sync with recipients list if it exists
                     if recipients and 0 <= current_index < len(recipients):
                         recipients[current_index]["bank_code"] = value
                         recipients[current_index]["bank_name"] = key.title() + \
@@ -425,13 +411,11 @@ Return JSON: {{"bank_code": "<code>", "bank_name": "<name>", "amount": {{"value"
                     active_recipient["bank_code"] = parsed["bank_code"]
                     active_recipient["bank_name"] = parsed.get(
                         "bank_name", "").title()
-                    # Sync with recipients list if it exists
                     if recipients and 0 <= current_index < len(recipients):
                         recipients[current_index]["bank_code"] = parsed["bank_code"]
                         recipients[current_index]["bank_name"] = parsed.get(
                             "bank_name", "").title()
 
-                    # Check if amount was also provided
                     amount_data = parsed.get("amount", {})
                     if amount_data.get("value") or amount_data.get("expression"):
                         phone_number = state["phone_number"]
@@ -548,19 +532,15 @@ Extract the selected option index (0-based). Return JSON: {{"selected_index": <n
             except Exception as exc:
                 print(f"Error parsing account selection: {exc}")
 
-        # Ensure recipient data is properly synced - create a new dict to ensure it's saved
-        # Create copy to ensure persistence
         recipient_data = dict(active_recipient)
 
         if recipients and 0 <= current_index < len(recipients):
             recipients[current_index] = recipient_data
             transfer_details["recipients"] = recipients
             transfer_details["current_recipient_index"] = current_index
-        # Always update the main recipient field with the copy
         transfer_details["recipient"] = recipient_data
         state["transfer_details"] = transfer_details
 
-        # Debug: Print what we extracted
         print(
             f"📋 Parsed recipient: account={recipient_data.get('account_number')}, bank={recipient_data.get('bank_code')}, bank_name={recipient_data.get('bank_name')}")
         print(

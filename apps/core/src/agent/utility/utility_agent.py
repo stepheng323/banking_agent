@@ -7,7 +7,6 @@ from typing import Any
 from langchain_openai import ChatOpenAI
 from langgraph.graph.state import StateGraph
 from langgraph.graph.graph import END
-from langgraph.checkpoint.memory import MemorySaver
 
 from apps.core.src.agent.core.base_agent import BaseAgent
 from apps.core.src.agent.utility.utility_state import UtilityState
@@ -17,6 +16,7 @@ class UtilityAgent(BaseAgent):
     """Utility Agent for handling airtime and data bundle purchases."""
 
     def __init__(self, llm: ChatOpenAI | None = None) -> None:
+        """Initialize utility agent with PostgreSQL checkpointer."""
         super().__init__(llm=llm, model="gpt-4o-mini", temperature=0)
 
     def _build_graph(self) -> Any:
@@ -46,10 +46,13 @@ class UtilityAgent(BaseAgent):
         graph.set_entry_point("placeholder")
         graph.add_edge("placeholder", END)
 
-        return graph.compile(checkpointer=self.memory)
+        return graph  # Return uncompiled - will be compiled in _ensure_checkpointer()
 
     async def invoke(self, phone_number: str, message: str, message_id: str) -> str:
         """Invoke the utility agent."""
+        # Ensure checkpointer is ready
+        await self._ensure_checkpointer()
+        
         initial_state: UtilityState = {
             "phone_number": phone_number,
             "message": message,

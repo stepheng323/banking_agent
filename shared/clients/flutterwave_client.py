@@ -33,7 +33,6 @@ class FlutterwaveClient(PaymentProvider):
         Raises:
             ValueError: If OAuth2 credentials are not configured
         """
-        # OAuth2 credentials (required)
         self.client_id = client_id or getattr(
             settings, "flutterwave_client_id", None)
         self.client_secret = client_secret or getattr(
@@ -50,10 +49,11 @@ class FlutterwaveClient(PaymentProvider):
         )
         self.base_url = FLUTTERWAVE_SANDBOX_URL if self.use_sandbox else FLUTTERWAVE_BASE_URL
 
-        # Token caching
         self._access_token: Optional[str] = None
         self._token_expires_at: float = 0.0
         self._refresh_token: Optional[str] = None
+        self._token_refresh_task: Optional[asyncio.Task] = None
+        self._is_shutting_down: bool = False
 
     @property
     def provider_name(self) -> str:
@@ -74,6 +74,158 @@ class FlutterwaveClient(PaymentProvider):
     def supports_status_checks(self) -> bool:
         """Flutterwave supports transaction status checks."""
         return True
+
+    @property
+    def supports_bank_list(self) -> bool:
+        """Flutterwave supports fetching bank lists."""
+        return True
+
+    @property
+    def access_token(self) -> Optional[str]:
+        """Get the current access token (may be expired)."""
+        return self._access_token
+
+    async def ensure_valid_token(self) -> str:
+        """
+        Ensure we have a valid access token, refreshing if necessary.
+
+        Returns:
+            Valid access token
+        """
+        return await self._get_access_token()
+
+    async def warm_up_token(self) -> None:
+        """
+        Proactively fetch and cache the OAuth token at startup.
+        Also starts a background task to keep the token fresh.
+        """
+        try:
+            await self._get_access_token()
+            print("✅ Flutterwave OAuth token warmed up and ready")
+
+            if not self._token_refresh_task or self._token_refresh_task.done():
+                self._token_refresh_task = asyncio.create_task(
+                    self._token_refresh_background_task()
+                )
+                print("   🔄 Background token refresh task started")
+        except Exception as e:
+            print(f"⚠️  Failed to warm up token: {e}")
+
+    async def shutdown(self) -> None:
+        """
+        Gracefully shutdown the client, canceling background tasks.
+        """
+        self._is_shutting_down = True
+        if self._token_refresh_task and not self._token_refresh_task.done():
+            self._token_refresh_task.cancel()
+            try:
+                await self._token_refresh_task
+            except asyncio.CancelledError:
+                pass
+        print("✅ Flutterwave client shut down gracefully")
+
+    async def _token_refresh_background_task(self) -> None:
+        """
+        Background task to proactively refresh the OAuth token before it expires.
+        Runs continuously until shutdown.
+        """
+        while not self._is_shutting_down:
+            try:
+                current_time = time.time()
+
+                if current_time >= (self._token_expires_at - 120):
+                    print("🔄 Proactively refreshing OAuth token...")
+                    await self._get_access_token()
+                    print("✅ OAuth token refreshed in background")
+
+                await asyncio.sleep(60)
+
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                print(f"⚠️  Background token refresh error: {e}")
+                await asyncio.sleep(120)
+
+    async def fetch_banks(self, country: str = "NG") -> Dict[str, Any]:
+        """
+        Fetch list of supported banks from Flutterwave.
+
+        Args:
+            country: Country code (e.g., "NG" for Nigeria, "GH" for Ghana)
+
+        Returns:
+            Dictionary with:
+                - success: bool
+                - banks: List[Dict[str, str]] with id, code, and name
+                - count: int (number of banks)
+                - error: str (if failed)
+                - provider: str
+        """
+        try:
+            token = await self._get_access_token()
+
+            url = f"{self.base_url}/banks"
+            params = {"country": country}
+            headers = {
+                "accept": "application/json",
+                "authorization": f"Bearer {token}"
+            }
+
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                response = await client.get(
+                    url,
+                    params=params,
+                    headers=headers
+                )
+                response.raise_for_status()
+
+                data = response.json()
+                if data.get("status") == "success":
+                    banks = data.get("data", [])
+                    return {
+                        "success": True,
+                        "banks": banks,
+                        "count": len(banks),
+                        "provider": self.provider_name
+                    }
+
+                error_msg = (
+                    data.get("message")
+                    or data.get("error")
+                    or "Failed to fetch banks"
+                )
+                return {
+                    "success": False,
+                    "banks": [],
+                    "count": 0,
+                    "error": error_msg,
+                    "provider": self.provider_name
+                }
+
+        except httpx.HTTPStatusError as e:
+            error_msg = f"HTTP {e.response.status_code}"
+            try:
+                error_body = e.response.json()
+                error_msg = error_body.get("message", error_msg)
+            except Exception:
+                pass
+
+            return {
+                "success": False,
+                "banks": [],
+                "count": 0,
+                "error": f"API error: {error_msg}",
+                "provider": self.provider_name
+            }
+
+        except Exception as e:
+            return {
+                "success": False,
+                "banks": [],
+                "count": 0,
+                "error": f"Failed to fetch banks: {str(e)}",
+                "provider": self.provider_name
+            }
 
     async def initiate_transfer(
         self,
@@ -110,15 +262,20 @@ class FlutterwaveClient(PaymentProvider):
         Get a valid access token, refreshing if necessary.
 
         Tokens expire in 10 minutes (600 seconds). We refresh when less than 60 seconds remain.
+        This method is called both on-demand and proactively by background task.
         """
         current_time = time.time()
 
-        # Check if we have a valid token (refresh if less than 60 seconds remain)
+        # If token is still valid with at least 60 seconds remaining, return it
         if self._access_token and current_time < (self._token_expires_at - 60):
             return self._access_token
 
-        # Fetch new token
-        print("🔑 Fetching Flutterwave OAuth2 token...")
+        # Need to fetch new token
+        is_refresh = bool(self._access_token)
+        if is_refresh:
+            print("🔄 Refreshing Flutterwave OAuth2 token...")
+        else:
+            print("🔑 Fetching Flutterwave OAuth2 token...")
 
         token_data = {
             "grant_type": "client_credentials",
@@ -138,16 +295,24 @@ class FlutterwaveClient(PaymentProvider):
 
                 access_token = token_response.get("access_token")
                 expires_in = token_response.get(
-                    "expires_in", 600)  # Default to 10 minutes
+                    "expires_in", 600)
                 self._refresh_token = token_response.get("refresh_token")
 
                 if not access_token:
                     raise ValueError("No access_token in OAuth2 response")
 
                 self._access_token = access_token
-                self._token_expires_at = current_time + expires_in - 60
+                self._token_expires_at = current_time + expires_in
 
-                print("✅ Flutterwave OAuth2 token obtained")
+                # Calculate actual expiry time for logging
+                expires_in_minutes = expires_in / 60
+                if is_refresh:
+                    print(
+                        f"✅ OAuth2 token refreshed (expires in {expires_in_minutes:.1f} minutes)")
+                else:
+                    print(
+                        f"✅ OAuth2 token obtained (expires in {expires_in_minutes:.1f} minutes)")
+
                 return access_token
 
         except httpx.HTTPStatusError as e:
