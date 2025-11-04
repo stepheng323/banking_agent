@@ -1,5 +1,23 @@
 """State schema for the Transfer Agent."""
-from typing import Literal, List, Optional, TypedDict, NotRequired
+from typing import Annotated, Literal, List, Optional, TypedDict, NotRequired, Any
+from operator import add
+
+
+def merge_transfer_details(existing: Optional[dict], new: Optional[dict]) -> dict:
+    """Custom reducer to merge transfer_details dicts, preserving nested data."""
+    if not existing:
+        return new or {}
+    if not new:
+        return existing
+    # Deep merge: preserve existing nested dicts and update with new values
+    merged = {**existing}
+    for key, value in new.items():
+        if key in merged and isinstance(merged[key], dict) and isinstance(value, dict):
+            # Recursively merge nested dicts
+            merged[key] = {**merged[key], **value}
+        else:
+            merged[key] = value
+    return merged
 
 
 class RecipientDetails(TypedDict):
@@ -53,7 +71,8 @@ class TransferState(TypedDict):
     message_id: str
     messages: NotRequired[List]
 
-    transfer_details: NotRequired[TransferDetails]
+    # Use custom reducer to deep merge transfer_details across updates
+    transfer_details: NotRequired[Annotated[dict, merge_transfer_details]]
     conversation_stage: NotRequired[
         Literal[
             "parsing",
@@ -69,14 +88,19 @@ class TransferState(TypedDict):
 
     missing_slots: NotRequired[List[str]]
     clarifications_needed: NotRequired[List[dict]]
-    execution_plan: NotRequired[Optional[List[dict]]]
-    validation_result: NotRequired[Optional[dict]]
+    execution_plan: NotRequired[Annotated[Optional[List[dict]], add]]
+    validation_result: NotRequired[Annotated[Optional[dict],
+                                             merge_transfer_details]]
     dependencies: NotRequired[List[str]]
 
-    user_accounts: NotRequired[Optional[List[dict]]]
-    user_beneficiaries: NotRequired[Optional[List[dict]]]
+    # Parallel execution support: use reducers to merge results from concurrent nodes
+    user_accounts: NotRequired[Annotated[List[dict], add]]
+    user_beneficiaries: NotRequired[Annotated[List[dict], add]]
+    all_beneficiaries: NotRequired[Annotated[List[dict], add]]
 
-    pending_clarification: NotRequired[Optional[dict]]
+    # Use custom reducer for dict fields to preserve across updates
+    pending_clarification: NotRequired[Annotated[Optional[dict],
+                                                 merge_transfer_details]]
     waiting_for_user_response: NotRequired[bool]
     waiting_for_confirmation: NotRequired[bool]
 
@@ -84,3 +108,6 @@ class TransferState(TypedDict):
     clarification_type: NotRequired[Optional[str]]
 
     response: NotRequired[Optional[str]]
+
+    # Outbox for deferred side-effects (e.g., WhatsApp flows). Append-only via reducer
+    outbox_messages: NotRequired[Annotated[List[dict], add]]

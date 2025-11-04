@@ -4,7 +4,7 @@
 import json
 from typing import Any
 
-from langchain_core.messages import HumanMessage, AIMessage
+from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 
 from apps.core.src.agent.banking.transfer.transfer_state import TransferState
 from apps.core.src.agent.banking.transfer.prompts import CLARIFICATION_PROMPTS
@@ -183,7 +183,7 @@ class ClarificationNodes:
 
         user_response = state["message"]
         pending = state.get("pending_clarification", {})
-        clarification_type = pending.get("type")
+        clarification_type = pending.get("type") or state.get("clarification_type")
 
         transfer_details = state.get("transfer_details", {}) or {}
         recipients = transfer_details.get("recipients") or []
@@ -202,6 +202,100 @@ class ClarificationNodes:
         if not state.get("messages"):
             state["messages"] = []
         state["messages"].append(HumanMessage(content=user_response))
+
+        # Check for cancel intent for ALL clarification types (not just PIN)
+        # Use LLM to detect cancel (multilingual, any phrasing)
+        cancel_keywords = ["cancel", "abort", "stop", "nevermind", "never mind", "quit", "disregard"]
+        user_response_lower = user_response.lower().strip()
+        has_cancel_keyword = any(kw in user_response_lower for kw in cancel_keywords)
+        
+        if has_cancel_keyword:
+            # Use LLM to confirm cancel intent (handles edge cases and multilingual)
+            cancel_system_prompt = (
+                "You are a strict intent classifier. Return ONLY compact JSON:\n"
+                "{\"cancel\": true|false}\n"
+                "Determine if the user intends to cancel/abort/stop the current operation in ANY language."
+            )
+            
+            try:
+                result = await self.llm.ainvoke([
+                    SystemMessage(content=cancel_system_prompt),
+                    HumanMessage(content=user_response),
+                ])
+                content = getattr(result, "content", "") or "{}"
+                start = content.find("{")
+                end = content.rfind("}")
+                is_cancel = False
+                if start != -1 and end != -1 and end > start:
+                    payload = json.loads(content[start:end+1])
+                    is_cancel = bool(payload.get("cancel", False))
+                
+                if is_cancel:
+                    print(f"   ✅ LLM detected cancel intent (clarification_type: {clarification_type})")
+                    state["response"] = "Transfer cancelled. Is there anything else I can help you with?"
+                    state["awaiting_clarification"] = False
+                    state["clarification_type"] = None
+                    state["waiting_for_confirmation"] = False
+                    state["waiting_for_user_response"] = False
+                    state["conversation_stage"] = "completed"
+                    state["pending_clarification"] = None
+                    # Clear transfer details to fully reset
+                    state["transfer_details"] = {}
+                    state["missing_slots"] = []
+                    print(f"   🔄 Cancel state set: conversation_stage=completed, awaiting_clarification=False")
+                    return state
+            except Exception as exc:
+                print(f"   ⚠️  LLM cancel detection failed: {exc}")
+                # Fallback: if cancel keyword found, assume cancel
+                if has_cancel_keyword:
+                    print(f"   ✅ Cancel keyword detected (fallback), cancelling transfer")
+                    state["response"] = "Transfer cancelled. Is there anything else I can help you with?"
+                    state["awaiting_clarification"] = False
+                    state["clarification_type"] = None
+                    state["waiting_for_confirmation"] = False
+                    state["waiting_for_user_response"] = False
+                    state["conversation_stage"] = "completed"
+                    state["pending_clarification"] = None
+                    state["transfer_details"] = {}
+                    state["missing_slots"] = []
+                    print(f"   🔄 Cancel state set (fallback): conversation_stage=completed, awaiting_clarification=False")
+                    return state
+
+        # Special handling: while waiting for PIN in WhatsApp Flow
+        # If we reach here, cancel was not detected (already handled above)
+        if clarification_type == "pin_confirmation":
+            # Not cancel - remind user to use PIN prompt
+            state["response"] = "Please use the secure PIN prompt I sent to authorize the transfer. Reply 'cancel' to stop."
+            state["conversation_stage"] = "confirming"
+            state["waiting_for_confirmation"] = True
+            # Do not continue the pipeline this turn
+            return state
+
+        if clarification_type == "pending_switch_confirmation":
+            new_instruction = (state.get("pending_clarification") or {}).get("new_instruction", "")
+            msg = (user_response or "").strip().lower()
+            if msg in {"new", "switch", "latest"}:
+                state["awaiting_clarification"] = False
+                state["clarification_type"] = None
+                state["waiting_for_confirmation"] = False
+                state["pending_clarification"] = None
+                state["conversation_stage"] = "parsing"
+                state["message"] = new_instruction
+                state["response"] = "Okay, we’ll switch to your new transfer request."
+                return state
+            if msg in {"old", "continue", "proceed"}:
+                state["response"] = "Okay—please authorize the transfer using the secure PIN prompt I sent."
+                state["awaiting_clarification"] = True
+                state["clarification_type"] = "pin_confirmation"
+                state["waiting_for_confirmation"] = True
+                state["conversation_stage"] = "confirming"
+                return state
+            state["response"] = "Please reply 'old' to continue the pending transfer, or 'new' to switch to your latest request."
+            state["awaiting_clarification"] = True
+            state["clarification_type"] = "pending_switch_confirmation"
+            state["waiting_for_confirmation"] = False
+            state["conversation_stage"] = "confirming"
+            return state
 
         if clarification_type == "ambiguous_recipient":
             options = pending["options"]
@@ -501,36 +595,127 @@ Return JSON: {{"bank_code": "<code>", "bank_name": "<name>", "amount": {{"value"
                 print(f"❌ Error parsing amount: {error_msg}")
 
         elif clarification_type == "source_account.account_id":
+            # CRITICAL: Preserve amount from checkpoint before parsing account selection
+            # This ensures amount isn't lost when user responds to account selection
+            preserved_amount = transfer_details.get("amount", {})
+            print(f"   🔍 DEBUG: transfer_details keys: {list(transfer_details.keys())}")
+            print(f"   🔍 DEBUG: amount dict: {preserved_amount}")
+            if preserved_amount and preserved_amount.get("value"):
+                print(f"   💾 Preserving amount from checkpoint: ₦{preserved_amount.get('value'):,.2f}")
+            else:
+                print(f"   ⚠️  No amount found in transfer_details! amount={preserved_amount}")
+            
             options = pending.get("options", [])
-            parse_prompt = f"""Parse the user's selection for source account given these options:
-{json.dumps(options, indent=2)}
-User response: "{user_response}"
-Extract the selected option index (0-based). Return JSON: {{"selected_index": <number>}}"""
-            response = await self.llm.ainvoke([HumanMessage(content=parse_prompt)])
-
-            if not hasattr(response, "content") or not isinstance(response.content, str):
-                print("Error: Invalid response from LLM")
-                return state
-            response_text = response.content
-
-            if "```json" in response_text:
-                response_text = response_text.split(
-                    "```json")[1].split("```")[0].strip()
-            try:
-                parsed = json.loads(response_text)
-                selected_index = parsed["selected_index"]
-                if 0 <= selected_index < len(options):
-                    selected = options[selected_index]
-                    transfer_details["source_account"] = {
-                        "account_id": selected.get("id"),
-                        "account_name": selected.get(
-                            "account_name", selected.get("bank_name", "")),
-                        "balance": selected.get("balance"),
-                    }
+            # Build a mapping of bank names and numbers to indices for better matching
+            option_mapping = {}
+            for idx, opt in enumerate(options):
+                bank_name = opt.get("bank_name", "").lower()
+                account_num = opt.get("account_number", "")
+                last4 = account_num[-4:] if len(account_num) >= 4 else ""
+                # Map bank name variations - try common patterns
+                bank_lower = bank_name.lower()
+                if "first" in bank_lower:
+                    option_mapping["first"] = idx
+                    option_mapping["firstbank"] = idx
+                    option_mapping["first bank"] = idx
+                    option_mapping["1st"] = idx
+                    option_mapping["1st bank"] = idx
+                if "gtb" in bank_lower or "gt bank" in bank_lower or "guarantee trust" in bank_lower:
+                    option_mapping["gtb"] = idx
+                    option_mapping["gtbank"] = idx
+                    option_mapping["gt bank"] = idx
+                    option_mapping["guarantee trust"] = idx
+                    option_mapping["guaranty trust"] = idx
+                # Map by number (1, 2, etc.) - prefer exact match
+                option_mapping[str(idx + 1)] = idx
+                option_mapping[str(idx)] = idx
+                # Map by last 4 digits
+                if last4:
+                    option_mapping[last4] = idx
+            
+            user_response_lower = user_response.lower().strip()
+            # Try direct matching first - check for exact matches first, then substring matches
+            matched_index = None
+            # First try exact matches (for numbers)
+            if user_response_lower in option_mapping:
+                matched_index = option_mapping[user_response_lower]
+                print(f"   ✅ Exact match '{user_response_lower}' → option {matched_index}")
+            else:
+                # Then try substring matches (for bank names)
+                for key, idx in option_mapping.items():
+                    if key in user_response_lower:
+                        matched_index = idx
+                        print(f"   ✅ Matched '{key}' to option {idx}")
+                        break
+            
+            if matched_index is not None:
+                selected = options[matched_index]
+                transfer_details["source_account"] = {
+                    "account_id": selected.get("id"),
+                    "account_name": selected.get(
+                        "account_name", selected.get("bank_name", "")),
+                    "balance": selected.get("balance"),
+                }
+                # CRITICAL: Restore preserved amount if it existed
+                if preserved_amount and preserved_amount.get("value"):
+                    transfer_details["amount"] = preserved_amount
+                    print(f"   ✅ Restored amount to transfer_details: ₦{preserved_amount.get('value'):,.2f}")
+                    # Remove amount.value from missing_slots since we restored it
+                    state["missing_slots"] = [s for s in state.get("missing_slots", []) if s != "amount.value"]
                 state["missing_slots"] = [s for s in state.get(
                     "missing_slots", []) if s != "source_account.account_id"]
-            except Exception as exc:
-                print(f"Error parsing account selection: {exc}")
+                print(f"✅ Source account selected: {selected.get('bank_name', 'Unknown')} (...{selected.get('account_number', '')[-4:]})")
+            else:
+                # Fallback to LLM parsing if direct matching fails
+                parse_prompt = f"""Parse the user's selection for source account given these options:
+{json.dumps(options, indent=2)}
+User response: "{user_response}"
+Extract the selected option index (0-based). Return JSON: {{"selected_index": <number>}}
+Common patterns:
+- "first bank" or "1" → index 0
+- "gtbank" or "2" → index 1
+- Bank name matching → corresponding index"""
+                response = await self.llm.ainvoke([HumanMessage(content=parse_prompt)])
+
+                if not hasattr(response, "content") or not isinstance(response.content, str):
+                    print("Error: Invalid response from LLM")
+                    return state
+                response_text = response.content
+
+                if "```json" in response_text:
+                    response_text = response_text.split(
+                        "```json")[1].split("```")[0].strip()
+                try:
+                    parsed = json.loads(response_text)
+                    selected_index = parsed.get("selected_index")
+                    
+                    # Validate selected_index is a valid integer
+                    if selected_index is not None and isinstance(selected_index, int):
+                        if 0 <= selected_index < len(options):
+                            selected = options[selected_index]
+                            transfer_details["source_account"] = {
+                                "account_id": selected.get("id"),
+                                "account_name": selected.get(
+                                    "account_name", selected.get("bank_name", "")),
+                                "balance": selected.get("balance"),
+                            }
+                            # CRITICAL: Restore preserved amount if it existed
+                            if preserved_amount and preserved_amount.get("value"):
+                                transfer_details["amount"] = preserved_amount
+                                print(f"   ✅ Restored amount to transfer_details (LLM path): ₦{preserved_amount.get('value'):,.2f}")
+                                # Remove amount.value from missing_slots since we restored it
+                                state["missing_slots"] = [s for s in state.get("missing_slots", []) if s != "amount.value"]
+                            state["missing_slots"] = [s for s in state.get(
+                                "missing_slots", []) if s != "source_account.account_id"]
+                            print(f"✅ Source account selected (LLM): {selected.get('bank_name', 'Unknown')} (...{selected.get('account_number', '')[-4:]})")
+                        else:
+                            print(f"⚠️  Invalid selected_index: {selected_index} (options length: {len(options)})")
+                    else:
+                        print(f"⚠️  Invalid selected_index type or None: {selected_index}")
+                except Exception as exc:
+                    print(f"Error parsing account selection: {exc}")
+                    import traceback
+                    traceback.print_exc()
 
         recipient_data = dict(active_recipient)
 
@@ -547,8 +732,23 @@ Extract the selected option index (0-based). Return JSON: {{"selected_index": <n
             f"📋 Updated transfer_details recipient: {transfer_details.get('recipient', {}).get('account_number')}, {transfer_details.get('recipient', {}).get('bank_code')}")
         print(f"📋 Remaining missing slots: {state.get('missing_slots', [])}")
 
-        state["pending_clarification"] = None
-        state["waiting_for_user_response"] = False
-        state["awaiting_clarification"] = False
-        state["clarification_type"] = None
+        # Only clear clarification flags if we successfully parsed the response
+        # For source_account.account_id, check if source_account was actually set
+        if clarification_type == "source_account.account_id":
+            if transfer_details.get("source_account", {}).get("account_id"):
+                # Successfully parsed - clear flags
+                state["pending_clarification"] = None
+                state["waiting_for_user_response"] = False
+                state["awaiting_clarification"] = False
+                state["clarification_type"] = None
+            else:
+                # Failed to parse - keep awaiting clarification
+                print("   ⚠️  Account selection parsing failed, keeping awaiting_clarification=True")
+                # Don't clear flags - let clarification_agent ask again
+        else:
+            # For other clarification types, clear flags (they handle their own success/failure)
+            state["pending_clarification"] = None
+            state["waiting_for_user_response"] = False
+            state["awaiting_clarification"] = False
+            state["clarification_type"] = None
         return state

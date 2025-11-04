@@ -22,7 +22,10 @@ class Settings:
         self.whatsapp_flow_private_key_path: str = os.getenv(
             "WHATSAPP_FLOW_PRIVATE_KEY_PATH", "")
         self.onboarding_flow_id: str = os.getenv(
-            "ONBOARDING_FLOW_ID", "1212187900453009")
+            "ONBOARDING_FLOW_ID", "")
+
+        self.pin_confirmation_flow_id: str = os.getenv(
+            "PIN_CONFIRMATION_FLOW_ID", "")
 
         self.app_env: str = os.getenv("APP_ENV", "dev")
         self.app_host: str = os.getenv("APP_HOST", "0.0.0.0")

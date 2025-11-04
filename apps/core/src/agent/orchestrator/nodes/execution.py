@@ -81,11 +81,23 @@ class TaskExecutorNode:
 
         state["task_results"] = task_results
 
-        # Check if any task is awaiting clarification
-        if task_results and task_results[-1].get("awaiting_clarification"):
-            state["awaiting_clarification"] = True
-            state["response"] = task_results[-1].get(
-                "response", "I need a bit more information.")
+        # Always set response from last task result (for both clarification and completion cases)
+        if task_results:
+            last_result = task_results[-1]
+            response_text = last_result.get("response", "")
+            
+            # Set response if available (for both clarification and completion cases)
+            if response_text:
+                state["response"] = response_text
+            
+            # Set awaiting_clarification flag based on task result
+            if last_result.get("awaiting_clarification"):
+                state["awaiting_clarification"] = True
+                state["clarification_type"] = last_result.get("clarification_type")
+            else:
+                # Clear flags if not awaiting clarification (e.g., on cancel/completion)
+                state["awaiting_clarification"] = False
+                state["clarification_type"] = None
 
         return state
 

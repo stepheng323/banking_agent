@@ -38,6 +38,12 @@ class OrchestratorState(TypedDict):
     # Conversation tracking
     awaiting_clarification: NotRequired[bool]
     clarification_type: NotRequired[Optional[str]]
+    pending_clarification: NotRequired[Optional[Dict[str, Any]]]
     is_continuation: NotRequired[bool]
     # Early intent classification result
     quick_classification: NotRequired[Optional[str]]
+    global_cancel: NotRequired[bool]
+    new_transfer: NotRequired[bool]
+    new_instruction: NotRequired[Optional[str]]
+    active_agent: NotRequired[Optional[str]]
+    route_fallback: NotRequired[bool]

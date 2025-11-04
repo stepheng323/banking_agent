@@ -1,14 +1,14 @@
 """Service for invoking specialized agents."""
 
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 from apps.core.src.agent.banking.query.query_agent import QueryAgent
 from apps.core.src.agent.banking.transfer.transfer_router import route_transfer_request
 from apps.core.src.agent.utility.utility_agent import UtilityAgent
+from apps.core.src.agent.utility.utility_state import UtilityState
 from apps.core.src.agent.conversation_context import ConversationContext
 from apps.core.src.agent.core.state import AgentState
-from apps.core.src.agent.banking.transfer.transfer_state import TransferState
-from apps.core.src.agent.utility.utility_state import UtilityState
+from shared.clients.whatsapp_client import WhatsAppClient
 
 
 class AgentInvoker:
@@ -18,6 +18,7 @@ class AgentInvoker:
         self,
         query_agent: QueryAgent,
         utility_agent: UtilityAgent,
+        whatsapp_client: WhatsAppClient,
     ):
         """
         Initialize with specialized agents.
@@ -27,6 +28,7 @@ class AgentInvoker:
         """
         self.query_agent = query_agent
         self.utility_agent = utility_agent
+        self.whatsapp_client = whatsapp_client
 
     async def invoke_query_agent(
         self,
@@ -41,7 +43,6 @@ class AgentInvoker:
             context.switch_agent("query")
 
         try:
-            # Ensure checkpointer is initialized before accessing graph
             await self.query_agent._ensure_checkpointer()
 
             config = {"configurable": {"thread_id": phone_number}}
@@ -103,24 +104,20 @@ class AgentInvoker:
 
         Uses intelligent routing to select between Simple and Intelligent agents.
         """
-        # Only switch if actually changing agents - this preserves awaiting_clarification
-        # when continuing a conversation with the same agent
+
         if context.active_agent != "transfer":
             context.switch_agent("transfer")
         else:
-            # Still update activity timestamp even if not switching
             context.update_activity()
 
         try:
-            print(f"🔍 TRANSFER AGENT INVOCATION:")
+            print("""🔍 TRANSFER AGENT INVOCATION:""")
             print(f"   Message: {instruction[:50]}...")
             print(
                 f"   Context awaiting_clarification: {context.awaiting_clarification}")
             print(
                 f"   Context clarification_type: {context.clarification_type}")
 
-            # Use intelligent router to select appropriate agent
-            # Router now returns structured data including clarification state
             result = await route_transfer_request(phone_number, instruction, message_id)
 
             response = result["response"]
@@ -129,11 +126,38 @@ class AgentInvoker:
             clarification_type = result.get("clarification_type")
             conversation_stage = result.get("conversation_stage", "completed")
 
-            print(f"📤 TRANSFER AGENT RESULT:")
+            print("""📤 TRANSFER AGENT RESULT:""")
             print(f"   Response: {response[:100]}...")
             print(f"   awaiting_clarification: {awaiting_clarification}")
             print(f"   clarification_type: {clarification_type}")
             print(f"   conversation_stage: {conversation_stage}")
+
+            outbox: List[Dict[str, Any]] = result.get(
+                "outbox_messages") or []  # type: ignore[assignment]
+            for msg in outbox:
+                try:
+                    if msg.get("channel") == "whatsapp" and msg.get("type") == "flow":
+                        flow = msg["flow"]
+                        # CRITICAL: 'to' is at the message level, not in flow dict
+                        to_number = msg.get("to") or phone_number
+                        if not to_number:
+                            print(
+                                f"⚠️  No 'to' field in message and phone_number is None, skipping flow")
+                            continue
+                        await self.whatsapp_client.send_flow(
+                            to=to_number,
+                            flow_id=flow.get("flow_id"),
+                            flow_cta=flow.get("flow_cta"),
+                            screen_name=flow.get("screen_name"),
+                            header=flow.get("header"),
+                            text_body=flow.get("text_body"),
+                            footer=flow.get("footer"),
+                            flow_token=flow.get("flow_token"),
+                            flow_action_payload=flow.get(
+                                "flow_action_payload", {})
+                        )
+                except Exception as send_exc:
+                    print(f"⚠️  Failed to dispatch outbox message: {send_exc}")
 
             if awaiting_clarification:
                 context.set_awaiting_clarification(clarification_type)

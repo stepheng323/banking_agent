@@ -42,6 +42,56 @@ class IntentNodes:
         return None
 
     @staticmethod
+    def _extract_amount_from_message(message: str) -> Optional[str]:
+        """Extract amount from user message using regex patterns as fallback."""
+        if not message:
+            return None
+        
+        message_lower = message.lower().strip()
+        
+        # Pattern 1: "5k", "10k", etc. (with optional space before k)
+        pattern_k = r"(\d+(?:,\d+)*(?:\.\d+)?)\s*k\b"
+        match_k = re.search(pattern_k, message_lower)
+        if match_k:
+            return match_k.group(1) + "k"
+        
+        # Pattern 2: "₦5000", "₦5,000", "₦ 5000", etc.
+        pattern_naira = r"₦\s*(\d+(?:,\d+)*(?:\.\d+)?)"
+        match_naira = re.search(pattern_naira, message_lower)
+        if match_naira:
+            return match_naira.group(1)
+        
+        # Pattern 3: "send 5000", "transfer 5k", "send 5,000", etc. (number after transfer keywords)
+        transfer_keywords = ["send", "transfer", "pay"]
+        for keyword in transfer_keywords:
+            # Match: keyword + optional space + number + optional k/thousand
+            pattern = rf"{keyword}\s+(\d+(?:,\d+)*(?:\.\d+)?)\s*(k|thousand)?"
+            match = re.search(pattern, message_lower)
+            if match:
+                amount_str = match.group(1)
+                multiplier = match.group(2)
+                if multiplier and multiplier in ("k", "thousand"):
+                    return amount_str + "k"
+                return amount_str
+        
+        # Pattern 4: Standalone numbers that might be amounts (less reliable, but useful fallback)
+        # Look for numbers in the range 100-1,000,000 (common transfer amounts)
+        pattern_standalone = r"\b(\d{3,7}(?:,\d{3})*)\b"
+        matches = re.findall(pattern_standalone, message)
+        if matches:
+            # Prefer the first reasonable number
+            for match in matches:
+                num_str = match.replace(",", "")
+                try:
+                    num_value = float(num_str)
+                    if 100 <= num_value <= 1000000:
+                        return num_str
+                except ValueError:
+                    continue
+        
+        return None
+
+    @staticmethod
     def _extract_recipients(parsed_intent: Dict[str, Any]) -> List[Dict[str, Any]]:
         """Derive a list of recipients from parsed intent data."""
         explicit_recipients = parsed_intent.get("recipients") or []
@@ -314,6 +364,22 @@ class IntentNodes:
                     "purpose": None,
                     "notes": None,
                 }
+
+        # FALLBACK: If amount wasn't extracted by LLM, try to extract it from raw message
+        amount_details = state.get("transfer_details", {}).get("amount", {})
+        if not amount_details.get("value") and not amount_details.get("needs_calculation"):
+            print("   🔍 Amount missing after LLM parsing, trying fallback extraction...")
+            fallback_amount = self._extract_amount_from_message(user_message)
+            if fallback_amount:
+                print(f"   ✅ Fallback extracted amount: {fallback_amount}")
+                if "transfer_details" not in state:
+                    state["transfer_details"] = {}
+                if "amount" not in state["transfer_details"]:
+                    state["transfer_details"]["amount"] = {"currency": "NGN", "needs_calculation": False}
+                normalized_amount = self._normalize_amount_value(fallback_amount)
+                if normalized_amount:
+                    state["transfer_details"]["amount"]["value"] = normalized_amount
+                    state["transfer_details"]["amount"]["total_value"] = normalized_amount
 
         # Initialize messages list, handling None from checkpoint state
         if not state.get("messages"):
