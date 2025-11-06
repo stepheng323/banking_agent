@@ -87,9 +87,9 @@ test-watch: ## Run tests in watch mode (re-run on file changes)
 run-gateway: ## Run gateway service (FastAPI with uvicorn)
 	@echo "$(GREEN)🚀 Starting Gateway service on port 8000...$(RESET)"
 	@if [ -d ".venv" ] && [ -f ".venv/bin/python" ]; then \
-		PYTHONPATH="$$(pwd)" .venv/bin/python -m uvicorn apps.gateway.main:app --host 0.0.0.0 --port 8000 --reload; \
+		PYTHONPATH="$$(pwd)" .venv/bin/python -m uvicorn apps.gateway.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir apps --reload-dir shared; \
 	elif command -v python3 &> /dev/null; then \
-		PYTHONPATH="$$(pwd)" python3 -m uvicorn apps.gateway.main:app --host 0.0.0.0 --port 8000 --reload; \
+		PYTHONPATH="$$(pwd)" python3 -m uvicorn apps.gateway.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir apps --reload-dir shared; \
 	else \
 		echo "$(RED)❌ Error: Python not found. Please install dependencies first:$(RESET)"; \
 		echo "   make install-dev"; \
@@ -99,9 +99,9 @@ run-gateway: ## Run gateway service (FastAPI with uvicorn)
 run-core: ## Run core agent service (FastAPI with uvicorn + message consumer)
 	@echo "$(GREEN)🚀 Starting Core agent service on port 8001...$(RESET)"
 	@if [ -d ".venv" ] && [ -f ".venv/bin/python" ]; then \
-		PYTHONPATH="$$(pwd)" .venv/bin/python -m uvicorn apps.core.src.main:app --host 0.0.0.0 --port 8001 --reload; \
+		PYTHONPATH="$$(pwd)" .venv/bin/python -m uvicorn apps.core.src.main:app --host 0.0.0.0 --port 8001 --reload --reload-dir apps --reload-dir shared; \
 	elif command -v python3 &> /dev/null; then \
-		PYTHONPATH="$$(pwd)" python3 -m uvicorn apps.core.src.main:app --host 0.0.0.0 --port 8001 --reload; \
+		PYTHONPATH="$$(pwd)" python3 -m uvicorn apps.core.src.main:app --host 0.0.0.0 --port 8001 --reload --reload-dir apps --reload-dir shared; \
 	else \
 		echo "$(RED)❌ Error: Python not found. Please install dependencies first:$(RESET)"; \
 		echo "   make install-dev"; \

@@ -75,33 +75,24 @@ def route_by_state(state: TransferState) -> Literal["end", "collect_amount", "se
     recipient_bank = state.get(
         "recipient_bank_code") or state.get("recipient_bank_name")
 
-    print(f"DEBUG route_by_state: flow_state={flow_state}, response={bool(response)}, amount={amount}, selected_account={bool(selected_account)}, recipient_account={bool(recipient_account)}, recipient_bank={bool(recipient_bank)}")
-
     if response and flow_state in ("collecting_amount", "selecting_account", "collecting_recipient", "error", "confirming"):
-        print(f"DEBUG route_by_state: Early exit due to response")
         return "end"
 
     if not amount:
-        print(f"DEBUG route_by_state: Routing to collect_amount")
         return "collect_amount"
 
     if not selected_account:
-        print(f"DEBUG route_by_state: Routing to select_account")
         return "select_account"
 
     if not recipient_account or not recipient_bank:
-        print(f"DEBUG route_by_state: Routing to collect_recipient")
         return "collect_recipient"
 
     if flow_state == "validating":
-        print(f"DEBUG route_by_state: Routing to confirm")
         return "confirm"
 
     if flow_state == "extracting":
-        print(f"DEBUG route_by_state: Routing to validate")
         return "validate"
 
-    print(f"DEBUG route_by_state: Default end")
     return "end"
 
 
@@ -282,25 +273,14 @@ class TransferFlowGraph:
                     "message": message,
                     "message_id": message_id,
                 })
-                print(
-                    f"DEBUG graph.run: Loaded checkpoint, amount: {input_state.get('amount')}")
             else:
                 # First turn - use initial state
                 input_state = create_initial_state(
                     phone_number, message, message_id)
-                print(
-                    f"DEBUG graph.run: First turn, amount: {input_state.get('amount')}")
-        except Exception as e:
+        except Exception:
             # If state retrieval fails, use initial state
-            print(
-                f"DEBUG graph.run: Could not load checkpoint: {e}, using initial state")
             input_state = create_initial_state(
                 phone_number, message, message_id)
 
-        print(f"DEBUG graph.run: Message: {message}")
-
         final_state = await self.graph.ainvoke(cast(TransferState, input_state), config)
-
-        print(
-            f"DEBUG graph.run: Final state amount: {final_state.get('amount')}")
         return final_state.get("response", "")

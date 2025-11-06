@@ -16,7 +16,6 @@ from shared.utils.serialization import sqlalchemy_to_dict
 from shared.database import Account
 from shared.database.models import Beneficiary
 from shared.config import settings
-from shared.clients.payment_provider import PaymentProvider
 
 
 async def extract_entities(
@@ -33,18 +32,7 @@ async def extract_entities(
     result: TransferExtractionResult = await extractor.extract(state["message"], smart_context=smart_context)
 
     entities = result.entities or SimpleTransferEntities()
-
-    # Debug: Log what was extracted
-    print(f"DEBUG extract_entities: Message='{state['message']}'")
-    print(f"DEBUG extract_entities: Raw result - {result.model_dump_json()}")
-    print(
-        f"DEBUG extract_entities: Extracted - account={entities.recipient_account}, bank={entities.bank_name or entities.bank_code}, amount={entities.amount}")
-
-    # Debug: Log existing amount from checkpoint
     existing_amount = state.get("amount")
-    if existing_amount:
-        print(
-            f"DEBUG extract_entities: Preserving existing amount from checkpoint: {existing_amount}")
 
     # Only update fields that are actually extracted (not None)
     # This preserves existing values from checkpoint state
@@ -57,25 +45,16 @@ async def extract_entities(
 
     # Only update entity fields if they were actually extracted
     if entities.amount is not None:
-        print(
-            f"DEBUG extract_entities: Updating amount from extraction: {entities.amount}")
         updates["amount"] = entities.amount
     elif existing_amount:
-        print(
-            f"DEBUG extract_entities: Keeping existing amount: {existing_amount}")
+        pass  # Keep existing amount
     if entities.recipient_name is not None:
         updates["recipient_name"] = entities.recipient_name
     if entities.recipient_account is not None:
-        print(
-            f"DEBUG extract_entities: Setting recipient_account={entities.recipient_account}")
         updates["recipient_account"] = entities.recipient_account
     if entities.bank_code is not None:
-        print(
-            f"DEBUG extract_entities: Setting recipient_bank_code={entities.bank_code}")
         updates["recipient_bank_code"] = entities.bank_code
     if entities.bank_name is not None:
-        print(
-            f"DEBUG extract_entities: Setting recipient_bank_name={entities.bank_name}")
         updates["recipient_bank_name"] = entities.bank_name
     if entities.source_account_id is not None:
         updates["source_account_id"] = entities.source_account_id
@@ -125,8 +104,18 @@ async def load_user_context(
         "accounts": accounts_dict,
         "beneficiaries": beneficiaries_dict,
     })
-    print(
-        f"DEBUG load_user_context: Loaded {len(accounts_dict)} accounts, {len(beneficiaries_dict)} beneficiaries")
+
+    # Auto-select account if only one account and not already selected
+    if len(accounts_dict) == 1 and not new_state.get("selected_source_account"):
+        from apps.core.src.agent.common.account_selection import pick_source_account
+        source_account_id = new_state.get("source_account_id")
+        source_account_id_str = str(
+            source_account_id) if source_account_id is not None else None
+        selected = pick_source_account(
+            accounts_dict, profile or {}, source_account_id_str)
+        if selected:
+            new_state["selected_source_account"] = selected
+
     return cast(TransferState, new_state)
 
 
@@ -151,18 +140,12 @@ async def select_source_account(
     source_account_id = state.get("source_account_id")
     llm_reply = state.get("llm_reply")
 
-    print(
-        f"DEBUG select_source_account: accounts={len(accounts)}, llm_reply={llm_reply}")
-
     selected, response = AccountSelectionService.select_account(
         accounts=accounts,
         profile=profile or {},
         source_account_id=source_account_id,
         llm_reply=llm_reply,
     )
-
-    print(
-        f"DEBUG select_source_account: selected={selected is not None}, response_length={len(response) if response else 0}")
 
     if selected is not None:
         return {
@@ -258,23 +241,16 @@ async def validate_parallel(
     bank_name = state.get("recipient_bank_name")
 
     if not bank_code and bank_name and bank_cache:
-        print(
-            f"DEBUG validate_parallel: Resolving bank_code from bank_name: {bank_name}")
-
         cache_ready = await bank_cache.ensure_banks_cached(fetch_banks_func)
         if cache_ready:
             resolved_code = await bank_cache.get_bank_code(bank_name)
             if resolved_code:
-                print(
-                    f"DEBUG validate_parallel: Resolved bank_code={resolved_code} for bank_name={bank_name}")
                 bank_code = resolved_code
                 state = {
                     **state,
                     "recipient_bank_code": resolved_code,
                 }
             else:
-                print(
-                    f"DEBUG validate_parallel: Could not resolve bank_code for bank_name={bank_name}")
                 return {
                     **state,
                     "flow_state": "error",
@@ -282,8 +258,6 @@ async def validate_parallel(
                     "validation_errors": ["bank_code_resolution_failed"],
                 }
         else:
-            print(
-                """DEBUG validate_parallel: Bank cache not available, skipping validation""")
             return {
                 **state,
                 "flow_state": "validating",
@@ -311,31 +285,33 @@ async def validate_parallel(
             "validation_errors": ["account_resolution_failed"],
         }
 
-    try:
-        available = float(balance.get("available", 0)) if balance else 0.0
-        amount_value = state.get("amount")
-        if amount_value is None:
-            return state
-        amount = float(amount_value)
-        if available < amount:
-            return {
-                **state,
-                "flow_state": "error",
-                "response": state.get("llm_reply") or "Insufficient balance in the selected account. Choose another account.",
-                "validation_errors": ["insufficient_balance"],
-            }
-        return {
-            **state,
-            "account_resolved": resolved,
-            "balance_available": available,
-            "flow_state": "validating",
-        }
-    except Exception:
-        return {
-            **state,
-            "account_resolved": resolved,
-            "flow_state": "validating",
-        }
+    # Account resolution succeeded - proceed even if balance check failed
+    # Balance check is optional and not all providers support it
+    available = None
+    if balance:
+        try:
+            available = float(balance.get("available", 0)) if balance else None
+            amount_value = state.get("amount")
+            if amount_value is not None and available is not None:
+                amount = float(amount_value)
+                if available < amount:
+                    return {
+                        **state,
+                        "flow_state": "error",
+                        "response": state.get("llm_reply") or "Insufficient balance in the selected account. Choose another account.",
+                        "validation_errors": ["insufficient_balance"],
+                    }
+        except Exception as e:
+            print(f"⚠️  Balance check failed (non-critical): {e}")
+            available = None
+
+    # Proceed with transfer - account is valid
+    return {
+        **state,
+        "account_resolved": resolved,
+        "balance_available": available,
+        "flow_state": "validating",
+    }
 
 
 async def prepare_confirmation(
@@ -406,17 +382,19 @@ async def prepare_confirmation(
             to=state["phone_number"],
             flow_cta="Authorize Transfer",
             flow_id=settings.pin_confirmation_flow_id,
-            screen_name="PIN_ENTRY",
+            screen_name="Pin",
             flow_token=token,
             header="Authorize Transfer",
-            text_body="Enter your 4-digit PIN to authorize this transfer.",
+            text_body=summary,
         )
     except Exception:
         pass
 
+    # Don't return summary as response since it's already in the flow message
+    # Return empty string to avoid duplicate text message
     return {
         **state,
-        "response": summary,
+        "response": "",  # Flow contains the summary, no need for separate text message
         "idempotency_key": idem_key,
         "transfer_status": "pending",
         "flow_state": "confirming",

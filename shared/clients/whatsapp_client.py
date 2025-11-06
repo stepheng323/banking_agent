@@ -161,28 +161,33 @@ class WhatsAppClient:
         """Send a flow to a WhatsApp number."""
         url = self._get_url()
 
+        interactive_payload = {
+            "type": "flow",
+            "header": {"type": "text", "text": header},
+            "body": {"text": text_body},
+            "action": {
+                "name": "flow",
+                "parameters": {
+                    "flow_message_version": "3",
+                    "flow_token": flow_token or "",
+                    "flow_id": flow_id,
+                    "flow_cta": flow_cta,
+                    "flow_action": "navigate",
+                    "flow_action_payload": flow_action_payload or {"screen": screen_name},
+                },
+            },
+        }
+        
+        # Only include footer if it's not empty (WhatsApp requires footer text to have at least 1 character)
+        if footer and footer.strip():
+            interactive_payload["footer"] = {"text": footer}
+        
         payload = {
             "messaging_product": "whatsapp",
             "recipient_type": "individual",
             "to": to,
             "type": "interactive",
-            "interactive": {
-                "type": "flow",
-                "header": {"type": "text", "text": header},
-                "body": {"text": text_body},
-                "footer": {"text": footer},
-                "action": {
-                    "name": "flow",
-                    "parameters": {
-                        "flow_message_version": "3",
-                        "flow_token": flow_token or "",
-                        "flow_id": flow_id,
-                        "flow_cta": flow_cta,
-                        "flow_action": "navigate",
-                        "flow_action_payload": flow_action_payload or {"screen": screen_name},
-                    },
-                },
-            },
+            "interactive": interactive_payload,
         }
 
         try:
