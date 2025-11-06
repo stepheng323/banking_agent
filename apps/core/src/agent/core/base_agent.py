@@ -79,10 +79,18 @@ class BaseAgent(ABC):
         """
         raise NotImplementedError("Subclasses must implement invoke")
 
-    def _get_config(self, phone_number: str, message_id: str) -> dict[str, Any]:
+    def _get_config(self, phone_number: str, message_id: str | None = None) -> dict[str, Any]:
         """Get standard config for graph invocation.
 
-        Uses only thread_id for checkpoint continuity across messages.
-        thread_ts would create a new checkpoint per message, breaking conversation continuity.
+        Uses agent-specific namespace + thread_id for checkpoint isolation.
+        Each agent type gets its own checkpoint namespace to prevent overwrites.
+
+        Args:
+            phone_number: User's phone number
+            message_id: Optional message ID (kept for compatibility, not used)
         """
-        return {"configurable": {"thread_id": phone_number}}
+        # Get agent-specific namespace (e.g., "TransferAgent", "QueryAgent")
+        agent_namespace = self.__class__.__name__
+        # Combine namespace with phone_number for unique thread_id per agent type
+        thread_id = f"{agent_namespace}:{phone_number}"
+        return {"configurable": {"thread_id": thread_id}}

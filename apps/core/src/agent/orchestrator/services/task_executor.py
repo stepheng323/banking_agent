@@ -137,6 +137,37 @@ class TaskExecutor:
                 )
                 continue
 
+            # Safety net: if planner emits an abort task, clear any pending transfer immediately
+            if task.get("action") == "abort_transfer":
+                try:
+                    from apps.core.src.agent.banking.transfer.transfer_agent import TransferAgent
+                    agent = TransferAgent()
+                    await agent._ensure_checkpointer()
+                    config = {"configurable": {"thread_id": f"TransferAgent:{phone_number}"}}
+                    checkpoint = await agent.graph.aget_state(config)
+                    if checkpoint and checkpoint.values:
+                        values = dict(checkpoint.values)
+                        values["awaiting_clarification"] = False
+                        values["clarification_type"] = None
+                        values["waiting_for_confirmation"] = False
+                        values["pending_clarification"] = None
+                        values["conversation_stage"] = "completed"
+                        values["message"] = "GLOBAL_CANCEL"
+                        await agent.graph.ainvoke(values, config)
+                except Exception as exc:  # pragma: no cover - defensive
+                    print(f"⚠️  Failed to clear transfer during abort task: {exc}")
+
+                task["status"] = TaskStatus.COMPLETED.value
+                results.append(
+                    {
+                        "task_id": task["id"],
+                        "executor": "system",
+                        "status": TaskStatus.COMPLETED.value,
+                        "response": "Transfer cancelled. Is there anything else I can help you with?",
+                    }
+                )
+                break
+
             task["status"] = TaskStatus.IN_PROGRESS.value
             executor = task.get("executor", "query")
 

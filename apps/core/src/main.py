@@ -12,7 +12,8 @@ from shared.clients.whatsapp_client import WhatsAppClient
 from shared.database.connection import get_db_session, init_db, init_checkpoint_tables
 from shared.queue.redis_queue import RedisQueue
 from shared.repositories.user_repository import UserRepository
-from shared.cache import BankCacheService
+from shared.cache import UserContextCacheService, BankCacheService
+from shared.cache.redis_client import RedisClient
 from shared.clients.payment_provider_factory import PaymentProviderFactory
 
 from apps.core.src.agent.orchestrator import OrchestratorAgent
@@ -20,13 +21,6 @@ from apps.core.src.consumer import MessageConsumer
 from apps.core.src.services.message_handler import MessageHandler
 from apps.core.src.services.onboarding.handler import OnboardingHandler
 from apps.core.src.services.onboarding.onboarding_service import OnboardingService
-from apps.core.src.api.routes import admin as admin_routes
-
-
-from apps.core.src.agent.banking.transfer.utils import (
-    load_banks_from_flutterwave_response,
-    fetch_and_cache_banks_on_startup
-)
 
 
 def setup_dependencies():
@@ -35,11 +29,19 @@ def setup_dependencies():
     redis_queue = RedisQueue(redis_url=settings.redis_url)
     user_repository = UserRepository(db=get_db_session())
 
-    orchestrator = OrchestratorAgent()
+    # Get shared Redis client (set in lifespan or auto-created)
+    shared_redis = RedisClient.get_client()
+
+    # Initialize cache services with shared Redis client
+    user_cache = UserContextCacheService(redis_client=shared_redis)
 
     onboarding_service = OnboardingService(whatsapp_client)
     onboarding_handler = OnboardingHandler(
         whatsapp_client, user_repository, onboarding_service)
+
+    orchestrator = OrchestratorAgent(
+        user_repo=user_repository, user_cache=user_cache
+    )
 
     message_handler = MessageHandler(
         whatsapp_client=whatsapp_client,
@@ -92,22 +94,33 @@ async def lifespan(app: FastAPI):
             encoding="utf-8",
             decode_responses=True
         )
+        # Set shared Redis client for all cache services
+        RedisClient.set_client(redis_client)
         print("   ✅ Redis client initialized")
     except Exception as e:
         print(f"   ⚠️  Redis client initialization warning: {e}")
 
-    try:
-        if redis_client:
-            admin_routes.set_redis_client(redis_client)
+    # Warm up bank cache (after Redis is initialized)
+    if redis_client:
+        try:
+            print("   🏦 Warming up bank cache...")
+            bank_cache = BankCacheService(redis_client=redis_client)
 
-            bank_cache = BankCacheService(redis_client)
-            banks = await fetch_and_cache_banks_on_startup(bank_cache)
-            load_banks_from_flutterwave_response(banks)
-            print(f"   ✅ Loaded {len(banks)} Nigerian banks for normalization")
-        else:
-            print("   ❌ Redis unavailable - bank normalization disabled")
-    except Exception as e:
-        print(f"   ⚠️  Bank loader error: {e}")
+            if payment_provider and hasattr(payment_provider, 'fetch_banks'):
+                async def fetch_banks():
+                    return await payment_provider.fetch_banks(country="NG")
+
+                cache_ready = await bank_cache.ensure_banks_cached(fetch_banks)
+                if cache_ready:
+                    banks = await bank_cache.get_banks()
+                    print(
+                        f"   ✅ Bank cache ready ({len(banks) if banks else 0} banks)")
+                else:
+                    print("   ⚠️  Bank cache warmup failed")
+            else:
+                print("   ⚠️  Payment provider does not support bank list fetching")
+        except Exception as e:
+            print(f"   ⚠️  Bank cache warmup warning: {e}")
 
     consumer = setup_dependencies()
     asyncio.create_task(consumer.start())
@@ -129,8 +142,6 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Core Banking Service", lifespan=lifespan)
-
-app.include_router(admin_routes.router)
 
 
 @app.get("/")

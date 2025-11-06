@@ -4,7 +4,10 @@ from typing import Any
 
 from langchain_openai import ChatOpenAI
 from langgraph.graph import StateGraph, END
+from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+
 from shared.config import settings
+from shared.clients.whatsapp_client import WhatsAppClient
 from apps.core.src.agent.banking.query.query_agent import QueryAgent
 from apps.core.src.agent.utility.utility_agent import UtilityAgent
 from apps.core.src.agent.conversation_context import ConversationContext
@@ -24,6 +27,9 @@ from apps.core.src.agent.orchestrator.nodes import (
     route_after_planning,
     route_after_execution,
 )
+from apps.core.src.agent.orchestrator.nodes.cancel import GlobalCancelNode
+from apps.core.src.agent.orchestrator.nodes.pending_switch import PendingSwitchNode
+from apps.core.src.agent.orchestrator.nodes.pending_switch_response import PendingSwitchResponseNode
 from apps.core.src.agent.orchestrator.services import (
     AgentInvoker,
     TaskPlanner,
@@ -56,8 +62,11 @@ class OrchestratorAgent:
 
         self.context_loader = UserContextLoader()
 
+        # Shared WhatsApp client instance (reads credentials from env)
+        self.whatsapp_client = WhatsAppClient()
+
         self.agent_invoker = AgentInvoker(
-            self.query_agent, self.utility_agent
+            self.query_agent, self.utility_agent, self.whatsapp_client
         )
         self.task_planner = TaskPlanner(self.planner_llm)
         self.task_executor = TaskExecutor(self.agent_invoker)
@@ -66,10 +75,6 @@ class OrchestratorAgent:
 
         self._conversation_contexts: dict[str, ConversationContext] = {}
 
-        # Initialize PostgreSQL checkpointer for async operations
-        from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
-
-        # Store the context manager
         self._checkpointer_cm = AsyncPostgresSaver.from_conn_string(
             conn_string=settings.database_url
         )
@@ -114,14 +119,26 @@ class OrchestratorAgent:
         """Build the orchestrator LangGraph with modular nodes."""
         graph = StateGraph(OrchestratorState)
 
-        continuation_node = ContinuationNode(self._get_or_create_context)
+        def get_orchestrator_lambda():
+            return self
+
+        continuation_node = ContinuationNode(
+            self._get_or_create_context, orchestrator_instance=self)
         quick_classifier_node = QuickIntentClassifierNode(self.llm)
+        # global cancel node needs a transfer agent instance; reuse router cache if present
+
+        def _get_transfer_agent_cached():
+            from apps.core.src.agent.banking.transfer.transfer_agent import TransferAgent
+            return TransferAgent()
+
+        global_cancel_node = GlobalCancelNode(
+            _get_transfer_agent_cached, orchestrator_instance=self, get_context_func=self._get_or_create_context)
+        pending_switch_node = PendingSwitchNode(_get_transfer_agent_cached)
+        pending_switch_response_node = PendingSwitchResponseNode(
+            _get_transfer_agent_cached, orchestrator_instance=self)
         context_loader_node = ContextLoaderNode(self.context_loader)
         planning_node = PlanningNode(self.task_planner.plan_tasks)
         conversational_node = ConversationalNode(self.llm)
-
-        def get_orchestrator_lambda():
-            return self
 
         task_executor_node = TaskExecutorNode(
             self.task_executor.execute_task_plan,
@@ -132,7 +149,6 @@ class OrchestratorAgent:
             self.response_formatter.format_final_response
         )
 
-        # Add all nodes (create wrapper functions to ensure proper async handling)
         async def check_continuation_wrapper(state: OrchestratorState) -> OrchestratorState:
             return await continuation_node(state)
 
@@ -156,7 +172,21 @@ class OrchestratorAgent:
 
         graph.add_node("check_continuation", check_continuation_wrapper)
         graph.add_node("quick_classify", quick_classify_wrapper)
+
+        async def global_cancel_wrapper(state: OrchestratorState) -> OrchestratorState:
+            return await global_cancel_node(state)
+
+        async def pending_switch_wrapper(state: OrchestratorState) -> OrchestratorState:
+            return await pending_switch_node(state)
+
+        async def pending_switch_response_wrapper(state: OrchestratorState) -> OrchestratorState:
+            return await pending_switch_response_node(state)
+
         graph.add_node("load_context", load_context_wrapper)
+        graph.add_node("handle_global_cancel", global_cancel_wrapper)
+        graph.add_node("pending_switch", pending_switch_wrapper)
+        graph.add_node("handle_pending_switch_response",
+                       pending_switch_response_wrapper)
         graph.add_node("planner", planner_wrapper)
         graph.add_node("conversational", conversational_wrapper)
         graph.add_node("task_executor", task_executor_wrapper)
@@ -168,16 +198,87 @@ class OrchestratorAgent:
             "check_continuation",
             route_after_continuation_check,
             {
+                "handle_global_cancel": "handle_global_cancel",
+                "handle_pending_switch_response": "handle_pending_switch_response",
                 "task_executor": "task_executor",
                 "quick_classify": "quick_classify",
             }
         )
 
+        def _route_after_quick(state: OrchestratorState) -> str:
+            global_cancel = state.get("global_cancel")
+            new_transfer = state.get("new_transfer")
+            clarification_type = state.get("clarification_type")
+
+            print(
+                f"🔀 ROUTE AFTER QUICK: global_cancel={global_cancel}, new_transfer={new_transfer}, clarification_type={clarification_type}")
+
+            if global_cancel:
+                print("   ✅ Routing to handle_global_cancel")
+                return "handle_global_cancel"
+
+            # If we're already in pending_switch_confirmation, handle the response
+            if clarification_type == "pending_switch_confirmation":
+                print("   ✅ Routing to handle_pending_switch_response")
+                return "handle_pending_switch_response"
+
+            if new_transfer:
+                print("   ✅ Routing to pending_switch")
+                return "pending_switch"
+
+            route = route_after_quick_classification(state)
+            print(f"   ✅ Routing to {route}")
+            return route
+
         graph.add_conditional_edges(
             "quick_classify",
-            route_after_quick_classification,
+            _route_after_quick,
             {
+                "handle_global_cancel": "handle_global_cancel",
+                "pending_switch": "pending_switch",
+                "handle_pending_switch_response": "handle_pending_switch_response",
                 "conversational": "conversational",
+                "load_context": "load_context",
+            }
+        )
+
+        graph.add_edge("handle_global_cancel", END)
+
+        def _route_after_pending_switch(state: OrchestratorState) -> str:
+            if state.get("route_fallback"):
+                return "load_context"
+            return END
+
+        graph.add_conditional_edges(
+            "pending_switch",
+            _route_after_pending_switch,
+            {
+                "load_context": "load_context",
+                END: END,
+            }
+        )
+
+        def _route_after_pending_switch_response(state: OrchestratorState) -> str:
+            if state.get("awaiting_clarification") and state.get("clarification_type") == "pending_switch_confirmation":
+                # Unclear response, ask again (response already set)
+                return END
+
+            # If response is already set (from direct transfer agent invocation for "old"), route to END
+            if state.get("response"):
+                return END
+
+            if state.get("active_agent") == "transfer":
+                # User chose "old", but response not set yet - route to task_executor to continue with transfer agent
+                return "task_executor"
+            # User chose "new", route to load_context to process new instruction
+            return "load_context"
+
+        graph.add_conditional_edges(
+            "handle_pending_switch_response",
+            _route_after_pending_switch_response,
+            {
+                END: END,
+                "task_executor": "task_executor",
                 "load_context": "load_context",
             }
         )

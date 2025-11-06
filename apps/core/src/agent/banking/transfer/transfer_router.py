@@ -15,6 +15,13 @@ Complex scenarios (use IntelligentTransferAgent):
 
 import re
 from typing import Literal
+from apps.core.src.agent.banking.transfer import (
+    IntelligentTransferAgent, TransferAgent
+)
+
+
+_SIMPLE_AGENT_CACHE = None
+_INTELLIGENT_AGENT_CACHE = None
 
 
 def classify_transfer_complexity(message: str) -> Literal["simple", "complex"]:
@@ -29,9 +36,6 @@ def classify_transfer_complexity(message: str) -> Literal["simple", "complex"]:
     """
     message_lower = message.lower()
 
-    # Complex indicators - require intelligent agent
-
-    # 1. Historical/temporal references
     historical_patterns = [
         r"\blast\s+(month|week|time)",
         r"\b(yesterday|earlier|previous|ago)\b",
@@ -46,7 +50,6 @@ def classify_transfer_complexity(message: str) -> Literal["simple", "complex"]:
                 f"   ℹ️  Complex: Historical reference detected - '{pattern}'")
             return "complex"
 
-    # 2. Multi-account references or pooling
     multi_account_patterns = [
         r"\buse\s+\w+\s+(first|then)",
         r"\bfrom\s+\w+\s+(and|or|then)",
@@ -149,18 +152,38 @@ async def route_transfer_request(
             - awaiting_clarification: bool
             - clarification_type: Optional[str]
             - conversation_stage: Optional[str]
+            - outbox_messages: List[Dict[str, Any]]
     """
+    # Filter out special internal messages that shouldn't be processed as transfers
+    special_messages = {"CLEAR_STATE", "GLOBAL_CANCEL",
+                        "CLEAR_PENDING_SWITCH", "CLEAR_PENDING_SWITCH_FINAL"}
+    if message in special_messages:
+        print(f"   ⚠️  Ignoring special message: {message}")
+        # For special messages, just return a no-op response
+        return {
+            "response": "",
+            "awaiting_clarification": False,
+            "clarification_type": None,
+            "conversation_stage": "completed",
+            "outbox_messages": [],
+        }
+
+    # CONTINUE_PENDING_TRANSFER is allowed to proceed - it will load checkpoint and continue
+
     complexity = classify_transfer_complexity(message)
 
     if complexity == "complex":
         print("\n🧠 Routing to INTELLIGENT AGENT (complex scenario)")
-        from apps.core.src.agent.banking.transfer.intelligent_transfer_agent import (
-            IntelligentTransferAgent
-        )
 
-        agent = IntelligentTransferAgent()
-        # Ensure checkpointer is ready
-        await agent._ensure_checkpointer()
+        # Use cached agent instance to reuse checkpointer connection
+        global _intelligent_agent_cache
+        if _intelligent_agent_cache is None:
+            print("   🔧 Creating new IntelligentTransferAgent instance (first time)")
+            _intelligent_agent_cache = IntelligentTransferAgent()
+            # Ensure checkpointer is ready
+            await _intelligent_agent_cache._ensure_checkpointer()
+
+        agent = _intelligent_agent_cache
 
         # Get config and load existing state from checkpoint
         config = agent._get_config(phone_number, message_id)
@@ -171,12 +194,71 @@ async def route_transfer_request(
 
             # Determine if we have meaningful state to continue from
             has_state = False
+            is_new_transfer_request = False
+
+            # Check if message is a NEW transfer request (contains transfer keywords)
+            transfer_keywords = ["send", "transfer",
+                                 "pay", "send money", "transfer money"]
+            message_lower = message.lower()
+            is_new_transfer_request = any(
+                kw in message_lower for kw in transfer_keywords)
+
             if checkpoint and checkpoint.values:
                 td = checkpoint.values.get('transfer_details', {})
-                has_state = (
-                    bool(td.get('recipient', {}).get('account_number')) or
-                    bool(checkpoint.values.get('pending_clarification'))
-                )
+                clarification_type = checkpoint.values.get(
+                    'clarification_type')
+                awaiting_clarification = checkpoint.values.get(
+                    'awaiting_clarification', False)
+
+                # If checkpoint has pending clarification but user sent a NEW transfer request,
+                # treat it as a new transfer and clear the old checkpoint
+                if awaiting_clarification and is_new_transfer_request:
+                    if clarification_type == "pin_confirmation":
+                        # For PIN, only clear if it's clearly a new transfer request
+                        print(
+                            f"   🔄 NEW transfer detected while PIN pending - clearing old checkpoint")
+                        clear_state = {
+                            "phone_number": phone_number,
+                            "message": "CLEAR_STATE",
+                            "message_id": message_id,
+                            "transfer_details": {},
+                            "awaiting_clarification": False,
+                            "clarification_type": None,
+                            "pending_clarification": None,
+                            "conversation_stage": None,
+                            "messages": [],
+                        }
+                        await agent.graph.ainvoke(clear_state, config)
+                        has_state = False
+                    elif clarification_type not in ("pin_confirmation", "pending_switch_confirmation"):
+                        # For other clarifications, if user sends new transfer request, start fresh
+                        print(
+                            f"   🔄 NEW transfer detected while waiting for {clarification_type} - clearing old checkpoint")
+                        clear_state = {
+                            "phone_number": phone_number,
+                            "message": "CLEAR_STATE",
+                            "message_id": message_id,
+                            "transfer_details": {},
+                            "awaiting_clarification": False,
+                            "clarification_type": None,
+                            "pending_clarification": None,
+                            "conversation_stage": None,
+                            "messages": [],
+                        }
+                        await agent.graph.ainvoke(clear_state, config)
+                        has_state = False
+                    else:
+                        # Keep state for PIN/pending_switch (might be continuation)
+                        has_state = (
+                            bool(td.get('recipient', {}).get('account_number')) or
+                            bool(checkpoint.values.get(
+                                'pending_clarification'))
+                        )
+                else:
+                    has_state = (
+                        bool(td.get('recipient', {}).get('account_number')) or
+                        bool(checkpoint.values.get('pending_clarification'))
+                    )
 
             if has_state:
                 # CONTINUATION: Merge checkpoint with new message
@@ -202,6 +284,7 @@ async def route_transfer_request(
                 "awaiting_clarification": result.get("awaiting_clarification", False),
                 "clarification_type": result.get("clarification_type"),
                 "conversation_stage": result.get("conversation_stage", "completed"),
+                "outbox_messages": result.get("outbox_messages", []),
             }
         except Exception as e:
             print(f"❌ Intelligent agent error: {e}")
@@ -212,18 +295,28 @@ async def route_transfer_request(
                 "awaiting_clarification": False,
                 "clarification_type": None,
                 "conversation_stage": "error",
+                "outbox_messages": [],
             }
 
     else:
         print("\n⚡ Routing to SIMPLE AGENT (standard transfer)")
-        from apps.core.src.agent.banking.transfer.transfer_agent import TransferAgent
 
-        agent = TransferAgent()
-        # Ensure checkpointer is ready
-        await agent._ensure_checkpointer()
+        # Use cached agent instance to reuse checkpointer connection
+        global _SIMPLE_AGENT_CACHE
+        if _SIMPLE_AGENT_CACHE is None:
+            print("   🔧 Creating new SimpleTransferAgent instance (first time)")
+            _SIMPLE_AGENT_CACHE = TransferAgent()
+            # Ensure checkpointer is ready
+            await _SIMPLE_AGENT_CACHE._ensure_checkpointer()
+
+        agent = _SIMPLE_AGENT_CACHE
 
         # Get config and load existing state from checkpoint
         config = agent._get_config(phone_number, message_id)
+
+        # DEBUG: Show thread_id being used
+        print(
+            f"   🔑 THREAD_ID: {config.get('configurable', {}).get('thread_id')}")
 
         try:
             # Check for existing checkpoint
@@ -254,14 +347,78 @@ async def route_transfer_request(
 
             # Determine if we have meaningful state to continue from
             has_state = False
+            is_new_transfer_request = False
+
+            # Check if message is a NEW transfer request (contains transfer keywords)
+            transfer_keywords = ["send", "transfer",
+                                 "pay", "send money", "transfer money"]
+            message_lower = message.lower()
+            is_new_transfer_request = any(
+                kw in message_lower for kw in transfer_keywords)
+
             if checkpoint and checkpoint.values:
                 td = checkpoint.values.get('transfer_details', {})
-                has_state = (
-                    bool(td.get('recipient', {}).get('account_number')) or
-                    bool(checkpoint.values.get('pending_clarification'))
-                )
+                clarification_type = checkpoint.values.get(
+                    'clarification_type')
+                awaiting_clarification = checkpoint.values.get(
+                    'awaiting_clarification', False)
+
+                # If checkpoint has pending clarification but user sent a NEW transfer request,
+                # treat it as a new transfer and clear the old checkpoint
+                # Exception: PIN confirmation - only clear if message contains transfer keywords
+                # (PIN could be entered as digits which shouldn't trigger reset)
+                if awaiting_clarification and is_new_transfer_request:
+                    if clarification_type == "pin_confirmation":
+                        # For PIN, only clear if it's clearly a new transfer request
+                        # (not just digits that might be PIN entry)
+                        print(
+                            f"   🔄 NEW transfer detected while PIN pending - clearing old checkpoint")
+                        clear_state = {
+                            "phone_number": phone_number,
+                            "message": "CLEAR_STATE",
+                            "message_id": message_id,
+                            "transfer_details": {},
+                            "awaiting_clarification": False,
+                            "clarification_type": None,
+                            "pending_clarification": None,
+                            "conversation_stage": None,
+                            "messages": [],
+                        }
+                        await agent.graph.ainvoke(clear_state, config)
+                        has_state = False
+                    elif clarification_type not in ("pin_confirmation", "pending_switch_confirmation"):
+                        # For other clarifications (source account, amount, etc.),
+                        # if user sends new transfer request, start fresh
+                        print(
+                            f"   🔄 NEW transfer detected while waiting for {clarification_type} - clearing old checkpoint")
+                        clear_state = {
+                            "phone_number": phone_number,
+                            "message": "CLEAR_STATE",
+                            "message_id": message_id,
+                            "transfer_details": {},
+                            "awaiting_clarification": False,
+                            "clarification_type": None,
+                            "pending_clarification": None,
+                            "conversation_stage": None,
+                            "messages": [],
+                        }
+                        await agent.graph.ainvoke(clear_state, config)
+                        has_state = False
+                    else:
+                        # Keep state for PIN/pending_switch (might be continuation)
+                        has_state = (
+                            bool(td.get('recipient', {}).get('account_number')) or
+                            bool(checkpoint.values.get(
+                                'pending_clarification'))
+                        )
+                else:
+                    has_state = (
+                        bool(td.get('recipient', {}).get('account_number')) or
+                        bool(checkpoint.values.get('pending_clarification'))
+                    )
 
             print(f"   → has_state decision: {has_state}")
+            print(f"   → is_new_transfer_request: {is_new_transfer_request}")
 
             if has_state:
                 # CONTINUATION: Merge checkpoint with new message
@@ -282,11 +439,34 @@ async def route_transfer_request(
                 }
 
             result = await agent.graph.ainvoke(initial_state, config)
+
+            # DEBUG: Check what was actually saved to checkpoint after execution
+            print(f"\n   📊 POST-EXECUTION CHECKPOINT CHECK:")
+            post_checkpoint = await agent.graph.aget_state(config)
+            if post_checkpoint and post_checkpoint.values:
+                print(f"      ✓ Checkpoint saved")
+                print(
+                    f"      - Checkpoint ID: {post_checkpoint.config.get('configurable', {}).get('checkpoint_id', 'N/A')}")
+                print(
+                    f"      - Keys saved: {list(post_checkpoint.values.keys())}")
+                td_post = post_checkpoint.values.get('transfer_details', {})
+                print(f"      - transfer_details: {bool(td_post)}")
+                if td_post:
+                    print(
+                        f"        - recipient.account_number: {td_post.get('recipient', {}).get('account_number')}")
+                print(
+                    f"      - clarification_type: {post_checkpoint.values.get('clarification_type')}")
+                print(
+                    f"      - awaiting_clarification: {post_checkpoint.values.get('awaiting_clarification')}")
+            else:
+                print(f"      ❌ No checkpoint saved!")
+
             return {
                 "response": result.get("response", "I couldn't process your transfer."),
                 "awaiting_clarification": result.get("awaiting_clarification", False),
                 "clarification_type": result.get("clarification_type"),
                 "conversation_stage": result.get("conversation_stage", "completed"),
+                "outbox_messages": result.get("outbox_messages", []),
             }
         except Exception as e:
             print(f"❌ Transfer agent error: {e}")
@@ -297,4 +477,5 @@ async def route_transfer_request(
                 "awaiting_clarification": False,
                 "clarification_type": None,
                 "conversation_stage": "error",
+                "outbox_messages": [],
             }

@@ -1,9 +1,11 @@
 """Redis-based cache for Nigerian banks data."""
 
 import json
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Callable, Awaitable, Any
 from datetime import datetime
 import redis.asyncio as redis
+
+from shared.cache.redis_client import RedisClient
 
 
 class BankCacheService:
@@ -12,22 +14,12 @@ class BankCacheService:
     CACHE_KEY = "nigerian_banks"
     TIMESTAMP_KEY = "nigerian_banks:timestamp"
 
-    def __init__(self, redis_client: redis.Redis):
-        """
-        Initialize bank cache service.
-
-        Args:
-            redis_client: Async Redis client instance
-        """
-        self.redis = redis_client
+    def __init__(self, redis_client: Optional[redis.Redis] = None):
+        """Initialize bank cache service."""
+        self.redis = redis_client or RedisClient.get_client()
 
     async def get_banks(self) -> Optional[List[Dict[str, str]]]:
-        """
-        Get banks from Redis cache.
-
-        Returns:
-            List of banks if cache hit, None if cache miss or expired
-        """
+        """Get banks from Redis cache."""
         try:
             cached_data = await self.redis.get(self.CACHE_KEY)
             if cached_data:
@@ -77,7 +69,8 @@ class BankCacheService:
         try:
             timestamp = await self.redis.get(self.TIMESTAMP_KEY)
             if timestamp:
-                return timestamp.decode('utf-8')
+                # Redis is configured with decode_responses=True, so no need to decode
+                return timestamp if isinstance(timestamp, str) else timestamp.decode('utf-8')
             return None
         except Exception as e:
             print(f"⚠️  Redis timestamp error: {e}")
@@ -122,4 +115,78 @@ class BankCacheService:
             return True
         except Exception as e:
             print(f"⚠️  Clear cache error: {e}")
+            return False
+
+    async def get_bank_code(self, bank_name: str) -> Optional[str]:
+        """
+        Lookup bank code from bank name using cached bank list.
+
+        Args:
+            bank_name: Bank name to lookup (e.g., "Access bank", "GTB")
+
+        Returns:
+            Bank code if found, None otherwise
+        """
+        banks = await self.get_banks()
+        if not banks:
+            return None
+
+        normalized_name = bank_name.lower().strip()
+
+        for bank in banks:
+            bank_name_field = bank.get("name", "").lower().strip()
+            if bank_name_field == normalized_name:
+                return bank.get("code")
+
+        for bank in banks:
+            bank_name_field = bank.get("name", "").lower().strip()
+            if normalized_name in bank_name_field or bank_name_field in normalized_name:
+                return bank.get("code")
+
+        normalized_no_suffix = normalized_name.replace(
+            " bank", "").replace(" plc", "").replace(" limited", "").strip()
+        for bank in banks:
+            bank_name_field = bank.get("name", "").lower().strip()
+            bank_name_no_suffix = bank_name_field.replace(" bank", "").replace(
+                " plc", "").replace(" limited", "").strip()
+            if normalized_no_suffix == bank_name_no_suffix:
+                return bank.get("code")
+
+        return None
+
+    async def ensure_banks_cached(
+        self,
+        fetch_func: Callable[[], Awaitable[Dict[str, Any]]]
+    ) -> bool:
+        """
+        Ensure banks are cached. Fetch from provider if cache is empty.
+
+        Args:
+            fetch_func: Async function that returns bank data from payment provider.
+                       Should return dict with 'success' bool and 'banks' list.
+
+        Returns:
+            True if banks are available (cached or fetched), False otherwise
+        """
+        # Check if banks exist in cache
+        banks = await self.get_banks()
+        if banks:
+            return True
+
+        # Cache miss - fetch from provider
+        try:
+            print("🔄 Bank cache miss - fetching from payment provider...")
+            result = await fetch_func()
+
+            if result.get("success") and result.get("banks"):
+                banks_list = result["banks"]
+                await self.set_banks(banks_list, ttl=86400)
+                print(f"✅ Fetched and cached {len(banks_list)} banks")
+                return True
+            else:
+                error = result.get("error", "Unknown error")
+                print(f"⚠️  Failed to fetch banks: {error}")
+                return False
+        except Exception as e:
+            print(f"⚠️  Error fetching banks: {e}")
             return False
