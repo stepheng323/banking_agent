@@ -129,20 +129,29 @@ class BankCacheService:
         """
         banks = await self.get_banks()
         if not banks:
+            print(f"⚠️  get_bank_code: No banks in cache for lookup: {bank_name}")
             return None
 
         normalized_name = bank_name.lower().strip()
+        print(f"DEBUG get_bank_code: Looking up '{bank_name}' (normalized: '{normalized_name}') in {len(banks)} banks")
 
+        # Try exact match first
         for bank in banks:
             bank_name_field = bank.get("name", "").lower().strip()
             if bank_name_field == normalized_name:
-                return bank.get("code")
+                code = bank.get("code")
+                print(f"✅ get_bank_code: Exact match found - '{bank.get('name')}' -> {code}")
+                return code
 
+        # Try partial match (contains)
         for bank in banks:
             bank_name_field = bank.get("name", "").lower().strip()
             if normalized_name in bank_name_field or bank_name_field in normalized_name:
-                return bank.get("code")
+                code = bank.get("code")
+                print(f"✅ get_bank_code: Partial match found - '{bank.get('name')}' -> {code}")
+                return code
 
+        # Try matching without common suffixes
         normalized_no_suffix = normalized_name.replace(
             " bank", "").replace(" plc", "").replace(" limited", "").strip()
         for bank in banks:
@@ -150,8 +159,11 @@ class BankCacheService:
             bank_name_no_suffix = bank_name_field.replace(" bank", "").replace(
                 " plc", "").replace(" limited", "").strip()
             if normalized_no_suffix == bank_name_no_suffix:
-                return bank.get("code")
+                code = bank.get("code")
+                print(f"✅ get_bank_code: Suffix-stripped match found - '{bank.get('name')}' -> {code}")
+                return code
 
+        print(f"⚠️  get_bank_code: No match found for '{bank_name}'")
         return None
 
     async def ensure_banks_cached(

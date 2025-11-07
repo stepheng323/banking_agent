@@ -36,9 +36,12 @@ class Settings:
 
         self.redis_url: str = os.getenv("REDIS_URL", "redis://localhost:6379")
 
+        # User context cache TTL (seconds)
+        self.user_ctx_ttl_seconds: int = int(
+            os.getenv("TTL_SECONDS", "6000"))
+
         self.openai_api_key: str = os.getenv("OPENAI_API_KEY", "")
 
-        # Flutterwave OAuth2 credentials (required)
         self.flutterwave_client_id: str = os.getenv(
             "FLUTTERWAVE_CLIENT_ID", "")
         self.flutterwave_client_secret: str = os.getenv(

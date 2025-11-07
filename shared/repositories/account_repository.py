@@ -19,13 +19,6 @@ class AccountRepository(BaseRepository[Account]):
         """Get all accounts for a user."""
         return self.db.query(Account).filter(Account.user_id == user_id).all()
 
-    def get_active_by_user(self, user_id: str) -> List[Account]:
-        """Get all active accounts for a user."""
-        return (
-            self.db.query(Account)
-            .filter(Account.user_id == user_id, Account.is_active == True)
-            .all()
-        )
 
     def get_by_account_id(self, account_id: str) -> Optional[Account]:
         """Get account by account_id (external ID)."""
