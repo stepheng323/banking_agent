@@ -3,6 +3,8 @@
 from typing import Any, cast
 import hashlib
 import json
+import redis.asyncio as redis
+
 from apps.core.src.agent.services.account_selection_service import AccountSelectionService
 from apps.core.src.agent.transfer.state import TransferState
 from apps.core.src.agent.models.transfer_extraction import TransferExtractionResult
@@ -11,11 +13,13 @@ from apps.core.src.agent.services.transfer_entity_extractor import TransferEntit
 from apps.core.src.agent.services.beneficiary_matcher import BeneficiaryMatcher
 from apps.core.src.agent.services.validation_service import AsyncValidationService
 from apps.core.src.agent.formatters.transfer import format_transfer_summary
+
 from shared.cache.bank_cache import BankCacheService
 from shared.utils.serialization import sqlalchemy_to_dict
 from shared.database import Account
 from shared.database.models import Beneficiary
 from shared.config import settings
+from shared.clients.whatsapp_client import WhatsAppClient
 
 
 async def extract_entities(
@@ -23,7 +27,6 @@ async def extract_entities(
     extractor: TransferEntityExtractor,
 ) -> TransferState:
     """Extract entities from user message."""
-    # Get last response from state for tone consistency
     last_response = state.get("response") or state.get("llm_reply")
     smart_context = None
     if last_response:
@@ -34,8 +37,9 @@ async def extract_entities(
     entities = result.entities or SimpleTransferEntities()
     existing_amount = state.get("amount")
 
-    # Only update fields that are actually extracted (not None)
-    # This preserves existing values from checkpoint state
+    print(
+        f"DEBUG extract_entities: Raw extraction - account='{entities.recipient_account}', bank_name='{entities.bank_name}', bank_code='{entities.bank_code}', amount='{entities.amount}'")
+
     new_state = dict(state)
     updates: dict[str, Any] = {
         "missing_fields": result.missingFields or [],
@@ -43,19 +47,24 @@ async def extract_entities(
         "flow_state": "extracting",
     }
 
-    # Only update entity fields if they were actually extracted
     if entities.amount is not None:
         updates["amount"] = entities.amount
     elif existing_amount:
-        pass  # Keep existing amount
+        pass
     if entities.recipient_name is not None:
         updates["recipient_name"] = entities.recipient_name
     if entities.recipient_account is not None:
-        updates["recipient_account"] = entities.recipient_account
+        normalized_account = str(entities.recipient_account).replace(
+            " ", "").replace("-", "").replace("_", "").strip()
+        updates["recipient_account"] = normalized_account
+        print(
+            f"DEBUG extract_entities: Normalized account '{entities.recipient_account}' -> '{normalized_account}'")
     if entities.bank_code is not None:
         updates["recipient_bank_code"] = entities.bank_code
     if entities.bank_name is not None:
         updates["recipient_bank_name"] = entities.bank_name
+        print(
+            f"DEBUG extract_entities: Extracted bank_name: '{entities.bank_name}'")
     if entities.source_account_id is not None:
         updates["source_account_id"] = entities.source_account_id
     if entities.narration is not None:
@@ -105,17 +114,6 @@ async def load_user_context(
         "beneficiaries": beneficiaries_dict,
     })
 
-    # Auto-select account if only one account and not already selected
-    if len(accounts_dict) == 1 and not new_state.get("selected_source_account"):
-        from apps.core.src.agent.common.account_selection import pick_source_account
-        source_account_id = new_state.get("source_account_id")
-        source_account_id_str = str(
-            source_account_id) if source_account_id is not None else None
-        selected = pick_source_account(
-            accounts_dict, profile or {}, source_account_id_str)
-        if selected:
-            new_state["selected_source_account"] = selected
-
     return cast(TransferState, new_state)
 
 
@@ -140,6 +138,9 @@ async def select_source_account(
     source_account_id = state.get("source_account_id")
     llm_reply = state.get("llm_reply")
 
+    print(
+        f"DEBUG select_source_account: accounts={len(accounts)}, source_account_id={source_account_id}")
+
     selected, response = AccountSelectionService.select_account(
         accounts=accounts,
         profile=profile or {},
@@ -147,10 +148,17 @@ async def select_source_account(
         llm_reply=llm_reply,
     )
 
+    print(
+        f"DEBUG select_source_account: selected={selected is not None}, response={response is not None}")
+
     if selected is not None:
+        # Account auto-selected - clear response and continue flow
+        print(
+            f"DEBUG select_source_account: Auto-selected account: {selected.get('id')}")
         return {
             **state,
             "selected_source_account": selected,
+            "response": "",  # Clear any previous response
         }
 
     return {
@@ -240,10 +248,48 @@ async def validate_parallel(
     bank_code = state.get("recipient_bank_code")
     bank_name = state.get("recipient_bank_name")
 
+    print(
+        f"DEBUG validate_parallel: Initial state - account='{acct_number}', bank_code='{bank_code}', bank_name='{bank_name}'")
+
+    # If bank_code exists but bank_name is provided, verify they match
+    # This handles cases where bank_code was set incorrectly from checkpoint
+    if bank_code and bank_name and bank_cache:
+        cache_ready = await bank_cache.ensure_banks_cached(fetch_banks_func)
+        if cache_ready:
+            correct_code = await bank_cache.get_bank_code(bank_name)
+            if correct_code and correct_code != bank_code:
+                print(
+                    f"DEBUG validate_parallel: Bank code mismatch! bank_name='{bank_name}' should be '{correct_code}' but got '{bank_code}', correcting...")
+                bank_code = correct_code
+                state = {
+                    **state,
+                    "recipient_bank_code": correct_code,
+                }
+            elif not correct_code:
+                print(
+                    f"DEBUG validate_parallel: Could not resolve bank_code for bank_name='{bank_name}', but bank_code='{bank_code}' exists. Proceeding with existing code.")
+
+    # Normalize account number (remove spaces, dashes, etc.) and update state
+    if acct_number:
+        normalized_account = str(acct_number).replace(
+            " ", "").replace("-", "").replace("_", "").strip()
+        print(
+            f"DEBUG validate_parallel: Normalizing account '{acct_number}' -> '{normalized_account}'")
+        if normalized_account != str(acct_number):
+            state = {
+                **state,
+                "recipient_account": normalized_account,
+            }
+        acct_number = normalized_account
+
     if not bank_code and bank_name and bank_cache:
+        print(
+            f"DEBUG validate_parallel: Resolving bank_code from bank_name: '{bank_name}'")
         cache_ready = await bank_cache.ensure_banks_cached(fetch_banks_func)
         if cache_ready:
             resolved_code = await bank_cache.get_bank_code(bank_name)
+            print(
+                f"DEBUG validate_parallel: Resolved bank_code: '{resolved_code}' for bank_name: '{bank_name}'")
             if resolved_code:
                 bank_code = resolved_code
                 state = {
@@ -251,6 +297,8 @@ async def validate_parallel(
                     "recipient_bank_code": resolved_code,
                 }
             else:
+                print(
+                    f"DEBUG validate_parallel: Failed to resolve bank_code for '{bank_name}'")
                 return {
                     **state,
                     "flow_state": "error",
@@ -258,12 +306,14 @@ async def validate_parallel(
                     "validation_errors": ["bank_code_resolution_failed"],
                 }
         else:
+            print(f"DEBUG validate_parallel: Bank cache not ready")
             return {
                 **state,
                 "flow_state": "validating",
             }
 
     if not bank_code:
+        print(f"DEBUG validate_parallel: No bank_code available")
         return {
             **state,
             "flow_state": "error",
@@ -271,13 +321,30 @@ async def validate_parallel(
             "validation_errors": ["missing_bank_code"],
         }
 
+    if not acct_number:
+        print(f"DEBUG validate_parallel: No account_number available")
+        return {
+            **state,
+            "flow_state": "error",
+            "response": state.get("llm_reply") or "Account number is required for validation.",
+            "validation_errors": ["missing_account_number"],
+        }
+
+    print(
+        f"DEBUG validate_parallel: Calling validation API with account_number='{acct_number}', bank_code='{bank_code}'")
     resolved, balance = await validation_service.validate_account_and_balance(
         account_number=str(acct_number),
         bank_code=str(bank_code),
         source_account_id=str(source.get("id")),
     )
+    print(
+        f"DEBUG validate_parallel: Validation result - resolved={resolved is not None}, balance={balance is not None}")
+    if resolved:
+        print(
+            f"DEBUG validate_parallel: Account resolved successfully: {resolved}")
 
-    if resolved is None:
+    # Check if resolution failed (None or success=False)
+    if resolved is None or (isinstance(resolved, dict) and not resolved.get("success", False)):
         return {
             **state,
             "flow_state": "error",
@@ -306,20 +373,23 @@ async def validate_parallel(
             available = None
 
     # Proceed with transfer - account is valid
+    # Clear any previous validation errors since account resolution succeeded
     return {
         **state,
         "account_resolved": resolved,
         "balance_available": available,
         "flow_state": "validating",
+        "validation_errors": [],  # Clear any previous validation errors
     }
 
 
 async def prepare_confirmation(
     state: TransferState,
-    whatsapp_client: Any,
-    redis_client: Any,
+    whatsapp_client: WhatsAppClient,
+    redis_client: redis.Redis,
 ) -> TransferState:
     """Prepare transfer confirmation summary."""
+    print(f"DEBUG prepare_confirmation: state={json.dumps(state, indent=2)}")
     amount = state.get("amount")
     account_resolved = state.get("account_resolved")
     rec_name = (
@@ -371,30 +441,26 @@ async def prepare_confirmation(
         ex=900
     )
 
-    try:
-        token = f"transfer-pin-{idem_key}"
-        await redis_client.set(
-            f"user:{state['phone_number']}:pending_transfer_flow_token",
-            token,
-            ex=900
-        )
-        await whatsapp_client.send_flow(
-            to=state["phone_number"],
-            flow_cta="Authorize Transfer",
-            flow_id=settings.pin_confirmation_flow_id,
-            screen_name="Pin",
-            flow_token=token,
-            header="Authorize Transfer",
-            text_body=summary,
-        )
-    except Exception:
-        pass
+    token = f"transfer-pin-{idem_key}"
+    await redis_client.set(
+        f"user:{state['phone_number']}:pending_transfer_flow_token",
+        token,
+        ex=900
+    )
 
-    # Don't return summary as response since it's already in the flow message
-    # Return empty string to avoid duplicate text message
+    await whatsapp_client.send_flow(
+        to=state["phone_number"],
+        header="Confirm Your Transfer",
+        flow_cta="Authorize Transfer",
+        flow_id=settings.pin_confirmation_flow_id,
+        screen_name="Pin",
+        flow_token=token,
+        text_body=summary,
+    )
+
     return {
         **state,
-        "response": "",  # Flow contains the summary, no need for separate text message
+        "response": "",
         "idempotency_key": idem_key,
         "transfer_status": "pending",
         "flow_state": "confirming",
