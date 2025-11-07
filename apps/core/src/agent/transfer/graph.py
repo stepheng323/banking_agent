@@ -82,6 +82,7 @@ def route_by_state(state: TransferState) -> Literal["end", "collect_amount", "se
         return "collect_amount"
 
     if not selected_account:
+        print(f"DEBUG route_by_state: No selected account, routing to select_account")
         return "select_account"
 
     if not recipient_account or not recipient_bank:
@@ -274,11 +275,9 @@ class TransferFlowGraph:
                     "message_id": message_id,
                 })
             else:
-                # First turn - use initial state
                 input_state = create_initial_state(
                     phone_number, message, message_id)
         except Exception:
-            # If state retrieval fails, use initial state
             input_state = create_initial_state(
                 phone_number, message, message_id)
 
