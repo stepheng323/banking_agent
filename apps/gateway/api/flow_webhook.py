@@ -22,22 +22,20 @@ from shared.utils import (
     hash_plaintext,
     is_encrypted,
     is_valid_pin_format,
+    verify_hash,
 )
+from shared.cache.redis_client import RedisClient
+from shared.clients.payment_provider_factory import PaymentProviderFactory
 
 router = APIRouter()
-
-_whatsapp_client_instance = None
 
 
 def get_whatsapp_client() -> WhatsAppClient:
     """
     Dependency factory for WhatsApp client.
-    Uses lazy initialization and singleton pattern for efficiency.
+    FastAPI will cache this dependency per request automatically.
     """
-    global _whatsapp_client_instance
-    if _whatsapp_client_instance is None:
-        _whatsapp_client_instance = WhatsAppClient()
-    return _whatsapp_client_instance
+    return WhatsAppClient()
 
 
 class FlowDataExchangeRequest(BaseModel):
@@ -52,13 +50,54 @@ class FlowDataExchangeRequest(BaseModel):
 class FlowAction(BaseModel):
     """Response model for flow actions."""
 
-    action: str  # 'navigate' or 'complete'
+    action: str
     next_screen: Optional[str] = None
     data: Optional[Dict[str, Any]] = None
 
 
-# In-memory storage for verification state (use Redis in production)
-verification_storage: Dict[str, Dict[str, Any]] = {}
+VERIFICATION_STORAGE_TTL = 3600  # 1 hour TTL for verification data
+
+
+async def get_verification_data(flow_token: str) -> Dict[str, Any]:
+    """Get verification data from Redis for a given flow_token."""
+    if not flow_token:
+        return {}
+
+    redis_client = RedisClient.get_client()
+    try:
+        data = await redis_client.get(f"verification:{flow_token}")
+        if data:
+            return json.loads(data)
+        return {}
+    except Exception as e:
+        print(f"⚠️  Error reading verification data from Redis: {e}")
+        return {}
+
+
+async def set_verification_data(flow_token: str, data: Dict[str, Any], ttl: int = VERIFICATION_STORAGE_TTL) -> None:
+    """Set verification data in Redis for a given flow_token."""
+    if not flow_token:
+        return
+
+    redis_client = RedisClient.get_client()
+    try:
+        await redis_client.set(
+            f"verification:{flow_token}",
+            json.dumps(data),
+            ex=ttl
+        )
+    except Exception as e:
+        print(f"⚠️  Error writing verification data to Redis: {e}")
+
+
+async def update_verification_data(flow_token: str, updates: Dict[str, Any], ttl: int = VERIFICATION_STORAGE_TTL) -> None:
+    """Update verification data in Redis, merging with existing data."""
+    if not flow_token:
+        return
+
+    existing = await get_verification_data(flow_token)
+    existing.update(updates)
+    await set_verification_data(flow_token, existing, ttl)
 
 
 @router.post("/webhook/flow")
@@ -130,11 +169,11 @@ async def flow_webhook(
             is_valid = bvn and len(bvn) == 11 and bvn.isdigit()
 
             if is_valid:
-                verification_storage[flow_token] = {
+                await set_verification_data(flow_token, {
                     "phone_number": flow_token.split("_")[-1],
                     "bvn": bvn,
                     "bvn_verified": True,
-                }
+                })
 
                 print("✅ BVN verified successfully")
                 response = {
@@ -190,9 +229,11 @@ async def flow_webhook(
             is_valid = otp and len(otp) == 6 and otp.isdigit()
 
             if is_valid:
-                if flow_token in verification_storage:
-                    verification_storage[flow_token]["otp_verified"] = True
-                    verification_storage[flow_token]["otp"] = otp
+                if flow_token:
+                    await update_verification_data(flow_token, {
+                        "otp_verified": True,
+                        "otp": otp,
+                    })
 
                 print("✅ OTP verified successfully")
 
@@ -221,9 +262,9 @@ async def flow_webhook(
 
                 # Persist accounts for later steps so IDs remain consistent
                 if flow_token:
-                    verification_storage.setdefault(flow_token, {})[
-                        "accounts_full"
-                    ] = accounts_full
+                    await update_verification_data(flow_token, {
+                        "accounts_full": accounts_full,
+                    })
 
                 accounts_flow = [
                     {
@@ -234,10 +275,8 @@ async def flow_webhook(
                 ]
 
                 # Get BVN from storage or current data
-                stored_bvn = (
-                    verification_storage.get(flow_token, {}).get(
-                        "bvn") if flow_token else None
-                )
+                verification_data = await get_verification_data(flow_token) if flow_token else {}
+                stored_bvn = verification_data.get("bvn")
                 current_bvn = stored_bvn or bvn or ""
 
                 response = {
@@ -263,10 +302,8 @@ async def flow_webhook(
 
             print("❌ OTP verification failed")
 
-            stored_bvn = (
-                verification_storage.get(flow_token, {}).get(
-                    "bvn") if flow_token else None
-            )
+            verification_data = await get_verification_data(flow_token) if flow_token else {}
+            stored_bvn = verification_data.get("bvn")
             current_bvn = stored_bvn or bvn or ""
 
             response = {
@@ -293,8 +330,9 @@ async def flow_webhook(
             if not flow_token:
                 return JSONResponse(content={"error": "flow_token is required"}, status_code=400)
             accounts = data.get("selected_accounts", [])
-            verification_data = verification_storage.get(flow_token, {})
-            verification_data.update({"selected_accounts": accounts})
+            if flow_token:
+                await update_verification_data(flow_token, {"selected_accounts": accounts})
+            verification_data = await get_verification_data(flow_token) if flow_token else {}
 
             print(f"🔍 Verification data: {verification_data}")
 
@@ -330,7 +368,7 @@ async def flow_webhook(
                     return JSONResponse(
                         content={"error": "flow_token is required"}, status_code=400
                     )
-                verification_data = verification_storage.get(flow_token, {})
+                verification_data = await get_verification_data(flow_token)
                 selected_accounts = verification_data.get(
                     "selected_accounts", [])
                 persisted_accounts = verification_data.get("accounts_full", [])
@@ -454,6 +492,340 @@ async def flow_webhook(
                     )
                 encrypted_response = encrypt_flow_response(
                     response, aes_key_bytes, iv_bytes)
+                return Response(content=encrypted_response, media_type="text/plain")
+
+            return JSONResponse(content=response)
+
+        elif screen == "Pin":
+            print(f"🔍 PIN screen payload: {json.dumps(data, indent=2)}")
+
+            pin = data.get("pin")
+
+            if not pin:
+                return JSONResponse(content={"error": "PIN is required"}, status_code=400)
+
+            if not is_valid_pin_format(str(pin)):
+                response = {
+                    "screen": "Pin",
+                    "data": {
+                        "show_error": True,
+                        "error_message": "Invalid PIN. Enter a 4-digit numeric PIN.",
+                    },
+                }
+
+                if request_was_encrypted:
+                    if aes_key_bytes is None or iv_bytes is None:
+                        return JSONResponse(
+                            content={"error": "Encryption keys missing"}, status_code=500
+                        )
+                    encrypted_response = encrypt_flow_response(
+                        response, aes_key_bytes, iv_bytes
+                    )
+                    return Response(content=encrypted_response, media_type="text/plain")
+
+                return JSONResponse(content=response)
+
+            # Handle transfer PIN verification
+            if flow_token and flow_token.startswith("transfer-pin-"):
+                # Extract idem_key from flow_token: "transfer-pin-{idem_key}"
+                idem_key = flow_token.replace("transfer-pin-", "")
+
+                # Get phone number from Redis
+                redis_client = RedisClient.get_client()
+                phone_number = await redis_client.get(f"transfer:token:{idem_key}:phone")
+
+                if not phone_number:
+                    print(
+                        f"⚠️  No phone number found for idem_key: {idem_key}")
+                    response = {
+                        "screen": "Pin",
+                        "data": {
+                            "show_error": True,
+                            "error_message": "Transfer session expired. Please start a new transfer.",
+                        },
+                    }
+                    if request_was_encrypted:
+                        if aes_key_bytes is None or iv_bytes is None:
+                            return JSONResponse(
+                                content={"error": "Encryption keys missing"}, status_code=500
+                            )
+                        encrypted_response = encrypt_flow_response(
+                            response, aes_key_bytes, iv_bytes
+                        )
+                        return Response(content=encrypted_response, media_type="text/plain")
+                    return JSONResponse(content=response)
+
+                # Get retry count
+                retry_key = f"transfer:retry:{idem_key}"
+                retry_count = await redis_client.get(retry_key)
+                retry_count = int(retry_count) if retry_count else 0
+
+                if retry_count >= 3:
+                    print(f"❌ Max retries exceeded for transfer: {idem_key}")
+                    response = {
+                        "screen": "Pin",
+                        "data": {
+                            "show_error": True,
+                            "error_message": "Maximum PIN attempts exceeded. Please start a new transfer.",
+                        },
+                    }
+                    if request_was_encrypted:
+                        if aes_key_bytes is None or iv_bytes is None:
+                            return JSONResponse(
+                                content={"error": "Encryption keys missing"}, status_code=500
+                            )
+                        encrypted_response = encrypt_flow_response(
+                            response, aes_key_bytes, iv_bytes
+                        )
+                        return Response(content=encrypted_response, media_type="text/plain")
+                    return JSONResponse(content=response)
+
+                # Retrieve pending transfer from Redis
+                pending_data = await redis_client.get(f"user:{phone_number}:pending_transfer")
+                if not pending_data:
+                    print(
+                        f"⚠️  No pending transfer found for phone: {phone_number} (may have been cancelled)")
+                    response = {
+                        "screen": "Pin",
+                        "data": {
+                            "show_error": True,
+                            "error_message": "This transfer has been cancelled or expired. Please start a new transfer.",
+                        },
+                    }
+                    if request_was_encrypted:
+                        if aes_key_bytes is None or iv_bytes is None:
+                            return JSONResponse(
+                                content={"error": "Encryption keys missing"}, status_code=500
+                            )
+                        encrypted_response = encrypt_flow_response(
+                            response, aes_key_bytes, iv_bytes
+                        )
+                        return Response(content=encrypted_response, media_type="text/plain")
+                    return JSONResponse(content=response)
+
+                pending_transfer = json.loads(pending_data)
+
+                # Verify PIN against user's stored PIN
+                with UnitOfWork() as uow:
+                    if not uow.users:
+                        return JSONResponse(content={"error": "Database error"}, status_code=500)
+
+                    user = uow.users.get_by_phone(phone_number)
+                    if not user:
+                        print(f"⚠️  User not found: {phone_number}")
+                        response = {
+                            "screen": "Pin",
+                            "data": {
+                                "show_error": True,
+                                "error_message": "User not found. Please contact support.",
+                            },
+                        }
+                        if request_was_encrypted:
+                            if aes_key_bytes is None or iv_bytes is None:
+                                return JSONResponse(
+                                    content={"error": "Encryption keys missing"}, status_code=500
+                                )
+                            encrypted_response = encrypt_flow_response(
+                                response, aes_key_bytes, iv_bytes
+                            )
+                            return Response(content=encrypted_response, media_type="text/plain")
+                        return JSONResponse(content=response)
+
+                    stored_pin_hash = getattr(user, "transaction_pin", None)
+                    if not stored_pin_hash:
+                        print(
+                            f"⚠️  No transaction PIN set for user: {phone_number}")
+                        response = {
+                            "screen": "Pin",
+                            "data": {
+                                "show_error": True,
+                                "error_message": "Transaction PIN not set. Please set up your PIN first.",
+                            },
+                        }
+                        if request_was_encrypted:
+                            if aes_key_bytes is None or iv_bytes is None:
+                                return JSONResponse(
+                                    content={"error": "Encryption keys missing"}, status_code=500
+                                )
+                            encrypted_response = encrypt_flow_response(
+                                response, aes_key_bytes, iv_bytes
+                            )
+                            return Response(content=encrypted_response, media_type="text/plain")
+                        return JSONResponse(content=response)
+
+                    pin_valid = verify_hash(str(pin), stored_pin_hash)
+
+                    if not pin_valid:
+                        retry_count += 1
+                        await redis_client.set(retry_key, str(retry_count), ex=900)
+
+                        attempts_remaining = 3 - retry_count
+                        error_msg = f"Invalid PIN. {attempts_remaining} attempt(s) remaining."
+                        if attempts_remaining == 0:
+                            error_msg = "Invalid PIN. Maximum attempts exceeded. Please start a new transfer."
+
+                        print(
+                            f"❌ PIN verification failed (attempt {retry_count}/3) for user: {phone_number}")
+                        response = {
+                            "screen": "Pin",
+                            "data": {
+                                "show_error": True,
+                                "error_message": error_msg,
+                            },
+                        }
+
+                        if request_was_encrypted:
+                            if aes_key_bytes is None or iv_bytes is None:
+                                return JSONResponse(
+                                    content={"error": "Encryption keys missing"}, status_code=500
+                                )
+                            encrypted_response = encrypt_flow_response(
+                                response, aes_key_bytes, iv_bytes
+                            )
+                            return Response(content=encrypted_response, media_type="text/plain")
+
+                        return JSONResponse(content=response)
+
+                print(f"✅ PIN verified for transfer: {idem_key}")
+
+                try:
+                    provider = PaymentProviderFactory.get_provider_for_service(
+                        "initiate_transfer")
+                    if not provider:
+                        raise ValueError(
+                            "No payment provider available for transfers")
+
+                    transfer_result = await provider.initiate_transfer(
+                        amount=float(pending_transfer.get("amount", 0)),
+                        recipient_account_number=pending_transfer["recipient"]["account_number"],
+                        recipient_bank_code=pending_transfer["recipient"]["bank_code"],
+                        sender_account_number=pending_transfer.get(
+                            "source", {}).get("account_number"),
+                        narration=pending_transfer.get("narration"),
+                        currency="NGN"
+                    )
+
+                    print(f"✅ Transfer executed: {transfer_result}")
+
+                    await redis_client.delete(f"user:{phone_number}:pending_transfer")
+                    await redis_client.delete(f"user:{phone_number}:pending_transfer_flow_token")
+                    await redis_client.delete(f"transfer:token:{idem_key}:phone")
+                    await redis_client.delete(f"transfer:retry:{idem_key}")
+                    await redis_client.delete(f"transfer:prev:{phone_number}:{idem_key}")
+
+                    if transfer_result.get("success"):
+                        transaction_id = transfer_result.get(
+                            "transaction_id", "N/A")
+                        amount = pending_transfer.get("amount", 0)
+                        recipient_name = pending_transfer["recipient"]["name"]
+                        asyncio.create_task(
+                            whatsapp_client.send_text(
+                                to=phone_number,
+                                text=f"✅ Transfer successful! ₦{amount:,.0f} has been sent to {recipient_name}. Transaction ID: {transaction_id}",
+                            )
+                        )
+                    else:
+                        error_msg = transfer_result.get(
+                            "error", "Unknown error")
+                        asyncio.create_task(
+                            whatsapp_client.send_text(
+                                to=phone_number,
+                                text=f"❌ Transfer failed: {error_msg}. Please try again.",
+                            )
+                        )
+                        response = {
+                            "screen": "Pin",
+                            "data": {
+                                "show_error": True,
+                                "error_message": f"Transfer failed: {error_msg}",
+                            },
+                        }
+                        if request_was_encrypted:
+                            if aes_key_bytes is None or iv_bytes is None:
+                                return JSONResponse(
+                                    content={"error": "Encryption keys missing"}, status_code=500
+                                )
+                            encrypted_response = encrypt_flow_response(
+                                response, aes_key_bytes, iv_bytes
+                            )
+                            return Response(content=encrypted_response, media_type="text/plain")
+                        return JSONResponse(content=response)
+
+                except Exception as e:
+                    print(f"❌ Transfer execution error: {e}")
+                    traceback.print_exc()
+                    asyncio.create_task(
+                        whatsapp_client.send_text(
+                            to=phone_number,
+                            text="❌ Transfer failed due to an error. Please try again later.",
+                        )
+                    )
+                    response = {
+                        "screen": "Pin",
+                        "data": {
+                            "show_error": True,
+                            "error_message": "Transfer failed due to an error. Please try again.",
+                        },
+                    }
+                    if request_was_encrypted:
+                        if aes_key_bytes is None or iv_bytes is None:
+                            return JSONResponse(
+                                content={"error": "Encryption keys missing"}, status_code=500
+                            )
+                        encrypted_response = encrypt_flow_response(
+                            response, aes_key_bytes, iv_bytes
+                        )
+                        return Response(content=encrypted_response, media_type="text/plain")
+                    return JSONResponse(content=response)
+
+                response = {
+                    "screen": "SUCCESS",
+                    "data": {
+                        "extension_message_response": {
+                            "params": {
+                                "flow_token": flow_token or "completed",
+                                "pin": str(pin),
+                                "success": True,
+                                "transaction_id": transfer_result.get("transaction_id", "N/A"),
+                            }
+                        }
+                    },
+                }
+
+                if request_was_encrypted:
+                    if aes_key_bytes is None or iv_bytes is None:
+                        return JSONResponse(
+                            content={"error": "Encryption keys missing"}, status_code=500
+                        )
+                    encrypted_response = encrypt_flow_response(
+                        response, aes_key_bytes, iv_bytes
+                    )
+                    return Response(content=encrypted_response, media_type="text/plain")
+
+                return JSONResponse(content=response)
+
+            # Default PIN handler (for onboarding, etc.)
+            response = {
+                "screen": "SUCCESS",
+                "data": {
+                    "extension_message_response": {
+                        "params": {
+                            "flow_token": flow_token or "completed",
+                            "pin": str(pin),
+                            "success": True,
+                        }
+                    }
+                },
+            }
+
+            if request_was_encrypted:
+                if aes_key_bytes is None or iv_bytes is None:
+                    return JSONResponse(
+                        content={"error": "Encryption keys missing"}, status_code=500
+                    )
+                encrypted_response = encrypt_flow_response(
+                    response, aes_key_bytes, iv_bytes
+                )
                 return Response(content=encrypted_response, media_type="text/plain")
 
             return JSONResponse(content=response)
