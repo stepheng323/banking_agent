@@ -8,6 +8,7 @@ from shared.clients.payment_provider import PaymentProvider
 
 class AsyncValidationService:
     """Async validation service to run provider validations in parallel."""
+
     def __init__(self, provider: PaymentProvider) -> None:
         self.provider = provider
 
@@ -16,11 +17,11 @@ class AsyncValidationService:
         account_number: str,
         bank_code: str,
         source_account_id: str,
-        timeout_s: float = 6.0,
+        timeout_s: float = 15.0,
     ) -> Tuple[Optional[Dict[str, Any]], Optional[Dict[str, Any]]]:
         """
         Validate recipient account and optionally check source account balance.
-        
+
         Note: Balance checking is optional and may not be available on all providers.
         If balance check fails, we still return the account resolution result.
         """
@@ -45,9 +46,25 @@ class AsyncValidationService:
         resolved, balance = await asyncio.gather(resolve_task, balance_task, return_exceptions=True)
 
         if isinstance(resolved, Exception):
-            print(f"⚠️  Account resolution exception: {resolved}")
+            exception_type = type(resolved).__name__
+            exception_msg = str(resolved) if str(
+                resolved) else f"{exception_type} (no message)"
+            print(
+                f"⚠️  Account resolution exception ({exception_type}): {exception_msg}")
+            if isinstance(resolved, asyncio.TimeoutError):
+                print(
+                    f"   ⏱️  Account resolution timed out after {timeout_s}s")
+            else:
+                import traceback
+                tb_str = ''.join(traceback.format_exception(
+                    type(resolved), resolved, resolved.__traceback__))
+                print(f"   Traceback:\n{tb_str}")
             resolved = None
         if isinstance(balance, Exception):
-            print(f"⚠️  Balance check exception (non-critical): {balance}")
+            exception_type = type(balance).__name__
+            exception_msg = str(balance) if str(
+                balance) else f"{exception_type} (no message)"
+            print(
+                f"⚠️  Balance check exception (non-critical) ({exception_type}): {exception_msg}")
             balance = None
         return resolved, balance
