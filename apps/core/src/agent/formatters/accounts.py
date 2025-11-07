@@ -12,7 +12,6 @@ def _get_last4(account: Dict) -> str:
     last4 = account.get("last4")
     if last4:
         return str(last4)
-    # Fallback to id hash tail if nothing else
     acc_id = str(account.get("id") or "")
     return acc_id[-4:] if acc_id else "????"
 

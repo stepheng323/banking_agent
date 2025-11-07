@@ -16,7 +16,6 @@ def _calculate_transfer_fee(amount: float) -> float:
         amt = float(amount)
     except Exception:
         return 0.0
-    # Simple heuristic: 0.5% with ₦10 minimum
     fee = round(amt * 0.005)
     return float(max(fee, 10))
 
@@ -46,10 +45,8 @@ def format_transfer_summary(data: Dict) -> str:
     total = amount + fee
 
     lines = [
-        "*Confirm Your Transfer*",
-        "",
         f"Amount: *{_format_currency_naira(amount)}*",
-        f"To: *{recipient_name}* ({recipient_bank} - ```{recipient_account}```)",
+        f"To: *{recipient_name.title()}* ({recipient_bank.title()} - ```{recipient_account}```)",
         f"From: {source_bank} (...{last4})",
     ]
 
@@ -65,5 +62,3 @@ def format_transfer_summary(data: Dict) -> str:
     )
 
     return "\n".join(lines)
-
-
