@@ -13,6 +13,10 @@ from apps.core.src.agent.services.transfer_entity_extractor import TransferEntit
 from apps.core.src.agent.services.beneficiary_matcher import BeneficiaryMatcher
 from apps.core.src.agent.services.validation_service import AsyncValidationService
 from apps.core.src.agent.formatters.transfer import format_transfer_summary
+from apps.core.src.agent.common.cancellation import (
+    is_cancellation_intent,
+    handle_transaction_cancellation,
+)
 
 from shared.cache.bank_cache import BankCacheService
 from shared.utils.serialization import sqlalchemy_to_dict
@@ -27,6 +31,29 @@ async def extract_entities(
     extractor: TransferEntityExtractor,
 ) -> TransferState:
     """Extract entities from user message."""
+    # Check for cancellation intent first (using LLM classification if available)
+    message = state.get("message", "")
+    phone_number = state.get("phone_number")
+
+    # Use LLM-based cancellation detection (checks classification result from orchestrator)
+    if await is_cancellation_intent(message, phone_number=phone_number):
+        flow_state = state.get("flow_state")
+        transfer_status = state.get("transfer_status")
+        idem_key = state.get("idempotency_key")
+
+        # Only handle cancellation if there's an active transaction
+        if (flow_state not in ("extracting", "error", "cancelled", None) or
+            transfer_status == "pending" or
+                idem_key):
+            # Mark for cancellation handling - will be routed to cancel node
+            print(
+                f"🚫 Cancellation detected in extract_entities: flow_state={flow_state}, transfer_status={transfer_status}, idem_key={idem_key}")
+            return {
+                **state,
+                "flow_state": "cancelled",
+                "response": "",  # Will be set in handle_cancellation
+            }
+
     last_response = state.get("response") or state.get("llm_reply")
     smart_context = None
     if last_response:
@@ -203,29 +230,53 @@ async def find_beneficiary(
             ])
             return {
                 **state,
+                "matched_beneficiary": None,  # Clear stale beneficiary - need clarification
                 "flow_state": "collecting_recipient",
                 "response": state.get("llm_reply") or f"I found multiple matches for '{rec_name}'. Which one? {opts}",
             }
         else:
+            # No match found - clear any stale matched_beneficiary
             return {
                 **state,
+                "matched_beneficiary": None,  # Clear stale beneficiary - no match found
                 "flow_state": "collecting_recipient",
                 "response": state.get("llm_reply") or "Please provide the account number and bank name.",
             }
 
     if acct_number and not (bank_code or bank_name):
+        # User provided account but not bank - clear any stale matched_beneficiary
+        # (since we're collecting bank info, the beneficiary match is no longer valid)
         return {
             **state,
+            "matched_beneficiary": None,  # Clear stale beneficiary - bank info missing
             "flow_state": "collecting_recipient",
             "response": state.get("llm_reply") or "Please provide the bank name for this account.",
         }
 
     if not acct_number or not (bank_code or bank_name):
+        # Missing account or bank - clear any stale matched_beneficiary
         return {
             **state,
+            "matched_beneficiary": None,  # Clear stale beneficiary - missing info
             "flow_state": "collecting_recipient",
             "response": state.get("llm_reply") or "Please provide the account number and bank name.",
         }
+
+    # If we have account and bank but no matched_beneficiary, that's fine
+    # (user provided account details directly, not through beneficiary matching)
+    # Clear any stale matched_beneficiary if it doesn't match current recipient
+    matched_beneficiary = state.get("matched_beneficiary")
+    if matched_beneficiary and isinstance(matched_beneficiary, dict):
+        beneficiary_account = str(
+            matched_beneficiary.get("account_number", ""))
+        beneficiary_bank_code = str(matched_beneficiary.get("bank_code", ""))
+        if (beneficiary_account != str(acct_number) or
+                beneficiary_bank_code != str(bank_code)):
+            # Stale matched_beneficiary - clear it
+            return {
+                **state,
+                "matched_beneficiary": None,
+            }
 
     return state
 
@@ -251,8 +302,6 @@ async def validate_parallel(
     print(
         f"DEBUG validate_parallel: Initial state - account='{acct_number}', bank_code='{bank_code}', bank_name='{bank_name}'")
 
-    # If bank_code exists but bank_name is provided, verify they match
-    # This handles cases where bank_code was set incorrectly from checkpoint
     if bank_code and bank_name and bank_cache:
         cache_ready = await bank_cache.ensure_banks_cached(fetch_banks_func)
         if cache_ready:
@@ -306,14 +355,14 @@ async def validate_parallel(
                     "validation_errors": ["bank_code_resolution_failed"],
                 }
         else:
-            print(f"DEBUG validate_parallel: Bank cache not ready")
+            print("""DEBUG validate_parallel: Bank cache not ready""")
             return {
                 **state,
                 "flow_state": "validating",
             }
 
     if not bank_code:
-        print(f"DEBUG validate_parallel: No bank_code available")
+        print("""DEBUG validate_parallel: No bank_code available""")
         return {
             **state,
             "flow_state": "error",
@@ -322,7 +371,7 @@ async def validate_parallel(
         }
 
     if not acct_number:
-        print(f"DEBUG validate_parallel: No account_number available")
+        print("""DEBUG validate_parallel: No account_number available""")
         return {
             **state,
             "flow_state": "error",
@@ -330,27 +379,117 @@ async def validate_parallel(
             "validation_errors": ["missing_account_number"],
         }
 
-    print(
-        f"DEBUG validate_parallel: Calling validation API with account_number='{acct_number}', bank_code='{bank_code}'")
-    resolved, balance = await validation_service.validate_account_and_balance(
-        account_number=str(acct_number),
-        bank_code=str(bank_code),
-        source_account_id=str(source.get("id")),
-    )
-    print(
-        f"DEBUG validate_parallel: Validation result - resolved={resolved is not None}, balance={balance is not None}")
-    if resolved:
-        print(
-            f"DEBUG validate_parallel: Account resolved successfully: {resolved}")
+    # Check if recipient is a matched beneficiary - use DB data instead of API
+    # Edge cases handled:
+    # 1. Beneficiary matched and matches current recipient → reuse/reconstruct from beneficiary
+    # 2. Beneficiary exists but doesn't match current recipient (stale) → clear and validate via API
+    # 3. No beneficiary → validate via API
+    # 4. Recipient changed from beneficiary to non-beneficiary → clear and validate via API
+    matched_beneficiary = state.get("matched_beneficiary")
+    account_resolved = state.get("account_resolved")
 
-    # Check if resolution failed (None or success=False)
-    if resolved is None or (isinstance(resolved, dict) and not resolved.get("success", False)):
-        return {
-            **state,
-            "flow_state": "error",
-            "response": state.get("llm_reply") or "I couldn't verify that account right now. Please confirm the account number and bank.",
-            "validation_errors": ["account_resolution_failed"],
-        }
+    # Get current recipient details (source of truth)
+    current_account = state.get("recipient_account")
+    current_bank_code = state.get("recipient_bank_code")
+
+    # Only use beneficiary data if matched_beneficiary exists AND matches current recipient
+    use_beneficiary = False
+    if matched_beneficiary and isinstance(matched_beneficiary, dict):
+        beneficiary_account = str(
+            matched_beneficiary.get("account_number", ""))
+        beneficiary_bank_code = str(matched_beneficiary.get("bank_code", ""))
+
+        # Verify the matched beneficiary actually matches current recipient details
+        # This handles stale matched_beneficiary from previous transfers
+        if (beneficiary_account and beneficiary_bank_code and
+            current_account and current_bank_code and
+            str(current_account) == beneficiary_account and
+                str(current_bank_code) == beneficiary_bank_code):
+            use_beneficiary = True
+            print(
+                f"DEBUG validate_parallel: Valid beneficiary match found (account={current_account}, bank={current_bank_code})")
+        else:
+            # Matched beneficiary doesn't match current recipient - it's stale!
+            print(f"DEBUG validate_parallel: Stale matched_beneficiary detected. "
+                  f"Beneficiary: account={beneficiary_account}, bank={beneficiary_bank_code}. "
+                  f"Current: account={current_account}, bank={current_bank_code}. "
+                  f"Clearing and validating via API.")
+            # Clear the stale matched_beneficiary
+            state = {
+                **state,
+                "matched_beneficiary": None,
+            }
+            matched_beneficiary = None
+
+    if use_beneficiary and matched_beneficiary:
+        # ✅ Valid beneficiary match - use beneficiary data
+        # Check if we can reuse existing account_resolved
+        if account_resolved and isinstance(account_resolved, dict):
+            # Verify existing resolution matches current recipient
+            if (account_resolved.get("account_number") == str(current_account) and
+                    account_resolved.get("bank_code") == str(current_bank_code)):
+                print(
+                    f"DEBUG validate_parallel: Reusing existing account_resolved for beneficiary")
+                resolved = account_resolved
+                balance = None
+            else:
+                # Existing resolution doesn't match - reconstruct from beneficiary
+                print(
+                    f"DEBUG validate_parallel: Reconstructing account_resolved for beneficiary (existing resolution doesn't match)")
+                resolved = {
+                    "success": True,
+                    "account_name": state.get("recipient_name") or matched_beneficiary.get("account_name") or matched_beneficiary.get("alias", ""),
+                    "account_number": current_account,
+                    "bank_code": current_bank_code,
+                    "provider": "database",
+                }
+                balance = None
+        else:
+            # No existing resolution - construct from beneficiary
+            print(f"DEBUG validate_parallel: Using beneficiary data from database")
+            resolved = {
+                "success": True,
+                "account_name": state.get("recipient_name") or matched_beneficiary.get("account_name") or matched_beneficiary.get("alias", ""),
+                "account_number": current_account,
+                "bank_code": current_bank_code,
+                "provider": "database",
+            }
+            balance = None
+    else:
+        # ❌ No valid beneficiary match - validate via API
+        # This handles:
+        # - No matched_beneficiary
+        # - Stale matched_beneficiary (already cleared above)
+        # - Recipient changed to non-beneficiary
+        if not current_account or not current_bank_code:
+            return {
+                **state,
+                "flow_state": "error",
+                "response": state.get("llm_reply") or "Account number and bank code are required for validation.",
+                "validation_errors": ["missing_recipient_details"],
+            }
+
+        print(
+            f"DEBUG validate_parallel: Calling validation API with account_number='{acct_number}', bank_code='{bank_code}'")
+        resolved, balance = await validation_service.validate_account_and_balance(
+            account_number=str(acct_number),
+            bank_code=str(bank_code),
+            source_account_id=str(source.get("id")),
+        )
+        print(
+            f"DEBUG validate_parallel: Validation result - resolved={resolved is not None}, balance={balance is not None}")
+        if resolved:
+            print(
+                f"DEBUG validate_parallel: Account resolved successfully: {resolved}")
+
+        # Check if resolution failed (None or success=False)
+        if resolved is None or (isinstance(resolved, dict) and not resolved.get("success", False)):
+            return {
+                **state,
+                "flow_state": "error",
+                "response": state.get("llm_reply") or "I couldn't verify that account right now. Please confirm the account number and bank.",
+                "validation_errors": ["account_resolution_failed"],
+            }
 
     # Account resolution succeeded - proceed even if balance check failed
     # Balance check is optional and not all providers support it
@@ -374,13 +513,216 @@ async def validate_parallel(
 
     # Proceed with transfer - account is valid
     # Clear any previous validation errors since account resolution succeeded
+    # Store initial values in Redis for change detection
+    idem_key = state.get("idempotency_key")
+    phone_number = state.get("phone_number")
+
+    # Get or create idempotency key if not exists
+    if not idem_key:
+        idem_key = hashlib.sha256(
+            f"{phone_number}|{state.get('amount')}|{acct_number}|{bank_name}".encode(
+                "utf-8")
+        ).hexdigest()
+
+    # Store initial values in Redis for change detection
+    if phone_number and idem_key:
+        prev_key = f"transfer:prev:{phone_number}:{idem_key}"
+        prev_values = {
+            "amount": state.get("amount"),
+            "recipient_account": acct_number,
+            "recipient_bank_code": bank_code,
+            "recipient_bank_name": bank_name,
+            "recipient_name": resolved.get("account_name") if isinstance(resolved, dict) else state.get("recipient_name"),
+        }
+        await bank_cache.redis.set(
+            prev_key,
+            json.dumps(prev_values),
+            ex=3600  # 1 hour expiry
+        )
+
     return {
         **state,
         "account_resolved": resolved,
         "balance_available": available,
         "flow_state": "validating",
         "validation_errors": [],  # Clear any previous validation errors
+        "idempotency_key": idem_key,
     }
+
+
+async def check_and_acknowledge_changes(
+    state: TransferState,
+    bank_cache: BankCacheService,
+) -> TransferState:
+    """
+    Check for changes in transfer details and show acknowledgment message.
+    Returns state with acknowledgment message if changes detected.
+    """
+    # Only check if we have a transfer in progress (account already resolved)
+    account_resolved = state.get("account_resolved")
+    selected_account = state.get("selected_source_account")
+
+    if not account_resolved or not selected_account:
+        return state
+
+    # If we already acknowledged changes, skip
+    if state.get("_change_acknowledged"):
+        return state
+
+    # Get current values
+    current_amount = state.get("amount")
+    current_account = state.get("recipient_account")
+    current_bank_code = state.get("recipient_bank_code")
+    current_bank_name = state.get("recipient_bank_name")
+    current_recipient_name = state.get("recipient_name")
+
+    # Get previous values from Redis
+    phone_number = state.get("phone_number")
+    idem_key = state.get("idempotency_key")
+
+    if not phone_number or not idem_key:
+        # No previous values to compare, store current as previous
+        if phone_number and idem_key:
+            prev_key = f"transfer:prev:{phone_number}:{idem_key}"
+            prev_values = {
+                "amount": current_amount,
+                "recipient_account": current_account,
+                "recipient_bank_code": current_bank_code,
+                "recipient_bank_name": current_bank_name,
+                "recipient_name": current_recipient_name or (
+                    account_resolved.get("account_name") if isinstance(
+                        account_resolved, dict) else None
+                ),
+            }
+            await bank_cache.redis.set(
+                prev_key,
+                json.dumps(prev_values),
+                ex=3600
+            )
+        return state
+
+    prev_key = f"transfer:prev:{phone_number}:{idem_key}"
+    try:
+        prev_data = await bank_cache.redis.get(prev_key)
+        if not prev_data:
+            # No previous data, store current as previous
+            prev_values = {
+                "amount": current_amount,
+                "recipient_account": current_account,
+                "recipient_bank_code": current_bank_code,
+                "recipient_bank_name": current_bank_name,
+                "recipient_name": current_recipient_name or (
+                    account_resolved.get("account_name") if isinstance(
+                        account_resolved, dict) else None
+                ),
+            }
+            await bank_cache.redis.set(
+                prev_key,
+                json.dumps(prev_values),
+                ex=3600
+            )
+            return state
+
+        prev_values = json.loads(prev_data)
+        previous_amount = prev_values.get("amount")
+        previous_account = prev_values.get("recipient_account")
+        previous_bank_code = prev_values.get("recipient_bank_code")
+        previous_bank_name = prev_values.get("recipient_bank_name")
+        previous_recipient_name = prev_values.get("recipient_name")
+    except Exception as e:
+        print(f"⚠️  Error loading previous values from Redis: {e}")
+        return state
+
+    # Detect changes
+    changes = []
+    recipient_info_changed = False
+
+    if current_amount and previous_amount and current_amount != previous_amount:
+        amount_str = f"₦{current_amount:,.0f}"
+        if current_amount == int(current_amount):
+            amount_str = amount_str.replace('.0', '')
+        changes.append(f"amount to {amount_str}")
+
+    if current_account and previous_account and str(current_account) != str(previous_account):
+        changes.append(f"account number to {current_account}")
+        recipient_info_changed = True
+
+    if current_bank_code and previous_bank_code and str(current_bank_code) != str(previous_bank_code):
+        bank_name = current_bank_name or current_bank_code
+        changes.append(f"bank to {bank_name}")
+        recipient_info_changed = True
+    elif current_bank_name and previous_bank_name and current_bank_name != previous_bank_name:
+        changes.append(f"bank to {current_bank_name}")
+        recipient_info_changed = True
+
+    if current_recipient_name and previous_recipient_name and current_recipient_name != previous_recipient_name:
+        changes.append(f"recipient to {current_recipient_name.title()}")
+        recipient_info_changed = True
+
+    # If recipient info changed, clear account_resolved to trigger re-validation
+    new_state_updates = {}
+    if recipient_info_changed:
+        print(f"DEBUG check_and_acknowledge_changes: Recipient info changed, clearing account_resolved for re-validation")
+        new_state_updates["account_resolved"] = None
+
+        # Clear matched_beneficiary only if it doesn't match the new recipient
+        # (find_beneficiary may have already matched a new beneficiary, so we should preserve it)
+        matched_beneficiary = state.get("matched_beneficiary")
+        if matched_beneficiary and isinstance(matched_beneficiary, dict):
+            beneficiary_account = str(
+                matched_beneficiary.get("account_number", ""))
+            beneficiary_bank_code = str(
+                matched_beneficiary.get("bank_code", ""))
+            # Only clear if it doesn't match the new recipient
+            if (beneficiary_account != str(current_account) or
+                    beneficiary_bank_code != str(current_bank_code)):
+                print(f"DEBUG check_and_acknowledge_changes: Clearing stale matched_beneficiary "
+                      f"(beneficiary: {beneficiary_account}/{beneficiary_bank_code} != "
+                      f"current: {current_account}/{current_bank_code})")
+                new_state_updates["matched_beneficiary"] = None
+            else:
+                print(f"DEBUG check_and_acknowledge_changes: Preserving matched_beneficiary "
+                      f"(still matches new recipient: {current_account}/{current_bank_code})")
+
+        # Reset so it can check again after re-validation
+        new_state_updates["_change_acknowledged"] = False
+
+    # If changes detected, show acknowledgment
+    if changes:
+        if len(changes) == 1:
+            message = f"Ok, changing {changes[0]}."
+        elif len(changes) == 2:
+            message = f"Ok, changing {changes[0]} and {changes[1]}."
+        else:
+            message = f"Ok, changing {', '.join(changes[:-1])}, and {changes[-1]}."
+
+        result = {
+            **state,
+            **new_state_updates,
+            "response": message,
+            "_change_acknowledged": True,
+            "flow_state": "validating",  # Will route appropriately
+        }
+        return cast(TransferState, result)
+
+    # No changes detected, update previous values in Redis
+    prev_values = {
+        "amount": current_amount,
+        "recipient_account": current_account,
+        "recipient_bank_code": current_bank_code,
+        "recipient_bank_name": current_bank_name,
+        "recipient_name": current_recipient_name or (
+            account_resolved.get("account_name") if isinstance(
+                account_resolved, dict) else None
+        ),
+    }
+    await bank_cache.redis.set(
+        prev_key,
+        json.dumps(prev_values),
+        ex=3600
+    )
+
+    return state
 
 
 async def prepare_confirmation(
@@ -448,6 +790,30 @@ async def prepare_confirmation(
         ex=900
     )
 
+    # Store phone number mapping for flow_token lookup
+    await redis_client.set(
+        f"transfer:token:{idem_key}:phone",
+        state["phone_number"],
+        ex=900
+    )
+
+    # Store initial previous values if not already stored
+    prev_key = f"transfer:prev:{state['phone_number']}:{idem_key}"
+    prev_data = await redis_client.get(prev_key)
+    if not prev_data:
+        prev_values = {
+            "amount": amount,
+            "recipient_account": acct_number,
+            "recipient_bank_code": state.get("recipient_bank_code"),
+            "recipient_bank_name": bank_name,
+            "recipient_name": rec_name,
+        }
+        await redis_client.set(
+            prev_key,
+            json.dumps(prev_values),
+            ex=3600
+        )
+
     await whatsapp_client.send_flow(
         to=state["phone_number"],
         header="Confirm Your Transfer",
@@ -465,3 +831,25 @@ async def prepare_confirmation(
         "transfer_status": "pending",
         "flow_state": "confirming",
     }
+
+
+async def handle_cancellation(
+    state: TransferState,
+    redis_client: redis.Redis,
+) -> TransferState:
+    """
+    Handle cancellation of transfer in progress.
+    Uses shared cancellation utilities for consistency across transaction types.
+    """
+    print(
+        f"🛑 handle_cancellation called: flow_state={state.get('flow_state')}, amount={state.get('amount')}, recipient={state.get('recipient_name')}")
+    # Convert TransferState to dict for the generic handler
+    state_dict = dict(state)
+    result = await handle_transaction_cancellation(
+        state=state_dict,
+        transaction_type="transfer",
+        redis_client=redis_client,
+    )
+    print(
+        f"✅ handle_cancellation completed: response={result.get('response', '')[:50]}...")
+    return cast(TransferState, result)
