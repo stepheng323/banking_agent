@@ -98,6 +98,16 @@ class OrchestratorAgent:
         except Exception:
             pass  # Don't fail if cache update fails
 
+    async def _save_classification_result(self, phone_number: str, result: ClassificationResult) -> None:
+        """Save classification result to Redis for use by transaction flows."""
+        try:
+            redis_client = RedisClient.get_client()
+            key = f"user:{phone_number}:last_classification"
+            # Save with 1 hour TTL
+            await redis_client.set(key, result.model_dump_json(), ex=3600)
+        except Exception:
+            pass  # Don't fail if cache update fails
+
     async def _classify_llm(
         self,
         text: str,
@@ -106,22 +116,41 @@ class OrchestratorAgent:
     ) -> ClassificationResult:
         system = (
             "You are an intent classifier for a banking assistant. "
-            "Classify messages into: transfer, airtime, data, conversational, unknown. "
+            "Classify messages into: transfer, airtime, data, conversational, cancel, unknown. "
             "Determine complexity (multi-step reasoning, dynamic amounts, pooling accounts, historical references, multiple transactions). "
             "Work across languages: English, Yoruba, Hausa, Igbo, Nigerian Pidgin, French, and more.\n\n"
+            
+            "**CANCELLATION INTENT:**\n"
+            "- If user wants to cancel, abort, or stop the current transaction, classify as 'cancel'\n"
+            "- Cancellation phrases: 'cancel', 'abort', 'stop', 'nevermind', 'forget it', 'don't send', 'no thanks', 'not now'\n"
+            "- Multilingual: 'ma fi sile' (Yoruba: forget it), 'ka soke' (Hausa: stop), equivalent phrases in other languages\n"
+            "- Set is_cancellation=true when intent is 'cancel'\n"
+            "- If there's an active transaction (context shows active_flow and flow_state not in initial states), cancellation is more likely\n"
+            "- If user provides transaction details (amount, account, bank), it's NOT cancellation - it's a continuation\n"
+            "- If user wants to change/modify transaction details, it's NOT cancellation - classify as the transaction type\n\n"
+            
             "**CONTEXT AWARENESS (HIGHEST PRIORITY):**\n"
-            "- If context.conversationState exists with active_flow='transfer', classify as 'transfer' (continuation)\n"
-            "- If previous assistant response asked for transfer details (account, bank, amount), and user provides them, classify as 'transfer'\n"
-            "- Account numbers (10 digits), bank names, or combinations ('0760505261 Access bank') are transfer continuations\n"
+            "- If context.conversationState exists with active_flow='transfer', classify as 'transfer' (continuation) UNLESS user explicitly cancels\n"
+            "- If previous assistant response asked for transfer details, and user provides them, classify as 'transfer'\n"
+            "- If user says 'cancel' during an active transfer, classify as 'cancel' with is_cancellation=true\n"
+            "- Account numbers (10 digits), bank names, or combinations ('0760505261 Access bank') are transfer continuations (not cancellation)\n"
             "- Short responses to transfer questions are continuations\n\n"
+            
             "**EXAMPLES:**\n"
-            "- '0760505261 Access bank' → transfer (providing requested info)\n"
-            "- 'Access bank' → transfer (answering bank question)\n"
-            "- '5k' → transfer (providing amount after being asked)\n"
-            "- 'send 5k' → transfer (new request)\n"
-            "- 'hi' → conversational\n"
-            "- 'check balance' → conversational\n\n"
-            "**PRINCIPLE:** If the message answers a question or provides requested information, it's a continuation. Otherwise, classify based on intent.\n"
+            "- 'cancel' → intent: cancel, is_cancellation: true\n"
+            "- 'ma fi sile' (Yoruba: forget it) → intent: cancel, is_cancellation: true\n"
+            "- 'stop' → intent: cancel, is_cancellation: true\n"
+            "- 'no thanks' → intent: cancel, is_cancellation: true\n"
+            "- 'send 5k' → intent: transfer, is_cancellation: false\n"
+            "- 'Access bank' → intent: transfer, is_cancellation: false\n"
+            "- '0760505261 Access bank' → intent: transfer, is_cancellation: false\n"
+            "- '5k' (after being asked for amount) → intent: transfer, is_cancellation: false\n"
+            "- 'change amount to 10k' → intent: transfer, is_cancellation: false (modification, not cancellation)\n"
+            "- 'hi' → intent: conversational, is_cancellation: false\n"
+            "- 'check balance' → intent: conversational, is_cancellation: false\n\n"
+            
+            "**PRINCIPLE:** If the message answers a question or provides requested information, it's a continuation. "
+            "If the message explicitly cancels/aborts, it's cancellation. Otherwise, classify based on intent.\n"
             "Return ONLY the JSON for the given schema."
         )
 
@@ -170,7 +199,65 @@ class OrchestratorAgent:
 
         print(f"Classification result: {result.model_dump_json()}")
 
+        # Save classification result for use by transaction flows
+        asyncio.create_task(self._save_classification_result(phone_number, result))
+
         intent = result.intent.lower()
+        
+        # Handle cancellation intent
+        is_cancellation = (intent == "cancel" or result.is_cancellation is True)
+        if is_cancellation:
+            # Check if there's an active transaction to cancel
+            # First check Redis conversation_state, then check for pending_transfer as fallback
+            has_active_transaction = False
+            active_flow = None
+            flow_state = None
+            transfer_status = None
+            
+            if conversation_state:
+                active_flow = conversation_state.get("active_flow")
+                flow_state = conversation_state.get("flow_state")
+                transfer_status = conversation_state.get("transfer_status")
+                
+                # Check if there's an active transaction
+                if (active_flow and 
+                    (flow_state not in ("extracting", "error", "cancelled", None) or
+                     transfer_status == "pending")):
+                    has_active_transaction = True
+            
+            # Fallback: Check for pending_transfer in Redis (for cases where conversation_state wasn't updated)
+            if not has_active_transaction:
+                try:
+                    redis_client = RedisClient.get_client()
+                    pending_transfer = await redis_client.get(f"user:{phone_number}:pending_transfer")
+                    if pending_transfer:
+                        has_active_transaction = True
+                        active_flow = "transfer"
+                        transfer_status = "pending"
+                        print(f"✅ Found active transaction via pending_transfer fallback")
+                except Exception as e:
+                    print(f"⚠️  Error checking pending_transfer: {e}")
+            
+            if has_active_transaction:
+                # Route to the appropriate flow's cancellation handler
+                if active_flow == "transfer":
+                    # Pass cancellation intent to transfer service
+                    # The transfer service will detect this and handle cancellation
+                    response = await self.transfer.run_simple(phone_number, text)
+                    asyncio.create_task(self._save_last_response(phone_number, response))
+                    return response
+                # Future: handle airtime/data cancellation
+                elif active_flow in ("airtime", "data"):
+                    # Future: route to airtime/data cancellation
+                    response = "Cancellation for airtime/data flows will be implemented soon."
+                    asyncio.create_task(self._save_last_response(phone_number, response))
+                    return response
+            
+            # No active transaction to cancel
+            response = "There's no active transaction to cancel."
+            asyncio.create_task(self._save_last_response(phone_number, response))
+            return response
+
         complex_note = "complex" if result.is_complex else "simple"
 
         response = (
