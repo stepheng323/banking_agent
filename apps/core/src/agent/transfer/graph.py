@@ -1,5 +1,6 @@
 """LangGraph graph for transfer flow."""
 
+import json
 from typing import Literal, cast
 from langgraph.graph import StateGraph, END
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
@@ -13,8 +14,11 @@ from apps.core.src.agent.transfer.nodes import (
     select_source_account,
     find_beneficiary,
     validate_parallel,
+    check_and_acknowledge_changes,
     prepare_confirmation,
+    handle_cancellation,
 )
+# Note: Cancellation detection is now handled in extract_entities node using LLM classification
 from apps.core.src.agent.services.transfer_entity_extractor import TransferEntityExtractor
 from apps.core.src.agent.services.beneficiary_matcher import BeneficiaryMatcher
 from apps.core.src.agent.services.validation_service import AsyncValidationService
@@ -65,7 +69,7 @@ def create_initial_state(phone_number: str, message: str, message_id: str) -> Tr
     }
 
 
-def route_by_state(state: TransferState) -> Literal["end", "collect_amount", "select_account", "collect_recipient", "validate", "confirm"]:
+def route_by_state(state: TransferState) -> Literal["end", "collect_amount", "select_account", "collect_recipient", "validate", "check_changes", "confirm", "cancel"]:
     """Route based on current flow state and missing data."""
     flow_state = state.get("flow_state")
     response = state.get("response", "")
@@ -74,7 +78,18 @@ def route_by_state(state: TransferState) -> Literal["end", "collect_amount", "se
     recipient_account = state.get("recipient_account")
     recipient_bank = state.get(
         "recipient_bank_code") or state.get("recipient_bank_name")
+    account_resolved = state.get("account_resolved")
 
+    # Check if cancellation was detected but not yet handled
+    # If flow_state is "cancelled" but response is empty, route to cancel node
+    if flow_state == "cancelled" and not response:
+        return "cancel"
+
+    # If already cancelled and response is set, end to send it
+    if flow_state == "cancelled" and response:
+        return "end"
+
+    # If we have a response, end to send it
     if response and flow_state in ("collecting_amount", "selecting_account", "collecting_recipient", "error", "confirming"):
         return "end"
 
@@ -88,7 +103,18 @@ def route_by_state(state: TransferState) -> Literal["end", "collect_amount", "se
     if not recipient_account or not recipient_bank:
         return "collect_recipient"
 
+    # After validation, check for changes before confirming
     if flow_state == "validating":
+        # If account_resolved was cleared (recipient info changed), re-validate
+        if not account_resolved:
+            # Make sure we have recipient info to validate
+            if recipient_account and recipient_bank:
+                return "validate"
+            # If no recipient info, go back to collecting
+            return "collect_recipient"
+        # Check if changes need acknowledgment
+        if not state.get("_change_acknowledged"):
+            return "check_changes"
         return "confirm"
 
     if flow_state == "extracting":
@@ -168,10 +194,16 @@ class TransferFlowGraph:
                 )
             return state
 
+        async def check_changes_node(state: TransferState) -> TransferState:
+            return await check_and_acknowledge_changes(state, self.bank_cache)
+
         async def confirm_node(state: TransferState) -> TransferState:
             return await prepare_confirmation(
                 state, self.whatsapp_client, self.redis_client
             )
+
+        async def cancellation_node(state: TransferState) -> TransferState:
+            return await handle_cancellation(state, self.redis_client)
 
         # Add nodes
         workflow.add_node("extract", extract_node)
@@ -180,11 +212,29 @@ class TransferFlowGraph:
         workflow.add_node("select_account", select_source_account)
         workflow.add_node("find_beneficiary", find_beneficiary_node)
         workflow.add_node("validate_parallel", validate_parallel_node)
+        workflow.add_node("check_changes", check_changes_node)
         workflow.add_node("confirm", confirm_node)
+        workflow.add_node("cancel", cancellation_node)
 
         workflow.set_entry_point("extract")
 
-        workflow.add_edge("extract", "load_context")
+        # After extract, check if cancellation was detected and route directly to cancel node
+        def route_after_extract(state: TransferState) -> str:
+            flow_state = state.get("flow_state")
+            response = state.get("response", "")
+            if flow_state == "cancelled" and not response:
+                print(f"🛑 Routing to cancel node after extract_entities")
+                return "cancel"
+            return "load_context"
+
+        workflow.add_conditional_edges(
+            "extract",
+            route_after_extract,
+            {
+                "cancel": "cancel",
+                "load_context": "load_context",
+            }
+        )
         workflow.add_edge("load_context", "validate_amount")
 
         workflow.add_conditional_edges(
@@ -197,6 +247,7 @@ class TransferFlowGraph:
                 "collect_recipient": "find_beneficiary",
                 "validate": "validate_parallel",
                 "confirm": "confirm",
+                "cancel": "cancel",
             }
         )
 
@@ -208,6 +259,7 @@ class TransferFlowGraph:
                 "collect_recipient": "find_beneficiary",
                 "validate": "validate_parallel",
                 "confirm": "confirm",
+                "cancel": "cancel",
             }
         )
 
@@ -218,6 +270,7 @@ class TransferFlowGraph:
                 "end": END,
                 "validate": "validate_parallel",
                 "confirm": "confirm",
+                "cancel": "cancel",
             }
         )
 
@@ -226,11 +279,26 @@ class TransferFlowGraph:
             route_by_state,
             {
                 "end": END,
+                "validate": "validate_parallel",  # Re-validate if account_resolved was cleared
+                "check_changes": "check_changes",
                 "confirm": "confirm",
+                "cancel": "cancel",
+            }
+        )
+
+        workflow.add_conditional_edges(
+            "check_changes",
+            route_by_state,
+            {
+                "end": END,  # If change message shown, end to send it
+                "validate": "validate_parallel",  # If recipient changed, re-validate
+                "confirm": "confirm",  # Otherwise proceed to confirmation
+                "cancel": "cancel",
             }
         )
 
         workflow.add_edge("confirm", END)
+        workflow.add_edge("cancel", END)
 
         return workflow
 
@@ -247,6 +315,60 @@ class TransferFlowGraph:
 
         if self.graph is None:
             self.graph = self._build_graph().compile(checkpointer=self._checkpointer)
+
+    async def _update_conversation_state(self, phone_number: str, state: TransferState) -> None:
+        """Update conversation_state in Redis so orchestrator can detect active transactions."""
+        try:
+            redis_client = RedisClient.get_client()
+            flow_state = state.get("flow_state")
+            active_flow = state.get("active_flow")
+            transfer_status = state.get("transfer_status")
+            idem_key = state.get("idempotency_key")
+
+            # Only save conversation_state if there's an active transaction
+            # (not in initial/extracting state unless there's a pending transfer)
+            should_save = False
+
+            if flow_state == "cancelled":
+                # Transaction cancelled - clear conversation_state
+                key = f"user:{phone_number}:conversation_state"
+                await redis_client.delete(key)
+                return
+
+            # Save if:
+            # 1. Transfer is pending (waiting for PIN)
+            # 2. Flow state indicates active transaction (not just extracting)
+            # 3. Has idempotency key (transaction initiated)
+            if (transfer_status == "pending" or
+                (flow_state not in ("extracting", "error", None) and active_flow == "transfer") or
+                    idem_key):
+                should_save = True
+
+            if should_save:
+                conversation_state = {
+                    "active_flow": active_flow,
+                    "flow_state": flow_state,
+                    "transfer_status": transfer_status,
+                    "idempotency_key": idem_key,
+                    "amount": state.get("amount"),
+                    "recipient_account": state.get("recipient_account"),
+                    "recipient_name": state.get("recipient_name"),
+                    "recipient_bank_code": state.get("recipient_bank_code"),
+                    "recipient_bank_name": state.get("recipient_bank_name"),
+                }
+
+                key = f"user:{phone_number}:conversation_state"
+                # Save with 1 hour TTL (same as other conversation state)
+                await redis_client.set(key, json.dumps(conversation_state), ex=3600)
+                print(
+                    f"✅ Updated conversation_state for {phone_number}: active_flow={active_flow}, flow_state={flow_state}, transfer_status={transfer_status}")
+            else:
+                # No active transaction - clear conversation_state if it exists
+                key = f"user:{phone_number}:conversation_state"
+                await redis_client.delete(key)
+        except Exception as e:
+            print(f"⚠️  Error updating conversation_state: {e}")
+            # Don't fail if conversation state update fails
 
     async def run(self, phone_number: str, message: str, message_id: str) -> str:
         """Run the transfer flow graph."""
@@ -282,4 +404,8 @@ class TransferFlowGraph:
                 phone_number, message, message_id)
 
         final_state = await self.graph.ainvoke(cast(TransferState, input_state), config)
+
+        # Update conversation_state in Redis so orchestrator can detect active transactions
+        await self._update_conversation_state(phone_number, cast(TransferState, final_state))
+
         return final_state.get("response", "")
