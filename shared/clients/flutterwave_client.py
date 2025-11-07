@@ -1,5 +1,6 @@
 """Flutterwave API client for payment services."""
 import asyncio
+import json
 import time
 from typing import Any, Dict, Optional
 
@@ -48,6 +49,8 @@ class FlutterwaveClient(PaymentProvider):
             settings, "flutterwave_use_sandbox", False
         )
         self.base_url = FLUTTERWAVE_SANDBOX_URL if self.use_sandbox else FLUTTERWAVE_BASE_URL
+        print(
+            f"🔧 Flutterwave client initialized: use_sandbox={self.use_sandbox}, base_url={self.base_url}")
 
         self._access_token: Optional[str] = None
         self._token_expires_at: float = 0.0
@@ -363,20 +366,24 @@ class FlutterwaveClient(PaymentProvider):
         url = f"{self.base_url}/banks/account-resolve"
         payload = {
             "account": {
-                "code": bank_code,
                 "number": account_number,
+                "code": bank_code,
             },
             "currency": currency,
         }
         headers = await self._get_headers()
+        headers["accept"] = "application/json"
 
         last_error = None
         for attempt in range(1, max_retries + 1):
             try:
                 async with httpx.AsyncClient(timeout=10.0) as client:
+
                     response = await client.post(url, headers=headers, json=payload)
                     response.raise_for_status()
                     result = response.json()
+                    print(
+                        f"🔍 resolve_account: result={json.dumps(result, indent=4)}")
                     if result.get("status") == "success":
                         data = result.get("data", {})
                         account_name = data.get("account_name", "").strip()
@@ -405,7 +412,20 @@ class FlutterwaveClient(PaymentProvider):
 
             except httpx.HTTPStatusError as e:
                 last_error = e
-                if e.response.status_code == 401:
+                status_code = e.response.status_code
+                try:
+                    error_body = e.response.json()
+                    error_msg = error_body.get(
+                        "message", f"HTTP {status_code}")
+                    print(
+                        f"⚠️  Flutterwave API {status_code} error: {error_msg}")
+                    print(f"   URL: {url}")
+                    print(f"   Payload: {payload}")
+                except Exception:
+                    print(
+                        f"⚠️  Flutterwave API {status_code} error (attempt {attempt}/{max_retries})")
+
+                if status_code == 401:
                     print("❌ Flutterwave API Authentication Failed (401)")
 
                     if attempt == 1:
@@ -425,7 +445,7 @@ class FlutterwaveClient(PaymentProvider):
                         "bank_code": bank_code,
                         "provider": self.provider_name,
                     }
-                elif e.response.status_code == 400:
+                elif status_code == 400:
                     try:
                         error_data = e.response.json()
                         error_msg = error_data.get(
