@@ -1,6 +1,6 @@
 """LangGraph state for transfer flow."""
 
-from typing import Literal, Optional, TypedDict
+from typing import Literal, NotRequired, Optional, TypedDict
 
 
 class TransferState(TypedDict):
@@ -21,7 +21,8 @@ class TransferState(TypedDict):
         "confirming",
         "authorizing",
         "completed",
-        "error"
+        "error",
+        "cancelled"
     ]
 
     # Extracted entities
@@ -52,3 +53,11 @@ class TransferState(TypedDict):
     idempotency_key: Optional[str]
     transfer_status: Literal["pending", "confirmed",
                              "authorized", "completed", "failed", None]
+
+    # Change tracking fields
+    _previous_amount: NotRequired[Optional[float]]
+    _previous_recipient_account: NotRequired[Optional[str]]
+    _previous_recipient_bank_code: NotRequired[Optional[str]]
+    _previous_recipient_bank_name: NotRequired[Optional[str]]
+    _previous_recipient_name: NotRequired[Optional[str]]
+    _change_acknowledged: NotRequired[bool]
