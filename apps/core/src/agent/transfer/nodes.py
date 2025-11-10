@@ -563,11 +563,19 @@ async def check_and_acknowledge_changes(
     selected_account = state.get("selected_source_account")
 
     if not account_resolved or not selected_account:
-        return state
+        # Missing required data, mark as acknowledged to prevent routing loop and proceed
+        return {
+            **state,
+            "_change_acknowledged": True,
+            "flow_state": "confirming",
+        }
 
-    # If we already acknowledged changes, skip
+    # If we already acknowledged changes, proceed to confirmation to avoid routing loop
     if state.get("_change_acknowledged"):
-        return state
+        return {
+            **state,
+            "flow_state": "confirming",
+        }
 
     # Get current values
     current_amount = state.get("amount")
@@ -581,31 +589,19 @@ async def check_and_acknowledge_changes(
     idem_key = state.get("idempotency_key")
 
     if not phone_number or not idem_key:
-        # No previous values to compare, store current as previous
-        if phone_number and idem_key:
-            prev_key = f"transfer:prev:{phone_number}:{idem_key}"
-            prev_values = {
-                "amount": current_amount,
-                "recipient_account": current_account,
-                "recipient_bank_code": current_bank_code,
-                "recipient_bank_name": current_bank_name,
-                "recipient_name": current_recipient_name or (
-                    account_resolved.get("account_name") if isinstance(
-                        account_resolved, dict) else None
-                ),
-            }
-            await bank_cache.redis.set(
-                prev_key,
-                json.dumps(prev_values),
-                ex=3600
-            )
-        return state
+        # Missing phone_number or idem_key, cannot store previous values
+        # Mark as acknowledged and proceed to confirmation since no previous values to compare
+        return {
+            **state,
+            "_change_acknowledged": True,
+            "flow_state": "confirming",
+        }
 
     prev_key = f"transfer:prev:{phone_number}:{idem_key}"
     try:
         prev_data = await bank_cache.redis.get(prev_key)
         if not prev_data:
-            # No previous data, store current as previous
+            # No previous data, store current as previous and mark as acknowledged
             prev_values = {
                 "amount": current_amount,
                 "recipient_account": current_account,
@@ -621,7 +617,12 @@ async def check_and_acknowledge_changes(
                 json.dumps(prev_values),
                 ex=3600
             )
-            return state
+            # Mark as acknowledged and proceed to confirmation since no previous data to compare
+            return {
+                **state,
+                "_change_acknowledged": True,
+                "flow_state": "confirming",
+            }
 
         prev_values = json.loads(prev_data)
         previous_amount = prev_values.get("amount")
@@ -684,9 +685,6 @@ async def check_and_acknowledge_changes(
                 print(f"DEBUG check_and_acknowledge_changes: Preserving matched_beneficiary "
                       f"(still matches new recipient: {current_account}/{current_bank_code})")
 
-        # Reset so it can check again after re-validation
-        new_state_updates["_change_acknowledged"] = False
-
     # If changes detected, show acknowledgment
     if changes:
         if len(changes) == 1:
@@ -696,16 +694,29 @@ async def check_and_acknowledge_changes(
         else:
             message = f"Ok, changing {', '.join(changes[:-1])}, and {changes[-1]}."
 
-        result = {
-            **state,
-            **new_state_updates,
-            "response": message,
-            "_change_acknowledged": True,
-            "flow_state": "validating",  # Will route appropriately
-        }
+        # If recipient info changed, we need to re-validate first
+        # The routing logic will prioritize re-validation (when account_resolved is None) over sending responses
+        if recipient_info_changed:
+            # Clear account_resolved to trigger re-validation
+            # Set response - routing will prioritize re-validation when account_resolved is None
+            result = {
+                **state,
+                **new_state_updates,
+                "response": message,  # Acknowledgment message - will be sent after re-validation
+                "_change_acknowledged": True,  # Mark as acknowledged to prevent immediate re-check
+                "flow_state": "validating",  # Route to validate to re-resolve account
+            }
+        else:
+            # Only amount changed, no re-validation needed, show acknowledgment and proceed to confirmation
+            result = {
+                **state,
+                "response": message,
+                "_change_acknowledged": True,
+                "flow_state": "confirming",
+            }
         return cast(TransferState, result)
 
-    # No changes detected, update previous values in Redis
+    # No changes detected, update previous values in Redis and proceed to confirmation
     prev_values = {
         "amount": current_amount,
         "recipient_account": current_account,
@@ -722,7 +733,12 @@ async def check_and_acknowledge_changes(
         ex=3600
     )
 
-    return state
+    # Mark as acknowledged and proceed to confirmation since no changes detected
+    return {
+        **state,
+        "_change_acknowledged": True,
+        "flow_state": "confirming",
+    }
 
 
 async def prepare_confirmation(

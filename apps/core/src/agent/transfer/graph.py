@@ -89,7 +89,16 @@ def route_by_state(state: TransferState) -> Literal["end", "collect_amount", "se
     if flow_state == "cancelled" and response:
         return "end"
 
-    # If we have a response, end to send it
+    # Priority: If account_resolved was cleared (recipient info changed), re-validate first
+    # This takes priority over sending responses to ensure account is re-validated
+    if flow_state == "validating" and not account_resolved:
+        # Make sure we have recipient info to validate
+        if recipient_account and recipient_bank:
+            return "validate"
+        # If no recipient info, go back to collecting
+        return "collect_recipient"
+
+    # If we have a response, end to send it (unless we need to re-validate)
     if response and flow_state in ("collecting_amount", "selecting_account", "collecting_recipient", "error", "confirming"):
         return "end"
 
@@ -105,16 +114,17 @@ def route_by_state(state: TransferState) -> Literal["end", "collect_amount", "se
 
     # After validation, check for changes before confirming
     if flow_state == "validating":
-        # If account_resolved was cleared (recipient info changed), re-validate
-        if not account_resolved:
-            # Make sure we have recipient info to validate
-            if recipient_account and recipient_bank:
-                return "validate"
-            # If no recipient info, go back to collecting
-            return "collect_recipient"
-        # Check if changes need acknowledgment
-        if not state.get("_change_acknowledged"):
+        # Only route to check_changes if changes haven't been acknowledged yet
+        # This prevents routing loops and ensures we don't check changes multiple times
+        change_acknowledged = state.get("_change_acknowledged", False)
+        if not change_acknowledged and account_resolved:
+            # Only check changes if account is resolved (otherwise we need to validate first)
             return "check_changes"
+        # Changes already acknowledged or account needs validation, proceed to confirmation
+        return "confirm"
+
+    # If flow_state is "confirming", route to confirm node
+    if flow_state == "confirming":
         return "confirm"
 
     if flow_state == "extracting":
