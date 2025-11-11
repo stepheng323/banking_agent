@@ -1,7 +1,17 @@
 """LangGraph graph for transfer flow."""
 
 import json
+import os
+import re
 from typing import Literal, cast
+
+# Performance: Only enable debug logging in debug mode
+DEBUG_MODE = os.getenv("DEBUG", "false").lower() == "true"
+
+def debug_log(message: str) -> None:
+    """Conditional debug logging - only logs if DEBUG env var is set."""
+    if DEBUG_MODE:
+        print(message)
 from langgraph.graph import StateGraph, END
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from langchain_core.runnables import RunnableConfig
@@ -106,26 +116,21 @@ def route_by_state(state: TransferState) -> Literal["end", "collect_amount", "se
         return "collect_amount"
 
     if not selected_account:
-        print(f"DEBUG route_by_state: No selected account, routing to select_account")
+        debug_log(f"DEBUG route_by_state: No selected account, routing to select_account")
         return "select_account"
 
     if not recipient_account or not recipient_bank:
         return "collect_recipient"
 
-    # After validation, check for changes before confirming
     if flow_state == "validating":
-        # Only route to check_changes if changes haven't been acknowledged yet
-        # This prevents routing loops and ensures we don't check changes multiple times
+
         change_acknowledged = state.get("_change_acknowledged", False)
         if not change_acknowledged and account_resolved:
-            # Only check changes if account is resolved (otherwise we need to validate first)
             return "check_changes"
-        # Changes already acknowledged or account needs validation, proceed to confirmation
         return "confirm"
 
-    # If flow_state is "confirming", route to confirm node
     if flow_state == "confirming":
-        return "confirm"
+        return "end"
 
     if flow_state == "extracting":
         return "validate"
@@ -233,7 +238,7 @@ class TransferFlowGraph:
             flow_state = state.get("flow_state")
             response = state.get("response", "")
             if flow_state == "cancelled" and not response:
-                print(f"🛑 Routing to cancel node after extract_entities")
+                debug_log(f"🛑 Routing to cancel node after extract_entities")
                 return "cancel"
             return "load_context"
 
@@ -370,14 +375,14 @@ class TransferFlowGraph:
                 key = f"user:{phone_number}:conversation_state"
                 # Save with 1 hour TTL (same as other conversation state)
                 await redis_client.set(key, json.dumps(conversation_state), ex=3600)
-                print(
+                debug_log(
                     f"✅ Updated conversation_state for {phone_number}: active_flow={active_flow}, flow_state={flow_state}, transfer_status={transfer_status}")
             else:
                 # No active transaction - clear conversation_state if it exists
                 key = f"user:{phone_number}:conversation_state"
                 await redis_client.delete(key)
         except Exception as e:
-            print(f"⚠️  Error updating conversation_state: {e}")
+            debug_log(f"⚠️  Error updating conversation_state: {e}")
             # Don't fail if conversation state update fails
 
     async def run(self, phone_number: str, message: str, message_id: str) -> str:
@@ -406,6 +411,74 @@ class TransferFlowGraph:
                     "message": message,
                     "message_id": message_id,
                 })
+
+                # CONTEXT-AWARE CLEARING: Only clear recipient data when it's actually a NEW transfer
+                # Don't clear when we're in the middle of collecting recipient information
+                stale_recipient = input_state.get("recipient_account")
+                stale_bank = input_state.get(
+                    "recipient_bank_code") or input_state.get("recipient_bank_name")
+                stale_transfer_status = input_state.get("transfer_status")
+                current_flow_state = input_state.get("flow_state")
+
+                # Check if message contains a NEW amount (indicating a new transfer)
+                # Look for amount keywords that would indicate user is starting a new transfer
+                message_lower = message.lower()
+                has_amount_keywords = any(keyword in message_lower for keyword in [
+                    "send", "transfer", "pay", "give"
+                ]) or any(char in message for char in ["k", "₦"]) or any(word in message_lower for word in ["thousand", "naira"])
+
+                # Extract potential amount from message (simple check for numbers with k/thousand/naira)
+                account_numbers_in_message = re.findall(r'\b\d{10}\b', message)
+                has_account_in_message = len(account_numbers_in_message) > 0
+
+                # Only clear recipient data if ALL of these are true:
+                # 1. Message has amount keywords (potential new transfer)
+                # 2. We're NOT in "collecting_recipient" state (not continuing a multi-turn conversation)
+                # 3. Transfer is NOT "pending" (not an active transfer in progress)
+                # 4. We have stale recipient data
+                should_clear_recipient = False
+                if (has_amount_keywords and
+                    (stale_recipient or stale_bank) and
+                    current_flow_state != "collecting_recipient" and
+                        stale_transfer_status != "pending"):
+                    # Check if this looks like a new transfer (has amount but no recipient account)
+                    if not has_account_in_message:
+                        # No account number in message + has amount keywords + not collecting recipient + not pending
+                        # This likely indicates a new transfer request
+                        should_clear_recipient = True
+                        debug_log(
+                            f"🧹 GRAPH INIT: Clearing stale recipient data - new transfer detected. Stale: account={stale_recipient}, bank={stale_bank}, status={stale_transfer_status}, flow_state={current_flow_state}")
+
+                if should_clear_recipient:
+                    input_state["recipient_account"] = None
+                    input_state["recipient_bank_code"] = None
+                    input_state["recipient_bank_name"] = None
+                    input_state["recipient_name"] = None
+                    input_state["account_resolved"] = None
+                    input_state["matched_beneficiary"] = None
+                    input_state["validation_errors"] = []
+                else:
+                    # Preserve recipient data - we're either continuing recipient collection or transfer is pending
+                    if stale_recipient or stale_bank:
+                        debug_log(
+                            f"ℹ️ GRAPH INIT: Preserving recipient data - continuing collection or active transfer. account={stale_recipient}, bank={stale_bank}, status={stale_transfer_status}, flow_state={current_flow_state}")
+
+                # Clear all state if transfer was completed/cancelled/failed (definite end of transfer)
+                if stale_transfer_status in ("completed", "failed", "cancelled"):
+                    debug_log(
+                        f"🧹 GRAPH INIT: Clearing state from {stale_transfer_status} transfer")
+                    input_state["recipient_account"] = None
+                    input_state["recipient_bank_code"] = None
+                    input_state["recipient_bank_name"] = None
+                    input_state["recipient_name"] = None
+                    input_state["account_resolved"] = None
+                    input_state["matched_beneficiary"] = None
+                    input_state["validation_errors"] = []
+                    input_state["transfer_status"] = None
+                    input_state["idempotency_key"] = None
+                    input_state["flow_state"] = "extracting"
+                    input_state["amount"] = None
+                    input_state["narration"] = None
             else:
                 input_state = create_initial_state(
                     phone_number, message, message_id)
