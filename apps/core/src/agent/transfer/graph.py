@@ -1,22 +1,16 @@
 """LangGraph graph for transfer flow."""
 
-import json
-import os
-import re
-from typing import Literal, cast
-
-# Performance: Only enable debug logging in debug mode
-DEBUG_MODE = os.getenv("DEBUG", "false").lower() == "true"
-
-def debug_log(message: str) -> None:
-    """Conditional debug logging - only logs if DEBUG env var is set."""
-    if DEBUG_MODE:
-        print(message)
 from langgraph.graph import StateGraph, END
-from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
-from langchain_core.runnables import RunnableConfig
-
-from apps.core.src.agent.transfer.state import TransferState
+from shared.cache.redis_client import RedisClient
+from shared.clients.payment_provider_factory import PaymentProviderFactory
+from shared.clients.whatsapp_client import WhatsAppClient
+from shared.repositories.beneficiary_repository import BeneficiaryRepository
+from shared.repositories.account_repository import AccountRepository
+from shared.cache.bank_cache import BankCacheService
+from shared.cache.user_context_cache import UserContextCacheService
+from apps.core.src.agent.services.validation_service import AsyncValidationService
+from apps.core.src.agent.services.beneficiary_matcher import BeneficiaryMatcher
+from apps.core.src.agent.services.transfer_entity_extractor import TransferEntityExtractor
 from apps.core.src.agent.transfer.nodes import (
     extract_entities,
     load_user_context,
@@ -28,17 +22,25 @@ from apps.core.src.agent.transfer.nodes import (
     prepare_confirmation,
     handle_cancellation,
 )
+from apps.core.src.agent.transfer.state import TransferState
+from langchain_core.runnables import RunnableConfig
+from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+import json
+import os
+import re
+from typing import Literal, cast
+
+# Performance: Only enable debug logging in debug mode
+DEBUG_MODE = os.getenv("DEBUG", "false").lower() == "true"
+
+
+def debug_log(message: str) -> None:
+    """Conditional debug logging - only logs if DEBUG env var is set."""
+    if DEBUG_MODE:
+        print(message)
+
+
 # Note: Cancellation detection is now handled in extract_entities node using LLM classification
-from apps.core.src.agent.services.transfer_entity_extractor import TransferEntityExtractor
-from apps.core.src.agent.services.beneficiary_matcher import BeneficiaryMatcher
-from apps.core.src.agent.services.validation_service import AsyncValidationService
-from shared.cache.user_context_cache import UserContextCacheService
-from shared.cache.bank_cache import BankCacheService
-from shared.repositories.account_repository import AccountRepository
-from shared.repositories.beneficiary_repository import BeneficiaryRepository
-from shared.clients.whatsapp_client import WhatsAppClient
-from shared.clients.payment_provider_factory import PaymentProviderFactory
-from shared.cache.redis_client import RedisClient
 
 
 def create_initial_state(phone_number: str, message: str, message_id: str) -> TransferState:
@@ -116,7 +118,8 @@ def route_by_state(state: TransferState) -> Literal["end", "collect_amount", "se
         return "collect_amount"
 
     if not selected_account:
-        debug_log(f"DEBUG route_by_state: No selected account, routing to select_account")
+        debug_log(
+            f"DEBUG route_by_state: No selected account, routing to select_account")
         return "select_account"
 
     if not recipient_account or not recipient_bank:
