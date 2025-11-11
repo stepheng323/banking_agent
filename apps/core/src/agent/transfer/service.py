@@ -9,7 +9,7 @@ from shared.repositories.beneficiary_repository import BeneficiaryRepository
 from shared.repositories.account_repository import AccountRepository
 from shared.clients.whatsapp_client import WhatsAppClient
 
-from apps.core.src.agent.transfer.extractor import TransferEntityExtractor
+from apps.core.src.agent.services.transfer_entity_extractor import TransferEntityExtractor
 from apps.core.src.agent.transfer.graph import TransferFlowGraph
 
 
