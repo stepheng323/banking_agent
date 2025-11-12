@@ -54,6 +54,9 @@ class TransferState(TypedDict):
     transfer_status: Literal["pending", "confirmed",
                              "authorized", "completed", "failed", None]
 
+    # Classification result from orchestrator
+    classification_result: NotRequired[Optional[dict]]
+
     # Change tracking fields
     _previous_amount: NotRequired[Optional[float]]
     _previous_recipient_account: NotRequired[Optional[str]]
