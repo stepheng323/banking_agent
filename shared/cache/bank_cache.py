@@ -129,26 +129,50 @@ class BankCacheService:
         """
         banks = await self.get_banks()
         if not banks:
-            print(f"⚠️  get_bank_code: No banks in cache for lookup: {bank_name}")
+            print(
+                f"⚠️  get_bank_code: No banks in cache for lookup: {bank_name}")
             return None
 
         normalized_name = bank_name.lower().strip()
-        print(f"DEBUG get_bank_code: Looking up '{bank_name}' (normalized: '{normalized_name}') in {len(banks)} banks")
+        print(
+            f"DEBUG get_bank_code: Looking up '{bank_name}' (normalized: '{normalized_name}') in {len(banks)} banks")
+
+        # Common bank abbreviations mapping (prioritize these)
+        # Maps abbreviations to possible full names or key terms to search for
+        bank_abbreviations = {
+            "uba": ["uba", "united bank for africa"],
+            "gtb": ["gtbank", "guaranty trust bank"],
+            "gtbank": ["gtbank", "guaranty trust bank"],
+            "access": ["access bank"],
+            "access bank": ["access bank"],
+            "zenith": ["zenith bank"],
+            "first bank": ["first bank", "firstbank"],
+            "firstbank": ["first bank", "firstbank"],
+            "opay": ["opay"],
+            "palmpay": ["palmpay", "palm pay"],
+            "kuda": ["kuda"],
+        }
+
+        # Check abbreviations first
+        if normalized_name in bank_abbreviations:
+            target_terms = bank_abbreviations[normalized_name]
+            for bank in banks:
+                bank_name_lower = bank.get("name", "").lower()
+                # Check if any target term matches the bank name (exact or contains)
+                for target_term in target_terms:
+                    if target_term == bank_name_lower or target_term in bank_name_lower or bank_name_lower in target_term:
+                        code = bank.get("code")
+                        print(
+                            f"✅ get_bank_code: Abbreviation match found - '{bank.get('name')}' -> {code}")
+                        return code
 
         # Try exact match first
         for bank in banks:
             bank_name_field = bank.get("name", "").lower().strip()
             if bank_name_field == normalized_name:
                 code = bank.get("code")
-                print(f"✅ get_bank_code: Exact match found - '{bank.get('name')}' -> {code}")
-                return code
-
-        # Try partial match (contains)
-        for bank in banks:
-            bank_name_field = bank.get("name", "").lower().strip()
-            if normalized_name in bank_name_field or bank_name_field in normalized_name:
-                code = bank.get("code")
-                print(f"✅ get_bank_code: Partial match found - '{bank.get('name')}' -> {code}")
+                print(
+                    f"✅ get_bank_code: Exact match found - '{bank.get('name')}' -> {code}")
                 return code
 
         # Try matching without common suffixes
@@ -160,7 +184,36 @@ class BankCacheService:
                 " plc", "").replace(" limited", "").strip()
             if normalized_no_suffix == bank_name_no_suffix:
                 code = bank.get("code")
-                print(f"✅ get_bank_code: Suffix-stripped match found - '{bank.get('name')}' -> {code}")
+                print(
+                    f"✅ get_bank_code: Suffix-stripped match found - '{bank.get('name')}' -> {code}")
+                return code
+
+        # Try partial match (contains) - but only for words, not substrings
+        # This prevents "uba" from matching "Bubayero"
+        # For short abbreviations (3 chars or less), check if they appear as standalone words
+        if len(normalized_name) <= 3:
+            for bank in banks:
+                bank_name_field = bank.get("name", "").lower().strip()
+                bank_words = bank_name_field.split()
+                # Check if normalized_name is a complete word in bank name
+                if normalized_name in bank_words:
+                    code = bank.get("code")
+                    print(
+                        f"✅ get_bank_code: Abbreviation word match found - '{bank.get('name')}' -> {code}")
+                    return code
+
+        # For longer names, check word matches
+        normalized_words = normalized_name.split()
+        for bank in banks:
+            bank_name_field = bank.get("name", "").lower().strip()
+            bank_words = bank_name_field.split()
+            # Check if any word from normalized_name is a complete word in bank name
+            # OR if normalized_name is a complete word in bank name
+            if (any(word in bank_words for word in normalized_words if len(word) >= 3) or
+                    normalized_name in bank_words):
+                code = bank.get("code")
+                print(
+                    f"✅ get_bank_code: Word match found - '{bank.get('name')}' -> {code}")
                 return code
 
         print(f"⚠️  get_bank_code: No match found for '{bank_name}'")
