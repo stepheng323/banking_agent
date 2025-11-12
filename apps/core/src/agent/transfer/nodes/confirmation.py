@@ -5,7 +5,7 @@ import hashlib
 import json
 import redis.asyncio as redis
 
-from apps.core.src.agent.formatters.transfer import format_transfer_summary
+from shared.formatters.transfer import format_transfer_summary
 from apps.core.src.agent.transfer.state import TransferState
 from shared.clients.whatsapp_client import WhatsAppClient
 from shared.config import settings
