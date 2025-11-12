@@ -241,9 +241,14 @@ class OrchestratorAgent:
             if has_active_transaction:
                 # Route to the appropriate flow's cancellation handler
                 if active_flow == "transfer":
-                    # Pass cancellation intent to transfer service
+                    # Pass classification result (with cancellation intent) to transfer service
                     # The transfer service will detect this and handle cancellation
-                    response = await self.transfer.run_simple(phone_number, text)
+                    classification_dict = result.model_dump() if hasattr(result, 'model_dump') else {
+                        "intent": result.intent,
+                        "is_cancellation": result.is_cancellation,
+                        "confidence": result.confidence,
+                    }
+                    response = await self.transfer.run_simple(phone_number, text, classification_dict)
                     asyncio.create_task(self._save_last_response(phone_number, response))
                     return response
                 # Future: handle airtime/data cancellation
@@ -270,7 +275,13 @@ class OrchestratorAgent:
             response += f"Reason: {result.complexity_reason}\n"
 
         if intent == "transfer":
-            response = await self.transfer.run_simple(phone_number, text)
+            # Pass classification result to transfer service for cancellation detection
+            classification_dict = result.model_dump() if hasattr(result, 'model_dump') else {
+                "intent": result.intent,
+                "is_cancellation": result.is_cancellation,
+                "confidence": result.confidence,
+            }
+            response = await self.transfer.run_simple(phone_number, text, classification_dict)
         elif intent in ("airtime", "data"):
             response += "Next: begin airtime/data flow."
         elif intent == "conversational":
