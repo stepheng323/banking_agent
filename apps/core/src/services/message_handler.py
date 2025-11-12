@@ -35,8 +35,7 @@ class MessageHandler:
         response = await self.orchestrator.invoke(
             phone_number, message.text or "", message.message_id
         )
-        # Only send text message if response is not empty
-        # (Some flows like transfer confirmation send interactive flows instead)
+
         if response and response.strip():
             await self.whatsapp_client.send_text(phone_number, response)
 

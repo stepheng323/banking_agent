@@ -1,8 +1,8 @@
 """Shared cancellation utilities for all transaction flows (transfer, airtime, data)."""
 
-import redis.asyncio as redis
 import json
 from typing import Dict, Any, Literal, Optional
+import redis.asyncio as redis
 from shared.cache.redis_client import RedisClient
 from apps.core.src.agent.models.classification import ClassificationResult
 
@@ -32,7 +32,6 @@ async def get_classification_result(phone_number: str) -> Optional[Classificatio
 async def is_cancellation_intent(
     message: str,
     phone_number: Optional[str] = None,
-    context: Optional[Dict[str, Any]] = None,
 ) -> bool:
     """
     Check if user message indicates cancellation intent.
@@ -46,11 +45,9 @@ async def is_cancellation_intent(
     Returns:
         True if cancellation intent detected
     """
-    # Try to get classification result from conversation state
     if phone_number:
         classification_result = await get_classification_result(phone_number)
         if classification_result:
-            # Use LLM-based classification result
             is_cancel = (
                 classification_result.intent.lower() == "cancel" or
                 classification_result.is_cancellation is True
@@ -59,7 +56,6 @@ async def is_cancellation_intent(
                 print(f"✅ Cancellation detected via LLM classification (intent={classification_result.intent}, confidence={classification_result.confidence})")
                 return True
     
-    # Fallback to keyword detection (for backward compatibility or when classification not available)
     message_lower = message.lower().strip()
     cancellation_keywords = [
         "cancel", "abort", "stop", "nevermind", "never mind",
@@ -69,7 +65,7 @@ async def is_cancellation_intent(
     ]
     keyword_match = any(keyword in message_lower for keyword in cancellation_keywords)
     if keyword_match:
-        print(f"✅ Cancellation detected via keyword matching (fallback)")
+        print("""✅ Cancellation detected via keyword matching (fallback)""")
     return keyword_match
 
 
@@ -96,14 +92,12 @@ async def cleanup_transaction_redis_keys(
     
     keys_to_delete = []
     
-    # Common keys for all transaction types
     if phone_number:
         keys_to_delete.extend([
             f"user:{phone_number}:pending_{transaction_type}",
             f"user:{phone_number}:pending_{transaction_type}_flow_token",
         ])
     
-    # Transaction-specific keys
     if phone_number and idempotency_key:
         if transaction_type == "transfer":
             keys_to_delete.extend([
@@ -124,7 +118,6 @@ async def cleanup_transaction_redis_keys(
                 f"data:prev:{phone_number}:{idempotency_key}",
             ])
     
-    # Delete all keys
     if keys_to_delete:
         try:
             deleted = await redis_client.delete(*keys_to_delete)
@@ -220,7 +213,6 @@ async def handle_transaction_cancellation(
     if not redis_client:
         redis_client = RedisClient.get_client()
     
-    # Get recipient/phone info based on transaction type
     recipient_name = None
     recipient_phone = None
     
@@ -229,15 +221,13 @@ async def handle_transaction_cancellation(
     elif transaction_type in ("airtime", "data"):
         recipient_phone = state.get("recipient_phone") or state.get("phone_number")
     
-    # Clean up Redis keys
     await cleanup_transaction_redis_keys(
-        phone_number=phone_number,
+        phone_number=str(phone_number),
         transaction_type=transaction_type,
         idempotency_key=idem_key,
         redis_client=redis_client,
     )
     
-    # Clear conversation_state in Redis
     try:
         key = f"user:{phone_number}:conversation_state"
         await redis_client.delete(key)
@@ -245,7 +235,6 @@ async def handle_transaction_cancellation(
     except Exception as e:
         print(f"⚠️  Error clearing conversation_state: {e}")
     
-    # Generate cancellation message
     message = get_cancellation_message(
         transaction_type=transaction_type,
         amount=amount,
@@ -253,7 +242,6 @@ async def handle_transaction_cancellation(
         phone_number=recipient_phone,
     )
     
-    # Reset state
     return {
         **state,
         "flow_state": "cancelled",
