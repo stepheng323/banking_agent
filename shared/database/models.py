@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime
 from enum import Enum
 
-from sqlalchemy import JSON, Boolean, Column, DateTime, ForeignKey, String
+from sqlalchemy import JSON, Boolean, Column, DateTime, ForeignKey, String, Float
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.sql import text
@@ -92,4 +92,50 @@ class Beneficiary(Base):
     )
 
     def __repr__(self):
-        return f"<Beneficiary(id={self.id}, name={self.name}, account_number={self.account_number}, bank_code={self.bank_code}, bank_name={self.bank_name})>"
+        return f"<Beneficiary(id={self.id}, name={self.account_name}, account_number={self.account_number}, bank_code={self.bank_code}, bank_name={self.bank_name})>"
+
+
+class Transaction(Base):
+    """Transaction database model for logging all transfers."""
+
+    __tablename__ = "transactions"
+
+    id = Column(UUID(as_uuid=True), primary_key=True,
+                default=uuid.uuid4, index=True)
+    user_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", name="fk_transactions_user_id"),
+        nullable=False,
+        index=True,
+    )
+    transaction_type = Column(String, default="transfer", nullable=False)
+    status = Column(String, nullable=False, index=True)
+    amount = Column(Float, nullable=False)
+    currency = Column(String, default="NGN", nullable=False)
+    source_account_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("accounts.id", name="fk_transactions_source_account_id"),
+        nullable=True,
+    )
+    source_account_number = Column(String, nullable=False)
+    source_bank_name = Column(String, nullable=False)
+    recipient_account_number = Column(String, nullable=False)
+    recipient_bank_code = Column(String, nullable=False)
+    recipient_bank_name = Column(String, nullable=False)
+    recipient_name = Column(String, nullable=False)
+    narration = Column(String, nullable=True)
+    transaction_id = Column(String, nullable=True)
+    idempotency_key = Column(String, unique=True, nullable=False, index=True)
+    error_message = Column(String, nullable=True)
+    provider_response = Column(JSON, nullable=True) 
+    receipt_sent = Column(Boolean, default=False, nullable=False)
+    beneficiary_suggested = Column(Boolean, default=False, nullable=False)
+    created_at = Column(DateTime, server_default=text(
+        "now()"), nullable=False, index=True)
+    updated_at = Column(
+        DateTime, server_default=text("now()"), onupdate=datetime.utcnow, nullable=False
+    )
+    completed_at = Column(DateTime, nullable=True)
+
+    def __repr__(self):
+        return f"<Transaction(id={self.id}, status={self.status}, amount={self.amount}, transaction_id={self.transaction_id})>"
