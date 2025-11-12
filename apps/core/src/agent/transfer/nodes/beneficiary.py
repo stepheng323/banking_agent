@@ -111,10 +111,13 @@ async def find_beneficiary(
     if acct_number and (bank_code or bank_name):
         # Clear llm_reply - validation nodes will set appropriate response
         # But preserve all recipient data from state
+        # Only clear llm_reply if we don't already have a response (to avoid losing important messages)
         result_state = {
             **state,
-            "llm_reply": None,  # Clear to prevent partial confirmation messages
         }
+        # Only clear llm_reply if response is empty (validation will set it)
+        if not result_state.get("response"):
+            result_state["llm_reply"] = None  # Clear to prevent partial confirmation messages
         if updates:
             result_state.update(updates)
         return cast(TransferState, result_state)
