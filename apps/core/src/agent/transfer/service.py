@@ -32,6 +32,6 @@ class TransferService:
             extractor=self.extractor,
         )
 
-    async def run_simple(self, phone: str, text: str) -> str:
+    async def run_simple(self, phone: str, text: str, classification_result: Optional[dict] = None) -> str:
         """Run the transfer flow using LangGraph."""
-        return await self.graph.run(phone, text, "")
+        return await self.graph.run(phone, text, "", classification_result)
