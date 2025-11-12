@@ -28,7 +28,7 @@ from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 import json
 import os
 import re
-from typing import Literal, cast
+from typing import Literal, Optional, cast
 
 # Performance: Only enable debug logging in debug mode
 DEBUG_MODE = os.getenv("DEBUG", "false").lower() == "true"
@@ -40,10 +40,11 @@ def debug_log(message: str) -> None:
         print(message)
 
 
-# Note: Cancellation detection is now handled in extract_entities node using LLM classification
+# Note: Cancellation detection is now handled in extract_entities node using classification result
+# passed from orchestrator, avoiding redundant LLM calls and Redis lookups
 
 
-def create_initial_state(phone_number: str, message: str, message_id: str) -> TransferState:
+def create_initial_state(phone_number: str, message: str, message_id: str, classification_result: Optional[dict] = None) -> TransferState:
     """Create initial state for transfer flow."""
     return {
         # User identification
@@ -78,6 +79,8 @@ def create_initial_state(phone_number: str, message: str, message_id: str) -> Tr
         # Metadata
         "idempotency_key": None,
         "transfer_status": None,
+        # Classification result from orchestrator
+        "classification_result": classification_result,
     }
 
 
@@ -388,7 +391,7 @@ class TransferFlowGraph:
             debug_log(f"⚠️  Error updating conversation_state: {e}")
             # Don't fail if conversation state update fails
 
-    async def run(self, phone_number: str, message: str, message_id: str) -> str:
+    async def run(self, phone_number: str, message: str, message_id: str, classification_result: Optional[dict] = None) -> str:
         """Run the transfer flow graph."""
         await self._ensure_checkpointer()
 
@@ -413,6 +416,8 @@ class TransferFlowGraph:
                     "phone_number": phone_number,
                     "message": message,
                     "message_id": message_id,
+                    # Update classification result from orchestrator
+                    "classification_result": classification_result,
                 })
 
                 # CONTEXT-AWARE CLEARING: Only clear recipient data when it's actually a NEW transfer
@@ -484,10 +489,10 @@ class TransferFlowGraph:
                     input_state["narration"] = None
             else:
                 input_state = create_initial_state(
-                    phone_number, message, message_id)
+                    phone_number, message, message_id, classification_result)
         except Exception:
             input_state = create_initial_state(
-                phone_number, message, message_id)
+                phone_number, message, message_id, classification_result)
 
         final_state = await self.graph.ainvoke(cast(TransferState, input_state), config)
 
