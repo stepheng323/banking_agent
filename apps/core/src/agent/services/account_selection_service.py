@@ -2,7 +2,7 @@
 
 from typing import Dict, List, Optional, Tuple
 
-from apps.core.src.agent.formatters.accounts import format_accounts_list
+from shared.formatters.accounts import format_accounts_list
 from apps.core.src.agent.common.account_selection import pick_source_account
 
 

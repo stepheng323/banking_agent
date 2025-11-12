@@ -18,9 +18,11 @@ from shared.clients.payment_provider_factory import PaymentProviderFactory
 
 from apps.core.src.agent.orchestrator import OrchestratorAgent
 from apps.core.src.consumer import MessageConsumer
+from apps.core.src.transfer_consumer import TransferConsumer
 from apps.core.src.services.message_handler import MessageHandler
 from apps.core.src.services.onboarding.handler import OnboardingHandler
 from apps.core.src.services.onboarding.onboarding_service import OnboardingService
+from apps.core.src.services.transfer_handler import TransferHandler
 
 
 def setup_dependencies():
@@ -50,9 +52,20 @@ def setup_dependencies():
         orchestrator=orchestrator,
     )
 
-    consumer = MessageConsumer(
-        redis_queue=redis_queue, handler=message_handler)
-    return consumer
+    message_consumer = MessageConsumer(
+        redis_queue=redis_queue, handler=message_handler
+    )
+
+    # Setup transfer handler and consumer
+    transfer_handler = TransferHandler(
+        whatsapp_client=whatsapp_client,
+        redis_client=shared_redis,
+    )
+    transfer_consumer = TransferConsumer(
+        redis_queue=redis_queue, transfer_handler=transfer_handler
+    )
+
+    return message_consumer, transfer_consumer
 
 
 @asynccontextmanager
@@ -122,9 +135,11 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             print(f"   ⚠️  Bank cache warmup warning: {e}")
 
-    consumer = setup_dependencies()
-    asyncio.create_task(consumer.start())
-    print("   ✅ Consumer started in background")
+    message_consumer, transfer_consumer = setup_dependencies()
+    asyncio.create_task(message_consumer.start())
+    print("   ✅ Message consumer started in background")
+    asyncio.create_task(transfer_consumer.start())
+    print("   ✅ Transfer consumer started in background")
 
     yield
 
@@ -136,7 +151,8 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             print(f"   ⚠️  Payment provider shutdown error: {e}")
 
-    consumer.stop()
+    message_consumer.stop()
+    transfer_consumer.stop()
     await asyncio.sleep(0.5)
     print("   ✅ Services stopped")
 

@@ -1,7 +1,6 @@
 """Core agent components - base classes and shared state."""
 
-from apps.core.src.agent.core.base_agent import BaseAgent
-from apps.core.src.agent.core.state import AgentState
-
-__all__ = ["BaseAgent", "AgentState"]
+# This module is currently empty as BaseAgent and AgentState were unused
+# and removed. Domain-specific agents (Transfer, Orchestrator) implement
+# their own patterns without a shared base class.
 

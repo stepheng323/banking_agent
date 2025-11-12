@@ -9,7 +9,7 @@ from shared.repositories.beneficiary_repository import BeneficiaryRepository
 from shared.repositories.account_repository import AccountRepository
 from shared.clients.whatsapp_client import WhatsAppClient
 
-from apps.core.src.agent.transfer.extractor import TransferEntityExtractor
+from apps.core.src.agent.services.transfer_entity_extractor import TransferEntityExtractor
 from apps.core.src.agent.transfer.graph import TransferFlowGraph
 
 
@@ -32,6 +32,6 @@ class TransferService:
             extractor=self.extractor,
         )
 
-    async def run_simple(self, phone: str, text: str) -> str:
+    async def run_simple(self, phone: str, text: str, classification_result: Optional[dict] = None) -> str:
         """Run the transfer flow using LangGraph."""
-        return await self.graph.run(phone, text, "")
+        return await self.graph.run(phone, text, "", classification_result)

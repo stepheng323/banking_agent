@@ -25,9 +25,21 @@ from shared.utils import (
     verify_hash,
 )
 from shared.cache.redis_client import RedisClient
-from shared.clients.payment_provider_factory import PaymentProviderFactory
+from shared.queue.redis_queue import RedisQueue
+from apps.gateway.core.config import settings
+
 
 router = APIRouter()
+
+_redis_queue_instance = None
+
+
+def get_redis_queue() -> RedisQueue:
+    """Dependency factory for Redis queue with lazy initialization."""
+    global _redis_queue_instance
+    if _redis_queue_instance is None:
+        _redis_queue_instance = RedisQueue(redis_url=settings.redis_url)
+    return _redis_queue_instance
 
 
 def get_whatsapp_client() -> WhatsAppClient:
@@ -74,7 +86,10 @@ async def get_verification_data(flow_token: str) -> Dict[str, Any]:
         return {}
 
 
-async def set_verification_data(flow_token: str, data: Dict[str, Any], ttl: int = VERIFICATION_STORAGE_TTL) -> None:
+async def set_verification_data(
+        flow_token: str,
+        data: Dict[str, Any],
+        ttl: int = VERIFICATION_STORAGE_TTL) -> None:
     """Set verification data in Redis for a given flow_token."""
     if not flow_token:
         return
@@ -102,7 +117,9 @@ async def update_verification_data(flow_token: str, updates: Dict[str, Any], ttl
 
 @router.post("/webhook/flow")
 async def flow_webhook(
-    req: Request, whatsapp_client: WhatsAppClient = Depends(get_whatsapp_client)
+    req: Request,
+    whatsapp_client: WhatsAppClient = Depends(get_whatsapp_client),
+    queue: RedisQueue = Depends(get_redis_queue),
 ):
     """
     Handle WhatsApp Flow data exchange.
@@ -525,12 +542,8 @@ async def flow_webhook(
 
                 return JSONResponse(content=response)
 
-            # Handle transfer PIN verification
             if flow_token and flow_token.startswith("transfer-pin-"):
-                # Extract idem_key from flow_token: "transfer-pin-{idem_key}"
                 idem_key = flow_token.replace("transfer-pin-", "")
-
-                # Get phone number from Redis
                 redis_client = RedisClient.get_client()
                 phone_number = await redis_client.get(f"transfer:token:{idem_key}:phone")
 
@@ -580,7 +593,6 @@ async def flow_webhook(
                         return Response(content=encrypted_response, media_type="text/plain")
                     return JSONResponse(content=response)
 
-                # Retrieve pending transfer from Redis
                 pending_data = await redis_client.get(f"user:{phone_number}:pending_transfer")
                 if not pending_data:
                     print(
@@ -605,7 +617,6 @@ async def flow_webhook(
 
                 pending_transfer = json.loads(pending_data)
 
-                # Verify PIN against user's stored PIN
                 with UnitOfWork() as uow:
                     if not uow.users:
                         return JSONResponse(content={"error": "Database error"}, status_code=500)
@@ -688,83 +699,30 @@ async def flow_webhook(
 
                 print(f"✅ PIN verified for transfer: {idem_key}")
 
+                # Queue transfer for execution in core service
+                transfer_request = {
+                    "type": "execute_transfer",
+                    "phone_number": phone_number,
+                    "idempotency_key": idem_key,
+                    "transfer_data": pending_transfer,
+                    "flow_token": flow_token,
+                }
+
                 try:
-                    provider = PaymentProviderFactory.get_provider_for_service(
-                        "initiate_transfer")
-                    if not provider:
-                        raise ValueError(
-                            "No payment provider available for transfers")
-
-                    transfer_result = await provider.initiate_transfer(
-                        amount=float(pending_transfer.get("amount", 0)),
-                        recipient_account_number=pending_transfer["recipient"]["account_number"],
-                        recipient_bank_code=pending_transfer["recipient"]["bank_code"],
-                        sender_account_number=pending_transfer.get(
-                            "source", {}).get("account_number"),
-                        narration=pending_transfer.get("narration"),
-                        currency="NGN"
+                    await queue.enqueue_simple(
+                        queue_name="banking:transfers",
+                        message=transfer_request,
                     )
-
-                    print(f"✅ Transfer executed: {transfer_result}")
-
-                    await redis_client.delete(f"user:{phone_number}:pending_transfer")
-                    await redis_client.delete(f"user:{phone_number}:pending_transfer_flow_token")
-                    await redis_client.delete(f"transfer:token:{idem_key}:phone")
-                    await redis_client.delete(f"transfer:retry:{idem_key}")
-                    await redis_client.delete(f"transfer:prev:{phone_number}:{idem_key}")
-
-                    if transfer_result.get("success"):
-                        transaction_id = transfer_result.get(
-                            "transaction_id", "N/A")
-                        amount = pending_transfer.get("amount", 0)
-                        recipient_name = pending_transfer["recipient"]["name"]
-                        asyncio.create_task(
-                            whatsapp_client.send_text(
-                                to=phone_number,
-                                text=f"✅ Transfer successful! ₦{amount:,.0f} has been sent to {recipient_name}. Transaction ID: {transaction_id}",
-                            )
-                        )
-                    else:
-                        error_msg = transfer_result.get(
-                            "error", "Unknown error")
-                        asyncio.create_task(
-                            whatsapp_client.send_text(
-                                to=phone_number,
-                                text=f"❌ Transfer failed: {error_msg}. Please try again.",
-                            )
-                        )
-                        response = {
-                            "screen": "Pin",
-                            "data": {
-                                "show_error": True,
-                                "error_message": f"Transfer failed: {error_msg}",
-                            },
-                        }
-                        if request_was_encrypted:
-                            if aes_key_bytes is None or iv_bytes is None:
-                                return JSONResponse(
-                                    content={"error": "Encryption keys missing"}, status_code=500
-                                )
-                            encrypted_response = encrypt_flow_response(
-                                response, aes_key_bytes, iv_bytes
-                            )
-                            return Response(content=encrypted_response, media_type="text/plain")
-                        return JSONResponse(content=response)
-
+                    print(f"✅ Transfer queued for execution: {idem_key}")
                 except Exception as e:
-                    print(f"❌ Transfer execution error: {e}")
+                    print(f"❌ Failed to queue transfer: {e}")
                     traceback.print_exc()
-                    asyncio.create_task(
-                        whatsapp_client.send_text(
-                            to=phone_number,
-                            text="❌ Transfer failed due to an error. Please try again later.",
-                        )
-                    )
+                    # Return error response if queuing fails
                     response = {
                         "screen": "Pin",
                         "data": {
                             "show_error": True,
-                            "error_message": "Transfer failed due to an error. Please try again.",
+                            "error_message": "Failed to process transfer. Please try again.",
                         },
                     }
                     if request_was_encrypted:
@@ -778,6 +736,7 @@ async def flow_webhook(
                         return Response(content=encrypted_response, media_type="text/plain")
                     return JSONResponse(content=response)
 
+                # Return success response immediately (transfer will be processed asynchronously)
                 response = {
                     "screen": "SUCCESS",
                     "data": {
@@ -786,7 +745,6 @@ async def flow_webhook(
                                 "flow_token": flow_token or "completed",
                                 "pin": str(pin),
                                 "success": True,
-                                "transaction_id": transfer_result.get("transaction_id", "N/A"),
                             }
                         }
                     },
