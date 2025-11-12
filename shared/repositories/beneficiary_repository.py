@@ -1,4 +1,5 @@
 """Repository for Beneficiary model."""
+from uuid import UUID
 from typing import List, Optional
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
@@ -14,7 +15,6 @@ class BeneficiaryRepository(BaseRepository[Beneficiary]):
 
     def get_by_user(self, user_id: str) -> List[Beneficiary]:
         """Get all beneficiaries for a user."""
-        from uuid import UUID
         # Convert string UUID to UUID if needed
         if isinstance(user_id, str):
             try:
@@ -25,8 +25,6 @@ class BeneficiaryRepository(BaseRepository[Beneficiary]):
 
     def get_by_name(self, user_id: str, name: str) -> Optional[Beneficiary]:
         """Get a beneficiary by exact name or alias match."""
-        from uuid import UUID
-        # Convert string UUID to UUID if needed
         if isinstance(user_id, str):
             try:
                 user_id = UUID(user_id)
@@ -42,7 +40,6 @@ class BeneficiaryRepository(BaseRepository[Beneficiary]):
 
     def search_by_name(self, user_id: str, search_term: str) -> List[Beneficiary]:
         """Search beneficiaries by name or alias (case-insensitive partial match)."""
-        from uuid import UUID
         # Convert string UUID to UUID if needed
         if isinstance(user_id, str):
             try:
