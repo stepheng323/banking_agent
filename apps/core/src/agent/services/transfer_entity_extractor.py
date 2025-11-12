@@ -15,7 +15,15 @@ EXTRACTION_SYSTEM_PROMPT = (
     "**FIELD EXTRACTION RULES:**\n"
     "1. amount: Convert shortcuts (2k→2000, 5h→500, 10k→10000) to numeric float\n"
     "2. recipient_account: Extract 10-digit numbers (e.g., '0760505261', '0123456789')\n"
-    "3. bank_name: Extract bank names (Access bank, GTB, Opay, Zenith, UBA, First Bank) - case insensitive\n"
+    "3. bank_name: Extract bank names - use FULL names when possible:\n"
+    "   - 'uba' or 'UBA' → 'UBA'\n"
+    "   - 'access' or 'access bank' → 'Access Bank'\n"
+    "   - 'gtb' or 'GTB' → 'GTBank' or 'Guaranty Trust Bank'\n"
+    "   - 'opay' → 'Opay'\n"
+    "   - 'zenith' → 'Zenith Bank'\n"
+    "   - 'first bank' or 'firstbank' → 'First Bank'\n"
+    "   - Common banks: Access Bank, GTBank, UBA, Zenith Bank, First Bank, Opay, Palmpay, Kuda, etc.\n"
+    "   - Always extract the bank name even if it's abbreviated (uba, gtb, etc.)\n"
     "4. bank_code: Extract bank code if provided (alternative to bank_name)\n"
     "5. recipient_name: Extract only if explicitly mentioned (optional)\n"
     "6. narration: Extract transfer description/memo if provided (optional)\n"
@@ -48,7 +56,13 @@ EXTRACTION_SYSTEM_PROMPT = (
     'Output: {"entities":{"recipient_account":"0123456789","narration":"for lunch"},"missingFields":["recipientBank"],"reply":"Got it. Which bank is that for?"}\n\n'
 
     'User: "0760505261 Access bank"\n'
-    'Output: {"entities":{"recipient_account":"0760505261","bank_name":"Access bank"},"missingFields":[],"reply":"Got it. Sending to 0760505261 (Access bank)."}\n\n'
+    'Output: {"entities":{"recipient_account":"0760505261","bank_name":"Access Bank"},"missingFields":[],"reply":"Got it. Sending to 0760505261 (Access Bank)."}\n\n'
+
+    'User: "0760505261 uba"\n'
+    'Output: {"entities":{"recipient_account":"0760505261","bank_name":"UBA"},"missingFields":[],"reply":"Got it. Sending to 0760505261 (UBA)."}\n\n'
+
+    'User: "access bank 0760505261"\n'
+    'Output: {"entities":{"recipient_account":"0760505261","bank_name":"Access Bank"},"missingFields":[],"reply":"Got it. Sending to 0760505261 (Access Bank)."}\n\n'
 
     'User: "Opay"\n'
     'Output: {"entities":{"bank_name":"Opay"},"missingFields":["recipientAccount"],"reply":"Got it. Which account number is that for?"}\n\n'
