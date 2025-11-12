@@ -196,9 +196,6 @@ def get_cancellation_message(
             return f"Data purchase cancelled. The purchase of {amount_str} data has been cancelled."
         else:
             return "Data purchase cancelled. The transaction has been cancelled."
-    
-    return "Transaction cancelled. The transaction has been cancelled."
-
 
 async def handle_transaction_cancellation(
     state: Dict[str, Any],
