@@ -22,7 +22,7 @@ from apps.core.src.transfer_consumer import TransferConsumer
 from apps.core.src.services.message_handler import MessageHandler
 from apps.core.src.services.onboarding.handler import OnboardingHandler
 from apps.core.src.services.onboarding.onboarding_service import OnboardingService
-from apps.core.src.services.transfer_handler import TransferHandler
+from apps.core.src.services.transfer.transfer_handler import TransferHandler
 
 
 def setup_dependencies():
