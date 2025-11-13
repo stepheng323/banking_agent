@@ -138,7 +138,7 @@ class OrchestratorAgent:
             
             "**EXAMPLES:**\n"
             "- 'cancel' → intent: cancel, is_cancellation: true\n"
-            "- 'ma fi sile' (Yoruba: forget it) → intent: cancel, is_cancellation: true\n"
+            "- 'fi sile' (Yoruba: forget it) → intent: cancel, is_cancellation: true\n"
             "- 'stop' → intent: cancel, is_cancellation: true\n"
             "- 'no thanks' → intent: cancel, is_cancellation: true\n"
             "- 'send 5k' → intent: transfer, is_cancellation: false\n"
