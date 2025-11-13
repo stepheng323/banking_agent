@@ -49,47 +49,47 @@ async def flow_webhook(
         if screen == "BVN_ENTRY":
             return await handle_bvn_entry(
                 data,
-                flow_token,
+                flow_token or "",
                 request_was_encrypted,
-                aes_key_bytes,
-                iv_bytes,
+                aes_key_bytes or b"",
+                iv_bytes or b"",
             )
 
         elif screen == "OTP_VERIFICATION":
             return await handle_otp_verification(
                 data,
-                flow_token,
+                flow_token or "",
                 request_was_encrypted,
-                aes_key_bytes,
-                iv_bytes,
+                aes_key_bytes or b"",
+                iv_bytes or b"",
             )
 
         elif screen == "ACCOUNT_SELECTION":
             return await handle_account_selection(
                 data,
-                flow_token,
+                flow_token or "",
                 request_was_encrypted,
-                aes_key_bytes,
-                iv_bytes,
+                aes_key_bytes or b"",
+                iv_bytes or b"",
             )
 
         elif screen == "PIN_ENTRY":
             return await handle_onboarding_pin(
                 data,
-                flow_token,
+                flow_token or "",
                 request_was_encrypted,
-                aes_key_bytes,
-                iv_bytes,
+                aes_key_bytes or b"",
+                iv_bytes or b"",
                 whatsapp_client,
             )
 
         elif screen == "Pin":
             return await handle_transfer_pin(
                 data,
-                flow_token,
+                flow_token or "",
                 request_was_encrypted,
-                aes_key_bytes,
-                iv_bytes,
+                aes_key_bytes or b"",
+                iv_bytes or b"",
                 queue,
             )
 

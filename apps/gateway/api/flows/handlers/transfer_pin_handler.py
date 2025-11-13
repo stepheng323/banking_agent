@@ -50,7 +50,6 @@ async def handle_transfer_pin(
         )
 
     if not flow_token or not flow_token.startswith("transfer-pin-"):
-        # Default PIN handler (for onboarding, etc.)
         return format_success_response(
             "SUCCESS",
             request_was_encrypted,
@@ -79,7 +78,6 @@ async def handle_transfer_pin(
             iv_bytes,
         )
 
-    # Get retry count
     retry_key = f"transfer:retry:{idem_key}"
     retry_count = await redis_client.get(retry_key)
     retry_count = int(retry_count) if retry_count else 0
@@ -161,7 +159,6 @@ async def handle_transfer_pin(
 
     print(f"✅ PIN verified for transfer: {idem_key}")
 
-    # Create transaction record before queueing
     try:
         transaction_id = await create_transfer_transaction(
             pending_transfer,
@@ -205,7 +202,6 @@ async def handle_transfer_pin(
             iv_bytes,
         )
 
-    # Return success response immediately (transfer will be processed asynchronously)
     return format_success_response(
         "SUCCESS",
         request_was_encrypted,
