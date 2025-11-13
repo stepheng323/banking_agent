@@ -49,6 +49,11 @@ class Settings:
         self.flutterwave_use_sandbox: bool = os.getenv(
             "FLUTTERWAVE_USE_SANDBOX", "false").lower() == "true"
 
+        # S3 Configuration
+        self.s3_bucket_name: str = os.getenv("S3_BUCKET_NAME", "")
+        self.s3_region: str = os.getenv("AWS_REGION", "us-east-1")
+        self.s3_receipt_prefix: str = "receipts"
+
         self._validate_whatsapp_config()
 
     def _validate_whatsapp_config(self) -> None:
