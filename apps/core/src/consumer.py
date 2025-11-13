@@ -1,4 +1,6 @@
+"""Message consumer for processing queued messages."""
 import asyncio
+import traceback
 
 from apps.core.src.services.message_handler import MessageHandler
 from shared.models.messages import WhatsAppMessage
@@ -6,12 +8,15 @@ from shared.queue.redis_queue import RedisQueue
 
 
 class MessageConsumer:
+    """Message Consumer Class"""
+
     def __init__(self, redis_queue: RedisQueue, handler: MessageHandler):
         self.queue = redis_queue
         self.handler = handler
         self.running = False
 
     async def process_message(self, message_data: dict) -> None:
+        """Process a message from the queue."""
         try:
             msg = WhatsAppMessage(**message_data)
             await self.handler.handle_message(msg)
@@ -21,6 +26,7 @@ class MessageConsumer:
             raise e
 
     async def start(self, queue_name: str = "banking:messages"):
+        """Start the message consumer."""
         self.running = True
         print(f"🚀 Starting message consumer for queue: {queue_name}")
 
@@ -38,7 +44,6 @@ class MessageConsumer:
                 break
             except Exception as e:
                 print(f" ❌ Consumer error: {e}")
-                import traceback
 
                 traceback.print_exc()
                 await asyncio.sleep(1)
@@ -47,4 +52,5 @@ class MessageConsumer:
         print("   👋 Consumer stopped")
 
     def stop(self):
+        """Stop the message consumer."""
         self.running = False
