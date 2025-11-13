@@ -1,76 +1,48 @@
-"""Receipt formatter for transaction receipts."""
+"""Receipt formatter for transaction receipts - generates image receipts."""
 
+from typing import Optional
 from datetime import datetime
-from typing import Any
 
 from shared.database.models import Transaction
+from shared.services.receipt_generator import ReceiptGenerator
+from shared.clients.s3_client import S3Client
+from shared.repositories.account_repository import AccountRepository
 
 
-def format_transaction_receipt(transaction: Transaction) -> str:
+async def generate_receipt_image(
+    transaction: Transaction,
+    account_repo: AccountRepository,
+    receipt_generator: ReceiptGenerator,
+    s3_client: S3Client,
+) -> str:
     """
-    Format a transaction receipt as a text message.
+    Generate receipt image from transaction and upload to S3.
 
     Args:
         transaction: Transaction database model instance
+        account_repo: Account repository to fetch account name
+        receipt_generator: Receipt generator service
+        s3_client: S3 client for uploading images
 
     Returns:
-        Formatted receipt string
+        S3 URL of the uploaded receipt image
     """
-    # Format date and time
-    created_at = transaction.created_at
-    if isinstance(created_at, str):
-        # Parse if string
-        try:
-            created_at = datetime.fromisoformat(
-                created_at.replace("Z", "+00:00"))
-        except Exception:
-            created_at = datetime.utcnow()
+    # Get account name from Account model
+    account_name: Optional[str] = None
+    if transaction.source_account_id:
+        account = account_repo.get_by_id(str(transaction.source_account_id))
+        if account:
+            account_name = account.account_name
 
-    date_str = created_at.strftime("%d %b %Y") if created_at else "N/A"
-    time_str = created_at.strftime("%I:%M %p") if created_at else "N/A"
+    # Generate receipt image
+    image_bytes = await receipt_generator.generate_receipt_image(
+        transaction, account_name
+    )
 
-    # Format amount
-    amount = transaction.amount
-    currency = transaction.currency or "NGN"
-    amount_str = f"₦{amount:,.2f}" if currency == "NGN" else f"{currency} {amount:,.2f}"
+    # Upload to S3
+    transaction_id = str(transaction.id)
+    s3_url = await s3_client.upload_receipt_image(
+        image_bytes, transaction_id, transaction.created_at
+    )
 
-    # Transaction ID
-    txn_id = transaction.transaction_id or "Pending"
-
-    # Recipient details
-    recipient_name = transaction.recipient_name or "N/A"
-    recipient_account = transaction.recipient_account_number
-    recipient_bank = transaction.recipient_bank_name or transaction.recipient_bank_code or "N/A"
-
-    # Source details
-    source_account = transaction.source_account_number or "N/A"
-    source_bank = transaction.source_bank_name or "N/A"
-
-    # Narration
-    narration = transaction.narration or "No narration"
-
-    # Status
-    status = transaction.status.upper()
-
-    receipt = f"""📄 TRANSACTION RECEIPT
-
-Transaction ID: {txn_id}
-Date: {date_str}
-Time: {time_str}
-Status: {status}
-
-Amount: {amount_str}
-Currency: {currency}
-
-From:
-{source_account} ({source_bank})
-
-To:
-{recipient_name}
-{recipient_account} ({recipient_bank})
-
-Narration: {narration}
-
-Thank you for using our service! 💙"""
-
-    return receipt
+    return s3_url
