@@ -48,16 +48,27 @@ async def find_beneficiary(
                 **state,
                 "matched_beneficiary": None,  # Clear stale beneficiary - need clarification
                 "flow_state": "collecting_recipient",
-                "response": state.get("llm_reply") or f"I found multiple matches for '{rec_name}'. Which one? {opts}",
+                # Use explicit clarification prompt to avoid conflicting LLM replies
+                "response": f"I found multiple matches for '{rec_name}'. Which one? {opts}",
             }
         else:
             # No match found - clear any stale matched_beneficiary
-            return {
-                **state,
-                "matched_beneficiary": None,  # Clear stale beneficiary - no match found
-                "flow_state": "collecting_recipient",
-                "response": state.get("llm_reply") or "Please provide the account number and bank name.",
-            }
+            # If user has already provided account number but not bank, ask only for bank
+            if acct_number and not (bank_code or bank_name):
+                return {
+                    **state,
+                    "matched_beneficiary": None,
+                    "flow_state": "collecting_recipient",
+                    "response": "Which bank is that for?",
+                }
+            else:
+                return {
+                    **state,
+                    "matched_beneficiary": None,  # Clear stale beneficiary - no match found
+                    "flow_state": "collecting_recipient",
+                    # Prefer explicit prompt here
+                    "response": "Please provide the account number and bank name.",
+                }
 
     if acct_number and not (bank_code or bank_name):
         # User provided account but not bank - clear any stale matched_beneficiary
@@ -66,7 +77,17 @@ async def find_beneficiary(
             **state,
             "matched_beneficiary": None,  # Clear stale beneficiary - bank info missing
             "flow_state": "collecting_recipient",
-            "response": state.get("llm_reply") or "Please provide the bank name for this account.",
+            # Prefer explicit prompt for missing bank
+            "response": "Which bank is that for?",
+        }
+
+    # If bank is present but account is missing, ask only for account number
+    if (bank_code or bank_name) and not acct_number:
+        return {
+            **state,
+            "matched_beneficiary": None,
+            "flow_state": "collecting_recipient",
+            "response": "What is the account number?",
         }
 
     if not acct_number or not (bank_code or bank_name):
@@ -75,7 +96,8 @@ async def find_beneficiary(
             **state,
             "matched_beneficiary": None,  # Clear stale beneficiary - missing info
             "flow_state": "collecting_recipient",
-            "response": state.get("llm_reply") or "Please provide the account number and bank name.",
+            # Prefer explicit combined prompt
+            "response": "Please provide the account number and bank name.",
         }
 
     # If we have account and bank but no matched_beneficiary, that's fine

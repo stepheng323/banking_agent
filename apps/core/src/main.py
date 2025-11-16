@@ -6,23 +6,27 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 import redis.asyncio as redis
 
+from shared.clients.s3_client import S3Client
 from shared.config import settings
 
 from shared.clients.whatsapp_client import WhatsAppClient
 from shared.database.connection import get_db_session, init_db, init_checkpoint_tables
 from shared.queue.redis_queue import RedisQueue
+from shared.repositories import BeneficiaryRepository
 from shared.repositories.user_repository import UserRepository
 from shared.cache import UserContextCacheService, BankCacheService
 from shared.cache.redis_client import RedisClient
 from shared.clients.payment_provider_factory import PaymentProviderFactory
+from shared.services.receipt_generator import ReceiptGenerator
 
 from apps.core.src.agent.orchestrator import OrchestratorAgent
-from apps.core.src.consumer import MessageConsumer
-from apps.core.src.transfer_consumer import TransferConsumer
-from apps.core.src.services.message_handler import MessageHandler
-from apps.core.src.services.onboarding.handler import OnboardingHandler
-from apps.core.src.services.onboarding.onboarding_service import OnboardingService
-from apps.core.src.services.transfer_handler import TransferHandler
+from apps.core.src.queue_consumers import MessageConsumer, TransferConsumer
+from apps.core.src.handlers import (
+    OnboardingHandler,
+    OnboardingService,
+    TransferHandler,
+    TransferService
+)
 
 
 def setup_dependencies():
@@ -31,45 +35,48 @@ def setup_dependencies():
     redis_queue = RedisQueue(redis_url=settings.redis_url)
     user_repository = UserRepository(db=get_db_session())
 
-    # Get shared Redis client (set in lifespan or auto-created)
     shared_redis = RedisClient.get_client()
 
-    # Initialize cache services with shared Redis client
     user_cache = UserContextCacheService(redis_client=shared_redis)
 
     onboarding_service = OnboardingService(whatsapp_client)
     onboarding_handler = OnboardingHandler(
         whatsapp_client, user_repository, onboarding_service)
 
+    beneficiary_repository = BeneficiaryRepository(db=get_db_session())
+    receipt_generator = ReceiptGenerator()
+    s3_client = S3Client()
+
+    transfer_service = TransferService(
+        whatsapp_client=whatsapp_client,
+        redis_client=shared_redis,
+        beneficiary_repository=beneficiary_repository,
+        receipt_generator=receipt_generator,
+        s3_client=s3_client,
+    )
+
     orchestrator = OrchestratorAgent(
         user_repo=user_repository, user_cache=user_cache
     )
 
-    message_handler = MessageHandler(
-        whatsapp_client=whatsapp_client,
+    message_consumer = MessageConsumer(
+        redis_queue=redis_queue,
         user_repository=user_repository,
         onboarding_handler=onboarding_handler,
         orchestrator=orchestrator,
-    )
-
-    message_consumer = MessageConsumer(
-        redis_queue=redis_queue, handler=message_handler
-    )
-
-    # Setup transfer handler and consumer
-    transfer_handler = TransferHandler(
         whatsapp_client=whatsapp_client,
-        redis_client=shared_redis,
     )
+
     transfer_consumer = TransferConsumer(
-        redis_queue=redis_queue, transfer_handler=transfer_handler
+        redis_queue=redis_queue,
+        transfer_handler=TransferHandler(transfer_service=transfer_service),
     )
 
     return message_consumer, transfer_consumer
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(_app: FastAPI):
     """Lifespan context manager for startup/shutdown events."""
     print("🚀 Starting Core Banking Service...")
 
@@ -107,13 +114,11 @@ async def lifespan(app: FastAPI):
             encoding="utf-8",
             decode_responses=True
         )
-        # Set shared Redis client for all cache services
         RedisClient.set_client(redis_client)
         print("   ✅ Redis client initialized")
     except Exception as e:
         print(f"   ⚠️  Redis client initialization warning: {e}")
 
-    # Warm up bank cache (after Redis is initialized)
     if redis_client:
         try:
             print("   🏦 Warming up bank cache...")
@@ -127,9 +132,9 @@ async def lifespan(app: FastAPI):
                 if cache_ready:
                     banks = await bank_cache.get_banks()
                     print(
-                        f"   ✅ Bank cache ready ({len(banks) if banks else 0} banks)")
+                        f"✅ Bank cache ready ({len(banks) if banks else 0} banks)")
                 else:
-                    print("   ⚠️  Bank cache warmup failed")
+                    print(" ⚠️ Bank cache warmup failed")
             else:
                 print("   ⚠️  Payment provider does not support bank list fetching")
         except Exception as e:
@@ -162,9 +167,11 @@ app = FastAPI(title="Core Banking Service", lifespan=lifespan)
 
 @app.get("/")
 async def root():
+    """Root endpoint"""
     return {"service": "Core Banking Service", "status": "running", "version": "1.0.0"}
 
 
 @app.get("/health")
 async def health():
+    """Health check endpoint"""
     return {"status": "healthy"}

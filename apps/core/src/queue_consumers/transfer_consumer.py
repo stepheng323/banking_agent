@@ -3,7 +3,7 @@
 import asyncio
 import traceback
 
-from apps.core.src.services.transfer_handler import TransferHandler
+from apps.core.src.handlers.transfer import TransferHandler
 from shared.queue.redis_queue import RedisQueue
 
 

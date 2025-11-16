@@ -1,6 +1,8 @@
+"""Onboarding handler"""
+
 from typing import Any, Dict
 
-from apps.core.src.services.onboarding.onboarding_service import OnboardingService
+from apps.core.src.handlers.onboarding.onboarding_service import OnboardingService
 from shared.clients.whatsapp_client import WhatsAppClient
 from shared.database.models import UserOnboardingStatusEnum
 from shared.models.messages import WhatsAppMessage
@@ -10,7 +12,7 @@ from shared.repositories.user_repository import UserRepository
 
 
 class OnboardingHandler:
-
+    """Onboarding handler"""
     def __init__(
         self,
         whatsapp_client: WhatsAppClient,
@@ -32,4 +34,4 @@ class OnboardingHandler:
             )
             uow.users.register_user(user_data)
 
-        return None
+        return {"status": "success", "message": "Onboarding started"}

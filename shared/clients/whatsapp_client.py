@@ -199,3 +199,78 @@ class WhatsAppClient:
 
             print(f"   Payload was: {json.dumps(payload, indent=2)}")
             raise
+
+    async def _upload_media_to_whatsapp(self, media_url: str) -> str:
+        """
+        Upload media to WhatsApp and get media ID.
+
+        Args:
+            media_url: Public URL of the media file
+
+        Returns:
+            Media ID from WhatsApp
+        """
+        upload_url = f"{GRAPH_API_BASE}/{self.phone_number_id}/media"
+        headers = self._get_headers()
+
+        payload = {
+            "messaging_product": "whatsapp",
+            "url": media_url,
+            "type": "image",
+        }
+
+        try:
+            async with httpx.AsyncClient(timeout=30) as client:
+                resp = await client.post(upload_url, headers=headers, json=payload)
+                resp.raise_for_status()
+                result = resp.json()
+                media_id = result.get("id")
+                if not media_id:
+                    raise ValueError("No media ID returned from WhatsApp")
+                print(f"✅ Media uploaded to WhatsApp: {media_id}")
+                return media_id
+        except Exception as e:
+            print(f"❌ Failed to upload media to WhatsApp: {e}")
+            raise
+
+    async def send_image(
+        self, to: str, image_url: str, caption: str = ""
+    ) -> Dict[str, Any]:
+        """
+        Send an image to a WhatsApp number.
+
+        Args:
+            to: Recipient phone number
+            image_url: Public URL of the image (must be accessible by WhatsApp)
+            caption: Optional caption text
+
+        Returns:
+            API response from WhatsApp
+        """
+        try:
+            # First, upload media to WhatsApp to get media ID
+            media_id = await self._upload_media_to_whatsapp(image_url)
+
+            # Then send message with media ID
+            url = self._get_url()
+            payload = {
+                "messaging_product": "whatsapp",
+                "recipient_type": "individual",
+                "to": to,
+                "type": "image",
+                "image": {
+                    "id": media_id,
+                    "caption": caption if caption else None,
+                },
+            }
+
+            # Remove caption if empty (WhatsApp doesn't accept empty captions)
+            if not caption:
+                payload["image"].pop("caption", None)
+
+            result = await self._send(url, payload)
+            print(f"✅ Image message sent to {to}")
+            return result
+        except Exception as e:
+            print(f"❌ Failed to send image message: {e}")
+            raise

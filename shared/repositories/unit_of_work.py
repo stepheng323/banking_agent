@@ -8,6 +8,7 @@ from shared.database.connection import get_db_session
 from shared.repositories.account_repository import AccountRepository
 from shared.repositories.user_repository import UserRepository
 from shared.repositories.beneficiary_repository import BeneficiaryRepository
+from shared.repositories.transaction_repository import TransactionRepository
 
 
 class UnitOfWork:
@@ -18,6 +19,7 @@ class UnitOfWork:
         self.users: Optional[UserRepository] = None
         self.accounts: Optional[AccountRepository] = None
         self.beneficiaries: Optional[BeneficiaryRepository] = None
+        self.transactions: Optional[TransactionRepository] = None
         self._rolled_back = False
 
     def __enter__(self):
@@ -26,6 +28,7 @@ class UnitOfWork:
         self.users = UserRepository(self.db)
         self.accounts = AccountRepository(self.db)
         self.beneficiaries = BeneficiaryRepository(self.db)
+        self.transactions = TransactionRepository(self.db)
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
