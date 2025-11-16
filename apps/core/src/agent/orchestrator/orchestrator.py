@@ -21,6 +21,7 @@ from shared.cache.redis_client import RedisClient
 from apps.core.src.agent.models.classification import ClassificationResult
 from apps.core.src.agent.services.conversation_responder import ConversationResponder
 from apps.core.src.agent.transfer import TransferService
+from apps.core.src.agent.airtime import AirtimeService
 
 
 class OrchestratorAgent:
@@ -45,6 +46,12 @@ class OrchestratorAgent:
             llm=self.llm,
             user_cache=self.user_cache,
             beneficiary_repo=beneficiary_repo,
+            account_repo=account_repo,
+            whatsapp_client=self.whatsapp_client,
+        )
+        self.airtime = AirtimeService(
+            llm=self.llm,
+            user_cache=self.user_cache,
             account_repo=account_repo,
             whatsapp_client=self.whatsapp_client,
         )
@@ -425,8 +432,15 @@ class OrchestratorAgent:
                 "confidence": result.confidence,
             }
             response = await self.transfer.run_simple(phone_number, text, classification_dict)
-        elif intent in ("airtime", "data"):
-            response += "Next: begin airtime/data flow."
+        elif intent == "airtime":
+            classification_dict = result.model_dump() if hasattr(result, 'model_dump') else {
+                "intent": result.intent,
+                "is_cancellation": result.is_cancellation,
+                "confidence": result.confidence,
+            }
+            response = await self.airtime.run_simple(phone_number, text, classification_dict)
+        elif intent == "data":
+            response += "Data purchase flow coming soon."
         elif intent == "conversational":
             conv = await self.conversation.generate_reply(phone_number, text, result, _user_ctx)
             print(f"Conversation response: {conv}")
