@@ -1,7 +1,5 @@
 """Account selection node for transfer flow."""
 
-from typing import cast
-
 from apps.core.src.agent.services.account_selection_service import AccountSelectionService
 from apps.core.src.agent.transfer.state import TransferState
 
