@@ -2,6 +2,8 @@
 
 import os
 import re
+import json
+
 from typing import Optional, cast
 
 from langchain_core.runnables import RunnableConfig
@@ -143,7 +145,6 @@ class TransferFlowGraph:
                 conv_state_data = await redis_client.get(conv_state_key)
 
                 if conv_state_data:
-                    import json
                     conv_state = json.loads(conv_state_data)
                     prev_amount = conv_state.get("amount", 0)
                     prev_recipient_name = conv_state.get("recipient_name")
@@ -281,7 +282,7 @@ class TransferFlowGraph:
                 should_clear_recipient = False
                 if (has_amount_keywords and
                     (stale_recipient or stale_bank) and
-                    current_flow_state != "collecting_recipient" and
+                    current_flow_state not in ("collecting_recipient", "collecting_amount") and
                         stale_transfer_status != "pending"):
                     # Check if this looks like a new transfer (has amount but no recipient account)
                     if not has_account_in_message:
