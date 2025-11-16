@@ -25,7 +25,7 @@ async def handle_transfer_pin(
 ) -> Response:
     """
     Handle Pin screen for transfer flow.
-    
+
     Validates PIN, verifies against user's stored PIN, creates transaction,
     queues transfer, and returns SUCCESS screen.
     """
@@ -94,7 +94,8 @@ async def handle_transfer_pin(
 
     pending_data = await redis_client.get(f"user:{phone_number}:pending_transfer")
     if not pending_data:
-        print(f"⚠️  No pending transfer found for phone: {phone_number} (may have been cancelled)")
+        print(
+            f"⚠️  No pending transfer found for phone: {phone_number} (may have been cancelled)")
         return format_error_response(
             "Pin",
             "This transfer has been cancelled or expired. Please start a new transfer.",
@@ -148,7 +149,8 @@ async def handle_transfer_pin(
             if attempts_remaining == 0:
                 error_msg = "Invalid PIN. Maximum attempts exceeded. Please start a new transfer."
 
-            print(f"❌ PIN verification failed (attempt {retry_count}/3) for user: {phone_number}")
+            print(
+                f"❌ PIN verification failed (attempt {retry_count}/3) for user: {phone_number}")
             return format_error_response(
                 "Pin",
                 error_msg,
@@ -157,12 +159,17 @@ async def handle_transfer_pin(
                 iv_bytes,
             )
 
-    print(f"✅ PIN verified for transfer: {idem_key}")
+        # Capture user_id inside the session to avoid DetachedInstanceError later
+        user_id = str(user.id)
+        # Avoid any accidental access to detached user outside the session
+        user = None
+
+    print(f"✅ PIN verified for transfer: {idem_key} (user_id={user_id})")
 
     try:
         transaction_id = await create_transfer_transaction(
             pending_transfer,
-            str(user.id),
+            user_id,
             idem_key,
         )
     except Exception as e:
@@ -215,4 +222,3 @@ async def handle_transfer_pin(
             }
         },
     )
-
