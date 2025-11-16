@@ -58,3 +58,13 @@ class BeneficiaryRepository(BaseRepository[Beneficiary]):
     def get_all_for_user(self, user_id: str) -> List[Beneficiary]:
         """Get all beneficiaries for a user (alias for get_by_user)."""
         return self.get_by_user(user_id)
+
+    def should_suggest_beneficiary(
+        self,
+        user_id: str,
+        account_number: str,
+        bank_code: str,
+    ) -> bool:
+        """Check if recipient should be suggested as a beneficiary."""
+        beneficiaries = self.get_by_user(user_id)
+        return any(beneficiary.account_number == account_number and beneficiary.bank_code == bank_code for beneficiary in beneficiaries)
