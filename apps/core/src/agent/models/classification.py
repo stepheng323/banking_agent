@@ -18,3 +18,7 @@ class ClassificationResult(BaseModel):
         default=None,
         description="True if the user wants to cancel/abort the current transaction. Set to true when intent is 'cancel' or when there's an active transaction and user expresses cancellation intent."
     )
+    extracted_alias: Optional[str] = Field(
+        default=None,
+        description="If responding to a beneficiary suggestion and user provides an alias/name (e.g., 'save as mum', 'My opay', 'mum'), extract and return the alias here. Otherwise leave null."
+    )
