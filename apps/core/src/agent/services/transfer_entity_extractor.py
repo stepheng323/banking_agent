@@ -25,7 +25,12 @@ EXTRACTION_SYSTEM_PROMPT = (
     "   - Common banks: Access Bank, GTBank, UBA, Zenith Bank, First Bank, Opay, Palmpay, Kuda, etc.\n"
     "   - Always extract the bank name even if it's abbreviated (uba, gtb, etc.)\n"
     "4. bank_code: Extract bank code if provided (alternative to bank_name)\n"
-    "5. recipient_name: Extract only if explicitly mentioned (optional)\n"
+    "5. recipient_name: Extract recipient name/alias when mentioned:\n"
+    "   - Patterns: 'send [amount] to [name]', 'to [name]', '[name]' (when not a bank name)\n"
+    "   - If smartContext.beneficiaries exists, check if [name] matches a saved alias/name\n"
+    "   - Distinguish between bank names (Opay, UBA, Access Bank) and beneficiary aliases/names\n"
+    "   - If 'to [name]' pattern exists, prioritize extracting as recipient_name over bank_name\n"
+    "   - Examples: 'send 4k to my opay' → recipient_name='my opay' (not bank_name)\n"
     "6. narration: Extract transfer description/memo if provided (optional)\n"
     "7. source_account_id: Extract if user specifies which account to use\n\n"
 
@@ -68,7 +73,11 @@ EXTRACTION_SYSTEM_PROMPT = (
     'Output: {"entities":{"bank_name":"Opay"},"missingFields":["recipientAccount"],"reply":"Got it. Which account number is that for?"}\n\n'
 
     'User: "send 2k opay 0123456789 birthday"\n'
-    'Output: {"entities":{"amount":2000,"bank_name":"opay","recipient_account":"0123456789","narration":"birthday"},"missingFields":[],"reply":"Sending ₦2,000 to Opay - 0123456789 for birthday."}\n'
+    'Output: {"entities":{"amount":2000,"bank_name":"opay","recipient_account":"0123456789","narration":"birthday"},"missingFields":[],"reply":"Sending ₦2,000 to Opay - 0123456789 for birthday."}\n\n'
+    'User: "send 4k to my opay"\n'
+    'Output: {"entities":{"amount":4000,"recipient_name":"my opay"},"missingFields":["recipientAccount","recipientBank"],"reply":"Sending ₦4,000 to my opay. Please provide the account number and bank name."}\n\n'
+    'User: "send 5k to mum"\n'
+    'Output: {"entities":{"amount":5000,"recipient_name":"mum"},"missingFields":["recipientAccount","recipientBank"],"reply":"Sending ₦5,000 to mum. Please provide the account number and bank name."}\n'
 )
 
 
@@ -84,8 +93,33 @@ class TransferEntityExtractor:
         """Extract entities from text."""
         user = text.strip()
         user_content = user
+        
+        # Build smart context with beneficiaries info if available
+        context_parts = []
         if smart_context:
-            user_content = f"{user}\n\nsmartContext: {smart_context}"
+            if "previousResponse" in smart_context:
+                context_parts.append(f"Previous response: {smart_context['previousResponse']}")
+            
+            # Include beneficiaries list to help distinguish aliases from bank names
+            if "beneficiaries" in smart_context and smart_context["beneficiaries"]:
+                beneficiaries = smart_context["beneficiaries"]
+                aliases = []
+                for b in beneficiaries:
+                    if isinstance(b, dict):
+                        alias = b.get("alias") or b.get("account_name")
+                        if alias:
+                            aliases.append(alias)
+                    elif hasattr(b, "alias") and b.alias:
+                        aliases.append(b.alias)
+                    elif hasattr(b, "account_name") and b.account_name:
+                        aliases.append(b.account_name)
+                
+                if aliases:
+                    context_parts.append(f"Saved beneficiary aliases/names: {', '.join(aliases)}")
+        
+        if context_parts:
+            user_content = f"{user}\n\nsmartContext:\n" + "\n".join(context_parts)
+        
         result = await self.structured.ainvoke(
             [
                 {"role": "system", "content": EXTRACTION_SYSTEM_PROMPT},
