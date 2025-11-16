@@ -11,12 +11,16 @@ def route_by_state(state: TransferState) -> Literal["end", "collect_amount", "se
     """Route based on current flow state and missing data."""
     flow_state = state.get("flow_state")
     response = state.get("response", "")
+    debug_log(
+        f"DEBUG route_by_state: flow_state={flow_state}, has_response={bool(response)}")
     amount = state.get("amount")
     selected_account = state.get("selected_source_account")
     recipient_account = state.get("recipient_account")
     recipient_bank = state.get(
         "recipient_bank_code") or state.get("recipient_bank_name")
     account_resolved = state.get("account_resolved")
+    debug_log(
+        f"DEBUG route_by_state: fields amount={amount}, selected_account={'yes' if selected_account else 'no'}, recipient_account={recipient_account}, recipient_bank={recipient_bank}, account_resolved={account_resolved}")
 
     if flow_state == "cancelled" and not response:
         return "cancel"
@@ -31,10 +35,27 @@ def route_by_state(state: TransferState) -> Literal["end", "collect_amount", "se
 
     llm_reply = state.get("llm_reply", "")
     has_response = response or llm_reply
+
+    # Short-circuit: if all required fields are present, proceed to confirm
+    # Only if the amount was set after recipient was established (when timestamps exist)
+    if amount and selected_account and recipient_account and recipient_bank and account_resolved:
+        amt_ts = state.get("_amount_set_at")
+        rcp_ts = state.get("_recipient_established_at")
+        seq_ok = True
+        if amt_ts is not None and rcp_ts is not None:
+            seq_ok = bool(amt_ts >= rcp_ts)
+            debug_log(
+                f"DEBUG route_by_state: sequencing check amt_ts={amt_ts}, rcp_ts={rcp_ts}, seq_ok={seq_ok}")
+        if seq_ok:
+            debug_log(
+                "✅ route_by_state: All required fields present (sequence ok) -> confirm")
+            return "confirm"
+
     if has_response and flow_state in ("collecting_amount", "selecting_account", "collecting_recipient", "error", "confirming"):
         return "end"
 
     if not amount:
+        debug_log("DEBUG route_by_state: Missing amount -> collect_amount")
         return "collect_amount"
 
     if not selected_account:
@@ -43,6 +64,8 @@ def route_by_state(state: TransferState) -> Literal["end", "collect_amount", "se
         return "select_account"
 
     if not recipient_account or not recipient_bank:
+        debug_log(
+            f"DEBUG route_by_state: Missing recipient -> collect_recipient (recipient_account={recipient_account}, recipient_bank={recipient_bank})")
         return "collect_recipient"
 
     if flow_state == "validating":
@@ -56,9 +79,12 @@ def route_by_state(state: TransferState) -> Literal["end", "collect_amount", "se
         return "end"
 
     if flow_state == "extracting":
-        if (amount and selected_account and recipient_account and recipient_bank and 
-            account_resolved and has_response):
+        if (amount and selected_account and recipient_account and recipient_bank and
+                account_resolved and has_response):
+            debug_log(
+                "DEBUG route_by_state: All required fields present with response during extracting -> end")
             return "end"
+        debug_log("DEBUG route_by_state: extracting -> validate")
         return "validate"
 
     return "end"
@@ -72,4 +98,3 @@ def route_after_extract(state: TransferState) -> str:
         debug_log("🛑 Routing to cancel node after extract_entities")
         return "cancel"
     return "load_context"
-
