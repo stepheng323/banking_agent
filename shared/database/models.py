@@ -81,6 +81,8 @@ class Beneficiary(Base):
     user_id = Column(UUID(as_uuid=True),
                      ForeignKey("users.id", name="fk_beneficiaries_user_id"),
                      nullable=False, index=True)
+    beneficiary_type = Column(
+        String, default="transfer", nullable=False, index=True)
     account_name = Column(String, nullable=False)
     alias = Column(String, nullable=True)
     account_number = Column(String, nullable=False)
@@ -92,7 +94,7 @@ class Beneficiary(Base):
     )
 
     def __repr__(self):
-        return f"<Beneficiary(id={self.id}, name={self.account_name}, account_number={self.account_number}, bank_code={self.bank_code}, bank_name={self.bank_name})>"
+        return f"<Beneficiary(id={self.id}, type={self.beneficiary_type}, name={self.account_name}, account_number={self.account_number}, bank_code={self.bank_code}, bank_name={self.bank_name})>"
 
 
 class Transaction(Base):
@@ -127,7 +129,7 @@ class Transaction(Base):
     transaction_id = Column(String, nullable=True)
     idempotency_key = Column(String, unique=True, nullable=False, index=True)
     error_message = Column(String, nullable=True)
-    provider_response = Column(JSON, nullable=True) 
+    provider_response = Column(JSON, nullable=True)
     receipt_sent = Column(Boolean, default=False, nullable=False)
     beneficiary_suggested = Column(Boolean, default=False, nullable=False)
     created_at = Column(DateTime, server_default=text(

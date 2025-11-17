@@ -10,7 +10,6 @@ import redis.asyncio as redis
 
 from shared.clients.whatsapp_client import WhatsAppClient
 from shared.clients.s3_client import S3Client
-from shared.formatters import format_beneficiary_suggestion
 from shared.repositories import BeneficiaryRepository
 from shared.repositories.unit_of_work import UnitOfWork
 from shared.formatters.receipt import generate_receipt_image
@@ -61,7 +60,6 @@ class TransferService:
     ) -> None:
         """Send success notification with receipt image to user."""
         try:
-            # If receipts are disabled, always send plain text confirmation
             if not _receipts_enabled():
                 provider_txn_id = transfer_result.get("transaction_id", "N/A")
                 fallback_amount = float(transfer_data.get("amount", 0))
@@ -162,9 +160,8 @@ class TransferService:
                 exists_in_beneficiaries = False
                 if has_beneficiary_repo:
                     try:
-                        # Repo method returns True when a matching beneficiary exists
                         exists_in_beneficiaries = self.beneficiary_repository.should_suggest_beneficiary(
-                            user_id, account_number, bank_code
+                            user_id, account_number, bank_code, beneficiary_type="transfer"
                         )
                     except Exception as e:
                         print(
@@ -174,7 +171,6 @@ class TransferService:
                 print(
                     f"DEBUG suggest_beneficiary: user_id={user_id}, acct={account_number}, bank_code={bank_code}, has_repo={has_beneficiary_repo}, exists_in_beneficiaries={exists_in_beneficiaries}")
 
-                # Suggest if recipient does NOT already exist
                 if has_beneficiary_repo and not exists_in_beneficiaries:
                     if transaction_id:
                         transaction = uow.transactions.get_by_id(
@@ -188,7 +184,6 @@ class TransferService:
                                 f"DEBUG suggest_beneficiary: marked transaction {transaction_id} beneficiary_suggested=True")
 
                     suggestion_key = f"user:{phone_number}:beneficiary_suggestion"
-                    # Build user-friendly display and default alias
                     masked_acct = f"…{str(account_number)[-4:]}"
                     recipient_display = recipient_name or masked_acct
                     bank_display = recipient.get("bank_name", "") or bank_code

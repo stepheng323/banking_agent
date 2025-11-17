@@ -1,41 +1,41 @@
-"""Transfer service facade using LangGraph."""
+"""Airtime purchase service facade using LangGraph."""
 
 from typing import Optional
 
 from langchain_openai import ChatOpenAI
 
 from shared.cache.user_context_cache import UserContextCacheService
-from shared.repositories.beneficiary_repository import BeneficiaryRepository
 from shared.repositories.account_repository import AccountRepository
+from shared.repositories.beneficiary_repository import BeneficiaryRepository
 from shared.clients.whatsapp_client import WhatsAppClient
 
-from apps.core.src.agent.transfer.extractor import TransferEntityExtractor
+from apps.core.src.agent.airtime.extractor import AirtimeEntityExtractor
 from apps.core.src.agent.services.flow_completion_callback import FlowCompletionCallback
-from apps.core.src.agent.transfer.graph import TransferFlowGraph
+from apps.core.src.agent.airtime.graph import AirtimeFlowGraph
 
 
-class TransferService:
-    """Transfer service facade using LangGraph."""
+class AirtimeService:
+    """Airtime purchase service facade using LangGraph."""
 
     def __init__(
         self,
         llm: Optional[ChatOpenAI],
         user_cache: UserContextCacheService,
-        beneficiary_repo: BeneficiaryRepository,
         account_repo: AccountRepository,
+        beneficiary_repo: BeneficiaryRepository,
         whatsapp_client: WhatsAppClient,
         completion_callback: Optional[FlowCompletionCallback] = None,
     ) -> None:
-        self.extractor = TransferEntityExtractor(llm)
-        self.graph = TransferFlowGraph(
+        self.extractor = AirtimeEntityExtractor(llm)
+        self.graph = AirtimeFlowGraph(
             user_cache=user_cache,
-            beneficiary_repo=beneficiary_repo,
             account_repo=account_repo,
+            beneficiary_repo=beneficiary_repo,
             whatsapp_client=whatsapp_client,
             extractor=self.extractor,
             completion_callback=completion_callback,
         )
 
     async def run_simple(self, phone: str, text: str, classification_result: Optional[dict] = None) -> str:
-        """Run the transfer flow using LangGraph."""
+        """Run the airtime purchase flow using LangGraph."""
         return await self.graph.run(phone, text, "", classification_result)

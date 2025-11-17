@@ -45,11 +45,9 @@ class BankCacheService:
             True if stored successfully, False otherwise
         """
         try:
-            # Serialize and store banks
             serialized = json.dumps(banks)
             await self.redis.setex(self.CACHE_KEY, ttl, serialized)
 
-            # Store timestamp
             timestamp = datetime.utcnow().isoformat()
             await self.redis.setex(self.TIMESTAMP_KEY, ttl, timestamp)
 

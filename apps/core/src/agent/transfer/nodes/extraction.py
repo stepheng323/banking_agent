@@ -5,7 +5,7 @@ import time
 
 from apps.core.src.agent.models.transfer import SimpleTransferEntities
 from apps.core.src.agent.models.transfer_extraction import TransferExtractionResult
-from apps.core.src.agent.services.transfer_entity_extractor import TransferEntityExtractor
+from apps.core.src.agent.transfer.extractor import TransferEntityExtractor
 from apps.core.src.agent.transfer.state import TransferState
 
 from .utils import debug_log

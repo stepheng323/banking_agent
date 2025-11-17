@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 import redis.asyncio as redis
+from langchain_openai import ChatOpenAI
 
 from shared.clients.s3_client import S3Client
 from shared.config import settings
@@ -12,14 +13,18 @@ from shared.config import settings
 from shared.clients.whatsapp_client import WhatsAppClient
 from shared.database.connection import get_db_session, init_db, init_checkpoint_tables
 from shared.queue.redis_queue import RedisQueue
-from shared.repositories import BeneficiaryRepository
+from shared.repositories import BeneficiaryRepository, AccountRepository
 from shared.repositories.user_repository import UserRepository
 from shared.cache import UserContextCacheService, BankCacheService
 from shared.cache.redis_client import RedisClient
 from shared.clients.payment_provider_factory import PaymentProviderFactory
 from shared.services.receipt_generator import ReceiptGenerator
 
+
 from apps.core.src.agent.orchestrator import OrchestratorAgent
+from apps.core.src.agent.services import ConversationResponder, TaskQueueService, TaskExecutor
+from apps.core.src.agent.transfer import TransferService as AgentTransferService
+from apps.core.src.agent.airtime import AirtimeService
 from apps.core.src.queue_consumers import MessageConsumer, TransferConsumer
 from apps.core.src.handlers import (
     OnboardingHandler,
@@ -44,6 +49,7 @@ def setup_dependencies():
         whatsapp_client, user_repository, onboarding_service)
 
     beneficiary_repository = BeneficiaryRepository(db=get_db_session())
+    account_repository = AccountRepository(db=get_db_session())
     receipt_generator = ReceiptGenerator()
     s3_client = S3Client()
 
@@ -55,9 +61,53 @@ def setup_dependencies():
         s3_client=s3_client,
     )
 
-    orchestrator = OrchestratorAgent(
-        user_repo=user_repository, user_cache=user_cache
+
+    llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+
+    task_queue_service = TaskQueueService()
+    conversation_responder = ConversationResponder(llm)
+
+    agent_transfer_service = AgentTransferService(
+        llm=llm,
+        user_cache=user_cache,
+        beneficiary_repo=beneficiary_repository,
+        account_repo=account_repository,
+        whatsapp_client=whatsapp_client,
+        completion_callback=None,
     )
+
+    agent_airtime_service = AirtimeService(
+        llm=llm,
+        user_cache=user_cache,
+        account_repo=account_repository,
+        beneficiary_repo=beneficiary_repository,
+        whatsapp_client=whatsapp_client,
+        completion_callback=None,
+    )
+
+    task_executor = TaskExecutor(
+        transfer_service=agent_transfer_service,
+        airtime_service=agent_airtime_service,
+        task_queue_service=task_queue_service,
+        completion_callback=None,
+    )
+
+    orchestrator = OrchestratorAgent(
+        llm=llm,
+        user_repo=user_repository,
+        user_cache=user_cache,
+        whatsapp_client=whatsapp_client,
+        task_queue_service=task_queue_service,
+        conversation_responder=conversation_responder,
+        transfer_service=agent_transfer_service,
+        airtime_service=agent_airtime_service,
+        task_executor=task_executor,
+    )
+
+    completion_callback = orchestrator.completion_callback
+    agent_transfer_service.graph.completion_callback = completion_callback
+    agent_airtime_service.graph.completion_callback = completion_callback
+    task_executor.completion_callback = completion_callback
 
     message_consumer = MessageConsumer(
         redis_queue=redis_queue,

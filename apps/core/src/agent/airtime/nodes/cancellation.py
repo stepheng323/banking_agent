@@ -1,30 +1,30 @@
-"""Cancellation node for transfer flow."""
+"""Cancellation node for airtime purchase flow."""
 
 from typing import cast
 
 from apps.core.src.agent.common.cancellation import handle_transaction_cancellation
-from apps.core.src.agent.transfer.state import TransferState
+from apps.core.src.agent.airtime.state import AirtimeState
 from shared.cache.redis_client import Redis
 
-from .utils import debug_log
+from ..graph.utils import debug_log
 
 
 async def handle_cancellation(
-    state: TransferState,
+    state: AirtimeState,
     redis_client: Redis,
-) -> TransferState:
+) -> AirtimeState:
     """
-    Handle cancellation of transfer in progress.
+    Handle cancellation of airtime purchase in progress.
     Uses shared cancellation utilities for consistency across transaction types.
     """
     debug_log(
-        f"🛑 handle_cancellation called: flow_state={state.get('flow_state')}, amount={state.get('amount')}, recipient={state.get('recipient_name')}")
+        f"🛑 handle_cancellation called: flow_state={state.get('flow_state')}, amount={state.get('amount')}, recipient_phone={state.get('recipient_phone')}")
     state_dict = dict(state)
     result = await handle_transaction_cancellation(
         state=state_dict,
-        transaction_type="transfer",
+        transaction_type="airtime",
         redis_client=redis_client,
     )
     debug_log(
         f"✅ handle_cancellation completed: response={result.get('response', '')[:50]}...")
-    return cast(TransferState, result)
+    return cast(AirtimeState, result)

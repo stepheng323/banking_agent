@@ -1,14 +1,13 @@
 """Confirmation node for transfer flow."""
 
-from typing import cast
 import hashlib
 import json
-import redis.asyncio as redis
 
-from shared.formatters.transfer import format_transfer_summary
 from apps.core.src.agent.transfer.state import TransferState
+from shared.formatters.transfer import format_transfer_summary
 from shared.clients.whatsapp_client import WhatsAppClient
 from shared.config import settings
+from shared.cache.redis_client import Redis
 
 from .utils import debug_log
 
@@ -16,7 +15,7 @@ from .utils import debug_log
 async def prepare_confirmation(
     state: TransferState,
     whatsapp_client: WhatsAppClient,
-    redis_client: redis.Redis,
+    redis_client: Redis,
 ) -> TransferState:
     """Prepare transfer confirmation summary."""
     debug_log(
@@ -111,7 +110,6 @@ async def prepare_confirmation(
     )
     await pipe.execute()
 
-    # Store initial previous values if not already stored
     prev_key = f"transfer:prev:{state['phone_number']}:{idem_key}"
     prev_data = await redis_client.get(prev_key)
     if not prev_data:
@@ -145,4 +143,3 @@ async def prepare_confirmation(
         "transfer_status": "pending",
         "flow_state": "confirming",
     }
-
