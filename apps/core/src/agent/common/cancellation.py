@@ -2,7 +2,6 @@
 
 import json
 from typing import Dict, Any, Literal, Optional
-import redis.asyncio as redis
 from shared.cache.redis_client import RedisClient
 from apps.core.src.agent.models.classification import ClassificationResult
 
@@ -193,7 +192,7 @@ def get_cancellation_message(
 async def handle_transaction_cancellation(
     state: Dict[str, Any],
     transaction_type: Literal["transfer", "airtime", "data"],
-    redis_client: Optional[redis.Redis] = None,
+    redis_client: Optional[RedisClient] = None,
 ) -> Dict[str, Any]:
     """
     Generic cancellation handler for any transaction type.

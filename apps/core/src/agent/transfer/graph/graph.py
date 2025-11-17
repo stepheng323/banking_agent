@@ -19,7 +19,7 @@ from shared.cache.bank_cache import BankCacheService
 from shared.cache.user_context_cache import UserContextCacheService
 from apps.core.src.agent.services.validation_service import AsyncValidationService
 from apps.core.src.agent.services.beneficiary_matcher import BeneficiaryMatcher
-from apps.core.src.agent.services.transfer_entity_extractor import TransferEntityExtractor
+from apps.core.src.agent.transfer.extractor import TransferEntityExtractor
 from apps.core.src.agent.services.flow_completion_callback import FlowCompletionCallback
 from apps.core.src.agent.transfer.state import TransferState
 

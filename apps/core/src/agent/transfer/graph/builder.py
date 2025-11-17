@@ -2,7 +2,7 @@
 
 from langgraph.graph import StateGraph, END
 
-from apps.core.src.agent.services.transfer_entity_extractor import TransferEntityExtractor
+from apps.core.src.agent.transfer.extractor import TransferEntityExtractor
 from apps.core.src.agent.services.beneficiary_matcher import BeneficiaryMatcher
 from apps.core.src.agent.services.validation_service import AsyncValidationService
 from apps.core.src.agent.transfer.nodes import (
@@ -25,7 +25,6 @@ from shared.clients.whatsapp_client import WhatsAppClient
 from shared.cache.redis_client import RedisClient
 
 from .routing import route_by_state, route_after_extract
-from .utils import debug_log
 
 
 def build_graph(
@@ -172,4 +171,3 @@ def build_graph(
     workflow.add_edge("cancel", END)
 
     return workflow
-
