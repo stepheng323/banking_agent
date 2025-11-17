@@ -5,6 +5,7 @@ import re
 import json
 
 from typing import Optional, cast
+import asyncio
 
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
@@ -19,6 +20,7 @@ from shared.cache.user_context_cache import UserContextCacheService
 from apps.core.src.agent.services.validation_service import AsyncValidationService
 from apps.core.src.agent.services.beneficiary_matcher import BeneficiaryMatcher
 from apps.core.src.agent.services.transfer_entity_extractor import TransferEntityExtractor
+from apps.core.src.agent.services.flow_completion_callback import FlowCompletionCallback
 from apps.core.src.agent.transfer.state import TransferState
 
 from .builder import build_graph
@@ -45,6 +47,7 @@ class TransferFlowGraph:
         account_repo: AccountRepository,
         whatsapp_client: WhatsAppClient,
         extractor: TransferEntityExtractor,
+        completion_callback: Optional[FlowCompletionCallback] = None,
     ):
         self.user_cache = user_cache
         self.beneficiary_repo = beneficiary_repo
@@ -52,6 +55,7 @@ class TransferFlowGraph:
         self.whatsapp_client = whatsapp_client
         self.extractor = extractor
         self.matcher = BeneficiaryMatcher()
+        self.completion_callback = completion_callback
 
         try:
             provider = PaymentProviderFactory.get_provider_for_service(
@@ -342,5 +346,21 @@ class TransferFlowGraph:
         elif final_state.get("transfer_status") not in ("pending", None):
             # Transfer completed/cancelled - clear session
             await clear_transfer_session(phone_number)
+
+            # Call completion callback if flow completed or failed
+            if self.completion_callback:
+                transfer_status = final_state.get("transfer_status")
+                if transfer_status in ("completed", "failed", "cancelled"):
+                    result = {
+                        "status": transfer_status,
+                        "amount": final_state.get("amount"),
+                        "recipient_account": final_state.get("recipient_account"),
+                        "response": final_state.get("response", ""),
+                    }
+                    asyncio.create_task(
+                        self.completion_callback.on_flow_complete(
+                            phone_number, "transfer", result
+                        )
+                    )
 
         return final_state.get("response", "")
