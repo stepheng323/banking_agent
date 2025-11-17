@@ -80,6 +80,7 @@ def setup_dependencies():
         llm=llm,
         user_cache=user_cache,
         account_repo=account_repository,
+        beneficiary_repo=beneficiary_repository,
         whatsapp_client=whatsapp_client,
         completion_callback=None,
     )

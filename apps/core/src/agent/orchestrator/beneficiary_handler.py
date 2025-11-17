@@ -64,6 +64,7 @@ class OrchestratorBeneficiaryHandler:
                     alias = result.extracted_alias if result.extracted_alias else None
                     uow.beneficiaries.create(
                         user_id=str(user.id),
+                        beneficiary_type="transfer",  # Default to transfer for existing flow
                         account_name=suggestion_context.get(
                             "recipient_name", ""),
                         account_number=suggestion_context.get(
@@ -124,6 +125,7 @@ class OrchestratorBeneficiaryHandler:
                             return response
                         uow.beneficiaries.create(
                             user_id=str(user.id),
+                            beneficiary_type="transfer",  # Default to transfer for existing flow
                             account_name=suggestion_context.get(
                                 "recipient_name", ""),
                             account_number=suggestion_context.get(
