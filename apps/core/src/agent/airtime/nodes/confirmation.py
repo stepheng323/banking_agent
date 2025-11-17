@@ -6,15 +6,15 @@ from typing import cast
 
 from apps.core.src.agent.airtime.state import AirtimeState
 from shared.clients.whatsapp_client import WhatsAppClient
-from shared.cache.redis_client import RedisClient
+from shared.cache.redis_client import Redis
 
 from ..graph.utils import debug_log
 
 
 async def prepare_confirmation(
     state: AirtimeState,
-    whatsapp_client: WhatsAppClient,
-    redis_client: RedisClient,
+    whatsapp_client: WhatsAppClient,  # noqa: ARG001  # Reserved for future WhatsApp flow integration
+    redis_client: Redis,
 ) -> AirtimeState:
     """Prepare airtime purchase confirmation summary."""
     debug_log(
@@ -46,22 +46,25 @@ async def prepare_confirmation(
     idem_key = state.get("idempotency_key")
     if not idem_key:
         idem_key = hashlib.sha256(
-            f"{state['phone_number']}|{amount}|{recipient_phone}|{network}".encode("utf-8")
+            f"{state['phone_number']}|{amount}|{recipient_phone}|{network}".encode(
+                "utf-8")
         ).hexdigest()
 
-    source_account_number = source.get("account_number") or ""
-    source_bank_name = source.get("bank_name") or source.get("name") or "Account"
+    source_account_number = (source.get(
+        "account_number") if source else None) or ""
+    source_bank_name = (source.get("bank_name") if source else None) or (
+        source.get("name") if source else None) or "Account"
 
     # Format confirmation message
     recipient_display = recipient_name or recipient_phone or "Recipient"
-    summary = f"📱 Airtime Purchase Summary\n\n"
+    summary = "📱 Airtime Purchase Summary\n\n"
     summary += f"Amount: ₦{amount:,.2f}\n"
     summary += f"Recipient: {recipient_display} ({network})\n"
     summary += f"Phone: {recipient_phone}\n"
     summary += f"Source: {source_bank_name} • {source_account_number}\n"
     if narration:
         summary += f"Note: {narration}\n"
-    summary += f"\nReply with your PIN to confirm."
+    summary += "\nReply with your PIN to confirm."
 
     pending = {
         "phone": state["phone_number"],
@@ -72,9 +75,11 @@ async def prepare_confirmation(
             "name": recipient_name,
         },
         "source": {
-            "id": source.get("id"),
+            # type: ignore[union-attr]
+            "id": source.get("id") if source else None,
             "account_number": source_account_number,
-            "account_name": source.get("account_name") or source.get("name"),
+            # type: ignore[union-attr]
+            "account_name": (source.get("account_name") if source else None) or (source.get("name") if source else None),
             "bank_name": source_bank_name,
         },
         "narration": narration,
@@ -109,4 +114,3 @@ async def prepare_confirmation(
         "airtime_status": "pending",
         "flow_state": "confirming",
     })
-

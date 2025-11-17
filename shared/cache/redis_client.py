@@ -5,6 +5,8 @@ import redis.asyncio as redis
 
 from shared.config import settings
 
+Redis = redis.Redis
+
 
 class RedisClient:
     """Singleton Redis client for use across all cache services."""

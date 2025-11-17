@@ -2,16 +2,16 @@
 
 from typing import cast
 
-from shared.cache.redis_client import RedisClient
 from apps.core.src.agent.common.cancellation import handle_transaction_cancellation
 from apps.core.src.agent.airtime.state import AirtimeState
+from shared.cache.redis_client import Redis
 
 from ..graph.utils import debug_log
 
 
 async def handle_cancellation(
     state: AirtimeState,
-    redis_client: RedisClient,
+    redis_client: Redis,
 ) -> AirtimeState:
     """
     Handle cancellation of airtime purchase in progress.

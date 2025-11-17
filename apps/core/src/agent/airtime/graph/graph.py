@@ -53,6 +53,7 @@ class AirtimeFlowGraph:
             if not db_url:
                 raise ValueError("DATABASE_URL required for checkpointing")
             self._checkpointer_cm = AsyncPostgresSaver.from_conn_string(db_url)
+            # type: ignore[method-assign,attr-defined]
             self._checkpointer = await self._checkpointer_cm.__aenter__()
             self._checkpointer_setup = True
 

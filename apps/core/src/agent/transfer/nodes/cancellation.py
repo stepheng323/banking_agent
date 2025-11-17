@@ -2,16 +2,16 @@
 
 from typing import cast
 
-from shared.cache.redis_client import RedisClient
 from apps.core.src.agent.common.cancellation import handle_transaction_cancellation
 from apps.core.src.agent.transfer.state import TransferState
+from shared.cache.redis_client import Redis
 
 from .utils import debug_log
 
 
 async def handle_cancellation(
     state: TransferState,
-    redis_client: RedisClient,
+    redis_client: Redis,
 ) -> TransferState:
     """
     Handle cancellation of transfer in progress.

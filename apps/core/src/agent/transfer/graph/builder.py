@@ -22,7 +22,7 @@ from shared.cache.user_context_cache import UserContextCacheService
 from shared.repositories.beneficiary_repository import BeneficiaryRepository
 from shared.repositories.account_repository import AccountRepository
 from shared.clients.whatsapp_client import WhatsAppClient
-from shared.cache.redis_client import RedisClient
+from shared.cache.redis_client import Redis
 
 from .routing import route_by_state, route_after_extract
 
@@ -37,7 +37,7 @@ def build_graph(
     bank_cache: BankCacheService,
     payment_provider,
     whatsapp_client: WhatsAppClient,
-    redis_client: RedisClient,
+    redis_client: Redis,
 ) -> StateGraph:
     """Build the LangGraph workflow."""
     workflow = StateGraph(TransferState)
@@ -149,7 +149,7 @@ def build_graph(
         route_by_state,
         {
             "end": END,
-            "validate": "validate_parallel",  # Re-validate if account_resolved was cleared
+            "validate": "validate_parallel",
             "check_changes": "check_changes",
             "confirm": "confirm",
             "cancel": "cancel",
@@ -160,9 +160,9 @@ def build_graph(
         "check_changes",
         route_by_state,
         {
-            "end": END,  # If change message shown, end to send it
-            "validate": "validate_parallel",  # If recipient changed, re-validate
-            "confirm": "confirm",  # Otherwise proceed to confirmation
+            "end": END, 
+            "validate": "validate_parallel", 
+            "confirm": "confirm", 
             "cancel": "cancel",
         }
     )

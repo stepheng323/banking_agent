@@ -18,7 +18,7 @@ from apps.core.src.agent.services.beneficiary_matcher import BeneficiaryMatcher
 from shared.cache.user_context_cache import UserContextCacheService
 from shared.repositories import BeneficiaryRepository, AccountRepository
 from shared.clients.whatsapp_client import WhatsAppClient
-from shared.cache.redis_client import RedisClient
+from shared.cache.redis_client import Redis
 
 from .routing import route_by_state, route_after_extract
 
@@ -30,7 +30,7 @@ def build_graph(
     beneficiary_repo: BeneficiaryRepository,
     matcher: BeneficiaryMatcher,
     whatsapp_client: WhatsAppClient,
-    redis_client: RedisClient,
+    redis_client: Redis,
 ) -> StateGraph:
     """Build the airtime purchase flow graph."""
     workflow = StateGraph(AirtimeState)
@@ -48,7 +48,7 @@ def build_graph(
 
     async def confirm_node(state: AirtimeState) -> AirtimeState:
         return await prepare_confirmation(
-            state, whatsapp_client, redis_client
+            state, whatsapp_client, redis_client  # type: ignore[arg-type]
         )
 
     async def cancellation_node(state: AirtimeState) -> AirtimeState:
@@ -93,7 +93,7 @@ def build_graph(
     )
 
     workflow.add_conditional_edges(
-        "select_account",   
+        "select_account",
         route_by_state,
         {
             "end": END,
