@@ -10,7 +10,12 @@ from apps.core.src.agent.airtime.state import AirtimeState
 from .utils import debug_log
 
 
-def create_initial_state(phone_number: str, message: str, message_id: str, classification_result: Optional[dict] = None) -> AirtimeState:
+def create_initial_state(
+    phone_number: str,
+    message: str,
+    message_id: str,
+    classification_result: Optional[dict] = None
+) -> AirtimeState:
     """Create initial state for airtime purchase flow."""
     return {
         "phone_number": phone_number,
@@ -26,11 +31,14 @@ def create_initial_state(phone_number: str, message: str, message_id: str, class
         "missing_fields": [],
         "user_profile": None,
         "accounts": [],
+        "beneficiaries": [],
         "selected_source_account": None,
+        "matched_beneficiary": None,
         "balance_available": None,
         "validation_errors": [],
         "response": "",
         "llm_reply": None,
+        "recipient_name": None,
         "idempotency_key": None,
         "airtime_status": None,
         "classification_result": classification_result,
@@ -76,4 +84,3 @@ async def update_conversation_state(phone_number: str, state: AirtimeState) -> N
             await redis_client.delete(key)
     except Exception as e:
         debug_log(f"⚠️  Error updating conversation_state: {e}")
-
