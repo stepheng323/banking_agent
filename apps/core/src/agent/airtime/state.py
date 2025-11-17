@@ -24,10 +24,9 @@ class AirtimeState(TypedDict):
         "cancelled"
     ]
 
-    # Extracted entities
     amount: Optional[float]
     recipient_phone: Optional[str]
-    network: Optional[str]  # MTN, Airtel, Glo, 9mobile
+    network: Optional[str]
     source_account_id: Optional[str]
     narration: Optional[str]
 
@@ -35,8 +34,10 @@ class AirtimeState(TypedDict):
 
     user_profile: Optional[dict]
     accounts: list[dict]
+    beneficiaries: list[dict]
 
     selected_source_account: Optional[dict]
+    matched_beneficiary: Optional[dict]
 
     balance_available: Optional[float]
     validation_errors: list[str]
@@ -44,9 +45,10 @@ class AirtimeState(TypedDict):
     response: str
     llm_reply: Optional[str]
 
+    recipient_name: Optional[str]
+
     idempotency_key: Optional[str]
-    airtime_status: Literal["pending", "confirmed", "authorized", "completed", "failed", None]
+    airtime_status: Literal["pending", "confirmed",
+                            "authorized", "completed", "failed", None]
 
-    # Classification result from orchestrator
     classification_result: NotRequired[Optional[dict]]
-
