@@ -6,9 +6,10 @@ from langchain_openai import ChatOpenAI
 
 from shared.cache.user_context_cache import UserContextCacheService
 from shared.repositories.account_repository import AccountRepository
+from shared.repositories.beneficiary_repository import BeneficiaryRepository
 from shared.clients.whatsapp_client import WhatsAppClient
 
-from apps.core.src.agent.services.airtime_entity_extractor import AirtimeEntityExtractor
+from apps.core.src.agent.airtime.extractor import AirtimeEntityExtractor
 from apps.core.src.agent.services.flow_completion_callback import FlowCompletionCallback
 from apps.core.src.agent.airtime.graph import AirtimeFlowGraph
 
@@ -21,6 +22,7 @@ class AirtimeService:
         llm: Optional[ChatOpenAI],
         user_cache: UserContextCacheService,
         account_repo: AccountRepository,
+        beneficiary_repo: BeneficiaryRepository,
         whatsapp_client: WhatsAppClient,
         completion_callback: Optional[FlowCompletionCallback] = None,
     ) -> None:
@@ -28,6 +30,7 @@ class AirtimeService:
         self.graph = AirtimeFlowGraph(
             user_cache=user_cache,
             account_repo=account_repo,
+            beneficiary_repo=beneficiary_repo,
             whatsapp_client=whatsapp_client,
             extractor=self.extractor,
             completion_callback=completion_callback,
