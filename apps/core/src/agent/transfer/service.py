@@ -10,6 +10,7 @@ from shared.repositories.account_repository import AccountRepository
 from shared.clients.whatsapp_client import WhatsAppClient
 
 from apps.core.src.agent.services.transfer_entity_extractor import TransferEntityExtractor
+from apps.core.src.agent.services.flow_completion_callback import FlowCompletionCallback
 from apps.core.src.agent.transfer.graph import TransferFlowGraph
 
 
@@ -22,6 +23,7 @@ class TransferService:
         beneficiary_repo: BeneficiaryRepository,
         account_repo: AccountRepository,
         whatsapp_client: WhatsAppClient,
+        completion_callback: Optional[FlowCompletionCallback] = None,
     ) -> None:
         self.extractor = TransferEntityExtractor(llm)
         self.graph = TransferFlowGraph(
@@ -30,6 +32,7 @@ class TransferService:
             account_repo=account_repo,
             whatsapp_client=whatsapp_client,
             extractor=self.extractor,
+            completion_callback=completion_callback,
         )
 
     async def run_simple(self, phone: str, text: str, classification_result: Optional[dict] = None) -> str:
