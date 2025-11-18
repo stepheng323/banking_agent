@@ -82,6 +82,7 @@ def setup_dependencies():
         account_repo=account_repository,
         beneficiary_repo=beneficiary_repository,
         whatsapp_client=whatsapp_client,
+        queue=redis_queue,
         completion_callback=None,
     )
 

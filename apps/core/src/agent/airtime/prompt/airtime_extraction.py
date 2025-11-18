@@ -1,4 +1,5 @@
-"""Airtime extraction prompt for LLM-based entity extraction."""
+"""Airtime extraction prompt fo
+r LLM-based entity extraction."""
 
 AIRTIME_EXTRACTION_PROMPT = (
     "You are an airtime purchase entity extractor. Extract structured data from user messages about airtime purchases.\n\n"

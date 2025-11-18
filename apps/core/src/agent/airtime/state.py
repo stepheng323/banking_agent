@@ -52,3 +52,7 @@ class AirtimeState(TypedDict):
                             "authorized", "completed", "failed", None]
 
     classification_result: NotRequired[Optional[dict]]
+
+    pin_verified: NotRequired[Optional[bool]]
+    pin_verification_error: NotRequired[Optional[str]]
+    pin_retry_count: NotRequired[int]

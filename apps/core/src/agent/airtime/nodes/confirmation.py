@@ -55,7 +55,6 @@ async def prepare_confirmation(
     source_bank_name = (source.get("bank_name") if source else None) or (
         source.get("name") if source else None) or "Account"
 
-    # Format confirmation message
     recipient_display = recipient_name or recipient_phone or "Recipient"
     summary = "📱 Airtime Purchase Summary\n\n"
     summary += f"Amount: ₦{amount:,.2f}\n"
@@ -85,10 +84,10 @@ async def prepare_confirmation(
         "narration": narration,
         "idempotency_key": idem_key,
         "status": "awaiting_confirmation",
+        "transaction_type": "airtime",
     }
 
-    # Store pending airtime purchase in Redis
-    token = f"airtime-pin-{idem_key}"
+    token = f"transaction-pin-{idem_key}"
     pipe = redis_client.pipeline()
     pipe.setex(
         f"user:{state['phone_number']}:pending_airtime",
@@ -101,7 +100,7 @@ async def prepare_confirmation(
         token
     )
     pipe.setex(
-        f"airtime:token:{idem_key}:phone",
+        f"transaction:token:{idem_key}:phone",
         900,
         state["phone_number"]
     )
@@ -112,5 +111,5 @@ async def prepare_confirmation(
         "response": summary,
         "idempotency_key": idem_key,
         "airtime_status": "pending",
-        "flow_state": "confirming",
+        "flow_state": "authorizing", 
     })
