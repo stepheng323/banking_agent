@@ -6,14 +6,24 @@ from typing import cast
 
 from apps.core.src.agent.airtime.state import AirtimeState
 from shared.clients.whatsapp_client import WhatsAppClient
+from shared.config import settings
 from shared.cache.redis_client import Redis
 
 from ..graph.utils import debug_log
 
 
+def _format_currency_naira(amount: float) -> str:
+    """Format amount as Nigerian Naira currency."""
+    try:
+        value = float(amount)
+    except Exception:
+        return f"₦{amount}"
+    return f"₦{value:,.0f}"
+
+
 async def prepare_confirmation(
     state: AirtimeState,
-    whatsapp_client: WhatsAppClient,  # noqa: ARG001  # Reserved for future WhatsApp flow integration
+    whatsapp_client: WhatsAppClient,
     redis_client: Redis,
 ) -> AirtimeState:
     """Prepare airtime purchase confirmation summary."""
@@ -33,7 +43,7 @@ async def prepare_confirmation(
                     **state,
                     "response": "",
                     "airtime_status": "pending",
-                    "flow_state": "confirming",
+                    "flow_state": "authorizing",
                 })
 
     amount = state.get("amount")
@@ -55,16 +65,23 @@ async def prepare_confirmation(
     source_bank_name = (source.get("bank_name") if source else None) or (
         source.get("name") if source else None) or "Account"
 
-    # Format confirmation message
     recipient_display = recipient_name or recipient_phone or "Recipient"
-    summary = "📱 Airtime Purchase Summary\n\n"
-    summary += f"Amount: ₦{amount:,.2f}\n"
-    summary += f"Recipient: {recipient_display} ({network})\n"
-    summary += f"Phone: {recipient_phone}\n"
-    summary += f"Source: {source_bank_name} • {source_account_number}\n"
+    
+    lines = [
+        f"Amount: *{_format_currency_naira(float(amount or 0))}*",
+        f"To: *{recipient_display}* ({network} - ```{recipient_phone}```)",
+        f"From: {source_bank_name} (...{source_account_number[-4:] if source_account_number else '????'})",
+    ]
+    
     if narration:
-        summary += f"Note: {narration}\n"
-    summary += "\nReply with your PIN to confirm."
+        lines.append(f"Narration: _{narration}_")
+    
+    lines.append("")
+    lines.append(
+        "Tap the authorize button below to enter your transaction PIN.\n"
+    )
+    
+    summary = "\n".join(lines)
 
     pending = {
         "phone": state["phone_number"],
@@ -75,20 +92,18 @@ async def prepare_confirmation(
             "name": recipient_name,
         },
         "source": {
-            # type: ignore[union-attr]
             "id": source.get("id") if source else None,
             "account_number": source_account_number,
-            # type: ignore[union-attr]
             "account_name": (source.get("account_name") if source else None) or (source.get("name") if source else None),
             "bank_name": source_bank_name,
         },
         "narration": narration,
         "idempotency_key": idem_key,
         "status": "awaiting_confirmation",
+        "transaction_type": "airtime",
     }
 
-    # Store pending airtime purchase in Redis
-    token = f"airtime-pin-{idem_key}"
+    token = f"transaction-pin-{idem_key}"
     pipe = redis_client.pipeline()
     pipe.setex(
         f"user:{state['phone_number']}:pending_airtime",
@@ -101,16 +116,26 @@ async def prepare_confirmation(
         token
     )
     pipe.setex(
-        f"airtime:token:{idem_key}:phone",
+        f"transaction:token:{idem_key}:phone",
         900,
         state["phone_number"]
     )
     await pipe.execute()
 
+    await whatsapp_client.send_flow(
+        to=state["phone_number"],
+        header="Confirm Your Airtime Purchase",
+        flow_cta="Authorize Airtime",
+        flow_id=settings.pin_confirmation_flow_id,
+        screen_name="Pin",
+        flow_token=token,
+        text_body=summary,
+    )
+
     return cast(AirtimeState, {
         **state,
-        "response": summary,
+        "response": "", 
         "idempotency_key": idem_key,
         "airtime_status": "pending",
-        "flow_state": "confirming",
+        "flow_state": "authorizing",
     })

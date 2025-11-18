@@ -14,6 +14,7 @@ def route_by_state(state: AirtimeState) -> Literal[
     "select_account",
     "validate",
     "confirm",
+    "authorize",
     "cancel",
     "extract"
 ]:
@@ -58,6 +59,14 @@ def route_by_state(state: AirtimeState) -> Literal[
         return "end" if validation_errors else "confirm"
 
     if flow_state == "confirming":
+        return "end"
+
+    if flow_state == "authorizing":
+        pin_verified = state.get("pin_verified")
+        if pin_verified is True:
+            debug_log("✅ PIN verified, routing to authorize node")
+            return "authorize"
+        debug_log("⏳ Waiting for PIN verification")
         return "end"
 
     if flow_state == "extracting":

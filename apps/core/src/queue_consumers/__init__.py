@@ -1,8 +1,8 @@
 
 from apps.core.src.queue_consumers.message_consumer import MessageConsumer
-from apps.core.src.queue_consumers.transfer_consumer import TransferConsumer
+from apps.core.src.queue_consumers.transaction_consumer import TransactionConsumer
 
 __all__ = [
     "MessageConsumer",
-    "TransferConsumer",
+    "TransactionConsumer",
 ]

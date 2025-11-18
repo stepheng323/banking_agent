@@ -7,6 +7,7 @@ from .beneficiary import find_beneficiary
 from .context import load_user_context
 from .confirmation import prepare_confirmation
 from .cancellation import handle_cancellation
+from .authorization import authorize_transaction
 
 __all__ = [
     "extract_entities",
@@ -18,4 +19,5 @@ __all__ = [
     "load_user_context",
     "prepare_confirmation",
     "handle_cancellation",
+    "authorize_transaction",
 ]

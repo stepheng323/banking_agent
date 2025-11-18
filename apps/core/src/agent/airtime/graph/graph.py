@@ -12,6 +12,7 @@ from shared.clients.whatsapp_client import WhatsAppClient
 from shared.repositories.account_repository import AccountRepository
 from shared.repositories.beneficiary_repository import BeneficiaryRepository
 from shared.cache.redis_client import RedisClient
+from shared.queue.redis_queue import RedisQueue
 from apps.core.src.agent.airtime.extractor import AirtimeEntityExtractor
 from apps.core.src.agent.services import BeneficiaryMatcher, FlowCompletionCallback
 from apps.core.src.agent.airtime.state import AirtimeState
@@ -30,6 +31,7 @@ class AirtimeFlowGraph:
         beneficiary_repo: BeneficiaryRepository,
         whatsapp_client: WhatsAppClient,
         extractor: AirtimeEntityExtractor,
+        queue: RedisQueue,
         completion_callback: Optional[FlowCompletionCallback] = None,
     ):
         self.user_cache = user_cache
@@ -40,6 +42,7 @@ class AirtimeFlowGraph:
         self.matcher = BeneficiaryMatcher()
         self.completion_callback = completion_callback
         self.redis_client = RedisClient.get_client()
+        self.queue = queue
 
         self.graph = None
         self._checkpointer_cm = None
@@ -66,6 +69,7 @@ class AirtimeFlowGraph:
                 matcher=self.matcher,
                 whatsapp_client=self.whatsapp_client,
                 redis_client=self.redis_client,
+                queue=self.queue,
             ).compile(checkpointer=self._checkpointer)
 
     async def run(self, phone_number: str, message: str, message_id: str, classification_result: Optional[dict] = None) -> str:
@@ -86,7 +90,65 @@ class AirtimeFlowGraph:
         final_state = await self.graph.ainvoke(cast(AirtimeState, input_state), config)
         await update_conversation_state(phone_number, cast(AirtimeState, final_state))
 
-        # Call completion callback if flow completed or failed
+        if self.completion_callback:
+            airtime_status = final_state.get("airtime_status")
+            if airtime_status in ("completed", "failed", "cancelled"):
+                completion_result = {
+                    "status": airtime_status,
+                    "amount": final_state.get("amount"),
+                    "recipient_phone": final_state.get("recipient_phone"),
+                    "response": final_state.get("response", ""),
+                }
+                asyncio.create_task(
+                    self.completion_callback.on_flow_complete(
+                        phone_number, "airtime", completion_result
+                    )
+                )
+
+        return final_state.get("response", "")
+
+    async def resume_after_pin_verification(
+        self, phone_number: str, pin_verified: bool, pin_error: Optional[str] = None
+    ) -> str:
+        """
+        Resume graph execution after PIN verification.
+
+        Args:
+            phone_number: User's phone number
+            pin_verified: Whether PIN was verified successfully
+            pin_error: Error message if PIN verification failed
+
+        Returns:
+            Response message
+        """
+        await self._ensure_checkpointer()
+
+        config: RunnableConfig = {
+            "configurable": {
+                "thread_id": f"airtime:{phone_number}",
+            }
+        }
+
+        if self.graph is None:
+            raise RuntimeError("Graph not compiled")
+
+        current_state = await self.graph.aget_state(config)
+        if not current_state or not current_state.values:
+            return "No active airtime purchase session found."
+
+        updated_state = dict(current_state.values)
+        updated_state.update({
+            "phone_number": phone_number,
+            "message": "",  
+            "message_id": "",
+            "pin_verified": pin_verified,
+            "pin_verification_error": pin_error,
+            "flow_state": "authorizing",
+        })
+
+        final_state = await self.graph.ainvoke(cast(AirtimeState, updated_state), config)
+        await update_conversation_state(phone_number, cast(AirtimeState, final_state))
+
         if self.completion_callback:
             airtime_status = final_state.get("airtime_status")
             if airtime_status in ("completed", "failed", "cancelled"):

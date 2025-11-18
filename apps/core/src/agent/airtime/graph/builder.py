@@ -12,13 +12,16 @@ from apps.core.src.agent.airtime.nodes import (
     find_beneficiary,
     prepare_confirmation,
     handle_cancellation,
+    authorize_transaction,
 )
 
 from apps.core.src.agent.services.beneficiary_matcher import BeneficiaryMatcher
+from apps.core.src.agent.services.authorization_service import AuthorizationService
 from shared.cache.user_context_cache import UserContextCacheService
 from shared.repositories import BeneficiaryRepository, AccountRepository
 from shared.clients.whatsapp_client import WhatsAppClient
 from shared.cache.redis_client import Redis
+from shared.queue.redis_queue import RedisQueue
 
 from .routing import route_by_state, route_after_extract
 
@@ -31,6 +34,7 @@ def build_graph(
     matcher: BeneficiaryMatcher,
     whatsapp_client: WhatsAppClient,
     redis_client: Redis,
+    queue: RedisQueue,
 ) -> StateGraph:
     """Build the airtime purchase flow graph."""
     workflow = StateGraph(AirtimeState)
@@ -56,6 +60,13 @@ def build_graph(
             state, redis_client
         )
 
+    authorization_service = AuthorizationService(redis_client=redis_client)
+
+    async def authorize_node(state: AirtimeState) -> AirtimeState:
+        return await authorize_transaction(
+            state, redis_client, queue, authorization_service
+        )
+
     # Add nodes
     workflow.add_node("extract", extract_node)
     workflow.add_node("load_context", load_context_node)
@@ -63,6 +74,7 @@ def build_graph(
     workflow.add_node("select_account", select_source_account)
     workflow.add_node("find_beneficiary", find_beneficiary_node)
     workflow.add_node("confirm", confirm_node)
+    workflow.add_node("authorize", authorize_node)
     workflow.add_node("cancel", cancellation_node)
 
     workflow.set_entry_point("extract")
@@ -116,7 +128,17 @@ def build_graph(
         }
     )
 
-    workflow.add_edge("confirm", END)
+    workflow.add_conditional_edges(
+        "confirm",
+        route_by_state,
+        {
+            "authorize": "authorize",
+            "end": END,
+            "cancel": "cancel",
+        }
+    )
+
+    workflow.add_edge("authorize", END)
 
     workflow.add_edge("cancel", END)
 

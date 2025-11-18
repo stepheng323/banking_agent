@@ -15,7 +15,7 @@ from apps.gateway.api.flows.handlers.account_selection_handler import handle_acc
 from apps.gateway.api.flows.handlers.bvn_handler import handle_bvn_entry
 from apps.gateway.api.flows.handlers.onboarding_pin_handler import handle_onboarding_pin
 from apps.gateway.api.flows.handlers.otp_handler import handle_otp_verification
-from apps.gateway.api.flows.handlers.transfer_pin_handler import handle_transfer_pin
+from apps.gateway.api.flows.handlers.transaction_pin_handler import handle_transaction_pin
 from apps.gateway.api.flows.request_processor import  process_flow_request
 
 router = APIRouter()
@@ -84,7 +84,7 @@ async def flow_webhook(
             )
 
         elif screen == "Pin":
-            return await handle_transfer_pin(
+            return await handle_transaction_pin(
                 data,
                 flow_token or "",
                 request_was_encrypted,
