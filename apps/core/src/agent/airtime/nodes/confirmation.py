@@ -93,10 +93,8 @@ async def prepare_confirmation(
             "name": recipient_name,
         },
         "source": {
-            # type: ignore[union-attr]
             "id": source.get("id") if source else None,
             "account_number": source_account_number,
-            # type: ignore[union-attr]
             "account_name": (source.get("account_name") if source else None) or (source.get("name") if source else None),
             "bank_name": source_bank_name,
         },
@@ -125,7 +123,6 @@ async def prepare_confirmation(
     )
     await pipe.execute()
 
-    # Send WhatsApp Flow instead of text message
     await whatsapp_client.send_flow(
         to=state["phone_number"],
         header="Confirm Your Airtime Purchase",
@@ -138,7 +135,7 @@ async def prepare_confirmation(
 
     return cast(AirtimeState, {
         **state,
-        "response": "",  # Empty response since flow is sent separately
+        "response": "", 
         "idempotency_key": idem_key,
         "airtime_status": "pending",
         "flow_state": "authorizing",
