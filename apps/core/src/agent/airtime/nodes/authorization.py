@@ -33,11 +33,9 @@ async def authorize_transaction(
             },
         )
 
-    # Check PIN verification result from Redis
     pin_result = await authorization_service.get_pin_verification_result(idem_key)
 
     if not pin_result:
-        # PIN not yet verified - this shouldn't happen if routing is correct
         debug_log(
             f"⚠️  No PIN verification result found for idem_key: {idem_key}")
         return cast(
@@ -54,7 +52,6 @@ async def authorize_transaction(
         retry_count = pin_result.retry_count
 
         if retry_count >= 3:
-            # Max retries exceeded
             debug_log(
                 f"❌ Max PIN retries exceeded for airtime: {idem_key}")
             await redis_client.delete(f"user:{phone_number}:pending_airtime")
@@ -71,7 +68,6 @@ async def authorize_transaction(
                 },
             )
 
-        # Retry needed - should route back to confirm
         debug_log(
             f"⚠️  PIN verification failed (attempt {retry_count}/3) for airtime: {idem_key}")
         return cast(
@@ -86,7 +82,6 @@ async def authorize_transaction(
             },
         )
 
-    # PIN verified - create transaction and queue execution
     debug_log(f"✅ PIN verified for airtime: {idem_key} (user_id={pin_result.user_id})")
 
     try:
@@ -115,14 +110,12 @@ async def authorize_transaction(
                 },
             )
 
-        # Create transaction record
         transaction_id = await create_airtime_transaction(
             pending_airtime,
             pin_result.user_id,
             idem_key,
         )
 
-        # Queue for execution
         airtime_request = {
             "type": "execute_airtime",
             "phone_number": phone_number,
@@ -132,13 +125,12 @@ async def authorize_transaction(
         }
 
         await queue.enqueue_simple(
-            queue_name="banking:airtime",
+            queue_name="banking:transactions",
             message=airtime_request,
         )
 
         debug_log(f"✅ Airtime purchase queued for execution: {idem_key}")
 
-        # Clean up PIN verification key
         pin_verification_key = f"transaction:pin_verified:{idem_key}"
         await redis_client.delete(pin_verification_key)
 

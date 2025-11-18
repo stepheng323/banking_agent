@@ -163,7 +163,7 @@ async def handle_transaction_pin(
                     "transaction_id": transaction_id,
                 }
                 await queue.enqueue_simple(
-                    queue_name="banking:transfers",
+                    queue_name="banking:transactions",
                     message=transfer_request,
                 )
                 response_message = "Transfer authorized. Processing your request..."
