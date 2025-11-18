@@ -67,7 +67,6 @@ async def prepare_confirmation(
 
     recipient_display = recipient_name or recipient_phone or "Recipient"
     
-    # Format summary with markdown formatting matching transfer style
     lines = [
         f"Amount: *{_format_currency_naira(float(amount or 0))}*",
         f"To: *{recipient_display}* ({network} - ```{recipient_phone}```)",
