@@ -25,13 +25,14 @@ from apps.core.src.agent.orchestrator import OrchestratorAgent
 from apps.core.src.agent.services import ConversationResponder, TaskQueueService, TaskExecutor
 from apps.core.src.agent.transfer import TransferService as AgentTransferService
 from apps.core.src.agent.airtime import AirtimeService
-from apps.core.src.queue_consumers import MessageConsumer, TransferConsumer
+from apps.core.src.queue_consumers import MessageConsumer, TransactionConsumer
 from apps.core.src.handlers import (
     OnboardingHandler,
     OnboardingService,
     TransferHandler,
     TransferService
 )
+from apps.core.src.handlers.airtime import AirtimeHandler, AirtimeService as HandlerAirtimeService
 
 
 def setup_dependencies():
@@ -118,12 +119,22 @@ def setup_dependencies():
         whatsapp_client=whatsapp_client,
     )
 
-    transfer_consumer = TransferConsumer(
+    # Create handler services
+    handler_airtime_service = HandlerAirtimeService(
+        whatsapp_client=whatsapp_client,
+        redis_client=shared_redis,
+    )
+    airtime_handler = AirtimeHandler(airtime_service=handler_airtime_service)
+    transfer_handler = TransferHandler(transfer_service=transfer_service)
+
+    # Create unified transaction consumer
+    transaction_consumer = TransactionConsumer(
         redis_queue=redis_queue,
-        transfer_handler=TransferHandler(transfer_service=transfer_service),
+        transfer_handler=transfer_handler,
+        airtime_handler=airtime_handler,
     )
 
-    return message_consumer, transfer_consumer
+    return message_consumer, transaction_consumer
 
 
 @asynccontextmanager
@@ -191,11 +202,11 @@ async def lifespan(_app: FastAPI):
         except Exception as e:
             print(f"   ⚠️  Bank cache warmup warning: {e}")
 
-    message_consumer, transfer_consumer = setup_dependencies()
+    message_consumer, transaction_consumer = setup_dependencies()
     asyncio.create_task(message_consumer.start())
     print("   ✅ Message consumer started in background")
-    asyncio.create_task(transfer_consumer.start())
-    print("   ✅ Transfer consumer started in background")
+    asyncio.create_task(transaction_consumer.start())
+    print("   ✅ Transaction consumer started in background")
 
     yield
 
@@ -208,7 +219,7 @@ async def lifespan(_app: FastAPI):
             print(f"   ⚠️  Payment provider shutdown error: {e}")
 
     message_consumer.stop()
-    transfer_consumer.stop()
+    transaction_consumer.stop()
     await asyncio.sleep(0.5)
     print("   ✅ Services stopped")
 
