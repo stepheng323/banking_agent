@@ -1,6 +1,7 @@
 """Repository for Account model."""
 
-from typing import List, Optional
+from typing import List, Optional, Union
+from uuid import UUID
 
 from sqlalchemy.orm import Session
 
@@ -17,7 +18,14 @@ class AccountRepository(BaseRepository[Account]):
 
     def get_by_user(self, user_id: str) -> List[Account]:
         """Get all accounts for a user."""
-        return self.db.query(Account).filter(Account.user_id == user_id).all()
+        # Convert string user_id to UUID if needed (Account.user_id is UUID type)
+        user_uuid: Union[str, UUID] = user_id
+        if isinstance(user_id, str):
+            try:
+                user_uuid = UUID(user_id)
+            except ValueError:
+                pass
+        return self.db.query(Account).filter(Account.user_id == user_uuid).all()
 
 
     def get_by_account_id(self, account_id: str) -> Optional[Account]:

@@ -40,6 +40,10 @@ class Settings:
         self.user_ctx_ttl_seconds: int = int(
             os.getenv("TTL_SECONDS", "6000"))
 
+        # Flow session timeout (seconds) - applies to all transaction flows
+        self.flow_session_timeout: int = int(
+            os.getenv("FLOW_SESSION_TIMEOUT", "600"))
+
         self.openai_api_key: str = os.getenv("OPENAI_API_KEY", "")
 
         self.flutterwave_client_id: str = os.getenv(
