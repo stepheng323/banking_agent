@@ -2,6 +2,6 @@
 
 
 def debug_log(message: str) -> None:
-    """Log debug message."""
-    print(f"[AIRTIME] {message}")
+    """Log debug message - no-op in production."""
+    pass
 
