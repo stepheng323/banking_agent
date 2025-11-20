@@ -7,7 +7,7 @@ from apps.core.src.agent.transfer.state import TransferState
 from .utils import debug_log
 
 
-def route_by_state(state: TransferState) -> Literal["end", "collect_amount", "select_account", "collect_recipient", "validate", "check_changes", "confirm", "cancel"]:
+def route_by_state(state: TransferState) -> Literal["end", "collect_amount", "select_account", "collect_recipient", "validate", "check_changes", "confirm", "authorize", "cancel"]:
     """Route based on current flow state and missing data."""
     flow_state = state.get("flow_state")
     response = state.get("response", "")
@@ -22,11 +22,35 @@ def route_by_state(state: TransferState) -> Literal["end", "collect_amount", "se
     debug_log(
         f"DEBUG route_by_state: fields amount={amount}, selected_account={'yes' if selected_account else 'no'}, recipient_account={recipient_account}, recipient_bank={recipient_bank}, account_resolved={account_resolved}")
 
+    # Terminal states - always end
+    if flow_state == "completed":
+        debug_log("DEBUG route_by_state: flow_state=completed -> end")
+        return "end"
+    
+    if flow_state == "error":
+        debug_log("DEBUG route_by_state: flow_state=error -> end")
+        return "end"
+
     if flow_state == "cancelled" and not response:
         return "cancel"
 
     if flow_state == "cancelled" and response:
         return "end"
+
+    # Authorization flow - special handling
+    if flow_state == "authorizing":
+        pin_verified = state.get("pin_verified")
+        debug_log(f"DEBUG route_by_state: flow_state=authorizing, pin_verified={pin_verified}")
+        if pin_verified is True:
+            debug_log("DEBUG route_by_state: PIN verified -> authorize")
+            return "authorize"
+        debug_log("DEBUG route_by_state: Waiting for PIN -> end")
+        return "end"
+
+    # Confirming state - route to confirm to send WhatsApp flow
+    if flow_state == "confirming":
+        debug_log("DEBUG route_by_state: flow_state=confirming -> confirm")
+        return "confirm"
 
     if flow_state == "validating" and not account_resolved:
         if recipient_account and recipient_bank:

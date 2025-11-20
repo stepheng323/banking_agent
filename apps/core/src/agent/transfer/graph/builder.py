@@ -14,6 +14,7 @@ from apps.core.src.agent.transfer.nodes import (
     validate_parallel,
     check_and_acknowledge_changes,
     prepare_confirmation,
+    authorize_transaction,
     handle_cancellation,
 )
 from apps.core.src.agent.transfer.state import TransferState
@@ -23,6 +24,7 @@ from shared.repositories.beneficiary_repository import BeneficiaryRepository
 from shared.repositories.account_repository import AccountRepository
 from shared.clients.whatsapp_client import WhatsAppClient
 from shared.cache.redis_client import Redis
+from shared.queue.redis_queue import RedisQueue
 
 from .routing import route_by_state, route_after_extract
 
@@ -38,6 +40,7 @@ def build_graph(
     payment_provider,
     whatsapp_client: WhatsAppClient,
     redis_client: Redis,
+    queue: RedisQueue,
 ) -> StateGraph:
     """Build the LangGraph workflow."""
     workflow = StateGraph(TransferState)
@@ -81,6 +84,11 @@ def build_graph(
             state, whatsapp_client, redis_client
         )
 
+    async def authorize_node(state: TransferState) -> TransferState:
+        return await authorize_transaction(
+            state, redis_client, queue
+        )
+
     async def cancellation_node(state: TransferState) -> TransferState:
         return await handle_cancellation(state, redis_client)
 
@@ -93,6 +101,7 @@ def build_graph(
     workflow.add_node("validate_parallel", validate_parallel_node)
     workflow.add_node("check_changes", check_changes_node)
     workflow.add_node("confirm", confirm_node)
+    workflow.add_node("authorize", authorize_node)
     workflow.add_node("cancel", cancellation_node)
 
     workflow.set_entry_point("extract")
@@ -168,6 +177,8 @@ def build_graph(
     )
 
     workflow.add_edge("confirm", END)
+
+    workflow.add_edge("authorize", END)
     workflow.add_edge("cancel", END)
 
     return workflow

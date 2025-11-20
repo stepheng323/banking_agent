@@ -8,6 +8,7 @@ from shared.cache.user_context_cache import UserContextCacheService
 from shared.repositories.beneficiary_repository import BeneficiaryRepository
 from shared.repositories.account_repository import AccountRepository
 from shared.clients.whatsapp_client import WhatsAppClient
+from shared.queue.redis_queue import RedisQueue
 
 from apps.core.src.agent.transfer.extractor import TransferEntityExtractor
 from apps.core.src.agent.services.flow_completion_callback import FlowCompletionCallback
@@ -24,6 +25,7 @@ class TransferService:
         beneficiary_repo: BeneficiaryRepository,
         account_repo: AccountRepository,
         whatsapp_client: WhatsAppClient,
+        queue: RedisQueue,
         completion_callback: Optional[FlowCompletionCallback] = None,
     ) -> None:
         self.extractor = TransferEntityExtractor(llm)
@@ -33,6 +35,7 @@ class TransferService:
             account_repo=account_repo,
             whatsapp_client=whatsapp_client,
             extractor=self.extractor,
+            queue=queue,
             completion_callback=completion_callback,
         )
 

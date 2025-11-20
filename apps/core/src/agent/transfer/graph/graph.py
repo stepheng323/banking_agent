@@ -17,6 +17,8 @@ from shared.repositories.beneficiary_repository import BeneficiaryRepository
 from shared.repositories.account_repository import AccountRepository
 from shared.cache.bank_cache import BankCacheService
 from shared.cache.user_context_cache import UserContextCacheService
+from shared.queue.redis_queue import RedisQueue
+from shared.config import settings
 from apps.core.src.agent.services.validation_service import AsyncValidationService
 from apps.core.src.agent.services.beneficiary_matcher import BeneficiaryMatcher
 from apps.core.src.agent.transfer.extractor import TransferEntityExtractor
@@ -32,9 +34,7 @@ from .state import (
     clear_transfer_session,
     has_substantial_transfer_data,
     clear_all_transfer_state,
-    TRANSFER_SESSION_TIMEOUT,
 )
-from .utils import debug_log
 
 
 class TransferFlowGraph:
@@ -47,6 +47,7 @@ class TransferFlowGraph:
         account_repo: AccountRepository,
         whatsapp_client: WhatsAppClient,
         extractor: TransferEntityExtractor,
+        queue: RedisQueue,
         completion_callback: Optional[FlowCompletionCallback] = None,
     ):
         self.user_cache = user_cache
@@ -68,6 +69,7 @@ class TransferFlowGraph:
         self.redis_client = RedisClient.get_client()
         self.bank_cache = BankCacheService(redis_client=self.redis_client)
         self.payment_provider = provider  # Store for bank fetching
+        self.queue = queue
 
         self.graph = None
         self._checkpointer_cm = None
@@ -97,6 +99,7 @@ class TransferFlowGraph:
                 payment_provider=self.payment_provider,
                 whatsapp_client=self.whatsapp_client,
                 redis_client=self.redis_client,
+                queue=self.queue,
             ).compile(checkpointer=self._checkpointer)
 
     async def run(self, phone_number: str, message: str, message_id: str, classification_result: Optional[dict] = None) -> str:
@@ -129,8 +132,6 @@ class TransferFlowGraph:
 
         # If user confirmed cancellation, clear all state before processing
         if is_cancellation_confirmation:
-            debug_log(
-                "✅ User confirmed cancellation - clearing all state before processing new transfer")
             await clear_all_transfer_state(phone_number, self.redis_client, self.graph, config)
             # Start fresh with new message
             input_state = create_initial_state(
@@ -141,9 +142,7 @@ class TransferFlowGraph:
 
         # If user declined cancellation, continue with previous transfer
         if is_cancellation_decline:
-            debug_log(
-                "ℹ️  User declined cancellation - continuing with previous transfer")
-            # Get transfer details from conversation_state (more reliable than checkpoint which may have been updated)
+            # Get transfer details from conversation_state
             try:
                 redis_client = RedisClient.get_client()
                 conv_state_key = f"user:{phone_number}:conversation_state"
@@ -163,9 +162,8 @@ class TransferFlowGraph:
                         return f"Got it. Continuing with your pending transfer of ₦{prev_amount:,.2f} to {prev_recipient}. Please enter your PIN to confirm."
                     else:
                         return f"Got it. Continuing with your transfer of ₦{prev_amount:,.2f} to {prev_recipient}."
-            except Exception as e:
-                debug_log(
-                    f"⚠️  Error loading conversation_state for 'No' response: {e}")
+            except Exception:
+                pass
 
             # Fallback: Try checkpoint
             try:
@@ -183,47 +181,75 @@ class TransferFlowGraph:
                         return f"Got it. Continuing with your transfer of ₦{prev_amount:,.2f} to {prev_recipient}."
             except Exception:
                 pass
-            # If both fail, return generic message
             return "Got it. Continuing with your previous transfer."
 
         # Load existing checkpoint state to preserve values from previous turns
-        # LangGraph's ainvoke REPLACES state, so we must load checkpoint first
-        # Use the graph's get_state method to get current checkpoint
         try:
             current_state = await self.graph.aget_state(config)
             if current_state and current_state.values:
-                # Merge checkpoint state with new message fields
                 input_state = dict(current_state.values)
-                input_state.update({
-                    "phone_number": phone_number,
-                    "message": message,
-                    "message_id": message_id,
-                    # Update classification result from orchestrator
-                    "classification_result": classification_result,
-                })
+                
+                checkpoint_transfer_status = input_state.get("transfer_status")
+                
+                # Check if transaction is complete or session expired
+                session_age = await get_transfer_session_age(phone_number)
+                is_terminal_status = checkpoint_transfer_status in ("authorized", "completed", "failed")
+                is_session_expired = session_age is not None and session_age >= settings.flow_session_timeout
+                
+                # Clear state if transaction complete or session expired
+                if is_terminal_status or is_session_expired:
+                    await clear_all_transfer_state(phone_number, self.redis_client, self.graph, config)
+                    input_state = create_initial_state(
+                        phone_number, message, message_id, classification_result)
+                else:
+                    # Check if this is a new transfer intent
+                    is_new_transfer_intent = False
+                    if classification_result:
+                        classification_intent = classification_result.get("intent", "").lower()
+                        is_new_transfer_intent = classification_intent in {
+                            "transfer", "send_money", "send money", "send", "pay"
+                        }
+                    
+                    # If new intent detected and we have old values, clear them
+                    if is_new_transfer_intent and (input_state.get("amount") or input_state.get("recipient_account")):
+                        # Clear old transfer values
+                        input_state["amount"] = None
+                        input_state["recipient_account"] = None
+                        input_state["recipient_bank_code"] = None
+                        input_state["recipient_bank_name"] = None
+                        input_state["recipient_name"] = None
+                        input_state["idempotency_key"] = None
+                        input_state["transfer_status"] = None
+                        input_state["account_resolved"] = None
+                        input_state["matched_beneficiary"] = None
+                        input_state["flow_state"] = "extracting"
+                        # Clear Redis previous values key
+                        prev_key = f"transfer:prev:{phone_number}:{input_state.get('idempotency_key', '')}"
+                        await self.redis_client.delete(prev_key)
+                    
+                    input_state.update({
+                        "phone_number": phone_number,
+                        "message": message,
+                        "message_id": message_id,
+                        "classification_result": classification_result,
+                    })
 
-                # SESSION-BASED TRANSFER MANAGEMENT
-                # Check if there's a pending transfer with substantial data
+                # Session-based transfer management
                 stale_transfer_status = input_state.get("transfer_status")
                 has_substantial_data = has_substantial_transfer_data(
                     cast(TransferState, input_state))
-                session_age = await get_transfer_session_age(phone_number)
 
-                # Check if message indicates a NEW transfer attempt
                 has_amount_keywords = any(keyword in message_lower for keyword in [
                     "send", "transfer", "pay", "give"
                 ]) or any(char in message for char in ["k", "₦"]) or any(word in message_lower for word in ["thousand", "naira"])
 
                 if has_amount_keywords and has_substantial_data:
                     if session_age is not None:
-                        if session_age < TRANSFER_SESSION_TIMEOUT:
-                            # Within session: Prompt user to cancel previous transfer
+                        if session_age < settings.flow_session_timeout:
                             amount = input_state.get("amount", 0)
                             recipient_name = input_state.get("recipient_name")
-                            recipient_account = input_state.get(
-                                "recipient_account")
+                            recipient_account = input_state.get("recipient_account")
 
-                            # Format recipient display
                             if recipient_name:
                                 recipient_display = recipient_name
                             elif recipient_account:
@@ -231,71 +257,46 @@ class TransferFlowGraph:
                             else:
                                 recipient_display = "the recipient"
 
-                            debug_log(
-                                f"⏸️  Session active ({session_age:.1f}s < {TRANSFER_SESSION_TIMEOUT}s) - prompting for cancellation")
-
                             cancellation_prompt = f"You have a pending transfer of ₦{amount:,.2f} to {recipient_display}. Would you like to cancel it and start a new transfer? (Reply 'yes' to cancel, 'no' to continue with the previous transfer)"
 
-                            # Update state with cancellation prompt and run through graph to save state
                             input_state["response"] = cancellation_prompt
                             input_state["flow_state"] = "extracting"
 
-                            # Run through graph to save state properly
                             prompt_state = await self.graph.ainvoke(cast(TransferState, input_state), config)
                             await update_conversation_state(phone_number, cast(TransferState, prompt_state))
 
                             return cancellation_prompt
                         else:
-                            # Session expired: Auto-clear all state
-                            debug_log(
-                                f"⏰ Transfer session expired ({session_age:.1f}s > {TRANSFER_SESSION_TIMEOUT}s) - clearing all state")
                             await clear_all_transfer_state(phone_number, self.redis_client, self.graph, config)
                             input_state = create_initial_state(
                                 phone_number, message, message_id, classification_result)
                     else:
-                        # No session but has substantial data (edge case) - clear it
-                        debug_log(
-                            "🧹 No active session but found substantial data - clearing state")
                         await clear_all_transfer_state(phone_number, self.redis_client, self.graph, config)
                         input_state = create_initial_state(
                             phone_number, message, message_id, classification_result)
 
-                # CONTEXT-AWARE CLEARING: Only clear recipient data when it's actually a NEW transfer
-                # Don't clear when we're in the middle of collecting recipient information
+                # Context-aware clearing: only clear recipient data when it's a new transfer
                 stale_recipient = input_state.get("recipient_account")
                 stale_bank = input_state.get(
                     "recipient_bank_code") or input_state.get("recipient_bank_name")
                 stale_transfer_status = input_state.get("transfer_status")
                 current_flow_state = input_state.get("flow_state")
 
-                # Check if message contains a NEW amount (indicating a new transfer)
-                # Look for amount keywords that would indicate user is starting a new transfer
                 message_lower = message.lower()
                 has_amount_keywords = any(keyword in message_lower for keyword in [
                     "send", "transfer", "pay", "give"
                 ]) or any(char in message for char in ["k", "₦"]) or any(word in message_lower for word in ["thousand", "naira"])
 
-                # Extract potential amount from message (simple check for numbers with k/thousand/naira)
                 account_numbers_in_message = re.findall(r'\b\d{10}\b', message)
                 has_account_in_message = len(account_numbers_in_message) > 0
 
-                # Only clear recipient data if ALL of these are true:
-                # 1. Message has amount keywords (potential new transfer)
-                # 2. We're NOT in "collecting_recipient" state (not continuing a multi-turn conversation)
-                # 3. Transfer is NOT "pending" (not an active transfer in progress)
-                # 4. We have stale recipient data
                 should_clear_recipient = False
                 if (has_amount_keywords and
                     (stale_recipient or stale_bank) and
                     current_flow_state not in ("collecting_recipient", "collecting_amount") and
                         stale_transfer_status != "pending"):
-                    # Check if this looks like a new transfer (has amount but no recipient account)
                     if not has_account_in_message:
-                        # No account number in message + has amount keywords + not collecting recipient + not pending
-                        # This likely indicates a new transfer request
                         should_clear_recipient = True
-                        debug_log(
-                            f"🧹 GRAPH INIT: Clearing stale recipient data - new transfer detected. Stale: account={stale_recipient}, bank={stale_bank}, status={stale_transfer_status}, flow_state={current_flow_state}")
 
                 if should_clear_recipient:
                     input_state["recipient_account"] = None
@@ -305,18 +306,9 @@ class TransferFlowGraph:
                     input_state["account_resolved"] = None
                     input_state["matched_beneficiary"] = None
                     input_state["validation_errors"] = []
-                    # Clear narration for new transfer
                     input_state["narration"] = None
-                else:
-                    # Preserve recipient data - we're either continuing recipient collection or transfer is pending
-                    if stale_recipient or stale_bank:
-                        debug_log(
-                            f"ℹ️ GRAPH INIT: Preserving recipient data - continuing collection or active transfer. account={stale_recipient}, bank={stale_bank}, status={stale_transfer_status}, flow_state={current_flow_state}")
 
-                # Clear all state if transfer was completed/cancelled/failed (definite end of transfer)
                 if stale_transfer_status in ("completed", "failed", "cancelled"):
-                    debug_log(
-                        f"🧹 GRAPH INIT: Clearing state from {stale_transfer_status} transfer")
                     input_state["recipient_account"] = None
                     input_state["recipient_bank_code"] = None
                     input_state["recipient_bank_name"] = None
@@ -337,18 +329,13 @@ class TransferFlowGraph:
                 phone_number, message, message_id, classification_result)
 
         final_state = await self.graph.ainvoke(cast(TransferState, input_state), config)
-
-        # Update conversation_state in Redis so orchestrator can detect active transactions
         await update_conversation_state(phone_number, cast(TransferState, final_state))
 
-        # Start or update transfer session if we have substantial data
         if has_substantial_transfer_data(cast(TransferState, final_state)):
             await start_transfer_session(phone_number)
         elif final_state.get("transfer_status") not in ("pending", None):
-            # Transfer completed/cancelled - clear session
             await clear_transfer_session(phone_number)
 
-            # Call completion callback if flow completed or failed
             if self.completion_callback:
                 transfer_status = final_state.get("transfer_status")
                 if transfer_status in ("completed", "failed", "cancelled"):
@@ -365,3 +352,70 @@ class TransferFlowGraph:
                     )
 
         return final_state.get("response", "")
+
+    async def resume_after_pin_verification(
+        self, phone_number: str, pin_verified: bool, pin_error: Optional[str] = None
+    ) -> str:
+        """
+        Resume graph execution after PIN verification.
+
+        Args:
+            phone_number: User's phone number
+            pin_verified: Whether PIN was verified successfully
+            pin_error: Error message if PIN verification failed
+
+        Returns:
+            Response message
+        """
+        await self._ensure_checkpointer()
+
+        config: RunnableConfig = {
+            "configurable": {
+                "thread_id": f"transfer:{phone_number}",
+            }
+        }
+
+        if self.graph is None:
+            raise RuntimeError("Graph not compiled")
+
+        current_state = await self.graph.aget_state(config)
+        if not current_state or not current_state.values:
+            return "No active transfer session found."
+
+        updated_state = dict(current_state.values)
+        updated_state.update({
+            "phone_number": phone_number,
+            "message": "",
+            "message_id": "",
+            "pin_verified": pin_verified,
+            "pin_verification_error": pin_error,
+            "flow_state": "authorizing",
+        })
+
+        final_state = await self.graph.ainvoke(cast(TransferState, updated_state), config)
+        await update_conversation_state(phone_number, cast(TransferState, final_state))
+
+        # Get response from final state
+        response = final_state.get("response", "")
+        transfer_status = final_state.get("transfer_status")
+
+        # Fallback if no response but transaction was authorized/completed
+        if not response and pin_verified and transfer_status in ("authorized", "completed"):
+            response = "Transfer authorized. Processing your request..."
+
+        if self.completion_callback:
+            transfer_status = final_state.get("transfer_status")
+            if transfer_status in ("completed", "failed", "cancelled"):
+                completion_result = {
+                    "status": transfer_status,
+                    "amount": final_state.get("amount"),
+                    "recipient_account": final_state.get("recipient_account"),
+                    "response": response,
+                }
+                asyncio.create_task(
+                    self.completion_callback.on_flow_complete(
+                        phone_number, "transfer", completion_result
+                    )
+                )
+
+        return response

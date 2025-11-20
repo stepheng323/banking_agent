@@ -1,17 +1,18 @@
 """State management utilities for transfer flow graph."""
 
 import json
-import time
 from typing import Optional
 
 from shared.cache.redis_client import RedisClient
+from shared.cache.flow_session_manager import (
+    get_flow_session_age,
+    start_flow_session,
+    clear_flow_session,
+)
 
 from apps.core.src.agent.transfer.state import TransferState
 
 from .utils import debug_log
-
-# Session timeout: 10 minutes
-TRANSFER_SESSION_TIMEOUT = 600  # 10 minutes in seconds
 
 
 def create_initial_state(phone_number: str, message: str, message_id: str, classification_result: Optional[dict] = None) -> TransferState:
@@ -109,41 +110,20 @@ async def update_conversation_state(phone_number: str, state: TransferState) -> 
         # Don't fail if conversation state update fails
 
 
+# Session management functions - use shared flow_session_manager
 async def get_transfer_session_age(phone_number: str) -> Optional[float]:
     """Get the age of the current transfer session in seconds, or None if no active session."""
-    try:
-        redis_client = RedisClient.get_client()
-        key = f"user:{phone_number}:transfer_session_start"
-        session_start = await redis_client.get(key)
-        if session_start:
-            start_time = float(session_start)
-            age = time.time() - start_time
-            return age
-    except Exception as e:
-        debug_log(f"⚠️  Error getting transfer session age: {e}")
-    return None
+    return await get_flow_session_age(phone_number, "transfer")
 
 
 async def start_transfer_session(phone_number: str) -> None:
     """Start a new transfer session by storing the current timestamp."""
-    try:
-        redis_client = RedisClient.get_client()
-        key = f"user:{phone_number}:transfer_session_start"
-        await redis_client.set(key, str(time.time()), ex=TRANSFER_SESSION_TIMEOUT)
-        debug_log(f"🕐 Started transfer session for {phone_number}")
-    except Exception as e:
-        debug_log(f"⚠️  Error starting transfer session: {e}")
+    await start_flow_session(phone_number, "transfer")
 
 
 async def clear_transfer_session(phone_number: str) -> None:
     """Clear the transfer session."""
-    try:
-        redis_client = RedisClient.get_client()
-        key = f"user:{phone_number}:transfer_session_start"
-        await redis_client.delete(key)
-        debug_log(f"🧹 Cleared transfer session for {phone_number}")
-    except Exception as e:
-        debug_log(f"⚠️  Error clearing transfer session: {e}")
+    await clear_flow_session(phone_number, "transfer")
 
 
 def has_substantial_transfer_data(state: TransferState) -> bool:
@@ -171,12 +151,14 @@ async def clear_all_transfer_state(phone_number: str, redis_client, graph, confi
             except Exception as e:
                 debug_log(f"⚠️  Error clearing checkpoint (may not exist): {e}")
         
+        # Clear flow session
+        await clear_flow_session(phone_number, "transfer")
+        
         # Clear Redis keys
         keys_to_delete = [
             f"user:{phone_number}:conversation_state",
             f"user:{phone_number}:pending_transfer",
             f"user:{phone_number}:pending_transfer_flow_token",
-            f"user:{phone_number}:transfer_session_start",
         ]
         
         for key in keys_to_delete:

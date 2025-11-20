@@ -33,15 +33,15 @@ async def find_beneficiary(
         if status == "single" and single:
             return {
                 **state,
-                "recipient_account": str(single.account_number),
-                "recipient_bank_code": str(single.bank_code),
-                "recipient_bank_name": str(single.bank_name),
+                "recipient_account": str(single.account_number) if single.account_number else "",
+                "recipient_bank_code": str(single.bank_code) if single.bank_code else "",
+                "recipient_bank_name": str(single.bank_name) if single.bank_name else "",
                 "recipient_name": str(single.account_name or single.alias or rec_name),
                 "matched_beneficiary": sqlalchemy_to_dict(single) if hasattr(single, "__table__") else single,
             }
         elif status == "clarify" and candidates:
             opts = "; ".join([
-                f"{(b.account_name or b.alias)} ({b.bank_name} • {str(b.account_number)[-4:]})"
+                f"{(b.account_name or b.alias)} ({b.bank_name or 'N/A'} • {str(b.account_number)[-4:] if b.account_number else 'N/A'})"
                 for b in candidates
             ])
             return {
