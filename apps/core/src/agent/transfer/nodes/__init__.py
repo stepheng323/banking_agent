@@ -8,6 +8,7 @@ from .extraction import extract_entities
 from .account_selection import select_source_account
 from .beneficiary import find_beneficiary
 from .validation import validate_amount, validate_parallel
+from .authorization import authorize_transaction
 from .utils import debug_log
 
 __all__ = [
@@ -19,6 +20,7 @@ __all__ = [
     "validate_parallel",
     "check_and_acknowledge_changes",
     "prepare_confirmation",
+    "authorize_transaction",
     "handle_cancellation",
     "debug_log",
 ]

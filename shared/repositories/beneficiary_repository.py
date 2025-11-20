@@ -83,4 +83,41 @@ class BeneficiaryRepository(BaseRepository[Beneficiary]):
         """Check if recipient should be suggested as a beneficiary."""
         beneficiaries = self.get_by_user(
             user_id, beneficiary_type=beneficiary_type)
-        return not any(beneficiary.account_number == account_number and beneficiary.bank_code == bank_code for beneficiary in beneficiaries)
+        # Handle None values in comparisons - skip if either field is None
+        return not any(
+            beneficiary.account_number == account_number and 
+            beneficiary.bank_code == bank_code
+            for beneficiary in beneficiaries
+            if beneficiary.account_number is not None and beneficiary.bank_code is not None
+        )
+
+    def should_suggest_airtime_beneficiary(
+        self,
+        user_id: str,
+        phone_number: str,
+        network: str,
+    ) -> bool:
+        """
+        Check if airtime recipient should be suggested as a beneficiary.
+        
+        For airtime beneficiaries:
+        - account_number stores the phone number
+        - bank_name stores the network name
+        
+        Args:
+            user_id: User's UUID
+            phone_number: Recipient phone number
+            network: Network name (MTN, Airtel, Glo, 9mobile)
+            
+        Returns:
+            True if recipient should be suggested (doesn't exist), False otherwise
+        """
+        beneficiaries = self.get_by_user(user_id, beneficiary_type="airtime")
+        # Handle None values in comparisons - skip if either field is None
+        # For airtime: account_number=phone, bank_name=network (both should always be present)
+        return not any(
+            beneficiary.account_number == phone_number and 
+            beneficiary.bank_name == network
+            for beneficiary in beneficiaries
+            if beneficiary.account_number is not None and beneficiary.bank_name is not None
+        )

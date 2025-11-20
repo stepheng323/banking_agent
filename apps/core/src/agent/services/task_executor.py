@@ -1,13 +1,15 @@
 """Task execution engine for multi-task execution."""
 
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, TYPE_CHECKING, Union
 
 from apps.core.src.agent.models.planner import PlannedTask
 from apps.core.src.agent.services.task_queue_service import TaskQueueService
 from apps.core.src.agent.services.flow_completion_callback import FlowCompletionCallback
-from apps.core.src.agent.transfer import TransferService
-from apps.core.src.agent.airtime import AirtimeService
 from shared.types.agent_types import TaskStatus
+
+if TYPE_CHECKING:
+    from apps.core.src.agent.transfer import TransferService
+    from apps.core.src.agent.airtime import AirtimeService
 
 
 class TaskExecutor:
@@ -15,8 +17,8 @@ class TaskExecutor:
 
     def __init__(
         self,
-        transfer_service: TransferService,
-        airtime_service: AirtimeService,
+        transfer_service: "TransferService",
+        airtime_service: "AirtimeService",
         task_queue_service: TaskQueueService,
         completion_callback: Optional[FlowCompletionCallback] = None,
     ):
@@ -101,7 +103,7 @@ class TaskExecutor:
 
     def get_executor_for_task(
         self, task: PlannedTask
-    ) -> Optional[TransferService | AirtimeService]:
+    ) -> Optional[Any]:
         """
         Map task executor to service instance.
 

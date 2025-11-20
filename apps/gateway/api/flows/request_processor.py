@@ -37,8 +37,21 @@ async def process_flow_request(req: Request) -> Tuple[ProcessedRequest, Optional
         Tuple of (ProcessedRequest, Optional[Response])
         Response is only set if there's an error that should be returned immediately
     """
-    body = await req.json()
-    print("📥 Flow webhook received")
+    try:
+        body = await req.json()
+    except Exception as e:
+        print(f"Error parsing JSON: {e}")
+        import traceback
+        traceback.print_exc()
+        return (
+            None,
+            Response(
+                content=json.dumps({"error": "Invalid JSON"}),
+                media_type="text/plain",
+                status_code=400,
+            ),
+        )
+    
 
     request_was_encrypted = is_encrypted(body)
     aes_key_bytes = None
@@ -51,10 +64,7 @@ async def process_flow_request(req: Request) -> Tuple[ProcessedRequest, Optional
 
         result = decrypt_flow_data(encrypted_data, encrypted_key, iv)
 
-        print(f"🔍 Result: {result}")
-
         if not result:
-            print("   ❌ Decryption failed - returning HTTP 421 per Meta spec")
             error_response = {
                 "errors": [
                     {
@@ -75,17 +85,12 @@ async def process_flow_request(req: Request) -> Tuple[ProcessedRequest, Optional
         screen = decrypted.get("screen")
         data = decrypted.get("data", {})
         flow_token = decrypted.get("flow_token")
-        print(f"   ✅ Decrypted flow data: {decrypted}")
 
     else:
         screen = body.get("screen")
         data = body.get("data", {})
         flow_token = body.get("flow_token")
-        print("   ℹ️  Unencrypted request - will return plain JSON")
 
-    print(f"   Screen: {screen}")
-    print(f"   Data: {data}")
-    print(f"   Flow token: {flow_token}")
 
     return (
         ProcessedRequest(

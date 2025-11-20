@@ -33,6 +33,7 @@ from apps.core.src.handlers import (
     TransferService
 )
 from apps.core.src.handlers.airtime import AirtimeHandler, AirtimeService as HandlerAirtimeService
+from apps.core.src.agent.services.beneficiary_suggestion_service import BeneficiarySuggestionService
 
 
 def setup_dependencies():
@@ -54,12 +55,19 @@ def setup_dependencies():
     receipt_generator = ReceiptGenerator()
     s3_client = S3Client()
 
+    # Create shared beneficiary suggestion service
+    beneficiary_suggestion_service = BeneficiarySuggestionService(
+        whatsapp_client=whatsapp_client,
+        redis_client=shared_redis,
+    )
+
     transfer_service = TransferService(
         whatsapp_client=whatsapp_client,
         redis_client=shared_redis,
         beneficiary_repository=beneficiary_repository,
         receipt_generator=receipt_generator,
         s3_client=s3_client,
+        beneficiary_suggestion_service=beneficiary_suggestion_service,
     )
 
 
@@ -74,6 +82,7 @@ def setup_dependencies():
         beneficiary_repo=beneficiary_repository,
         account_repo=account_repository,
         whatsapp_client=whatsapp_client,
+        queue=redis_queue,
         completion_callback=None,
     )
 
@@ -123,6 +132,7 @@ def setup_dependencies():
     handler_airtime_service = HandlerAirtimeService(
         whatsapp_client=whatsapp_client,
         redis_client=shared_redis,
+        beneficiary_suggestion_service=beneficiary_suggestion_service,
     )
     airtime_handler = AirtimeHandler(airtime_service=handler_airtime_service)
     transfer_handler = TransferHandler(transfer_service=transfer_service)

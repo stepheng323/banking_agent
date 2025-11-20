@@ -59,7 +59,7 @@ class RedisQueue:
         return None
 
     async def dequeue_blocking(self, queue_name: str, timeout: int = 0) -> Optional[Dict[str, Any]]:
-
+        """Dequeue a message from the queue, blocking until one is available or timeout."""
         if not self._redis:
             await self.connect()
 
@@ -70,7 +70,7 @@ class RedisQueue:
             _, message_json = result
             message = json.loads(message_json)
             return message
-
+        
         return None
 
     async def enqueue_simple(self, queue_name: str, message: Dict[str, Any]) -> None:
@@ -83,8 +83,11 @@ class RedisQueue:
         }
 
         list_name = f"{queue_name}:list"
-        await self._redis.lpush(list_name, json.dumps(enriched_message))
-        print(f"📤 Enqueued message to {queue_name}")
+        try:
+            await self._redis.lpush(list_name, json.dumps(enriched_message))
+        except Exception as e:
+            print(f"Error enqueuing message to {list_name}: {e}")
+            raise
 
         if not self._redis:
             await self.connect()

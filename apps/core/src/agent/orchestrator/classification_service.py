@@ -29,11 +29,13 @@ class OrchestratorClassificationService:
             "- If context.pendingBeneficiarySuggestion exists and user responds to the suggestion:\n"
             "  - 'yes', 'sure', 'ok', 'confirm', 'save', 'add', 'go ahead', 'proceed' → intent: yes or confirm, extracted_alias: null\n"
             "  - 'no', 'skip', 'don't save', 'not now', 'cancel' → intent: no or skip, extracted_alias: null\n"
-            "  - If user provides an alias/name (e.g., 'save as mum', 'My opay', 'mum', 'call it mum', 'save it as mum'):\n"
-            "    → Extract the alias/name and set extracted_alias to that value (just the name, not the full phrase)\n"
+            "  - If user provides an alias/name (e.g., 'save as mum', 'My opay', 'mum', 'call it mum', 'save it as mum', or just a name like 'Gaines', 'Mum', 'Home'):\n"
+            "    → ALWAYS extract the alias/name and set extracted_alias to that value (just the name, not the full phrase)\n"
             "    → Intent can be 'yes', 'confirm', or keep as original intent\n"
-            "    → Examples: 'save as mum' → extracted_alias: 'mum', 'My opay' → extracted_alias: 'My opay', 'mum' → extracted_alias: 'mum'\n"
-            "  - These are responses to: 'Would you like to save [name] as a beneficiary?'\n\n"
+            "    → Examples: 'save as mum' → extracted_alias: 'mum', 'My opay' → extracted_alias: 'My opay', 'mum' → extracted_alias: 'mum', 'Gaines' → extracted_alias: 'Gaines'\n"
+            "  - CRITICAL: If previous response asks for a name/alias (e.g., 'Please provide a name or alias'), and user sends just a name, you MUST extract it as extracted_alias\n"
+            "  - CRITICAL: When context.pendingBeneficiarySuggestion exists and user provides a single word or short phrase that looks like a name, extract it as extracted_alias\n"
+            "  - These are responses to: 'Would you like to save [name] as a beneficiary?' or 'Please provide a name or alias...'\n\n"
 
             "**CANCELLATION INTENT:**\n"
             "- If user wants to cancel, abort, or stop the current transaction, classify as 'cancel'\n"
@@ -63,8 +65,10 @@ class OrchestratorClassificationService:
             "- 'change amount to 10k' → intent: transfer, is_cancellation: false (modification, not cancellation)\n"
             "- 'hi' → intent: conversational, is_cancellation: false\n"
             "- 'check balance' → intent: conversational, is_cancellation: false\n"
-            "- 'yes' (to beneficiary suggestion) → intent: yes or confirm\n"
-            "- 'no' (to beneficiary suggestion) → intent: no or skip\n\n"
+            "- 'yes' (to beneficiary suggestion) → intent: yes or confirm, extracted_alias: null\n"
+            "- 'no' (to beneficiary suggestion) → intent: no or skip, extracted_alias: null\n"
+            "- 'Gaines' (after being asked 'Please provide a name or alias...') → intent: yes or confirm, extracted_alias: 'Gaines'\n"
+            "- 'Mum' (after being asked for alias) → intent: yes or confirm, extracted_alias: 'Mum'\n\n"
 
             "**PRINCIPLE:** If the message answers a question or provides requested information, it's a continuation. "
             "If the message explicitly cancels/aborts, it's cancellation. "
@@ -92,10 +96,22 @@ class OrchestratorClassificationService:
                 suggestion = context["pendingBeneficiarySuggestion"]
                 recipient_name = suggestion.get(
                     "recipient_name", "this recipient")
+                beneficiary_type = suggestion.get("beneficiary_type", "transfer")
+                
+                # Use the actual last_response to understand what was asked
+                context_message = f"The assistant just asked about saving a beneficiary."
+                if last_response:
+                    # Include the actual last response to help classifier understand the context
+                    context_message = f"The assistant's last message was: '{last_response}'"
+                
                 user_content = (
                     f"{user_content}\n\n"
-                    f"[Context: The assistant just asked: 'Would you like to save {recipient_name} as a beneficiary for faster transfers? Reply to confirm.']\n"
-                    f"This message is a response to that question. Classify as 'yes'/'confirm' if user wants to save, or 'no'/'skip' if user declines."
+                    f"[Context: {context_message}]\n"
+                    f"Beneficiary type: {beneficiary_type}. "
+                    f"This message is a response to that question. "
+                    f"CRITICAL: If the last message asked for a name/alias and user provides just a name (even a single word like 'Gaines'), you MUST extract it as extracted_alias. "
+                    f"Classify as 'yes'/'confirm' if user wants to save, 'no'/'skip' if user declines, "
+                    f"or extract the alias if user provides a name. When in doubt and user provides a name-like word, extract it as extracted_alias."
                 )
 
         raw = await self.classifier_llm.ainvoke(

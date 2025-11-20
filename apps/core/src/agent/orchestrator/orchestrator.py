@@ -17,14 +17,12 @@ from apps.core.src.agent.services import ConversationResponder, TaskQueueService
 from apps.core.src.agent.transfer import TransferService
 from apps.core.src.agent.airtime import AirtimeService
 
-from apps.core.src.agent.orchestrator import (
-    OrchestratorContextManager,
-    OrchestratorClassificationService,
-    OrchestratorTaskPlanner,
-    OrchestratorBeneficiaryHandler,
-    OrchestratorCancellationHandler,
-    OrchestratorIntentRouter,
-)
+from apps.core.src.agent.orchestrator.context_manager import OrchestratorContextManager
+from apps.core.src.agent.orchestrator.classification_service import OrchestratorClassificationService
+from apps.core.src.agent.orchestrator.task_planner import OrchestratorTaskPlanner
+from apps.core.src.agent.orchestrator.beneficiary_handler import OrchestratorBeneficiaryHandler
+from apps.core.src.agent.orchestrator.cancellation_handler import OrchestratorCancellationHandler
+from apps.core.src.agent.orchestrator.intent_router import OrchestratorIntentRouter
 
 
 class OrchestratorAgent:
@@ -144,9 +142,9 @@ class OrchestratorAgent:
         if suggestion_data:
             suggestion_context = json.loads(suggestion_data)
             classification_context["pendingBeneficiarySuggestion"] = suggestion_context
-            recipient_name = suggestion_context.get(
-                "recipient_name", "this recipient")
-            last_response = f"Would you like to save {recipient_name} as a beneficiary for faster transfers? Reply to confirm."
+            # Don't override last_response - use the actual last response sent to the user
+            # This ensures the classifier sees the actual prompt (e.g., "Please provide a name or alias...")
+            # rather than a hardcoded message
 
         result = await self.classification_service.classify(
             text,
@@ -154,19 +152,27 @@ class OrchestratorAgent:
             last_response,
         )
 
-        print(f"Classification result: {result.model_dump_json()}")
 
         asyncio.create_task(
             self.context_manager.save_classification_result(phone_number, result))
 
         intent = result.intent.lower()
 
+        # Transaction intents that should NOT be treated as beneficiary responses
+        transaction_intents = {"transfer", "airtime", "data"}
+        
         if suggestion_context:
-            response = await self.beneficiary_handler.handle_beneficiary_response(
-                phone_number, text, result, suggestion_context
-            )
-            if response:
-                return response
+            # If intent is a transaction intent, clear stale suggestion key and skip beneficiary handling
+            if intent in transaction_intents:
+                await redis_client.delete(suggestion_key)
+                suggestion_context = None
+            else:
+                # Only handle beneficiary response if intent is NOT a transaction intent
+                response = await self.beneficiary_handler.handle_beneficiary_response(
+                    phone_number, text, result, suggestion_context
+                )
+                if response:
+                    return response
 
         is_cancellation = (
             intent == "cancel" or result.is_cancellation is True)

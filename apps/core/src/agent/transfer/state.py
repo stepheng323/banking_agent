@@ -57,6 +57,11 @@ class TransferState(TypedDict):
     # Classification result from orchestrator
     classification_result: NotRequired[Optional[dict]]
 
+    # PIN verification fields
+    pin_verified: NotRequired[Optional[bool]]
+    pin_verification_error: NotRequired[Optional[str]]
+    pin_retry_count: NotRequired[int]
+
     # Change tracking fields
     _previous_amount: NotRequired[Optional[float]]
     _previous_recipient_account: NotRequired[Optional[str]]
