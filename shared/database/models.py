@@ -85,9 +85,9 @@ class Beneficiary(Base):
         String, default="transfer", nullable=False, index=True)
     account_name = Column(String, nullable=False)
     alias = Column(String, nullable=True)
-    account_number = Column(String, nullable=False)
-    bank_code = Column(String, nullable=False)
-    bank_name = Column(String, nullable=False)
+    account_number = Column(String, nullable=True)
+    bank_code = Column(String, nullable=True)
+    bank_name = Column(String, nullable=True)
     created_at = Column(DateTime, server_default=text("now()"), nullable=False)
     updated_at = Column(
         DateTime, server_default=text("now()"), onupdate=datetime.utcnow, nullable=False
