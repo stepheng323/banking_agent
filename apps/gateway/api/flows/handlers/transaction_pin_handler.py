@@ -1,24 +1,24 @@
 """Unified PIN handler for all transaction types (transfer, airtime, data)."""
 
-import json
-import traceback
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, TYPE_CHECKING
 
 from fastapi.responses import Response
 
 from shared.cache.redis_client import RedisClient
-from shared.queue.redis_queue import RedisQueue
+from shared.clients.whatsapp_client import WhatsAppClient
 from apps.core.src.agent.services.authorization_service import AuthorizationService
 from apps.gateway.api.flows.response_helpers import format_error_response, format_success_response
-from apps.gateway.api.flows.transaction_service import create_transfer_transaction
 
-# Import services - these will be injected or created as needed
-try:
+if TYPE_CHECKING:
     from apps.core.src.agent.transfer.service import TransferService
     from apps.core.src.agent.airtime.service import AirtimeService
-except ImportError:
-    TransferService = None
-    AirtimeService = None
+else:
+    try:
+        from apps.core.src.agent.transfer.service import TransferService
+        from apps.core.src.agent.airtime.service import AirtimeService
+    except ImportError:
+        TransferService = None  # type: ignore
+        AirtimeService = None  # type: ignore
 
 
 async def handle_transaction_pin(
@@ -27,9 +27,9 @@ async def handle_transaction_pin(
     request_was_encrypted: bool,
     aes_key_bytes: bytes,
     iv_bytes: bytes,
-    queue: RedisQueue,
-    transfer_service: Optional[TransferService] = None,
-    airtime_service: Optional[AirtimeService] = None,
+    whatsapp_client: WhatsAppClient,
+    transfer_service: Optional["TransferService"] = None,
+    airtime_service: Optional["AirtimeService"] = None,
 ) -> Response:
     """
     Unified PIN handler for all transaction types.
@@ -43,7 +43,7 @@ async def handle_transaction_pin(
         request_was_encrypted: Whether request was encrypted
         aes_key_bytes: AES key for encryption
         iv_bytes: IV for encryption
-        queue: Redis queue instance
+        whatsapp_client: WhatsApp client instance
         transfer_service: Optional TransferService instance
         airtime_service: Optional AirtimeService instance
     """
@@ -92,7 +92,6 @@ async def handle_transaction_pin(
             phone_number = await redis_client.get(f"airtime:token:{idem_key}:phone")
 
     if not phone_number:
-        print(f"⚠️  No phone number found for idem_key: {idem_key}")
         return format_error_response(
             "Pin",
             "Transaction session expired. Please start a new transaction.",
@@ -121,7 +120,6 @@ async def handle_transaction_pin(
 
     if not auth_result.verified:
         error_msg = auth_result.error or "PIN verification failed"
-        print(f"❌ PIN verification failed for {transaction_type}: {idem_key} - {error_msg}")
         return format_error_response(
             "Pin",
             error_msg,
@@ -130,65 +128,109 @@ async def handle_transaction_pin(
             iv_bytes,
         )
 
-    print(f"✅ PIN verified for {transaction_type}: {idem_key} (user_id={auth_result.user_id})")
 
     try:
+        response_message = None
         if transaction_type == "transfer":
             if transfer_service and hasattr(transfer_service.graph, "resume_after_pin_verification"):
-                response_message = await transfer_service.graph.resume_after_pin_verification(
-                    phone_number, True, None
-                )
-            else:
-                pending_data = await redis_client.get(f"user:{phone_number}:pending_transfer")
-                if not pending_data:
+                try:
+                    response_message = await transfer_service.graph.resume_after_pin_verification(
+                        phone_number, True, None
+                    )
+                except Exception:
+                    import traceback
+                    traceback.print_exc()
                     return format_error_response(
                         "Pin",
-                        "Transfer session expired. Please start a new transfer.",
+                        "Failed to process transfer authorization. Please try again.",
                         request_was_encrypted,
                         aes_key_bytes,
                         iv_bytes,
                     )
-                pending_transfer = json.loads(pending_data)
-                transaction_id = await create_transfer_transaction(
-                    pending_transfer,
-                    auth_result.user_id,
-                    idem_key,
+            else:
+                return format_error_response(
+                    "Pin",
+                    "Transfer service not available. Please start a new transfer.",
+                    request_was_encrypted,
+                    aes_key_bytes,
+                    iv_bytes,
                 )
-                transfer_request = {
-                    "type": "execute_transfer",
-                    "phone_number": phone_number,
-                    "idempotency_key": idem_key,
-                    "transfer_data": pending_transfer,
-                    "flow_token": flow_token,
-                    "transaction_id": transaction_id,
-                }
-                await queue.enqueue_simple(
-                    queue_name="banking:transactions",
-                    message=transfer_request,
-                )
-                response_message = "Transfer authorized. Processing your request..."
 
         elif transaction_type == "airtime":
-            if airtime_service and hasattr(airtime_service.graph, "resume_after_pin_verification"):
+            if not airtime_service:
+                return format_error_response(
+                    "Pin",
+                    "Airtime service not available. Please start a new airtime purchase.",
+                    request_was_encrypted,
+                    aes_key_bytes,
+                    iv_bytes,
+                )
+            
+            if not hasattr(airtime_service, "graph"):
+                return format_error_response(
+                    "Pin",
+                    "Airtime service not properly initialized. Please start a new airtime purchase.",
+                    request_was_encrypted,
+                    aes_key_bytes,
+                    iv_bytes,
+                )
+            
+            if not hasattr(airtime_service.graph, "resume_after_pin_verification"):
+                return format_error_response(
+                    "Pin",
+                    "Airtime service not properly initialized. Please start a new airtime purchase.",
+                    request_was_encrypted,
+                    aes_key_bytes,
+                    iv_bytes,
+                )
+            
+            try:
                 response_message = await airtime_service.graph.resume_after_pin_verification(
                     phone_number, True, None
                 )
-            else:
+            except Exception as e:
+                print(f"Error in resume_after_pin_verification: {e}")
+                import traceback
+                traceback.print_exc()
+                # Don't return error immediately - try to send a default message instead
                 response_message = "Airtime purchase authorized. Processing your request..."
 
         else:
-            response_message = f"{transaction_type.capitalize()} transaction authorized. Processing your request..."
+            return format_error_response(
+                "Pin",
+                f"Unsupported transaction type: {transaction_type}",
+                request_was_encrypted,
+                aes_key_bytes,
+                iv_bytes,
+            )
 
     except Exception as e:
-        print(f"❌ Error resuming graph for {transaction_type}: {e}")
+        print(f"Error processing transaction: {e}")
+        import traceback
         traceback.print_exc()
         return format_error_response(
             "Pin",
-            "Failed to process authorization. Please try again.",
+            f"Failed to process {transaction_type} authorization. Please try again.",
             request_was_encrypted,
             aes_key_bytes,
             iv_bytes,
         )
+
+    # Ensure we always have a response message
+    if not response_message or not response_message.strip():
+        response_message = f"{transaction_type.capitalize()} transaction authorized. Processing your request..."
+
+    # Send response message to user via WhatsApp
+    if response_message and response_message.strip():
+        try:
+            await whatsapp_client.send_text(
+                to=phone_number,
+                text=response_message,
+            )
+        except Exception as e:
+            print(f"Error sending response: {e}")
+            import traceback
+            traceback.print_exc()
 
     return format_success_response(
         "SUCCESS",

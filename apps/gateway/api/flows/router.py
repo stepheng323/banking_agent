@@ -10,7 +10,12 @@ from shared.clients.whatsapp_client import WhatsAppClient
 from shared.queue.redis_queue import RedisQueue
 from shared.utils import encrypt_flow_response
 
-from apps.gateway.api.flows.dependencies import get_redis_queue, get_whatsapp_client
+from apps.gateway.api.flows.dependencies import (
+    get_redis_queue,
+    get_whatsapp_client,
+    get_airtime_service,
+    get_transfer_service,
+)
 from apps.gateway.api.flows.handlers.account_selection_handler import handle_account_selection
 from apps.gateway.api.flows.handlers.bvn_handler import handle_bvn_entry
 from apps.gateway.api.flows.handlers.onboarding_pin_handler import handle_onboarding_pin
@@ -26,6 +31,8 @@ async def flow_webhook(
     req: Request,
     whatsapp_client: WhatsAppClient = Depends(get_whatsapp_client),
     queue: RedisQueue = Depends(get_redis_queue),
+    airtime_service = Depends(get_airtime_service),
+    transfer_service = Depends(get_transfer_service),
 ):
     """
     Handle WhatsApp Flow data exchange.
@@ -45,6 +52,7 @@ async def flow_webhook(
         request_was_encrypted = processed_request.request_was_encrypted
         aes_key_bytes = processed_request.aes_key_bytes
         iv_bytes = processed_request.iv_bytes
+
 
         if screen == "BVN_ENTRY":
             return await handle_bvn_entry(
@@ -90,7 +98,9 @@ async def flow_webhook(
                 request_was_encrypted,
                 aes_key_bytes or b"",
                 iv_bytes or b"",
-                queue,
+                whatsapp_client,
+                transfer_service=transfer_service,
+                airtime_service=airtime_service,
             )
 
         print(f" 🏥 Health check (unknown screen: {screen})")
