@@ -94,6 +94,7 @@ class TransactionConsumer:
         print(f"🚀 Starting unified transaction consumer for queue: {queue_name}")
 
         await self.queue.connect()
+        
         while self.running:
             try:
                 transaction_data = await self.queue.dequeue_blocking(
@@ -101,20 +102,15 @@ class TransactionConsumer:
                 )
                 if transaction_data:
                     await self.process_transaction(transaction_data)
-                else:
-                    # No message available, continue polling
-                    pass
 
             except asyncio.CancelledError:
-                print("   Transaction consumer cancelled")
                 break
             except Exception as e:
-                print(f" ❌ Transaction consumer error: {e}")
+                print(f"Transaction consumer error: {e}")
                 traceback.print_exc()
                 await asyncio.sleep(1)
 
         await self.queue.close()
-        print("   👋 Transaction consumer stopped")
 
     def stop(self):
         """Stop the transaction consumer."""
