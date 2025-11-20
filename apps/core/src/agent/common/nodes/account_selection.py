@@ -1,12 +1,16 @@
 """Shared account selection node for all flows."""
 
-from typing import Callable, Optional, TypeVar, Dict, cast
+from typing import Callable, Optional, TypeVar, Dict, cast, TYPE_CHECKING
 
 from apps.core.src.agent.services.account_selection_service import AccountSelectionService
-from apps.core.src.agent.transfer.state import TransferState
-from apps.core.src.agent.airtime.state import AirtimeState
 
-StateType = TypeVar('StateType', bound=TransferState | AirtimeState)
+if TYPE_CHECKING:
+    from apps.core.src.agent.transfer.state import TransferState
+    from apps.core.src.agent.airtime.state import AirtimeState
+
+# TypeVar without bound - bound is only for type checking and doesn't affect runtime
+# Type checkers will still validate based on usage in function signatures
+StateType = TypeVar('StateType')
 
 
 async def select_source_account_shared(
@@ -46,6 +50,16 @@ async def select_source_account_shared(
             "response": "",
         })
 
+    # If no accounts available, set error state with clear message
+    if not accounts:
+        error_message = "I couldn't find any account on your profile. Please add an account first to proceed with this transaction."
+        return cast(StateType, {
+            **state,
+            "flow_state": "error",
+            "response": error_message,
+        })
+
+    # If accounts exist but none selected, ask user to select
     return cast(StateType, {
         **state,
         "flow_state": "selecting_account",

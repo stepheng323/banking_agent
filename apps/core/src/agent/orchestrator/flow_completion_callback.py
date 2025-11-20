@@ -2,11 +2,10 @@
 
 from typing import Any
 
-from apps.core.src.agent.services.flow_completion_callback import BaseFlowCompletionCallback
 from apps.core.src.agent.services.task_queue_service import TaskQueueService
 
 
-class OrchestratorFlowCompletionCallback(BaseFlowCompletionCallback):
+class OrchestratorFlowCompletionCallback:
     """Callback that triggers next task execution when a flow completes."""
 
     def __init__(
