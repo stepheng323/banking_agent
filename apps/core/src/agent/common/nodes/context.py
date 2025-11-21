@@ -1,5 +1,6 @@
 """Shared context loading node for all flows."""
 
+import asyncio
 from typing import Any, TypeVar, cast
 
 from shared.database import Account
@@ -42,35 +43,103 @@ async def load_user_context_shared(
     user_id = profile.get("id") if isinstance(profile, dict) else None
     if user_id:
         print(f"[CONTEXT] User ID found: {user_id}, loading from database if needed")
-        try:
-            if not beneficiaries_list:
-                print(f"[CONTEXT] Loading beneficiaries from database for user_id={user_id}, type={beneficiary_type}")
+        
+        # Determine what needs to be loaded
+        need_beneficiaries = not beneficiaries_list
+        need_accounts = not accounts
+        
+        # If both need loading, fetch in parallel for better performance
+        if need_beneficiaries and need_accounts:
+            print(f"[CONTEXT] Loading both beneficiaries and accounts in parallel for user_id={user_id}")
+            
+            def load_beneficiaries_sync():
+                """Load beneficiaries from database (sync)."""
                 try:
-                    beneficiaries_list = beneficiary_repo.get_by_user(
+                    return beneficiary_repo.get_by_user(
                         str(user_id), beneficiary_type=beneficiary_type
                     )
                 except Exception as ben_error:
                     error_msg = str(ben_error).lower()
                     if "beneficiary_type" in error_msg and ("does not exist" in error_msg or "undefinedcolumn" in error_msg):
                         print(f"[CONTEXT] ⚠️  beneficiary_type column not found, loading all beneficiaries without type filter")
-                        beneficiaries_list = beneficiary_repo.get_by_user(str(user_id), beneficiary_type=None)
+                        return beneficiary_repo.get_by_user(str(user_id), beneficiary_type=None)
                     else:
                         raise
-                print(f"[CONTEXT] Loaded {len(beneficiaries_list)} beneficiaries from database")
-            else:
-                print(f"[CONTEXT] Using {len(beneficiaries_list)} beneficiaries from cache")
+            
+            def load_accounts_sync():
+                """Load accounts from database (sync)."""
+                return account_repo.get_by_user(str(user_id))
+            
+            # Run both queries in parallel using thread pool for sync DB calls
+            try:
+                beneficiaries_task = asyncio.create_task(
+                    asyncio.to_thread(load_beneficiaries_sync)
+                )
+                accounts_task = asyncio.create_task(
+                    asyncio.to_thread(load_accounts_sync)
+                )
                 
-            if not accounts:
-                print(f"[CONTEXT] Loading accounts from database for user_id={user_id}")
-                db_accounts = account_repo.get_by_user(str(user_id))
-                accounts = db_accounts or []
-                print(f"[CONTEXT] Loaded {len(accounts)} accounts from database")
-            else:
-                print(f"[CONTEXT] Using {len(accounts)} accounts from cache")
-        except Exception as e:
-            print(f"[CONTEXT] ❌ Error loading data from database: {type(e).__name__}: {e}")
-            import traceback
-            traceback.print_exc()
+                beneficiaries_result, accounts_result = await asyncio.gather(
+                    beneficiaries_task, accounts_task, return_exceptions=True
+                )
+                
+                # Handle beneficiaries result
+                if isinstance(beneficiaries_result, Exception):
+                    print(f"[CONTEXT] ❌ Error loading beneficiaries: {type(beneficiaries_result).__name__}: {beneficiaries_result}")
+                    beneficiaries_list = []
+                else:
+                    beneficiaries_list = beneficiaries_result or []
+                    print(f"[CONTEXT] Loaded {len(beneficiaries_list)} beneficiaries from database")
+                
+                # Handle accounts result
+                if isinstance(accounts_result, Exception):
+                    print(f"[CONTEXT] ❌ Error loading accounts: {type(accounts_result).__name__}: {accounts_result}")
+                    accounts = []
+                else:
+                    accounts = accounts_result or []
+                    print(f"[CONTEXT] Loaded {len(accounts)} accounts from database")
+                    
+            except Exception as e:
+                print(f"[CONTEXT] ❌ Error in parallel loading: {type(e).__name__}: {e}")
+                import traceback
+                traceback.print_exc()
+                # Fallback to empty lists
+                if need_beneficiaries:
+                    beneficiaries_list = []
+                if need_accounts:
+                    accounts = []
+        
+        else:
+            # Load sequentially if only one needs loading
+            try:
+                if need_beneficiaries:
+                    print(f"[CONTEXT] Loading beneficiaries from database for user_id={user_id}, type={beneficiary_type}")
+                    try:
+                        beneficiaries_list = beneficiary_repo.get_by_user(
+                            str(user_id), beneficiary_type=beneficiary_type
+                        )
+                    except Exception as ben_error:
+                        error_msg = str(ben_error).lower()
+                        if "beneficiary_type" in error_msg and ("does not exist" in error_msg or "undefinedcolumn" in error_msg):
+                            print(f"[CONTEXT] ⚠️  beneficiary_type column not found, loading all beneficiaries without type filter")
+                            beneficiaries_list = beneficiary_repo.get_by_user(str(user_id), beneficiary_type=None)
+                        else:
+                            raise
+                    print(f"[CONTEXT] Loaded {len(beneficiaries_list)} beneficiaries from database")
+                else:
+                    print(f"[CONTEXT] Using {len(beneficiaries_list)} beneficiaries from cache")
+                    
+                if need_accounts:
+                    print(f"[CONTEXT] Loading accounts from database for user_id={user_id}")
+                    db_accounts = account_repo.get_by_user(str(user_id))
+                    accounts = db_accounts or []
+                    print(f"[CONTEXT] Loaded {len(accounts)} accounts from database")
+                else:
+                    print(f"[CONTEXT] Using {len(accounts)} accounts from cache")
+            except Exception as e:
+                print(f"[CONTEXT] ❌ Error loading data from database: {type(e).__name__}: {e}")
+                import traceback
+                traceback.print_exc()
     else:
         print(f"[CONTEXT] ⚠️  No user_id found in profile, cannot load from database")
 

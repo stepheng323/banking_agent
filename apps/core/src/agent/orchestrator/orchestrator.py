@@ -93,7 +93,8 @@ class OrchestratorAgent:
         if not text or not text.strip():
             return "Please send a message with your request."
 
-        user_ctx = await self.context_manager.load_user_context(phone_number)
+        # Load all context data in parallel using Redis pipeline
+        user_ctx, conversation_state, last_response, suggestion_data = await self.context_manager.load_context_parallel(phone_number)
 
         has_active_queue = await self.task_queue_service.has_active_queue(phone_number)
         if has_active_queue:
@@ -127,20 +128,19 @@ class OrchestratorAgent:
                     )
                     return next_task_response
 
-        conversation_state = await self.context_manager.get_conversation_state(phone_number)
-        last_response = await self.context_manager.get_last_response(phone_number)
-
-        redis_client = RedisClient.get_client()
-        suggestion_key = f"user:{phone_number}:beneficiary_suggestion"
-        suggestion_data = await redis_client.get(suggestion_key)
+        # Parse suggestion_data if present
         suggestion_context = None
+        if suggestion_data:
+            try:
+                suggestion_context = json.loads(suggestion_data)
+            except (json.JSONDecodeError, TypeError):
+                suggestion_context = None
 
         classification_context = {}
         if conversation_state:
             classification_context["conversationState"] = conversation_state
 
-        if suggestion_data:
-            suggestion_context = json.loads(suggestion_data)
+        if suggestion_context:
             classification_context["pendingBeneficiarySuggestion"] = suggestion_context
             # Don't override last_response - use the actual last response sent to the user
             # This ensures the classifier sees the actual prompt (e.g., "Please provide a name or alias...")
@@ -164,6 +164,8 @@ class OrchestratorAgent:
         if suggestion_context:
             # If intent is a transaction intent, clear stale suggestion key and skip beneficiary handling
             if intent in transaction_intents:
+                suggestion_key = f"user:{phone_number}:beneficiary_suggestion"
+                redis_client = RedisClient.get_client()
                 await redis_client.delete(suggestion_key)
                 suggestion_context = None
             else:
