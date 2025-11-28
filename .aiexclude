@@ -1,0 +1,20 @@
+# Binary artifacts
+*.pyc
+*.o
+*.so
+*.dll
+*.exe
+
+# Asset files (Agent tries to read them as text)
+*.png
+*.jpg
+*.ico
+*.pdf
+
+# Lock files (sometimes contain complex encoding)
+package-lock.json
+yarn.lock
+go.sum
+
+# Large minified files
+*.min.js
