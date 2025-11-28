@@ -53,12 +53,10 @@ class OrchestratorAgent:
         self.airtime = airtime_service
         self.task_executor = task_executor
 
-        # Create completion callback (needs reference to self)
         self.completion_callback = OrchestratorFlowCompletionCallback(
             self.task_queue_service, self
         )
 
-        # Initialize extracted modules with dependency injection
         self.context_manager = OrchestratorContextManager(
             user_cache=self.user_cache,
             user_repo=self.user_repo,
@@ -93,7 +91,6 @@ class OrchestratorAgent:
         if not text or not text.strip():
             return "Please send a message with your request."
 
-        # Load all context data in parallel using Redis pipeline
         user_ctx, conversation_state, last_response, suggestion_data = await self.context_manager.load_context_parallel(phone_number)
 
         has_active_queue = await self.task_queue_service.has_active_queue(phone_number)
@@ -142,10 +139,6 @@ class OrchestratorAgent:
 
         if suggestion_context:
             classification_context["pendingBeneficiarySuggestion"] = suggestion_context
-            # Don't override last_response - use the actual last response sent to the user
-            # This ensures the classifier sees the actual prompt (e.g., "Please provide a name or alias...")
-            # rather than a hardcoded message
-
         result = await self.classification_service.classify(
             text,
             classification_context if classification_context else None,
@@ -158,18 +151,15 @@ class OrchestratorAgent:
 
         intent = result.intent.lower()
 
-        # Transaction intents that should NOT be treated as beneficiary responses
         transaction_intents = {"transfer", "airtime", "data"}
         
         if suggestion_context:
-            # If intent is a transaction intent, clear stale suggestion key and skip beneficiary handling
             if intent in transaction_intents:
                 suggestion_key = f"user:{phone_number}:beneficiary_suggestion"
                 redis_client = RedisClient.get_client()
                 await redis_client.delete(suggestion_key)
                 suggestion_context = None
             else:
-                # Only handle beneficiary response if intent is NOT a transaction intent
                 response = await self.beneficiary_handler.handle_beneficiary_response(
                     phone_number, text, result, suggestion_context
                 )
