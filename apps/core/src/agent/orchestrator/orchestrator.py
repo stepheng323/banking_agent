@@ -2,6 +2,7 @@
 
 import json
 import asyncio
+from typing import Any
 
 from langchain_openai import ChatOpenAI
 
@@ -16,6 +17,7 @@ from apps.core.src.agent.orchestrator.flow_completion_callback import (
 from apps.core.src.agent.services import ConversationResponder, TaskQueueService, TaskExecutor
 from apps.core.src.agent.transfer import TransferService
 from apps.core.src.agent.airtime import AirtimeService
+from shared.types.agent_types import TaskStatus
 
 from apps.core.src.agent.orchestrator.context_manager import OrchestratorContextManager
 from apps.core.src.agent.orchestrator.classification_service import OrchestratorClassificationService
@@ -23,6 +25,19 @@ from apps.core.src.agent.orchestrator.task_planner import OrchestratorTaskPlanne
 from apps.core.src.agent.orchestrator.beneficiary_handler import OrchestratorBeneficiaryHandler
 from apps.core.src.agent.orchestrator.cancellation_handler import OrchestratorCancellationHandler
 from apps.core.src.agent.orchestrator.intent_router import OrchestratorIntentRouter
+
+from apps.core.src.agent.orchestrator.pipeline import MessageContext, MessagePipeline
+from apps.core.src.agent.orchestrator.pipeline.handlers import (
+    ContextLoaderHandler,
+    ClassificationHandler,
+    FreshStartHandler,
+    BeneficiaryHandler,
+    CancellationHandler,
+    BatchAuthorizationHandler,
+    ActiveQueueHandler,
+    NextTaskHandler,
+    IntentRoutingHandler
+)
 
 
 class OrchestratorAgent:
@@ -41,144 +56,66 @@ class OrchestratorAgent:
         task_executor: TaskExecutor,
     ) -> None:
         self.llm = llm
-        self.classifier_llm = self.llm.with_structured_output(
-            ClassificationResult)
-        self.planner_llm = self.llm.with_structured_output(PlannerOutput)
         self.user_repo = user_repo
         self.user_cache = user_cache
         self.whatsapp_client = whatsapp_client
-        self.conversation = conversation_responder
         self.task_queue_service = task_queue_service
-        self.transfer = transfer_service
-        self.airtime = airtime_service
+        self.conversation_responder = conversation_responder
+        self.transfer_service = transfer_service
+        self.airtime_service = airtime_service
         self.task_executor = task_executor
 
-        self.completion_callback = OrchestratorFlowCompletionCallback(
-            self.task_queue_service, self
-        )
-
         self.context_manager = OrchestratorContextManager(
-            user_cache=self.user_cache,
-            user_repo=self.user_repo,
+            user_cache, user_repo
         )
-        self.classification_service = OrchestratorClassificationService(
-            classifier_llm=self.classifier_llm,
-        )
-        self.task_planner = OrchestratorTaskPlanner(
-            planner_llm=self.planner_llm,
-            task_queue_service=self.task_queue_service,
-            task_executor=self.task_executor,
-        )
+        self.classification_service = OrchestratorClassificationService(llm)
+        self.task_planner = OrchestratorTaskPlanner(llm, task_queue_service, task_executor)
         self.beneficiary_handler = OrchestratorBeneficiaryHandler(
-            context_manager=self.context_manager,
+            self.context_manager
+        )
+        self.completion_callback = OrchestratorFlowCompletionCallback(
+            task_queue_service, self
         )
         self.cancellation_handler = OrchestratorCancellationHandler(
-            transfer_service=self.transfer,
-            airtime_service=self.airtime,
-            context_manager=self.context_manager,
+            transfer_service, airtime_service, self.context_manager, task_queue_service
         )
         self.intent_router = OrchestratorIntentRouter(
-            task_queue_service=self.task_queue_service,
-            task_planner=self.task_planner,
-            transfer_service=self.transfer,
-            airtime_service=self.airtime,
-            conversation_responder=self.conversation,
-            context_manager=self.context_manager,
+            task_queue_service,
+            self.task_planner,
+            transfer_service,
+            airtime_service,
+            conversation_responder,
+            self.context_manager,
+            self,
         )
-
-    async def invoke(self, phone_number: str, text: str, _message_id: str) -> str:
-        """Invoke the orchestrator agent."""
-        if not text or not text.strip():
-            return "Please send a message with your request."
-
-        user_ctx, conversation_state, last_response, suggestion_data = await self.context_manager.load_context_parallel(phone_number)
-
-        has_active_queue = await self.task_queue_service.has_active_queue(phone_number)
-        if has_active_queue:
-            current_task_id = await self.task_queue_service.get_current_task(phone_number)
-            if current_task_id:
-                planner_output = await self.task_queue_service.get_task_queue(phone_number)
-                if planner_output:
-                    for task in planner_output.tasks:
-                        if task.id == current_task_id:
-                            if task.executor == "transfer":
-                                task_classification_dict = {
-                                    "intent": "transfer"}
-                                task_response = await self.transfer.run_simple(phone_number, text, task_classification_dict)
-                                asyncio.create_task(
-                                    self.context_manager.save_last_response(phone_number, task_response))
-                                return task_response
-                            elif task.executor == "airtime":
-                                task_classification_dict = {
-                                    "intent": "airtime"}
-                                task_response = await self.airtime.run_simple(phone_number, text, task_classification_dict)
-                                asyncio.create_task(
-                                    self.context_manager.save_last_response(phone_number, task_response))
-                                return task_response
-                            break
-            else:
-                next_task_response = await self.task_planner.handle_next_task(phone_number, text)
-                if next_task_response:
-                    asyncio.create_task(
-                        self.context_manager.save_last_response(
-                            phone_number, next_task_response)
-                    )
-                    return next_task_response
-
-        # Parse suggestion_data if present
-        suggestion_context = None
-        if suggestion_data:
-            try:
-                suggestion_context = json.loads(suggestion_data)
-            except (json.JSONDecodeError, TypeError):
-                suggestion_context = None
-
-        classification_context = {}
-        if conversation_state:
-            classification_context["conversationState"] = conversation_state
-
-        if suggestion_context:
-            classification_context["pendingBeneficiarySuggestion"] = suggestion_context
-        result = await self.classification_service.classify(
-            text,
-            classification_context if classification_context else None,
-            last_response,
-        )
-
-
-        asyncio.create_task(
-            self.context_manager.save_classification_result(phone_number, result))
-
-        intent = result.intent.lower()
-
-        transaction_intents = {"transfer", "airtime", "data"}
         
-        if suggestion_context:
-            if intent in transaction_intents:
-                suggestion_key = f"user:{phone_number}:beneficiary_suggestion"
-                redis_client = RedisClient.get_client()
-                await redis_client.delete(suggestion_key)
-                suggestion_context = None
-            else:
-                response = await self.beneficiary_handler.handle_beneficiary_response(
-                    phone_number, text, result, suggestion_context
-                )
-                if response:
-                    return response
+        self._handlers = [
+            ContextLoaderHandler(self.context_manager, task_queue_service),
+            ClassificationHandler(self.classification_service, self.context_manager),
+            FreshStartHandler(self.context_manager, transfer_service),
+            BeneficiaryHandler(self.beneficiary_handler),
+            CancellationHandler(self.cancellation_handler),
+            BatchAuthorizationHandler(task_queue_service, transfer_service),
+            ActiveQueueHandler(task_queue_service, transfer_service, airtime_service),
+            NextTaskHandler(self.task_planner),
+            IntentRoutingHandler(self.intent_router),
+        ]
 
-        is_cancellation = (
-            intent == "cancel" or result.is_cancellation is True)
-        if is_cancellation:
-            response = await self.cancellation_handler.handle_cancellation(
-                phone_number, text, result, conversation_state
-            )
-            if response:
-                return response
+    @property
+    def transfer(self) -> TransferService:
+        """Get transfer service."""
+        return self.transfer_service
 
-        response = await self.intent_router.route_intent(
-            phone_number, text, result, user_ctx
+    async def invoke(self, phone_number: str, text: str, message_id: str) -> str:
+        """Invoke the orchestrator with a user message using the pipeline."""
+        
+        initial_context = MessageContext(
+            phone_number=phone_number,
+            text=text,
+            message_id=message_id
         )
-        asyncio.create_task(
-            self.context_manager.save_last_response(phone_number, response))
-
+        
+        pipeline = MessagePipeline(self._handlers)
+        response = await pipeline.process(initial_context)
+        
         return response
