@@ -44,4 +44,4 @@ class MessagePipeline:
                     print(f"✅ [{handler.name}] Message handled")
                     break
         
-        return current_context.response or "I'm not sure how to help with that."
+        return current_context.response if current_context.response is not None else "I'm not sure how to help with that."
