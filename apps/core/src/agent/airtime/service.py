@@ -1,17 +1,19 @@
 """Airtime purchase service facade using LangGraph."""
 
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from apps.core.src.agent.services.flow_completion_callback import FlowCompletionCallback
 
 from langchain_openai import ChatOpenAI
 
 from shared.cache.user_context_cache import UserContextCacheService
-from shared.repositories.account_repository import AccountRepository
 from shared.repositories.beneficiary_repository import BeneficiaryRepository
+from shared.repositories.account_repository import AccountRepository
 from shared.clients.whatsapp_client import WhatsAppClient
 from shared.queue.redis_queue import RedisQueue
 
 from apps.core.src.agent.airtime.extractor import AirtimeEntityExtractor
-from apps.core.src.agent.services.flow_completion_callback import FlowCompletionCallback
 from apps.core.src.agent.airtime.graph import AirtimeFlowGraph
 
 
@@ -26,7 +28,7 @@ class AirtimeService:
         beneficiary_repo: BeneficiaryRepository,
         whatsapp_client: WhatsAppClient,
         queue: RedisQueue,
-        completion_callback: Optional[FlowCompletionCallback] = None,
+        completion_callback: Optional["FlowCompletionCallback"] = None,
     ) -> None:
         self.extractor = AirtimeEntityExtractor(llm)
         self.graph = AirtimeFlowGraph(
