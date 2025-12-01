@@ -17,6 +17,20 @@ from .utils import debug_log
 
 def create_initial_state(phone_number: str, message: str, message_id: str, classification_result: Optional[dict] = None) -> TransferState:
     """Create initial state for transfer flow."""
+    # Extract task parameters from classification_result if available
+    task_params = None
+    if classification_result and "task_parameters" in classification_result:
+        task_params = classification_result.get("task_parameters", {})
+    
+    # Pre-populate from task parameters
+    amount = None
+    recipient_name = None
+    if task_params:
+        amount = task_params.get("amount")
+        if isinstance(amount, (int, float)):
+            amount = float(amount)
+        recipient_name = task_params.get("recipient")
+    
     return {
         # User identification
         "phone_number": phone_number,
@@ -25,9 +39,9 @@ def create_initial_state(phone_number: str, message: str, message_id: str, class
         # Flow state
         "active_flow": "transfer",
         "flow_state": "extracting",
-        # Entities
-        "amount": None,
-        "recipient_name": None,
+        # Entities - pre-populate from task parameters if available
+        "amount": amount,
+        "recipient_name": recipient_name,
         "recipient_account": None,
         "recipient_bank_code": None,
         "recipient_bank_name": None,
@@ -146,7 +160,21 @@ async def clear_all_transfer_state(phone_number: str, redis_client, graph, confi
         # Clear LangGraph checkpoint
         if graph and config:
             try:
-                await graph.adelete(config)
+                # Fix for AsyncPostgresSaver which uses adelete_thread
+                if hasattr(graph, "checkpointer") and graph.checkpointer:
+                    thread_id = config["configurable"]["thread_id"]
+                    # Check if checkpointer has adelete_thread (AsyncPostgresSaver)
+                    if hasattr(graph.checkpointer, "adelete_thread"):
+                        await graph.checkpointer.adelete_thread(thread_id)
+                    # Fallback for other checkpointers that might use adelete
+                    elif hasattr(graph.checkpointer, "adelete"):
+                        await graph.checkpointer.adelete(config)
+                    else:
+                        # Try calling on graph directly as fallback
+                        await graph.adelete(config)
+                else:
+                    await graph.adelete(config)
+                    
                 debug_log(f"🧹 Cleared LangGraph checkpoint for {phone_number}")
             except Exception as e:
                 debug_log(f"⚠️  Error clearing checkpoint (may not exist): {e}")

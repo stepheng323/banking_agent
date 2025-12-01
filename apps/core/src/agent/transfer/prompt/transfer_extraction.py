@@ -54,13 +54,13 @@ TRANSFER_EXTRACTION_PROMPT = (
     'Output: {"entities":{"recipient_account":"0123456789","narration":"for lunch"},"missingFields":["recipientBank"],"reply":"Got it. Which bank is that for?"}\n\n'
 
     'User: "0760505261 Access bank"\n'
-    'Output: {"entities":{"recipient_account":"0760505261","bank_name":"Access Bank"},"missingFields":[],"reply":"Got it. Sending to 0760505261 (Access Bank)."}\n\n'
+    'Output: {"entities":{"recipient_account":"0760505261","bank_name":"Access Bank"},"missingFields":[],"reply":"Got it. Account details received for 0760505261 (Access Bank)."}\n\n'
 
     'User: "0760505261 uba"\n'
-    'Output: {"entities":{"recipient_account":"0760505261","bank_name":"UBA"},"missingFields":[],"reply":"Got it. Sending to 0760505261 (UBA)."}\n\n'
+    'Output: {"entities":{"recipient_account":"0760505261","bank_name":"UBA"},"missingFields":[],"reply":"Got it. Account details received for 0760505261 (UBA)."}\n\n'
 
     'User: "access bank 0760505261"\n'
-    'Output: {"entities":{"recipient_account":"0760505261","bank_name":"Access Bank"},"missingFields":[],"reply":"Got it. Sending to 0760505261 (Access Bank)."}\n\n'
+    'Output: {"entities":{"recipient_account":"0760505261","bank_name":"Access Bank"},"missingFields":[],"reply":"Got it. Account details received for 0760505261 (Access Bank)."}\n\n'
 
     'User: "Opay"\n'
     'Output: {"entities":{"bank_name":"Opay"},"missingFields":["recipientAccount"],"reply":"Got it. Which account number is that for?"}\n\n'

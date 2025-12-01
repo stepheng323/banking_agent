@@ -81,19 +81,31 @@ async def authorize_transaction(
 
     # PIN is verified (either from pin_result or from state)
     try:
-        pending_data = await redis_client.get(f"user:{phone_number}:pending_transfer")
-        if not pending_data:
-            return cast(
-                TransferState,
-                {
-                    **state,
-                    "response": "Transfer session expired. Please start a new transfer.",
-                    "flow_state": "error",
-                    "transfer_status": "failed",
-                },
-            )
+        # OPTIMIZED: Get pending transfer data directly from state (checkpoint)
+        # The confirmation node now stores data in the checkpoint, not Redis
+        amount = state.get("amount")
+        recipient_account = state.get("recipient_account")
+        recipient_bank_name = state.get("recipient_bank_name")
+        recipient_name = state.get("recipient_name")
+        
+        if not amount or not recipient_account:
+            debug_log(f"❌ Missing transfer data in state for authorization")
+            return {
+                **state,
+                "response": "Session expired or invalid. Please start a new transfer.",
+                "transfer_status": "failed",
+                "flow_state": "completed",
+            }
 
-        pending_transfer = json.loads(pending_data)
+        pending_transfer = {
+            "amount": amount,
+            "recipient": {
+                "account_number": recipient_account,
+                "bank_name": recipient_bank_name,
+                "name": recipient_name
+            },
+            "idempotency_key": state.get("idempotency_key")
+        }
 
         # Get user_id from pin_result or from pending_transfer/user_profile
         user_id = None

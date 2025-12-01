@@ -22,6 +22,12 @@ async def prepare_confirmation(
         f"DEBUG prepare_confirmation: state={json.dumps(state, indent=2)}")
 
     phone_number = state.get("phone_number")
+    
+    # Check if this is part of a complex transfer (has active task queue)
+    # For complex transfers, we stop at collection complete instead of sending authorization flow
+    queue_key = f"user:{phone_number}:task_queue"
+    has_active_queue = await redis_client.exists(queue_key)
+    
     existing_idem_key = state.get("idempotency_key")
     if existing_idem_key:
         pending_data = await redis_client.get(f"user:{phone_number}:pending_transfer")
@@ -30,6 +36,14 @@ async def prepare_confirmation(
             if pending_transfer.get("idempotency_key") == existing_idem_key:
                 debug_log(
                     f"✅ Transfer confirmation flow already sent for idem_key: {existing_idem_key}")
+                # If part of complex transfer, mark as collection_complete instead
+                if has_active_queue:
+                    return {
+                        **state,
+                        "response": "",
+                        "transfer_status": "collection_complete",  # Special status for complex transfers
+                        "flow_state": "confirming",
+                    }
                 return {
                     **state,
                     "response": "",
@@ -90,14 +104,9 @@ async def prepare_confirmation(
         "status": "awaiting_confirmation",
     }
 
-    # OPTIMIZED: Batch Redis SET operations using pipeline
+    # OPTIMIZED: Store only flow token (pending_transfer data is in checkpoint)
     token = f"transfer-pin-{idem_key}"
     pipe = redis_client.pipeline()
-    pipe.setex(
-        f"user:{state['phone_number']}:pending_transfer",
-        900,
-        json.dumps(pending)
-    )
     pipe.setex(
         f"user:{state['phone_number']}:pending_transfer_flow_token",
         900,
@@ -126,6 +135,21 @@ async def prepare_confirmation(
             ex=3600
         )
 
+    # For complex transfers (has active queue), don't send authorization flow yet
+    # Just mark as collection_complete and return empty response
+    # The flow completion callback will send the appropriate transition message
+    if has_active_queue:
+        debug_log(f"🔍 [CONFIRMATION] Complex transfer detected - marking as collection_complete")
+        
+        return {
+            **state,
+            "response": "",  # Empty response - callback handles transition messaging
+            "idempotency_key": idem_key,
+            "transfer_status": "collection_complete",  # Special status for complex transfers
+            "flow_state": "confirming",
+        }
+    
+    # For single transfers, send authorization flow as normal
     await whatsapp_client.send_flow(
         to=state["phone_number"],
         header="Confirm Your Transfer",

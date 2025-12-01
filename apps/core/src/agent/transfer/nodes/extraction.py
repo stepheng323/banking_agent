@@ -49,13 +49,24 @@ async def extract_entities(
     if beneficiaries:
         smart_context["beneficiaries"] = beneficiaries
 
-    result: TransferExtractionResult = await extractor.extract(state["message"], smart_context=smart_context if smart_context else None)
+    # Debug: Log the message being extracted
+    message_to_extract = state.get("message", "")
+    debug_log(f"🔍 [EXTRACTION] Extracting from message: '{message_to_extract}'")
+    debug_log(f"🔍 [EXTRACTION] State before extraction - recipient_account={state.get('recipient_account')}, recipient_bank={state.get('recipient_bank_name') or state.get('recipient_bank_code')}, amount={state.get('amount')}")
+    
+    result: TransferExtractionResult = await extractor.extract(message_to_extract, smart_context=smart_context if smart_context else None)
 
     entities = result.entities or SimpleTransferEntities()
     existing_amount = state.get("amount")
+    
+    debug_log(f"🔍 [EXTRACTION] State amount before extraction: {existing_amount}")
 
     debug_log(
-        f"DEBUG extract_entities: Raw extraction - account='{entities.recipient_account}', bank_name='{entities.bank_name}', bank_code='{entities.bank_code}', amount='{entities.amount}'")
+        f"🔍 [EXTRACTION] Raw extraction - account='{entities.recipient_account}', bank_name='{entities.bank_name}', bank_code='{entities.bank_code}', amount='{entities.amount}'")
+    debug_log(
+        f"🔍 [EXTRACTION] Missing fields: {result.missingFields}")
+    debug_log(
+        f"🔍 [EXTRACTION] LLM reply: {result.reply}")
 
     existing_recipient_in_state = state.get("recipient_account")
     existing_bank_in_state = state.get(
@@ -64,7 +75,6 @@ async def extract_entities(
         f"DEBUG extract_entities: State before processing - existing recipient_account={existing_recipient_in_state}, bank={existing_bank_in_state}, existing_amount={existing_amount}")
 
     should_clear_stale_recipient = False
-    current_flow_state = state.get("flow_state")
     transfer_status = state.get("transfer_status")
 
     # Do NOT clear recipient when only amount arrives.
@@ -153,8 +163,13 @@ async def extract_entities(
     if entities.amount is not None:
         updates["amount"] = entities.amount
         updates["_amount_set_at"] = time.time()
-    elif existing_amount:
-        pass
+    elif existing_amount is not None:
+        # Preserve existing amount when user is providing other details (e.g., account details)
+        # This is important for complex transfers where amount comes from task parameters
+        # Use explicit None check to preserve amount even if it's 0 (though unlikely)
+        updates["amount"] = existing_amount
+        # Don't update _amount_set_at to preserve original timestamp
+        debug_log(f"🔍 [EXTRACTION] Preserving existing amount: {existing_amount}")
     if entities.recipient_name is not None:
         updates["recipient_name"] = entities.recipient_name
 
@@ -175,10 +190,11 @@ async def extract_entities(
     if entities.bank_code is not None:
         updates["recipient_bank_code"] = entities.bank_code
         updates["_recipient_established_at"] = time.time()
+        debug_log(f"🔍 [EXTRACTION] Adding bank_code to updates: '{entities.bank_code}'")
     if entities.bank_name is not None:
         updates["recipient_bank_name"] = entities.bank_name
         debug_log(
-            f"DEBUG extract_entities: Extracted bank_name: '{entities.bank_name}'")
+            f"🔍 [EXTRACTION] Adding bank_name to updates: '{entities.bank_name}'")
         if entities.recipient_account is None:
             existing_account = new_state.get("recipient_account")
             if existing_account:
@@ -191,23 +207,51 @@ async def extract_entities(
     if entities.narration is not None:
         updates["narration"] = entities.narration
 
+    # Debug: Log what updates will be applied
+    debug_log(f"🔍 [EXTRACTION] Updates to apply: {updates}")
+    
     new_state.update(updates)
+    
+    # Debug: Log state after updates
+    debug_log(f"🔍 [EXTRACTION] State after updates - recipient_account={new_state.get('recipient_account')}, recipient_bank={new_state.get('recipient_bank_name') or new_state.get('recipient_bank_code')}")
 
     # Retained safety: Clear stale amount if after updates the recipient differs from what amount was set against
     # (covers edge cases where earlier pre-update check did not trigger)
+    # BUT: Don't clear if user is providing account details for an existing task (same recipient_name)
     post_incoming_account = incoming_account_norm
     post_incoming_bank = incoming_bank_any
     post_existing_account = new_state.get("recipient_account")
     post_existing_bank_any = new_state.get(
         "recipient_bank_code") or new_state.get("recipient_bank_name")
+    post_existing_recipient_name = new_state.get("recipient_name")
+    incoming_recipient_name = entities.recipient_name
+    
+    # Check if this is providing account details for the same recipient (not a new recipient)
+    is_same_recipient = (
+        post_existing_recipient_name and 
+        incoming_recipient_name and 
+        str(post_existing_recipient_name).lower() == str(incoming_recipient_name).lower()
+    ) or (
+        post_existing_recipient_name and 
+        not incoming_recipient_name and
+        post_existing_recipient_name  # User providing account details without repeating name
+    )
+    
     is_new_account_post = bool(
         post_incoming_account and post_incoming_account != post_existing_account)
     is_new_bank_post = bool(
         post_incoming_bank and post_incoming_bank != post_existing_bank_any)
+    
+    # Only clear amount if recipient actually changed (different account/bank AND different recipient name)
+    # Don't clear if user is just providing account details for the same recipient
     if (is_new_account_post or is_new_bank_post) and new_state.get("amount") is not None:
-        debug_log(
-            "ℹ️ extract_entities: Post-update detected recipient mismatch -> clearing previous amount")
-        new_state["amount"] = None
+        if not is_same_recipient:
+            debug_log(
+                "ℹ️ extract_entities: Post-update detected recipient mismatch -> clearing previous amount")
+            new_state["amount"] = None
+        else:
+            debug_log(
+                "ℹ️ extract_entities: Same recipient, preserving amount when providing account details")
     debug_log(
         f"DEBUG extract_entities: Timestamps - _recipient_established_at={new_state.get('_recipient_established_at')}, _amount_set_at={new_state.get('_amount_set_at')}")
 
