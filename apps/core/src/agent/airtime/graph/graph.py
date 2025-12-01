@@ -1,11 +1,14 @@
 """LangGraph graph for airtime purchase flow."""
 
 import os
-from typing import Optional, cast
+from typing import Optional, cast, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from apps.core.src.agent.services import FlowCompletionCallback
 import asyncio
 
 from langchain_core.runnables import RunnableConfig
-from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+from langgraph.checkpoint.redis.aio import AsyncRedisSaver
 
 from shared.cache.user_context_cache import UserContextCacheService
 from shared.clients.whatsapp_client import WhatsAppClient
@@ -13,8 +16,9 @@ from shared.repositories.account_repository import AccountRepository
 from shared.repositories.beneficiary_repository import BeneficiaryRepository
 from shared.cache.redis_client import RedisClient
 from shared.queue.redis_queue import RedisQueue
+from shared.config.settings import settings
 from apps.core.src.agent.airtime.extractor import AirtimeEntityExtractor
-from apps.core.src.agent.services import BeneficiaryMatcher, FlowCompletionCallback
+from apps.core.src.agent.services import BeneficiaryMatcher
 from apps.core.src.agent.airtime.state import AirtimeState
 
 from .builder import build_graph
@@ -32,7 +36,7 @@ class AirtimeFlowGraph:
         whatsapp_client: WhatsAppClient,
         extractor: AirtimeEntityExtractor,
         queue: RedisQueue,
-        completion_callback: Optional[FlowCompletionCallback] = None,
+        completion_callback: Optional["FlowCompletionCallback"] = None,
     ):
         self.user_cache = user_cache
         self.account_repo = account_repo
@@ -52,12 +56,9 @@ class AirtimeFlowGraph:
     async def _ensure_checkpointer(self):
         """Ensure checkpointer is initialized and graph is compiled."""
         if not self._checkpointer_setup:
-            db_url = os.getenv("DATABASE_URL", "")
-            if not db_url:
-                raise ValueError("DATABASE_URL required for checkpointing")
-            self._checkpointer_cm = AsyncPostgresSaver.from_conn_string(db_url)
-            # type: ignore[method-assign,attr-defined]
-            self._checkpointer = await self._checkpointer_cm.__aenter__()
+            # Use Redis Stack checkpointer (<1ms latency, includes RediSearch module)
+            self._checkpointer = AsyncRedisSaver(redis_url=settings.redis_url)
+            await self._checkpointer.asetup()
             self._checkpointer_setup = True
 
         if self.graph is None:
