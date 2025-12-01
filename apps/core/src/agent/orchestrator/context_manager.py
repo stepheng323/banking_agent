@@ -22,15 +22,21 @@ class OrchestratorContextManager:
         self.user_cache = user_cache
         self.user_repo = user_repo
 
-    async def load_user_context(self, phone_number: str) -> dict[str, Any]:
-        """Load user context from cache or database."""
+    async def load_user_context(self, phone_number: str, user: Optional[Any] = None) -> dict[str, Any]:
+        """
+        Load user context from cache or database.
+        
+        Args:
+            phone_number: User's phone number
+            user: Optional pre-fetched user object to avoid duplicate database queries
+        """
         cached = await self.user_cache.get(phone_number)
         if cached:
             return cached
 
-        profile = None
+        profile = user
         accounts: list[Account] = []
-        if self.user_repo:
+        if profile is None and self.user_repo:
             profile = self.user_repo.get_by_phone(phone_number)
 
         safe_profile: dict[str, Any] | None = sqlalchemy_to_dict(
@@ -54,6 +60,15 @@ class OrchestratorContextManager:
         except Exception:
             pass
         return None
+
+    async def clear_conversation_state(self, phone_number: str) -> None:
+        """Clear conversation state for this user."""
+        try:
+            redis_client = RedisClient.get_client()
+            key = f"user:{phone_number}:conversation_state"
+            await redis_client.delete(key)
+        except Exception as e:
+            print(f"⚠️  Error clearing conversation_state: {e}")
 
     async def get_last_response(self, phone_number: str) -> Optional[str]:
         """Get last assistant response from Redis (fast, for LLM context)."""

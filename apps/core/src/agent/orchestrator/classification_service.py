@@ -1,8 +1,10 @@
 """Intent classification service for the orchestrator."""
 
+import json
 from typing import Any, Optional
 
 from langchain_core.runnables import Runnable
+from langchain_core.messages import AIMessage
 from apps.core.src.agent.models.classification import ClassificationResult
 
 
@@ -24,6 +26,15 @@ class OrchestratorClassificationService:
             "Classify messages into: transfer, airtime, data, conversational, cancel, yes, no, confirm, skip, unknown. "
             "Determine complexity (multi-step reasoning, dynamic amounts, pooling accounts, historical references, multiple transactions). "
             "Work across languages: English, Yoruba, Hausa, Igbo, Nigerian Pidgin, French, and more.\n\n"
+            
+            "**COMPLEX TRANSACTIONS (MULTIPLE OPERATIONS):**\n"
+            "- If a message contains multiple transfers, airtime purchases, or a mix of operations, it is COMPLEX\n"
+            "- Examples of complex transactions:\n"
+            "  - 'Send 5k to ayo and 20k to mum' → intent: transfer, is_complex: true, complexity_reason: 'multiple transfers'\n"
+            "  - 'Transfer 10k to John and buy 5k airtime for mum' → intent: mixed, is_complex: true, complexity_reason: 'multiple operations'\n"
+            "  - 'Send 5k to ayo, 10k to mum, and 15k to dad' → intent: transfer, is_complex: true, complexity_reason: 'multiple transfers'\n"
+            "- When is_complex=true and complexity_reason contains 'multiple', the system will break it down into separate tasks\n"
+            "- CRITICAL: Always set is_complex=true and include 'multiple' in complexity_reason when you see multiple amounts/recipients/operations\n\n"
 
             "**BENEFICIARY SUGGESTION RESPONSES:**\n"
             "- If context.pendingBeneficiarySuggestion exists and user responds to the suggestion:\n"
@@ -54,21 +65,23 @@ class OrchestratorClassificationService:
             "- Short responses to transfer questions are continuations\n\n"
 
             "**EXAMPLES:**\n"
-            "- 'cancel' → intent: cancel, is_cancellation: true\n"
-            "- 'fi sile' (Yoruba: forget it) → intent: cancel, is_cancellation: true\n"
-            "- 'stop' → intent: cancel, is_cancellation: true\n"
-            "- 'no thanks' → intent: cancel, is_cancellation: true\n"
-            "- 'send 5k' → intent: transfer, is_cancellation: false\n"
-            "- 'Access bank' → intent: transfer, is_cancellation: false\n"
-            "- '0760505261 Access bank' → intent: transfer, is_cancellation: false\n"
-            "- '5k' (after being asked for amount) → intent: transfer, is_cancellation: false\n"
-            "- 'change amount to 10k' → intent: transfer, is_cancellation: false (modification, not cancellation)\n"
-            "- 'hi' → intent: conversational, is_cancellation: false\n"
-            "- 'check balance' → intent: conversational, is_cancellation: false\n"
-            "- 'yes' (to beneficiary suggestion) → intent: yes or confirm, extracted_alias: null\n"
-            "- 'no' (to beneficiary suggestion) → intent: no or skip, extracted_alias: null\n"
-            "- 'Gaines' (after being asked 'Please provide a name or alias...') → intent: yes or confirm, extracted_alias: 'Gaines'\n"
-            "- 'Mum' (after being asked for alias) → intent: yes or confirm, extracted_alias: 'Mum'\n\n"
+            "- 'cancel' → intent: cancel, is_cancellation: true, is_complex: false\n"
+            "- 'fi sile' (Yoruba: forget it) → intent: cancel, is_cancellation: true, is_complex: false\n"
+            "- 'stop' → intent: cancel, is_cancellation: true, is_complex: false\n"
+            "- 'no thanks' → intent: cancel, is_cancellation: true, is_complex: false\n"
+            "- 'send 5k' → intent: transfer, is_cancellation: false, is_complex: false\n"
+            "- 'Send 5k to ayo and 20k to mum' → intent: transfer, is_cancellation: false, is_complex: true, complexity_reason: 'multiple transfers'\n"
+            "- 'Transfer 10k to John and 15k to Mary' → intent: transfer, is_cancellation: false, is_complex: true, complexity_reason: 'multiple transfers'\n"
+            "- 'Access bank' → intent: transfer, is_cancellation: false, is_complex: false\n"
+            "- '0760505261 Access bank' → intent: transfer, is_cancellation: false, is_complex: false\n"
+            "- '5k' (after being asked for amount) → intent: transfer, is_cancellation: false, is_complex: false\n"
+            "- 'change amount to 10k' → intent: transfer, is_cancellation: false, is_complex: false (modification, not cancellation)\n"
+            "- 'hi' → intent: conversational, is_cancellation: false, is_complex: false\n"
+            "- 'check balance' → intent: conversational, is_cancellation: false, is_complex: false\n"
+            "- 'yes' (to beneficiary suggestion) → intent: yes or confirm, extracted_alias: null, is_complex: false\n"
+            "- 'no' (to beneficiary suggestion) → intent: no or skip, extracted_alias: null, is_complex: false\n"
+            "- 'Gaines' (after being asked 'Please provide a name or alias...') → intent: yes or confirm, extracted_alias: 'Gaines', is_complex: false\n"
+            "- 'Mum' (after being asked for alias) → intent: yes or confirm, extracted_alias: 'Mum', is_complex: false\n\n"
 
             "**PRINCIPLE:** If the message answers a question or provides requested information, it's a continuation. "
             "If the message explicitly cancels/aborts, it's cancellation. "
@@ -118,6 +131,43 @@ class OrchestratorClassificationService:
             [{"role": "system", "content": system},
                 {"role": "user", "content": user_content}]
         )
+        
+        # Handle different return types from LLM
         if isinstance(raw, ClassificationResult):
             return raw
-        return ClassificationResult.model_validate(raw)
+        
+        # Extract content from AIMessage if needed
+        if isinstance(raw, AIMessage):
+            content = raw.content
+        else:
+            content = raw
+        
+        # Parse JSON string if needed
+        if isinstance(content, str):
+            try:
+                content = json.loads(content)
+            except json.JSONDecodeError:
+                # If it's not valid JSON, try to extract JSON from the string
+                # Some LLMs return JSON wrapped in markdown code blocks
+                import re
+                json_match = re.search(r'\{[^{}]*\}', content, re.DOTALL)
+                if json_match:
+                    content = json.loads(json_match.group())
+                else:
+                    raise ValueError(f"Could not parse JSON from LLM response: {content}")
+        
+        # Ensure all required fields are present with defaults
+        if isinstance(content, dict):
+            # Provide defaults for missing required fields
+            defaults = {
+                "response": "",
+                "is_complex": False,
+                "complexity_reason": "",
+                "confidence": 0.0,
+            }
+            # Only add defaults for fields that are missing
+            for key, default_value in defaults.items():
+                if key not in content:
+                    content[key] = default_value
+        
+        return ClassificationResult.model_validate(content)
