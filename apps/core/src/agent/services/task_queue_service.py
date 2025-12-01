@@ -71,10 +71,25 @@ class TaskQueueService:
             return None
 
         completed_tasks = await self.get_completed_task_ids(phone_number)
+        
+        # Also get collection_complete tasks (they're ready, not pending)
+        results_key = f"user:{phone_number}:task_results"
+        results_data = await self.redis_client.get(results_key)
+        collection_complete_tasks = set()
+        if results_data:
+            results = json.loads(results_data)
+            collection_complete_tasks = {
+                task_id for task_id, result in results.items()
+                if result.get("status") == TaskStatus.COLLECTION_COMPLETE.value
+            }
 
         for task in planner_output.tasks:
+            # Skip if task is already completed or collection_complete
+            if task.id in completed_tasks or task.id in collection_complete_tasks:
+                continue
+            # Only return pending tasks with satisfied dependencies
             if task.status == TaskStatus.PENDING:
-                if all(dep_id in completed_tasks for dep_id in task.depends_on):
+                if all(dep_id in completed_tasks or dep_id in collection_complete_tasks for dep_id in task.depends_on):
                     return task
 
         return None
@@ -91,6 +106,22 @@ class TaskQueueService:
             for task_id, result in results.items()
             if result.get("status") == TaskStatus.COMPLETED
         ]
+
+    async def get_task_results(self, phone_number: str) -> Dict[str, Any]:
+        """
+        Get all task results for a user.
+        
+        Args:
+            phone_number: User's phone number
+            
+        Returns:
+            Dictionary mapping task_id to result data
+        """
+        results_key = f"user:{phone_number}:task_results"
+        data = await self.redis_client.get(results_key)
+        if not data:
+            return {}
+        return json.loads(data)
 
     async def update_task_status(
         self,

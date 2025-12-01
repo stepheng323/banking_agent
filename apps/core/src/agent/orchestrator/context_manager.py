@@ -22,15 +22,21 @@ class OrchestratorContextManager:
         self.user_cache = user_cache
         self.user_repo = user_repo
 
-    async def load_user_context(self, phone_number: str) -> dict[str, Any]:
-        """Load user context from cache or database."""
+    async def load_user_context(self, phone_number: str, user: Optional[Any] = None) -> dict[str, Any]:
+        """
+        Load user context from cache or database.
+        
+        Args:
+            phone_number: User's phone number
+            user: Optional pre-fetched user object to avoid duplicate database queries
+        """
         cached = await self.user_cache.get(phone_number)
         if cached:
             return cached
 
-        profile = None
+        profile = user
         accounts: list[Account] = []
-        if self.user_repo:
+        if profile is None and self.user_repo:
             profile = self.user_repo.get_by_phone(phone_number)
 
         safe_profile: dict[str, Any] | None = sqlalchemy_to_dict(
@@ -54,6 +60,15 @@ class OrchestratorContextManager:
         except Exception:
             pass
         return None
+
+    async def clear_conversation_state(self, phone_number: str) -> None:
+        """Clear conversation state for this user."""
+        try:
+            redis_client = RedisClient.get_client()
+            key = f"user:{phone_number}:conversation_state"
+            await redis_client.delete(key)
+        except Exception as e:
+            print(f"⚠️  Error clearing conversation_state: {e}")
 
     async def get_last_response(self, phone_number: str) -> Optional[str]:
         """Get last assistant response from Redis (fast, for LLM context)."""
@@ -82,3 +97,79 @@ class OrchestratorContextManager:
             await redis_client.set(key, result.model_dump_json(), ex=3600)
         except Exception:
             pass
+
+    async def load_context_parallel(self, phone_number: str) -> tuple[dict[str, Any], Optional[dict[str, Any]], Optional[str], Optional[str]]:
+        """
+        Load all context data in parallel using Redis pipeline for optimal performance.
+        
+        Fetches multiple Redis keys in a single round trip:
+        - user context (ctx)
+        - conversation_state
+        - last_response
+        - beneficiary_suggestion
+        
+        Args:
+            phone_number: User's phone number
+            
+        Returns:
+            Tuple of (user_ctx, conversation_state, last_response, suggestion_data)
+        """
+        try:
+            redis_client = RedisClient.get_client()
+            keys = [
+                f"user:{phone_number}:ctx",
+                f"user:{phone_number}:conversation_state",
+                f"user:{phone_number}:last_response",
+                f"user:{phone_number}:beneficiary_suggestion",
+            ]
+            
+            # Use pipeline to fetch all keys in parallel
+            pipe = redis_client.pipeline()
+            for key in keys:
+                pipe.get(key)
+            results = await pipe.execute()
+            
+            # Parse results
+            user_ctx_data = results[0]
+            user_ctx = None
+            if user_ctx_data:
+                try:
+                    user_ctx = json.loads(user_ctx_data)
+                except (json.JSONDecodeError, TypeError):
+                    pass
+            
+            # Fallback to load_user_context if cache miss
+            if not user_ctx:
+                user_ctx = await self.load_user_context(phone_number)
+            
+            # Parse conversation_state
+            conversation_state = None
+            if results[1]:
+                try:
+                    conversation_state = json.loads(results[1])
+                except (json.JSONDecodeError, TypeError):
+                    pass
+            
+            # last_response is already a string or None
+            last_response = results[2] if results[2] else None
+            
+            # suggestion_data is JSON string or None
+            suggestion_data = results[3] if results[3] else None
+            
+            return user_ctx, conversation_state, last_response, suggestion_data
+            
+        except Exception as e:
+            # Fallback to individual calls on error
+            print(f"⚠️  Error in parallel context loading: {e}, falling back to sequential")
+            user_ctx = await self.load_user_context(phone_number)
+            conversation_state = await self.get_conversation_state(phone_number)
+            last_response = await self.get_last_response(phone_number)
+            
+            try:
+                redis_client = RedisClient.get_client()
+                suggestion_key = f"user:{phone_number}:beneficiary_suggestion"
+                suggestion_data = await redis_client.get(suggestion_key)
+            except Exception:
+                suggestion_data = None
+                
+            return user_ctx, conversation_state, last_response, suggestion_data

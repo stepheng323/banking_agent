@@ -1,9 +1,12 @@
 """Task planning and execution for the orchestrator."""
 
+import json
+import re
 from typing import Optional
 import traceback
 
 from langchain_core.runnables import Runnable
+from langchain_core.messages import AIMessage
 from apps.core.src.agent.models.planner import PlannerOutput
 from apps.core.src.agent.services.task_queue_service import TaskQueueService
 from apps.core.src.agent.services.task_executor import TaskExecutor
@@ -43,9 +46,31 @@ class OrchestratorTaskPlanner:
                 {"role": "user", "content": user_prompt},
             ]
         )
+        
+        # Handle different return types from LLM
         if isinstance(result, PlannerOutput):
             return result
-        return PlannerOutput.model_validate(result)
+        
+        # Extract content from AIMessage if needed
+        if isinstance(result, AIMessage):
+            content = result.content
+        else:
+            content = result
+        
+        # Parse JSON string if needed
+        if isinstance(content, str):
+            try:
+                content = json.loads(content)
+            except json.JSONDecodeError:
+                # If it's not valid JSON, try to extract JSON from the string
+                # Some LLMs return JSON wrapped in markdown code blocks
+                json_match = re.search(r'\{[^{}]*\}', content, re.DOTALL)
+                if json_match:
+                    content = json.loads(json_match.group())
+                else:
+                    raise ValueError(f"Could not parse JSON from LLM response: {content}")
+        
+        return PlannerOutput.model_validate(content)
 
     async def handle_next_task(self, phone_number: str, text: str) -> Optional[str]:
         """

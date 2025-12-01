@@ -198,16 +198,6 @@ Available context:
 
 Return an object that matches the schema above EXACTLY (no markdown).
 When the user mixes intents (e.g., transfers + queries), include every step in sequence.
-
-IMPORTANT GUIDELINES:
-- For transfer requests: ALWAYS create a "transfer" task, even if beneficiary/amount is missing.
-  The transfer agent will collect missing details through conversation.
-- For query requests: ALWAYS create a "query" task.
-- For utility requests: ALWAYS create a "utility" task.
-- Only create "system" tasks for truly unsupported operations or security violations.
-- Never create system tasks to notify about missing information - agents handle that.
-
-Never leave "tasks" empty; synthesize a reasonable task when uncertain.
 """
 
 

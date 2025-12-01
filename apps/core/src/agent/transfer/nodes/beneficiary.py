@@ -21,6 +21,18 @@ async def find_beneficiary(
     bank_code = state.get("recipient_bank_code")
     bank_name = state.get("recipient_bank_name")
     beneficiaries = state.get("beneficiaries", [])
+    
+    # Debug logging
+    debug_log(f"🔍 [BENEFICIARY] Input: rec_name={rec_name}, acct_number={acct_number}, bank_code={bank_code}, bank_name={bank_name}")
+
+    # CRITICAL FIX: If account and bank are already provided, skip beneficiary matching
+    # This prevents re-asking for account details when user has already provided them
+    if acct_number and (bank_code or bank_name):
+        debug_log(f"✅ [BENEFICIARY] Account and bank already provided, skipping beneficiary matching")
+        # Account and bank are present, no need to match beneficiaries
+        # Just ensure we have the required fields and return state
+        if acct_number and (bank_code or bank_name):
+            return state
 
     if rec_name and not (acct_number and (bank_code or bank_name)):
         beneficiaries_models = [
@@ -59,35 +71,55 @@ async def find_beneficiary(
                     "response": "Which bank is that for?",
                 }
             else:
+                # Include recipient name in prompt if available
+                if rec_name:
+                    response = f"Please provide the account number and bank name for {rec_name}."
+                else:
+                    response = "Please provide the account number and bank name."
                 return {
                     **state,
                     "matched_beneficiary": None,
                     "flow_state": "collecting_recipient",
-                    "response": "Please provide the account number and bank name.",
+                    "response": response,
                 }
 
     if acct_number and not (bank_code or bank_name):
+        # Include recipient name in prompt if available
+        if rec_name:
+            response = f"Which bank is that for {rec_name}?"
+        else:
+            response = "Which bank is that for?"
         return {
             **state,
             "matched_beneficiary": None,
             "flow_state": "collecting_recipient",
-            "response": "Which bank is that for?",
+            "response": response,
         }
 
     if (bank_code or bank_name) and not acct_number:
+        # Include recipient name in prompt if available
+        if rec_name:
+            response = f"What is the account number for {rec_name}?"
+        else:
+            response = "What is the account number?"
         return {
             **state,
             "matched_beneficiary": None,
             "flow_state": "collecting_recipient",
-            "response": "What is the account number?",
+            "response": response,
         }
 
     if not acct_number or not (bank_code or bank_name):
+        # Include recipient name in prompt if available
+        if rec_name:
+            response = f"Please provide the account number and bank name for {rec_name}."
+        else:
+            response = "Please provide the account number and bank name."
         return {
             **state,
             "matched_beneficiary": None,
             "flow_state": "collecting_recipient",
-            "response": "Please provide the account number and bank name.",
+            "response": response,
         }
 
     matched_beneficiary = state.get("matched_beneficiary")

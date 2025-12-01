@@ -11,8 +11,9 @@ def route_by_state(state: TransferState) -> Literal["end", "collect_amount", "se
     """Route based on current flow state and missing data."""
     flow_state = state.get("flow_state")
     response = state.get("response", "")
+    transfer_status = state.get("transfer_status")
     debug_log(
-        f"DEBUG route_by_state: flow_state={flow_state}, has_response={bool(response)}")
+        f"DEBUG route_by_state: flow_state={flow_state}, has_response={bool(response)}, transfer_status={transfer_status}")
     amount = state.get("amount")
     selected_account = state.get("selected_source_account")
     recipient_account = state.get("recipient_account")
@@ -29,6 +30,12 @@ def route_by_state(state: TransferState) -> Literal["end", "collect_amount", "se
     
     if flow_state == "error":
         debug_log("DEBUG route_by_state: flow_state=error -> end")
+        return "end"
+    
+    # CRITICAL: If transfer_status is collection_complete, end the flow
+    # This prevents proceeding to authorization for complex transfers
+    if transfer_status == "collection_complete":
+        debug_log("DEBUG route_by_state: transfer_status=collection_complete -> end (complex transfer, waiting for batch authorization)")
         return "end"
 
     if flow_state == "cancelled" and not response:
@@ -89,7 +96,7 @@ def route_by_state(state: TransferState) -> Literal["end", "collect_amount", "se
 
     if not recipient_account or not recipient_bank:
         debug_log(
-            f"DEBUG route_by_state: Missing recipient -> collect_recipient (recipient_account={recipient_account}, recipient_bank={recipient_bank})")
+            f"🔍 [ROUTING] Missing recipient -> collect_recipient (recipient_account={recipient_account}, recipient_bank={recipient_bank})")
         return "collect_recipient"
 
     if flow_state == "validating":

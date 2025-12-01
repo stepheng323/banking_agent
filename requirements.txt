@@ -7,7 +7,7 @@ langchain==0.3.14
 langchain-community==0.3.13
 langgraph==0.2.60
 langchain-openai==0.2.14
-langgraph-checkpoint-postgres==2.0.11
+langgraph-checkpoint-redis==0.2.1
 
 
 aioboto3==12.3.0
@@ -26,6 +26,7 @@ httpx==0.26.0
 requests==2.31.0
 python-multipart==0.0.9
 python-dotenv==1.0.1
+structlog>=25.5.0
 
 pycryptodome==3.20.0
 
