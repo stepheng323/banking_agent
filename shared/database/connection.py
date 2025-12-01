@@ -4,7 +4,6 @@
 import os
 from collections.abc import Generator
 
-from langgraph.checkpoint.postgres import PostgresSaver
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -67,24 +66,8 @@ def init_db():
         raise
 
 
-def init_checkpoint_tables():
-    """Initialize LangGraph checkpoint tables for persistent conversation state."""
-    try:
-
-        db_url = os.getenv("DATABASE_URL", "")
-        if not db_url:
-            print("⚠️  DATABASE_URL not set, skipping checkpoint table initialization")
-            return
-
-        print("🔄 Initializing LangGraph checkpoint tables...")
-        # PostgresSaver.from_conn_string() returns a context manager
-        with PostgresSaver.from_conn_string(conn_string=db_url) as checkpointer:
-            checkpointer.setup()
-        print("✅ LangGraph checkpoint tables initialized")
-    except Exception as e:
-        print(f"⚠️  Checkpoint table initialization error: {e}")
-        # Don't raise - checkpoint tables are optional for basic functionality
-        print("   Conversations will not persist across restarts")
+# NOTE: Checkpoint tables no longer needed - using Redis checkpointer
+# LangGraph checkpoints are now stored in Redis for better performance (<10ms vs 50-200ms)
 
 
 def drop_db():

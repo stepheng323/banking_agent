@@ -45,7 +45,6 @@ def setup_dependencies():
     receipt_generator = ReceiptGenerator()
     s3_client = S3Client()
 
-    # Create shared beneficiary suggestion service
     beneficiary_suggestion_service = BeneficiarySuggestionService(
         whatsapp_client=whatsapp_client,
         redis_client=shared_redis,

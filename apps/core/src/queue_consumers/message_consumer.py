@@ -44,17 +44,17 @@ class MessageConsumer:
         """Handle a WhatsApp message."""
         phone_number = message.from_number
         
-        # Parallelize user lookup (sync) with context pre-loading (async)
-        # This reduces latency by starting both operations simultaneously
-        user_task = asyncio.create_task(
-            asyncio.to_thread(self.user_repository.get_by_phone, phone_number)
-        )
-        context_task = asyncio.create_task(
-            self.orchestrator.context_manager.load_user_context(phone_number)
+        # Get user first (synchronous database operation)
+        # Then load context, passing the user to avoid duplicate database queries
+        user = await asyncio.to_thread(
+            self.user_repository.get_by_phone, phone_number
         )
         
-        # Wait for both to complete
-        user, _ = await asyncio.gather(user_task, context_task)
+        # Load context, passing the user to avoid duplicate queries
+        # This also avoids SQLAlchemy session concurrency issues
+        await self.orchestrator.context_manager.load_user_context(
+            phone_number, user=user
+        )
 
         if user is None or getattr(user, "onboarding_status", None) != UserOnboardingStatusEnum.ONBOARDING_COMPLETED:
             return await self.onboarding_handler.handle_onboarding(message)

@@ -24,6 +24,7 @@ class TaskStatus(str, Enum):
     """Task status for the agent."""
     PENDING = "pending"
     IN_PROGRESS = "in_progress"
+    COLLECTION_COMPLETE = "collection_complete"  # All info collected, ready for authorization
     COMPLETED = "completed"
     FAILED = "failed"
 

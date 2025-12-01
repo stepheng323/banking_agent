@@ -11,7 +11,7 @@ from fastapi import FastAPI
 import redis.asyncio as redis
 
 from shared.config import settings
-from shared.database.connection import init_db, init_checkpoint_tables
+from shared.database.connection import init_db
 from shared.cache import BankCacheService
 from shared.cache.redis_client import RedisClient
 from shared.clients.payment_provider_factory import PaymentProviderFactory
@@ -29,12 +29,6 @@ async def lifespan(_app: FastAPI):
         logger.info("Database initialized")
     except Exception as e:
         logger.warning("Database initialization warning", error=str(e))
-
-    try:
-        init_checkpoint_tables()
-        logger.info("Checkpoint tables initialized")
-    except Exception as e:
-        logger.warning("Checkpoint initialization warning", error=str(e))
 
     payment_provider = None
     try:
@@ -90,7 +84,7 @@ async def lifespan(_app: FastAPI):
 
     yield
 
-    print("\n") # Newline for cleaner exit
+    print("\n")     
     logger.info("Shutting down Core Banking Service...")
 
     if payment_provider:
