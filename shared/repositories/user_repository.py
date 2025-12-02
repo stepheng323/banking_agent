@@ -76,3 +76,10 @@ class UserRepository(BaseRepository[User]):
     def get_registered_count(self) -> int:
         """Get count of registered users."""
         return self.db.query(User).count()
+
+    def get_accounts_by_phone(self, phone_number: str) -> list:
+        """Get user accounts by phone number."""
+        user = self.get_by_phone(phone_number)
+        if user:
+            return user.accounts
+        return []

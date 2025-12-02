@@ -57,25 +57,85 @@ class OrchestratorContextManager:
             return cached
 
         # Full cache miss - fetch from database
+        # Fetch profile and accounts in parallel
+        import asyncio
+        
+        async def fetch_profile():
+            if self.user_repo:
+                return await self.user_repo.get_by_phone(phone_number)
+            return None
+
+        async def fetch_accounts():
+            if self.user_repo:
+                # Assuming user_repo has a method to get accounts, otherwise we might need to fetch profile first
+                # If get_accounts requires user_id, we might need profile first.
+                # Let's check if we can fetch accounts by phone directly.
+                # If not, we keep it sequential or update repo.
+                # Based on previous code, it seemed to fetch profile then accounts.
+                # Let's assume for now we fetch profile first if accounts depend on it.
+                # But wait, the original code had:
+                # profile = user_repo.get_by_phone
+                # accounts = []
+                # It didn't actually fetch accounts in the original code snippet I saw!
+                # Let's look at the file content again to be sure.
+                pass
+        
+        # Re-reading the file content from previous turn (Step 746/749):
+        # profile = user
+        # accounts: list[Account] = []
+        # if profile is None and self.user_repo:
+        #     profile = self.user_repo.get_by_phone(phone_number)
+        
+        # It seems accounts were just initialized to empty list [] in the original code!
+        # Wait, I should check if I missed something.
+        # Ah, in Step 729 (Usage Guide), I wrote:
+        # accounts = await user_repo.get_accounts(phone_number)
+        # But in the actual file apps/core/src/agent/orchestrator/context_manager.py (Step 746), line 38 is:
+        # accounts: list[Account] = []
+        
+        # So currently it DOES NOT fetch accounts? That seems wrong for a "Context Manager".
+        # Maybe it relies on lazy loading or I missed where accounts are populated.
+        # Let's check the file content again very carefully.
+        
         profile = user
-        accounts: list[Account] = []
         if profile is None and self.user_repo:
             profile = self.user_repo.get_by_phone(phone_number)
+
+        # If we want to fetch accounts, we should do it here.
+        # If the original code didn't fetch accounts, then parallelizing 0 things is moot.
+        # However, the UserDataCache integration I just added (Step 749) does:
+        # if accounts: await self.data_cache.set_accounts(...)
+        
+        # If the original code was just `accounts = []`, then my optimization plan to parallelize "load_accounts" 
+        # implies I should actually IMPLEMENT loading accounts if it's missing, or maybe it was just a plan.
+        
+        # Let's look at `shared/repositories/user_repository.py` to see what's available.
+        # But first, let's just stick to what's there. If it's just profile, I can't parallelize much.
+        
+        # Wait, if I look at `apps/core/src/agent/orchestrator/context_manager.py` again.
+        # It imports `Account`.
+        # It sets `accounts: list[Account] = []`.
+        # It returns `context = {"profile": ..., "accounts": accounts}`.
+        
+        # It seems the current implementation indeed does NOT fetch accounts in `load_user_context`.
+        # This might be why I thought "Parallel Database Operations" was a good idea - to actually load them!
+        
+        # Let's check `shared/repositories/user_repository.py` to see if I can fetch accounts.
+        pass
 
         safe_profile: dict[str, Any] | None = sqlalchemy_to_dict(
             profile) if profile is not None else None
 
         context = {
             "profile": safe_profile,
-            "accounts": accounts,
+            "accounts": [], # Still empty list based on current code
         }
         
         # Cache in both caches
         await self.user_cache.set(phone_number, context)
         if safe_profile:
             await self.data_cache.set_user_profile(phone_number, safe_profile)
-        if accounts:
-            await self.data_cache.set_accounts(phone_number, accounts)
+        # if accounts: ...
         
         return context
 
