@@ -120,7 +120,12 @@ async def handle_transaction_pin(
 
     authorization_service = AuthorizationService(redis_client=redis_client)
 
-    auth_result = await authorization_service.verify_pin(phone_number, str(pin), idem_key)
+    auth_result = await authorization_service.verify_pin(
+        phone_number, 
+        str(pin), 
+        idem_key,
+        transaction_type=transaction_type
+    )
 
     if not transaction_type:
         transaction_type = auth_result.transaction_type

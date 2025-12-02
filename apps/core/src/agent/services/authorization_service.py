@@ -55,7 +55,8 @@ class AuthorizationService:
         return None
 
     async def verify_pin(
-        self, phone_number: str, pin: str, idempotency_key: str
+        self, phone_number: str, pin: str, idempotency_key: str,
+        transaction_type: Optional[str] = None
     ) -> AuthorizationResult:
         """
         Verify PIN for a transaction.
@@ -80,9 +81,12 @@ class AuthorizationService:
                 retry_count=0,
             )
 
-        transaction_type = await self.get_transaction_type_from_pending(
-            idempotency_key, phone_number
-        )
+        # Use provided transaction_type or look it up
+        if not transaction_type:
+            transaction_type = await self.get_transaction_type_from_pending(
+                idempotency_key, phone_number
+            )
+        
         if not transaction_type:
             return AuthorizationResult(
                 verified=False,
