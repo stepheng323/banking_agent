@@ -488,6 +488,7 @@ class TransferFlowGraph:
             "pin_verified": pin_verified,
             "pin_verification_error": pin_error,
             "flow_state": "authorizing",
+            "skip_confirmation_display": True,  # Skip showing confirmation again
         })
 
         final_state = await self.graph.ainvoke(cast(TransferState, updated_state), config)
