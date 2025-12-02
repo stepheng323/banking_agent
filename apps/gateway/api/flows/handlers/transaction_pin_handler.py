@@ -1,5 +1,6 @@
-"""Unified PIN handler for all transaction types (transfer, airtime, data)."""
+"""Unified PIN handler for all transaction types (transfer, airtime, data, batch)."""
 
+import asyncio
 from typing import Any, Dict, Optional, TYPE_CHECKING
 
 from fastapi.responses import Response
@@ -58,8 +59,13 @@ async def handle_transaction_pin(
             iv_bytes,
         )
 
+
     if not flow_token or not flow_token.startswith("transaction-pin-"):
-        if flow_token and flow_token.startswith("transfer-pin-"):
+        if flow_token and flow_token.startswith("batch-auth-"):
+            # Batch authorization
+            transaction_type = "batch"
+            idem_key = flow_token  # Use full token as key
+        elif flow_token and flow_token.startswith("transfer-pin-"):
             idem_key = flow_token.replace("transfer-pin-", "")
             transaction_type = "transfer"
         elif flow_token and flow_token.startswith("airtime-pin-"):
@@ -82,14 +88,26 @@ async def handle_transaction_pin(
     else:
         idem_key = flow_token.replace("transaction-pin-", "")
         transaction_type = None  
+  
+
 
     redis_client = RedisClient.get_client()
-    phone_number = await redis_client.get(f"transaction:token:{idem_key}:phone")
+    
+    # For batch authorization, extract phone from flow token
+    if transaction_type == "batch":
+        # Flow token format: batch-auth-{phone}-{timestamp}
+        parts = flow_token.split("-")
+        if len(parts) >= 3:
+            phone_number = parts[2]
+        else:
+            phone_number = None
+    else:
+        phone_number = await redis_client.get(f"transaction:token:{idem_key}:phone")
 
-    if not phone_number:
-        phone_number = await redis_client.get(f"transfer:token:{idem_key}:phone")
         if not phone_number:
-            phone_number = await redis_client.get(f"airtime:token:{idem_key}:phone")
+            phone_number = await redis_client.get(f"transfer:token:{idem_key}:phone")
+            if not phone_number:
+                phone_number = await redis_client.get(f"airtime:token:{idem_key}:phone")
 
     if not phone_number:
         return format_error_response(
@@ -131,7 +149,49 @@ async def handle_transaction_pin(
 
     try:
         response_message = None
+        
+        # Handle batch authorization
+        if transaction_type == "batch":
+            from apps.core.src.agent.services.batch_executor import execute_batch
+            from apps.core.src.agent.services.task_queue_service import TaskQueueService
+            
+            # Send immediate acknowledgment
+            await whatsapp_client.send_text(
+                phone_number,
+                "✅ PIN verified. Authorizing transfers..."
+            )
+            
+            # Execute batch in background
+            task_queue_service = TaskQueueService(redis_client=redis_client)
+            asyncio.create_task(
+                execute_batch(
+                    phone_number=phone_number,
+                    pin_verified=True,
+                    whatsapp_client=whatsapp_client,
+                    task_queue_service=task_queue_service,
+                    transfer_service=transfer_service,
+                    airtime_service=airtime_service,
+                )
+            )
+            
+            # Return success immediately
+            return format_success_response(
+                "SUCCESS",
+                request_was_encrypted,
+                aes_key_bytes,
+                iv_bytes,
+                extension_message_response={
+                    "params": {
+                        "flow_token": flow_token,
+                        "pin": str(pin),
+                        "success": True,
+                    }
+                },
+            )
+        
+        # Handle single transfer
         if transaction_type == "transfer":
+
             if transfer_service and hasattr(transfer_service.graph, "resume_after_pin_verification"):
                 try:
                     response_message = await transfer_service.graph.resume_after_pin_verification(
