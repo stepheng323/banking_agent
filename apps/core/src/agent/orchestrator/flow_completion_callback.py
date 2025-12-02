@@ -75,6 +75,12 @@ class OrchestratorFlowCompletionCallback:
         Returns:
             Summary message string
         """
+        from apps.core.src.agent.services.batch_utils import (
+            requires_authorization,
+            mask_account_number,
+            format_amount
+        )
+        
         planner_output = await self.task_queue_service.get_task_queue(phone_number)
         if not planner_output:
             return "Ready to authorize transactions."
@@ -82,10 +88,10 @@ class OrchestratorFlowCompletionCallback:
         # Get task results to get resolved account names
         results = await self.task_queue_service.get_task_results(phone_number)
         
-        # Build summary with resolved account names
-        task_summaries = []
+        # Separate auth-required and non-auth tasks
+        auth_tasks = []
+        non_auth_tasks = []
         total_amount = 0
-        has_authorizable_tasks = False  # Track if any tasks need authorization
         
         for i, task in enumerate(planner_output.tasks, 1):
             task_result = results.get(task.id, {})
@@ -93,7 +99,6 @@ class OrchestratorFlowCompletionCallback:
             executor = task.executor
             
             if executor == "transfer":
-                has_authorizable_tasks = True
                 # Get resolved account name from result
                 account_resolved = result_data.get("account_resolved") if isinstance(result_data, dict) else None
                 amount = task.parameters.get("amount") if task.parameters else None
@@ -107,66 +112,44 @@ class OrchestratorFlowCompletionCallback:
                     account_name = account_resolved.get("account_name", recipient or "Recipient")
                     account_number = result_data.get("recipient_account", "") if isinstance(result_data, dict) else ""
                     bank_name = result_data.get("recipient_bank_name", "") if isinstance(result_data, dict) else ""
-                    if account_number:
-                        account_display = f"{account_name} ({account_number[-4:] if len(account_number) >= 4 else account_number} - {bank_name})"
-                    else:
-                        account_display = account_name
-                else:
-                    account_display = recipient or "Recipient"
-                
-                # Get source account info
-                source_account = result_data.get("selected_source_account") if isinstance(result_data, dict) else None
-                source_display = ""
-                
-                if source_account and isinstance(source_account, dict):
-                    source_bank = source_account.get("bank_name", "")
-                    source_num = source_account.get("account_number", "")
                     
-                    if source_bank and source_num:
-                        # Format: "from GTBank (5261)"
-                        source_display = f" from {source_bank} ({source_num[-4:]})"
-                    elif source_bank:
-                        # Only bank name available
-                        source_display = f" from {source_bank}"
-                
-                if amount:
-                    task_summaries.append(f"{i}. ₦{amount:,.0f} to {account_display}{source_display}")
+                    # Format with masked account
+                    masked_account = mask_account_number(account_number) if account_number else ""
+                    task_line = f"{i}️⃣ Transfer {format_amount(amount)}\n   To: {account_name}\n   Account: {masked_account}\n   Bank: {bank_name}"
                 else:
-                    task_summaries.append(f"{i}. Transfer to {account_display}{source_display}")
+                    task_line = f"{i}️⃣ Transfer {format_amount(amount)} to {recipient or 'Recipient'}"
+                
+                auth_tasks.append(task_line)
             
             elif executor == "airtime":
-                has_authorizable_tasks = True
                 amount = task.parameters.get("amount") if task.parameters else None
                 recipient = task.parameters.get("recipient") if task.parameters else None
                 if amount:
                     total_amount += float(amount)
-                    task_summaries.append(f"{i}. ₦{amount:,.0f} airtime to {recipient or 'recipient'}")
+                    task_line = f"{i}️⃣ Airtime {format_amount(amount)} to {recipient or 'recipient'}"
                 else:
-                    task_summaries.append(f"{i}. Airtime purchase")
-            
-            elif executor == "query":
-                # For balance checks or other queries, they don't need authorization
-                # But we should still show them in the summary
-                query_type = task.parameters.get("query_type", "query") if task.parameters else "query"
-                task_summaries.append(f"{i}. {query_type.title()}")
+                    task_line = f"{i}️⃣ Airtime purchase"
+                
+                auth_tasks.append(task_line)
             
             else:
-                # Generic task
+                # Non-auth task (queries, etc.)
                 task_desc = self._format_task_description(task)
-                task_summaries.append(f"{i}. {task_desc}")
-                # Assume generic tasks might need authorization
-                if executor not in ("query", "conversational"):
-                    has_authorizable_tasks = True
+                non_auth_tasks.append(f"{i}. {task_desc}")
         
-        summary = f"📋 Summary of {len(task_summaries)} task{'s' if len(task_summaries) > 1 else ''}:\n\n"
-        summary += "\n".join(task_summaries)
-        if total_amount > 0:
-            summary += f"\n\n*Total: ₦{total_amount:,.0f}*"
+        # Build summary with better formatting
+        task_count = len(auth_tasks) if auth_tasks else len(non_auth_tasks)
+        task_type = "Transfer" if task_count == 1 and planner_output.tasks[0].executor == "transfer" else "Task"
         
-        if has_authorizable_tasks:
-            summary += "\n\nPlease confirm to authorize all transactions with a single PIN entry."
+        summary = f"📋 Authorize {task_count} {task_type}{'s' if task_count > 1 else ''}\n\n"
+        
+        if auth_tasks:
+            summary += "\n\n".join(auth_tasks)
         else:
-            summary += "\n\nAll tasks are ready. Proceed?"
+            summary += "\n".join(non_auth_tasks)
+        
+        if total_amount > 0:
+            summary += f"\n\n{'━' * 25}\n💰 Total: {format_amount(total_amount)}\n{'━' * 25}"
         
         return summary
 
