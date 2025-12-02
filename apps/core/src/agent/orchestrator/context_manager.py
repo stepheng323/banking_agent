@@ -9,6 +9,7 @@ from shared.cache.redis_client import RedisClient
 from shared.database.models import Account
 from shared.utils.serialization import sqlalchemy_to_dict
 from apps.core.src.agent.models.classification import ClassificationResult
+from apps.core.src.agent.services.user_data_cache import UserDataCache
 
 
 class OrchestratorContextManager:
@@ -21,19 +22,41 @@ class OrchestratorContextManager:
     ) -> None:
         self.user_cache = user_cache
         self.user_repo = user_repo
+        self.data_cache = UserDataCache()  # New dedicated data cache
 
     async def load_user_context(self, phone_number: str, user: Optional[Any] = None) -> dict[str, Any]:
         """
         Load user context from cache or database.
         
+        Uses two-tier caching:
+        1. UserDataCache (Redis) - for structured data with TTL
+        2. UserContextCacheService (existing) - for general context
+        
         Args:
             phone_number: User's phone number
             user: Optional pre-fetched user object to avoid duplicate database queries
         """
+        # Try new data cache first (more granular)
+        cached_data = await self.data_cache.get_all_user_data(phone_number)
+        
+        if cached_data["profile"] and cached_data["accounts"]:
+            # Cache hit - return cached data
+            return {
+                "profile": cached_data["profile"],
+                "accounts": cached_data["accounts"],
+            }
+        
+        # Cache miss - try old cache
         cached = await self.user_cache.get(phone_number)
         if cached:
+            # Populate new cache from old cache data
+            if cached.get("profile"):
+                await self.data_cache.set_user_profile(phone_number, cached["profile"])
+            if cached.get("accounts"):
+                await self.data_cache.set_accounts(phone_number, cached["accounts"])
             return cached
 
+        # Full cache miss - fetch from database
         profile = user
         accounts: list[Account] = []
         if profile is None and self.user_repo:
@@ -46,7 +69,14 @@ class OrchestratorContextManager:
             "profile": safe_profile,
             "accounts": accounts,
         }
+        
+        # Cache in both caches
         await self.user_cache.set(phone_number, context)
+        if safe_profile:
+            await self.data_cache.set_user_profile(phone_number, safe_profile)
+        if accounts:
+            await self.data_cache.set_accounts(phone_number, accounts)
+        
         return context
 
     async def get_conversation_state(self, phone_number: str) -> Optional[dict[str, Any]]:
