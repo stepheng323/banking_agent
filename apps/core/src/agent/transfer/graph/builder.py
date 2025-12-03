@@ -18,8 +18,8 @@ from apps.core.src.agent.transfer.nodes import (
     handle_cancellation,
 )
 from apps.core.src.agent.transfer.state import TransferState
+from apps.core.src.agent.services.user_data_cache import UserDataCache
 from shared.cache.bank_cache import BankCacheService
-from shared.cache.user_context_cache import UserContextCacheService
 from shared.repositories.beneficiary_repository import BeneficiaryRepository
 from shared.repositories.account_repository import AccountRepository
 from shared.clients.whatsapp_client import WhatsAppClient
@@ -31,7 +31,7 @@ from .routing import route_by_state, route_after_extract
 
 def build_graph(
     extractor: TransferEntityExtractor,
-    user_cache: UserContextCacheService,
+    user_cache: UserDataCache,
     account_repo: AccountRepository,
     beneficiary_repo: BeneficiaryRepository,
     matcher: BeneficiaryMatcher,

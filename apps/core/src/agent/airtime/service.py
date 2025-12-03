@@ -7,7 +7,7 @@ if TYPE_CHECKING:
 
 from langchain_openai import ChatOpenAI
 
-from shared.cache.user_context_cache import UserContextCacheService
+from apps.core.src.agent.services.user_data_cache import UserDataCache
 from shared.repositories.beneficiary_repository import BeneficiaryRepository
 from shared.repositories.account_repository import AccountRepository
 from shared.clients.whatsapp_client import WhatsAppClient
@@ -23,7 +23,7 @@ class AirtimeService:
     def __init__(
         self,
         llm: Optional[ChatOpenAI],
-        user_cache: UserContextCacheService,
+        user_cache: UserDataCache,
         account_repo: AccountRepository,
         beneficiary_repo: BeneficiaryRepository,
         whatsapp_client: WhatsAppClient,

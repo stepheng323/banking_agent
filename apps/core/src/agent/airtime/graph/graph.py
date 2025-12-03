@@ -10,7 +10,7 @@ import asyncio
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.redis.aio import AsyncRedisSaver
 
-from shared.cache.user_context_cache import UserContextCacheService
+from apps.core.src.agent.services.user_data_cache import UserDataCache
 from shared.clients.whatsapp_client import WhatsAppClient
 from shared.repositories.account_repository import AccountRepository
 from shared.repositories.beneficiary_repository import BeneficiaryRepository
@@ -30,7 +30,7 @@ class AirtimeFlowGraph:
 
     def __init__(
         self,
-        user_cache: UserContextCacheService,
+        user_cache: UserDataCache,
         account_repo: AccountRepository,
         beneficiary_repo: BeneficiaryRepository,
         whatsapp_client: WhatsAppClient,

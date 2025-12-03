@@ -17,7 +17,7 @@ from apps.core.src.agent.airtime.nodes import (
 
 from apps.core.src.agent.services.beneficiary_matcher import BeneficiaryMatcher
 from apps.core.src.agent.services.authorization_service import AuthorizationService
-from shared.cache.user_context_cache import UserContextCacheService
+from apps.core.src.agent.services.user_data_cache import UserDataCache
 from shared.repositories import BeneficiaryRepository, AccountRepository
 from shared.clients.whatsapp_client import WhatsAppClient
 from shared.cache.redis_client import Redis
@@ -28,7 +28,7 @@ from .routing import route_by_state, route_after_extract
 
 def build_graph(
     extractor: AirtimeEntityExtractor,
-    user_cache: UserContextCacheService,
+    user_cache: UserDataCache,
     account_repo: AccountRepository,
     beneficiary_repo: BeneficiaryRepository,
     matcher: BeneficiaryMatcher,
