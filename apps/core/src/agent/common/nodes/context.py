@@ -13,7 +13,7 @@ StateType = TypeVar('StateType')
 
 async def load_user_context_shared(
     state: StateType,
-    user_cache: Any,
+    user_cache: Any,  # UserDataCache
     account_repo: Any,
     beneficiary_repo: Any,
     beneficiary_type: str = "transfer",
@@ -23,7 +23,7 @@ async def load_user_context_shared(
 
     Args:
         state: Flow state (TransferState, AirtimeState, etc.)
-        user_cache: User context cache service
+        user_cache: UserDataCache service
         account_repo: Account repository
         beneficiary_repo: Beneficiary repository
         beneficiary_type: Type of beneficiaries to load ("transfer" or "airtime")
@@ -33,10 +33,12 @@ async def load_user_context_shared(
     """
     state_dict = cast(dict[str, Any], state)
     phone = state_dict["phone_number"]
-    ctx = await user_cache.get(phone) or {}
-    profile = ctx.get("profile") or {}
-    accounts = ctx.get("accounts") or []
-    beneficiaries_list = ctx.get("beneficiaries") or []
+    
+    # Load from UserDataCache
+    cached = await user_cache.get_all_user_data(phone)
+    profile = cached.get("profile") or {}
+    accounts = cached.get("accounts") or []
+    beneficiaries_list = cached.get("beneficiaries") or []
 
     print(f"[CONTEXT] load_user_context_shared: phone={phone}, accounts_from_cache={len(accounts)}, beneficiaries_from_cache={len(beneficiaries_list)}")
 
@@ -151,6 +153,12 @@ async def load_user_context_shared(
         sqlalchemy_to_dict(b) if isinstance(b, Beneficiary) else b
         for b in beneficiaries_list
     ]
+    
+    # Cache the loaded data
+    if beneficiaries_dict:
+        await user_cache.set_beneficiaries(phone, beneficiaries_dict)
+    if accounts_dict:
+        await user_cache.set_accounts(phone, accounts_dict)
 
     print(f"[CONTEXT] Final state: accounts={len(accounts_dict)}, beneficiaries={len(beneficiaries_dict)}")
 
