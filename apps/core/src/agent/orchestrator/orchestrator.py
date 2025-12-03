@@ -6,7 +6,6 @@ from typing import Any
 
 from langchain_openai import ChatOpenAI
 
-from shared.cache import UserContextCacheService
 from shared.clients.whatsapp_client import WhatsAppClient
 from shared.repositories import UserRepository
 from shared.cache.redis_client import RedisClient
@@ -47,7 +46,6 @@ class OrchestratorAgent:
         self,
         llm: ChatOpenAI,
         user_repo: UserRepository,
-        user_cache: UserContextCacheService,
         whatsapp_client: WhatsAppClient,
         task_queue_service: TaskQueueService,
         conversation_responder: ConversationResponder,
@@ -57,7 +55,6 @@ class OrchestratorAgent:
     ) -> None:
         self.llm = llm
         self.user_repo = user_repo
-        self.user_cache = user_cache
         self.whatsapp_client = whatsapp_client
         self.task_queue_service = task_queue_service
         self.conversation_responder = conversation_responder
@@ -66,7 +63,7 @@ class OrchestratorAgent:
         self.task_executor = task_executor
 
         self.context_manager = OrchestratorContextManager(
-            user_cache, user_repo
+            user_repo
         )
         self.classification_service = OrchestratorClassificationService(llm)
         self.task_planner = OrchestratorTaskPlanner(llm, task_queue_service, task_executor)
