@@ -8,8 +8,8 @@ from shared.repositories import AccountRepository, BeneficiaryRepository
 from shared.clients.whatsapp_client import WhatsAppClient
 from shared.cache.redis_client import Redis
 from shared.queue.redis_queue import RedisQueue
-from apps.core.src.agent.services.beneficiary_matcher import BeneficiaryMatcher
-from apps.core.src.agent.services.authorization_service import AuthorizationService
+from apps.core.src.agent.beneficiary.matcher import BeneficiaryMatcher
+from apps.core.src.agent.authorization.service import AuthorizationService
 
 
 class AirtimeNodeContext:

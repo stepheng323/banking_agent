@@ -4,7 +4,7 @@ import json
 from typing import cast
 
 from apps.core.src.agent.airtime.state import AirtimeState
-from apps.core.src.agent.services import AuthorizationService
+from apps.core.src.agent.authorization.service import AuthorizationService
 from apps.gateway.api.flows.transaction_service import create_airtime_transaction
 from shared.cache.redis_client import Redis
 from shared.queue.redis_queue import RedisQueue

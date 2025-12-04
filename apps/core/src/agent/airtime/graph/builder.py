@@ -15,8 +15,8 @@ from apps.core.src.agent.airtime.nodes import (
     authorize_transaction,
 )
 
-from apps.core.src.agent.services.beneficiary_matcher import BeneficiaryMatcher
-from apps.core.src.agent.services.authorization_service import AuthorizationService
+from apps.core.src.agent.beneficiary.matcher import BeneficiaryMatcher
+from apps.core.src.agent.authorization.service import AuthorizationService
 from apps.core.src.agent.services.user_data_cache import UserDataCache
 from shared.repositories import BeneficiaryRepository, AccountRepository
 from shared.clients.whatsapp_client import WhatsAppClient

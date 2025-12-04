@@ -1,6 +1,6 @@
 """Account selection node for transfer flow."""
 
-from apps.core.src.agent.common.nodes.account_selection import select_source_account_shared
+from apps.core.src.agent.nodes.account_selection import select_source_account_shared
 from apps.core.src.agent.transfer.state import TransferState
 
 from .utils import debug_log

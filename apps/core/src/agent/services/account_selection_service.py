@@ -3,11 +3,30 @@
 from typing import Dict, List, Optional, Tuple
 
 from shared.formatters.accounts import format_accounts_list
-from apps.core.src.agent.common.account_selection import pick_source_account
 
 
 class AccountSelectionService:
     """Service for selecting source accounts across different flows."""
+
+    @staticmethod
+    def pick_source_account(
+        accounts: List[Dict], profile: Dict, source_account_id: Optional[str]
+    ) -> Optional[Dict]:
+        """Pick a source account from the list of accounts."""
+        if not accounts:
+            return None
+        if source_account_id:
+            for a in accounts:
+                if str(a.get("id")) == str(source_account_id):
+                    return a
+        default_id = profile.get("default_account_id")
+        if default_id:
+            for a in accounts:
+                if str(a.get("id")) == str(default_id):
+                    return a
+        if len(accounts) == 1:
+            return accounts[0]
+        return None
 
     @staticmethod
     def select_account(
@@ -33,7 +52,7 @@ class AccountSelectionService:
         if not accounts:
             return None, llm_reply or "I couldn't find any account on your profile. Please add an account first."
         
-        selected = pick_source_account(accounts, profile or {}, source_account_id)
+        selected = AccountSelectionService.pick_source_account(accounts, profile or {}, source_account_id)
         
         if selected is not None:
             return selected, None
@@ -47,4 +66,3 @@ class AccountSelectionService:
             print(f"DEBUG AccountSelectionService: Combined response length={len(combined)}")
             return None, combined
         return None, account_list
-

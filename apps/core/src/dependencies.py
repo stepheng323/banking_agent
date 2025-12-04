@@ -12,7 +12,7 @@ from shared.services.receipt_generator import ReceiptGenerator
 from apps.core.src.agent.services.user_data_cache import UserDataCache
 
 from apps.core.src.agent.orchestrator import OrchestratorAgent
-from apps.core.src.agent.services import ConversationResponder, TaskQueueService, TaskExecutor
+from apps.core.src.agent.orchestrator.services import ConversationResponder, TaskQueueService, TaskExecutor
 from apps.core.src.agent.transfer import TransferService as AgentTransferService
 from apps.core.src.agent.airtime import AirtimeService
 from apps.core.src.queue_consumers import MessageConsumer, TransactionConsumer
@@ -61,11 +61,12 @@ def setup_dependencies():
     )
 
 
-    llm = ChatOpenAI(
-        model="gpt-4o-mini",
-        temperature=0,
-        model_kwargs={"seed": 42}  # Enable semantic caching with deterministic outputs
-    )
+    llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+
+    # Mono API client for transaction queries
+    mono_client = MonoClient(api_key=settings.mono_api_key)
+    query_service = QueryService(llm=llm, mono_client=mono_client)
+    account_management_service = AccountManagementService(account_repo=account_repository)
 
     task_queue_service = TaskQueueService()
     conversation_responder = ConversationResponder(llm)
@@ -107,6 +108,8 @@ def setup_dependencies():
         transfer_service=agent_transfer_service,
         airtime_service=agent_airtime_service,
         task_executor=task_executor,
+        query_service=query_service,
+        account_management_service=account_management_service,
     )
 
     completion_callback = orchestrator.completion_callback

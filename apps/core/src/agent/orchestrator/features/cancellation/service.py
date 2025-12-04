@@ -10,7 +10,7 @@ from apps.core.src.agent.airtime import AirtimeService
 from apps.core.src.agent.orchestrator.features.context.service import OrchestratorContextManager
 
 if TYPE_CHECKING:
-    from apps.core.src.agent.services.task_queue_service import TaskQueueService
+    from apps.core.src.agent.orchestrator.services.task_queue_service import TaskQueueService
 
 
 class OrchestratorCancellationHandler:
@@ -32,7 +32,7 @@ class OrchestratorCancellationHandler:
         self,
         phone_number: str,
         text: str,
-        result: ClassificationResult,
+        result: Optional[ClassificationResult],
         conversation_state: Optional[dict],
     ) -> Optional[str]:
         """
@@ -126,22 +126,26 @@ class OrchestratorCancellationHandler:
                 print(f"⚠️  Error checking pending transactions: {e}")
 
         if has_active_transaction:
-            if active_flow == "transfer":
+            # Create default cancel classification if result is None
+            if result:
                 cancel_classification_dict = result.model_dump() if hasattr(result, 'model_dump') else {
                     "intent": result.intent,
                     "is_cancellation": result.is_cancellation,
                     "confidence": result.confidence,
                 }
+            else:
+                cancel_classification_dict = {
+                    "intent": "cancel",
+                    "is_cancellation": True,
+                    "confidence": 1.0
+                }
+
+            if active_flow == "transfer":
                 cancel_response = await self.transfer_service.run_simple(phone_number, text, cancel_classification_dict)
                 asyncio.create_task(
                     self.context_manager.save_last_response(phone_number, cancel_response))
                 return cancel_response
             elif active_flow == "airtime":
-                cancel_classification_dict = result.model_dump() if hasattr(result, 'model_dump') else {
-                    "intent": result.intent,
-                    "is_cancellation": result.is_cancellation,
-                    "confidence": result.confidence,
-                }
                 cancel_response = await self.airtime_service.run_simple(phone_number, text, cancel_classification_dict)
                 asyncio.create_task(
                     self.context_manager.save_last_response(phone_number, cancel_response))

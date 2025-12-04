@@ -3,7 +3,7 @@
 from langgraph.graph import StateGraph, END
 
 from apps.core.src.agent.transfer.extractor import TransferEntityExtractor
-from apps.core.src.agent.services.beneficiary_matcher import BeneficiaryMatcher
+from apps.core.src.agent.beneficiary.matcher import BeneficiaryMatcher
 from apps.core.src.agent.services.validation_service import AsyncValidationService
 from apps.core.src.agent.transfer.nodes import (
     extract_entities,

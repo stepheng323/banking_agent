@@ -2,7 +2,7 @@
 
 from typing import cast
 
-from apps.core.src.agent.common.cancellation import handle_transaction_cancellation
+from apps.core.src.agent.services.cancellation_utils import handle_transaction_cancellation
 from apps.core.src.agent.airtime.state import AirtimeState
 from shared.cache.redis_client import Redis
 

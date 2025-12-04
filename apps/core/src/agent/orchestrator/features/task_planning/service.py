@@ -8,8 +8,8 @@ import traceback
 from langchain_core.runnables import Runnable
 from langchain_core.messages import AIMessage
 from apps.core.src.agent.models.planner import PlannerOutput
-from apps.core.src.agent.services.task_queue_service import TaskQueueService
-from apps.core.src.agent.services.task_executor import TaskExecutor
+from apps.core.src.agent.orchestrator.services.task_queue_service import TaskQueueService
+from apps.core.src.agent.orchestrator.services.task_executor import TaskExecutor
 from apps.core.src.agent.prompts.planner import PLANNER_SYSTEM_PROMPT, PLANNER_USER_PROMPT_TEMPLATE
 
 

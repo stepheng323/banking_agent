@@ -2,7 +2,7 @@
 
 from typing import Any, cast
 
-from apps.core.src.agent.common.nodes.context import load_user_context_shared
+from apps.core.src.agent.nodes.context import load_user_context_shared
 from apps.core.src.agent.airtime.state import AirtimeState
 
 

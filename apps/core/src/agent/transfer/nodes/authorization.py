@@ -5,7 +5,7 @@ from typing import cast
 
 from apps.core.src.agent.transfer.state import TransferState
 from apps.gateway.api.flows.transaction_service import create_transfer_transaction
-from apps.core.src.agent.services.authorization_service import AuthorizationService
+from apps.core.src.agent.authorization.service import AuthorizationService
 from shared.cache.redis_client import Redis
 from shared.queue.redis_queue import RedisQueue
 

@@ -5,7 +5,7 @@ from typing import cast
 from shared.database.models import Beneficiary
 from shared.utils.serialization import sqlalchemy_to_dict
 
-from apps.core.src.agent.services.beneficiary_matcher import BeneficiaryMatcher
+from apps.core.src.agent.beneficiary.matcher import BeneficiaryMatcher
 from apps.core.src.agent.airtime.state import AirtimeState
 
 from ..graph.utils import debug_log
