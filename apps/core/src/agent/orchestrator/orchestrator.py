@@ -7,7 +7,9 @@ from typing import Any
 from langchain_openai import ChatOpenAI
 
 from shared.clients.whatsapp_client import WhatsAppClient
-from shared.repositories import UserRepository
+from shared.clients.whatsapp_client import WhatsAppClient
+from shared.repositories import UserRepository, BeneficiaryRepository
+from shared.cache.redis_client import RedisClient
 from shared.cache.redis_client import RedisClient
 
 from apps.core.src.agent.models import ClassificationResult, PlannerOutput
@@ -18,25 +20,23 @@ from apps.core.src.agent.transfer import TransferService
 from apps.core.src.agent.airtime import AirtimeService
 from shared.types.agent_types import TaskStatus
 
-from apps.core.src.agent.orchestrator.context_manager import OrchestratorContextManager
-from apps.core.src.agent.orchestrator.classification_service import OrchestratorClassificationService
-from apps.core.src.agent.orchestrator.task_planner import OrchestratorTaskPlanner
-from apps.core.src.agent.orchestrator.beneficiary_handler import OrchestratorBeneficiaryHandler
-from apps.core.src.agent.orchestrator.cancellation_handler import OrchestratorCancellationHandler
-from apps.core.src.agent.orchestrator.intent_router import OrchestratorIntentRouter
+from apps.core.src.agent.orchestrator.features.context.service import OrchestratorContextManager
+from apps.core.src.agent.orchestrator.features.classification.service import OrchestratorClassificationService
+from apps.core.src.agent.orchestrator.features.task_planning.service import OrchestratorTaskPlanner
+from apps.core.src.agent.orchestrator.features.beneficiary.service import OrchestratorBeneficiaryHandler
+from apps.core.src.agent.orchestrator.features.cancellation.service import OrchestratorCancellationHandler
+from apps.core.src.agent.orchestrator.features.intent_routing.service import OrchestratorIntentRouter
 
 from apps.core.src.agent.orchestrator.pipeline import MessageContext, MessagePipeline
-from apps.core.src.agent.orchestrator.pipeline.handlers import (
-    ContextLoaderHandler,
-    ClassificationHandler,
-    FreshStartHandler,
-    BeneficiaryHandler,
-    CancellationHandler,
-    BatchAuthorizationHandler,
-    ActiveQueueHandler,
-    NextTaskHandler,
-    IntentRoutingHandler
-)
+from apps.core.src.agent.orchestrator.features.context.handler import ContextLoaderHandler
+from apps.core.src.agent.orchestrator.features.classification.handler import ClassificationHandler
+from apps.core.src.agent.orchestrator.features.fresh_start.handler import FreshStartHandler
+from apps.core.src.agent.orchestrator.features.beneficiary.handler import BeneficiaryHandler
+from apps.core.src.agent.orchestrator.features.cancellation.handler import CancellationHandler
+from apps.core.src.agent.orchestrator.features.batch_authorization.handler import BatchAuthorizationHandler
+from apps.core.src.agent.orchestrator.features.active_queue.handler import ActiveQueueHandler
+from apps.core.src.agent.orchestrator.features.task_planning.handler import NextTaskHandler
+from apps.core.src.agent.orchestrator.features.intent_routing.handler import IntentRoutingHandler
 
 
 class OrchestratorAgent:
@@ -46,6 +46,7 @@ class OrchestratorAgent:
         self,
         llm: ChatOpenAI,
         user_repo: UserRepository,
+        beneficiary_repo: BeneficiaryRepository,
         whatsapp_client: WhatsAppClient,
         task_queue_service: TaskQueueService,
         conversation_responder: ConversationResponder,
@@ -63,7 +64,8 @@ class OrchestratorAgent:
         self.task_executor = task_executor
 
         self.context_manager = OrchestratorContextManager(
-            user_repo
+            user_repo,
+            beneficiary_repo
         )
         self.classification_service = OrchestratorClassificationService(llm)
         self.task_planner = OrchestratorTaskPlanner(llm, task_queue_service, task_executor)

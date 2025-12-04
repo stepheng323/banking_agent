@@ -14,27 +14,22 @@ class MessageContext:
     Each handler receives this context, processes it, and returns an updated version.
     """
     
-    # Input
     phone_number: str
     text: str
     message_id: str
     
-    # Loaded user data
     user_context: dict[str, Any] = field(default_factory=dict)
     conversation_state: Optional[dict[str, Any]] = None
     last_response: Optional[str] = None
     suggestion_data: Optional[str] = None
     suggestion_context: Optional[dict[str, Any]] = None
     
-    # Classification
     classification_result: Optional[ClassificationResult] = None
     
-    # Queue state
     has_active_queue: bool = False
     current_task_id: Optional[str] = None
     planner_output: Optional[PlannerOutput] = None
     
-    # Response
     response: Optional[str] = None
     handled: bool = False
     

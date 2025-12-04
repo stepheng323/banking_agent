@@ -2,7 +2,7 @@
 
 from apps.core.src.agent.orchestrator.pipeline.message_handler import MessageHandler
 from apps.core.src.agent.orchestrator.pipeline.message_context import MessageContext
-from apps.core.src.agent.orchestrator.cancellation_handler import OrchestratorCancellationHandler
+from .service import OrchestratorCancellationHandler
 from shared.cache.redis_client import RedisClient
 from apps.core.src.agent.services.batch_utils import ExecutionState
 

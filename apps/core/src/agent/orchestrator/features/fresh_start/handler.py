@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING
 
 from apps.core.src.agent.orchestrator.pipeline.message_handler import MessageHandler
 from apps.core.src.agent.orchestrator.pipeline.message_context import MessageContext
-from apps.core.src.agent.orchestrator.context_manager import OrchestratorContextManager
+from apps.core.src.agent.orchestrator.features.context.service import OrchestratorContextManager
 
 if TYPE_CHECKING:
     from apps.core.src.agent.transfer import TransferService

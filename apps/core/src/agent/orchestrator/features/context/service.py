@@ -5,6 +5,7 @@ import json
 import asyncio
 
 from shared.repositories.user_repository import UserRepository
+from shared.repositories.beneficiary_repository import BeneficiaryRepository
 from shared.cache.redis_client import RedisClient
 from shared.database.models import Account
 from shared.utils.serialization import sqlalchemy_to_dict
@@ -18,8 +19,10 @@ class OrchestratorContextManager:
     def __init__(
         self,
         user_repo: Optional[UserRepository] = None,
+        beneficiary_repo: Optional[BeneficiaryRepository] = None,
     ) -> None:
         self.user_repo = user_repo
+        self.beneficiary_repo = beneficiary_repo
         self.data_cache = UserDataCache()
 
     async def load_user_context(self, phone_number: str, user: Optional[Any] = None) -> dict[str, Any]:
@@ -32,34 +35,56 @@ class OrchestratorContextManager:
             phone_number: User's phone number
             user: Optional pre-fetched user object to avoid duplicate database queries
         """
-        # Try cache first
         cached_data = await self.data_cache.get_all_user_data(phone_number)
         
         if cached_data["profile"]:
             return {
                 "profile": cached_data["profile"],
                 "accounts": cached_data["accounts"] or [],
+                "beneficiaries": cached_data["beneficiaries"] or [],
             }
         
-        # Cache miss - fetch from database
-        profile = user
-        if profile is None and self.user_repo:
-            profile = await asyncio.to_thread(
-                self.user_repo.get_by_phone, phone_number
-            )
+        def fetch_db_data():
+            """Fetch user and accounts in a separate thread to avoid blocking."""
+            current_profile = user
+            if current_profile is None and self.user_repo:
+                current_profile = self.user_repo.get_by_phone(phone_number)
+            
+            current_accounts = []
+            if current_profile:
+                current_accounts = list(current_profile.accounts)
+            
+            current_beneficiaries = []
+            if current_profile and self.beneficiary_repo:
+                current_beneficiaries = self.beneficiary_repo.get_by_user(current_profile.id)
 
-        # Serialize profile
+            return current_profile, current_accounts, current_beneficiaries
+
+        profile, accounts, beneficiaries = await asyncio.to_thread(fetch_db_data)
+
         safe_profile: dict[str, Any] | None = sqlalchemy_to_dict(
             profile) if profile is not None else None
+            
+        safe_accounts = [
+            sqlalchemy_to_dict(acc) for acc in accounts
+        ]
+
+        safe_beneficiaries = [
+            sqlalchemy_to_dict(ben) for ben in beneficiaries
+        ]
 
         context = {
             "profile": safe_profile,
-            "accounts": [],
+            "accounts": safe_accounts,
+            "beneficiaries": safe_beneficiaries,
         }
         
-        # Cache the result
         if safe_profile:
             await self.data_cache.set_user_profile(phone_number, safe_profile)
+        if safe_accounts:
+            await self.data_cache.set_accounts(phone_number, safe_accounts)
+        if safe_beneficiaries:
+            await self.data_cache.set_beneficiaries(phone_number, safe_beneficiaries)
         
         return context
 

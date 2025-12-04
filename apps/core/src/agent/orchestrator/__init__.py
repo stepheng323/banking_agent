@@ -2,13 +2,13 @@
 
 from apps.core.src.agent.orchestrator.orchestrator import OrchestratorAgent
 from apps.core.src.agent.orchestrator.orchestrator_state import OrchestratorState
-from apps.core.src.agent.orchestrator.context_manager import OrchestratorContextManager
-from apps.core.src.agent.orchestrator.classification_service import (
+from apps.core.src.agent.orchestrator.features.context.service import OrchestratorContextManager
+from apps.core.src.agent.orchestrator.features.classification.service import (
     OrchestratorClassificationService)
-from apps.core.src.agent.orchestrator.task_planner import OrchestratorTaskPlanner
-from apps.core.src.agent.orchestrator.beneficiary_handler import OrchestratorBeneficiaryHandler
-from apps.core.src.agent.orchestrator.cancellation_handler import OrchestratorCancellationHandler
-from apps.core.src.agent.orchestrator.intent_router import OrchestratorIntentRouter
+from apps.core.src.agent.orchestrator.features.task_planning.service import OrchestratorTaskPlanner
+from apps.core.src.agent.orchestrator.features.beneficiary.service import OrchestratorBeneficiaryHandler
+from apps.core.src.agent.orchestrator.features.cancellation.service import OrchestratorCancellationHandler
+from apps.core.src.agent.orchestrator.features.intent_routing.service import OrchestratorIntentRouter
 
 __all__ = [
     "OrchestratorAgent",

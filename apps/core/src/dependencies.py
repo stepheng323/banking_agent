@@ -96,6 +96,7 @@ def setup_dependencies():
     orchestrator = OrchestratorAgent(
         llm=llm,
         user_repo=user_repository,
+        beneficiary_repo=beneficiary_repository,
         whatsapp_client=whatsapp_client,
         task_queue_service=task_queue_service,
         conversation_responder=conversation_responder,

@@ -7,7 +7,7 @@ import traceback
 from shared.repositories.unit_of_work import UnitOfWork
 from shared.cache.redis_client import RedisClient
 from apps.core.src.agent.models.classification import ClassificationResult
-from apps.core.src.agent.orchestrator.context_manager import OrchestratorContextManager
+from apps.core.src.agent.orchestrator.features.context.service import OrchestratorContextManager
 
 
 class OrchestratorBeneficiaryHandler:

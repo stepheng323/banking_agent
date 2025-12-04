@@ -43,27 +43,21 @@ class MessageConsumer:
     async def _handle_message(self, message: WhatsAppMessage) -> Dict[str, Any] | None:
         """Handle a WhatsApp message."""
         phone_number = message.from_number
-        
-        # Get user first (synchronous database operation)
-        # Then load context, passing the user to avoid duplicate database queries
+
         user = await asyncio.to_thread(
             self.user_repository.get_by_phone, phone_number
         )
-        
-        # Load context, passing the user to avoid duplicate queries
-        # This also avoids SQLAlchemy session concurrency issues
+        if user is None or getattr(user, "onboarding_status", None) != UserOnboardingStatusEnum.ONBOARDING_COMPLETED:
+            return await self.onboarding_handler.handle_onboarding(message)
+
         await self.orchestrator.context_manager.load_user_context(
             phone_number, user=user
         )
-
-        if user is None or getattr(user, "onboarding_status", None) != UserOnboardingStatusEnum.ONBOARDING_COMPLETED:
-            return await self.onboarding_handler.handle_onboarding(message)
 
         response = await self.orchestrator.invoke(
             phone_number, message.text or "", message.message_id
         )
 
-        # Keep WhatsApp send blocking to preserve message order
         if response and response.strip():
             await self.whatsapp_client.send_text(phone_number, response)
             

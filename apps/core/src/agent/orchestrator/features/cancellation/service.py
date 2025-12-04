@@ -7,7 +7,7 @@ from shared.cache.redis_client import RedisClient
 from apps.core.src.agent.models.classification import ClassificationResult
 from apps.core.src.agent.transfer import TransferService
 from apps.core.src.agent.airtime import AirtimeService
-from apps.core.src.agent.orchestrator.context_manager import OrchestratorContextManager
+from apps.core.src.agent.orchestrator.features.context.service import OrchestratorContextManager
 
 if TYPE_CHECKING:
     from apps.core.src.agent.services.task_queue_service import TaskQueueService
