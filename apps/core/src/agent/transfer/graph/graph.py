@@ -23,7 +23,7 @@ from apps.core.src.agent.services.user_data_cache import UserDataCache
 from shared.queue.redis_queue import RedisQueue
 from shared.config.settings import settings
 from apps.core.src.agent.services.validation_service import AsyncValidationService
-from apps.core.src.agent.services.beneficiary_matcher import BeneficiaryMatcher
+from apps.core.src.agent.beneficiary.matcher import BeneficiaryMatcher
 from apps.core.src.agent.transfer.extractor import TransferEntityExtractor
 from apps.core.src.agent.transfer.state import TransferState
 
@@ -216,6 +216,7 @@ class TransferFlowGraph:
                 # Check if message contains account numbers (indicates continuation, not new task)
                 import re
                 has_account_number = bool(re.search(r'\b\d{10}\b', message))
+                is_new_task_start = has_task_params and not has_account_number
                 
                 if checkpoint_transfer_status == "collection_complete" and is_new_task_start:
                     debug_log(f"🧹 [GRAPH] Clearing stale collection_complete status for new task")
@@ -488,6 +489,7 @@ class TransferFlowGraph:
             "pin_verified": pin_verified,
             "pin_verification_error": pin_error,
             "flow_state": "authorizing",
+            "transfer_status": "pending",  # Clear collection_complete status to allow authorization
             "skip_confirmation_display": True,  # Skip showing confirmation again
         })
 

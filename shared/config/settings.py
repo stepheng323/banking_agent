@@ -53,6 +53,8 @@ class Settings:
         self.flutterwave_use_sandbox: bool = os.getenv(
             "FLUTTERWAVE_USE_SANDBOX", "false").lower() == "true"
 
+        self.mono_api_key: str = os.getenv("MONO_API_KEY", "")
+
         # S3 Configuration
         self.s3_bucket_name: str = os.getenv("S3_BUCKET_NAME", "")
         self.s3_region: str = os.getenv("AWS_REGION", "us-east-1")

@@ -7,7 +7,7 @@ from fastapi.responses import Response
 
 from shared.cache.redis_client import RedisClient
 from shared.clients.whatsapp_client import WhatsAppClient
-from apps.core.src.agent.services.authorization_service import AuthorizationService
+from apps.core.src.agent.authorization.service import AuthorizationService
 from apps.gateway.api.flows.response_helpers import format_error_response, format_success_response
 
 if TYPE_CHECKING:
@@ -157,8 +157,8 @@ async def handle_transaction_pin(
         
         # Handle batch authorization
         if transaction_type == "batch":
-            from apps.core.src.agent.services.batch_executor import execute_batch
-            from apps.core.src.agent.services.task_queue_service import TaskQueueService
+            from apps.core.src.agent.batch.executor import execute_batch
+            from apps.core.src.agent.orchestrator.services.task_queue_service import TaskQueueService
             
             # Send immediate acknowledgment
             await whatsapp_client.send_text(

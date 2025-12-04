@@ -5,7 +5,7 @@ from typing import Any, TYPE_CHECKING
 if TYPE_CHECKING:
     from apps.core.src.agent.orchestrator.orchestrator import OrchestratorAgent
 
-from apps.core.src.agent.services.task_queue_service import TaskQueueService
+from apps.core.src.agent.orchestrator.services.task_queue_service import TaskQueueService
 from shared.types.agent_types import TaskStatus
 from shared.cache.redis_client import RedisClient
 from shared.config import settings
@@ -75,7 +75,7 @@ class OrchestratorFlowCompletionCallback:
         Returns:
             Summary message string
         """
-        from apps.core.src.agent.services.batch_utils import (
+        from apps.core.src.agent.batch.utils import (
             requires_authorization,
             mask_account_number,
             format_amount

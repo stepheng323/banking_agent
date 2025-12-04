@@ -18,7 +18,7 @@ from shared.cache.redis_client import RedisClient
 from shared.queue.redis_queue import RedisQueue
 from shared.config.settings import settings
 from apps.core.src.agent.airtime.extractor import AirtimeEntityExtractor
-from apps.core.src.agent.services import BeneficiaryMatcher
+from apps.core.src.agent.beneficiary.matcher import BeneficiaryMatcher
 from apps.core.src.agent.airtime.state import AirtimeState
 
 from .builder import build_graph
@@ -145,6 +145,7 @@ class AirtimeFlowGraph:
             "pin_verified": pin_verified,
             "pin_verification_error": pin_error,
             "flow_state": "authorizing",
+            "airtime_status": "pending",  # Clear collection_complete status
         })
 
         final_state = await self.graph.ainvoke(cast(AirtimeState, updated_state), config)
