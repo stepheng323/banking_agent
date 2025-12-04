@@ -7,9 +7,9 @@ from shared.database.connection import get_db_session
 from shared.queue.redis_queue import RedisQueue
 from shared.repositories import BeneficiaryRepository, AccountRepository
 from shared.repositories.user_repository import UserRepository
-from shared.cache import UserContextCacheService
 from shared.cache.redis_client import RedisClient
 from shared.services.receipt_generator import ReceiptGenerator
+from apps.core.src.agent.services.user_data_cache import UserDataCache
 
 from apps.core.src.agent.orchestrator import OrchestratorAgent
 from apps.core.src.agent.services import ConversationResponder, TaskQueueService, TaskExecutor
@@ -34,7 +34,8 @@ def setup_dependencies():
 
     shared_redis = RedisClient.get_client()
 
-    user_cache = UserContextCacheService(redis_client=shared_redis)
+    # Create UserDataCache for agent services
+    user_data_cache = UserDataCache(redis_client=shared_redis)
 
     onboarding_service = OnboardingService(whatsapp_client)
     onboarding_handler = OnboardingHandler(
@@ -60,14 +61,18 @@ def setup_dependencies():
     )
 
 
-    llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+    llm = ChatOpenAI(
+        model="gpt-4o-mini",
+        temperature=0,
+        model_kwargs={"seed": 42}  # Enable semantic caching with deterministic outputs
+    )
 
     task_queue_service = TaskQueueService()
     conversation_responder = ConversationResponder(llm)
 
     agent_transfer_service = AgentTransferService(
         llm=llm,
-        user_cache=user_cache,
+        user_cache=user_data_cache,
         beneficiary_repo=beneficiary_repository,
         account_repo=account_repository,
         whatsapp_client=whatsapp_client,
@@ -77,7 +82,7 @@ def setup_dependencies():
 
     agent_airtime_service = AirtimeService(
         llm=llm,
-        user_cache=user_cache,
+        user_cache=user_data_cache,
         account_repo=account_repository,
         beneficiary_repo=beneficiary_repository,
         whatsapp_client=whatsapp_client,
@@ -95,7 +100,7 @@ def setup_dependencies():
     orchestrator = OrchestratorAgent(
         llm=llm,
         user_repo=user_repository,
-        user_cache=user_cache,
+        beneficiary_repo=beneficiary_repository,
         whatsapp_client=whatsapp_client,
         task_queue_service=task_queue_service,
         conversation_responder=conversation_responder,

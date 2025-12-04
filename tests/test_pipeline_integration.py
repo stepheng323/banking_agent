@@ -12,7 +12,6 @@ class TestPipelineIntegration:
         return {
             "llm": MagicMock(),
             "user_repo": MagicMock(),
-            "user_cache": AsyncMock(),
             "whatsapp_client": AsyncMock(),
             "task_queue_service": AsyncMock(),
             "conversation_responder": AsyncMock(),

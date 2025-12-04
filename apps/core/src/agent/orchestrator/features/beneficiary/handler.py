@@ -2,7 +2,7 @@
 
 from apps.core.src.agent.orchestrator.pipeline.message_handler import MessageHandler
 from apps.core.src.agent.orchestrator.pipeline.message_context import MessageContext
-from apps.core.src.agent.orchestrator.beneficiary_handler import OrchestratorBeneficiaryHandler
+from .service import OrchestratorBeneficiaryHandler
 from shared.cache.redis_client import RedisClient
 
 

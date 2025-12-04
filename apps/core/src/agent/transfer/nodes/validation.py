@@ -231,6 +231,28 @@ async def validate_parallel(
                 "validation_errors": ["missing_recipient_details"],
             }
 
+        # Send immediate acknowledgment for better UX
+        try:
+            from shared.clients.whatsapp_client import WhatsAppClient
+            whatsapp_client = WhatsAppClient()
+            # We need to run this in background or await it. 
+            # Since this is an async function, we can await it, but that adds to latency?
+            # No, the goal is to send it *before* the long operation.
+            # But if we await it, we delay the validation start by ~0.5s.
+            # Ideally we fire and forget, or await it (0.5s is fine if it gives feedback).
+            # Actually, asyncio.create_task is better for "fire and forget" if we don't want to block.
+            import asyncio
+            phone_number = state.get("phone_number")
+            if phone_number:
+                asyncio.create_task(
+                    whatsapp_client.send_text(
+                        phone_number,
+                        "🔍 Validating account details..."
+                    )
+                )
+        except Exception as e:
+            debug_log(f"⚠️ Failed to send ack: {e}")
+
         debug_log(
             f"DEBUG validate_parallel: Calling validation API with account_number='{acct_number}', bank_code='{bank_code}'")
         resolved, balance = await validation_service.validate_account_and_balance(

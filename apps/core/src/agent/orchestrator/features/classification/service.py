@@ -14,6 +14,90 @@ class OrchestratorClassificationService:
     def __init__(self, classifier_llm: Runnable) -> None:
         self.classifier_llm = classifier_llm
 
+    def _try_fast_path(
+        self,
+        text: str,
+        context: Optional[dict[str, Any]] = None,
+    ) -> Optional[ClassificationResult]:
+        """
+        Try to classify using fast path (regex) when intent is unambiguous.
+        
+        Only returns a result when we're CERTAIN of the intent based on:
+        1. Active flow context (conversation_state)
+        2. Simple, unambiguous patterns
+        
+        Returns None if LLM classification is needed.
+        """
+        import re
+        
+        text_clean = text.strip().lower()
+        
+        # Get active flow from context
+        active_flow = None
+        if context and context.get("conversationState"):
+            active_flow = context["conversationState"].get("active_flow")
+        
+        # 1. CANCELLATION - Always safe to detect
+        cancel_patterns = {"cancel", "stop", "abort", "nevermind", "forget it", "no thanks"}
+        if text_clean in cancel_patterns:
+            return ClassificationResult(
+                intent="cancel",
+                is_cancellation=True,
+                is_complex=False,
+                confidence=0.99,
+            )
+        
+        # 2. YES/NO/CONFIRM - Only when there's NO active flow (answering questions)
+        # If there's an active flow, these might be answering "how much?" etc.
+        if not active_flow:
+            if text_clean in {"yes", "ok", "sure", "confirm", "proceed"}:
+                return ClassificationResult(
+                    intent="yes",
+                    is_complex=False,
+                    confidence=0.95,
+                )
+            if text_clean in {"no", "skip", "nope"}:
+                return ClassificationResult(
+                    intent="no",
+                    is_complex=False,
+                    confidence=0.95,
+                )
+        
+        # 3. SIMPLE AMOUNTS - Only when there's an active flow
+        # This is safe because we know they're answering "how much?"
+        if active_flow in {"transfer", "airtime", "data"}:
+            # Match: "5000", "5k", "N5000", "10k", etc.
+            amount_match = re.match(r'^[nN]?\s*(\d+)[kK]?$', text_clean)
+            if amount_match:
+                return ClassificationResult(
+                    intent=active_flow,  # Continue the active flow
+                    is_complex=False,
+                    confidence=0.98,
+                )
+        
+        # 4. ACCOUNT NUMBERS - Only when active flow is transfer
+        if active_flow == "transfer":
+            # 10-digit account number
+            if re.match(r'^\d{10}$', text_clean):
+                return ClassificationResult(
+                    intent="transfer",
+                    is_complex=False,
+                    confidence=0.97,
+                )
+        
+        # 5. PHONE NUMBERS - Only when active flow is airtime/data
+        if active_flow in {"airtime", "data"}:
+            # Nigerian phone number (11 digits starting with 0, or 10 digits)
+            if re.match(r'^0\d{10}$|^\d{10}$', text_clean):
+                return ClassificationResult(
+                    intent=active_flow,
+                    is_complex=False,
+                    confidence=0.97,
+                )
+        
+        # Cannot safely classify - use LLM
+        return None
+
     async def classify(
         self,
         text: str,
@@ -21,6 +105,14 @@ class OrchestratorClassificationService:
         last_response: Optional[str] = None,
     ) -> ClassificationResult:
         """Classify user intent from text."""
+        # Try fast path first
+        fast_result = self._try_fast_path(text, context)
+        if fast_result:
+            print(f"⚡ Fast path: '{text[:50]}' → {fast_result.intent} (confidence: {fast_result.confidence})")
+            return fast_result
+        
+        # Fall back to LLM classification
+
         system = (
             "You are an intent classifier for a banking assistant. "
             "Classify messages into: transfer, airtime, data, conversational, cancel, yes, no, confirm, skip, unknown. "

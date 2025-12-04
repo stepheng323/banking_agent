@@ -43,50 +43,26 @@ class MessageConsumer:
     async def _handle_message(self, message: WhatsAppMessage) -> Dict[str, Any] | None:
         """Handle a WhatsApp message."""
         phone_number = message.from_number
-        
-        # Get user first (synchronous database operation)
-        # Then load context, passing the user to avoid duplicate database queries
+
         user = await asyncio.to_thread(
             self.user_repository.get_by_phone, phone_number
         )
-        
-        # Load context, passing the user to avoid duplicate queries
-        # This also avoids SQLAlchemy session concurrency issues
+        if user is None or getattr(user, "onboarding_status", None) != UserOnboardingStatusEnum.ONBOARDING_COMPLETED:
+            return await self.onboarding_handler.handle_onboarding(message)
+
         await self.orchestrator.context_manager.load_user_context(
             phone_number, user=user
         )
-
-        if user is None or getattr(user, "onboarding_status", None) != UserOnboardingStatusEnum.ONBOARDING_COMPLETED:
-            return await self.onboarding_handler.handle_onboarding(message)
 
         response = await self.orchestrator.invoke(
             phone_number, message.text or "", message.message_id
         )
 
-        # Keep WhatsApp send blocking to preserve message order
         if response and response.strip():
             await self.whatsapp_client.send_text(phone_number, response)
             
-            # Pre-warm context for next message (non-blocking background task)
-            asyncio.create_task(
-                self._warm_context_for_next_message(phone_number)
-            )
-
         return {"status": "success", "response": response}
     
-    async def _warm_context_for_next_message(self, phone_number: str) -> None:
-        """
-        Pre-warm user context cache for the next message.
-        
-        This is a non-blocking background task that refreshes the context
-        after sending a response, improving response time for subsequent messages.
-        """
-        try:
-            # Refresh user context in background
-            await self.orchestrator.context_manager.load_user_context(phone_number)
-        except Exception as e:
-            # Silently fail - this is an optimization, not critical
-            print(f"⚠️  Context pre-warming failed for {phone_number}: {e}")
 
     async def start(self, queue_name: str = "banking:messages"):
         """Start the message consumer."""

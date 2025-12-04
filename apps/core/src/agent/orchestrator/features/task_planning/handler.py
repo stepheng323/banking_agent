@@ -2,7 +2,7 @@
 
 from apps.core.src.agent.orchestrator.pipeline.message_handler import MessageHandler
 from apps.core.src.agent.orchestrator.pipeline.message_context import MessageContext
-from apps.core.src.agent.orchestrator.task_planner import OrchestratorTaskPlanner
+from .service import OrchestratorTaskPlanner
 
 
 class NextTaskHandler(MessageHandler):

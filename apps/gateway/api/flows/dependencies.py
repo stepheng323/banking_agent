@@ -6,11 +6,11 @@ from langchain_openai import ChatOpenAI
 
 from shared.clients.whatsapp_client import WhatsAppClient
 from shared.queue.redis_queue import RedisQueue
-from shared.cache.user_context_cache import UserContextCacheService
 from shared.cache.redis_client import RedisClient
 from shared.repositories.account_repository import AccountRepository
 from shared.repositories.beneficiary_repository import BeneficiaryRepository
 from shared.database.connection import get_db_session
+from apps.core.src.agent.services.user_data_cache import UserDataCache
 
 from apps.gateway.core.config import settings
 
@@ -67,7 +67,7 @@ def get_airtime_service() -> Optional[Any]:
             # Initialize dependencies
             llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
             redis_client = RedisClient.get_client()
-            user_cache = UserContextCacheService(redis_client=redis_client)
+            user_cache = UserDataCache(redis_client=redis_client)
             account_repo = AccountRepository(db=get_db_session())
             beneficiary_repo = BeneficiaryRepository(db=get_db_session())
             whatsapp_client = WhatsAppClient()
@@ -106,7 +106,7 @@ def get_transfer_service() -> Optional[Any]:
             # Initialize dependencies
             llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
             redis_client = RedisClient.get_client()
-            user_cache = UserContextCacheService(redis_client=redis_client)
+            user_cache = UserDataCache(redis_client=redis_client)
             account_repo = AccountRepository(db=get_db_session())
             beneficiary_repo = BeneficiaryRepository(db=get_db_session())
             whatsapp_client = WhatsAppClient()

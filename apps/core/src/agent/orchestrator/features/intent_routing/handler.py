@@ -2,7 +2,7 @@
 
 from apps.core.src.agent.orchestrator.pipeline.message_handler import MessageHandler
 from apps.core.src.agent.orchestrator.pipeline.message_context import MessageContext
-from apps.core.src.agent.orchestrator.intent_router import OrchestratorIntentRouter
+from .service import OrchestratorIntentRouter
 
 
 class IntentRoutingHandler(MessageHandler):

@@ -19,7 +19,7 @@ from shared.clients.whatsapp_client import WhatsAppClient
 from shared.repositories.beneficiary_repository import BeneficiaryRepository
 from shared.repositories.account_repository import AccountRepository
 from shared.cache.bank_cache import BankCacheService
-from shared.cache.user_context_cache import UserContextCacheService
+from apps.core.src.agent.services.user_data_cache import UserDataCache
 from shared.queue.redis_queue import RedisQueue
 from shared.config.settings import settings
 from apps.core.src.agent.services.validation_service import AsyncValidationService
@@ -45,7 +45,7 @@ class TransferFlowGraph:
 
     def __init__(
         self,
-        user_cache: UserContextCacheService,
+        user_cache: UserDataCache,
         beneficiary_repo: BeneficiaryRepository,
         account_repo: AccountRepository,
         whatsapp_client: WhatsAppClient,
@@ -488,6 +488,7 @@ class TransferFlowGraph:
             "pin_verified": pin_verified,
             "pin_verification_error": pin_error,
             "flow_state": "authorizing",
+            "skip_confirmation_display": True,  # Skip showing confirmation again
         })
 
         final_state = await self.graph.ainvoke(cast(TransferState, updated_state), config)

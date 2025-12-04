@@ -12,7 +12,11 @@ class AirtimeEntityExtractor:
     """Airtime entity extractor."""
 
     def __init__(self, llm: Optional[ChatOpenAI] = None) -> None:
-        self.llm = llm or ChatOpenAI(model="gpt-4o-mini", temperature=0)
+        self.llm = llm or ChatOpenAI(
+            model="gpt-4o-mini",
+            temperature=0,
+            model_kwargs={"seed": 42}
+        )
         self.structured = self.llm.with_structured_output(
             AirtimeExtractionResult)
 

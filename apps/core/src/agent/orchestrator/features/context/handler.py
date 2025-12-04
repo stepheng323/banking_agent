@@ -3,7 +3,7 @@
 import json
 from apps.core.src.agent.orchestrator.pipeline.message_handler import MessageHandler
 from apps.core.src.agent.orchestrator.pipeline.message_context import MessageContext
-from apps.core.src.agent.orchestrator.context_manager import OrchestratorContextManager
+from .service import OrchestratorContextManager
 from apps.core.src.agent.services import TaskQueueService
 
 

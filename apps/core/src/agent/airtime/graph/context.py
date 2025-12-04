@@ -3,7 +3,7 @@
 from typing import Optional
 
 from apps.core.src.agent.airtime.extractor import AirtimeEntityExtractor
-from shared.cache.user_context_cache import UserContextCacheService
+from apps.core.src.agent.services.user_data_cache import UserDataCache
 from shared.repositories import AccountRepository, BeneficiaryRepository
 from shared.clients.whatsapp_client import WhatsAppClient
 from shared.cache.redis_client import Redis
@@ -23,7 +23,7 @@ class AirtimeNodeContext:
 
     def __init__(self):
         self.extractor: Optional[AirtimeEntityExtractor] = None
-        self.user_cache: Optional[UserContextCacheService] = None
+        self.user_cache: Optional[UserDataCache] = None
         self.account_repo: Optional[AccountRepository] = None
         self.beneficiary_repo: Optional[BeneficiaryRepository] = None
         self.whatsapp_client: Optional[WhatsAppClient] = None
@@ -56,7 +56,7 @@ class AirtimeNodeContext:
     def setup(
         self,
         extractor: AirtimeEntityExtractor,
-        user_cache: UserContextCacheService,
+        user_cache: UserDataCache,
         account_repo: AccountRepository,
         beneficiary_repo: BeneficiaryRepository,
         whatsapp_client: WhatsAppClient,

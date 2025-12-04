@@ -23,6 +23,15 @@ async def prepare_confirmation(
 
     phone_number = state.get("phone_number")
     
+    # Skip confirmation display if resuming after PIN verification
+    if state.get("skip_confirmation_display"):
+        debug_log("⏭️ Skipping confirmation display (resuming after PIN)")
+        return {
+            **state,
+            "response": "",
+            "skip_confirmation_display": False,  # Reset flag
+        }
+    
     # Check if this is part of a complex transfer (has active task queue)
     # For complex transfers, we stop at collection complete instead of sending authorization flow
     queue_key = f"user:{phone_number}:task_queue"

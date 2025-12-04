@@ -1,5 +1,5 @@
 from apps.gateway.api.webhook import router as webhook_router
-from apps.gateway.api.flows import router as flow_webhook_router
+from apps.gateway.api.flows.router import router as flow_webhook_router
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from shared.utils.logging import configure_logger

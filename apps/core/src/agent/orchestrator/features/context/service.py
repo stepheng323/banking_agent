@@ -2,13 +2,15 @@
 
 from typing import Any, Optional
 import json
+import asyncio
 
-from shared.cache import UserContextCacheService
 from shared.repositories.user_repository import UserRepository
+from shared.repositories.beneficiary_repository import BeneficiaryRepository
 from shared.cache.redis_client import RedisClient
 from shared.database.models import Account
 from shared.utils.serialization import sqlalchemy_to_dict
 from apps.core.src.agent.models.classification import ClassificationResult
+from apps.core.src.agent.services.user_data_cache import UserDataCache
 
 
 class OrchestratorContextManager:
@@ -16,38 +18,76 @@ class OrchestratorContextManager:
 
     def __init__(
         self,
-        user_cache: UserContextCacheService,
         user_repo: Optional[UserRepository] = None,
+        beneficiary_repo: Optional[BeneficiaryRepository] = None,
     ) -> None:
-        self.user_cache = user_cache
         self.user_repo = user_repo
+        self.beneficiary_repo = beneficiary_repo
+        self.data_cache = UserDataCache()
 
     async def load_user_context(self, phone_number: str, user: Optional[Any] = None) -> dict[str, Any]:
         """
         Load user context from cache or database.
         
+        Uses UserDataCache (Redis) for structured data with TTL.
+        
         Args:
             phone_number: User's phone number
             user: Optional pre-fetched user object to avoid duplicate database queries
         """
-        cached = await self.user_cache.get(phone_number)
-        if cached:
-            return cached
+        cached_data = await self.data_cache.get_all_user_data(phone_number)
+        
+        if cached_data["profile"]:
+            return {
+                "profile": cached_data["profile"],
+                "accounts": cached_data["accounts"] or [],
+                "beneficiaries": cached_data["beneficiaries"] or [],
+            }
+        
+        def fetch_db_data():
+            """Fetch user and accounts in a separate thread to avoid blocking."""
+            current_profile = user
+            if current_profile is None and self.user_repo:
+                current_profile = self.user_repo.get_by_phone(phone_number)
+            
+            current_accounts = []
+            if current_profile:
+                current_accounts = list(current_profile.accounts)
+            
+            current_beneficiaries = []
+            if current_profile and self.beneficiary_repo:
+                current_beneficiaries = self.beneficiary_repo.get_by_user(current_profile.id)
 
-        profile = user
-        accounts: list[Account] = []
-        if profile is None and self.user_repo:
-            profile = self.user_repo.get_by_phone(phone_number)
+            return current_profile, current_accounts, current_beneficiaries
+
+        profile, accounts, beneficiaries = await asyncio.to_thread(fetch_db_data)
 
         safe_profile: dict[str, Any] | None = sqlalchemy_to_dict(
             profile) if profile is not None else None
+            
+        safe_accounts = [
+            sqlalchemy_to_dict(acc) for acc in accounts
+        ]
+
+        safe_beneficiaries = [
+            sqlalchemy_to_dict(ben) for ben in beneficiaries
+        ]
 
         context = {
             "profile": safe_profile,
-            "accounts": accounts,
+            "accounts": safe_accounts,
+            "beneficiaries": safe_beneficiaries,
         }
-        await self.user_cache.set(phone_number, context)
+        
+        if safe_profile:
+            await self.data_cache.set_user_profile(phone_number, safe_profile)
+        if safe_accounts:
+            await self.data_cache.set_accounts(phone_number, safe_accounts)
+        if safe_beneficiaries:
+            await self.data_cache.set_beneficiaries(phone_number, safe_beneficiaries)
+        
         return context
+
 
     async def get_conversation_state(self, phone_number: str) -> Optional[dict[str, Any]]:
         """Get the current conversation/flow state for this user."""
@@ -117,7 +157,6 @@ class OrchestratorContextManager:
         try:
             redis_client = RedisClient.get_client()
             keys = [
-                f"user:{phone_number}:ctx",
                 f"user:{phone_number}:conversation_state",
                 f"user:{phone_number}:last_response",
                 f"user:{phone_number}:beneficiary_suggestion",
@@ -129,32 +168,22 @@ class OrchestratorContextManager:
                 pipe.get(key)
             results = await pipe.execute()
             
-            # Parse results
-            user_ctx_data = results[0]
-            user_ctx = None
-            if user_ctx_data:
-                try:
-                    user_ctx = json.loads(user_ctx_data)
-                except (json.JSONDecodeError, TypeError):
-                    pass
-            
-            # Fallback to load_user_context if cache miss
-            if not user_ctx:
-                user_ctx = await self.load_user_context(phone_number)
+            # Load user context separately (uses UserDataCache)
+            user_ctx = await self.load_user_context(phone_number)
             
             # Parse conversation_state
             conversation_state = None
-            if results[1]:
+            if results[0]:
                 try:
-                    conversation_state = json.loads(results[1])
+                    conversation_state = json.loads(results[0])
                 except (json.JSONDecodeError, TypeError):
                     pass
             
             # last_response is already a string or None
-            last_response = results[2] if results[2] else None
+            last_response = results[1] if results[1] else None
             
             # suggestion_data is JSON string or None
-            suggestion_data = results[3] if results[3] else None
+            suggestion_data = results[2] if results[2] else None
             
             return user_ctx, conversation_state, last_response, suggestion_data
             
