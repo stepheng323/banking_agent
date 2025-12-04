@@ -87,7 +87,7 @@ class OrchestratorAgent:
             self.context_manager,
             self,
         )
-        
+        # Handler order matters
         self._handlers = [
             ContextLoaderHandler(self.context_manager, task_queue_service),
             ClassificationHandler(self.classification_service, self.context_manager),

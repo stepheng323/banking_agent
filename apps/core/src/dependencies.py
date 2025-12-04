@@ -61,7 +61,11 @@ def setup_dependencies():
     )
 
 
-    llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+    llm = ChatOpenAI(
+        model="gpt-4o-mini",
+        temperature=0,
+        model_kwargs={"seed": 42}  # Enable semantic caching with deterministic outputs
+    )
 
     task_queue_service = TaskQueueService()
     conversation_responder = ConversationResponder(llm)
