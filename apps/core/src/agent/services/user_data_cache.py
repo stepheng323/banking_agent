@@ -4,7 +4,7 @@ import json
 from typing import Optional, List, Dict, Any
 from datetime import timedelta
 
-from shared.cache.redis_client import RedisClient
+from shared.cache.redis_client import RedisClient, Redis
 
 
 class UserDataCache:
@@ -24,7 +24,7 @@ class UserDataCache:
     ACCOUNTS_TTL = int(timedelta(minutes=5).total_seconds())   # 5 minutes
     BENEFICIARIES_TTL = int(timedelta(minutes=5).total_seconds())  # 5 minutes
     
-    def __init__(self, redis_client: Optional[RedisClient] = None):
+    def __init__(self, redis_client: Optional[Redis] = None):
         self.redis = redis_client or RedisClient.get_client()
     
     # ============ User Profile Cache ============

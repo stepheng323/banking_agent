@@ -17,13 +17,11 @@ from apps.core.src.agent.orchestrator.services import ConversationResponder, Tas
 from apps.core.src.agent.transfer import TransferService as AgentTransferService
 from apps.core.src.agent.airtime import AirtimeService
 from apps.core.src.queue_consumers import MessageConsumer, TransactionConsumer
-from apps.core.src.handlers import (
-    OnboardingHandler,
-    OnboardingService,
-    TransferHandler,
-)
+from apps.core.src.agent.execution.onboarding.executor import OnboardingExecutor
+from apps.core.src.agent.execution.onboarding.service import OnboardingService
+from apps.core.src.agent.execution.transfer.executor import TransferExecutor
+from apps.core.src.agent.execution.airtime.executor import AirtimeExecutor
 from apps.core.src.agent.completion.transfer import TransferCompletionService
-from apps.core.src.handlers.airtime import AirtimeHandler
 from apps.core.src.agent.completion.airtime import AirtimeCompletionService
 from apps.core.src.agent.beneficiary.suggestion_service import BeneficiarySuggestionService
 from apps.core.src.agent.query.service import QueryService
