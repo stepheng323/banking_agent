@@ -6,7 +6,7 @@ from typing import Dict, Any
 
 from shared.clients.payment_provider_factory import PaymentProviderFactory
 from shared.repositories.unit_of_work import UnitOfWork
-from apps.core.src.handlers.transfer.transfer_service import TransferService
+from apps.core.src.handlers.transfer.transfer_service import TransferNotificationService
 
 
 class TransferHandler:
@@ -14,7 +14,7 @@ class TransferHandler:
 
     def __init__(
         self,
-        transfer_service: TransferService,
+        transfer_service: TransferNotificationService,
     ):
         self.transfer_service = transfer_service
 

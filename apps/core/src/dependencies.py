@@ -21,9 +21,10 @@ from apps.core.src.handlers import (
     OnboardingHandler,
     OnboardingService,
     TransferHandler,
-    TransferService
 )
-from apps.core.src.handlers.airtime import AirtimeHandler, AirtimeService as HandlerAirtimeService
+from apps.core.src.handlers.transfer.transfer_service import TransferNotificationService
+from apps.core.src.handlers.airtime import AirtimeHandler
+from apps.core.src.handlers.airtime.airtime_service import AirtimeNotificationService
 from apps.core.src.agent.beneficiary.suggestion_service import BeneficiarySuggestionService
 from apps.core.src.agent.query.service import QueryService
 from apps.core.src.agent.account_management.service import AccountManagementService
@@ -54,7 +55,7 @@ def setup_dependencies():
         redis_client=shared_redis,
     )
 
-    transfer_service = TransferService(
+    transfer_notification_service = TransferNotificationService(
         whatsapp_client=whatsapp_client,
         redis_client=shared_redis,
         beneficiary_repository=beneficiary_repository,
@@ -128,13 +129,13 @@ def setup_dependencies():
         whatsapp_client=whatsapp_client,
     )
 
-    handler_airtime_service = HandlerAirtimeService(
+    airtime_notification_service = AirtimeNotificationService(
         whatsapp_client=whatsapp_client,
         redis_client=shared_redis,
         beneficiary_suggestion_service=beneficiary_suggestion_service,
     )
-    airtime_handler = AirtimeHandler(airtime_service=handler_airtime_service)
-    transfer_handler = TransferHandler(transfer_service=transfer_service)
+    airtime_handler = AirtimeHandler(airtime_service=airtime_notification_service)
+    transfer_handler = TransferHandler(transfer_service=transfer_notification_service)
 
     transaction_consumer = TransactionConsumer(
         redis_queue=redis_queue,

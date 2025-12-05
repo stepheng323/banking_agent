@@ -148,6 +148,34 @@ class PaymentProvider(ABC):
         raise NotImplementedError(
             f"{self.provider_name} does not support bank list fetching")
 
+    async def purchase_airtime(
+        self,
+        amount: float,
+        recipient_phone: str,
+        network: str,
+    ) -> Dict[str, Any]:
+        """
+        Purchase airtime for a phone number.
+
+        Args:
+            amount: Amount of airtime to purchase
+            recipient_phone: Phone number to top up
+            network: Network provider (MTN, AIRTEL, GLO, 9MOBILE)
+
+        Returns:
+            Dictionary with:
+                - success: bool
+                - transaction_id: str (if successful)
+                - status: str
+                - error: str (if failed)
+                - provider: str
+
+        Raises:
+            NotImplementedError: If provider doesn't support airtime
+        """
+        raise NotImplementedError(
+            f"{self.provider_name} does not support airtime purchases yet")
+
     async def warm_up_token(self) -> None:
         """
         Proactively fetch and cache authentication tokens at startup.

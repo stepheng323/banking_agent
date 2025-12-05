@@ -23,7 +23,7 @@ def _receipts_enabled() -> bool:
     return flag in ("1", "true", "yes", "on")
 
 
-class TransferService:
+class TransferNotificationService:
     """Service for handling transfer notifications, cleanup, and beneficiary suggestions."""
 
     def __init__(

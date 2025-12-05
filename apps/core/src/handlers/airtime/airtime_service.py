@@ -9,7 +9,7 @@ from shared.repositories.beneficiary_repository import BeneficiaryRepository
 from apps.core.src.agent.beneficiary.suggestion_service import BeneficiarySuggestionService
 
 
-class AirtimeService:
+class AirtimeNotificationService:
     """Service for airtime purchase operations."""
 
     def __init__(
