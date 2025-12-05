@@ -6,7 +6,7 @@ from typing import List, Dict, Any, Optional, TYPE_CHECKING, Union
 from shared.cache.redis_client import RedisClient
 from shared.clients.whatsapp_client import WhatsAppClient
 from apps.core.src.agent.orchestrator.services.task_queue_service import TaskQueueService
-from apps.core.src.agent.batch.utils import (
+from apps.core.src.agent.tools.batch.utils import (
     ExecutionState,
     format_amount,
 )

@@ -73,7 +73,7 @@ class OrchestratorFlowCompletionCallback:
         Returns:
             Summary message string
         """
-        from apps.core.src.agent.batch.utils import (
+        from apps.core.src.agent.tools.batch.utils import (
             requires_authorization,
             mask_account_number,
             format_amount
