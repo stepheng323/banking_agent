@@ -8,12 +8,14 @@ from apps.gateway.api.flows.transaction_service import create_transfer_transacti
 from apps.core.src.agent.tools.authorization.service import AuthorizationService
 from shared.cache.redis_client import Redis
 from shared.queue.redis_queue import RedisQueue
+from apps.core.src.agent.sub_agents.transfer.nodes.utils import debug_log
 
 
 async def authorize_transaction(
     state: TransferState,
     redis_client: Redis,
     queue: RedisQueue,
+    authorization_service: AuthorizationService | None = None,
 ) -> TransferState:
     """Authorize transaction after PIN verification."""
     phone_number = state.get("phone_number")
@@ -30,7 +32,9 @@ async def authorize_transaction(
             },
         )
 
-    authorization_service = AuthorizationService(redis_client=redis_client)
+    if not authorization_service:
+        authorization_service = AuthorizationService(redis_client=redis_client)
+    
     pin_result = await authorization_service.get_pin_verification_result(idem_key)
     pin_verified_in_state = state.get("pin_verified")
 
