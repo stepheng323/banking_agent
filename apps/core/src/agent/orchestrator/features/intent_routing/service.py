@@ -5,8 +5,8 @@ from typing import Any
 import asyncio
 import traceback
 
-from apps.core.src.agent.models.classification import ClassificationResult
-from apps.core.src.agent.models.planner import PlannerOutput
+from apps.core.src.agent.orchestrator.models.classification import ClassificationResult
+from apps.core.src.agent.orchestrator.models.planner import PlannerOutput
 from apps.core.src.agent.orchestrator.services.task_queue_service import TaskQueueService
 from apps.core.src.agent.orchestrator.services.conversation_responder import ConversationResponder
 from apps.core.src.agent.transfer import TransferService

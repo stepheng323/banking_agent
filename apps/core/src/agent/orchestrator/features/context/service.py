@@ -9,7 +9,7 @@ from shared.repositories.beneficiary_repository import BeneficiaryRepository
 from shared.cache.redis_client import RedisClient
 from shared.database.models import Account
 from shared.utils.serialization import sqlalchemy_to_dict
-from apps.core.src.agent.models.classification import ClassificationResult
+from apps.core.src.agent.orchestrator.models.classification import ClassificationResult
 from apps.core.src.agent.services.user_data_cache import UserDataCache
 
 

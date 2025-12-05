@@ -4,7 +4,7 @@ from typing import Optional, Dict, Any
 
 from langchain_openai import ChatOpenAI
 
-from apps.core.src.agent.models.transfer_extraction import TransferExtractionResult
+from apps.core.src.agent.transfer.models_extraction import TransferExtractionResult
 from apps.core.src.agent.transfer.prompt.transfer_extraction import TRANSFER_EXTRACTION_PROMPT
 
 

@@ -14,7 +14,7 @@ from shared.repositories import BeneficiaryRepository
 from shared.repositories.unit_of_work import UnitOfWork
 from shared.formatters.receipt import generate_receipt_image
 from shared.services.receipt_generator import ReceiptGenerator
-from apps.core.src.agent.services.beneficiary_suggestion_service import BeneficiarySuggestionService
+from apps.core.src.agent.beneficiary.suggestion_service import BeneficiarySuggestionService
 
 
 def _receipts_enabled() -> bool:

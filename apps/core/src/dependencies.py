@@ -1,6 +1,7 @@
 from langchain_openai import ChatOpenAI
 
 from shared.clients.s3_client import S3Client
+from shared.clients.mono_client import MonoClient
 from shared.config import settings
 from shared.clients.whatsapp_client import WhatsAppClient
 from shared.database.connection import get_db_session
@@ -23,7 +24,9 @@ from apps.core.src.handlers import (
     TransferService
 )
 from apps.core.src.handlers.airtime import AirtimeHandler, AirtimeService as HandlerAirtimeService
-from apps.core.src.agent.services.beneficiary_suggestion_service import BeneficiarySuggestionService
+from apps.core.src.agent.beneficiary.suggestion_service import BeneficiarySuggestionService
+from apps.core.src.agent.query.service import QueryService
+from apps.core.src.agent.account_management.service import AccountManagementService
 
 
 def setup_dependencies():

@@ -1,7 +1,7 @@
 """Batch authorization utilities and constants."""
 
 from typing import List
-from apps.core.src.agent.models.planner import PlannedTask
+from apps.core.src.agent.orchestrator.models.planner import PlannedTask
 
 # Executors that require PIN authorization
 AUTH_REQUIRED_EXECUTORS = {"transfer", "airtime", "data"}

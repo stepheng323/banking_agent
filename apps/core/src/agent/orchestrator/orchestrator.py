@@ -1,24 +1,16 @@
 """Minimal orchestrator: LLM-based multilingual intent+complexity and user context cache."""
 
-import json
-import asyncio
-from typing import Any
-
 from langchain_openai import ChatOpenAI
 
 from shared.clients.whatsapp_client import WhatsAppClient
-from shared.clients.whatsapp_client import WhatsAppClient
 from shared.repositories import UserRepository, BeneficiaryRepository
 from shared.cache.redis_client import RedisClient
-from shared.cache.redis_client import RedisClient
 
-from apps.core.src.agent.models import ClassificationResult, PlannerOutput
 from apps.core.src.agent.orchestrator.flow_completion_callback import (
     OrchestratorFlowCompletionCallback)
 from apps.core.src.agent.orchestrator.services import ConversationResponder, TaskQueueService, TaskExecutor
 from apps.core.src.agent.transfer import TransferService
 from apps.core.src.agent.airtime import AirtimeService
-from shared.types.agent_types import TaskStatus
 
 from apps.core.src.agent.orchestrator.features.context.service import OrchestratorContextManager
 from apps.core.src.agent.orchestrator.features.classification.service import OrchestratorClassificationService
@@ -68,6 +60,8 @@ class OrchestratorAgent:
         self.transfer_service = transfer_service
         self.airtime_service = airtime_service
         self.task_executor = task_executor
+        self.query_service = query_service
+        self.account_management_service = account_management_service
 
         self.context_manager = OrchestratorContextManager(
             user_repo,

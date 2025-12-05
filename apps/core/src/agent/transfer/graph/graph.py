@@ -1,13 +1,7 @@
 """LangGraph graph for transfer flow."""
 
-import os
-import re
 import json
-
 from typing import Optional, cast, TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from apps.core.src.agent.services.flow_completion_callback import FlowCompletionCallback
 import asyncio
 
 from langchain_core.runnables import RunnableConfig
@@ -37,7 +31,9 @@ from .state import (
     has_substantial_transfer_data,
     clear_all_transfer_state,
 )
-from .utils import debug_log
+from shared.utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 
 class TransferFlowGraph:
@@ -92,11 +88,11 @@ class TransferFlowGraph:
             if self._checkpointer:
                 thread_id = config["configurable"]["thread_id"]
                 await self._checkpointer.adelete_thread(thread_id)
-                debug_log(f"✅ Cleared transfer checkpoint for {phone_number}")
+                logger.info(f"Cleared transfer checkpoint for {phone_number}")
             else:
-                debug_log(f"⚠️  Checkpointer not initialized, cannot clear checkpoint for {phone_number}")
+                logger.warning(f"Checkpointer not initialized, cannot clear checkpoint for {phone_number}")
         except Exception as e:
-            debug_log(f"⚠️  Error clearing transfer checkpoint: {e}")
+            logger.error(f"Error clearing transfer checkpoint: {e}")
 
     async def _ensure_checkpointer(self):
         """Ensure checkpointer is initialized and graph is compiled."""
@@ -123,7 +119,7 @@ class TransferFlowGraph:
 
     async def run(self, phone_number: str, message: str, message_id: str, classification_result: Optional[dict] = None) -> str:
         """Run the transfer flow graph."""
-        print(f"🔍 [TRANSFER_GRAPH] run called with message: '{message}'")
+        logger.info(f"run called with message: '{message}'")
         await self._ensure_checkpointer()
 
         config: RunnableConfig = {
@@ -219,7 +215,7 @@ class TransferFlowGraph:
                 is_new_task_start = has_task_params and not has_account_number
                 
                 if checkpoint_transfer_status == "collection_complete" and is_new_task_start:
-                    debug_log(f"🧹 [GRAPH] Clearing stale collection_complete status for new task")
+                    logger.debug(f"Clearing stale collection_complete status for new task")
                     input_state["transfer_status"] = None
                     input_state["flow_state"] = "extracting"
                     # CRITICAL: Clear ALL task-specific data for new task to prevent data leakage
@@ -249,13 +245,13 @@ class TransferFlowGraph:
                         
                         if task_amount:
                             input_state["amount"] = float(task_amount)
-                            debug_log(f"🔍 [GRAPH] Set amount from task_parameters: {task_amount}")
+                            logger.debug(f"Set amount from task_parameters: {task_amount}")
                         
                         if task_recipient:
                             input_state["recipient_name"] = task_recipient
-                            debug_log(f"🔍 [GRAPH] Set recipient_name from task_parameters: {task_recipient}")
+                            logger.debug(f"Set recipient_name from task_parameters: {task_recipient}")
                 
-                debug_log(f"🔍 [GRAPH] Message update - old: '{old_message}' -> new: '{message}'")
+                logger.debug(f"Message update - old: '{old_message}' -> new: '{message}'")
                 
                 checkpoint_transfer_status = input_state.get("transfer_status")
                 
@@ -300,7 +296,7 @@ class TransferFlowGraph:
                     if is_new_transfer_intent and (input_state.get("amount") or input_state.get("recipient_account")):
                         # Only clear if this is truly a NEW transfer (not continuing an existing one or complex transfer)
                         if not has_task_params and not is_continuing_flow:
-                            debug_log(f"🧹 [GRAPH] Clearing old transfer values - new intent detected, not a complex transfer")
+                            logger.debug(f"Clearing old transfer values - new intent detected, not a complex transfer")
                             # Clear old transfer values
                             input_state["amount"] = None
                             input_state["recipient_account"] = None
@@ -316,7 +312,7 @@ class TransferFlowGraph:
                             prev_key = f"transfer:prev:{phone_number}:{input_state.get('idempotency_key', '')}"
                             await self.redis_client.delete(prev_key)
                         else:
-                            debug_log(f"🔍 [GRAPH] Preserving transfer values - has_task_params={has_task_params}, is_continuing_flow={is_continuing_flow}")
+                            logger.debug(f"Preserving transfer values - has_task_params={has_task_params}, is_continuing_flow={is_continuing_flow}")
 
                 # Session-based transfer management
                 stale_transfer_status = input_state.get("transfer_status")
@@ -377,8 +373,8 @@ class TransferFlowGraph:
                 
                 # Debug logging
                 current_amount = input_state.get("amount")
-                debug_log(f"🔍 [GRAPH] Message: '{message}', has_amount_keywords={has_amount_keywords}, has_account_in_message={has_account_in_message}, account_numbers={account_numbers_in_message}")
-                debug_log(f"🔍 [GRAPH] State: amount={current_amount}, stale_recipient={stale_recipient}, stale_bank={stale_bank}, flow_state={current_flow_state}, transfer_status={stale_transfer_status}")
+                logger.debug(f"Message: '{message}', has_amount_keywords={has_amount_keywords}, has_account_in_message={has_account_in_message}, account_numbers={account_numbers_in_message}")
+                logger.debug(f"State: amount={current_amount}, stale_recipient={stale_recipient}, stale_bank={stale_bank}, flow_state={current_flow_state}, transfer_status={stale_transfer_status}")
 
                 should_clear_recipient = False
                 # CRITICAL FIX: Don't clear recipient if user is providing account details (collecting_recipient state)
@@ -390,10 +386,10 @@ class TransferFlowGraph:
                     stale_transfer_status not in ("pending", "collection_complete")):
                     if not has_account_in_message:
                         should_clear_recipient = True
-                        debug_log(f"🔍 [GRAPH] Will clear recipient: has_amount_keywords={has_amount_keywords}, has_account_in_message={has_account_in_message}, flow_state={current_flow_state}, transfer_status={stale_transfer_status}")
+                        logger.debug(f"Will clear recipient: has_amount_keywords={has_amount_keywords}, has_account_in_message={has_account_in_message}, flow_state={current_flow_state}, transfer_status={stale_transfer_status}")
 
                 if should_clear_recipient:
-                    debug_log(f"🧹 [GRAPH] Clearing stale recipient data")
+                    logger.debug(f"Clearing stale recipient data")
                     input_state["recipient_account"] = None
                     input_state["recipient_bank_code"] = None
                     input_state["recipient_bank_name"] = None

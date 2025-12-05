@@ -4,7 +4,7 @@ from typing import Any
 
 from langchain_openai import ChatOpenAI
 
-from apps.core.src.agent.models.classification import ClassificationResult
+from apps.core.src.agent.orchestrator.models.classification import ClassificationResult
 
 
 class ConversationResponder:

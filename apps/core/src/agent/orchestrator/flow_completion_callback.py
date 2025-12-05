@@ -9,12 +9,10 @@ from apps.core.src.agent.orchestrator.services.task_queue_service import TaskQue
 from shared.types.agent_types import TaskStatus
 from shared.cache.redis_client import RedisClient
 from shared.config import settings
+from shared.utils.logging import get_logger
 import time
 
-
-def debug_log(message: str) -> None:
-    """Simple debug logging."""
-    print(message)
+logger = get_logger(__name__)
 
 
 class OrchestratorFlowCompletionCallback:
@@ -110,6 +108,9 @@ class OrchestratorFlowCompletionCallback:
                 # Format task description with resolved account name
                 if account_resolved and isinstance(account_resolved, dict):
                     account_name = account_resolved.get("account_name", recipient or "Recipient")
+                    if account_name:
+                        account_name = account_name.strip().title()
+                    
                     account_number = result_data.get("recipient_account", "") if isinstance(result_data, dict) else ""
                     bank_name = result_data.get("recipient_bank_name", "") if isinstance(result_data, dict) else ""
                     
@@ -117,7 +118,8 @@ class OrchestratorFlowCompletionCallback:
                     masked_account = mask_account_number(account_number) if account_number else ""
                     task_line = f"{i}️⃣ Transfer {format_amount(amount)}\n   To: {account_name}\n   Account: {masked_account}\n   Bank: {bank_name}"
                 else:
-                    task_line = f"{i}️⃣ Transfer {format_amount(amount)} to {recipient or 'Recipient'}"
+                    recipient_display = (recipient or 'Recipient').strip().title()
+                    task_line = f"{i}️⃣ Transfer {format_amount(amount)} to {recipient_display}"
                 
                 auth_tasks.append(task_line)
             
@@ -202,9 +204,9 @@ class OrchestratorFlowCompletionCallback:
             redis_client = RedisClient.get_client()
             conversation_state_key = f"user:{phone_number}:conversation_state"
             await redis_client.delete(conversation_state_key)
-            print(f"✅ Cleared conversation_state for {phone_number} after all tasks completed")
+            logger.info(f"Cleared conversation_state for {phone_number} after all tasks completed")
         except Exception as e:
-            print(f"⚠️  Error clearing conversation_state: {e}")
+            logger.error(f"Error clearing conversation_state: {e}")
 
     async def on_flow_complete(
         self,
@@ -240,16 +242,16 @@ class OrchestratorFlowCompletionCallback:
                         TaskStatus.COLLECTION_COMPLETE, 
                         result
                     )
-                    print(f"✅ Marked task {current_task_id} ({flow_type}) as COLLECTION_COMPLETE (ready for authorization)")
+                    logger.info(f"Marked task {current_task_id} ({flow_type}) as COLLECTION_COMPLETE (ready for authorization)")
                     
                     # CRITICAL: Clear transfer checkpoint so next task starts fresh
                     # The checkpoint has transfer_status=collection_complete which would cause next task to end immediately
                     if flow_type == "transfer" and hasattr(self.orchestrator, 'transfer'):
                         try:
                             await self.orchestrator.transfer.clear_checkpoint(phone_number)
-                            debug_log(f"🧹 [CALLBACK] Cleared transfer checkpoint for {phone_number} after task {current_task_id} reached collection_complete")
+                            logger.debug(f"[CALLBACK] Cleared transfer checkpoint for {phone_number} after task {current_task_id} reached collection_complete")
                         except Exception as e:
-                            debug_log(f"⚠️  [CALLBACK] Error clearing transfer checkpoint: {e}")
+                            logger.error(f"[CALLBACK] Error clearing transfer checkpoint: {e}")
                 else:
                     # Task fully completed (authorized) - mark as COMPLETED
                     await self.task_queue_service.update_task_status(
@@ -258,7 +260,7 @@ class OrchestratorFlowCompletionCallback:
                         TaskStatus.COMPLETED, 
                         result
                     )
-                    print(f"✅ Marked task {current_task_id} ({flow_type}) as COMPLETED")
+                    logger.info(f"Marked task {current_task_id} ({flow_type}) as COMPLETED")
             
             # Get task statuses to check if all are ready
             planner_output = await self.task_queue_service.get_task_queue(phone_number)
@@ -297,7 +299,7 @@ class OrchestratorFlowCompletionCallback:
             
             if is_collection_complete and all_tasks_ready:
                 # All tasks are ready - show summary instead of moving to next task
-                debug_log(f"🔍 [CALLBACK] All tasks ready for batch authorization")
+                logger.debug(f"[CALLBACK] All tasks ready for batch authorization")
                 summary = await self._generate_batch_summary(phone_number)
                 if hasattr(self.orchestrator, 'whatsapp_client'):
                     # Use WhatsApp Flow for batch authorization
@@ -345,21 +347,21 @@ class OrchestratorFlowCompletionCallback:
             # This prevents re-executing tasks that are already collection_complete
             if not completed_task_id:
                 # No task was marked - this shouldn't happen, but prevent loop
-                debug_log(f"⚠️  [CALLBACK] No completed_task_id found, cannot identify completed task")
+                logger.warning(f"[CALLBACK] No completed_task_id found, cannot identify completed task")
                 return
             
             # Verify the completed_task_id is in all_done_task_ids (should be after marking)
             if completed_task_id not in all_done_task_ids:
-                debug_log(f"⚠️  [CALLBACK] Completed task {completed_task_id} not found in done tasks, may not have been marked correctly")
+                logger.warning(f"[CALLBACK] Completed task {completed_task_id} not found in done tasks, may not have been marked correctly")
             
             next_task = await self.task_queue_service.get_next_task(phone_number)
             if next_task:
                 # Prevent loop: verify next task is different from completed/collection_complete ones
                 if next_task.id in all_done_task_ids:
-                    print(f"⚠️  Next task {next_task.id} is already completed/collection_complete, skipping to prevent loop")
+                    logger.warning(f"Next task {next_task.id} is already completed/collection_complete, skipping to prevent loop")
                     # Also check if it's the same as the task that just completed
                     if next_task.id == completed_task_id:
-                        print(f"⚠️  Next task {next_task.id} is same as just-completed task {completed_task_id}, this is a bug")
+                        logger.warning(f"Next task {next_task.id} is same as just-completed task {completed_task_id}, this is a bug")
                     # Check if there are more tasks or if we should clear the queue
                     planner_output = await self.task_queue_service.get_task_queue(phone_number)
                     if planner_output:
@@ -380,13 +382,13 @@ class OrchestratorFlowCompletionCallback:
                 
                 # CRITICAL: Also check if next_task is the same as the task that just completed
                 if next_task.id == completed_task_id:
-                    print(f"⚠️  Next task {next_task.id} is same as just-completed task {completed_task_id}, skipping to prevent loop")
+                    logger.warning(f"Next task {next_task.id} is same as just-completed task {completed_task_id}, skipping to prevent loop")
                     return
                 
                 # Check if task is already in progress (shouldn't happen after clearing, but safety check)
                 current_task_id = await self.task_queue_service.get_current_task(phone_number)
                 if current_task_id == next_task.id:
-                    print(f"⚠️  Task {next_task.id} is already in progress, skipping to prevent loop")
+                    logger.warning(f"Task {next_task.id} is already in progress, skipping to prevent loop")
                     return
                 
                 # Set the next task as current before executing to prevent race conditions
@@ -411,11 +413,11 @@ class OrchestratorFlowCompletionCallback:
                                 break
                     
                     # Debug logging: verify task IDs are different
-                    print(f"🔍 Task identification: completed_task_id={completed_task.id if completed_task else None} (saved_completed_task_id={completed_task_id}), next_task_id={next_task.id}")
+                    logger.debug(f"Task identification: completed_task_id={completed_task.id if completed_task else None} (saved_completed_task_id={completed_task_id}), next_task_id={next_task.id}")
                     
                     # Also verify this is NOT the same as next_task
                     if completed_task and completed_task.id == next_task.id:
-                        print(f"⚠️  Completed task {completed_task.id} is same as next task, skipping transition")
+                        logger.warning(f"Completed task {completed_task.id} is same as next task, skipping transition")
                         completed_task = None
                     
                     # Build transition message only if tasks are different
@@ -454,7 +456,7 @@ class OrchestratorFlowCompletionCallback:
                                     phone_number, next_task_response
                                 )
                     
-                    print(f"✅ Flow {flow_type} completed. Next task ready: {next_task.id} ({next_task.executor})")
+                    logger.info(f"Flow {flow_type} completed. Next task ready: {next_task.id} ({next_task.executor})")
             else:
                 # All tasks completed - generate and send summary
                 summary = await self._generate_completion_summary(phone_number)
@@ -471,4 +473,4 @@ class OrchestratorFlowCompletionCallback:
                 # Clear conversation state to prevent any active flows from continuing
                 await self._clear_conversation_state(phone_number)
                 
-                print(f"✅ All tasks completed for {phone_number}")
+                logger.info(f"All tasks completed for {phone_number}")

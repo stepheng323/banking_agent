@@ -6,7 +6,7 @@ from typing import Any, cast
 
 from apps.core.src.agent.airtime.state import AirtimeState
 from apps.core.src.agent.airtime.extractor import AirtimeEntityExtractor
-from apps.core.src.agent.models.airtime_extraction import AirtimeExtractionResult, SimpleAirtimeEntities
+from apps.core.src.agent.airtime.models import AirtimeExtractionResult, SimpleAirtimeEntities
 from ..graph.utils import debug_log
 
 

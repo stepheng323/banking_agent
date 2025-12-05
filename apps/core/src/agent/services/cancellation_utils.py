@@ -4,7 +4,7 @@ import json
 from typing import Dict, Any, Literal, Optional
 
 from shared.cache.redis_client import RedisClient, Redis
-from apps.core.src.agent.models.classification import ClassificationResult
+from apps.core.src.agent.orchestrator.models.classification import ClassificationResult
 
 
 async def get_classification_result(phone_number: str) -> Optional[ClassificationResult]:

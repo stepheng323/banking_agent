@@ -9,7 +9,11 @@ _log_level = (os.getenv("LOG_LEVEL") or "").lower()
 DEBUG_MODE = _flag in ("1", "true", "yes", "on") or _log_level == "debug"
 
 
+from shared.utils.logging import get_logger
+
+logger = get_logger("transfer_nodes")
+
 def debug_log(message: str) -> None:
-    """Conditional debug logging - only logs if DEBUG env var is set."""
+    """Conditional debug logging - now using structlog."""
     if DEBUG_MODE:
-        print(message)
+        logger.debug(message)

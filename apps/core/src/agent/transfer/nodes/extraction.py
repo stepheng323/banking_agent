@@ -3,8 +3,8 @@
 from typing import Any, cast
 import time
 
-from apps.core.src.agent.models.transfer import SimpleTransferEntities
-from apps.core.src.agent.models.transfer_extraction import TransferExtractionResult
+from apps.core.src.agent.transfer.models import SimpleTransferEntities
+from apps.core.src.agent.transfer.models_extraction import TransferExtractionResult
 from apps.core.src.agent.transfer.extractor import TransferEntityExtractor
 from apps.core.src.agent.transfer.state import TransferState
 

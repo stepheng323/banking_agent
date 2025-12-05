@@ -3,7 +3,7 @@
 from typing import List, Literal
 from pydantic import BaseModel, Field
 
-from apps.core.src.agent.models.transfer import SimpleTransferEntities
+from apps.core.src.agent.transfer.models import SimpleTransferEntities
 
 
 class TransferExtractionResult(BaseModel):

@@ -7,8 +7,9 @@ from shared.utils.serialization import sqlalchemy_to_dict
 
 from apps.core.src.agent.beneficiary.matcher import BeneficiaryMatcher
 from apps.core.src.agent.transfer.state import TransferState
+from shared.utils.logging import get_logger
 
-from .utils import debug_log
+logger = get_logger(__name__)
 
 
 async def find_beneficiary(
@@ -17,18 +18,22 @@ async def find_beneficiary(
 ) -> TransferState:
     """Find beneficiary by name (optional convenience feature). Account resolution happens via banking API."""
     rec_name = state.get("recipient_name")
+    # Title case recipient name for better presentation
+    if rec_name:
+        rec_name = rec_name.strip().title()
+        
     acct_number = state.get("recipient_account")
     bank_code = state.get("recipient_bank_code")
     bank_name = state.get("recipient_bank_name")
     beneficiaries = state.get("beneficiaries", [])
     
     # Debug logging
-    debug_log(f"🔍 [BENEFICIARY] Input: rec_name={rec_name}, acct_number={acct_number}, bank_code={bank_code}, bank_name={bank_name}")
+    logger.debug("Beneficiary check input", rec_name=rec_name, acct_number=acct_number, bank_code=bank_code, bank_name=bank_name)
 
     # CRITICAL FIX: If account and bank are already provided, skip beneficiary matching
     # This prevents re-asking for account details when user has already provided them
     if acct_number and (bank_code or bank_name):
-        debug_log(f"✅ [BENEFICIARY] Account and bank already provided, skipping beneficiary matching")
+        logger.debug("Account and bank already provided, skipping beneficiary matching")
         # Account and bank are present, no need to match beneficiaries
         # Just ensure we have the required fields and return state
         if acct_number and (bank_code or bank_name):
@@ -136,8 +141,13 @@ async def find_beneficiary(
         if (current_account and current_bank and
                 (beneficiary_account != current_account or beneficiary_bank_code != current_bank)):
             updates["matched_beneficiary"] = None
-            debug_log(
-                f"DEBUG find_beneficiary: Clearing stale matched_beneficiary (beneficiary: {beneficiary_account}/{beneficiary_bank_code} != current: {current_account}/{current_bank})")
+            logger.debug(
+                "Clearing stale matched_beneficiary",
+                beneficiary_account=beneficiary_account,
+                beneficiary_bank=beneficiary_bank_code,
+                current_account=current_account,
+                current_bank=current_bank
+            )
 
     if acct_number and (bank_code or bank_name):
         result_state = {

@@ -1,20 +1,20 @@
 """Batch executor service for parallel task execution."""
 
 import asyncio
-import time
-from typing import List, Dict, Any, Optional, TYPE_CHECKING
+from typing import List, Dict, Any, Optional, TYPE_CHECKING, Union
 
 from shared.cache.redis_client import RedisClient
 from shared.clients.whatsapp_client import WhatsAppClient
 from apps.core.src.agent.orchestrator.services.task_queue_service import TaskQueueService
 from apps.core.src.agent.batch.utils import (
     ExecutionState,
-    requires_authorization,
     format_amount,
-    mask_account_number,
 )
-from apps.core.src.agent.models.planner import PlannedTask
+from apps.core.src.agent.orchestrator.models.planner import PlannedTask
 from shared.types.agent_types import TaskStatus
+from shared.utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 if TYPE_CHECKING:
     from apps.core.src.agent.transfer.service import TransferService
@@ -100,7 +100,7 @@ async def execute_batch(
         
         for i, result in enumerate(results):
             if isinstance(result, Exception):
-                print(f"❌ [BATCH] Task {tasks_to_execute[i].id} raised exception: {result}")
+                logger.error(f"[BATCH] Task {tasks_to_execute[i].id} raised exception: {result}")
                 failed.append({
                     "task": tasks_to_execute[i],
                     "error": str(result)
@@ -118,7 +118,7 @@ async def execute_batch(
         await task_queue_service.clear_task_queue(phone_number)
         await redis_client.delete(f"queue:{phone_number}:execution_state")
         
-        print(f"✅ [BATCH] Completed {len(completed)}/{total} tasks for {phone_number}")
+        logger.info(f"[BATCH] Completed {len(completed)}/{total} tasks for {phone_number}")
         
         return {
             "completed": len(completed),
@@ -128,9 +128,7 @@ async def execute_batch(
         }
     
     except Exception as e:
-        print(f"❌ [BATCH] Error executing batch: {e}")
-        import traceback
-        traceback.print_exc()
+        logger.error(f"[BATCH] Error executing batch: {e}", exc_info=True)
         
         # Send error message to user
         try:
@@ -174,7 +172,7 @@ async def _execute_single_task(
         # Check for cancellation
         cancelled = await redis_client.get(f"queue:{phone_number}:cancel_batch")
         if cancelled:
-            print(f"⚠️  [BATCH] Task {task.id} cancelled before execution")
+            logger.warning(f"[BATCH] Task {task.id} cancelled before execution")
             return {
                 "success": False,
                 "cancelled": True,
@@ -189,7 +187,7 @@ async def _execute_single_task(
             TaskStatus.IN_PROGRESS
         )
         
-        print(f"🔄 [BATCH] Executing task {task.id}: {task_desc}")
+        logger.info(f"[BATCH] Executing task {task.id}: {task_desc}")
         
         # Execute based on type
         if task.executor == "transfer":
@@ -229,7 +227,7 @@ async def _execute_single_task(
             success_msg = _format_success_message(task, result)
             await whatsapp_client.send_text(phone_number, success_msg)
             
-            print(f"✅ [BATCH] Task {task.id} completed: {task_desc}")
+            logger.info(f"[BATCH] Task {task.id} completed: {task_desc}")
         else:
             await task_queue_service.update_task_status(
                 phone_number,
@@ -245,16 +243,13 @@ async def _execute_single_task(
                 f"⚠️ {task_desc} failed: {error_msg}"
             )
             
-            print(f"⚠️  [BATCH] Task {task.id} failed: {error_msg}")
+            logger.error(f"[BATCH] Task {task.id} failed: {error_msg}")
         
         return result
         
     except Exception as e:
-        print(f"❌ [BATCH] Task {task.id} exception: {e}")
-        import traceback
-        traceback.print_exc()
+        logger.error(f"[BATCH] Task {task.id} exception: {e}", exc_info=True)
         
-        # Mark as failed
         await task_queue_service.update_task_status(
             phone_number,
             task.id,
@@ -262,7 +257,6 @@ async def _execute_single_task(
             {"error": str(e)}
         )
         
-        # Send error message
         await whatsapp_client.send_text(
             phone_number,
             f"❌ {task_desc} error: {str(e)}"
@@ -303,7 +297,9 @@ async def _execute_transfer_task(
                 "thread_id": f"transfer:{phone_number}",
             }
         }
-        final_state = await transfer_service.graph.graph.aget_state(config)
+        final_state = None
+        if transfer_service.graph.graph:
+            final_state = await transfer_service.graph.graph.aget_state(config)
         
         if final_state and final_state.values:
             transfer_status = final_state.values.get("transfer_status")
@@ -324,7 +320,7 @@ async def _execute_transfer_task(
         return {"success": True, "response": response}
         
     except Exception as e:
-        print(f"Error executing transfer task: {e}")
+        logger.error(f"Error executing transfer task: {e}")
         return {"success": False, "error": str(e)}
 
 
@@ -350,7 +346,7 @@ async def _execute_airtime_task(
         }
         
     except Exception as e:
-        print(f"Error executing airtime task: {e}")
+        logger.error(f"Error executing airtime task: {e}")
         return {"success": False, "error": str(e)}
 
 

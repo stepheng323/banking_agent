@@ -4,7 +4,7 @@ from typing import Optional, Dict, Any
 
 from langchain_openai import ChatOpenAI
 
-from apps.core.src.agent.models.airtime_extraction import AirtimeExtractionResult
+from apps.core.src.agent.airtime.models import AirtimeExtractionResult
 from apps.core.src.agent.airtime.prompt.airtime_extraction import AIRTIME_EXTRACTION_PROMPT
 
 

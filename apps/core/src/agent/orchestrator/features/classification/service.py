@@ -5,7 +5,7 @@ from typing import Any, Optional
 
 from langchain_core.runnables import Runnable
 from langchain_core.messages import AIMessage
-from apps.core.src.agent.models.classification import ClassificationResult
+from apps.core.src.agent.orchestrator.models.classification import ClassificationResult
 
 
 class OrchestratorClassificationService:

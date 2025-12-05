@@ -6,7 +6,7 @@ from typing import Dict, Any, Optional
 from shared.clients.whatsapp_client import WhatsAppClient
 from shared.cache.redis_client import RedisClient
 from shared.repositories.beneficiary_repository import BeneficiaryRepository
-from apps.core.src.agent.services.beneficiary_suggestion_service import BeneficiarySuggestionService
+from apps.core.src.agent.beneficiary.suggestion_service import BeneficiarySuggestionService
 
 
 class AirtimeService:

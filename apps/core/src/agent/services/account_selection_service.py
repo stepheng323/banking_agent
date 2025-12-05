@@ -57,7 +57,6 @@ class AccountSelectionService:
         if selected is not None:
             return selected, None
         
-        # Need to ask user to select
         account_list = format_accounts_list(accounts)
         print(f"DEBUG AccountSelectionService: accounts count={len(accounts)}, formatted_list={account_list[:100] if account_list else 'EMPTY'}")
         
