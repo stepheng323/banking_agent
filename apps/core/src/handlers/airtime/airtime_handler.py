@@ -6,7 +6,7 @@ from typing import Dict, Any
 
 from shared.clients.payment_provider_factory import PaymentProviderFactory
 from shared.repositories.unit_of_work import UnitOfWork
-from apps.core.src.handlers.airtime.airtime_service import AirtimeNotificationService
+from apps.core.src.handlers.airtime.airtime_service import AirtimeCompletionService
 
 
 class AirtimeHandler:
@@ -14,13 +14,13 @@ class AirtimeHandler:
 
     def __init__(
         self,
-        airtime_service: AirtimeNotificationService,
+        airtime_service: AirtimeCompletionService,
     ):
         """
         Initialize airtime handler.
 
         Args:
-            airtime_service: AirtimeNotificationService instance for notifications and cleanup
+            airtime_service: AirtimeCompletionService instance for notifications and cleanup
         """
         self.airtime_service = airtime_service
 
