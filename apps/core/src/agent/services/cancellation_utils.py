@@ -1,13 +1,18 @@
 """Shared cancellation utilities for all transaction flows (transfer, airtime, data)."""
 
 import json
-from typing import Dict, Any, Literal, Optional
+from typing import Dict, Any, Literal, Optional, TYPE_CHECKING
 
 from shared.cache.redis_client import RedisClient, Redis
-from apps.core.src.agent.orchestrator.models.classification import ClassificationResult
+from shared.utils.logging import get_logger
+
+logger = get_logger(__name__)
+
+if TYPE_CHECKING:
+    from apps.core.src.agent.orchestrator.models.classification import ClassificationResult
 
 
-async def get_classification_result(phone_number: str) -> Optional[ClassificationResult]:
+async def get_classification_result(phone_number: str) -> Optional["ClassificationResult"]:
     """
     Get the latest classification result from conversation state.
 
@@ -18,6 +23,7 @@ async def get_classification_result(phone_number: str) -> Optional[Classificatio
         ClassificationResult if available, None otherwise
     """
     try:
+        from apps.core.src.agent.orchestrator.models.classification import ClassificationResult
         redis_client = RedisClient.get_client()
         key = f"user:{phone_number}:last_classification"
         data = await redis_client.get(key)
@@ -25,7 +31,7 @@ async def get_classification_result(phone_number: str) -> Optional[Classificatio
             result_dict = json.loads(data)
             return ClassificationResult.model_validate(result_dict)
     except Exception as e:
-        print(f"⚠️  Error retrieving classification result: {e}")
+        logger.warning(f"Error retrieving classification result: {e}")
     return None
 
 
