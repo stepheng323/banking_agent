@@ -25,6 +25,7 @@ from shared.repositories.account_repository import AccountRepository
 from shared.clients.whatsapp_client import WhatsAppClient
 from shared.cache.redis_client import Redis
 from shared.queue.redis_queue import RedisQueue
+from apps.core.src.agent.tools.authorization.service import AuthorizationService
 
 from .routing import route_by_state, route_after_extract
 
@@ -44,6 +45,7 @@ def build_graph(
 ) -> StateGraph:
     """Build the LangGraph workflow."""
     workflow = StateGraph(TransferState)
+    authorization_service = AuthorizationService(redis_client=redis_client)
 
     async def extract_node(state: TransferState) -> TransferState:
         return await extract_entities(state, extractor)
@@ -86,8 +88,9 @@ def build_graph(
 
     async def authorize_node(state: TransferState) -> TransferState:
         return await authorize_transaction(
-            state, redis_client, queue
+            state, redis_client, queue, authorization_service
         )
+
 
     async def cancellation_node(state: TransferState) -> TransferState:
         return await handle_cancellation(state, redis_client)
