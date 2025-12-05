@@ -6,7 +6,7 @@ from typing import Dict, Any
 
 from shared.clients.payment_provider_factory import PaymentProviderFactory
 from shared.repositories.unit_of_work import UnitOfWork
-from apps.core.src.handlers.airtime.airtime_service import AirtimeCompletionService
+from apps.core.src.agent.completion.airtime import AirtimeCompletionService
 
 
 class AirtimeHandler:

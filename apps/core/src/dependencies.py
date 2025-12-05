@@ -22,9 +22,9 @@ from apps.core.src.handlers import (
     OnboardingService,
     TransferHandler,
 )
-from apps.core.src.handlers.transfer.transfer_service import TransferCompletionService
+from apps.core.src.agent.completion.transfer import TransferCompletionService
 from apps.core.src.handlers.airtime import AirtimeHandler
-from apps.core.src.handlers.airtime.airtime_service import AirtimeCompletionService
+from apps.core.src.agent.completion.airtime import AirtimeCompletionService
 from apps.core.src.agent.beneficiary.suggestion_service import BeneficiarySuggestionService
 from apps.core.src.agent.query.service import QueryService
 from apps.core.src.agent.account_management.service import AccountManagementService

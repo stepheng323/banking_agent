@@ -6,7 +6,7 @@ from typing import Dict, Any
 
 from shared.clients.payment_provider_factory import PaymentProviderFactory
 from shared.repositories.unit_of_work import UnitOfWork
-from apps.core.src.handlers.transfer.transfer_service import TransferCompletionService
+from apps.core.src.agent.completion.transfer import TransferCompletionService
 
 
 class TransferHandler:
