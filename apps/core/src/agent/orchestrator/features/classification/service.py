@@ -5,7 +5,7 @@ from typing import Any, Optional
 
 from langchain_core.runnables import Runnable
 from langchain_core.messages import AIMessage
-from apps.core.src.agent.models.classification import ClassificationResult
+from apps.core.src.agent.orchestrator.models.classification import ClassificationResult
 
 
 class OrchestratorClassificationService:
@@ -32,12 +32,10 @@ class OrchestratorClassificationService:
         
         text_clean = text.strip().lower()
         
-        # Get active flow from context
         active_flow = None
         if context and context.get("conversationState"):
             active_flow = context["conversationState"].get("active_flow")
         
-        # 1. CANCELLATION - Always safe to detect
         cancel_patterns = {"cancel", "stop", "abort", "nevermind", "forget it", "no thanks"}
         if text_clean in cancel_patterns:
             return ClassificationResult(
@@ -45,57 +43,59 @@ class OrchestratorClassificationService:
                 is_cancellation=True,
                 is_complex=False,
                 confidence=0.99,
+                response="Transaction cancelled.",
+                complexity_reason="Simple single intent",
             )
         
-        # 2. YES/NO/CONFIRM - Only when there's NO active flow (answering questions)
-        # If there's an active flow, these might be answering "how much?" etc.
         if not active_flow:
             if text_clean in {"yes", "ok", "sure", "confirm", "proceed"}:
                 return ClassificationResult(
                     intent="yes",
                     is_complex=False,
                     confidence=0.95,
+                    response="Confirmed.",
+                    complexity_reason="Simple single intent",
                 )
             if text_clean in {"no", "skip", "nope"}:
                 return ClassificationResult(
                     intent="no",
                     is_complex=False,
                     confidence=0.95,
+                    response="Declined.",
+                    complexity_reason="Simple single intent",
                 )
         
-        # 3. SIMPLE AMOUNTS - Only when there's an active flow
-        # This is safe because we know they're answering "how much?"
+
         if active_flow in {"transfer", "airtime", "data"}:
-            # Match: "5000", "5k", "N5000", "10k", etc.
             amount_match = re.match(r'^[nN]?\s*(\d+)[kK]?$', text_clean)
             if amount_match:
                 return ClassificationResult(
-                    intent=active_flow,  # Continue the active flow
+                    intent=active_flow,
                     is_complex=False,
                     confidence=0.98,
+                    response="Amount received.",
+                    complexity_reason="Simple amount detected",
                 )
         
-        # 4. ACCOUNT NUMBERS - Only when active flow is transfer
         if active_flow == "transfer":
-            # 10-digit account number
             if re.match(r'^\d{10}$', text_clean):
                 return ClassificationResult(
                     intent="transfer",
                     is_complex=False,
                     confidence=0.97,
+                    response="Account number received.",
+                    complexity_reason="Account number detected",
                 )
         
-        # 5. PHONE NUMBERS - Only when active flow is airtime/data
         if active_flow in {"airtime", "data"}:
-            # Nigerian phone number (11 digits starting with 0, or 10 digits)
             if re.match(r'^0\d{10}$|^\d{10}$', text_clean):
                 return ClassificationResult(
                     intent=active_flow,
                     is_complex=False,
                     confidence=0.97,
+                    response="Phone number received.",
+                    complexity_reason="Phone number detected",
                 )
-        
-        # Cannot safely classify - use LLM
         return None
 
     async def classify(
@@ -105,19 +105,39 @@ class OrchestratorClassificationService:
         last_response: Optional[str] = None,
     ) -> ClassificationResult:
         """Classify user intent from text."""
-        # Try fast path first
         fast_result = self._try_fast_path(text, context)
         if fast_result:
             print(f"⚡ Fast path: '{text[:50]}' → {fast_result.intent} (confidence: {fast_result.confidence})")
             return fast_result
         
-        # Fall back to LLM classification
+
 
         system = (
             "You are an intent classifier for a banking assistant. "
-            "Classify messages into: transfer, airtime, data, conversational, cancel, yes, no, confirm, skip, unknown. "
+            "Classify messages into: transfer, airtime, data, query, manage_accounts, conversational, cancel, yes, no, confirm, skip, unknown. "
             "Determine complexity (multi-step reasoning, dynamic amounts, pooling accounts, historical references, multiple transactions). "
             "Work across languages: English, Yoruba, Hausa, Igbo, Nigerian Pidgin, French, and more.\n\n"
+            
+            "**QUERY INTENT (FINANCIAL QUESTIONS):**\n"
+            "- If a message is asking about transaction history, spending patterns, or financial insights, classify as 'query'\n"
+            "- Examples of query intent:\n"
+            "  - 'How much did I spend yesterday?' → intent: query\n"
+            "  - 'Who did I send money to the most?' → intent: query\n"
+            "  - 'Show me all my Uber transactions' → intent: query\n"
+            "  - 'Where did my money go this month?' → intent: query\n"
+            "  - 'How much did I send to mum?' → intent: query\n"
+            "- Query intent is for QUESTIONS about past transactions, not requests to make new transactions\n\n"
+            
+            "**MANAGE_ACCOUNTS INTENT (ACCOUNT MANAGEMENT):**\n"
+            "- If a message is about managing linked bank accounts, classify as 'manage_accounts'\n"
+            "- Examples of manage_accounts intent:\n"
+            "  - 'Show my accounts' → intent: manage_accounts\n"
+            "  - 'List my linked accounts' → intent: manage_accounts\n"
+            "  - 'Set GTBank as default' → intent: manage_accounts\n"
+            "  - 'Unlink my Access account' → intent: manage_accounts\n"
+            "  - 'Link a new account' → intent: manage_accounts\n"
+            "  - 'Add another bank account' → intent: manage_accounts\n"
+            "  - Numeric responses (1, 2, 3) when in account selection context → intent: manage_accounts\n\n"
             
             "**COMPLEX TRANSACTIONS (MULTIPLE OPERATIONS):**\n"
             "- If a message contains multiple transfers, airtime purchases, or a mix of operations, it is COMPLEX\n"
@@ -204,7 +224,7 @@ class OrchestratorClassificationService:
                 beneficiary_type = suggestion.get("beneficiary_type", "transfer")
                 
                 # Use the actual last_response to understand what was asked
-                context_message = f"The assistant just asked about saving a beneficiary."
+                context_message = f"The assistant just asked about saving a beneficiary: {recipient_name}."
                 if last_response:
                     # Include the actual last response to help classifier understand the context
                     context_message = f"The assistant's last message was: '{last_response}'"

@@ -12,6 +12,7 @@ class CreateAccount(BaseModel):
     bank_name: str
     account_number: str
     account_name: Optional[str] = None
+    is_default: bool = False
     extra_data: Dict[str, Any] = Field(default_factory=dict)
 
 

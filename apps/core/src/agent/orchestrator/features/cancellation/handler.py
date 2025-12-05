@@ -4,7 +4,7 @@ from apps.core.src.agent.orchestrator.pipeline.message_handler import MessageHan
 from apps.core.src.agent.orchestrator.pipeline.message_context import MessageContext
 from .service import OrchestratorCancellationHandler
 from shared.cache.redis_client import RedisClient
-from apps.core.src.agent.services.batch_utils import ExecutionState
+from apps.core.src.agent.tools.batch.utils import ExecutionState
 
 
 class CancellationHandler(MessageHandler):

@@ -10,14 +10,14 @@ from shared.cache.redis_client import RedisClient
 from shared.repositories.account_repository import AccountRepository
 from shared.repositories.beneficiary_repository import BeneficiaryRepository
 from shared.database.connection import get_db_session
-from apps.core.src.agent.services.user_data_cache import UserDataCache
+from apps.core.src.agent.tools.cache.user_data import UserDataCache
 
 from apps.gateway.core.config import settings
 
 # Import agent services
 try:
-    from apps.core.src.agent.airtime.service import AirtimeService
-    from apps.core.src.agent.transfer.service import TransferService
+    from apps.core.src.agent.sub_agents.airtime.service import AirtimeService
+    from apps.core.src.agent.sub_agents.transfer.service import TransferService
     print("✅ Successfully imported AirtimeService and TransferService")
 except ImportError as e:
     print(f"❌ Failed to import AirtimeService/TransferService: {e}")

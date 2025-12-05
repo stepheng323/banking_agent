@@ -6,7 +6,7 @@ import traceback
 
 from shared.repositories.unit_of_work import UnitOfWork
 from shared.cache.redis_client import RedisClient
-from apps.core.src.agent.models.classification import ClassificationResult
+from apps.core.src.agent.orchestrator.models.classification import ClassificationResult
 from apps.core.src.agent.orchestrator.features.context.service import OrchestratorContextManager
 
 
@@ -108,7 +108,7 @@ class OrchestratorBeneficiaryHandler:
                         # Auto-detect network from phone if not provided
                         # Network can always be detected from valid Nigerian phone numbers
                         if recipient_phone and not network:
-                            from apps.core.src.agent.airtime.nodes.extraction import detect_network_from_phone
+                            from apps.core.src.agent.sub_agents.airtime.nodes.extraction import detect_network_from_phone
                             auto_network = detect_network_from_phone(recipient_phone)
                             if auto_network:
                                 network = auto_network
@@ -227,7 +227,7 @@ class OrchestratorBeneficiaryHandler:
                             # Auto-detect network from phone if not provided
                             # Network can always be detected from valid Nigerian phone numbers
                             if recipient_phone and not network:
-                                from apps.core.src.agent.airtime.nodes.extraction import detect_network_from_phone
+                                from apps.core.src.agent.sub_agents.airtime.nodes.extraction import detect_network_from_phone
                                 auto_network = detect_network_from_phone(recipient_phone)
                                 if auto_network:
                                     network = auto_network

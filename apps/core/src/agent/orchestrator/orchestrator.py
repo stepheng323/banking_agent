@@ -1,24 +1,16 @@
 """Minimal orchestrator: LLM-based multilingual intent+complexity and user context cache."""
 
-import json
-import asyncio
-from typing import Any
-
 from langchain_openai import ChatOpenAI
 
 from shared.clients.whatsapp_client import WhatsAppClient
-from shared.clients.whatsapp_client import WhatsAppClient
 from shared.repositories import UserRepository, BeneficiaryRepository
 from shared.cache.redis_client import RedisClient
-from shared.cache.redis_client import RedisClient
 
-from apps.core.src.agent.models import ClassificationResult, PlannerOutput
 from apps.core.src.agent.orchestrator.flow_completion_callback import (
     OrchestratorFlowCompletionCallback)
-from apps.core.src.agent.services import ConversationResponder, TaskQueueService, TaskExecutor
-from apps.core.src.agent.transfer import TransferService
-from apps.core.src.agent.airtime import AirtimeService
-from shared.types.agent_types import TaskStatus
+from apps.core.src.agent.orchestrator.services import ConversationResponder, TaskQueueService, TaskExecutor
+from apps.core.src.agent.sub_agents.transfer import TransferService
+from apps.core.src.agent.sub_agents.airtime import AirtimeService
 
 from apps.core.src.agent.orchestrator.features.context.service import OrchestratorContextManager
 from apps.core.src.agent.orchestrator.features.classification.service import OrchestratorClassificationService
@@ -26,6 +18,8 @@ from apps.core.src.agent.orchestrator.features.task_planning.service import Orch
 from apps.core.src.agent.orchestrator.features.beneficiary.service import OrchestratorBeneficiaryHandler
 from apps.core.src.agent.orchestrator.features.cancellation.service import OrchestratorCancellationHandler
 from apps.core.src.agent.orchestrator.features.intent_routing.service import OrchestratorIntentRouter
+from apps.core.src.agent.sub_agents.query.service import QueryService
+from apps.core.src.agent.sub_agents.account_management.service import AccountManagementService
 
 from apps.core.src.agent.orchestrator.pipeline import MessageContext, MessagePipeline
 from apps.core.src.agent.orchestrator.features.context.handler import ContextLoaderHandler
@@ -37,6 +31,8 @@ from apps.core.src.agent.orchestrator.features.batch_authorization.handler impor
 from apps.core.src.agent.orchestrator.features.active_queue.handler import ActiveQueueHandler
 from apps.core.src.agent.orchestrator.features.task_planning.handler import NextTaskHandler
 from apps.core.src.agent.orchestrator.features.intent_routing.handler import IntentRoutingHandler
+from apps.core.src.agent.orchestrator.features.query.handler import QueryHandler
+from apps.core.src.agent.orchestrator.features.account_management.handler import AccountManagementHandler
 
 
 class OrchestratorAgent:
@@ -53,6 +49,8 @@ class OrchestratorAgent:
         transfer_service: TransferService,
         airtime_service: AirtimeService,
         task_executor: TaskExecutor,
+        query_service: QueryService,
+        account_management_service: AccountManagementService
     ) -> None:
         self.llm = llm
         self.user_repo = user_repo
@@ -62,6 +60,8 @@ class OrchestratorAgent:
         self.transfer_service = transfer_service
         self.airtime_service = airtime_service
         self.task_executor = task_executor
+        self.query_service = query_service
+        self.account_management_service = account_management_service
 
         self.context_manager = OrchestratorContextManager(
             user_repo,
@@ -97,6 +97,8 @@ class OrchestratorAgent:
             BatchAuthorizationHandler(task_queue_service, transfer_service),
             ActiveQueueHandler(task_queue_service, transfer_service, airtime_service),
             NextTaskHandler(self.task_planner),
+            AccountManagementHandler(account_management_service),
+            QueryHandler(query_service),
             IntentRoutingHandler(self.intent_router),
         ]
 

@@ -1,6 +1,7 @@
 from langchain_openai import ChatOpenAI
 
 from shared.clients.s3_client import S3Client
+from shared.clients.mono_client import MonoClient
 from shared.config import settings
 from shared.clients.whatsapp_client import WhatsAppClient
 from shared.database.connection import get_db_session
@@ -9,21 +10,22 @@ from shared.repositories import BeneficiaryRepository, AccountRepository
 from shared.repositories.user_repository import UserRepository
 from shared.cache.redis_client import RedisClient
 from shared.services.receipt_generator import ReceiptGenerator
-from apps.core.src.agent.services.user_data_cache import UserDataCache
+from apps.core.src.agent.tools.cache.user_data import UserDataCache
 
 from apps.core.src.agent.orchestrator import OrchestratorAgent
-from apps.core.src.agent.services import ConversationResponder, TaskQueueService, TaskExecutor
-from apps.core.src.agent.transfer import TransferService as AgentTransferService
-from apps.core.src.agent.airtime import AirtimeService
+from apps.core.src.agent.orchestrator.services import ConversationResponder, TaskQueueService, TaskExecutor
+from apps.core.src.agent.sub_agents.transfer import TransferService as AgentTransferService
+from apps.core.src.agent.sub_agents.airtime import AirtimeService
 from apps.core.src.queue_consumers import MessageConsumer, TransactionConsumer
-from apps.core.src.handlers import (
-    OnboardingHandler,
-    OnboardingService,
-    TransferHandler,
-    TransferService
-)
-from apps.core.src.handlers.airtime import AirtimeHandler, AirtimeService as HandlerAirtimeService
-from apps.core.src.agent.services.beneficiary_suggestion_service import BeneficiarySuggestionService
+from apps.core.src.agent.sub_agents.onboarding.executor import OnboardingExecutor
+from apps.core.src.agent.sub_agents.onboarding.service import OnboardingService
+from apps.core.src.agent.sub_agents.transfer.executor import TransferExecutor
+from apps.core.src.agent.sub_agents.airtime.executor import AirtimeExecutor
+from apps.core.src.agent.sub_agents.transfer.completion import TransferCompletionService
+from apps.core.src.agent.sub_agents.airtime.completion import AirtimeCompletionService
+from apps.core.src.agent.tools.beneficiary.suggestion_service import BeneficiarySuggestionService
+from apps.core.src.agent.sub_agents.query.service import QueryService
+from apps.core.src.agent.sub_agents.account_management.service import AccountManagementService
 
 
 def setup_dependencies():
@@ -38,7 +40,7 @@ def setup_dependencies():
     user_data_cache = UserDataCache(redis_client=shared_redis)
 
     onboarding_service = OnboardingService(whatsapp_client)
-    onboarding_handler = OnboardingHandler(
+    onboarding_executor = OnboardingExecutor(
         whatsapp_client, user_repository, onboarding_service)
 
     beneficiary_repository = BeneficiaryRepository(db=get_db_session())
@@ -51,7 +53,7 @@ def setup_dependencies():
         redis_client=shared_redis,
     )
 
-    transfer_service = TransferService(
+    transfer_completion_service = TransferCompletionService(
         whatsapp_client=whatsapp_client,
         redis_client=shared_redis,
         beneficiary_repository=beneficiary_repository,
@@ -61,11 +63,12 @@ def setup_dependencies():
     )
 
 
-    llm = ChatOpenAI(
-        model="gpt-4o-mini",
-        temperature=0,
-        model_kwargs={"seed": 42}  # Enable semantic caching with deterministic outputs
-    )
+    llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+
+    # Mono API client for transaction queries
+    mono_client = MonoClient(api_key=settings.mono_api_key)
+    query_service = QueryService(llm=llm, mono_client=mono_client)
+    account_management_service = AccountManagementService(account_repo=account_repository)
 
     task_queue_service = TaskQueueService()
     conversation_responder = ConversationResponder(llm)
@@ -107,6 +110,8 @@ def setup_dependencies():
         transfer_service=agent_transfer_service,
         airtime_service=agent_airtime_service,
         task_executor=task_executor,
+        query_service=query_service,
+        account_management_service=account_management_service,
     )
 
     completion_callback = orchestrator.completion_callback
@@ -117,23 +122,23 @@ def setup_dependencies():
     message_consumer = MessageConsumer(
         redis_queue=redis_queue,
         user_repository=user_repository,
-        onboarding_handler=onboarding_handler,
+        onboarding_executor=onboarding_executor,
         orchestrator=orchestrator,
         whatsapp_client=whatsapp_client,
     )
 
-    handler_airtime_service = HandlerAirtimeService(
+    airtime_completion_service = AirtimeCompletionService(
         whatsapp_client=whatsapp_client,
         redis_client=shared_redis,
         beneficiary_suggestion_service=beneficiary_suggestion_service,
     )
-    airtime_handler = AirtimeHandler(airtime_service=handler_airtime_service)
-    transfer_handler = TransferHandler(transfer_service=transfer_service)
+    airtime_executor = AirtimeExecutor(airtime_service=airtime_completion_service)
+    transfer_executor = TransferExecutor(transfer_service=transfer_completion_service)
 
     transaction_consumer = TransactionConsumer(
         redis_queue=redis_queue,
-        transfer_handler=transfer_handler,
-        airtime_handler=airtime_handler,
+        transfer_executor=transfer_executor,
+        airtime_executor=airtime_executor,
     )
 
     return message_consumer, transaction_consumer

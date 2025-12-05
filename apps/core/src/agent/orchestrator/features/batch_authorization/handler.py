@@ -4,10 +4,10 @@ from typing import TYPE_CHECKING
 
 from apps.core.src.agent.orchestrator.pipeline.message_handler import MessageHandler
 from apps.core.src.agent.orchestrator.pipeline.message_context import MessageContext
-from apps.core.src.agent.services import TaskQueueService
+from apps.core.src.agent.orchestrator.services import TaskQueueService
 
 if TYPE_CHECKING:
-    from apps.core.src.agent.transfer import TransferService
+    from apps.core.src.agent.sub_agents.transfer import TransferService
 from shared.types.agent_types import TaskStatus
 
 

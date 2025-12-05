@@ -4,13 +4,16 @@ from typing import Optional, TYPE_CHECKING
 import asyncio
 
 from shared.cache.redis_client import RedisClient
-from apps.core.src.agent.models.classification import ClassificationResult
-from apps.core.src.agent.transfer import TransferService
-from apps.core.src.agent.airtime import AirtimeService
+from apps.core.src.agent.orchestrator.models.classification import ClassificationResult
+from apps.core.src.agent.sub_agents.transfer import TransferService
+from apps.core.src.agent.sub_agents.airtime import AirtimeService
 from apps.core.src.agent.orchestrator.features.context.service import OrchestratorContextManager
+from shared.utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 if TYPE_CHECKING:
-    from apps.core.src.agent.services.task_queue_service import TaskQueueService
+    from apps.core.src.agent.orchestrator.services.task_queue_service import TaskQueueService
 
 
 class OrchestratorCancellationHandler:
@@ -32,7 +35,7 @@ class OrchestratorCancellationHandler:
         self,
         phone_number: str,
         text: str,
-        result: ClassificationResult,
+        result: Optional[ClassificationResult],
         conversation_state: Optional[dict],
     ) -> Optional[str]:
         """
@@ -51,7 +54,7 @@ class OrchestratorCancellationHandler:
         if self.task_queue_service:
             has_active_queue = await self.task_queue_service.has_active_queue(phone_number)
             if has_active_queue:
-                print(f"🛑 Cancellation detected during active task queue for {phone_number}")
+                logger.info(f"Cancellation detected during active task queue for {phone_number}")
                 
                 # Get current task to determine if we need to clear transfer checkpoint
                 current_task_id = await self.task_queue_service.get_current_task(phone_number)
@@ -66,16 +69,16 @@ class OrchestratorCancellationHandler:
                 
                 # Clear task queue
                 await self.task_queue_service.clear_task_queue(phone_number)
-                print(f"✅ Cleared task queue for {phone_number}")
+                logger.info(f"Cleared task queue for {phone_number}")
                 
                 # Clear conversation state
                 await self.context_manager.clear_conversation_state(phone_number)
-                print(f"✅ Cleared conversation state for {phone_number}")
+                logger.info(f"Cleared conversation state for {phone_number}")
                 
                 # Clear transfer checkpoint if current task is a transfer
                 if current_task_executor == "transfer":
                     await self.transfer_service.clear_checkpoint(phone_number)
-                    print(f"✅ Cleared transfer checkpoint for {phone_number}")
+                    logger.info(f"Cleared transfer checkpoint for {phone_number}")
                 
                 cancel_response = "All pending transfers have been cancelled."
                 asyncio.create_task(
@@ -110,8 +113,8 @@ class OrchestratorCancellationHandler:
                     has_active_transaction = True
                     active_flow = "transfer"
                     transfer_status = "pending"
-                    print(
-                        "✅ Found active transaction via pending_transfer fallback")
+                    logger.info(
+                        "Found active transaction via pending_transfer fallback")
                 
                 # Check for pending airtime
                 if not has_active_transaction:
@@ -120,28 +123,32 @@ class OrchestratorCancellationHandler:
                         has_active_transaction = True
                         active_flow = "airtime"
                         airtime_status = "pending"
-                        print(
-                            "✅ Found active transaction via pending_airtime fallback")
+                        logger.info(
+                            "Found active transaction via pending_airtime fallback")
             except Exception as e:
-                print(f"⚠️  Error checking pending transactions: {e}")
+                logger.error(f"Error checking pending transactions: {e}")
 
         if has_active_transaction:
-            if active_flow == "transfer":
+            # Create default cancel classification if result is None
+            if result:
                 cancel_classification_dict = result.model_dump() if hasattr(result, 'model_dump') else {
                     "intent": result.intent,
                     "is_cancellation": result.is_cancellation,
                     "confidence": result.confidence,
                 }
+            else:
+                cancel_classification_dict = {
+                    "intent": "cancel",
+                    "is_cancellation": True,
+                    "confidence": 1.0
+                }
+
+            if active_flow == "transfer":
                 cancel_response = await self.transfer_service.run_simple(phone_number, text, cancel_classification_dict)
                 asyncio.create_task(
                     self.context_manager.save_last_response(phone_number, cancel_response))
                 return cancel_response
             elif active_flow == "airtime":
-                cancel_classification_dict = result.model_dump() if hasattr(result, 'model_dump') else {
-                    "intent": result.intent,
-                    "is_cancellation": result.is_cancellation,
-                    "confidence": result.confidence,
-                }
                 cancel_response = await self.airtime_service.run_simple(phone_number, text, cancel_classification_dict)
                 asyncio.create_task(
                     self.context_manager.save_last_response(phone_number, cancel_response))

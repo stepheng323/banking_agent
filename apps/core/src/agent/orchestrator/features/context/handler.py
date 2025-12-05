@@ -4,7 +4,7 @@ import json
 from apps.core.src.agent.orchestrator.pipeline.message_handler import MessageHandler
 from apps.core.src.agent.orchestrator.pipeline.message_context import MessageContext
 from .service import OrchestratorContextManager
-from apps.core.src.agent.services import TaskQueueService
+from apps.core.src.agent.orchestrator.services import TaskQueueService
 
 
 class ContextLoaderHandler(MessageHandler):

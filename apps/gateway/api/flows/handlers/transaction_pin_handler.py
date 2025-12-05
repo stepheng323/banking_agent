@@ -7,16 +7,16 @@ from fastapi.responses import Response
 
 from shared.cache.redis_client import RedisClient
 from shared.clients.whatsapp_client import WhatsAppClient
-from apps.core.src.agent.services.authorization_service import AuthorizationService
+from apps.core.src.agent.tools.authorization.service import AuthorizationService
 from apps.gateway.api.flows.response_helpers import format_error_response, format_success_response
 
 if TYPE_CHECKING:
-    from apps.core.src.agent.transfer.service import TransferService
-    from apps.core.src.agent.airtime.service import AirtimeService
+    from apps.core.src.agent.sub_agents.transfer.service import TransferService
+    from apps.core.src.agent.sub_agents.airtime.service import AirtimeService
 else:
     try:
-        from apps.core.src.agent.transfer.service import TransferService
-        from apps.core.src.agent.airtime.service import AirtimeService
+        from apps.core.src.agent.sub_agents.transfer.service import TransferService
+        from apps.core.src.agent.sub_agents.airtime.service import AirtimeService
     except ImportError:
         TransferService = None  # type: ignore
         AirtimeService = None  # type: ignore
@@ -157,8 +157,8 @@ async def handle_transaction_pin(
         
         # Handle batch authorization
         if transaction_type == "batch":
-            from apps.core.src.agent.services.batch_executor import execute_batch
-            from apps.core.src.agent.services.task_queue_service import TaskQueueService
+            from apps.core.src.agent.tools.batch.executor import execute_batch
+            from apps.core.src.agent.orchestrator.services.task_queue_service import TaskQueueService
             
             # Send immediate acknowledgment
             await whatsapp_client.send_text(
