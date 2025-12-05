@@ -2,7 +2,8 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from apps.core.src.agent.orchestrator.orchestrator import OrchestratorAgent
 from apps.core.src.agent.orchestrator.pipeline.message_context import MessageContext
-from apps.core.src.agent.models import ClassificationResult, PlannerOutput, PlannedTask
+from apps.core.src.agent.orchestrator.models.classification import ClassificationResult
+from apps.core.src.agent.orchestrator.models.planner import PlannerOutput, PlannedTask
 
 @pytest.mark.asyncio
 class TestPipelineIntegration:

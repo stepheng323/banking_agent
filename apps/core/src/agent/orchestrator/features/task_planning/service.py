@@ -10,7 +10,7 @@ from langchain_core.messages import AIMessage
 from apps.core.src.agent.orchestrator.models.planner import PlannerOutput
 from apps.core.src.agent.orchestrator.services.task_queue_service import TaskQueueService
 from apps.core.src.agent.orchestrator.services.task_executor import TaskExecutor
-from apps.core.src.agent.prompts.planner import PLANNER_SYSTEM_PROMPT, PLANNER_USER_PROMPT_TEMPLATE
+from apps.core.src.agent.orchestrator.features.task_planning.prompt import PLANNER_SYSTEM_PROMPT, PLANNER_USER_PROMPT_TEMPLATE
 
 
 class OrchestratorTaskPlanner:
