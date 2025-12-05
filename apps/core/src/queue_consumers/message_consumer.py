@@ -4,7 +4,7 @@ import traceback
 from typing import Any, Dict
 
 from apps.core.src.agent.orchestrator import OrchestratorAgent
-from apps.core.src.handlers.onboarding import OnboardingHandler
+from apps.core.src.agent.execution.onboarding.executor import OnboardingExecutor
 
 from shared.clients.whatsapp_client import WhatsAppClient
 from shared.database.models import UserOnboardingStatusEnum
@@ -18,14 +18,14 @@ class MessageConsumer:
 
     def __init__(self, redis_queue: RedisQueue,
                  user_repository: UserRepository,
-                 onboarding_handler: OnboardingHandler,
+                 onboarding_executor: OnboardingExecutor,
                  orchestrator: OrchestratorAgent,
                  whatsapp_client: WhatsAppClient,
 
                  ):
         self.queue = redis_queue
         self.user_repository = user_repository
-        self.onboarding_handler = onboarding_handler
+        self.onboarding_executor = onboarding_executor
         self.orchestrator = orchestrator
         self.whatsapp_client = whatsapp_client
         self.running = False
@@ -48,7 +48,7 @@ class MessageConsumer:
             self.user_repository.get_by_phone, phone_number
         )
         if user is None or getattr(user, "onboarding_status", None) != UserOnboardingStatusEnum.ONBOARDING_COMPLETED:
-            return await self.onboarding_handler.handle_onboarding(message)
+            return await self.onboarding_executor.handle_onboarding(message)
 
         await self.orchestrator.context_manager.load_user_context(
             phone_number, user=user

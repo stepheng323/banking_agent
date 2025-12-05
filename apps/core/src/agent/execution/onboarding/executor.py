@@ -2,7 +2,7 @@
 
 from typing import Any, Dict
 
-from apps.core.src.handlers.onboarding.onboarding_service import OnboardingService
+from apps.core.src.agent.execution.onboarding.service import OnboardingService
 from shared.clients.whatsapp_client import WhatsAppClient
 from shared.database.models import UserOnboardingStatusEnum
 from shared.models.messages import WhatsAppMessage
@@ -11,7 +11,7 @@ from shared.repositories.unit_of_work import UnitOfWork
 from shared.repositories.user_repository import UserRepository
 
 
-class OnboardingHandler:
+class OnboardingExecutor:
     """Onboarding handler"""
     def __init__(
         self,

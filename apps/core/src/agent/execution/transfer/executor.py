@@ -9,7 +9,7 @@ from shared.repositories.unit_of_work import UnitOfWork
 from apps.core.src.agent.completion.transfer import TransferCompletionService
 
 
-class TransferHandler:
+class TransferExecutor:
     """Handles transfer execution and notifications."""
 
     def __init__(

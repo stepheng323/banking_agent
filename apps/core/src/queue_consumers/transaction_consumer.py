@@ -13,8 +13,8 @@ class TransactionConsumer:
     def __init__(
         self,
         redis_queue: RedisQueue,
-        transfer_handler: Optional[Any] = None,
-        airtime_handler: Optional[Any] = None,
+        transfer_executor: Optional[Any] = None,
+        airtime_executor: Optional[Any] = None,
         data_handler: Optional[Any] = None,
     ):
         """
@@ -22,13 +22,13 @@ class TransactionConsumer:
 
         Args:
             redis_queue: Redis queue instance
-            transfer_handler: Optional TransferHandler instance
-            airtime_handler: Optional AirtimeHandler instance
+            transfer_executor: Optional TransferExecutor instance
+            airtime_executor: Optional AirtimeExecutor instance
             data_handler: Optional DataHandler instance (for future use)
         """
         self.queue = redis_queue
-        self.transfer_handler = transfer_handler
-        self.airtime_handler = airtime_handler
+        self.transfer_executor = transfer_executor
+        self.airtime_executor = airtime_executor
         self.data_handler = data_handler
         self.running = False
 
@@ -49,22 +49,22 @@ class TransactionConsumer:
 
         try:
             if transaction_type == "execute_transfer":
-                if not self.transfer_handler:
-                    print("❌ Transfer handler not available")
+                if not self.transfer_executor:
+                    print("❌ Transfer executor not available")
                     return
-                if hasattr(self.transfer_handler, "handle_transfer"):
-                    await self.transfer_handler.handle_transfer(transaction_data)
+                if hasattr(self.transfer_executor, "handle_transfer"):
+                    await self.transfer_executor.handle_transfer(transaction_data)
                 else:
-                    print(f"❌ Transfer handler missing handle_transfer method")
+                    print(f"❌ Transfer executor missing handle_transfer method")
             
             elif transaction_type == "execute_airtime":
-                if not self.airtime_handler:
-                    print("❌ Airtime handler not available")
+                if not self.airtime_executor:
+                    print("❌ Airtime executor not available")
                     return
-                if hasattr(self.airtime_handler, "handle_airtime"):
-                    await self.airtime_handler.handle_airtime(transaction_data)
+                if hasattr(self.airtime_executor, "handle_airtime"):
+                    await self.airtime_executor.handle_airtime(transaction_data)
                 else:
-                    print(f"❌ Airtime handler missing handle_airtime method")
+                    print(f"❌ Airtime executor missing handle_airtime method")
             
             elif transaction_type == "execute_data":
                 if not self.data_handler:

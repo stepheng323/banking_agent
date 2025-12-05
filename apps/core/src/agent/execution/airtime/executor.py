@@ -9,7 +9,7 @@ from shared.repositories.unit_of_work import UnitOfWork
 from apps.core.src.agent.completion.airtime import AirtimeCompletionService
 
 
-class AirtimeHandler:
+class AirtimeExecutor:
     """Handles airtime purchase execution and notifications."""
 
     def __init__(

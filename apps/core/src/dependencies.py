@@ -42,7 +42,7 @@ def setup_dependencies():
     user_data_cache = UserDataCache(redis_client=shared_redis)
 
     onboarding_service = OnboardingService(whatsapp_client)
-    onboarding_handler = OnboardingHandler(
+    onboarding_executor = OnboardingExecutor(
         whatsapp_client, user_repository, onboarding_service)
 
     beneficiary_repository = BeneficiaryRepository(db=get_db_session())
@@ -124,7 +124,7 @@ def setup_dependencies():
     message_consumer = MessageConsumer(
         redis_queue=redis_queue,
         user_repository=user_repository,
-        onboarding_handler=onboarding_handler,
+        onboarding_executor=onboarding_executor,
         orchestrator=orchestrator,
         whatsapp_client=whatsapp_client,
     )
@@ -134,13 +134,13 @@ def setup_dependencies():
         redis_client=shared_redis,
         beneficiary_suggestion_service=beneficiary_suggestion_service,
     )
-    airtime_handler = AirtimeHandler(airtime_service=airtime_completion_service)
-    transfer_handler = TransferHandler(transfer_service=transfer_completion_service)
+    airtime_executor = AirtimeExecutor(airtime_service=airtime_completion_service)
+    transfer_executor = TransferExecutor(transfer_service=transfer_completion_service)
 
     transaction_consumer = TransactionConsumer(
         redis_queue=redis_queue,
-        transfer_handler=transfer_handler,
-        airtime_handler=airtime_handler,
+        transfer_executor=transfer_executor,
+        airtime_executor=airtime_executor,
     )
 
     return message_consumer, transaction_consumer
