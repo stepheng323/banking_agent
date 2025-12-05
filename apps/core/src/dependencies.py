@@ -10,22 +10,22 @@ from shared.repositories import BeneficiaryRepository, AccountRepository
 from shared.repositories.user_repository import UserRepository
 from shared.cache.redis_client import RedisClient
 from shared.services.receipt_generator import ReceiptGenerator
-from apps.core.src.agent.services.user_data_cache import UserDataCache
+from apps.core.src.agent.tools.cache.user_data import UserDataCache
 
 from apps.core.src.agent.orchestrator import OrchestratorAgent
 from apps.core.src.agent.orchestrator.services import ConversationResponder, TaskQueueService, TaskExecutor
-from apps.core.src.agent.transfer import TransferService as AgentTransferService
-from apps.core.src.agent.airtime import AirtimeService
+from apps.core.src.agent.sub_agents.transfer import TransferService as AgentTransferService
+from apps.core.src.agent.sub_agents.airtime import AirtimeService
 from apps.core.src.queue_consumers import MessageConsumer, TransactionConsumer
-from apps.core.src.agent.execution.onboarding.executor import OnboardingExecutor
-from apps.core.src.agent.execution.onboarding.service import OnboardingService
-from apps.core.src.agent.execution.transfer.executor import TransferExecutor
-from apps.core.src.agent.execution.airtime.executor import AirtimeExecutor
-from apps.core.src.agent.completion.transfer import TransferCompletionService
-from apps.core.src.agent.completion.airtime import AirtimeCompletionService
-from apps.core.src.agent.beneficiary.suggestion_service import BeneficiarySuggestionService
-from apps.core.src.agent.query.service import QueryService
-from apps.core.src.agent.account_management.service import AccountManagementService
+from apps.core.src.agent.sub_agents.onboarding.executor import OnboardingExecutor
+from apps.core.src.agent.sub_agents.onboarding.service import OnboardingService
+from apps.core.src.agent.sub_agents.transfer.executor import TransferExecutor
+from apps.core.src.agent.sub_agents.airtime.executor import AirtimeExecutor
+from apps.core.src.agent.sub_agents.transfer.completion import TransferCompletionService
+from apps.core.src.agent.sub_agents.airtime.completion import AirtimeCompletionService
+from apps.core.src.agent.tools.beneficiary.suggestion_service import BeneficiarySuggestionService
+from apps.core.src.agent.sub_agents.query.service import QueryService
+from apps.core.src.agent.sub_agents.account_management.service import AccountManagementService
 
 
 def setup_dependencies():

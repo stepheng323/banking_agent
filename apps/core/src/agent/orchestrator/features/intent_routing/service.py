@@ -9,8 +9,8 @@ from apps.core.src.agent.orchestrator.models.classification import Classificatio
 from apps.core.src.agent.orchestrator.models.planner import PlannerOutput
 from apps.core.src.agent.orchestrator.services.task_queue_service import TaskQueueService
 from apps.core.src.agent.orchestrator.services.conversation_responder import ConversationResponder
-from apps.core.src.agent.transfer import TransferService
-from apps.core.src.agent.airtime import AirtimeService
+from apps.core.src.agent.sub_agents.transfer import TransferService
+from apps.core.src.agent.sub_agents.airtime import AirtimeService
 from apps.core.src.agent.orchestrator.features.task_planning.service import OrchestratorTaskPlanner
 from apps.core.src.agent.orchestrator.features.context.service import OrchestratorContextManager
 

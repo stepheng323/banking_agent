@@ -10,7 +10,7 @@ from shared.cache.redis_client import RedisClient
 from shared.database.models import Account
 from shared.utils.serialization import sqlalchemy_to_dict
 from apps.core.src.agent.orchestrator.models.classification import ClassificationResult
-from apps.core.src.agent.services.user_data_cache import UserDataCache
+from apps.core.src.agent.tools.cache.user_data import UserDataCache
 
 
 class OrchestratorContextManager:

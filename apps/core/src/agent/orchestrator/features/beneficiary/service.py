@@ -108,7 +108,7 @@ class OrchestratorBeneficiaryHandler:
                         # Auto-detect network from phone if not provided
                         # Network can always be detected from valid Nigerian phone numbers
                         if recipient_phone and not network:
-                            from apps.core.src.agent.airtime.nodes.extraction import detect_network_from_phone
+                            from apps.core.src.agent.sub_agents.airtime.nodes.extraction import detect_network_from_phone
                             auto_network = detect_network_from_phone(recipient_phone)
                             if auto_network:
                                 network = auto_network
@@ -227,7 +227,7 @@ class OrchestratorBeneficiaryHandler:
                             # Auto-detect network from phone if not provided
                             # Network can always be detected from valid Nigerian phone numbers
                             if recipient_phone and not network:
-                                from apps.core.src.agent.airtime.nodes.extraction import detect_network_from_phone
+                                from apps.core.src.agent.sub_agents.airtime.nodes.extraction import detect_network_from_phone
                                 auto_network = detect_network_from_phone(recipient_phone)
                                 if auto_network:
                                     network = auto_network

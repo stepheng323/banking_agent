@@ -4,12 +4,12 @@ from typing import Optional, Dict, Any, TYPE_CHECKING, Union
 
 from apps.core.src.agent.orchestrator.models.planner import PlannedTask
 from apps.core.src.agent.orchestrator.services.task_queue_service import TaskQueueService
-from apps.core.src.agent.services.flow_completion_callback import FlowCompletionCallback
+from apps.core.src.agent.tools.flow_completion import FlowCompletionCallback
 from shared.types.agent_types import TaskStatus
 
 if TYPE_CHECKING:
-    from apps.core.src.agent.transfer import TransferService
-    from apps.core.src.agent.airtime import AirtimeService
+    from apps.core.src.agent.sub_agents.transfer import TransferService
+    from apps.core.src.agent.sub_agents.airtime import AirtimeService
 
 
 class TaskExecutor:

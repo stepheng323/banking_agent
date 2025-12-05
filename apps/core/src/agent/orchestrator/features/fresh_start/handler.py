@@ -7,7 +7,7 @@ from apps.core.src.agent.orchestrator.pipeline.message_context import MessageCon
 from apps.core.src.agent.orchestrator.features.context.service import OrchestratorContextManager
 
 if TYPE_CHECKING:
-    from apps.core.src.agent.transfer import TransferService
+    from apps.core.src.agent.sub_agents.transfer import TransferService
 
 
 class FreshStartHandler(MessageHandler):

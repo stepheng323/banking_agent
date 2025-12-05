@@ -5,8 +5,8 @@ import asyncio
 
 from shared.cache.redis_client import RedisClient
 from apps.core.src.agent.orchestrator.models.classification import ClassificationResult
-from apps.core.src.agent.transfer import TransferService
-from apps.core.src.agent.airtime import AirtimeService
+from apps.core.src.agent.sub_agents.transfer import TransferService
+from apps.core.src.agent.sub_agents.airtime import AirtimeService
 from apps.core.src.agent.orchestrator.features.context.service import OrchestratorContextManager
 from shared.utils.logging import get_logger
 

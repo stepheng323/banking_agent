@@ -4,7 +4,7 @@ import re
 from typing import Optional
 from apps.core.src.agent.orchestrator.pipeline.message_handler import MessageHandler
 from apps.core.src.agent.orchestrator.pipeline.message_context import MessageContext
-from apps.core.src.agent.account_management.service import AccountManagementService
+from apps.core.src.agent.sub_agents.account_management.service import AccountManagementService
 
 
 class AccountManagementHandler(MessageHandler):

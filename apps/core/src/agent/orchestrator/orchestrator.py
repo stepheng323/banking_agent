@@ -9,8 +9,8 @@ from shared.cache.redis_client import RedisClient
 from apps.core.src.agent.orchestrator.flow_completion_callback import (
     OrchestratorFlowCompletionCallback)
 from apps.core.src.agent.orchestrator.services import ConversationResponder, TaskQueueService, TaskExecutor
-from apps.core.src.agent.transfer import TransferService
-from apps.core.src.agent.airtime import AirtimeService
+from apps.core.src.agent.sub_agents.transfer import TransferService
+from apps.core.src.agent.sub_agents.airtime import AirtimeService
 
 from apps.core.src.agent.orchestrator.features.context.service import OrchestratorContextManager
 from apps.core.src.agent.orchestrator.features.classification.service import OrchestratorClassificationService
@@ -18,8 +18,8 @@ from apps.core.src.agent.orchestrator.features.task_planning.service import Orch
 from apps.core.src.agent.orchestrator.features.beneficiary.service import OrchestratorBeneficiaryHandler
 from apps.core.src.agent.orchestrator.features.cancellation.service import OrchestratorCancellationHandler
 from apps.core.src.agent.orchestrator.features.intent_routing.service import OrchestratorIntentRouter
-from apps.core.src.agent.query.service import QueryService
-from apps.core.src.agent.account_management.service import AccountManagementService
+from apps.core.src.agent.sub_agents.query.service import QueryService
+from apps.core.src.agent.sub_agents.account_management.service import AccountManagementService
 
 from apps.core.src.agent.orchestrator.pipeline import MessageContext, MessagePipeline
 from apps.core.src.agent.orchestrator.features.context.handler import ContextLoaderHandler

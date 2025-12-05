@@ -17,8 +17,8 @@ from shared.utils.logging import get_logger
 logger = get_logger(__name__)
 
 if TYPE_CHECKING:
-    from apps.core.src.agent.transfer.service import TransferService
-    from apps.core.src.agent.airtime.service import AirtimeService
+    from apps.core.src.agent.sub_agents.transfer.service import TransferService
+    from apps.core.src.agent.sub_agents.airtime.service import AirtimeService
 
 
 async def execute_batch(
@@ -291,7 +291,7 @@ async def _execute_transfer_task(
         )
         
         # Get the final state to check status
-        from apps.core.src.agent.transfer.graph.graph import TransferFlowGraph
+        from apps.core.src.agent.sub_agents.transfer.graph.graph import TransferFlowGraph
         config = {
             "configurable": {
                 "thread_id": f"transfer:{phone_number}",

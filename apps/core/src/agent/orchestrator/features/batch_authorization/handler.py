@@ -7,7 +7,7 @@ from apps.core.src.agent.orchestrator.pipeline.message_context import MessageCon
 from apps.core.src.agent.orchestrator.services import TaskQueueService
 
 if TYPE_CHECKING:
-    from apps.core.src.agent.transfer import TransferService
+    from apps.core.src.agent.sub_agents.transfer import TransferService
 from shared.types.agent_types import TaskStatus
 
 
