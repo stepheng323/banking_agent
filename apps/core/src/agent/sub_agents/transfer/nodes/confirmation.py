@@ -9,8 +9,6 @@ from shared.clients.whatsapp_client import WhatsAppClient
 from shared.config import settings
 from shared.cache.redis_client import Redis
 
-from .utils import debug_log
-
 
 async def prepare_confirmation(
     state: TransferState,
@@ -18,22 +16,15 @@ async def prepare_confirmation(
     redis_client: Redis,
 ) -> TransferState:
     """Prepare transfer confirmation summary."""
-    debug_log(
-        f"DEBUG prepare_confirmation: state={json.dumps(state, indent=2)}")
-
     phone_number = state.get("phone_number")
     
-    # Skip confirmation display if resuming after PIN verification
     if state.get("skip_confirmation_display"):
-        debug_log("⏭️ Skipping confirmation display (resuming after PIN)")
         return {
             **state,
             "response": "",
-            "skip_confirmation_display": False,  # Reset flag
+            "skip_confirmation_display": False,
         }
     
-    # Check if this is part of a complex transfer (has active task queue)
-    # For complex transfers, we stop at collection complete instead of sending authorization flow
     queue_key = f"user:{phone_number}:task_queue"
     has_active_queue = await redis_client.exists(queue_key)
     
@@ -43,14 +34,11 @@ async def prepare_confirmation(
         if pending_data:
             pending_transfer = json.loads(pending_data)
             if pending_transfer.get("idempotency_key") == existing_idem_key:
-                debug_log(
-                    f"✅ Transfer confirmation flow already sent for idem_key: {existing_idem_key}")
-                # If part of complex transfer, mark as collection_complete instead
                 if has_active_queue:
                     return {
                         **state,
                         "response": "",
-                        "transfer_status": "collection_complete",  # Special status for complex transfers
+                        "transfer_status": "collection_complete",
                         "flow_state": "confirming",
                     }
                 return {
@@ -113,7 +101,6 @@ async def prepare_confirmation(
         "status": "awaiting_confirmation",
     }
 
-    # OPTIMIZED: Store only flow token (pending_transfer data is in checkpoint)
     token = f"transfer-pin-{idem_key}"
     pipe = redis_client.pipeline()
     pipe.setex(
@@ -144,21 +131,15 @@ async def prepare_confirmation(
             ex=3600
         )
 
-    # For complex transfers (has active queue), don't send authorization flow yet
-    # Just mark as collection_complete and return empty response
-    # The flow completion callback will send the appropriate transition message
     if has_active_queue:
-        debug_log(f"🔍 [CONFIRMATION] Complex transfer detected - marking as collection_complete")
-        
         return {
             **state,
-            "response": "",  # Empty response - callback handles transition messaging
+            "response": "",
             "idempotency_key": idem_key,
-            "transfer_status": "collection_complete",  # Special status for complex transfers
+            "transfer_status": "collection_complete",
             "flow_state": "confirming",
         }
     
-    # For single transfers, send authorization flow as normal
     await whatsapp_client.send_flow(
         to=state["phone_number"],
         header="Confirm Your Transfer",

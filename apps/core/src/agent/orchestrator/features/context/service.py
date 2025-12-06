@@ -7,7 +7,6 @@ import asyncio
 from shared.repositories.user_repository import UserRepository
 from shared.repositories.beneficiary_repository import BeneficiaryRepository
 from shared.cache.redis_client import RedisClient
-from shared.database.models import Account
 from shared.utils.serialization import sqlalchemy_to_dict
 from apps.core.src.agent.orchestrator.models.classification import ClassificationResult
 from apps.core.src.agent.tools.cache.user_data import UserDataCache
@@ -56,7 +55,8 @@ class OrchestratorContextManager:
             
             current_beneficiaries = []
             if current_profile and self.beneficiary_repo:
-                current_beneficiaries = self.beneficiary_repo.get_by_user(current_profile.id)
+                user_id = str(current_profile.id)
+                current_beneficiaries = self.beneficiary_repo.get_by_user(user_id)
 
             return current_profile, current_accounts, current_beneficiaries
 
@@ -162,16 +162,13 @@ class OrchestratorContextManager:
                 f"user:{phone_number}:beneficiary_suggestion",
             ]
             
-            # Use pipeline to fetch all keys in parallel
             pipe = redis_client.pipeline()
             for key in keys:
                 pipe.get(key)
             results = await pipe.execute()
             
-            # Load user context separately (uses UserDataCache)
             user_ctx = await self.load_user_context(phone_number)
             
-            # Parse conversation_state
             conversation_state = None
             if results[0]:
                 try:
@@ -179,16 +176,13 @@ class OrchestratorContextManager:
                 except (json.JSONDecodeError, TypeError):
                     pass
             
-            # last_response is already a string or None
             last_response = results[1] if results[1] else None
             
-            # suggestion_data is JSON string or None
             suggestion_data = results[2] if results[2] else None
             
             return user_ctx, conversation_state, last_response, suggestion_data
             
         except Exception as e:
-            # Fallback to individual calls on error
             print(f"⚠️  Error in parallel context loading: {e}, falling back to sequential")
             user_ctx = await self.load_user_context(phone_number)
             conversation_state = await self.get_conversation_state(phone_number)

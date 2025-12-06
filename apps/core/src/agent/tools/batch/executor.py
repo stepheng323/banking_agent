@@ -1,7 +1,7 @@
 """Batch executor service for parallel task execution."""
 
 import asyncio
-from typing import List, Dict, Any, Optional, TYPE_CHECKING, Union
+from typing import List, Dict, Any, Optional, TYPE_CHECKING
 
 from shared.cache.redis_client import RedisClient
 from shared.clients.whatsapp_client import WhatsAppClient
@@ -46,14 +46,12 @@ async def execute_batch(
     redis_client = RedisClient.get_client()
     
     try:
-        # Set execution state
         await redis_client.set(
             f"queue:{phone_number}:execution_state",
             ExecutionState.EXECUTING_BATCH,
-            ex=600  # 10 min TTL
+            ex=600
         )
         
-        # Get all collection_complete tasks
         planner_output = await task_queue_service.get_task_queue(phone_number)
         if not planner_output:
             return {"completed": 0, "failed": 0, "total": 0}
@@ -70,13 +68,11 @@ async def execute_batch(
         if total == 0:
             return {"completed": 0, "failed": 0, "total": 0}
         
-        # Send initial message
         await whatsapp_client.send_text(
             phone_number,
             f"⏳ Processing {total} task{'s' if total > 1 else ''} in parallel..."
         )
         
-        # Create async tasks for parallel execution
         async_tasks = []
         for task in tasks_to_execute:
             async_task = _execute_single_task(
@@ -91,10 +87,8 @@ async def execute_batch(
             )
             async_tasks.append(async_task)
         
-        # Execute all tasks in parallel
         results = await asyncio.gather(*async_tasks, return_exceptions=True)
         
-        # Process results
         completed = []
         failed = []
         
@@ -110,11 +104,9 @@ async def execute_batch(
             else:
                 failed.append(result)
         
-        # Send final summary
         summary = _generate_final_summary(tasks_to_execute, completed, failed)
         await whatsapp_client.send_text(phone_number, summary)
         
-        # Cleanup
         await task_queue_service.clear_task_queue(phone_number)
         await redis_client.delete(f"queue:{phone_number}:execution_state")
         
@@ -130,7 +122,6 @@ async def execute_batch(
     except Exception as e:
         logger.error(f"[BATCH] Error executing batch: {e}", exc_info=True)
         
-        # Send error message to user
         try:
             await whatsapp_client.send_text(
                 phone_number,
@@ -139,7 +130,6 @@ async def execute_batch(
         except Exception:
             pass
         
-        # Cleanup
         await redis_client.delete(f"queue:{phone_number}:execution_state")
         
         return {
@@ -169,7 +159,6 @@ async def _execute_single_task(
     task_desc = _format_task_description(task)
     
     try:
-        # Check for cancellation
         cancelled = await redis_client.get(f"queue:{phone_number}:cancel_batch")
         if cancelled:
             logger.warning(f"[BATCH] Task {task.id} cancelled before execution")
@@ -180,7 +169,6 @@ async def _execute_single_task(
                 "task_desc": task_desc
             }
         
-        # Mark as executing
         await task_queue_service.update_task_status(
             phone_number,
             task.id,
@@ -189,7 +177,6 @@ async def _execute_single_task(
         
         logger.info(f"[BATCH] Executing task {task.id}: {task_desc}")
         
-        # Execute based on type
         if task.executor == "transfer":
             result = await _execute_transfer_task(
                 phone_number, task, transfer_service, pin_verified, task_queue_service
@@ -210,11 +197,9 @@ async def _execute_single_task(
                 "error": f"Unknown executor: {task.executor}"
             }
         
-        # Add task description to result
         result["task_desc"] = task_desc
         result["task"] = task
         
-        # Update task status
         if result["success"]:
             await task_queue_service.update_task_status(
                 phone_number,
@@ -223,7 +208,6 @@ async def _execute_single_task(
                 result
             )
             
-            # Send success message immediately
             success_msg = _format_success_message(task, result)
             await whatsapp_client.send_text(phone_number, success_msg)
             
@@ -236,7 +220,6 @@ async def _execute_single_task(
                 result
             )
             
-            # Send failure message
             error_msg = result.get('error', 'Unknown error')
             await whatsapp_client.send_text(
                 phone_number,
@@ -279,18 +262,14 @@ async def _execute_transfer_task(
 ) -> Dict[str, Any]:
     """Execute a transfer task."""
     try:
-        # Get task result which has account details
         task_results = await task_queue_service.get_task_results(phone_number)
         task_result = task_results.get(task.id, {})
         result_data = task_result.get("result", {})
         
-        # Resume transfer graph for authorization/execution
-        # The graph is already in collection_complete state with all details
         response = await transfer_service.graph.resume_after_pin_verification(
             phone_number, pin_verified, None
         )
         
-        # Get the final state to check status
         from apps.core.src.agent.sub_agents.transfer.graph.graph import TransferFlowGraph
         config = {
             "configurable": {
@@ -411,7 +390,6 @@ def _generate_final_summary(
     failed_count = len(failed)
     
     if failed_count == 0:
-        # All succeeded
         summary = f"✅ All {total} task{'s' if total > 1 else ''} completed!\n\n"
         
         total_amount = 0
@@ -419,7 +397,6 @@ def _generate_final_summary(
             task_desc = _format_task_description(task)
             summary += f"{i}. {task_desc} ✓\n"
             
-            # Add up amounts
             if task.parameters and task.parameters.get("amount"):
                 total_amount += task.parameters["amount"]
         
@@ -427,7 +404,6 @@ def _generate_final_summary(
             summary += f"\nTotal: {format_amount(total_amount)}"
     
     elif completed_count == 0:
-        # All failed
         summary = f"❌ All tasks failed. Please check and try again.\n\n"
         
         for i, task in enumerate(tasks, 1):
@@ -436,10 +412,8 @@ def _generate_final_summary(
             summary += f"{i}. {task_desc} ✗ ({error})\n"
     
     else:
-        # Mixed results
         summary = f"⚠️ {completed_count} of {total} tasks completed.\n\n"
         
-        # Create a mapping of task id to result
         completed_map = {r.get("task").id: r for r in completed if r.get("task")}
         failed_map = {r.get("task").id: r for r in failed if r.get("task")}
         

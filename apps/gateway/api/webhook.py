@@ -100,7 +100,6 @@ async def whatsapp_webhook(
                         text="Sorry, I'm having trouble processing your message right now.",
                     )
 
-            # Process flow completion messages
             elif msg_type == "interactive" and flow_data:
                 whatsapp_msg = WhatsAppMessage(
                     message_id=message_id,
