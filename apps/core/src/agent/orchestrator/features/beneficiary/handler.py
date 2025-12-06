@@ -24,16 +24,16 @@ class BeneficiaryHandler(MessageHandler):
     
     async def handle(self, context: MessageContext) -> MessageContext:
         """Handle beneficiary response."""
-        # If user is starting a new transaction, clear suggestion
+        if not context.classification_result or not context.suggestion_context:
+            return context
+
         if context.intent in self.TRANSACTION_INTENTS:
             suggestion_key = f"user:{context.phone_number}:beneficiary_suggestion"
             redis_client = RedisClient.get_client()
             await redis_client.delete(suggestion_key)
             
-            # Clear suggestion context and continue to next handler
             return context.update(suggestion_context=None)
         
-        # Otherwise, handle beneficiary response
         response = await self.beneficiary_handler.handle_beneficiary_response(
             context.phone_number,
             context.text,
@@ -44,5 +44,4 @@ class BeneficiaryHandler(MessageHandler):
         if response:
             return context.with_response(response, handled=True)
         
-        # If no response, continue to next handler
         return context
