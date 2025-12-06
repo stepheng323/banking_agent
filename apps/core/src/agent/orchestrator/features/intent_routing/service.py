@@ -11,6 +11,8 @@ from apps.core.src.agent.orchestrator.services.task_queue_service import TaskQue
 from apps.core.src.agent.orchestrator.services.conversation_responder import ConversationResponder
 from apps.core.src.agent.sub_agents.transfer import TransferService
 from apps.core.src.agent.sub_agents.airtime import AirtimeService
+from apps.core.src.agent.sub_agents.query.service import QueryService
+from apps.core.src.agent.sub_agents.account_management.service import AccountManagementService
 from apps.core.src.agent.orchestrator.features.task_planning.service import OrchestratorTaskPlanner
 from apps.core.src.agent.orchestrator.features.context.service import OrchestratorContextManager
 
@@ -26,6 +28,8 @@ class OrchestratorIntentRouter:
         airtime_service: AirtimeService,
         conversation_responder: ConversationResponder,
         context_manager: OrchestratorContextManager,
+        query_service: QueryService,
+        account_management_service: AccountManagementService,
         orchestrator: Any = None,  # Optional orchestrator reference for sending messages
     ) -> None:
         self.task_queue_service = task_queue_service
@@ -35,6 +39,8 @@ class OrchestratorIntentRouter:
         self.conversation_responder = conversation_responder
         self.context_manager = context_manager
         self.orchestrator = orchestrator
+        self.query_service = query_service
+        self.account_management_service = account_management_service
 
     def _generate_task_acknowledgment(
         self, planner_output: PlannerOutput
@@ -97,8 +103,6 @@ class OrchestratorIntentRouter:
         """
         intent = result.intent.lower()
 
-        # Handle mixed/complex intents with task planning
-        # Check if complex and complexity_reason indicates multiple operations
         is_multiple_transactions = (
             result.is_complex and 
             "multiple" in result.complexity_reason.lower()
@@ -117,7 +121,6 @@ class OrchestratorIntentRouter:
                     acknowledgment = self._generate_task_acknowledgment(planner_output)
                     print(f"🔍 [INTENT_ROUTER] Generated acknowledgment: {acknowledgment}")
                     
-                    # Send acknowledgment via WhatsApp client - use orchestrator's whatsapp_client directly
                     try:
                         if self.orchestrator and hasattr(self.orchestrator, 'whatsapp_client'):
                             await self.orchestrator.whatsapp_client.send_text(
@@ -130,16 +133,13 @@ class OrchestratorIntentRouter:
                         print(f"❌ [INTENT_ROUTER] Error sending acknowledgment: {e}")
                         traceback.print_exc()
                     
-                    # Save acknowledgment as last response
                     asyncio.create_task(
                         self.context_manager.save_last_response(
                             phone_number, acknowledgment)
                     )
                     
-                    # Execute first task (this will return the task's initial response)
                     next_task_response = await self.task_planner.handle_next_task(phone_number, text)
                     if next_task_response:
-                        # Save task response separately
                         asyncio.create_task(
                             self.context_manager.save_last_response(
                                 phone_number, next_task_response)
@@ -151,7 +151,6 @@ class OrchestratorIntentRouter:
                 print(f"⚠️  Error in multi-task planning: {e}")
                 traceback.print_exc()
 
-        # Route to specific services
         if intent == "transfer":
             transfer_classification_dict = result.model_dump() if hasattr(result, 'model_dump') else {
                 "intent": result.intent,
@@ -168,6 +167,17 @@ class OrchestratorIntentRouter:
             response = await self.airtime_service.run_simple(phone_number, text, airtime_classification_dict)
         elif intent == "data":
             response = "Data purchase flow coming soon."
+
+        elif intent == "query":
+            if self.query_service:
+                response = await self.query_service.handle_query(phone_number, text, result)
+            else:
+                response = "Query service not available."
+        elif intent == "account_management":
+            if self.account_management_service:
+                response = await self.account_management_service.handle_account_management(phone_number, text, result)
+            else:
+                response = "Account management service not available."
         elif intent == "conversational":
             conv = await self.conversation_responder.generate_reply(phone_number, text, result, user_ctx)
             print(f"Conversation response: {conv}")
