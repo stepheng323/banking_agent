@@ -1,7 +1,11 @@
 """Batch authorization handler - handles batch authorization confirmation."""
 
+import time
 from typing import TYPE_CHECKING
 
+from shared.clients.whatsapp_client import WhatsAppClient
+from shared.cache.redis_client import RedisClient
+from shared.config import settings
 from apps.core.src.agent.orchestrator.pipeline.message_handler import MessageHandler
 from apps.core.src.agent.orchestrator.pipeline.message_context import MessageContext
 from apps.core.src.agent.orchestrator.services import TaskQueueService
@@ -13,21 +17,20 @@ from shared.types.agent_types import TaskStatus
 
 class BatchAuthorizationHandler(MessageHandler):
     """
-    Handles batch authorization confirmation.
+    Handles batch authorization trigger.
     
-    Runs when all tasks are collection_complete and user confirms.
+    Runs when all tasks are collection_complete to trigger the Auth Flow.
     """
-    
-    CONFIRMATION_INTENTS = {"yes", "confirm", "proceed", "ok"}
-    CONFIRMATION_TEXTS = {"yes", "confirm", "proceed", "ok", "y"}
     
     def __init__(
         self,
         task_queue_service: TaskQueueService,
         transfer_service: "TransferService",
+        whatsapp_client: WhatsAppClient
     ):
         self.task_queue_service = task_queue_service
         self.transfer_service = transfer_service
+        self.whatsapp_client = whatsapp_client
     
     async def can_handle(self, context: MessageContext) -> bool:
         """
@@ -35,55 +38,45 @@ class BatchAuthorizationHandler(MessageHandler):
         - Has active queue
         - Has planner output
         - All tasks are collection_complete
-        - User is confirming
         """
         if not context.has_active_queue or not context.planner_output:
             return False
         
-        # Check if all tasks are collection_complete
         task_results = await self.task_queue_service.get_task_results(context.phone_number)
         all_tasks_ready = all(
             task_results.get(task.id, {}).get("status") == TaskStatus.COLLECTION_COMPLETE.value
             for task in context.planner_output.tasks
         )
         
-        if not all_tasks_ready:
-            return False
-        
-        # Check if user is confirming
-        is_confirmation = (
-            context.intent in self.CONFIRMATION_INTENTS or
-            context.text.lower().strip() in self.CONFIRMATION_TEXTS
-        )
-        
-        return is_confirmation
+        return all_tasks_ready
     
     async def handle(self, context: MessageContext) -> MessageContext:
-        """Trigger batch authorization flow."""
-        print(f"🔍 [BatchAuth] Triggering batch authorization")
+        """Trigger batch authorization flow via WhatsApp PIN flow."""
+        print(f"🔍 [BatchAuth] Auto-triggering batch authorization")
         
-        # Get task results
-        task_results = await self.task_queue_service.get_task_results(context.phone_number)
+        redis = RedisClient.get_client()
+        auth_sent_key = f"batch:auth_sent:{context.phone_number}"
+        if await redis.get(auth_sent_key):
+            return context
         
-        # Find first collection_complete task
-        first_task = None
-        for task in context.planner_output.tasks:
-            if task_results.get(task.id, {}).get("status") == TaskStatus.COLLECTION_COMPLETE.value:
-                first_task = task
-                break
-        
-        if first_task and first_task.executor == "transfer":
-            # Set as current task and trigger authorization
-            await self.task_queue_service.set_current_task(context.phone_number, first_task.id)
+        if not context.planner_output:
+            return context
             
-            # Trigger authorization flow
-            auth_response = await self.transfer_service.run_simple(
-                context.phone_number, "authorize", {"intent": "transfer"}
-            )
-            return context.with_response(auth_response, handled=True)
+        total_tasks = len(context.planner_output.tasks)
         
-        # Fallback response
-        return context.with_response(
-            "Ready to authorize. Please proceed with the authorization flow.",
-            handled=True
+        timestamp = int(time.time())
+        flow_token = f"batch-auth-{context.phone_number}-{timestamp}"
+        
+        await self.whatsapp_client.send_flow(
+            to=context.phone_number,
+            header="Authorize Transactions",
+            flow_cta="Authorize",
+            flow_id=settings.pin_confirmation_flow_id,
+            screen_name="Pin",
+            flow_token=flow_token,
+            text_body=f"You have {total_tasks} transaction{'s' if total_tasks > 1 else ''} ready for authorization. Tap below to enter your PIN and process them all at once."
         )
+        
+        await redis.setex(auth_sent_key, 300, "1")
+        
+        return context.with_response("", handled=True)
