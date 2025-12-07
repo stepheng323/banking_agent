@@ -17,6 +17,10 @@ def create_initial_state(
     classification_result: Optional[dict] = None
 ) -> AirtimeState:
     """Create initial state for airtime purchase flow."""
+    language = None
+    if classification_result and "detected_language" in classification_result:
+        language = classification_result.get("detected_language")
+
     return {
         "phone_number": phone_number,
         "message": message,
@@ -42,6 +46,7 @@ def create_initial_state(
         "idempotency_key": None,
         "airtime_status": None,
         "classification_result": classification_result,
+        "language": language,
     }
 
 

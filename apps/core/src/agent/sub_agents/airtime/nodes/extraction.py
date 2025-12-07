@@ -86,6 +86,10 @@ async def extract_entities(state: AirtimeState, extractor: AirtimeEntityExtracto
             airtime_beneficiaries.append(b)
     if airtime_beneficiaries:
         smart_context["beneficiaries"] = airtime_beneficiaries
+    
+    language = state.get("language")
+    if language:
+        smart_context["language"] = language
 
     result: AirtimeExtractionResult = await extractor.extract(state["message"], smart_context=smart_context if smart_context else None)
 
