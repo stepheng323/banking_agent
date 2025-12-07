@@ -75,7 +75,9 @@ def setup_dependencies():
     )
     account_management_service = AccountManagementService(
         account_repo=account_repository,
-        user_repo=user_repository
+        user_repo=user_repository,
+        llm=llm,
+        whatsapp_client=whatsapp_client
     )
 
     task_queue_service = TaskQueueService()
