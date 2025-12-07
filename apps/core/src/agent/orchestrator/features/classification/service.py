@@ -32,6 +32,27 @@ class OrchestratorClassificationService:
         
         text_clean = text.strip().lower()
         
+        # Fast path for greetings - no LLM needed
+        greeting_patterns = {
+            "hi", "hello", "hey", "hey there", "hi there", "hello there",
+            "good morning", "good afternoon", "good evening", "good night",
+            "gm", "gn", "morning", "afternoon", "evening",
+            # Multilingual greetings
+            "bawo", "kaaro", "ekaro",  # Yoruba
+            "sannu", "barka",  # Hausa
+            "kedu", "ndewo",  # Igbo
+            "how far", "how you dey",  # Nigerian Pidgin
+        }
+        if text_clean in greeting_patterns:
+            return ClassificationResult(
+                intent="conversational",
+                is_cancellation=False,
+                is_complex=False,
+                confidence=0.99,
+                response="",
+                complexity_reason="Simple greeting",
+            )
+        
         active_flow = None
         if context and context.get("conversationState"):
             active_flow = context["conversationState"].get("active_flow")
@@ -116,8 +137,17 @@ class OrchestratorClassificationService:
             "You are an intent classifier for a banking assistant. "
             "Classify messages into: transfer, airtime, data, query, manage_accounts, conversational, cancel, yes, no, confirm, skip, unknown. "
             "Determine complexity (multi-step reasoning, dynamic amounts, pooling accounts, historical references, multiple transactions). "
-            "Work across languages: English, Yoruba, Hausa, Igbo, Nigerian Pidgin, French, and more.\n\n"
+            "Detect language (English, Yoruba, Hausa, Igbo, Pidgin, French, etc). Return language name in detected_language field.\n\n"
             
+            "**CONVERSATIONAL INTENT (EXPANDED):**\n"
+            "- Greetings: hi, hello, good morning, bawo, kedu, sannu\n"
+            "- Gratitude: thank you, thanks, eshe, nagode, dalu, you are the best\n"
+            "- Jokes/Fun: tell me a joke, say something funny, are you smart?\n"
+            "- Identity/Testing: who are you?, are you a bot?, are you real?, you are stupid\n"
+            "- Feedback/Comments: good job, this is cool, i like this app\n"
+            "- General Banter: simple replies that don't fit other intents but aren't cancellations\n"
+            "- If message is purely conversational/social, classify as 'conversational'.\n\n"
+
             "**QUERY INTENT (FINANCIAL QUESTIONS):**\n"
             "- If a message is asking about transaction history, spending patterns, or financial insights, classify as 'query'\n"
             "- Examples of query intent:\n"
@@ -188,10 +218,13 @@ class OrchestratorClassificationService:
             "- '0760505261 Access bank' → intent: transfer, is_cancellation: false, is_complex: false\n"
             "- '5k' (after being asked for amount) → intent: transfer, is_cancellation: false, is_complex: false\n"
             "- 'change amount to 10k' → intent: transfer, is_cancellation: false, is_complex: false (modification, not cancellation)\n"
-            "- 'hi' → intent: conversational, is_cancellation: false, is_complex: false\n"
+            "- 'hi' → intent: conversational, is_cancellation: false, is_complex: false, detected_language: 'English'\n"
+            "- 'bawo ni' → intent: conversational, is_cancellation: false, is_complex: false, detected_language: 'Yoruba'\n"
+            "- 'thank you' → intent: conversational, is_cancellation: false, is_complex: false\n"
+            "- 'tell me a joke' → intent: conversational, is_cancellation: false, is_complex: false\n"
             "- 'check balance' → intent: conversational, is_cancellation: false, is_complex: false\n"
             "- 'yes' (to beneficiary suggestion) → intent: yes or confirm, extracted_alias: null, is_complex: false\n"
-            "- 'no' (to beneficiary suggestion) → intent: no or skip, extracted_alias: null, is_complex: false\n"
+            "- 'no' (to beneficiary suggestion) → intent: no or skip, extracted_alias: null, is_complex: false\n" 
             "- 'Gaines' (after being asked 'Please provide a name or alias...') → intent: yes or confirm, extracted_alias: 'Gaines', is_complex: false\n"
             "- 'Mum' (after being asked for alias) → intent: yes or confirm, extracted_alias: 'Mum', is_complex: false\n\n"
 
@@ -201,6 +234,7 @@ class OrchestratorClassificationService:
             "Otherwise, classify based on intent.\n"
             "Return ONLY the JSON for the given schema."
         )
+
 
         user_content = text.strip()
 

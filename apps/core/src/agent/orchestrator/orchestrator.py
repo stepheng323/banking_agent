@@ -1,5 +1,6 @@
 """Minimal orchestrator: LLM-based multilingual intent+complexity and user context cache."""
 
+import asyncio
 from langchain_openai import ChatOpenAI
 
 from shared.clients.whatsapp_client import WhatsAppClient
@@ -115,5 +116,12 @@ class OrchestratorAgent:
         
         pipeline = MessagePipeline(self._handlers)
         response = await pipeline.process(initial_context)
+        
+        asyncio.create_task(
+            self.context_manager.add_conversation_turn(phone_number, "user", text)
+        )
+        asyncio.create_task(
+            self.context_manager.add_conversation_turn(phone_number, "assistant", response)
+        )
         
         return response
