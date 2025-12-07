@@ -28,13 +28,9 @@ class ContextLoaderHandler(MessageHandler):
     
     async def handle(self, context: MessageContext) -> MessageContext:
         """Load user context and queue state."""
-        # Load user context
-        user_ctx = await self.context_manager.load_user_context(context.phone_number)
-        conversation_state = user_ctx.get("conversation_state")
-        last_response = user_ctx.get("last_response")
-        suggestion_data = user_ctx.get("suggestion_data")
+        user_ctx, conversation_state, last_response, suggestion_data = \
+            await self.context_manager.load_context_parallel(context.phone_number)
         
-        # Parse suggestion context
         suggestion_context = None
         if suggestion_data:
             try:
@@ -42,10 +38,8 @@ class ContextLoaderHandler(MessageHandler):
             except (json.JSONDecodeError, TypeError):
                 suggestion_context = None
         
-        # Check for active queue
         has_active_queue = await self.task_queue_service.has_active_queue(context.phone_number)
         
-        # Get planner output if queue exists
         planner_output = None
         current_task_id = None
         if has_active_queue:
@@ -53,7 +47,6 @@ class ContextLoaderHandler(MessageHandler):
             if planner_output:
                 current_task_id = await self.task_queue_service.get_current_task(context.phone_number)
         
-        # Return updated context
         return context.update(
             user_context=user_ctx,
             conversation_state=conversation_state,

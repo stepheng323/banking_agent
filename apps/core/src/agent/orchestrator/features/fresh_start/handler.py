@@ -55,5 +55,4 @@ class FreshStartHandler(MessageHandler):
         
         print(f"✅ Cleared stale state for fresh start message: {context.text}")
         
-        # Return context with cleared conversation_state
         return context.update(conversation_state=None)

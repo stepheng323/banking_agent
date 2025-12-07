@@ -22,3 +22,8 @@ class ClassificationResult(BaseModel):
         default=None,
         description="If responding to a beneficiary suggestion and user provides an alias/name (e.g., 'save as mum', 'My opay', 'mum'), extract and return the alias here. Otherwise leave null."
     )
+    detected_language: Optional[str] = Field(
+        default=None,
+        description="The detected language of the user's message (e.g., English, Yoruba, Hausa, Igbo, Pidgin, French). Only set this if you are confident about the language."
+    )
+

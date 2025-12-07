@@ -236,6 +236,9 @@ class TransferFlowGraph:
                 if classification_result:
                     input_state["classification_result"] = classification_result
                     
+                    if "detected_language" in classification_result:
+                        input_state["language"] = classification_result["detected_language"]
+                    
                     # CRITICAL: Always restore task parameters when they exist
                     # This ensures each task uses its own amount and recipient, not values from previous task
                     if "task_parameters" in classification_result:

@@ -31,5 +31,4 @@ class NextTaskHandler(MessageHandler):
         if response:
             return context.with_response(response, handled=True)
         
-        # No next task available
         return context

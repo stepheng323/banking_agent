@@ -61,6 +61,9 @@ class TransferState(TypedDict):
     pin_verified: NotRequired[Optional[bool]]
     pin_verification_error: NotRequired[Optional[str]]
     pin_retry_count: NotRequired[int]
+    
+    # User Preferences
+    language: NotRequired[Optional[str]]
 
     # Change tracking fields
     _previous_amount: NotRequired[Optional[float]]

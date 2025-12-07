@@ -1,6 +1,5 @@
 """Unified PIN handler for all transaction types (transfer, airtime, data, batch)."""
 
-import asyncio
 from typing import Any, Dict, Optional, TYPE_CHECKING
 
 from fastapi.responses import Response
@@ -13,13 +12,16 @@ from apps.gateway.api.flows.response_helpers import format_error_response, forma
 if TYPE_CHECKING:
     from apps.core.src.agent.sub_agents.transfer.service import TransferService
     from apps.core.src.agent.sub_agents.airtime.service import AirtimeService
+    from apps.core.src.agent.tools.batch.service import BatchService
 else:
     try:
         from apps.core.src.agent.sub_agents.transfer.service import TransferService
         from apps.core.src.agent.sub_agents.airtime.service import AirtimeService
+        from apps.core.src.agent.tools.batch.service import BatchService
     except ImportError:
-        TransferService = None  # type: ignore
-        AirtimeService = None  # type: ignore
+        TransferService = None      
+        AirtimeService = None   
+        BatchService = None
 
 
 async def handle_transaction_pin(
@@ -31,6 +33,7 @@ async def handle_transaction_pin(
     whatsapp_client: WhatsAppClient,
     transfer_service: Optional["TransferService"] = None,
     airtime_service: Optional["AirtimeService"] = None,
+    batch_service: Optional["BatchService"] = None,
 ) -> Response:
     """
     Unified PIN handler for all transaction types.
@@ -47,6 +50,7 @@ async def handle_transaction_pin(
         whatsapp_client: WhatsApp client instance
         transfer_service: Optional TransferService instance
         airtime_service: Optional AirtimeService instance
+        batch_service: Optional BatchService instance
     """
     pin = data.get("pin")
 
@@ -62,9 +66,8 @@ async def handle_transaction_pin(
 
     if not flow_token or not flow_token.startswith("transaction-pin-"):
         if flow_token and flow_token.startswith("batch-auth-"):
-            # Batch authorization
             transaction_type = "batch"
-            idem_key = flow_token  # Use full token as key
+            idem_key = flow_token
         elif flow_token and flow_token.startswith("transfer-pin-"):
             idem_key = flow_token.replace("transfer-pin-", "")
             transaction_type = "transfer"
@@ -90,12 +93,9 @@ async def handle_transaction_pin(
         transaction_type = None  
   
 
-
     redis_client = RedisClient.get_client()
     
-    # For batch authorization, extract phone from flow token
     if transaction_type == "batch":
-        # Flow token format: batch-auth-{phone}-{timestamp}
         parts = flow_token.split("-")
         if len(parts) >= 3:
             phone_number = parts[2]
@@ -155,111 +155,38 @@ async def handle_transaction_pin(
     try:
         response_message = None
         
-        # Handle batch authorization
-        if transaction_type == "batch":
-            from apps.core.src.agent.tools.batch.executor import execute_batch
-            from apps.core.src.agent.orchestrator.services.task_queue_service import TaskQueueService
-            
-            # Send immediate acknowledgment
-            await whatsapp_client.send_text(
-                phone_number,
-                "✅ PIN verified. Authorizing transfers..."
-            )
-            
-            # Execute batch in background
-            task_queue_service = TaskQueueService(redis_client=redis_client)
-            asyncio.create_task(
-                execute_batch(
-                    phone_number=phone_number,
-                    pin_verified=True,
-                    whatsapp_client=whatsapp_client,
-                    task_queue_service=task_queue_service,
-                    transfer_service=transfer_service,
-                    airtime_service=airtime_service,
-                )
-            )
-            
-            # Return success immediately
-            return format_success_response(
-                "SUCCESS",
-                request_was_encrypted,
-                aes_key_bytes,
-                iv_bytes,
-                extension_message_response={
-                    "params": {
-                        "flow_token": flow_token,
-                        "pin": str(pin),
-                        "success": True,
-                    }
-                },
-            )
+        service_map = {
+            "transfer": transfer_service,
+            "airtime": airtime_service,
+            "batch": batch_service
+        }
         
-        # Handle single transfer
-        if transaction_type == "transfer":
-
-            if transfer_service and hasattr(transfer_service.graph, "resume_after_pin_verification"):
+        service = service_map.get(transaction_type)
+        
+        if transaction_type == "transfer" or transaction_type == "airtime":
+            if service and hasattr(service, "graph") and hasattr(service.graph, "resume_after_pin_verification"):
                 try:
-                    response_message = await transfer_service.graph.resume_after_pin_verification(
+                    response_message = await service.graph.resume_after_pin_verification(
                         phone_number, True, None
                     )
                 except Exception:
                     import traceback
                     traceback.print_exc()
-                    return format_error_response(
-                        "Pin",
-                        "Failed to process transfer authorization. Please try again.",
-                        request_was_encrypted,
-                        aes_key_bytes,
-                        iv_bytes,
-                    )
+                    if transaction_type == "airtime":
+                        response_message = f"{transaction_type.capitalize()} transaction authorized. Processing your request..."
+                    else:
+                        raise
             else:
-                return format_error_response(
-                    "Pin",
-                    "Transfer service not available. Please start a new transfer.",
-                    request_was_encrypted,
-                    aes_key_bytes,
-                    iv_bytes,
-                )
-
-        elif transaction_type == "airtime":
-            if not airtime_service:
-                return format_error_response(
-                    "Pin",
-                    "Airtime service not available. Please start a new airtime purchase.",
-                    request_was_encrypted,
-                    aes_key_bytes,
-                    iv_bytes,
-                )
-            
-            if not hasattr(airtime_service, "graph"):
-                return format_error_response(
-                    "Pin",
-                    "Airtime service not properly initialized. Please start a new airtime purchase.",
-                    request_was_encrypted,
-                    aes_key_bytes,
-                    iv_bytes,
-                )
-            
-            if not hasattr(airtime_service.graph, "resume_after_pin_verification"):
-                return format_error_response(
-                    "Pin",
-                    "Airtime service not properly initialized. Please start a new airtime purchase.",
-                    request_was_encrypted,
-                    aes_key_bytes,
-                    iv_bytes,
-                )
-            
-            try:
-                response_message = await airtime_service.graph.resume_after_pin_verification(
+                raise ValueError(f"Service for {transaction_type} not properly initialized")
+                
+        elif transaction_type == "batch":
+            if service and hasattr(service, "resume_after_pin_verification"):
+                response_message = await service.resume_after_pin_verification(
                     phone_number, True, None
                 )
-            except Exception as e:
-                print(f"Error in resume_after_pin_verification: {e}")
-                import traceback
-                traceback.print_exc()
-                # Don't return error immediately - try to send a default message instead
-                response_message = "Airtime purchase authorized. Processing your request..."
-
+            else:
+                raise ValueError("Batch service not available")
+                
         else:
             return format_error_response(
                 "Pin",
@@ -281,11 +208,9 @@ async def handle_transaction_pin(
             iv_bytes,
         )
 
-    # Ensure we always have a response message
     if not response_message or not response_message.strip():
         response_message = f"{transaction_type.capitalize()} transaction authorized. Processing your request..."
 
-    # Send response message to user via WhatsApp
     if response_message and response_message.strip():
         try:
             await whatsapp_client.send_text(
@@ -310,4 +235,3 @@ async def handle_transaction_pin(
             }
         },
     )
-

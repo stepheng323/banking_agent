@@ -56,7 +56,6 @@ class AirtimeFlowGraph:
     async def _ensure_checkpointer(self):
         """Ensure checkpointer is initialized and graph is compiled."""
         if not self._checkpointer_setup:
-            # Use Redis Stack checkpointer (<1ms latency, includes RediSearch module)
             self._checkpointer = AsyncRedisSaver(redis_url=settings.redis_url)
             await self._checkpointer.asetup()
             self._checkpointer_setup = True
@@ -88,6 +87,10 @@ class AirtimeFlowGraph:
 
         input_state = create_initial_state(
             phone_number, message, message_id, classification_result)
+
+        if classification_result and "detected_language" in classification_result:
+             input_state["language"] = classification_result["detected_language"]
+        
         final_state = await self.graph.ainvoke(cast(AirtimeState, input_state), config)
         await update_conversation_state(phone_number, cast(AirtimeState, final_state))
 
@@ -145,7 +148,7 @@ class AirtimeFlowGraph:
             "pin_verified": pin_verified,
             "pin_verification_error": pin_error,
             "flow_state": "authorizing",
-            "airtime_status": "pending",  # Clear collection_complete status
+            "airtime_status": "pending",  
         })
 
         final_state = await self.graph.ainvoke(cast(AirtimeState, updated_state), config)

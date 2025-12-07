@@ -1,6 +1,5 @@
 """Authorization node for transfer flow."""
 
-import json
 from typing import cast
 
 from apps.core.src.agent.sub_agents.transfer.state import TransferState
@@ -38,10 +37,8 @@ async def authorize_transaction(
     pin_result = await authorization_service.get_pin_verification_result(idem_key)
     pin_verified_in_state = state.get("pin_verified")
 
-    # If no pin_result but pin_verified is True in state, proceed (PIN was verified in handler)
     if not pin_result:
         if pin_verified_in_state is True:
-            # We'll get user_id from pending_transfer data below
             pass
         else:
             return cast(
@@ -83,10 +80,7 @@ async def authorize_transaction(
             },
         )
 
-    # PIN is verified (either from pin_result or from state)
     try:
-        # OPTIMIZED: Get pending transfer data directly from state (checkpoint)
-        # The confirmation node now stores data in the checkpoint, not Redis
         amount = state.get("amount")
         recipient_account = state.get("recipient_account")
         recipient_bank_name = state.get("recipient_bank_name")
@@ -111,12 +105,10 @@ async def authorize_transaction(
             "idempotency_key": state.get("idempotency_key")
         }
 
-        # Get user_id from pin_result or from pending_transfer/user_profile
         user_id = None
         if pin_result and pin_result.user_id:
             user_id = pin_result.user_id
         else:
-            # Try to get user_id from user_profile in state
             user_profile = state.get("user_profile")
             if isinstance(user_profile, dict):
                 user_id = user_profile.get("id")
@@ -150,7 +142,6 @@ async def authorize_transaction(
             message=transfer_request,
         )
 
-        # Clear previous values from Redis so next transfer is treated as new, not a change
         prev_values_key = f"transfer:prev:session:{phone_number}"
         await redis_client.delete(prev_values_key)
 
@@ -174,8 +165,6 @@ async def authorize_transaction(
 
     except Exception as e:
         error_msg = "Failed to process authorization. Please try again."
-        import traceback
-        traceback.print_exc()
         return cast(
             TransferState,
             {

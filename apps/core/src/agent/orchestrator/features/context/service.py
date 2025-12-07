@@ -7,7 +7,6 @@ import asyncio
 from shared.repositories.user_repository import UserRepository
 from shared.repositories.beneficiary_repository import BeneficiaryRepository
 from shared.cache.redis_client import RedisClient
-from shared.database.models import Account
 from shared.utils.serialization import sqlalchemy_to_dict
 from apps.core.src.agent.orchestrator.models.classification import ClassificationResult
 from apps.core.src.agent.tools.cache.user_data import UserDataCache
@@ -56,7 +55,8 @@ class OrchestratorContextManager:
             
             current_beneficiaries = []
             if current_profile and self.beneficiary_repo:
-                current_beneficiaries = self.beneficiary_repo.get_by_user(current_profile.id)
+                user_id = str(current_profile.id)
+                current_beneficiaries = self.beneficiary_repo.get_by_user(user_id)
 
             return current_profile, current_accounts, current_beneficiaries
 
@@ -138,6 +138,46 @@ class OrchestratorContextManager:
         except Exception:
             pass
 
+    async def get_conversation_history(self, phone_number: str, limit: int = 10) -> list[dict[str, str]]:
+        """Get recent conversation history."""
+        try:
+            redis_client = RedisClient.get_client()
+            key = f"user:{phone_number}:chat_history"
+            items = await redis_client.lrange(key, -limit, -1)
+            return [json.loads(item) for item in items]
+        except Exception:
+            return []
+
+    async def add_conversation_turn(self, phone_number: str, role: str, content: str) -> None:
+        """Add a message to conversation history."""
+        try:
+            redis_client = RedisClient.get_client()
+            key = f"user:{phone_number}:chat_history"
+            message = json.dumps({"role": role, "content": content})
+            await redis_client.rpush(key, message)
+            await redis_client.ltrim(key, -50, -1)
+            await redis_client.expire(key, 86400)
+        except Exception:
+            pass
+
+    async def get_user_language(self, phone_number: str) -> Optional[str]:
+        """Get user's preferred language."""
+        try:
+            redis_client = RedisClient.get_client()
+            key = f"user:{phone_number}:language"
+            return await redis_client.get(key)
+        except Exception:
+            return None
+
+    async def set_user_language(self, phone_number: str, language: str) -> None:
+        """Set user's preferred language."""
+        try:
+            redis_client = RedisClient.get_client()
+            key = f"user:{phone_number}:language"
+            await redis_client.set(key, language, ex=2592000)  # 30 days
+        except Exception:
+            pass
+
     async def load_context_parallel(self, phone_number: str) -> tuple[dict[str, Any], Optional[dict[str, Any]], Optional[str], Optional[str]]:
         """
         Load all context data in parallel using Redis pipeline for optimal performance.
@@ -147,6 +187,8 @@ class OrchestratorContextManager:
         - conversation_state
         - last_response
         - beneficiary_suggestion
+        - language
+        - chat_history
         
         Args:
             phone_number: User's phone number
@@ -160,18 +202,20 @@ class OrchestratorContextManager:
                 f"user:{phone_number}:conversation_state",
                 f"user:{phone_number}:last_response",
                 f"user:{phone_number}:beneficiary_suggestion",
+                f"user:{phone_number}:language",
+                f"user:{phone_number}:chat_history",
             ]
             
-            # Use pipeline to fetch all keys in parallel
             pipe = redis_client.pipeline()
-            for key in keys:
+            for key in keys[0:4]: # Get values for first 4 keys
                 pipe.get(key)
+            
+            pipe.lrange(keys[4], -10, -1)
+            
             results = await pipe.execute()
             
-            # Load user context separately (uses UserDataCache)
             user_ctx = await self.load_user_context(phone_number)
             
-            # Parse conversation_state
             conversation_state = None
             if results[0]:
                 try:
@@ -179,20 +223,29 @@ class OrchestratorContextManager:
                 except (json.JSONDecodeError, TypeError):
                     pass
             
-            # last_response is already a string or None
             last_response = results[1] if results[1] else None
-            
-            # suggestion_data is JSON string or None
             suggestion_data = results[2] if results[2] else None
+            language = results[3] if results[3] else None
+            
+            history_raw = results[4] if results[4] else []
+            history = []
+            try:
+                history = [json.loads(item) for item in history_raw]
+            except Exception:
+                pass
+                
+            user_ctx["language"] = language
+            user_ctx["history"] = history
             
             return user_ctx, conversation_state, last_response, suggestion_data
             
         except Exception as e:
-            # Fallback to individual calls on error
             print(f"⚠️  Error in parallel context loading: {e}, falling back to sequential")
             user_ctx = await self.load_user_context(phone_number)
             conversation_state = await self.get_conversation_state(phone_number)
             last_response = await self.get_last_response(phone_number)
+            language = await self.get_user_language(phone_number)
+            history = await self.get_conversation_history(phone_number)
             
             try:
                 redis_client = RedisClient.get_client()
@@ -200,5 +253,8 @@ class OrchestratorContextManager:
                 suggestion_data = await redis_client.get(suggestion_key)
             except Exception:
                 suggestion_data = None
-                
+            
+            user_ctx["language"] = language
+            user_ctx["history"] = history
+            
             return user_ctx, conversation_state, last_response, suggestion_data

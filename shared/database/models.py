@@ -7,6 +7,7 @@ from enum import Enum
 from sqlalchemy import JSON, Boolean, Column, DateTime, ForeignKey, String, Float
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import relationship
 from sqlalchemy.sql import text
 
 Base = declarative_base()
@@ -39,6 +40,10 @@ class User(Base):
         DateTime, server_default=text("now()"), onupdate=datetime.utcnow, nullable=False
     )
 
+    accounts = relationship("Account", back_populates="user")
+    beneficiaries = relationship("Beneficiary", back_populates="user")
+    transactions = relationship("Transaction", back_populates="user")
+
     def __repr__(self):
         return f"<User(id={self.id}, phone={self.phone_number}, name={self.full_name})>"
 
@@ -67,6 +72,8 @@ class Account(Base):
         DateTime, server_default=text("now()"), onupdate=datetime.utcnow, nullable=False
     )
 
+    user = relationship("User", back_populates="accounts")
+
     def __repr__(self):
         return f"<Account(id={self.id}, bank={self.bank_name}, number={self.account_number})>"
 
@@ -92,6 +99,8 @@ class Beneficiary(Base):
     updated_at = Column(
         DateTime, server_default=text("now()"), onupdate=datetime.utcnow, nullable=False
     )
+
+    user = relationship("User", back_populates="beneficiaries")
 
     def __repr__(self):
         return f"<Beneficiary(id={self.id}, type={self.beneficiary_type}, name={self.account_name}, account_number={self.account_number}, bank_code={self.bank_code}, bank_name={self.bank_name})>"
@@ -138,6 +147,8 @@ class Transaction(Base):
         DateTime, server_default=text("now()"), onupdate=datetime.utcnow, nullable=False
     )
     completed_at = Column(DateTime, nullable=True)
+
+    user = relationship("User", back_populates="transactions")
 
     def __repr__(self):
         return f"<Transaction(id={self.id}, status={self.status}, amount={self.amount}, transaction_id={self.transaction_id})>"

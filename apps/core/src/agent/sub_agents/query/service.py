@@ -1,30 +1,77 @@
 """Query service for answering financial questions using Mono API."""
 
 from typing import Dict, Any, List
+import json
 from langchain_core.runnables import Runnable
 
 from shared.clients.mono_client import MonoClient
+from shared.repositories.user_repository import UserRepository
+from shared.repositories.account_repository import AccountRepository
 from apps.core.src.agent.sub_agents.query.parser import QueryParser
 
 
 class QueryService:
     """Service for answering financial questions about user transactions."""
     
-    def __init__(self, llm: Runnable, mono_client: MonoClient):
+    def __init__(
+        self,
+        llm: Runnable,
+        mono_client: MonoClient,
+        user_repo: UserRepository,
+        account_repo: AccountRepository
+    ):
         """
         Initialize query service.
         
         Args:
             llm: Language model for parsing and formatting
             mono_client: Mono API client
+            user_repo: User repository
+            account_repo: Account repository
         """
         self.llm = llm
         self.mono = mono_client
+        self.user_repo = user_repo
+        self.account_repo = account_repo
         self.parser = QueryParser(llm)
     
+    async def handle_query(
+        self,
+        text: str,
+        user_ctx: Dict[str, Any]
+    ) -> str:
+        """
+        Handle query intent.
+        
+        Args:
+            text: User's query text
+            user_ctx: User context (profile, accounts, etc.)
+            
+        Returns:
+            Response message
+        """
+        profile = user_ctx.get("profile")
+        if not profile:
+            return "I couldn't find your profile. Please contact support."
+            
+        accounts = user_ctx.get("accounts", [])
+        account = None
+
+        for acc in accounts:
+            if acc.get("is_default"):
+                account = acc
+                break
+        
+        if not account and accounts:
+            account = accounts[0]
+            
+        if not account:
+            return "You need to link a bank account before I can check your transactions."
+        
+        return await self.answer_question(account["account_id"], text)
+
     async def answer_question(
         self,
-        user_id: str,
         account_id: str,
         question: str
     ) -> str:
@@ -49,7 +96,7 @@ class QueryService:
                 to_date=params["date_range"]["to"],
                 transaction_type=params["transaction_type"] if params["transaction_type"] != "both" else None,
                 narration=params["narration_filter"],
-                limit=1000
+                limit=100
             )
             
             if not transactions:
@@ -57,7 +104,8 @@ class QueryService:
             
             result = self._aggregate(transactions, params)
             
-            response = self._format_response(result, params)
+            language = user_ctx.get("language") or "English"
+            response = await self._format_response(result, params, language)
             
             return response
             
@@ -110,17 +158,48 @@ class QueryService:
         date_range = params["date_range"]
         return f"I couldn't find any transactions from {date_range['from']} to {date_range['to']}."
     
-    def _format_response(self, result: Any, params: Dict[str, Any]) -> str:
-        """Format aggregated results into natural language."""
+    async def _format_response(self, result: Any, params: Dict[str, Any], language: str = "English") -> str:
+        """Format aggregated results into natural language using LLM."""
         query_type = params["query_type"]
         
-        if query_type == "total_spent":
-            return self._format_total_spent(result)
-        elif query_type in ["search", "transaction_list"]:
-            return self._format_transaction_list(result, params)
-        else:
-            return str(result)
-    
+        # Prepare context for LLM
+        context = {
+            "query_type": query_type,
+            "data": result,
+            "params": params,
+            "language": language
+        }
+        
+        # Optimization: Use deterministic formatting for English to save latency
+        if language.lower() in ("english", "en"):
+             if query_type == "total_spent":
+                 return self._format_total_spent(result)
+             elif query_type in ["search", "transaction_list"]:
+                 return self._format_transaction_list(result, params)
+
+        prompt = f"""
+You are a banking assistant. Summarize the following transaction data for the user.
+Reply in {language}. Keep it concise and helpful. Use emojis like 📤 for debit and 📥 for credit.
+
+Data:
+{json.dumps(context, indent=2, default=str)}
+
+If the data list is empty, say no transactions were found matching the criteria.
+"""
+        try:
+             response = await self.llm.ainvoke(prompt)
+             if hasattr(response, 'content'):
+                 return response.content
+             return str(response)
+        except Exception:
+             # Fallback to English hardcoded format if LLM fails
+             if query_type == "total_spent":
+                 return self._format_total_spent(result)
+             elif query_type in ["search", "transaction_list"]:
+                 return self._format_transaction_list(result, params)
+             else:
+                 return str(result)
+
     def _format_total_spent(self, result: Dict[str, Any]) -> str:
         """Format total spent response."""
         total = result["total_naira"]

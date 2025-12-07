@@ -1,22 +1,149 @@
 """Service for managing user bank accounts."""
 
 from typing import List, Optional, Dict, Any
+import time
+from langchain_openai import ChatOpenAI
+from shared.clients.whatsapp_client import WhatsAppClient
+from shared.config import settings
 from shared.repositories.account_repository import AccountRepository
+from shared.repositories.user_repository import UserRepository
 from shared.database.models import Account
+from apps.core.src.agent.sub_agents.account_management.parser import AccountManagementParser, AccountManagementIntent
+from apps.core.src.agent.sub_agents.account_management.formatter import AccountManagementFormatter
 
 
 class AccountManagementService:
     """Service for managing user bank accounts (link, unlink, list, set default)."""
     
-    def __init__(self, account_repo: AccountRepository):
+    def __init__(
+        self, 
+        account_repo: AccountRepository, 
+        user_repo: UserRepository,
+        llm: ChatOpenAI,
+        whatsapp_client: WhatsAppClient
+    ):
         """
         Initialize account management service.
         
         Args:
             account_repo: Repository for account operations
+            user_repo: Repository for user operations
+            llm: Language model for intent parsing
+            whatsapp_client: WhatsApp client for sending flows
         """
         self.account_repo = account_repo
+        self.user_repo = user_repo
+        self.llm = llm
+        self.whatsapp_client = whatsapp_client
+        self.parser = AccountManagementParser(llm)
     
+    async def handle_account_management(
+        self,
+        phone_number: str,
+        text: str,
+        user_ctx: Dict[str, Any]
+    ) -> str:
+        """
+        Handle account management intent.
+        
+        Args:
+            phone_number: User's phone number
+            text: User's command text
+            user_ctx: User context
+            
+        Returns:
+            Response message
+        """
+        profile = user_ctx.get("profile")
+        if not profile:
+            return "User not found."
+        user_id = str(profile["id"])
+        
+        parsed: AccountManagementIntent = await self.parser.parse(text)
+        action = parsed.action
+        identifier = parsed.identifier
+        
+        response = ""
+        if action == "unlink":
+            if identifier:
+                response = await self.unlink_account(user_id, identifier)
+            else:
+                response = "Which account would you like to unlink? Please say 'unlink [bank name]' or 'unlink [number]'."
+
+        elif action == "set_default":
+            if identifier:
+                response = await self.set_default(user_id, identifier)
+            else:
+                response = "Which account should be your default? Say 'set [bank name] as default'."
+            
+        elif action == "link":
+            response = await self.link_account(phone_number)
+                 
+        elif action == "list":
+            accounts = user_ctx.get("accounts")
+            if accounts:
+                response = AccountManagementFormatter.format_account_list(accounts)
+            else:
+                response = await self.list_accounts(user_id)
+            
+        else:
+            accounts = user_ctx.get("accounts")
+            if accounts:
+                response = AccountManagementFormatter.format_account_list(accounts)
+            else:
+                response = await self.list_accounts(user_id)
+                
+        language = user_ctx.get("language")
+        if language and language.lower() not in ("english", "en"):
+            return await self._translate_response(response, language)
+            
+        return response
+
+    async def _translate_response(self, text: str, language: str) -> str:
+        """Translate response to user's preferred language using LLM."""
+        try:
+            prompt = (
+                f"Translate the following banking assistant response to {language}. "
+                "Keep the formatting (markdown, emojis) exactly the same. "
+                "Adapt the tone to be natural in the target language (e.g., Use Pidgin English style if language is Pidgin).\n\n"
+                f"Original Response:\n{text}"
+            )
+            result = await self.llm.ainvoke(prompt)
+            if hasattr(result, 'content'):
+                return result.content
+            return str(result)
+        except Exception:
+            return text
+
+    async def link_account(self, phone_number: str) -> str:
+        """
+        Send Mono Connect flow to link a new account.
+        
+        Args:
+            phone_number: User's phone number
+            
+        Returns:
+            Instruction message
+        """
+        flow_id = settings.onboarding_flow_id
+        if not flow_id:
+            return "Sorry, account linking is temporarily unavailable. Please contact support."
+            
+        timestamp = int(time.time())
+        flow_token = f"link-{phone_number}-{timestamp}"
+        
+        await self.whatsapp_client.send_flow(
+            to=phone_number,
+            header="Link New Account",
+            flow_cta="Link Account",
+            flow_id=flow_id,
+            screen_name="Link Account",
+            flow_token=flow_token,
+            text_body="Tap the button below to securely link your bank account."
+        )
+        
+        return "I've sent you a secure link to connect your new bank account. Please tap the 'Link Account' button below to proceed."
+
     async def list_accounts(self, user_id: str) -> str:
         """
         List all linked accounts for a user.
@@ -28,32 +155,7 @@ class AccountManagementService:
             Formatted message with account list
         """
         accounts = self.account_repo.get_by_user(user_id)
-        
-        if not accounts:
-            return (
-                "You don't have any linked bank accounts yet.\n\n"
-                "To link an account, I'll need to guide you through Mono Connect. "
-                "This is currently done during onboarding, but we can set it up for you again."
-            )
-        
-        lines = ["🏦 *Your Linked Accounts:*\n"]
-        for i, account in enumerate(accounts, 1):
-            default_marker = " ✓ *Default*" if account.is_default else ""
-            masked_number = f"***{account.account_number[-4:]}" if account.account_number else "****"
-            
-            lines.append(
-                f"{i}. {account.bank_name} ({masked_number}){default_marker}\n"
-                f"   {account.account_name or 'Account'}"
-            )
-        
-        lines.append(
-            "\n\n💡 *Tips:*\n"
-            "• Reply with a number (1, 2, etc.) to set that as your default account\n"
-            "• Say 'unlink account [number]' to remove an account\n"
-            "• Say 'link new account' to add another account"
-        )
-        
-        return "\n".join(lines)
+        return AccountManagementFormatter.format_account_list(accounts)
     
     async def set_default(self, user_id: str, account_identifier: str) -> str:
         """
@@ -71,14 +173,12 @@ class AccountManagementService:
         if not accounts:
             return "You don't have any linked accounts."
         
-        # Try to parse as index first
         selected_account = None
         try:
             account_index = int(account_identifier)
             if 1 <= account_index <= len(accounts):
                 selected_account = accounts[account_index - 1]
         except ValueError:
-            # Not a number, try to match by bank name
             selected_account = self._find_account_by_bank_name(accounts, account_identifier)
         
         if not selected_account:
@@ -89,7 +189,7 @@ class AccountManagementService:
             )
         
         try:
-            self.account_repo.set_default_account(user_id, selected_account.account_id)
+            self.account_repo.set_default_account(user_id, str(selected_account.account_id))
             
             masked_number = f"***{selected_account.account_number[-4:]}"
             return (
@@ -124,14 +224,12 @@ class AccountManagementService:
                 "If you want to switch accounts, link a new one first, then unlink this one."
             )
         
-        # Try to parse as index first
         selected_account = None
         try:
             account_index = int(account_identifier)
             if 1 <= account_index <= len(accounts):
                 selected_account = accounts[account_index - 1]
         except ValueError:
-            # Not a number, try to match by bank name
             selected_account = self._find_account_by_bank_name(accounts, account_identifier)
         
         if not selected_account:
@@ -143,7 +241,7 @@ class AccountManagementService:
         
         try:
             success = self.account_repo.delete_account(
-                selected_account.account_id,
+                str(selected_account.account_id),
                 user_id
             )
             
@@ -173,7 +271,6 @@ class AccountManagementService:
         """
         bank_name_lower = bank_name.lower().strip()
         
-        # Common bank abbreviations
         bank_aliases = {
             "gtb": "gtbank",
             "gtbank": "gtbank",
@@ -200,10 +297,8 @@ class AccountManagementService:
             "palmpay": "palmpay",
         }
         
-        # Normalize the search term
         normalized_search = bank_aliases.get(bank_name_lower, bank_name_lower)
         
-        # Try exact match first
         for account in accounts:
             account_bank_lower = account.bank_name.lower()
             if (normalized_search in account_bank_lower or 
@@ -212,28 +307,3 @@ class AccountManagementService:
                 return account
         
         return None
-
-    
-    async def get_default_account(self, user_id: str) -> Optional[Account]:
-        """
-        Get user's default account.
-        
-        Args:
-            user_id: User ID
-            
-        Returns:
-            Default account or None
-        """
-        return self.account_repo.get_default_account(user_id)
-    
-    async def get_accounts(self, user_id: str) -> List[Account]:
-        """
-        Get all accounts for a user.
-        
-        Args:
-            user_id: User ID
-            
-        Returns:
-            List of accounts
-        """
-        return self.account_repo.get_by_user(user_id)

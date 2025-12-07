@@ -56,3 +56,5 @@ class AirtimeState(TypedDict):
     pin_verified: NotRequired[Optional[bool]]
     pin_verification_error: NotRequired[Optional[str]]
     pin_retry_count: NotRequired[int]
+    
+    language: NotRequired[Optional[str]]

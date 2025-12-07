@@ -45,4 +45,10 @@ class ClassificationHandler(MessageHandler):
             self.context_manager.save_classification_result(context.phone_number, result)
         )
         
+        if result.detected_language:
+            asyncio.create_task(
+                self.context_manager.set_user_language(
+                    context.phone_number, result.detected_language)
+            )
+        
         return context.update(classification_result=result)

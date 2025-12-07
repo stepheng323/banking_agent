@@ -49,6 +49,11 @@ class TransferEntityExtractor:
                 if aliases:
                     context_parts.append(
                         f"Saved beneficiary aliases/names: {', '.join(aliases)}")
+        
+            if "language" in smart_context:
+                context_parts.append(
+                    f"CRITICAL: User's preferred language is {smart_context['language']}. GENERATE THE REPLY IN {smart_context['language'].upper()}. Adapt the tone to match user's style."
+                )
 
         if context_parts:
             user_content = f"{user}\n\nsmartContext:\n" + \

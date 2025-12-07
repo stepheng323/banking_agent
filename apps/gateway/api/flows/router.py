@@ -15,6 +15,7 @@ from apps.gateway.api.flows.dependencies import (
     get_whatsapp_client,
     get_airtime_service,
     get_transfer_service,
+    get_batch_service,
 )
 from apps.gateway.api.flows.handlers.account_selection_handler import handle_account_selection
 from apps.gateway.api.flows.handlers.bvn_handler import handle_bvn_entry
@@ -33,6 +34,7 @@ async def flow_webhook(
     queue: RedisQueue = Depends(get_redis_queue),
     airtime_service = Depends(get_airtime_service),
     transfer_service = Depends(get_transfer_service),
+    batch_service = Depends(get_batch_service),
 ):
     """
     Handle WhatsApp Flow data exchange.
@@ -101,6 +103,7 @@ async def flow_webhook(
                 whatsapp_client,
                 transfer_service=transfer_service,
                 airtime_service=airtime_service,
+                batch_service=batch_service,
             )
 
         print(f" 🏥 Health check (unknown screen: {screen})")
@@ -122,4 +125,3 @@ async def flow_webhook(
         print(f"❌ Error in flow webhook: {e}")
         traceback.print_exc()
         return JSONResponse(content={"error": "Internal server error"}, status_code=500)
-

@@ -1,10 +1,10 @@
 """Minimal orchestrator: LLM-based multilingual intent+complexity and user context cache."""
 
+import asyncio
 from langchain_openai import ChatOpenAI
 
 from shared.clients.whatsapp_client import WhatsAppClient
 from shared.repositories import UserRepository, BeneficiaryRepository
-from shared.cache.redis_client import RedisClient
 
 from apps.core.src.agent.orchestrator.flow_completion_callback import (
     OrchestratorFlowCompletionCallback)
@@ -31,8 +31,6 @@ from apps.core.src.agent.orchestrator.features.batch_authorization.handler impor
 from apps.core.src.agent.orchestrator.features.active_queue.handler import ActiveQueueHandler
 from apps.core.src.agent.orchestrator.features.task_planning.handler import NextTaskHandler
 from apps.core.src.agent.orchestrator.features.intent_routing.handler import IntentRoutingHandler
-from apps.core.src.agent.orchestrator.features.query.handler import QueryHandler
-from apps.core.src.agent.orchestrator.features.account_management.handler import AccountManagementHandler
 
 
 class OrchestratorAgent:
@@ -85,7 +83,9 @@ class OrchestratorAgent:
             airtime_service,
             conversation_responder,
             self.context_manager,
-            self,
+            query_service,
+            account_management_service,
+            self.whatsapp_client,
         )
         # Handler order matters
         self._handlers = [
@@ -94,12 +94,10 @@ class OrchestratorAgent:
             FreshStartHandler(self.context_manager, transfer_service),
             BeneficiaryHandler(self.beneficiary_handler),
             CancellationHandler(self.cancellation_handler),
-            BatchAuthorizationHandler(task_queue_service, transfer_service),
+            BatchAuthorizationHandler(task_queue_service, transfer_service, whatsapp_client),
             ActiveQueueHandler(task_queue_service, transfer_service, airtime_service),
             NextTaskHandler(self.task_planner),
-            AccountManagementHandler(account_management_service),
-            QueryHandler(query_service),
-            IntentRoutingHandler(self.intent_router),
+            IntentRoutingHandler(self.intent_router)
         ]
 
     @property
@@ -118,5 +116,12 @@ class OrchestratorAgent:
         
         pipeline = MessagePipeline(self._handlers)
         response = await pipeline.process(initial_context)
+        
+        asyncio.create_task(
+            self.context_manager.add_conversation_turn(phone_number, "user", text)
+        )
+        asyncio.create_task(
+            self.context_manager.add_conversation_turn(phone_number, "assistant", response)
+        )
         
         return response

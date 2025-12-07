@@ -65,6 +65,12 @@ async def whatsapp_webhook(
             msg_type = msg.get("type", "text")
             flow_data = msg.get("flow_data")
 
+            # Temporary whitelist check
+            ALLOWED_NUMBER = "2348162511023"
+            if from_id != ALLOWED_NUMBER:
+                print(f"⛔ Ignoring message from unauthorized user: {from_id}")
+                continue
+
             print(f"   Message from {from_id}: {msg_type}")
             if text:
                 print(f"   Text: {text}")
@@ -100,7 +106,6 @@ async def whatsapp_webhook(
                         text="Sorry, I'm having trouble processing your message right now.",
                     )
 
-            # Process flow completion messages
             elif msg_type == "interactive" and flow_data:
                 whatsapp_msg = WhatsAppMessage(
                     message_id=message_id,

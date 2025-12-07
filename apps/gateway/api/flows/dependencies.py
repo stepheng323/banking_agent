@@ -11,6 +11,7 @@ from shared.repositories.account_repository import AccountRepository
 from shared.repositories.beneficiary_repository import BeneficiaryRepository
 from shared.database.connection import get_db_session
 from apps.core.src.agent.tools.cache.user_data import UserDataCache
+from apps.core.src.agent.orchestrator.services.task_queue_service import TaskQueueService
 
 from apps.gateway.core.config import settings
 
@@ -18,24 +19,29 @@ from apps.gateway.core.config import settings
 try:
     from apps.core.src.agent.sub_agents.airtime.service import AirtimeService
     from apps.core.src.agent.sub_agents.transfer.service import TransferService
-    print("✅ Successfully imported AirtimeService and TransferService")
+    from apps.core.src.agent.tools.batch.service import BatchService
+    print("✅ Successfully imported AirtimeService, TransferService, and BatchService")
 except ImportError as e:
-    print(f"❌ Failed to import AirtimeService/TransferService: {e}")
+    print(f"❌ Failed to import Agent Services: {e}")
     import traceback
     traceback.print_exc()
     AirtimeService = None  # type: ignore
     TransferService = None  # type: ignore
+    BatchService = None # type: ignore
 except Exception as e:
-    print(f"❌ Unexpected error importing AirtimeService/TransferService: {e}")
+    print(f"❌ Unexpected error importing Agent Services: {e}")
     import traceback
     traceback.print_exc()
     AirtimeService = None  # type: ignore
     TransferService = None  # type: ignore
+    BatchService = None # type: ignore
 
 
 _redis_queue_instance = None
 _airtime_service_instance = None
 _transfer_service_instance = None
+_batch_service_instance = None
+_task_queue_service_instance = None
 
 
 def get_redis_queue() -> RedisQueue:
@@ -52,6 +58,14 @@ def get_whatsapp_client() -> WhatsAppClient:
     FastAPI will cache this dependency per request automatically.
     """
     return WhatsAppClient()
+
+
+def get_task_queue_service() -> TaskQueueService:
+    """Dependency factory for TaskQueueService."""
+    global _task_queue_service_instance
+    if _task_queue_service_instance is None:
+        _task_queue_service_instance = TaskQueueService(redis_client=RedisClient.get_client())
+    return _task_queue_service_instance
 
 
 def get_airtime_service() -> Optional[Any]:
@@ -131,3 +145,33 @@ def get_transfer_service() -> Optional[Any]:
     
     return _transfer_service_instance
 
+
+def get_batch_service() -> Optional[Any]:
+    """Dependency factory for BatchService."""
+    global _batch_service_instance
+    
+    if BatchService is None:
+        print("⚠️  BatchService not available (import failed)")
+        return None
+        
+    if _batch_service_instance is None:
+        try:
+            whatsapp_client = WhatsAppClient()
+            task_queue_service = get_task_queue_service()
+            transfer_service = get_transfer_service()
+            airtime_service = get_airtime_service()
+            
+            _batch_service_instance = BatchService(
+                whatsapp_client=whatsapp_client,
+                task_queue_service=task_queue_service,
+                transfer_service=transfer_service,
+                airtime_service=airtime_service
+            )
+            print("✅ BatchService instance created")
+        except Exception as e:
+            print(f"❌ Error creating BatchService: {e}")
+            import traceback
+            traceback.print_exc()
+            return None
+            
+    return _batch_service_instance
