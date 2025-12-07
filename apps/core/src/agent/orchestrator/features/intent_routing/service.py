@@ -161,16 +161,12 @@ class OrchestratorIntentRouter:
             response = "Data purchase flow coming soon."
 
         elif intent == "query":
-            if self.query_service:
-                response = await self.query_service.handle_query(phone_number, text, result, user_ctx)
-            else:
-                response = "Query service not available."
+            response = await self.query_service.handle_query(text, user_ctx)
+
         elif intent == "account_management":
-            if self.account_management_service:
-                response = await self.account_management_service.handle_account_management(phone_number, text, result, user_ctx)
-            else:
-                response = "Account management service not available."
+            response = await self.account_management_service.handle_account_management(phone_number, text, result, user_ctx)
         elif intent == "conversational":
+            
             conv = await self.conversation_responder.generate_reply(phone_number, text, result, user_ctx)
             print(f"Conversation response: {conv}")
             response = conv

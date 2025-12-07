@@ -6,7 +6,6 @@ from langchain_core.runnables import Runnable
 from shared.clients.mono_client import MonoClient
 from shared.repositories.user_repository import UserRepository
 from shared.repositories.account_repository import AccountRepository
-from apps.core.src.agent.orchestrator.models.classification import ClassificationResult
 from apps.core.src.agent.sub_agents.query.parser import QueryParser
 
 
@@ -37,18 +36,14 @@ class QueryService:
     
     async def handle_query(
         self,
-        phone_number: str,
         text: str,
-        result: ClassificationResult,
         user_ctx: Dict[str, Any]
     ) -> str:
         """
         Handle query intent.
         
         Args:
-            phone_number: User's phone number
             text: User's query text
-            result: Classification result
             user_ctx: User context (profile, accounts, etc.)
             
         Returns:
@@ -58,13 +53,9 @@ class QueryService:
         if not profile:
             return "I couldn't find your profile. Please contact support."
             
-        user_id = str(profile["id"])
-        
-        # Get accounts from context
         accounts = user_ctx.get("accounts", [])
-        
-        # Find default account or fallback to first
         account = None
+
         for acc in accounts:
             if acc.get("is_default"):
                 account = acc
@@ -76,11 +67,10 @@ class QueryService:
         if not account:
             return "You need to link a bank account before I can check your transactions."
         
-        return await self.answer_question(user_id, account["account_id"], text)
+        return await self.answer_question(account["account_id"], text)
 
     async def answer_question(
         self,
-        user_id: str,
         account_id: str,
         question: str
     ) -> str:
@@ -105,7 +95,7 @@ class QueryService:
                 to_date=params["date_range"]["to"],
                 transaction_type=params["transaction_type"] if params["transaction_type"] != "both" else None,
                 narration=params["narration_filter"],
-                limit=1000
+                limit=100
             )
             
             if not transactions:
