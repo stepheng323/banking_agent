@@ -1,16 +1,14 @@
 """Parser for account management intents using LLM."""
 
-import json
-from typing import Optional, Dict, Any
+from typing import Optional, Literal
 from pydantic import BaseModel, Field
-from langchain_core.runnables import Runnable
-from langchain_core.messages import AIMessage
+from langchain_openai import ChatOpenAI
 
 
 class AccountManagementIntent(BaseModel):
     """Structured output for account management intent."""
     
-    action: str = Field(
+    action: Literal["list", "set_default", "unlink", "link", "unknown"] = Field(
         description="The action to perform: 'list', 'set_default', 'unlink', 'link', or 'unknown'"
     )
     identifier: Optional[str] = Field(
@@ -26,10 +24,10 @@ class AccountManagementIntent(BaseModel):
 class AccountManagementParser:
     """Parses natural language into structured account management intents."""
     
-    def __init__(self, llm: Runnable):
+    def __init__(self, llm: ChatOpenAI):
         self.llm = llm
     
-    async def parse(self, text: str) -> Dict[str, Any]:
+    async def parse(self, text: str) -> AccountManagementIntent:
         """
         Parse user text into structured intent.
         
@@ -37,7 +35,7 @@ class AccountManagementParser:
             text: User's input text
             
         Returns:
-            Dictionary with action and identifier
+            AccountManagementIntent object
         """
         system_prompt = (
             "You are an intent parser for a banking assistant's account management module. "
@@ -59,39 +57,22 @@ class AccountManagementParser:
             "Extract the bank name, alias, or list index (number) mentioned.\n"
             "- 'Set GTBank as default' -> identifier: 'GTBank'\n"
             "- 'Remove number 2' -> identifier: '2'\n"
-            "- 'Make my Opay default' -> identifier: 'Opay'\n\n"
-            
-            "Return ONLY a JSON object with keys: 'action', 'identifier', 'language'."
+            "- 'Make my Opay default' -> identifier: 'Opay'"
         )
         
         try:
-            response = await self.llm.ainvoke([
+            structured_llm = self.llm.with_structured_output(AccountManagementIntent)
+            
+            result = await structured_llm.ainvoke([
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": text}
             ])
             
-            content = response.content if isinstance(response, AIMessage) else str(response)
-            
-            # Handle list content (e.g. from some LLM providers)
-            if isinstance(content, list):
-                content = "".join(
-                    item if isinstance(item, str) else item.get("text", "")
-                    for item in content
-                )
-            
-            if not isinstance(content, str):
-                content = str(content)
-            
-            content = content.strip()
-            if "```json" in content:
-                content = content.split("```json")[1].split("```")[0].strip()
-            elif "```" in content:
-                content = content.split("```")[1].split("```")[0].strip()
-                
-            data = json.loads(content)
-            return data
+            if isinstance(result, dict):
+                return AccountManagementIntent(**result)
+            return result
             
         except Exception as e:
             print(f"Error parsing account management intent: {e}")
-            return {"action": "list", "identifier": None}
+            return AccountManagementIntent(action="list")
 
