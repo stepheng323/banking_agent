@@ -1,6 +1,7 @@
 """Query service for answering financial questions using Mono API."""
 
 from typing import Dict, Any, List
+import json
 from langchain_core.runnables import Runnable
 
 from shared.clients.mono_client import MonoClient
@@ -103,7 +104,8 @@ class QueryService:
             
             result = self._aggregate(transactions, params)
             
-            response = self._format_response(result, params)
+            language = user_ctx.get("language") or "English"
+            response = await self._format_response(result, params, language)
             
             return response
             
@@ -156,17 +158,48 @@ class QueryService:
         date_range = params["date_range"]
         return f"I couldn't find any transactions from {date_range['from']} to {date_range['to']}."
     
-    def _format_response(self, result: Any, params: Dict[str, Any]) -> str:
-        """Format aggregated results into natural language."""
+    async def _format_response(self, result: Any, params: Dict[str, Any], language: str = "English") -> str:
+        """Format aggregated results into natural language using LLM."""
         query_type = params["query_type"]
         
-        if query_type == "total_spent":
-            return self._format_total_spent(result)
-        elif query_type in ["search", "transaction_list"]:
-            return self._format_transaction_list(result, params)
-        else:
-            return str(result)
-    
+        # Prepare context for LLM
+        context = {
+            "query_type": query_type,
+            "data": result,
+            "params": params,
+            "language": language
+        }
+        
+        # Optimization: Use deterministic formatting for English to save latency
+        if language.lower() in ("english", "en"):
+             if query_type == "total_spent":
+                 return self._format_total_spent(result)
+             elif query_type in ["search", "transaction_list"]:
+                 return self._format_transaction_list(result, params)
+
+        prompt = f"""
+You are a banking assistant. Summarize the following transaction data for the user.
+Reply in {language}. Keep it concise and helpful. Use emojis like 📤 for debit and 📥 for credit.
+
+Data:
+{json.dumps(context, indent=2, default=str)}
+
+If the data list is empty, say no transactions were found matching the criteria.
+"""
+        try:
+             response = await self.llm.ainvoke(prompt)
+             if hasattr(response, 'content'):
+                 return response.content
+             return str(response)
+        except Exception:
+             # Fallback to English hardcoded format if LLM fails
+             if query_type == "total_spent":
+                 return self._format_total_spent(result)
+             elif query_type in ["search", "transaction_list"]:
+                 return self._format_transaction_list(result, params)
+             else:
+                 return str(result)
+
     def _format_total_spent(self, result: Dict[str, Any]) -> str:
         """Format total spent response."""
         total = result["total_naira"]

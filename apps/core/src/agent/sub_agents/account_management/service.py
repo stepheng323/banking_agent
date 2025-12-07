@@ -63,30 +63,57 @@ class AccountManagementService:
         action = parsed.action
         identifier = parsed.identifier
         
+        response = ""
         if action == "unlink":
             if identifier:
-                return await self.unlink_account(user_id, identifier)
-            return "Which account would you like to unlink? Please say 'unlink [bank name]' or 'unlink [number]'."
+                response = await self.unlink_account(user_id, identifier)
+            else:
+                response = "Which account would you like to unlink? Please say 'unlink [bank name]' or 'unlink [number]'."
 
         elif action == "set_default":
             if identifier:
-                return await self.set_default(user_id, identifier)
-            return "Which account should be your default? Say 'set [bank name] as default'."
+                response = await self.set_default(user_id, identifier)
+            else:
+                response = "Which account should be your default? Say 'set [bank name] as default'."
             
         elif action == "link":
-            return await self.link_account(phone_number)
+            response = await self.link_account(phone_number)
                  
         elif action == "list":
             accounts = user_ctx.get("accounts")
             if accounts:
-                return AccountManagementFormatter.format_account_list(accounts)
-            return await self.list_accounts(user_id)
+                response = AccountManagementFormatter.format_account_list(accounts)
+            else:
+                response = await self.list_accounts(user_id)
             
         else:
             accounts = user_ctx.get("accounts")
             if accounts:
-                return AccountManagementFormatter.format_account_list(accounts)
-            return await self.list_accounts(user_id)
+                response = AccountManagementFormatter.format_account_list(accounts)
+            else:
+                response = await self.list_accounts(user_id)
+                
+        language = user_ctx.get("language")
+        if language and language.lower() not in ("english", "en"):
+            return await self._translate_response(response, language)
+            
+        return response
+
+    async def _translate_response(self, text: str, language: str) -> str:
+        """Translate response to user's preferred language using LLM."""
+        try:
+            prompt = (
+                f"Translate the following banking assistant response to {language}. "
+                "Keep the formatting (markdown, emojis) exactly the same. "
+                "Adapt the tone to be natural in the target language (e.g., Use Pidgin English style if language is Pidgin).\n\n"
+                f"Original Response:\n{text}"
+            )
+            result = await self.llm.ainvoke(prompt)
+            if hasattr(result, 'content'):
+                return result.content
+            return str(result)
+        except Exception:
+            return text
 
     async def link_account(self, phone_number: str) -> str:
         """
@@ -110,7 +137,7 @@ class AccountManagementService:
             header="Link New Account",
             flow_cta="Link Account",
             flow_id=flow_id,
-            screen_name="MonoConnect",
+            screen_name="Link Account",
             flow_token=flow_token,
             text_body="Tap the button below to securely link your bank account."
         )
@@ -280,28 +307,3 @@ class AccountManagementService:
                 return account
         
         return None
-
-    
-    async def get_default_account(self, user_id: str) -> Optional[Account]:
-        """
-        Get user's default account.
-        
-        Args:
-            user_id: User ID
-            
-        Returns:
-            Default account or None
-        """
-        return self.account_repo.get_default_account(user_id)
-    
-    async def get_accounts(self, user_id: str) -> List[Account]:
-        """
-        Get all accounts for a user.
-        
-        Args:
-            user_id: User ID
-            
-        Returns:
-            List of accounts
-        """
-        return self.account_repo.get_by_user(user_id)
