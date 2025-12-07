@@ -2,14 +2,14 @@
 
 from typing import List, Optional, Dict, Any
 import time
-from langchain_core.runnables import Runnable
+from langchain_openai import ChatOpenAI
 from shared.clients.whatsapp_client import WhatsAppClient
 from shared.config import settings
 from shared.repositories.account_repository import AccountRepository
 from shared.repositories.user_repository import UserRepository
 from shared.database.models import Account
-from apps.core.src.agent.orchestrator.models.classification import ClassificationResult
-from apps.core.src.agent.sub_agents.account_management.parser import AccountManagementParser
+from apps.core.src.agent.sub_agents.account_management.parser import AccountManagementParser, AccountManagementIntent
+from apps.core.src.agent.sub_agents.account_management.formatter import AccountManagementFormatter
 
 
 class AccountManagementService:
@@ -19,7 +19,7 @@ class AccountManagementService:
         self, 
         account_repo: AccountRepository, 
         user_repo: UserRepository,
-        llm: Runnable,
+        llm: ChatOpenAI,
         whatsapp_client: WhatsAppClient
     ):
         """
@@ -41,7 +41,6 @@ class AccountManagementService:
         self,
         phone_number: str,
         text: str,
-        result: ClassificationResult,
         user_ctx: Dict[str, Any]
     ) -> str:
         """
@@ -50,7 +49,6 @@ class AccountManagementService:
         Args:
             phone_number: User's phone number
             text: User's command text
-            result: Classification result
             user_ctx: User context
             
         Returns:
@@ -61,10 +59,9 @@ class AccountManagementService:
             return "User not found."
         user_id = str(profile["id"])
         
-        # Parse intent using LLM
-        parsed = await self.parser.parse(text)
-        action = parsed.get("action", "list")
-        identifier = parsed.get("identifier")
+        parsed: AccountManagementIntent = await self.parser.parse(text)
+        action = parsed.action
+        identifier = parsed.identifier
         
         if action == "unlink":
             if identifier:
@@ -82,14 +79,13 @@ class AccountManagementService:
         elif action == "list":
             accounts = user_ctx.get("accounts")
             if accounts:
-                return self._format_account_list(accounts)
+                return AccountManagementFormatter.format_account_list(accounts)
             return await self.list_accounts(user_id)
             
         else:
-            # Default/unknown behavior -> list accounts
             accounts = user_ctx.get("accounts")
             if accounts:
-                return self._format_account_list(accounts)
+                return AccountManagementFormatter.format_account_list(accounts)
             return await self.list_accounts(user_id)
 
     async def link_account(self, phone_number: str) -> str:
@@ -121,51 +117,6 @@ class AccountManagementService:
         
         return "I've sent you a secure link to connect your new bank account. Please tap the 'Link Account' button below to proceed."
 
-    def _format_account_list(self, accounts: List[Any]) -> str:
-        """Format list of accounts for display."""
-        if not accounts:
-            return (
-                "You don't have any linked bank accounts yet.\n\n"
-                "To link an account, I'll need to guide you through Mono Connect. "
-                "This is currently done during onboarding, but we can set it up for you again."
-            )
-        
-        lines = ["🏦 *Your Linked Accounts:*\n"]
-        for i, account in enumerate(accounts, 1):
-            # account can be Account model or dict from cache
-            is_default = False
-            account_number = ""
-            bank_name = ""
-            account_name = ""
-            
-            if isinstance(account, dict):
-                is_default = account.get("is_default", False)
-                account_number = account.get("account_number", "")
-                bank_name = account.get("bank_name", "")
-                account_name = account.get("account_name", "Account")
-            else:
-                is_default = account.is_default
-                account_number = account.account_number
-                bank_name = account.bank_name
-                account_name = account.account_name or "Account"
-                
-            default_marker = " ✓ *Default*" if is_default else ""
-            masked_number = f"***{account_number[-4:]}" if account_number else "****"
-            
-            lines.append(
-                f"{i}. {bank_name} ({masked_number}){default_marker}\n"
-                f"   {account_name}"
-            )
-        
-        lines.append(
-            "\n\n💡 *Tips:*\n"
-            "• Reply with a number (1, 2, etc.) to set that as your default account\n"
-            "• Say 'unlink account [number]' to remove an account\n"
-            "• Say 'link new account' to add another account"
-        )
-        
-        return "\n".join(lines)
-
     async def list_accounts(self, user_id: str) -> str:
         """
         List all linked accounts for a user.
@@ -177,7 +128,7 @@ class AccountManagementService:
             Formatted message with account list
         """
         accounts = self.account_repo.get_by_user(user_id)
-        return self._format_account_list(accounts)
+        return AccountManagementFormatter.format_account_list(accounts)
     
     async def set_default(self, user_id: str, account_identifier: str) -> str:
         """
@@ -195,14 +146,12 @@ class AccountManagementService:
         if not accounts:
             return "You don't have any linked accounts."
         
-        # Try to parse as index first
         selected_account = None
         try:
             account_index = int(account_identifier)
             if 1 <= account_index <= len(accounts):
                 selected_account = accounts[account_index - 1]
         except ValueError:
-            # Not a number, try to match by bank name
             selected_account = self._find_account_by_bank_name(accounts, account_identifier)
         
         if not selected_account:
@@ -248,14 +197,12 @@ class AccountManagementService:
                 "If you want to switch accounts, link a new one first, then unlink this one."
             )
         
-        # Try to parse as index first
         selected_account = None
         try:
             account_index = int(account_identifier)
             if 1 <= account_index <= len(accounts):
                 selected_account = accounts[account_index - 1]
         except ValueError:
-            # Not a number, try to match by bank name
             selected_account = self._find_account_by_bank_name(accounts, account_identifier)
         
         if not selected_account:
@@ -297,7 +244,6 @@ class AccountManagementService:
         """
         bank_name_lower = bank_name.lower().strip()
         
-        # Common bank abbreviations
         bank_aliases = {
             "gtb": "gtbank",
             "gtbank": "gtbank",
@@ -324,10 +270,8 @@ class AccountManagementService:
             "palmpay": "palmpay",
         }
         
-        # Normalize the search term
         normalized_search = bank_aliases.get(bank_name_lower, bank_name_lower)
         
-        # Try exact match first
         for account in accounts:
             account_bank_lower = account.bank_name.lower()
             if (normalized_search in account_bank_lower or 

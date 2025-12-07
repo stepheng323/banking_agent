@@ -72,7 +72,16 @@ class AccountManagementParser:
             
             content = response.content if isinstance(response, AIMessage) else str(response)
             
-            # Clean up content to ensure valid JSON
+            # Handle list content (e.g. from some LLM providers)
+            if isinstance(content, list):
+                content = "".join(
+                    item if isinstance(item, str) else item.get("text", "")
+                    for item in content
+                )
+            
+            if not isinstance(content, str):
+                content = str(content)
+            
             content = content.strip()
             if "```json" in content:
                 content = content.split("```json")[1].split("```")[0].strip()
