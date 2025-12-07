@@ -17,14 +17,17 @@ from .utils import debug_log
 
 def create_initial_state(phone_number: str, message: str, message_id: str, classification_result: Optional[dict] = None) -> TransferState:
     """Create initial state for transfer flow."""
-    # Extract task parameters from classification_result if available
     task_params = None
     if classification_result and "task_parameters" in classification_result:
         task_params = classification_result.get("task_parameters", {})
     
-    # Pre-populate from task parameters
     amount = None
     recipient_name = None
+    language = None
+    
+    if classification_result and "detected_language" in classification_result:
+        language = classification_result.get("detected_language")
+
     if task_params:
         amount = task_params.get("amount")
         if isinstance(amount, (int, float)):
@@ -39,6 +42,7 @@ def create_initial_state(phone_number: str, message: str, message_id: str, class
         # Flow state
         "active_flow": "transfer",
         "flow_state": "extracting",
+        "language": language,
         # Entities - pre-populate from task parameters if available
         "amount": amount,
         "recipient_name": recipient_name,

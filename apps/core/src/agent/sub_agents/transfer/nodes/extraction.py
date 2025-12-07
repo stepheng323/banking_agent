@@ -44,12 +44,14 @@ async def extract_entities(
     if last_response:
         smart_context["previousResponse"] = last_response
 
-    # Include beneficiaries in context to help extractor distinguish aliases from bank names
     beneficiaries = state.get("beneficiaries", [])
     if beneficiaries:
         smart_context["beneficiaries"] = beneficiaries
+    
+    language = state.get("language")
+    if language:
+        smart_context["language"] = language
 
-    # Debug: Log the message being extracted
     message_to_extract = state.get("message", "")
     debug_log(f"🔍 [EXTRACTION] Extracting from message: '{message_to_extract}'")
     debug_log(f"🔍 [EXTRACTION] State before extraction - recipient_account={state.get('recipient_account')}, recipient_bank={state.get('recipient_bank_name') or state.get('recipient_bank_code')}, amount={state.get('amount')}")
