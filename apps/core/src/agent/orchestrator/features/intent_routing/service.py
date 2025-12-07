@@ -163,10 +163,10 @@ class OrchestratorIntentRouter:
         elif intent == "query":
             response = await self.query_service.handle_query(text, user_ctx)
 
-        elif intent == "account_management":
+        elif intent == "manage_accounts":
             response = await self.account_management_service.handle_account_management(phone_number, text, result, user_ctx)
         elif intent == "conversational":
-            
+
             conv = await self.conversation_responder.generate_reply(phone_number, text, result, user_ctx)
             print(f"Conversation response: {conv}")
             response = conv
