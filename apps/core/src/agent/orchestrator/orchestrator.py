@@ -82,9 +82,9 @@ class OrchestratorAgent:
             airtime_service,
             conversation_responder,
             self.context_manager,
-            self,
             query_service,
-            account_management_service
+            account_management_service,
+            self.whatsapp_client,
         )
         # Handler order matters
         self._handlers = [

@@ -15,6 +15,7 @@ from apps.core.src.agent.sub_agents.query.service import QueryService
 from apps.core.src.agent.sub_agents.account_management.service import AccountManagementService
 from apps.core.src.agent.orchestrator.features.task_planning.service import OrchestratorTaskPlanner
 from apps.core.src.agent.orchestrator.features.context.service import OrchestratorContextManager
+from shared.clients.whatsapp_client import WhatsAppClient
 
 
 class OrchestratorIntentRouter:
@@ -30,7 +31,7 @@ class OrchestratorIntentRouter:
         context_manager: OrchestratorContextManager,
         query_service: QueryService,
         account_management_service: AccountManagementService,
-        orchestrator: Any = None,  # Optional orchestrator reference for sending messages
+        whatsapp_client: WhatsAppClient,
     ) -> None:
         self.task_queue_service = task_queue_service
         self.task_planner = task_planner
@@ -38,7 +39,7 @@ class OrchestratorIntentRouter:
         self.airtime_service = airtime_service
         self.conversation_responder = conversation_responder
         self.context_manager = context_manager
-        self.orchestrator = orchestrator
+        self.whatsapp_client = whatsapp_client
         self.query_service = query_service
         self.account_management_service = account_management_service
 
@@ -117,21 +118,12 @@ class OrchestratorIntentRouter:
                         phone_number, planner_output
                     )
                     
-                    # Generate and send acknowledgment message separately BEFORE executing task
                     acknowledgment = self._generate_task_acknowledgment(planner_output)
                     print(f"🔍 [INTENT_ROUTER] Generated acknowledgment: {acknowledgment}")
                     
-                    try:
-                        if self.orchestrator and hasattr(self.orchestrator, 'whatsapp_client'):
-                            await self.orchestrator.whatsapp_client.send_text(
-                                phone_number, acknowledgment
-                            )
-                            print(f"✅ [INTENT_ROUTER] Sent acknowledgment message")
-                        else:
-                            print(f"⚠️  [INTENT_ROUTER] Orchestrator or whatsapp_client not available, cannot send acknowledgment")
-                    except Exception as e:
-                        print(f"❌ [INTENT_ROUTER] Error sending acknowledgment: {e}")
-                        traceback.print_exc()
+                    await self.whatsapp_client.send_text(
+                        phone_number, acknowledgment
+                    )
                     
                     asyncio.create_task(
                         self.context_manager.save_last_response(
@@ -170,12 +162,12 @@ class OrchestratorIntentRouter:
 
         elif intent == "query":
             if self.query_service:
-                response = await self.query_service.handle_query(phone_number, text, result)
+                response = await self.query_service.handle_query(phone_number, text, result, user_ctx)
             else:
                 response = "Query service not available."
         elif intent == "account_management":
             if self.account_management_service:
-                response = await self.account_management_service.handle_account_management(phone_number, text, result)
+                response = await self.account_management_service.handle_account_management(phone_number, text, result, user_ctx)
             else:
                 response = "Account management service not available."
         elif intent == "conversational":

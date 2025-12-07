@@ -26,7 +26,8 @@ class AccountManagementService:
         self,
         phone_number: str,
         text: str,
-        result: ClassificationResult
+        result: ClassificationResult,
+        user_ctx: Dict[str, Any]
     ) -> str:
         """
         Handle account management intent.
@@ -35,14 +36,15 @@ class AccountManagementService:
             phone_number: User's phone number
             text: User's command text
             result: Classification result
+            user_ctx: User context
             
         Returns:
             Response message
         """
-        user = self.user_repo.get_by_phone(phone_number)
-        if not user:
+        profile = user_ctx.get("profile")
+        if not profile:
             return "User not found."
-        user_id = str(user.id)
+        user_id = str(profile["id"])
         
         text_lower = text.lower()
         
@@ -66,10 +68,61 @@ class AccountManagementService:
                  return "Which account should be your default? Say 'set [bank name] as default'."
                  
         elif "list" in text_lower or "show" in text_lower or "balance" in text_lower:
+            accounts = user_ctx.get("accounts")
+            if accounts:
+                return self._format_account_list(accounts)
             return await self.list_accounts(user_id)
             
         else:
+            accounts = user_ctx.get("accounts")
+            if accounts:
+                return self._format_account_list(accounts)
             return await self.list_accounts(user_id)
+
+    def _format_account_list(self, accounts: List[Any]) -> str:
+        """Format list of accounts for display."""
+        if not accounts:
+            return (
+                "You don't have any linked bank accounts yet.\n\n"
+                "To link an account, I'll need to guide you through Mono Connect. "
+                "This is currently done during onboarding, but we can set it up for you again."
+            )
+        
+        lines = ["🏦 *Your Linked Accounts:*\n"]
+        for i, account in enumerate(accounts, 1):
+            # account can be Account model or dict from cache
+            is_default = False
+            account_number = ""
+            bank_name = ""
+            account_name = ""
+            
+            if isinstance(account, dict):
+                is_default = account.get("is_default", False)
+                account_number = account.get("account_number", "")
+                bank_name = account.get("bank_name", "")
+                account_name = account.get("account_name", "Account")
+            else:
+                is_default = account.is_default
+                account_number = account.account_number
+                bank_name = account.bank_name
+                account_name = account.account_name or "Account"
+                
+            default_marker = " ✓ *Default*" if is_default else ""
+            masked_number = f"***{account_number[-4:]}" if account_number else "****"
+            
+            lines.append(
+                f"{i}. {bank_name} ({masked_number}){default_marker}\n"
+                f"   {account_name}"
+            )
+        
+        lines.append(
+            "\n\n💡 *Tips:*\n"
+            "• Reply with a number (1, 2, etc.) to set that as your default account\n"
+            "• Say 'unlink account [number]' to remove an account\n"
+            "• Say 'link new account' to add another account"
+        )
+        
+        return "\n".join(lines)
 
     async def list_accounts(self, user_id: str) -> str:
         """
@@ -82,32 +135,7 @@ class AccountManagementService:
             Formatted message with account list
         """
         accounts = self.account_repo.get_by_user(user_id)
-        
-        if not accounts:
-            return (
-                "You don't have any linked bank accounts yet.\n\n"
-                "To link an account, I'll need to guide you through Mono Connect. "
-                "This is currently done during onboarding, but we can set it up for you again."
-            )
-        
-        lines = ["🏦 *Your Linked Accounts:*\n"]
-        for i, account in enumerate(accounts, 1):
-            default_marker = " ✓ *Default*" if account.is_default else ""
-            masked_number = f"***{account.account_number[-4:]}" if account.account_number else "****"
-            
-            lines.append(
-                f"{i}. {account.bank_name} ({masked_number}){default_marker}\n"
-                f"   {account.account_name or 'Account'}"
-            )
-        
-        lines.append(
-            "\n\n💡 *Tips:*\n"
-            "• Reply with a number (1, 2, etc.) to set that as your default account\n"
-            "• Say 'unlink account [number]' to remove an account\n"
-            "• Say 'link new account' to add another account"
-        )
-        
-        return "\n".join(lines)
+        return self._format_account_list(accounts)
     
     async def set_default(self, user_id: str, account_identifier: str) -> str:
         """

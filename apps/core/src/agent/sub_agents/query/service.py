@@ -1,6 +1,6 @@
 """Query service for answering financial questions using Mono API."""
 
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List
 from langchain_core.runnables import Runnable
 
 from shared.clients.mono_client import MonoClient
@@ -39,7 +39,8 @@ class QueryService:
         self,
         phone_number: str,
         text: str,
-        result: ClassificationResult
+        result: ClassificationResult,
+        user_ctx: Dict[str, Any]
     ) -> str:
         """
         Handle query intent.
@@ -48,27 +49,34 @@ class QueryService:
             phone_number: User's phone number
             text: User's query text
             result: Classification result
+            user_ctx: User context (profile, accounts, etc.)
             
         Returns:
             Response message
         """
-        user = self.user_repo.get_by_phone(phone_number)
-        if not user:
+        profile = user_ctx.get("profile")
+        if not profile:
             return "I couldn't find your profile. Please contact support."
             
-        user_id = str(user.id)
+        user_id = str(profile["id"])
         
-        # Get default account
-        account = self.account_repo.get_default_account(user_id)
+        # Get accounts from context
+        accounts = user_ctx.get("accounts", [])
+        
+        # Find default account or fallback to first
+        account = None
+        for acc in accounts:
+            if acc.get("is_default"):
+                account = acc
+                break
+        
+        if not account and accounts:
+            account = accounts[0]
+            
         if not account:
-            # Fallback to first account
-            accounts = self.account_repo.get_by_user(user_id)
-            if accounts:
-                account = accounts[0]
-            else:
-                return "You need to link a bank account before I can check your transactions."
+            return "You need to link a bank account before I can check your transactions."
         
-        return await self.answer_question(user_id, account.account_id, text)
+        return await self.answer_question(user_id, account["account_id"], text)
 
     async def answer_question(
         self,
