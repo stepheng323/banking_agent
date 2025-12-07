@@ -67,8 +67,16 @@ def setup_dependencies():
 
     # Mono API client for transaction queries
     mono_client = MonoClient(api_key=settings.mono_api_key)
-    query_service = QueryService(llm=llm, mono_client=mono_client)
-    account_management_service = AccountManagementService(account_repo=account_repository)
+    query_service = QueryService(
+        llm=llm,
+        mono_client=mono_client,
+        user_repo=user_repository,
+        account_repo=account_repository
+    )
+    account_management_service = AccountManagementService(
+        account_repo=account_repository,
+        user_repo=user_repository
+    )
 
     task_queue_service = TaskQueueService()
     conversation_responder = ConversationResponder(llm)

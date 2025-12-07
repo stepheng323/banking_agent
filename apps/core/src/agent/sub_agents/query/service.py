@@ -1,27 +1,75 @@
 """Query service for answering financial questions using Mono API."""
 
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from langchain_core.runnables import Runnable
 
 from shared.clients.mono_client import MonoClient
+from shared.repositories.user_repository import UserRepository
+from shared.repositories.account_repository import AccountRepository
+from apps.core.src.agent.orchestrator.models.classification import ClassificationResult
 from apps.core.src.agent.sub_agents.query.parser import QueryParser
 
 
 class QueryService:
     """Service for answering financial questions about user transactions."""
     
-    def __init__(self, llm: Runnable, mono_client: MonoClient):
+    def __init__(
+        self,
+        llm: Runnable,
+        mono_client: MonoClient,
+        user_repo: UserRepository,
+        account_repo: AccountRepository
+    ):
         """
         Initialize query service.
         
         Args:
             llm: Language model for parsing and formatting
             mono_client: Mono API client
+            user_repo: User repository
+            account_repo: Account repository
         """
         self.llm = llm
         self.mono = mono_client
+        self.user_repo = user_repo
+        self.account_repo = account_repo
         self.parser = QueryParser(llm)
     
+    async def handle_query(
+        self,
+        phone_number: str,
+        text: str,
+        result: ClassificationResult
+    ) -> str:
+        """
+        Handle query intent.
+        
+        Args:
+            phone_number: User's phone number
+            text: User's query text
+            result: Classification result
+            
+        Returns:
+            Response message
+        """
+        user = self.user_repo.get_by_phone(phone_number)
+        if not user:
+            return "I couldn't find your profile. Please contact support."
+            
+        user_id = str(user.id)
+        
+        # Get default account
+        account = self.account_repo.get_default_account(user_id)
+        if not account:
+            # Fallback to first account
+            accounts = self.account_repo.get_by_user(user_id)
+            if accounts:
+                account = accounts[0]
+            else:
+                return "You need to link a bank account before I can check your transactions."
+        
+        return await self.answer_question(user_id, account.account_id, text)
+
     async def answer_question(
         self,
         user_id: str,

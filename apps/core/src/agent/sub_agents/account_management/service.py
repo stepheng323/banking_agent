@@ -1,22 +1,76 @@
 """Service for managing user bank accounts."""
 
 from typing import List, Optional, Dict, Any
+import re
 from shared.repositories.account_repository import AccountRepository
+from shared.repositories.user_repository import UserRepository
 from shared.database.models import Account
+from apps.core.src.agent.orchestrator.models.classification import ClassificationResult
 
 
 class AccountManagementService:
     """Service for managing user bank accounts (link, unlink, list, set default)."""
     
-    def __init__(self, account_repo: AccountRepository):
+    def __init__(self, account_repo: AccountRepository, user_repo: UserRepository):
         """
         Initialize account management service.
         
         Args:
             account_repo: Repository for account operations
+            user_repo: Repository for user operations
         """
         self.account_repo = account_repo
+        self.user_repo = user_repo
     
+    async def handle_account_management(
+        self,
+        phone_number: str,
+        text: str,
+        result: ClassificationResult
+    ) -> str:
+        """
+        Handle account management intent.
+        
+        Args:
+            phone_number: User's phone number
+            text: User's command text
+            result: Classification result
+            
+        Returns:
+            Response message
+        """
+        user = self.user_repo.get_by_phone(phone_number)
+        if not user:
+            return "User not found."
+        user_id = str(user.id)
+        
+        text_lower = text.lower()
+        
+        if "unlink" in text_lower or "remove" in text_lower or "delete" in text_lower:
+            match = re.search(r'(?:unlink|remove|delete)\s+(.*)', text_lower)
+            if match:
+                identifier = match.group(1).strip()
+                return await self.unlink_account(user_id, identifier)
+            else:
+                return "Which account would you like to unlink? Please say 'unlink [bank name]' or 'unlink [number]'."
+
+        elif "default" in text_lower and ("set" in text_lower or "make" in text_lower):
+            match = re.search(r'(?:set|make)\s+(.*?)\s+(?:as|my)?\s*default', text_lower)
+            if not match:
+                match = re.search(r'(?:set|make)\s+default\s+(.*)', text_lower)
+            
+            if match:
+                 identifier = match.group(1).strip()
+                 return await self.set_default(user_id, identifier)
+            else:
+                 return "Which account should be your default? Say 'set [bank name] as default'."
+                 
+        elif "list" in text_lower or "show" in text_lower or "balance" in text_lower:
+            return await self.list_accounts(user_id)
+            
+        else:
+            return await self.list_accounts(user_id)
+
     async def list_accounts(self, user_id: str) -> str:
         """
         List all linked accounts for a user.
