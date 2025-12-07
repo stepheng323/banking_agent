@@ -17,7 +17,6 @@ def get_last4(account: Any) -> str:
         acc_id = str(account.get("id") or "")
         return acc_id[-4:] if acc_id else "????"
     else:
-        # Assume object
         number = str(getattr(account, "account_number", "") or getattr(account, "number", "") or "")
         if number:
             return number[-4:]
