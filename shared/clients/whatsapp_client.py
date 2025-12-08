@@ -274,3 +274,49 @@ class WhatsAppClient:
         except Exception as e:
             print(f"❌ Failed to send image message: {e}")
             raise
+
+    async def get_media_url(self, media_id: str) -> str:
+        """
+        Get the download URL for a media ID.
+        
+        Args:
+            media_id: Media ID from Meta
+            
+        Returns:
+            Publicly accessible URL (with auth token appended) or internal URL
+        """
+        url = f"{GRAPH_API_BASE}/{media_id}"
+        headers = self._get_headers()
+        
+        try:
+             async with httpx.AsyncClient(timeout=10) as client:
+                 resp = await client.get(url, headers=headers)
+                 resp.raise_for_status()
+                 result = resp.json()
+                 media_url = result.get("url")
+                 if not media_url:
+                     raise ValueError("No URL returned for media")
+                 return media_url
+        except Exception as e:
+             print(f"❌ Failed to get media URL: {e}")
+             raise
+
+    async def download_media(self, media_url: str) -> bytes:
+        """
+        Download media binary content.
+        
+        Args:
+            media_url: URL obtained from get_media_url
+            
+        Returns:
+            Binary content
+        """
+        headers = self._get_headers()
+        try:
+             async with httpx.AsyncClient(timeout=30) as client:
+                 resp = await client.get(media_url, headers=headers)
+                 resp.raise_for_status()
+                 return resp.content
+        except Exception as e:
+             print(f"❌ Failed to download media: {e}")
+             raise

@@ -13,7 +13,7 @@ from shared.services.receipt_generator import ReceiptGenerator
 from apps.core.src.agent.tools.cache.user_data import UserDataCache
 
 from apps.core.src.agent.orchestrator import OrchestratorAgent
-from apps.core.src.agent.orchestrator.services import ConversationResponder, TaskQueueService, TaskExecutor
+from apps.core.src.agent.orchestrator.services import ConversationResponder, TaskQueueService, TaskExecutor, MediaService
 from apps.core.src.agent.sub_agents.transfer import TransferService as AgentTransferService
 from apps.core.src.agent.sub_agents.airtime import AirtimeService
 from apps.core.src.queue_consumers import MessageConsumer, TransactionConsumer
@@ -110,6 +110,9 @@ def setup_dependencies():
         completion_callback=None,
     )
 
+
+    media_service = MediaService(whatsapp_client)
+
     orchestrator = OrchestratorAgent(
         llm=llm,
         user_repo=user_repository,
@@ -122,6 +125,7 @@ def setup_dependencies():
         task_executor=task_executor,
         query_service=query_service,
         account_management_service=account_management_service,
+        media_service=media_service,
     )
 
     completion_callback = orchestrator.completion_callback

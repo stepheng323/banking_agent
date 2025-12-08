@@ -38,7 +38,8 @@ class ClassificationHandler(MessageHandler):
         result = await self.classification_service.classify(
             context.text,
             classification_context,
-            context.last_response
+            context.last_response,
+            context.image_data
         )
         
         asyncio.create_task(
