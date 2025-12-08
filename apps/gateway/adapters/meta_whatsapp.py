@@ -15,6 +15,8 @@ ParsedMessage = TypedDict(
         "text": str,
         "type": str,
         "flow_data": Optional[Dict[str, Any]],
+        "media_id": Optional[str],
+        "mime_type": Optional[str],
         "raw": Dict[str, Any],
     },
     total=False,
@@ -47,6 +49,11 @@ def parse_payload(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
                 if message_type == "text":
                     text_content: Dict[str, Any] = message.get("text", {})
                     text = text_content.get("body", "")
+                elif message_type == "image":
+                    image: Dict[str, Any] = message.get("image", {})
+                    text = image.get("caption", "")
+                elif message_type == "audio":
+                    pass
                 elif message_type == "interactive":
                     interactive: Dict[str, Any] = message.get(
                         "interactive", {})
@@ -62,6 +69,19 @@ def parse_payload(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
                         except json.JSONDecodeError:
                             flow_data = {"raw": response_json}
 
+                
+                media_id = None
+                mime_type = None
+                
+                if message_type == "image":
+                    image_data = message.get("image", {})
+                    media_id = image_data.get("id")
+                    mime_type = image_data.get("mime_type")
+                elif message_type == "audio":
+                    audio_data = message.get("audio", {})
+                    media_id = audio_data.get("id")
+                    mime_type = audio_data.get("mime_type")
+
                 results.append(
                     {
                         "id": message.get("id"),
@@ -69,6 +89,8 @@ def parse_payload(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
                         "text": text,
                         "type": message_type,
                         "flow_data": flow_data,
+                        "media_id": media_id,
+                        "mime_type": mime_type,
                         "raw": message,
                     }
                 )

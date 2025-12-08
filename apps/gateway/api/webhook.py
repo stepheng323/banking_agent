@@ -76,26 +76,42 @@ async def whatsapp_webhook(
                 print(f"   Text: {text}")
             if flow_data:
                 print(f"   Flow data: {flow_data}")
+            
+            priority = MessagePriority.NORMAL
+            if msg_type == "interactive":
+                priority = MessagePriority.HIGH
+            
+            if msg_type in ("text", "image", "audio", "interactive"):
+                media_id = msg.get("media_id")
+                mime_type = msg.get("mime_type")
+                
+                try:
+                    enum_type = MessageType(msg_type)
+                except ValueError:
+                    enum_type = MessageType.TEXT
 
-            if text:
                 whatsapp_msg = WhatsAppMessage(
                     message_id=message_id,
                     from_number=from_id,
-                    message_type=MessageType.TEXT,
+                    message_type=enum_type,
                     text=text,
                     flow_data=flow_data,
+                    media_id=media_id,
+                    mime_type=mime_type,
                     timestamp=datetime.utcnow(),
-                    priority=MessagePriority.NORMAL,
+                    priority=priority,
                 )
+                
                 try:
                     await queue.enqueue_simple(
                         queue_name="banking:messages",
                         message=whatsapp_msg.model_dump(mode="json"),
                     )
-                    print(" ✅ Text message enqueued for processing")
+                    print(f" ✅ {msg_type} message enqueued for processing")
 
                     try:
-                        await whatsapp_client.send_typing_indicator(message_id=message_id)
+                         if msg_type != "interactive":
+                            await whatsapp_client.send_typing_indicator(message_id=message_id)
                     except Exception as typing_error:
                         print(f"   ⚠️  Could not send typing indicator: {typing_error}")
 
