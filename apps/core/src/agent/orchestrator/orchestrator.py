@@ -1,5 +1,6 @@
 """Minimal orchestrator: LLM-based multilingual intent+complexity and user context cache."""
 
+from typing import Any
 import asyncio
 from langchain_openai import ChatOpenAI
 
@@ -48,7 +49,8 @@ class OrchestratorAgent:
         airtime_service: AirtimeService,
         task_executor: TaskExecutor,
         query_service: QueryService,
-        account_management_service: AccountManagementService
+        account_management_service: AccountManagementService,
+        media_service: Any = None
     ) -> None:
         self.llm = llm
         self.user_repo = user_repo
@@ -60,6 +62,7 @@ class OrchestratorAgent:
         self.task_executor = task_executor
         self.query_service = query_service
         self.account_management_service = account_management_service
+        self.media_service = media_service
 
         self.context_manager = OrchestratorContextManager(
             user_repo,
@@ -105,13 +108,22 @@ class OrchestratorAgent:
         """Get transfer service."""
         return self.transfer_service
 
-    async def invoke(self, phone_number: str, text: str, message_id: str) -> str:
+    async def invoke(self, phone_number: str, text: str, message_id: str, message_type: str = "text") -> str:
         """Invoke the orchestrator with a user message using the pipeline."""
+        self.message_type = message_type
         
+        if self.message_type == "audio":
+             text = await self.media_service.process_audio(message_id)
+        
+        image_data = None
+        if self.message_type == "image":
+             image_data = await self.media_service.get_image_data(message_id)
+
         initial_context = MessageContext(
             phone_number=phone_number,
             text=text,
-            message_id=message_id
+            message_id=message_id,
+            image_data=image_data
         )
         
         pipeline = MessagePipeline(self._handlers)
