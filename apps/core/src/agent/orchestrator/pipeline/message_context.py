@@ -18,6 +18,7 @@ class MessageContext:
     phone_number: str
     text: str
     message_id: str
+    image_data: Optional[str] = None
     
     user_context: dict[str, Any] = field(default_factory=dict)
     conversation_state: Optional[dict[str, Any]] = None
@@ -57,6 +58,7 @@ class MessageContext:
             phone_number=self.phone_number,
             text=self.text,
             message_id=self.message_id,
+            image_data=self.image_data,
             user_context=self.user_context,
             conversation_state=self.conversation_state,
             last_response=self.last_response,
@@ -76,6 +78,7 @@ class MessageContext:
             "phone_number": self.phone_number,
             "text": self.text,
             "message_id": self.message_id,
+            "image_data": self.image_data,
             "user_context": self.user_context,
             "conversation_state": self.conversation_state,
             "last_response": self.last_response,
