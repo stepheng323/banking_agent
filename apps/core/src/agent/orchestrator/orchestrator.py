@@ -2,6 +2,7 @@
 
 from typing import Any
 import asyncio
+from shared.utils.async_helpers import create_background_task
 from langchain_openai import ChatOpenAI
 
 from shared.clients.whatsapp_client import WhatsAppClient
@@ -129,10 +130,10 @@ class OrchestratorAgent:
         pipeline = MessagePipeline(self._handlers)
         response = await pipeline.process(initial_context)
         
-        asyncio.create_task(
+        create_background_task(
             self.context_manager.add_conversation_turn(phone_number, "user", text)
         )
-        asyncio.create_task(
+        create_background_task(
             self.context_manager.add_conversation_turn(phone_number, "assistant", response)
         )
         

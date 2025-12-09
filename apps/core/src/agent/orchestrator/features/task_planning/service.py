@@ -11,6 +11,9 @@ from apps.core.src.agent.orchestrator.models.planner import PlannerOutput
 from apps.core.src.agent.orchestrator.services.task_queue_service import TaskQueueService
 from apps.core.src.agent.orchestrator.services.task_executor import TaskExecutor
 from apps.core.src.agent.orchestrator.features.task_planning.prompt import PLANNER_SYSTEM_PROMPT, PLANNER_USER_PROMPT_TEMPLATE
+from shared.utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 
 class OrchestratorTaskPlanner:
@@ -92,7 +95,7 @@ class OrchestratorTaskPlanner:
                 result_value = result.get("result", "Task executed")
                 return str(result_value) if result_value is not None else "Task executed"
             except Exception as e:
-                print(f"⚠️  Error executing task: {e}")
+                logger.error("error_executing")
                 traceback.print_exc()
                 return f"Error executing task: {str(e)}"
         return None

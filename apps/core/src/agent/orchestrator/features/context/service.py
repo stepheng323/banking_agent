@@ -10,6 +10,9 @@ from shared.cache.redis_client import RedisClient
 from shared.utils.serialization import sqlalchemy_to_dict
 from apps.core.src.agent.orchestrator.models.classification import ClassificationResult
 from apps.core.src.agent.tools.cache.user_data import UserDataCache
+from shared.utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 
 class OrchestratorContextManager:
@@ -108,7 +111,7 @@ class OrchestratorContextManager:
             key = f"user:{phone_number}:conversation_state"
             await redis_client.delete(key)
         except Exception as e:
-            print(f"⚠️  Error clearing conversation_state: {e}")
+            logger.error("error_clearing")
 
     async def get_last_response(self, phone_number: str) -> Optional[str]:
         """Get last assistant response from Redis (fast, for LLM context)."""
@@ -240,7 +243,7 @@ class OrchestratorContextManager:
             return user_ctx, conversation_state, last_response, suggestion_data
             
         except Exception as e:
-            print(f"⚠️  Error in parallel context loading: {e}, falling back to sequential")
+            logger.error("error_in_parallel_context")
             user_ctx = await self.load_user_context(phone_number)
             conversation_state = await self.get_conversation_state(phone_number)
             last_response = await self.get_last_response(phone_number)

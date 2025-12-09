@@ -5,6 +5,9 @@ from typing import TYPE_CHECKING
 from apps.core.src.agent.orchestrator.pipeline.message_handler import MessageHandler
 from apps.core.src.agent.orchestrator.pipeline.message_context import MessageContext
 from apps.core.src.agent.orchestrator.services import TaskQueueService
+from shared.utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 if TYPE_CHECKING:
     from apps.core.src.agent.sub_agents.transfer import TransferService
@@ -34,7 +37,7 @@ class ActiveQueueHandler(MessageHandler):
     
     async def handle(self, context: MessageContext) -> MessageContext:
         """Route to current task."""
-        print(f"🔍 [ActiveQueue] Routing to task: {context.current_task_id}")
+        logger.debug("routing_to")
         
         # Find the current task
         current_task = None
@@ -44,7 +47,7 @@ class ActiveQueueHandler(MessageHandler):
                 break
         
         if not current_task:
-            print(f"⚠️  [ActiveQueue] Task {context.current_task_id} not found in queue")
+            logger.warning("task_not_found")
             return context
         
         # Route to appropriate executor
@@ -75,5 +78,5 @@ class ActiveQueueHandler(MessageHandler):
             return context.with_response(response, handled=True)
         
         # Unknown executor
-        print(f"⚠️  [ActiveQueue] Unknown executor: {current_task.executor}")
+        logger.warning("unknown")
         return context

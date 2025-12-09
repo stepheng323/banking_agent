@@ -6,6 +6,9 @@ from apps.core.src.agent.orchestrator.models.planner import PlannedTask
 from apps.core.src.agent.orchestrator.services.task_queue_service import TaskQueueService
 from apps.core.src.agent.tools.flow_completion import FlowCompletionCallback
 from shared.types.agent_types import TaskStatus
+from shared.utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 if TYPE_CHECKING:
     from apps.core.src.agent.sub_agents.transfer import TransferService
@@ -65,23 +68,23 @@ class TaskExecutor:
                 # If user message has account details, use it directly (user is providing info)
                 if has_account_number or has_bank_name:
                     use_user_message = True
-                    print(f"🔍 [TASK_EXECUTOR] User message contains account details, using user message: '{user_message}'")
+                    logger.debug("user_message_contains_account")
             
             if use_user_message:
                 message_to_use = user_message
             else:
                 # Construct task-specific message from parameters for new task
                 message_to_use = self._construct_task_message(task, user_message)
-                print(f"🔍 [TASK_EXECUTOR] Using constructed task message: '{message_to_use}'")
+                logger.debug("using_constructed_task")
                 
                 # CRITICAL: When starting a NEW task (not continuing with user-provided details),
                 # clear the checkpoint to remove stale collection_complete status from previous task
                 if task.executor == "transfer" and hasattr(executor_service, 'clear_checkpoint'):
                     try:
                         await executor_service.clear_checkpoint(phone_number)
-                        print(f"🧹 [TASK_EXECUTOR] Cleared transfer checkpoint for new task {task.id}")
+                        logger.info("cleared_transfer_checkpoint_for")
                     except Exception as e:
-                        print(f"⚠️  [TASK_EXECUTOR] Error clearing checkpoint: {e}")
+                        logger.error("error_clearing")
             
             # Create classification_result with task parameters for transfer/airtime flows
             classification_result = None

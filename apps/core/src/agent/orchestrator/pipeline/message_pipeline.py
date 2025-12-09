@@ -3,6 +3,9 @@
 from typing import List
 from apps.core.src.agent.orchestrator.pipeline.message_context import MessageContext
 from apps.core.src.agent.orchestrator.pipeline.message_handler import MessageHandler
+from shared.utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 
 class MessagePipeline:
@@ -36,12 +39,12 @@ class MessagePipeline:
         
         for handler in self.handlers:
             if await handler.can_handle(current_context):
-                print(f"🔄 [{handler.name}] Processing message")
+                logger.info("processing_message")
                 
                 current_context = await handler.handle(current_context)
                 
                 if current_context.handled:
-                    print(f"✅ [{handler.name}] Message handled")
+                    logger.info("message_handled")
                     break
         
         return current_context.response if current_context.response is not None else "I'm not sure how to help with that."

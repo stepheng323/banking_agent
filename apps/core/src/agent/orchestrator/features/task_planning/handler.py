@@ -3,6 +3,9 @@
 from apps.core.src.agent.orchestrator.pipeline.message_handler import MessageHandler
 from apps.core.src.agent.orchestrator.pipeline.message_context import MessageContext
 from .service import OrchestratorTaskPlanner
+from shared.utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 
 class NextTaskHandler(MessageHandler):
@@ -21,7 +24,7 @@ class NextTaskHandler(MessageHandler):
     
     async def handle(self, context: MessageContext) -> MessageContext:
         """Trigger next task in queue."""
-        print(f"🔍 [NextTask] Triggering next task in queue")
+        logger.debug("triggering_next_task_in")
         
         response = await self.task_planner.handle_next_task(
             context.phone_number,
