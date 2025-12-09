@@ -1,13 +1,13 @@
 """Validation nodes for transfer flow."""
 
-from typing import Any, cast
+from typing import Any, Optional
 
 from apps.core.src.agent.tools.validation.service import AsyncValidationService
 from apps.core.src.agent.sub_agents.transfer.state import TransferState
 from shared.cache.bank_cache import BankCacheService
+from shared.clients.whatsapp_client import WhatsAppClient
 
 from .utils import debug_log
-from shared.clients.whatsapp_client import WhatsAppClient
 from apps.core.src.agent.sub_agents.transfer.validators import (
     SelfTransferValidator,
     BankCodeResolver,
@@ -33,18 +33,21 @@ async def validate_parallel(
     validation_service: AsyncValidationService,
     bank_cache: BankCacheService,
     fetch_banks_func: Any,
+    whatsapp_client: Optional[WhatsAppClient] = None,
 ) -> TransferState:
     """
     Parallel validation: resolve account + check balance.
     
-    This function now delegates to ValidationCoordinator for better testability
-    and maintainability while preserving the same interface.
+    Args:
+        state: Current transfer state
+        validation_service: Service for account validation
+        bank_cache: Bank cache service
+        fetch_banks_func: Function to fetch banks
+        whatsapp_client: Optional WhatsApp client for sending acknowledgments
     """
     self_transfer_validator = SelfTransferValidator()
     bank_code_resolver = BankCodeResolver(bank_cache)
     beneficiary_matcher = BeneficiaryMatcher()
-    
-    whatsapp_client = WhatsAppClient() if state.get("phone_number") else None
     account_validator = AccountValidator(validation_service, whatsapp_client)
     
     coordinator = ValidationCoordinator(
@@ -56,3 +59,4 @@ async def validate_parallel(
     )
     
     return await coordinator.validate(state, fetch_banks_func)
+

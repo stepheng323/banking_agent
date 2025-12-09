@@ -74,7 +74,8 @@ def build_graph(
                 state,
                 validation_service,
                 bank_cache,
-                fetch_banks_func
+                fetch_banks_func,
+                whatsapp_client,
             )
         return state
 
