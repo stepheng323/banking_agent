@@ -8,6 +8,9 @@ from typing import Dict, Any, Optional
 from shared.clients.whatsapp_client import WhatsAppClient
 from shared.cache.redis_client import RedisClient
 from shared.repositories.unit_of_work import UnitOfWork
+from shared.utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 
 class BeneficiarySuggestionService:
@@ -53,7 +56,7 @@ class BeneficiarySuggestionService:
 
                 user = uow.users.get_by_phone(phone_number)
                 if not user:
-                    print(f"DEBUG suggest_beneficiary ({beneficiary_type}): user not found")
+                    logger.debug("debug_user")
                     return
 
                 user_id = str(user.id)
@@ -125,7 +128,7 @@ class BeneficiarySuggestionService:
                                 to=phone_number, text=message
                             )
                         )
-                        print(f"✅ Beneficiary suggestion sent for {phone_number} (transfer)")
+                        logger.info("beneficiary_suggestion_sent_for")
 
                 elif beneficiary_type in ("airtime", "data"):
                     # Airtime and data use the same logic (phone + network)
@@ -193,11 +196,11 @@ class BeneficiarySuggestionService:
                                 to=phone_number, text=message
                             )
                         )
-                        print(f"✅ Beneficiary suggestion sent for {phone_number} ({beneficiary_type})")
+                        logger.info("beneficiary_suggestion_sent_for")
                 else:
-                    print(f"⚠️  Unknown beneficiary type: {beneficiary_type}")
+                    logger.warning("unknown_beneficiary")
 
         except Exception as e:
-            print(f"⚠️  Error checking/suggesting beneficiary ({beneficiary_type}): {e}")
+            logger.error("error_beneficiary")
             traceback.print_exc()
 

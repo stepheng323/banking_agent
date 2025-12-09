@@ -4,6 +4,9 @@ import json
 from typing import Dict, Any
 from datetime import datetime, timedelta
 from langchain_core.runnables import Runnable
+from shared.utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 
 class QueryParser:
@@ -53,7 +56,7 @@ class QueryParser:
             return params
             
         except Exception as e:
-            print(f"Error parsing query: {e}")
+            logger.error("error_parsing")
             return self._get_default_params()
     
     def _build_prompt(self, question: str) -> str:

@@ -1,6 +1,9 @@
 """Shared utilities for transfer flow graph."""
 
 import os
+from shared.utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 # Performance: Only enable debug logging in debug mode
 # Enable when any common debug env is set
@@ -12,5 +15,4 @@ DEBUG_MODE = _flag in ("1", "true", "yes", "on") or _log_level == "debug"
 def debug_log(message: str) -> None:
     """Conditional debug logging - only logs if DEBUG env var is set."""
     if DEBUG_MODE:
-        print(message)
-
+        logger.debug(message)
