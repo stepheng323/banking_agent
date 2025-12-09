@@ -1,6 +1,7 @@
 """Transfer service for handling transfer notifications and cleanup."""
 
 import asyncio
+from shared.utils.async_helpers import create_background_task
 import os
 import json
 import traceback
@@ -15,6 +16,9 @@ from shared.repositories.unit_of_work import UnitOfWork
 from shared.formatters.receipt import generate_receipt_image
 from shared.services.receipt_generator import ReceiptGenerator
 from apps.core.src.agent.tools.beneficiary.suggestion_service import BeneficiarySuggestionService
+from shared.utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 
 def _receipts_enabled() -> bool:
@@ -50,9 +54,9 @@ class TransferCompletionService:
             await self.redis_client.delete(f"transfer:token:{idem_key}:phone")
             await self.redis_client.delete(f"transfer:retry:{idem_key}")
             await self.redis_client.delete(f"transfer:prev:{phone_number}:{idem_key}")
-            print(f"✅ Cleaned up Redis keys for transfer: {idem_key}")
+            logger.info("transfer_redis_cleanup", phone=phone_number, idem_key=idem_key)
         except Exception as e:
-            print(f"⚠️  Error cleaning up Redis keys: {e}")
+            logger.error("transfer_redis_cleanup_error", phone=phone_number, idem_key=idem_key, error=str(e), exc_info=True)
 
     async def send_success_notification(
         self,
@@ -72,7 +76,7 @@ class TransferCompletionService:
                     f"✅ Transfer successful! ₦{fallback_amount:,.0f} has been sent to "
                     f"{recipient_name}. Transaction ID: {provider_txn_id}"
                 )
-                asyncio.create_task(self.whatsapp_client.send_text(
+                create_background_task(self.whatsapp_client.send_text(
                     to=phone_number, text=message))
                 # Suggest saving beneficiary if service is available
                 if self.beneficiary_suggestion_service:
@@ -83,8 +87,7 @@ class TransferCompletionService:
                         recipient_data=recipient,
                         transaction_id=transaction_id,
                     )
-                print(
-                    f"✅ Success text notification queued (receipts disabled) for {phone_number}")
+                logger.info("transfer_success_notification_queued", phone=phone_number, receipts_enabled=False)
                 return
 
             if transaction_id:
@@ -104,7 +107,7 @@ class TransferCompletionService:
                                 self.s3_client,
                             )
 
-                            asyncio.create_task(
+                            create_background_task(
                                 self.whatsapp_client.send_image(
                                     to=phone_number,
                                     image_url=receipt_url,
@@ -133,15 +136,14 @@ class TransferCompletionService:
                     f"✅ Transfer successful! ₦{fallback_amount:,.0f} has been sent to "
                     f"{recipient_name}. Transaction ID: {provider_txn_id}"
                 )
-                asyncio.create_task(
+                create_background_task(
                     self.whatsapp_client.send_text(
                         to=phone_number, text=message)
                 )
 
-            print(f"✅ Success notification queued for {phone_number}")
+            logger.info("transfer_success_notification_queued", phone=phone_number, has_receipt=bool(transaction_id))
         except Exception as e:
-            print(f"⚠️  Error sending success notification: {e}")
-            traceback.print_exc()
+            logger.error("transfer_success_notification_error", phone=phone_number, error=str(e), exc_info=True)
 
 
     async def send_failure_notification(
@@ -150,9 +152,9 @@ class TransferCompletionService:
         """Send failure notification to user."""
         try:
             message = f"❌ Transfer failed: {error_message}. Please try again."
-            asyncio.create_task(
+            create_background_task(
                 self.whatsapp_client.send_text(to=phone_number, text=message)
             )
-            print(f"✅ Failure notification queued for {phone_number}")
+            logger.info("transfer_failure_notification_queued", phone=phone_number, error=error_message)
         except Exception as e:
-            print(f"⚠️  Error sending failure notification: {e}")
+            logger.error("transfer_failure_notification_error", phone=phone_number, error=str(e), exc_info=True)

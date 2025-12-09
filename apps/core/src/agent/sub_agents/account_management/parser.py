@@ -1,8 +1,11 @@
-"""Parser for account management intents using LLM."""
+"""Parser for account management intents."""
 
 from typing import Optional, Literal
 from pydantic import BaseModel, Field
 from langchain_openai import ChatOpenAI
+from shared.utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 
 class AccountManagementIntent(BaseModel):
@@ -73,6 +76,5 @@ class AccountManagementParser:
             return result
             
         except Exception as e:
-            print(f"Error parsing account management intent: {e}")
+            logger.error("parse_account_management_error", text=text[:100], error=str(e), exc_info=True)
             return AccountManagementIntent(action="list")
-

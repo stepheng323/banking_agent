@@ -12,9 +12,12 @@ from shared.repositories.beneficiary_repository import BeneficiaryRepository
 from shared.repositories.account_repository import AccountRepository
 from shared.clients.whatsapp_client import WhatsAppClient
 from shared.queue.redis_queue import RedisQueue
+from shared.utils.logging import get_logger
 
 from apps.core.src.agent.sub_agents.transfer.extractor import TransferEntityExtractor
 from apps.core.src.agent.sub_agents.transfer.graph import TransferFlowGraph
+
+logger = get_logger(__name__)
 
 
 class TransferService:
@@ -43,7 +46,7 @@ class TransferService:
 
     async def run_simple(self, phone: str, text: str, classification_result: Optional[dict] = None) -> str:
         """Run the transfer flow using LangGraph."""
-        print(f"🔍 [TRANSFER_SERVICE] run_simple called with message: '{text}'")
+        logger.debug("transfer_flow_started", phone=phone, message=text[:100])
         return await self.graph.run(phone, text, "", classification_result)
     
     async def clear_checkpoint(self, phone_number: str) -> None:
@@ -51,4 +54,4 @@ class TransferService:
         try:
             await self.graph.clear_checkpoint(phone_number)
         except Exception as e:
-            print(f"⚠️  Error clearing transfer checkpoint: {e}")
+            logger.error("transfer_checkpoint_clear_error", phone=phone_number, error=str(e), exc_info=True)
