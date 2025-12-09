@@ -6,6 +6,10 @@ from datetime import datetime
 import redis.asyncio as redis
 
 from shared.cache.redis_client import RedisClient
+from shared.utils.bank_aliases import normalize_bank_name, get_bank_search_terms
+from shared.utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 
 class BankCacheService:
@@ -24,13 +28,13 @@ class BankCacheService:
             cached_data = await self.redis.get(self.CACHE_KEY)
             if cached_data:
                 banks = json.loads(cached_data)
-                print(f"✅ Loaded {len(banks)} banks from Redis cache")
+                logger.info("banks_cache_hit", count=len(banks))
                 return banks
 
-            print("⚠️  Redis cache miss - banks not found")
+            logger.debug("banks_cache_miss")
             return None
         except Exception as e:
-            print(f"⚠️  Redis get error: {e}")
+            logger.error("banks_cache_get_error", error=str(e), exc_info=True)
             return None
 
     async def set_banks(self, banks: List[Dict[str, str]], ttl: int = 86400) -> bool:
@@ -51,10 +55,10 @@ class BankCacheService:
             timestamp = datetime.utcnow().isoformat()
             await self.redis.setex(self.TIMESTAMP_KEY, ttl, timestamp)
 
-            print(f"✅ Stored {len(banks)} banks in Redis (TTL: {ttl}s)")
+            logger.info("banks_cached", count=len(banks), ttl_seconds=ttl)
             return True
         except Exception as e:
-            print(f"⚠️  Redis set error: {e}")
+            logger.error("banks_cache_set_error", error=str(e), exc_info=True)
             return False
 
     async def get_last_updated(self) -> Optional[str]:
@@ -71,33 +75,35 @@ class BankCacheService:
                 return timestamp if isinstance(timestamp, str) else timestamp.decode('utf-8')
             return None
         except Exception as e:
-            print(f"⚠️  Redis timestamp error: {e}")
+            logger.error("banks_timestamp_get_error", error=str(e), exc_info=True)
             return None
 
-    async def refresh_banks(self, fetch_func) -> List[Dict[str, str]]:
+    async def refresh_banks(self, fetch_banks_func: Callable[[], Awaitable[Dict[str, Any]]]) -> Optional[List[Dict[str, str]]]:
         """
         Force refresh banks from Flutterwave and update cache.
 
         Args:
-            fetch_func: Async function to fetch banks from Flutterwave
+            fetch_banks_func: Async function that returns bank data from payment provider.
+                       Should return dict with 'success' bool and 'banks' list.
 
         Returns:
             List of banks
         """
         try:
-            print("🔄 Force refreshing banks from Flutterwave...")
-            banks = await fetch_func()
+            logger.info("banks_refresh_started")
+            result = await fetch_banks_func()
 
-            if banks:
-                await self.set_banks(banks, ttl=86400)
-                print(f"✅ Refreshed {len(banks)} banks")
+            if result.get("success") and result.get("banks"):
+                banks = result["banks"]
+                await self.set_banks(banks)
+                logger.info("banks_refreshed", count=len(banks))
                 return banks
 
-            print("⚠️  Failed to refresh banks from Flutterwave")
-            return []
+            logger.warning("banks_refresh_failed", result=result)
+            return None
         except Exception as e:
-            print(f"⚠️  Refresh error: {e}")
-            return []
+            logger.error("banks_refresh_error", error=str(e), exc_info=True)
+            return None
 
     async def clear_cache(self) -> bool:
         """
@@ -109,10 +115,10 @@ class BankCacheService:
         try:
             await self.redis.delete(self.CACHE_KEY)
             await self.redis.delete(self.TIMESTAMP_KEY)
-            print("✅ Cleared banks cache")
+            logger.info("banks_cache_cleared")
             return True
         except Exception as e:
-            print(f"⚠️  Clear cache error: {e}")
+            logger.error("banks_cache_clear_error", error=str(e), exc_info=True)
             return False
 
     async def get_bank_code(self, bank_name: str) -> Optional[str]:
@@ -127,77 +133,51 @@ class BankCacheService:
         """
         banks = await self.get_banks()
         if not banks:
-            print(
-                f"⚠️  get_bank_code: No banks in cache for lookup: {bank_name}")
+            logger.warning("bank_code_lookup_no_cache", bank_name=bank_name)
             return None
 
         normalized_name = bank_name.lower().strip()
-        print(
-            f"DEBUG get_bank_code: Looking up '{bank_name}' (normalized: '{normalized_name}') in {len(banks)} banks")
+        logger.debug("bank_code_lookup_started", bank_name=bank_name, normalized=normalized_name, total_banks=len(banks))
 
-        # Common bank abbreviations mapping (prioritize these)
-        # Maps abbreviations to possible full names or key terms to search for
-        bank_abbreviations = {
-            "uba": ["uba", "united bank for africa"],
-            "gtb": ["gtbank", "guaranty trust bank"],
-            "gtbank": ["gtbank", "guaranty trust bank"],
-            "access": ["access bank"],
-            "access bank": ["access bank"],
-            "zenith": ["zenith bank"],
-            "first bank": ["first bank", "firstbank"],
-            "firstbank": ["first bank", "firstbank"],
-            "opay": ["opay"],
-            "palmpay": ["palmpay", "palm pay"],
-            "kuda": ["kuda"],
-        }
+        # Use centralized bank aliases for search terms
+        search_terms = get_bank_search_terms(bank_name)
+        normalized = normalize_bank_name(bank_name)
 
-        # Check abbreviations first
-        if normalized_name in bank_abbreviations:
-            target_terms = bank_abbreviations[normalized_name]
-            for bank in banks:
-                bank_name_lower = bank.get("name", "").lower()
-                # Check if any target term matches the bank name (exact or contains)
-                for target_term in target_terms:
-                    if target_term == bank_name_lower or target_term in bank_name_lower or bank_name_lower in target_term:
-                        code = bank.get("code")
-                        print(
-                            f"✅ get_bank_code: Abbreviation match found - '{bank.get('name')}' -> {code}")
-                        return code
+        # Check using search terms from centralized aliases
+        for bank in banks:
+            bank_name_lower = bank.get("name", "").lower()
+            for term in search_terms:
+                if term in bank_name_lower or bank_name_lower in term:
+                    code = bank.get("code")
+                    logger.info("bank_code_found", match_type="alias", bank_name=bank.get('name'), code=code, search_term=bank_name)
+                    return code
 
-        # Try exact match first
+        # Try exact match
         for bank in banks:
             bank_name_field = bank.get("name", "").lower().strip()
-            if bank_name_field == normalized_name:
+            if bank_name_field == normalized_name or bank_name_field == normalized:
                 code = bank.get("code")
-                print(
-                    f"✅ get_bank_code: Exact match found - '{bank.get('name')}' -> {code}")
+                logger.info("bank_code_found", match_type="exact", bank_name=bank.get('name'), code=code, search_term=bank_name)
                 return code
 
         # Try matching without common suffixes
-        normalized_no_suffix = normalized_name.replace(
-            " bank", "").replace(" plc", "").replace(" limited", "").strip()
+        normalized_no_suffix = normalized_name.replace(" bank", "").replace(" plc", "").replace(" limited", "").strip()
         for bank in banks:
             bank_name_field = bank.get("name", "").lower().strip()
-            bank_name_no_suffix = bank_name_field.replace(" bank", "").replace(
-                " plc", "").replace(" limited", "").strip()
+            bank_name_no_suffix = bank_name_field.replace(" bank", "").replace(" plc", "").replace(" limited", "").strip()
             if normalized_no_suffix == bank_name_no_suffix:
                 code = bank.get("code")
-                print(
-                    f"✅ get_bank_code: Suffix-stripped match found - '{bank.get('name')}' -> {code}")
+                logger.info("bank_code_found", match_type="suffix_stripped", bank_name=bank.get('name'), code=code, search_term=bank_name)
                 return code
 
-        # Try partial match (contains) - but only for words, not substrings
-        # This prevents "uba" from matching "Bubayero"
         # For short abbreviations (3 chars or less), check if they appear as standalone words
         if len(normalized_name) <= 3:
             for bank in banks:
                 bank_name_field = bank.get("name", "").lower().strip()
                 bank_words = bank_name_field.split()
-                # Check if normalized_name is a complete word in bank name
                 if normalized_name in bank_words:
                     code = bank.get("code")
-                    print(
-                        f"✅ get_bank_code: Abbreviation word match found - '{bank.get('name')}' -> {code}")
+                    logger.info("bank_code_found", match_type="word", bank_name=bank.get('name'), code=code, search_term=bank_name)
                     return code
 
         # For longer names, check word matches
@@ -205,27 +185,23 @@ class BankCacheService:
         for bank in banks:
             bank_name_field = bank.get("name", "").lower().strip()
             bank_words = bank_name_field.split()
-            # Check if any word from normalized_name is a complete word in bank name
-            # OR if normalized_name is a complete word in bank name
-            if (any(word in bank_words for word in normalized_words if len(word) >= 3) or
-                    normalized_name in bank_words):
+            if any(word in bank_words for word in normalized_words if len(word) >= 3) or normalized_name in bank_words:
                 code = bank.get("code")
-                print(
-                    f"✅ get_bank_code: Word match found - '{bank.get('name')}' -> {code}")
+                logger.info("bank_code_found", match_type="word", bank_name=bank.get('name'), code=code, search_term=bank_name)
                 return code
 
-        print(f"⚠️  get_bank_code: No match found for '{bank_name}'")
+        logger.warning("bank_code_not_found", bank_name=bank_name)
         return None
 
     async def ensure_banks_cached(
         self,
-        fetch_func: Callable[[], Awaitable[Dict[str, Any]]]
+        fetch_banks_func: Callable[[], Awaitable[Dict[str, Any]]]
     ) -> bool:
         """
         Ensure banks are cached. Fetch from provider if cache is empty.
 
         Args:
-            fetch_func: Async function that returns bank data from payment provider.
+            fetch_banks_func: Async function that returns bank data from payment provider.
                        Should return dict with 'success' bool and 'banks' list.
 
         Returns:
@@ -238,18 +214,18 @@ class BankCacheService:
 
         # Cache miss - fetch from provider
         try:
-            print("🔄 Bank cache miss - fetching from payment provider...")
-            result = await fetch_func()
+            logger.info("banks_cache_miss_fetching")
+            result = await fetch_banks_func()
 
             if result.get("success") and result.get("banks"):
                 banks_list = result["banks"]
                 await self.set_banks(banks_list, ttl=86400)
-                print(f"✅ Fetched and cached {len(banks_list)} banks")
+                logger.info("banks_fetched_and_cached", count=len(banks_list))
                 return True
             else:
                 error = result.get("error", "Unknown error")
-                print(f"⚠️  Failed to fetch banks: {error}")
+                logger.error("banks_fetch_failed", error=error)
                 return False
         except Exception as e:
-            print(f"⚠️  Error fetching banks: {e}")
+            logger.error("banks_ensure_error", error=str(e), exc_info=True)
             return False
