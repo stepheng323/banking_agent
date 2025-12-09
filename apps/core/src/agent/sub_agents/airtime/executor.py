@@ -7,6 +7,9 @@ from typing import Dict, Any
 from shared.clients.payment_provider_factory import PaymentProviderFactory
 from shared.repositories.unit_of_work import UnitOfWork
 from apps.core.src.agent.sub_agents.airtime.completion import AirtimeCompletionService
+from shared.utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 
 class AirtimeExecutor:
@@ -42,7 +45,7 @@ class AirtimeExecutor:
 
 
         if not phone_number or not idem_key or not airtime_data:
-            print("❌ Invalid airtime request: missing required fields")
+            logger.error("invalid_airtime_request", phone=phone_number, idem_key=idem_key, has_data=bool(airtime_data))
             return
 
         if transaction_id:
@@ -63,10 +66,10 @@ class AirtimeExecutor:
             
             # Fallback: Try to get any available provider if purchase_airtime service not found
             if not provider:
-                print("[AIRTIME HANDLER] ⚠️  No provider found for 'purchase_airtime' service, trying primary provider...")
+                logger.warning("airtime_provider_not_found", service="purchase_airtime")
                 provider = PaymentProviderFactory.get_primary_provider()
                 if not provider:
-                    print("[AIRTIME HANDLER] ❌ No payment provider available at all")
+                    logger.error("no_payment_provider_available")
                     raise ValueError("No payment provider available for airtime purchases")
 
             recipient = airtime_data.get("recipient", {})
@@ -75,7 +78,6 @@ class AirtimeExecutor:
             amount = float(airtime_data.get("amount", 0))
 
 
-            # Check if provider has purchase_airtime method
             if hasattr(provider, "purchase_airtime"):
                 purchase_result = await provider.purchase_airtime(
                     amount=amount,
@@ -122,19 +124,19 @@ class AirtimeExecutor:
             await self.airtime_service.cleanup_redis_keys(phone_number, idem_key)
 
             if purchase_result.get("success"):
-                print(f"[AIRTIME HANDLER] ✅ Purchase successful, sending success notification...")
+                logger.info("airtime_purchase_successful", phone=phone_number, recipient=recipient_phone)
                 await self.airtime_service.send_success_notification(
                     phone_number, airtime_data, purchase_result, transaction_id
                 )
-                print(f"[AIRTIME HANDLER] ✅ Success notification sent")
+                logger.debug("airtime_success_notification_sent", phone=phone_number)
             else:
                 error_msg = purchase_result.get("error", "Unknown error")
-                print(f"[AIRTIME HANDLER] ❌ Purchase failed: {error_msg}, sending failure notification...")
+                logger.warning("airtime_purchase_failed", phone=phone_number, error=error_msg)
                 await self.airtime_service.send_failure_notification(phone_number, error_msg)
-                print(f"[AIRTIME HANDLER] ✅ Failure notification sent")
+                logger.debug("airtime_failure_notification_sent", phone=phone_number)
 
         except NotImplementedError as e:
-            print(f"⚠️  Airtime purchase not implemented: {e}")
+            logger.warning("airtime_not_implemented", error=str(e), exc_info=True)
             # Mark transaction as failed
             if transaction_id:
                 with UnitOfWork() as uow:
@@ -152,8 +154,7 @@ class AirtimeExecutor:
                 phone_number, "Airtime purchase service is not yet available. Please try again later."
             )
         except Exception as e:
-            print(f"❌ Airtime purchase execution error: {e}")
-            traceback.print_exc()
+            logger.error("airtime_execution_error", phone=phone_number, error=str(e), exc_info=True)
             if transaction_id:
                 with UnitOfWork() as uow:
                     if uow.transactions:

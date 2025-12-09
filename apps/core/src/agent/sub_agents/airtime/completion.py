@@ -1,12 +1,16 @@
 """Airtime purchase service for handling airtime purchase operations."""
 
 import asyncio
+from shared.utils.async_helpers import create_background_task
 from typing import Dict, Any, Optional
 
 from shared.clients.whatsapp_client import WhatsAppClient
 from shared.cache.redis_client import RedisClient
 from shared.repositories.beneficiary_repository import BeneficiaryRepository
 from apps.core.src.agent.tools.beneficiary.suggestion_service import BeneficiarySuggestionService
+from shared.utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 
 class AirtimeCompletionService:
@@ -40,9 +44,9 @@ class AirtimeCompletionService:
             await self.redis_client.delete(f"user:{phone_number}:pending_airtime_flow_token")
             await self.redis_client.delete(f"transaction:token:{idempotency_key}:phone")
             await self.redis_client.delete(f"transaction:retry:{idempotency_key}")
-            print(f"✅ Cleaned up Redis keys for airtime purchase: {idempotency_key}")
+            logger.info("airtime_redis_cleanup", phone=phone_number, idem_key=idempotency_key)
         except Exception as e:
-            print(f"⚠️  Error cleaning up Redis keys: {e}")
+            logger.error("airtime_redis_cleanup_error", phone=phone_number, idem_key=idempotency_key, error=str(e), exc_info=True)
 
     async def send_success_notification(
         self,
@@ -72,18 +76,16 @@ class AirtimeCompletionService:
             # Send success notification first (await to ensure it's sent before beneficiary suggestion)
             await self.whatsapp_client.send_text(to=phone_number, text=message)
             
-            print(f"✅ Success notification sent for {phone_number}")
+            logger.info("airtime_success_notification_sent", phone=phone_number, recipient=recipient_phone)
             
             # Check and suggest saving recipient as beneficiary if service is available
-            # This runs AFTER the success notification is sent
             if self.beneficiary_suggestion_service:
                 recipient = airtime_data.get("recipient", {})
                 recipient_phone = recipient.get("phone", "")
                 network = recipient.get("network", "")
                 
-                print(f"DEBUG beneficiary_suggestion: service available, recipient={recipient}, phone={recipient_phone}, network={network}")
+                logger.debug("beneficiary_suggestion_check", phone=phone_number, has_phone=bool(recipient_phone), has_network=bool(network))
                 
-                # Validate recipient has required fields before calling suggestion service
                 if recipient_phone and network:
                     try:
                         await self.beneficiary_suggestion_service.check_and_suggest_beneficiary(
@@ -92,20 +94,15 @@ class AirtimeCompletionService:
                             recipient_data=recipient,
                             transaction_id=transaction_id,
                         )
-                        print(f"✅ Beneficiary suggestion call completed for {phone_number}")
+                        logger.debug("beneficiary_suggestion_completed", phone=phone_number)
                     except Exception as e:
-                        # Log specific error but don't break the success notification flow
-                        print(f"⚠️  Error in beneficiary suggestion for {phone_number}: {e}")
-                        import traceback
-                        traceback.print_exc()
+                        logger.warning("beneficiary_suggestion_error", phone=phone_number, error=str(e), exc_info=True)
                 else:
-                    print(f"⚠️  Skipping beneficiary suggestion: missing required fields (phone={recipient_phone}, network={network})")
+                    logger.warning("beneficiary_suggestion_skipped", phone=phone_number, reason="missing_fields")
             else:
-                print(f"⚠️  Beneficiary suggestion service not available for {phone_number}")
+                logger.debug("beneficiary_suggestion_unavailable", phone=phone_number)
         except Exception as e:
-            print(f"⚠️  Error sending success notification: {e}")
-            import traceback
-            traceback.print_exc()
+            logger.error("airtime_success_notification_error", phone=phone_number, error=str(e), exc_info=True)
 
     async def send_failure_notification(
         self, phone_number: str, error_message: str
@@ -113,11 +110,11 @@ class AirtimeCompletionService:
         """Send failure notification for airtime purchase."""
         try:
             message = f"❌ Airtime purchase failed: {error_message}. Please try again."
-            asyncio.create_task(
+            create_background_task(
                 self.whatsapp_client.send_text(to=phone_number, text=message)
             )
-            print(f"✅ Failure notification queued for {phone_number}")
+            logger.info("airtime_failure_notification_queued", phone=phone_number, error=error_message)
         except Exception as e:
-            print(f"⚠️  Error sending failure notification: {e}")
+            logger.error("airtime_failure_notification_error", phone=phone_number, error=str(e), exc_info=True)
 
 
