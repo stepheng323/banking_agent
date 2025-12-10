@@ -8,6 +8,9 @@ from shared.clients.mono_client import MonoClient
 from shared.repositories.user_repository import UserRepository
 from shared.repositories.account_repository import AccountRepository
 from apps.core.src.agent.sub_agents.query.parser import QueryParser
+from shared.utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 
 class QueryService:
@@ -88,7 +91,7 @@ class QueryService:
         """
         try:
             params = await self.parser.parse(question)
-            print(f"📊 Query params: {params}")
+            logger.info("query")
             
             transactions = await self.mono.get_transactions(
                 account_id=account_id,
@@ -110,7 +113,7 @@ class QueryService:
             return response
             
         except Exception as e:
-            print(f"Error answering question: {e}")
+            logger.error("error_answering")
             return "I'm having trouble analyzing your transactions right now. Please try again."
     
     def _aggregate(self, transactions: List[Dict[str, Any]], params: Dict[str, Any]) -> Any:

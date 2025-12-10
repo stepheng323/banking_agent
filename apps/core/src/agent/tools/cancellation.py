@@ -133,7 +133,7 @@ async def cleanup_transaction_redis_keys(
                 f"✅ Cancellation ({transaction_type}): Cleared {deleted} Redis keys")
             return deleted
         except Exception as e:
-            print(f"⚠️  Error cleaning up Redis keys during cancellation: {e}")
+            logger.error("error_cleaning_up_redis")
             return 0
 
     return 0
@@ -242,9 +242,9 @@ async def handle_transaction_cancellation(
     try:
         key = f"user:{phone_number}:conversation_state"
         await redis_client.delete(key)
-        print(f"✅ Cleared conversation_state for cancelled {transaction_type}")
+        logger.info("cleared_for_cancelled")
     except Exception as e:
-        print(f"⚠️  Error clearing conversation_state: {e}")
+        logger.error("error_clearing")
 
     message = get_cancellation_message(
         transaction_type=transaction_type,

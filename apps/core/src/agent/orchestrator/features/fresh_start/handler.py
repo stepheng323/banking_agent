@@ -5,6 +5,9 @@ from typing import TYPE_CHECKING
 from apps.core.src.agent.orchestrator.pipeline.message_handler import MessageHandler
 from apps.core.src.agent.orchestrator.pipeline.message_context import MessageContext
 from apps.core.src.agent.orchestrator.features.context.service import OrchestratorContextManager
+from shared.utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 if TYPE_CHECKING:
     from apps.core.src.agent.sub_agents.transfer import TransferService
@@ -53,6 +56,6 @@ class FreshStartHandler(MessageHandler):
         await self.context_manager.clear_conversation_state(context.phone_number)
         await self.transfer_service.graph.clear_checkpoint(context.phone_number)
         
-        print(f"✅ Cleared stale state for fresh start message: {context.text}")
+        logger.info("cleared_stale_state_for")
         
         return context.update(conversation_state=None)

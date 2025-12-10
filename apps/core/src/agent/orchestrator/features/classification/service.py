@@ -5,6 +5,9 @@ from typing import Any, Optional
 from langchain_core.runnables import Runnable
 from apps.core.src.agent.orchestrator.models.classification import ClassificationResult
 from apps.core.src.agent.orchestrator.features.classification.prompts import CLASSIFICATION_SYSTEM_PROMPT
+from shared.utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 
 class OrchestratorClassificationService:
@@ -123,7 +126,7 @@ class OrchestratorClassificationService:
         """Classify user intent from text."""
         fast_result = self._try_fast_path(text, context)
         if fast_result and not image_data:
-            print(f"⚡ Fast path: '{text[:50]}' → {fast_result.intent} (confidence: {fast_result.confidence})")
+            logger.info("fast")
             return fast_result
         
 

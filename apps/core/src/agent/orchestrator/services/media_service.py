@@ -7,6 +7,9 @@ from langchain_openai import ChatOpenAI
 from openai import AsyncOpenAI
 from shared.clients.whatsapp_client import WhatsAppClient
 from shared.config import settings
+from shared.utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 
 class MediaService:
@@ -46,11 +49,11 @@ class MediaService:
             )
 
             text = str(transcription).strip()
-            print(f"🎤 Transcribed audio: {text}")
+            logger.info("transcribed")
             return text
 
         except Exception as e:
-            print(f"❌ Failed to process audio: {e}")
+            logger.error("failed_to_process")
             return "Attributes of the audio could not be processed."
 
     async def get_image_data(self, media_id: str) -> Optional[str]:
@@ -71,5 +74,5 @@ class MediaService:
             return f"data:image/jpeg;base64,{base64_image}"
 
         except Exception as e:
-            print(f"❌ Failed to get image data: {e}")
+            logger.error("failed_to_get_image")
             return None

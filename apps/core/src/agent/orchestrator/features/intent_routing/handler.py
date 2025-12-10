@@ -3,6 +3,9 @@
 from apps.core.src.agent.orchestrator.pipeline.message_handler import MessageHandler
 from apps.core.src.agent.orchestrator.pipeline.message_context import MessageContext
 from .service import OrchestratorIntentRouter
+from shared.utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 
 class IntentRoutingHandler(MessageHandler):
@@ -21,7 +24,7 @@ class IntentRoutingHandler(MessageHandler):
     
     async def handle(self, context: MessageContext) -> MessageContext:
         """Route to appropriate service."""
-        print(f"🔍 [IntentRouting] Routing intent: {context.intent}")
+        logger.debug("routing")
         
         response = await self.intent_router.route_intent(
             context.phone_number,

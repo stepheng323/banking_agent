@@ -13,6 +13,9 @@ from apps.core.src.agent.orchestrator.services import TaskQueueService
 if TYPE_CHECKING:
     from apps.core.src.agent.sub_agents.transfer import TransferService
 from shared.types.agent_types import TaskStatus
+from shared.utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 
 class BatchAuthorizationHandler(MessageHandler):
@@ -52,7 +55,7 @@ class BatchAuthorizationHandler(MessageHandler):
     
     async def handle(self, context: MessageContext) -> MessageContext:
         """Trigger batch authorization flow via WhatsApp PIN flow."""
-        print(f"🔍 [BatchAuth] Auto-triggering batch authorization")
+        logger.debug("batch_authorization")
         
         redis = RedisClient.get_client()
         auth_sent_key = f"batch:auth_sent:{context.phone_number}"

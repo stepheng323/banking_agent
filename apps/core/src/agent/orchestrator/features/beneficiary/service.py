@@ -8,6 +8,9 @@ from shared.repositories.unit_of_work import UnitOfWork
 from shared.cache.redis_client import RedisClient
 from apps.core.src.agent.orchestrator.models.classification import ClassificationResult
 from apps.core.src.agent.orchestrator.features.context.service import OrchestratorContextManager
+from shared.utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 
 class OrchestratorBeneficiaryHandler:
@@ -175,7 +178,7 @@ class OrchestratorBeneficiaryHandler:
                         self.context_manager.save_last_response(phone_number, response))
                     return response
             except Exception as e:
-                print(f"Error creating beneficiary: {e}")
+                logger.error("error_creating")
                 traceback.print_exc()
         elif intent in ("no", "skip", "cancel"):
             # Rely on LLM intent classification, no pattern matching
@@ -288,7 +291,7 @@ class OrchestratorBeneficiaryHandler:
                             self.context_manager.save_last_response(phone_number, response))
                         return response
                 except Exception as e:
-                    print(f"Error creating beneficiary: {e}")
+                    logger.error("error_creating")
                     traceback.print_exc()
 
         return None

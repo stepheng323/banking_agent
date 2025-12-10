@@ -1,5 +1,8 @@
 from shared.clients.whatsapp_client import WhatsAppClient
 from shared.config import settings
+from shared.utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 
 class OnboardingService:
@@ -19,5 +22,5 @@ class OnboardingService:
                 text_body="Hi, I'm Fusepay an AI banking assistant that can help you with your banking needs. To get started, please complete the onboarding form below.",
             )
         except Exception as e:
-            print(f"❌ Failed to send onboarding flow: {e}")
+            logger.error("failed_to_send_onboarding")
             raise e

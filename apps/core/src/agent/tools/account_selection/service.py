@@ -3,6 +3,9 @@
 from typing import Dict, List, Optional, Tuple
 
 from shared.formatters.accounts import format_accounts_list
+from shared.utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 
 class AccountSelectionService:
@@ -58,10 +61,10 @@ class AccountSelectionService:
             return selected, None
         
         account_list = format_accounts_list(accounts)
-        print(f"DEBUG AccountSelectionService: accounts count={len(accounts)}, formatted_list={account_list[:100] if account_list else 'EMPTY'}")
+        logger.debug("debug_accounts")
         
         if llm_reply:
             combined = f"{llm_reply}\n\n{account_list}"
-            print(f"DEBUG AccountSelectionService: Combined response length={len(combined)}")
+            logger.debug("debug_combined_response")
             return None, combined
         return None, account_list

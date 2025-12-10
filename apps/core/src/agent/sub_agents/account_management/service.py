@@ -7,9 +7,13 @@ from shared.clients.whatsapp_client import WhatsAppClient
 from shared.config import settings
 from shared.repositories.account_repository import AccountRepository
 from shared.repositories.user_repository import UserRepository
-from shared.database.models import Account
+from shared.models.account import Account
+from shared.database.models import User
+from shared.utils.logging import get_logger
 from apps.core.src.agent.sub_agents.account_management.parser import AccountManagementParser, AccountManagementIntent
 from apps.core.src.agent.sub_agents.account_management.formatter import AccountManagementFormatter
+
+logger = get_logger(__name__)
 
 
 class AccountManagementService:
@@ -198,7 +202,7 @@ class AccountManagementService:
                 f"All transactions will use this account unless you specify otherwise."
             )
         except Exception as e:
-            print(f"Error setting default account: {e}")
+            logger.error("set_default_account_error", user_id=user_id, account_id=str(selected_account.account_id), error=str(e), exc_info=True)
             return "Sorry, I couldn't update your default account. Please try again."
     
     async def unlink_account(self, user_id: str, account_identifier: str) -> str:
@@ -255,7 +259,7 @@ class AccountManagementService:
             else:
                 return "Sorry, I couldn't unlink that account. Please try again."
         except Exception as e:
-            print(f"Error unlinking account: {e}")
+            logger.error("unlink_account_error", user_id=user_id, account_id=str(selected_account.account_id), error=str(e), exc_info=True)
             return "Sorry, I couldn't unlink that account. Please try again."
     
     def _find_account_by_bank_name(self, accounts: List[Account], bank_name: str) -> Optional[Account]:
@@ -269,35 +273,10 @@ class AccountManagementService:
         Returns:
             Matching account or None
         """
+        from shared.utils.bank_aliases import normalize_bank_name
+        
         bank_name_lower = bank_name.lower().strip()
-        
-        bank_aliases = {
-            "gtb": "gtbank",
-            "gtbank": "gtbank",
-            "guaranty trust": "gtbank",
-            "uba": "uba",
-            "united bank": "uba",
-            "access": "access",
-            "zenith": "zenith",
-            "first bank": "first bank",
-            "firstbank": "first bank",
-            "fbn": "first bank",
-            "union": "union bank",
-            "sterling": "sterling",
-            "stanbic": "stanbic",
-            "fidelity": "fidelity",
-            "wema": "wema",
-            "polaris": "polaris",
-            "keystone": "keystone",
-            "fcmb": "fcmb",
-            "ecobank": "ecobank",
-            "providus": "providus",
-            "kuda": "kuda",
-            "opay": "opay",
-            "palmpay": "palmpay",
-        }
-        
-        normalized_search = bank_aliases.get(bank_name_lower, bank_name_lower)
+        normalized_search = normalize_bank_name(bank_name)
         
         for account in accounts:
             account_bank_lower = account.bank_name.lower()
@@ -307,3 +286,4 @@ class AccountManagementService:
                 return account
         
         return None
+

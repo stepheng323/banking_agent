@@ -7,6 +7,9 @@ from typing import Dict, Any
 from shared.clients.payment_provider_factory import PaymentProviderFactory
 from shared.repositories.unit_of_work import UnitOfWork
 from apps.core.src.agent.sub_agents.transfer.completion import TransferCompletionService
+from shared.utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 
 class TransferExecutor:
@@ -35,7 +38,7 @@ class TransferExecutor:
         transaction_id = transfer_request["transaction_id"]
 
         if not phone_number or not idem_key or not transfer_data:
-            print("""❌ Invalid transfer request: missing required fields""")
+            logger.error("invalid_transfer_request", phone=phone_number, idem_key=idem_key, has_data=bool(transfer_data))
             return
 
         if transaction_id:
@@ -65,7 +68,7 @@ class TransferExecutor:
                 currency="NGN"
             )
 
-            print(f"✅ Transfer executed: {transfer_result}")
+            logger.info("transfer_executed", phone=phone_number, result=transfer_result.get("success"), transaction_id=transfer_result.get("transaction_id"))
 
             if transaction_id:
                 with UnitOfWork() as uow:
@@ -105,8 +108,7 @@ class TransferExecutor:
                 await self.transfer_service.send_failure_notification(phone_number, error_msg)
 
         except Exception as e:
-            print(f"❌ Transfer execution error: {e}")
-            traceback.print_exc()
+            logger.error("transfer_execution_error", phone=phone_number, error=str(e), exc_info=True)
             if transaction_id:
                 with UnitOfWork() as uow:
                     if uow.transactions:

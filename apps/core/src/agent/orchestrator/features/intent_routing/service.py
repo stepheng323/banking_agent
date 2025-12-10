@@ -16,6 +16,9 @@ from apps.core.src.agent.sub_agents.account_management.service import AccountMan
 from apps.core.src.agent.orchestrator.features.task_planning.service import OrchestratorTaskPlanner
 from apps.core.src.agent.orchestrator.features.context.service import OrchestratorContextManager
 from shared.clients.whatsapp_client import WhatsAppClient
+from shared.utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 
 class OrchestratorIntentRouter:
@@ -112,14 +115,14 @@ class OrchestratorIntentRouter:
         if intent == "mixed" or is_multiple_transactions:
             try:
                 planner_output = await self.task_planner.plan_tasks(phone_number, text)
-                print(f"planner_output: {json.dumps(planner_output.model_dump(), indent=4)}")
+                logger.info("log_event")
                 if planner_output.tasks:
                     await self.task_queue_service.create_task_queue(
                         phone_number, planner_output
                     )
                     
                     acknowledgment = self._generate_task_acknowledgment(planner_output)
-                    print(f"🔍 [INTENT_ROUTER] Generated acknowledgment: {acknowledgment}")
+                    logger.debug("generated")
                     
                     await self.whatsapp_client.send_text(
                         phone_number, acknowledgment
@@ -140,7 +143,7 @@ class OrchestratorIntentRouter:
                     else:
                         return acknowledgment
             except Exception as e:
-                print(f"⚠️  Error in multi-task planning: {e}")
+                logger.error("error_in")
                 traceback.print_exc()
 
         if intent == "transfer":
@@ -168,7 +171,7 @@ class OrchestratorIntentRouter:
         elif intent == "conversational":
 
             conv = await self.conversation_responder.generate_reply(phone_number, text, result, user_ctx)
-            print(f"Conversation response: {conv}")
+            logger.info("conversation")
             response = conv
         else:
             conv = await self.conversation_responder.generate_reply(phone_number, text, result, user_ctx)
