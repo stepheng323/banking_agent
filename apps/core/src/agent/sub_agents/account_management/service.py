@@ -8,7 +8,7 @@ from shared.config import settings
 from shared.repositories.account_repository import AccountRepository
 from shared.repositories.user_repository import UserRepository
 from shared.models.account import Account
-from shared.models.user import User
+from shared.database.models import User
 from shared.utils.logging import get_logger
 from apps.core.src.agent.sub_agents.account_management.parser import AccountManagementParser, AccountManagementIntent
 from apps.core.src.agent.sub_agents.account_management.formatter import AccountManagementFormatter
