@@ -1,12 +1,9 @@
 """Task planning and execution for the orchestrator."""
 
-import json
-import re
 from typing import Optional
 import traceback
 
-from langchain_core.runnables import Runnable
-from langchain_core.messages import AIMessage
+from langchain_openai import ChatOpenAI
 from apps.core.src.agent.orchestrator.models.planner import PlannerOutput
 from apps.core.src.agent.orchestrator.services.task_queue_service import TaskQueueService
 from apps.core.src.agent.orchestrator.services.task_executor import TaskExecutor
@@ -21,11 +18,12 @@ class OrchestratorTaskPlanner:
 
     def __init__(
         self,
-        planner_llm: Runnable,
+        planner_llm: ChatOpenAI,
         task_queue_service: TaskQueueService,
         task_executor: TaskExecutor,
     ) -> None:
         self.planner_llm = planner_llm
+        self.structured_planner = planner_llm.with_structured_output(PlannerOutput)
         self.task_queue_service = task_queue_service
         self.task_executor = task_executor
 
@@ -43,37 +41,17 @@ class OrchestratorTaskPlanner:
         user_prompt = PLANNER_USER_PROMPT_TEMPLATE.format(
             phone_number=phone_number, user_message=text
         )
-        result = await self.planner_llm.ainvoke(
+        
+        result = await self.structured_planner.ainvoke(
             [
                 {"role": "system", "content": PLANNER_SYSTEM_PROMPT},
                 {"role": "user", "content": user_prompt},
             ]
         )
         
-        # Handle different return types from LLM
         if isinstance(result, PlannerOutput):
             return result
-        
-        # Extract content from AIMessage if needed
-        if isinstance(result, AIMessage):
-            content = result.content
-        else:
-            content = result
-        
-        # Parse JSON string if needed
-        if isinstance(content, str):
-            try:
-                content = json.loads(content)
-            except json.JSONDecodeError:
-                # If it's not valid JSON, try to extract JSON from the string
-                # Some LLMs return JSON wrapped in markdown code blocks
-                json_match = re.search(r'\{[^{}]*\}', content, re.DOTALL)
-                if json_match:
-                    content = json.loads(json_match.group())
-                else:
-                    raise ValueError(f"Could not parse JSON from LLM response: {content}")
-        
-        return PlannerOutput.model_validate(content)
+        return PlannerOutput.model_validate(result)
 
     async def handle_next_task(self, phone_number: str, text: str) -> Optional[str]:
         """
