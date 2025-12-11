@@ -4,12 +4,14 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from shared.clients.whatsapp_client import WhatsAppClient
 from shared.models.messages import MessagePriority, MessageType, WhatsAppMessage
 from shared.queue.redis_queue import RedisQueue
+from shared.utils.logging import get_logger
 
 from apps.gateway.adapters.meta_whatsapp import parse_payload, verify_meta_signature
 from apps.gateway.adapters.sender import send_text
 from apps.gateway.core.config import settings
 
 router = APIRouter()
+logger = get_logger(__name__)
 
 _redis_queue_instance = None
 _whatsapp_client_instance = None
@@ -52,11 +54,7 @@ async def whatsapp_webhook(
         await verify_meta_signature(request)
         payload = await request.json()
 
-        print("📥 Received webhook payload")
-
         messages = parse_payload(payload)
-
-        print(f"🔍 Messages: {messages}")
 
         for msg in messages:
             text = msg.get("text") or ""
@@ -68,20 +66,22 @@ async def whatsapp_webhook(
             # Temporary whitelist check
             ALLOWED_NUMBER = "2348162511023"
             if from_id != ALLOWED_NUMBER:
-                print(f"⛔ Ignoring message from unauthorized user: {from_id}")
+                logger.debug("webhook_message_filtered", from_id=from_id)
                 continue
 
-            print(f"   Message from {from_id}: {msg_type}")
-            if text:
-                print(f"   Text: {text}")
-            if flow_data:
-                print(f"   Flow data: {flow_data}")
+            logger.info("webhook_message_received", from_id=from_id, msg_type=msg_type)
             
             priority = MessagePriority.NORMAL
             if msg_type == "interactive":
                 priority = MessagePriority.HIGH
             
-            if msg_type in ("text", "image", "audio", "interactive"):
+            # Handle regular messages (text, image, audio)
+            # For interactive messages, only handle if there's NO flow_data
+            # (flow_data is handled by the /webhook/flow endpoint)
+            is_regular_message = msg_type in ("text", "image", "audio")
+            is_interactive_without_flow = msg_type == "interactive" and not flow_data
+            
+            if is_regular_message or is_interactive_without_flow:
                 media_id = msg.get("media_id")
                 mime_type = msg.get("mime_type")
                 
@@ -107,49 +107,28 @@ async def whatsapp_webhook(
                         queue_name="banking:messages",
                         message=whatsapp_msg.model_dump(mode="json"),
                     )
-                    print(f" ✅ {msg_type} message enqueued for processing")
+                    logger.info("message_enqueued", msg_type=msg_type, from_id=from_id)
 
                     try:
                          if msg_type != "interactive":
                             await whatsapp_client.send_typing_indicator(message_id=message_id)
-                    except Exception as typing_error:
-                        print(f"   ⚠️  Could not send typing indicator: {typing_error}")
+                    except Exception:
+                        pass  # Typing indicator is not critical
 
                 except Exception as queue_error:
-                    print(f"   ❌ Failed to enqueue message: {queue_error}")
+                    logger.error("message_enqueue_failed", error=str(queue_error))
                     await send_text(
                         to=from_id,
                         text="Sorry, I'm having trouble processing your message right now.",
                     )
 
             elif msg_type == "interactive" and flow_data:
-                whatsapp_msg = WhatsAppMessage(
-                    message_id=message_id,
-                    from_number=from_id,
-                    message_type=MessageType.FLOW,
-                    text=None,
-                    flow_data=flow_data,
-                    timestamp=datetime.utcnow(),
-                    priority=MessagePriority.HIGH,
-                )
-                try:
-                    await queue.enqueue_simple(
-                        queue_name="banking:messages",
-                        message=whatsapp_msg.model_dump(mode="json"),
-                    )
-                    print(" ✅ Flow response enqueued for processing")
-                except Exception as queue_error:
-                    print(f"   ❌ Failed to enqueue flow message: {queue_error}")
-                    await send_text(
-                        to=from_id,
-                        text="Sorry, I'm having trouble processing your submission right now.",
-                    )
+                # Flow responses are handled by the /webhook/flow endpoint
+                logger.debug("flow_response_skipped", from_id=from_id)
 
         return Response(status_code=200)
 
     except Exception as e:
-        import traceback
-
-        print(f"❌ Error processing webhook: {e}")
-        print(traceback.format_exc())
+        logger.error("webhook_error", error=str(e), exc_info=True)
         return Response(status_code=200)
+
