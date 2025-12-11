@@ -8,8 +8,6 @@ if TYPE_CHECKING:
     from apps.core.src.agent.sub_agents.transfer.state import TransferState
     from apps.core.src.agent.sub_agents.airtime.state import AirtimeState
 
-# TypeVar without bound - bound is only for type checking and doesn't affect runtime
-# Type checkers will still validate based on usage in function signatures
 StateType = TypeVar('StateType')
 
 
@@ -29,12 +27,14 @@ async def select_source_account_shared(
     accounts = state.get("accounts", [])
     profile = state.get("user_profile", {})
     source_account_id = state.get("source_account_id")
+    source_bank_name = state.get("source_bank_name")
     llm_reply = state.get("llm_reply")
 
     selected, response = AccountSelectionService.select_account(
         accounts=accounts,
         profile=profile or {},
         source_account_id=source_account_id,
+        source_bank_name=source_bank_name,
         llm_reply=llm_reply,
     )
 
@@ -50,7 +50,6 @@ async def select_source_account_shared(
             "response": "",
         })
 
-    # If no accounts available, set error state with clear message
     if not accounts:
         error_message = "I couldn't find any account on your profile. Please add an account first to proceed with this transaction."
         return cast(StateType, {
@@ -59,7 +58,6 @@ async def select_source_account_shared(
             "response": error_message,
         })
 
-    # If accounts exist but none selected, ask user to select
     return cast(StateType, {
         **state,
         "flow_state": "selecting_account",

@@ -3,7 +3,10 @@
 import hashlib
 import json
 from typing import Any, Optional
+
+from apps.core.src.agent.tools.account_selection.service import AccountSelectionService
 from apps.core.src.agent.sub_agents.transfer.state import TransferState
+
 from shared.cache.bank_cache import BankCacheService
 from shared.utils.logging import get_logger
 
@@ -11,6 +14,7 @@ from .self_transfer_validator import SelfTransferValidator
 from .bank_code_resolver import BankCodeResolver
 from .beneficiary_matcher import BeneficiaryMatcher
 from .account_validator import AccountValidator
+
 
 logger = get_logger(__name__)
 
@@ -57,6 +61,12 @@ class ValidationCoordinator:
         Returns:
             Updated transfer state
         """
+        is_internal_transfer = state.get("is_internal_transfer", False)
+        if is_internal_transfer:
+            state = await self._resolve_internal_transfer(state)
+            if state.get("flow_state") == "error":
+                return state
+
         recipient_account = state.get("recipient_account")
         recipient_bank_code = state.get("recipient_bank_code")
         recipient_bank_name = state.get("recipient_bank_name")
@@ -197,6 +207,9 @@ class ValidationCoordinator:
                 ex=3600  # 1 hour expiry
             )
 
+        # Extract recipient_name for the state
+        resolved_recipient_name = resolved.get("account_name") if isinstance(resolved, dict) else state.get("recipient_name")
+
         return {
             **state,
             "account_resolved": resolved,
@@ -204,4 +217,81 @@ class ValidationCoordinator:
             "flow_state": "validating",
             "validation_errors": [],
             "idempotency_key": idem_key,
+            "recipient_name": resolved_recipient_name,  # Ensure recipient_name is in state for authorization
+            "recipient_bank_code": recipient_bank_code,  # Ensure bank_code is persisted
+        }
+
+    async def _resolve_internal_transfer(self, state: TransferState) -> TransferState:
+        """
+        Resolve internal transfer destination by finding user's account by bank name.
+        
+        For internal transfers, the recipient is the user's own account at the destination bank.
+        This method finds that account and populates the recipient fields.
+        
+        Args:
+            state: Current transfer state with is_internal_transfer=True
+            
+        Returns:
+            Updated state with recipient_account and recipient_bank populated from user's account
+        """
+        
+        accounts = state.get("accounts", [])
+        recipient_bank_name = state.get("recipient_bank_name")
+        selected_source_account = state.get("selected_source_account")
+        
+        if not recipient_bank_name:
+            return {
+                **state,
+                "flow_state": "error",
+                "response": "Please specify which account to transfer to (e.g., 'to my GTB').",
+                "validation_errors": ["missing_destination_bank"],
+            }
+        
+        destination_account = AccountSelectionService.find_account_by_bank_name(
+            accounts, recipient_bank_name
+        )
+        
+        if not destination_account:
+            return {
+                **state,
+                "flow_state": "error",
+                "response": f"I couldn't find a {recipient_bank_name} account linked to your profile. Please link it first or check the bank name.",
+                "validation_errors": ["destination_account_not_found"],
+            }
+        
+        if selected_source_account:
+            is_valid, error_message = self.self_transfer_validator.validate(
+                recipient_account=destination_account.get("account_number"),
+                recipient_bank_code=destination_account.get("bank_code"),
+                recipient_bank_name=destination_account.get("bank_name"),
+                source_account=selected_source_account,
+            )
+            if not is_valid:
+                return {
+                    **state,
+                    "flow_state": "error",
+                    "response": error_message or "Source and destination accounts are the same. Please specify different accounts.",
+                    "validation_errors": ["same_source_destination"],
+                }
+        
+        logger.info(
+            "internal_transfer_resolved",
+            source_bank=selected_source_account.get("bank_name") if selected_source_account else None,
+            destination_bank=destination_account.get("bank_name"),
+            destination_account=destination_account.get("account_number"),
+        )
+        
+        return {
+            **state,
+            "recipient_account": destination_account.get("account_number"),
+            "recipient_bank_name": destination_account.get("bank_name"),
+            "recipient_bank_code": destination_account.get("bank_code"),
+            "recipient_name": destination_account.get("account_name"),
+            "account_resolved": {
+                "success": True,
+                "account_name": destination_account.get("account_name"),
+                "account_number": destination_account.get("account_number"),
+                "bank_code": destination_account.get("bank_code"),
+                "provider": "internal",
+            },
         }

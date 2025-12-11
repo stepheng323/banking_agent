@@ -20,8 +20,13 @@ class TransferEntityExtractor:
         self.structured = self.llm.with_structured_output(
             TransferExtractionResult)
 
-    async def extract(self, text: str, smart_context: Optional[Dict[str, Any]] = None) -> TransferExtractionResult:
-        """Extract entities from text."""
+    async def extract(
+        self, 
+        text: str, 
+        smart_context: Optional[Dict[str, Any]] = None,
+        image_data: str | None = None
+    ) -> TransferExtractionResult:
+        """Extract entities from text and optional image."""
         user = text.strip()
         user_content = user
 
@@ -59,10 +64,31 @@ class TransferEntityExtractor:
             user_content = f"{user}\n\nsmartContext:\n" + \
                 "\n".join(context_parts)
 
+        # Build user message - with or without image
+        if image_data:
+            # Add instruction for image analysis
+            if user_content:
+                user_content = f"{user_content}\n\n[An image is attached. Please extract any visible bank account number, bank name, or other transfer details from the image.]"
+            else:
+                user_content = "[An image is attached. Please extract any visible bank account number, bank name, or other transfer details from the image.]"
+            
+            user_message = {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": user_content},
+                    {
+                        "type": "image_url",
+                        "image_url": {"url": image_data}
+                    }
+                ]
+            }
+        else:
+            user_message = {"role": "user", "content": user_content}
+
         result = await self.structured.ainvoke(
             [
                 {"role": "system", "content": TRANSFER_EXTRACTION_PROMPT},
-                {"role": "user", "content": user_content},
+                user_message,
             ]
         )
         if isinstance(result, TransferExtractionResult):

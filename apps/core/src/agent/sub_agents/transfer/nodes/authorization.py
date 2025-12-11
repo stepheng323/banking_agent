@@ -8,6 +8,9 @@ from apps.core.src.agent.tools.authorization.service import AuthorizationService
 from shared.cache.redis_client import Redis
 from shared.queue.redis_queue import RedisQueue
 from apps.core.src.agent.sub_agents.transfer.nodes.utils import debug_log
+from shared.utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 
 async def authorize_transaction(
@@ -19,6 +22,8 @@ async def authorize_transaction(
     """Authorize transaction after PIN verification."""
     phone_number = state.get("phone_number")
     idem_key = state.get("idempotency_key")
+    
+    debug_log(f"🔐 authorize_transaction ENTRY: phone={phone_number}, idem_key={idem_key}, flow_state={state.get('flow_state')}, transfer_status={state.get('transfer_status')}")
 
     if not idem_key:
         return cast(
@@ -84,10 +89,15 @@ async def authorize_transaction(
         amount = state.get("amount")
         recipient_account = state.get("recipient_account")
         recipient_bank_name = state.get("recipient_bank_name")
+        recipient_bank_code = state.get("recipient_bank_code")
         recipient_name = state.get("recipient_name")
         
         if not amount or not recipient_account:
-            debug_log(f"❌ Missing transfer data in state for authorization")
+            logger.warning(
+                "authorization_missing_data",
+                amount=amount,
+                recipient_account=recipient_account,
+            )
             return {
                 **state,
                 "response": "Session expired or invalid. Please start a new transfer.",
@@ -100,6 +110,7 @@ async def authorize_transaction(
             "recipient": {
                 "account_number": recipient_account,
                 "bank_name": recipient_bank_name,
+                "bank_code": recipient_bank_code,
                 "name": recipient_name
             },
             "idempotency_key": state.get("idempotency_key")
@@ -113,6 +124,11 @@ async def authorize_transaction(
             if isinstance(user_profile, dict):
                 user_id = user_profile.get("id")
             if not user_id:
+                logger.warning(
+                    "authorization_missing_user_id",
+                    pin_result=bool(pin_result),
+                    user_profile=bool(user_profile),
+                )
                 return cast(
                     TransferState,
                     {
@@ -164,6 +180,12 @@ async def authorize_transaction(
         return result
 
     except Exception as e:
+        logger.error(
+            "authorization_error",
+            error=str(e),
+            phone=phone_number,
+            exc_info=True,
+        )
         error_msg = "Failed to process authorization. Please try again."
         return cast(
             TransferState,

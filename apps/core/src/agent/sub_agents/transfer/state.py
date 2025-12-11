@@ -25,13 +25,14 @@ class TransferState(TypedDict):
         "cancelled"
     ]
 
-    # Extracted entities
     amount: Optional[float]
     recipient_name: Optional[str]
     recipient_account: Optional[str]
     recipient_bank_code: Optional[str]
     recipient_bank_name: Optional[str]
     source_account_id: Optional[str]
+    source_bank_name: Optional[str]
+    is_internal_transfer: Optional[bool]
     narration: Optional[str]
 
     missing_fields: list[str]
@@ -54,21 +55,19 @@ class TransferState(TypedDict):
     transfer_status: Literal["pending", "confirmed",
                              "authorized", "completed", "failed", None]
 
-    # Classification result from orchestrator
     classification_result: NotRequired[Optional[dict]]
 
-    # PIN verification fields
     pin_verified: NotRequired[Optional[bool]]
     pin_verification_error: NotRequired[Optional[str]]
     pin_retry_count: NotRequired[int]
     
-    # User Preferences
     language: NotRequired[Optional[str]]
 
-    # Change tracking fields
     _previous_amount: NotRequired[Optional[float]]
     _previous_recipient_account: NotRequired[Optional[str]]
     _previous_recipient_bank_code: NotRequired[Optional[str]]
     _previous_recipient_bank_name: NotRequired[Optional[str]]
     _previous_recipient_name: NotRequired[Optional[str]]
     _change_acknowledged: NotRequired[bool]
+    
+    image_data: NotRequired[Optional[str]]  # Base64 encoded image for vision extraction

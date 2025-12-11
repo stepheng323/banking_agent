@@ -68,6 +68,15 @@ def parse_payload(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
                             flow_data = json.loads(response_json)
                         except json.JSONDecodeError:
                             flow_data = {"raw": response_json}
+                    
+                    # Also handle nfm_reply type (WhatsApp Flow PIN/data responses)
+                    elif interactive_type == "nfm_reply":
+                        nfm_reply: Dict[str, Any] = interactive.get("nfm_reply", {})
+                        response_json_str: str = nfm_reply.get("response_json", "{}")
+                        try:
+                            flow_data = json.loads(response_json_str)
+                        except json.JSONDecodeError:
+                            flow_data = {"raw": response_json_str}
 
                 
                 media_id = None

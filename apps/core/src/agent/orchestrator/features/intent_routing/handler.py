@@ -30,7 +30,8 @@ class IntentRoutingHandler(MessageHandler):
             context.phone_number,
             context.text,
             context.classification_result,
-            context.user_context
+            context.user_context,
+            image_data=context.image_data
         )
         
         return context.with_response(response, handled=True)

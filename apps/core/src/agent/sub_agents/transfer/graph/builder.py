@@ -116,6 +116,7 @@ def build_graph(
         {
             "cancel": "cancel",
             "load_context": "load_context",
+            "authorize": "authorize",
         }
     )
     workflow.add_edge("load_context", "validate_amount")

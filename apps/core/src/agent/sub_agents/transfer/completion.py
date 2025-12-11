@@ -76,8 +76,7 @@ class TransferCompletionService:
                     f"✅ Transfer successful! ₦{fallback_amount:,.0f} has been sent to "
                     f"{recipient_name}. Transaction ID: {provider_txn_id}"
                 )
-                create_background_task(self.whatsapp_client.send_text(
-                    to=phone_number, text=message))
+                await self.whatsapp_client.send_text(to=phone_number, text=message)
                 # Suggest saving beneficiary if service is available
                 if self.beneficiary_suggestion_service:
                     recipient = transfer_data.get("recipient", {})
@@ -107,12 +106,10 @@ class TransferCompletionService:
                                 self.s3_client,
                             )
 
-                            create_background_task(
-                                self.whatsapp_client.send_image(
-                                    to=phone_number,
-                                    image_url=receipt_url,
-                                    caption="Transaction Receipt",
-                                )
+                            await self.whatsapp_client.send_image(
+                                to=phone_number,
+                                image_url=receipt_url,
+                                caption="Transaction Receipt",
                             )
 
                             uow.transactions.update(txn, receipt_sent=True)
@@ -136,10 +133,7 @@ class TransferCompletionService:
                     f"✅ Transfer successful! ₦{fallback_amount:,.0f} has been sent to "
                     f"{recipient_name}. Transaction ID: {provider_txn_id}"
                 )
-                create_background_task(
-                    self.whatsapp_client.send_text(
-                        to=phone_number, text=message)
-                )
+                await self.whatsapp_client.send_text(to=phone_number, text=message)
 
             logger.info("transfer_success_notification_queued", phone=phone_number, has_receipt=bool(transaction_id))
         except Exception as e:

@@ -109,16 +109,23 @@ class OrchestratorAgent:
         """Get transfer service."""
         return self.transfer_service
 
-    async def invoke(self, phone_number: str, text: str, message_id: str, message_type: str = "text") -> str:
+    async def invoke(
+        self, 
+        phone_number: str, 
+        text: str, 
+        message_id: str, 
+        message_type: str = "text",
+        media_id: str | None = None
+    ) -> str:
         """Invoke the orchestrator with a user message using the pipeline."""
         self.message_type = message_type
         
-        if self.message_type == "audio":
-             text = await self.media_service.process_audio(message_id)
+        if self.message_type == "audio" and media_id:
+            text = await self.media_service.process_audio(media_id)
         
         image_data = None
-        if self.message_type == "image":
-             image_data = await self.media_service.get_image_data(message_id)
+        if self.message_type == "image" and media_id:
+            image_data = await self.media_service.get_image_data(media_id)
 
         initial_context = MessageContext(
             phone_number=phone_number,

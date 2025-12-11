@@ -16,6 +16,21 @@ async def extract_entities(
     extractor: TransferEntityExtractor,
 ) -> TransferState:
     """Extract entities from user message."""
+    
+    # Skip extraction for terminal states or authorization in progress
+    transfer_status = state.get("transfer_status")
+    flow_state = state.get("flow_state")
+    message = state.get("message", "")
+    
+    debug_log(f"📥 extract_entities ENTRY: flow_state={flow_state}, transfer_status={transfer_status}, message='{message[:50] if message else ''}'...")
+    
+    if transfer_status in ("authorized", "completed", "failed"):
+        debug_log(f"⏭️ Skipping extraction - terminal status: {transfer_status}")
+        return state
+    
+    if flow_state == "authorizing":
+        debug_log(f"⏭️ Skipping extraction - authorization in progress")
+        return state
 
     classification_result = state.get("classification_result")
     if classification_result:
@@ -53,10 +68,15 @@ async def extract_entities(
         smart_context["language"] = language
 
     message_to_extract = state.get("message", "")
+    image_data = state.get("image_data")
     debug_log(f"🔍 [EXTRACTION] Extracting from message: '{message_to_extract}'")
     debug_log(f"🔍 [EXTRACTION] State before extraction - recipient_account={state.get('recipient_account')}, recipient_bank={state.get('recipient_bank_name') or state.get('recipient_bank_code')}, amount={state.get('amount')}")
     
-    result: TransferExtractionResult = await extractor.extract(message_to_extract, smart_context=smart_context if smart_context else None)
+    result: TransferExtractionResult = await extractor.extract(
+        message_to_extract, 
+        smart_context=smart_context if smart_context else None,
+        image_data=image_data
+    )
 
     entities = result.entities or SimpleTransferEntities()
     existing_amount = state.get("amount")
@@ -206,8 +226,24 @@ async def extract_entities(
 
     if entities.source_account_id is not None:
         updates["source_account_id"] = entities.source_account_id
+    if entities.source_bank_name is not None:
+        updates["source_bank_name"] = entities.source_bank_name
+        debug_log(f"🔍 [EXTRACTION] Adding source_bank_name to updates: '{entities.source_bank_name}'")
     if entities.narration is not None:
         updates["narration"] = entities.narration
+
+    # Detect internal transfer (user wants to move between their own accounts)
+    # Pattern: source_bank_name + bank_name (destination) WITHOUT recipient_account AND WITHOUT recipient_name
+    # If recipient_name is present (e.g., "mum's gtb"), it's an EXTERNAL transfer, not internal
+    is_internal_transfer = (
+        entities.source_bank_name is not None and
+        entities.bank_name is not None and
+        entities.recipient_account is None and
+        entities.recipient_name is None  # No recipient = it's user's own account
+    )
+    if is_internal_transfer:
+        updates["is_internal_transfer"] = True
+        debug_log(f"🔄 [EXTRACTION] Internal transfer detected: {entities.source_bank_name} -> {entities.bank_name}")
 
     # Debug: Log what updates will be applied
     debug_log(f"🔍 [EXTRACTION] Updates to apply: {updates}")

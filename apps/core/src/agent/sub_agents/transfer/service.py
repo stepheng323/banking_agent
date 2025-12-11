@@ -44,10 +44,16 @@ class TransferService:
             completion_callback=completion_callback,
         )
 
-    async def run_simple(self, phone: str, text: str, classification_result: Optional[dict] = None) -> str:
+    async def run_simple(
+        self, 
+        phone: str, 
+        text: str, 
+        classification_result: Optional[dict] = None,
+        image_data: str | None = None
+    ) -> str:
         """Run the transfer flow using LangGraph."""
         logger.debug("transfer_flow_started", phone=phone, message=text[:100])
-        return await self.graph.run(phone, text, "", classification_result)
+        return await self.graph.run(phone, text, "", classification_result, image_data=image_data)
     
     async def clear_checkpoint(self, phone_number: str) -> None:
         """Clear transfer flow checkpoint for a user."""

@@ -92,6 +92,7 @@ class OrchestratorIntentRouter:
         text: str,
         result: ClassificationResult,
         user_ctx: dict[str, Any],
+        image_data: str | None = None,
     ) -> str:
         """
         Route intent to appropriate service.
@@ -101,6 +102,7 @@ class OrchestratorIntentRouter:
             text: User's message
             result: Classification result
             user_ctx: User context
+            image_data: Optional base64 image data
 
         Returns:
             Response string
@@ -152,7 +154,9 @@ class OrchestratorIntentRouter:
                 "is_cancellation": result.is_cancellation,
                 "confidence": result.confidence,
             }
-            response = await self.transfer_service.run_simple(phone_number, text, transfer_classification_dict)
+            response = await self.transfer_service.run_simple(
+                phone_number, text, transfer_classification_dict, image_data=image_data
+            )
         elif intent == "airtime":
             airtime_classification_dict = result.model_dump() if hasattr(result, 'model_dump') else {
                 "intent": result.intent,
