@@ -37,6 +37,12 @@ def route_by_state(state: TransferState) -> Literal["end", "collect_amount", "se
     if transfer_status == "collection_complete":
         debug_log("DEBUG route_by_state: transfer_status=collection_complete -> end (complex transfer, waiting for batch authorization)")
         return "end"
+    
+    # CRITICAL: If transfer_status is pending, confirmation was already sent
+    # Don't route to confirm again - wait for PIN verification
+    if transfer_status == "pending":
+        debug_log("DEBUG route_by_state: transfer_status=pending -> end (confirmation already sent, waiting for PIN)")
+        return "end"
 
     if flow_state == "cancelled" and not response:
         return "cancel"
@@ -122,10 +128,21 @@ def route_by_state(state: TransferState) -> Literal["end", "collect_amount", "se
 
 
 def route_after_extract(state: TransferState) -> str:
-    """Route after extract node - check for cancellation."""
+    """Route after extract node - check for cancellation or authorization."""
     flow_state = state.get("flow_state")
+    transfer_status = state.get("transfer_status")
     response = state.get("response", "")
+    
+    debug_log(f"🔀 route_after_extract: flow_state={flow_state}, transfer_status={transfer_status}, has_response={bool(response)}")
+    
+    # If authorizing, skip to authorize node
+    if flow_state == "authorizing":
+        debug_log("✅ Routing to authorize node after extract (PIN verified)")
+        return "authorize"
+    
     if flow_state == "cancelled" and not response:
         debug_log("🛑 Routing to cancel node after extract_entities")
         return "cancel"
+    
+    debug_log("➡️ Routing to load_context after extract")
     return "load_context"

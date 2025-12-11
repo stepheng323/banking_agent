@@ -15,7 +15,13 @@ from apps.core.src.agent.sub_agents.transfer.state import TransferState
 from .utils import debug_log
 
 
-def create_initial_state(phone_number: str, message: str, message_id: str, classification_result: Optional[dict] = None) -> TransferState:
+def create_initial_state(
+    phone_number: str, 
+    message: str, 
+    message_id: str, 
+    classification_result: Optional[dict] = None,
+    image_data: str | None = None
+) -> TransferState:
     """Create initial state for transfer flow."""
     task_params = None
     if classification_result and "task_parameters" in classification_result:
@@ -70,6 +76,8 @@ def create_initial_state(phone_number: str, message: str, message_id: str, class
         "transfer_status": None,
         # Classification result from orchestrator
         "classification_result": classification_result,
+        # Image data for vision extraction
+        "image_data": image_data,
     }
 
 
