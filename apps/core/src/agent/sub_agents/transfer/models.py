@@ -18,6 +18,7 @@ class SimpleTransferEntities(BaseModel):
     bank_code: Optional[str] = Field(default=None, description="Recipient bank code if provided")
     bank_name: Optional[str] = Field(default=None, description="Recipient bank name if provided")
     source_account_id: Optional[str] = Field(default=None, description="Explicit source account id/reference if provided")
+    source_bank_name: Optional[str] = Field(default=None, description="Source bank name for internal transfers (e.g., 'Access Bank', 'GTBank')")
     amount: Optional[float] = Field(default=None, description="Transfer amount as numeric value")
     narration: Optional[str] = Field(default=None, description="Transfer description/memo (optional)")
 
