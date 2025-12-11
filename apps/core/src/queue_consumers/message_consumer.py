@@ -1,6 +1,5 @@
 """Message consumer for processing queued messages."""
 import asyncio
-import traceback
 from typing import Any, Dict
 
 from apps.core.src.agent.orchestrator import OrchestratorAgent
@@ -11,6 +10,9 @@ from shared.database.models import UserOnboardingStatusEnum
 from shared.models.messages import WhatsAppMessage
 from shared.queue.redis_queue import RedisQueue
 from shared.repositories.user_repository import UserRepository
+from shared.utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 
 class MessageConsumer:
@@ -37,12 +39,16 @@ class MessageConsumer:
             await self._handle_message(msg)
 
         except Exception as e:
-            print(f"❌ Processing failed: {e}")
+            logger.error("message_processing_failed", error=str(e), exc_info=True)
             raise e
 
     async def _handle_message(self, message: WhatsAppMessage) -> Dict[str, Any] | None:
         """Handle a WhatsApp message."""
         phone_number = message.from_number
+
+        # Skip FLOW message types - handled by the flow webhook endpoint
+        if message.message_type.value == "flow":
+            return {"status": "skipped", "reason": "Flow messages handled by flow webhook"}
 
         user = await asyncio.to_thread(
             self.user_repository.get_by_phone, phone_number
@@ -55,7 +61,11 @@ class MessageConsumer:
         )
 
         response = await self.orchestrator.invoke(
-            phone_number, message.text or "", message.message_id
+            phone_number, 
+            message.text or "", 
+            message.message_id,
+            message_type=message.message_type.value,
+            media_id=message.media_id
         )
 
         if response and response.strip():
@@ -67,7 +77,7 @@ class MessageConsumer:
     async def start(self, queue_name: str = "banking:messages"):
         """Start the message consumer."""
         self.running = True
-        print(f"🚀 Starting message consumer for queue: {queue_name}")
+        logger.info("message_consumer_starting", queue=queue_name)
 
         await self.queue.connect()
         while self.running:
@@ -75,21 +85,18 @@ class MessageConsumer:
                 message_data = await self.queue.dequeue_blocking(queue_name=queue_name, timeout=5)
                 if message_data:
                     await self.process_message(message_data)
-                else:
-                    pass
 
             except asyncio.CancelledError:
-                print("   Consumer cancelled")
+                logger.info("message_consumer_cancelled")
                 break
             except Exception as e:
-                print(f" ❌ Consumer error: {e}")
-
-                traceback.print_exc()
+                logger.error("message_consumer_error", error=str(e), exc_info=True)
                 await asyncio.sleep(1)
 
         await self.queue.close()
-        print("   👋 Consumer stopped")
+        logger.info("message_consumer_stopped")
 
     def stop(self):
         """Stop the message consumer."""
         self.running = False
+
