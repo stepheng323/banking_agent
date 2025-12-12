@@ -24,7 +24,7 @@ from apps.core.src.agent.sub_agents.airtime.executor import AirtimeExecutor
 from apps.core.src.agent.sub_agents.transfer.completion import TransferCompletionService
 from apps.core.src.agent.sub_agents.airtime.completion import AirtimeCompletionService
 from apps.core.src.agent.tools.beneficiary.suggestion_service import BeneficiarySuggestionService
-from apps.core.src.agent.sub_agents.query.service import QueryService
+from apps.core.src.agent.sub_agents.query.graph import QueryFlowGraph
 from apps.core.src.agent.sub_agents.account_management.service import AccountManagementService
 
 
@@ -67,11 +67,10 @@ def setup_dependencies():
 
     # Mono API client for transaction queries
     mono_client = MonoClient(api_key=settings.mono_api_key)
-    query_service = QueryService(
+    query_graph = QueryFlowGraph(
         llm=llm,
         mono_client=mono_client,
-        user_repo=user_repository,
-        account_repo=account_repository
+        redis_client=shared_redis,
     )
     account_management_service = AccountManagementService(
         account_repo=account_repository,
@@ -123,7 +122,7 @@ def setup_dependencies():
         transfer_service=agent_transfer_service,
         airtime_service=agent_airtime_service,
         task_executor=task_executor,
-        query_service=query_service,
+        query_graph=query_graph,
         account_management_service=account_management_service,
         media_service=media_service,
     )
