@@ -1,26 +1,20 @@
 """Handler for BVN_ENTRY screen."""
 
-from typing import Any, Dict, Tuple
-
 from fastapi.responses import Response
 
 from apps.gateway.api.flows.response_helpers import format_error_response, format_success_response
-from apps.gateway.api.flows.verification import set_verification_data
+from shared.services import onboarding_service
 
 
 async def handle_bvn_entry(
-    data: Dict[str, Any],
+    bvn: str,
     flow_token: str,
     request_was_encrypted: bool,
     aes_key_bytes: bytes,
     iv_bytes: bytes,
 ) -> Response:
-    """
-    Handle BVN_ENTRY screen.
+    """Handle BVN_ENTRY screen - validates BVN and initiates verification."""
     
-    Validates BVN format and proceeds to OTP_VERIFICATION screen.
-    """
-    bvn = data.get("bvn")
     if not bvn:
         return format_error_response(
             "BVN_ENTRY",
@@ -39,35 +33,25 @@ async def handle_bvn_entry(
             iv_bytes,
         )
 
-    print(f"🔍 Verifying BVN: {bvn}")
-
-    is_valid = bvn and len(bvn) == 11 and bvn.isdigit()
-
-    if is_valid:
-        await set_verification_data(flow_token, {
-            "phone_number": flow_token.split("_")[-1],
-            "bvn": bvn,
-            "bvn_verified": True,
-        })
-
-        print("✅ BVN verified successfully")
+    result = await onboarding_service.initiate_bvn_verification(flow_token, bvn)
+    
+    if result.success:
         return format_success_response(
-            "OTP_VERIFICATION",
+            "METHOD_SELECTION",
             request_was_encrypted,
             aes_key_bytes,
             iv_bytes,
-            bvn=str(bvn),
+            bvn=result.data["bvn"],
+            methods=result.data["methods"],
             show_error=False,
             error_message="",
         )
-
-    print("❌ BVN verification failed")
+    
     return format_error_response(
         "BVN_ENTRY",
-        "Invalid BVN. Please check and enter a valid 11-digit BVN.",
+        result.error,
         request_was_encrypted,
         aes_key_bytes,
         iv_bytes,
-        bvn=str(bvn) if bvn else "",
+        bvn=bvn,
     )
-

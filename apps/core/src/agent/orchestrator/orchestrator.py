@@ -20,7 +20,7 @@ from apps.core.src.agent.orchestrator.features.task_planning.service import Orch
 from apps.core.src.agent.orchestrator.features.beneficiary.service import OrchestratorBeneficiaryHandler
 from apps.core.src.agent.orchestrator.features.cancellation.service import OrchestratorCancellationHandler
 from apps.core.src.agent.orchestrator.features.intent_routing.service import OrchestratorIntentRouter
-from apps.core.src.agent.sub_agents.query.service import QueryService
+from apps.core.src.agent.sub_agents.query.graph import QueryFlowGraph
 from apps.core.src.agent.sub_agents.account_management.service import AccountManagementService
 
 from apps.core.src.agent.orchestrator.pipeline import MessageContext, MessagePipeline
@@ -49,7 +49,7 @@ class OrchestratorAgent:
         transfer_service: TransferService,
         airtime_service: AirtimeService,
         task_executor: TaskExecutor,
-        query_service: QueryService,
+        query_graph: QueryFlowGraph,
         account_management_service: AccountManagementService,
         media_service: Any = None
     ) -> None:
@@ -61,7 +61,7 @@ class OrchestratorAgent:
         self.transfer_service = transfer_service
         self.airtime_service = airtime_service
         self.task_executor = task_executor
-        self.query_service = query_service
+        self.query_graph = query_graph
         self.account_management_service = account_management_service
         self.media_service = media_service
 
@@ -87,7 +87,7 @@ class OrchestratorAgent:
             airtime_service,
             conversation_responder,
             self.context_manager,
-            query_service,
+            query_graph,
             account_management_service,
             self.whatsapp_client,
         )

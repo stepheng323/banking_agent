@@ -66,10 +66,13 @@ def init_db():
         raise
 
 
-# NOTE: Checkpoint tables no longer needed - using Redis checkpointer
-# LangGraph checkpoints are now stored in Redis for better performance (<10ms vs 50-200ms)
-
-
 def drop_db():
-    Base.metadata.drop_all(bind=get_engine())
-    print("🗑️  Database tables dropped")
+    """Drop all tables including LangGraph checkpoint tables."""
+    from sqlalchemy import text
+    
+    engine = get_engine()
+    with engine.connect() as conn:
+        conn.execute(text("DROP SCHEMA public CASCADE"))
+        conn.execute(text("CREATE SCHEMA public"))
+        conn.commit()
+    print("🗑️  All database tables dropped")

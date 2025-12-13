@@ -11,7 +11,7 @@ from apps.core.src.agent.orchestrator.services.task_queue_service import TaskQue
 from apps.core.src.agent.orchestrator.services.conversation_responder import ConversationResponder
 from apps.core.src.agent.sub_agents.transfer import TransferService
 from apps.core.src.agent.sub_agents.airtime import AirtimeService
-from apps.core.src.agent.sub_agents.query.service import QueryService
+from apps.core.src.agent.sub_agents.query.graph import QueryFlowGraph
 from apps.core.src.agent.sub_agents.account_management.service import AccountManagementService
 from apps.core.src.agent.orchestrator.features.task_planning.service import OrchestratorTaskPlanner
 from apps.core.src.agent.orchestrator.features.context.service import OrchestratorContextManager
@@ -32,7 +32,7 @@ class OrchestratorIntentRouter:
         airtime_service: AirtimeService,
         conversation_responder: ConversationResponder,
         context_manager: OrchestratorContextManager,
-        query_service: QueryService,
+        query_graph: QueryFlowGraph,
         account_management_service: AccountManagementService,
         whatsapp_client: WhatsAppClient,
     ) -> None:
@@ -43,7 +43,7 @@ class OrchestratorIntentRouter:
         self.conversation_responder = conversation_responder
         self.context_manager = context_manager
         self.whatsapp_client = whatsapp_client
-        self.query_service = query_service
+        self.query_graph = query_graph
         self.account_management_service = account_management_service
 
     def _generate_task_acknowledgment(
@@ -61,7 +61,6 @@ class OrchestratorIntentRouter:
         task_count = len(planner_output.tasks)
         normalized = planner_output.normalized_instruction
         
-        # Determine task type and extract recipient name from first task
         first_task_type = "task"
         recipient_name = None
         if planner_output.tasks:
@@ -69,7 +68,6 @@ class OrchestratorIntentRouter:
             executor = first_task.executor
             if executor == "transfer":
                 first_task_type = "transfer"
-                # Extract recipient name from task parameters
                 params = first_task.parameters or {}
                 recipient_name = params.get("recipient")
             elif executor == "airtime":
@@ -78,7 +76,6 @@ class OrchestratorIntentRouter:
                 first_task_type = "query"
         
         if task_count > 1:
-            # Use recipient name if available, otherwise fall back to generic
             if recipient_name:
                 return f"I'll help you {normalized.lower()}. I'll process these one at a time. Let's start with the transfer to {recipient_name}."
             else:
@@ -168,7 +165,7 @@ class OrchestratorIntentRouter:
             response = "Data purchase flow coming soon."
 
         elif intent == "query":
-            response = await self.query_service.handle_query(text, user_ctx)
+            response = await self.query_graph.run(phone_number, text, user_ctx)
 
         elif intent == "manage_accounts":
             response = await self.account_management_service.handle_account_management(phone_number, text, user_ctx)

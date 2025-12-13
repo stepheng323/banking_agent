@@ -1,13 +1,12 @@
 #!/usr/bin/env python3
 """
 Drop all database tables.
-Loads DATABASE_URL from .env file if it exists.
+Loads DATABASE_URL from .env file.
 """
 
 import os
 import sys
 from pathlib import Path
-from shared.database.connection import drop_db
 
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
@@ -21,6 +20,8 @@ if env_file.exists():
                 if "=" in line:
                     key, value = line.split("=", 1)
                     os.environ[key.strip()] = value.strip()
+
+from shared.database.connection import drop_db
 
 
 if __name__ == "__main__":
