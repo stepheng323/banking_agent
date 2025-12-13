@@ -1,5 +1,6 @@
 """LangGraph graph for query flow."""
 
+import json
 from typing import Optional, Dict, Any
 from functools import partial
 
@@ -28,7 +29,6 @@ from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
 
-# Session TTL in seconds (5 minutes)
 SESSION_TTL = 300
 
 
@@ -59,7 +59,6 @@ class QueryFlowGraph:
         """Build the query flow graph."""
         graph = StateGraph(QueryState)
 
-        # Add nodes with bound dependencies
         graph.add_node("parse", partial(parse_node, parser=self.parser))
         graph.add_node("fetch", partial(fetch_node, mono_client=self.mono))
         graph.add_node("aggregate", aggregate_node)
@@ -68,7 +67,6 @@ class QueryFlowGraph:
         graph.add_node("format", partial(format_node, llm=self.llm))
         graph.add_node("error", self._error_node)
 
-        # Add edges
         graph.set_entry_point("parse")
         
         graph.add_conditional_edges(
@@ -126,7 +124,6 @@ class QueryFlowGraph:
         Returns:
             Response string
         """
-        # Get account info
         accounts = user_ctx.get("accounts", [])
         account = None
         for acc in accounts:
@@ -143,38 +140,30 @@ class QueryFlowGraph:
         if not account_id:
             return "I couldn't find your linked account. Please try linking again."
 
-        # Check for existing session
         session_key = f"query:session:{phone_number}"
         session_data = await self._load_session(session_key)
         
-        # Detect if this is a continuation
         session_active = session_data.get("session_active", False) if session_data else False
         continuation_type = detect_continuation_type(message, session_active)
         
-        # Build initial state
         if continuation_type == "show_more" and session_data:
-            # Continue from saved state
             state = session_data
             state["message"] = message
             state["flow_state"] = "paginating"
             state["continuation_type"] = "show_more"
             
-            # Run pagination flow
             result = await self._run_continuation(state, "paginate")
         
         elif continuation_type == "filter" and session_data:
-            # Apply filter to saved state
             state = session_data
             state["message"] = message
             state["flow_state"] = "refining"
             state["continuation_type"] = "filter"
             state["new_filter"] = extract_filter_term(message)
             
-            # Run refine flow
             result = await self._run_continuation(state, "refine")
         
         else:
-            # New query
             state: QueryState = {
                 "phone_number": phone_number,
                 "message": message,
@@ -200,10 +189,8 @@ class QueryFlowGraph:
                 "response": "",
             }
             
-            # Run full graph
             result = await self.graph.ainvoke(state)
 
-        # Save session if active
         if result.get("session_active"):
             await self._save_session(session_key, result)
         else:
@@ -213,7 +200,6 @@ class QueryFlowGraph:
 
     async def _run_continuation(self, state: QueryState, start_node: str) -> Dict[str, Any]:
         """Run graph from a specific node for continuations."""
-        # For continuations, we run specific nodes directly
         if start_node == "paginate":
             state = {**state, **(await paginate_node(state))}
             state = {**state, **(await aggregate_node(state))}
@@ -229,7 +215,6 @@ class QueryFlowGraph:
     async def _load_session(self, key: str) -> Optional[Dict[str, Any]]:
         """Load session state from Redis."""
         try:
-            import json
             data = await self.redis.get(key)
             if data:
                 return json.loads(data)
@@ -240,8 +225,6 @@ class QueryFlowGraph:
     async def _save_session(self, key: str, state: Dict[str, Any]) -> None:
         """Save session state to Redis."""
         try:
-            import json
-            # Only save serializable fields
             save_state = {
                 k: v for k, v in state.items()
                 if k in (

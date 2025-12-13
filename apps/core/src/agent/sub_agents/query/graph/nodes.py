@@ -22,7 +22,6 @@ async def parse_node(
     
     try:
         params = await parser.parse(message)
-        
         return {
             "flow_state": "fetching",
             "query_type": params.get("query_type", "transaction_list"),

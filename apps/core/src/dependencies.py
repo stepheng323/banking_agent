@@ -26,6 +26,7 @@ from apps.core.src.agent.sub_agents.airtime.completion import AirtimeCompletionS
 from apps.core.src.agent.tools.beneficiary.suggestion_service import BeneficiarySuggestionService
 from apps.core.src.agent.sub_agents.query.graph import QueryFlowGraph
 from apps.core.src.agent.sub_agents.account_management.service import AccountManagementService
+from shared.clients.mono_client import mono_client
 
 
 def setup_dependencies():
@@ -36,7 +37,6 @@ def setup_dependencies():
 
     shared_redis = RedisClient.get_client()
 
-    # Create UserDataCache for agent services
     user_data_cache = UserDataCache(redis_client=shared_redis)
 
     onboarding_service = OnboardingService(whatsapp_client)
@@ -65,8 +65,6 @@ def setup_dependencies():
 
     llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
 
-    # Mono API client for transaction queries
-    mono_client = MonoClient(api_key=settings.mono_api_key)
     query_graph = QueryFlowGraph(
         llm=llm,
         mono_client=mono_client,

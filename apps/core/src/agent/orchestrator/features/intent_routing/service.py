@@ -61,7 +61,6 @@ class OrchestratorIntentRouter:
         task_count = len(planner_output.tasks)
         normalized = planner_output.normalized_instruction
         
-        # Determine task type and extract recipient name from first task
         first_task_type = "task"
         recipient_name = None
         if planner_output.tasks:
@@ -69,7 +68,6 @@ class OrchestratorIntentRouter:
             executor = first_task.executor
             if executor == "transfer":
                 first_task_type = "transfer"
-                # Extract recipient name from task parameters
                 params = first_task.parameters or {}
                 recipient_name = params.get("recipient")
             elif executor == "airtime":
@@ -78,7 +76,6 @@ class OrchestratorIntentRouter:
                 first_task_type = "query"
         
         if task_count > 1:
-            # Use recipient name if available, otherwise fall back to generic
             if recipient_name:
                 return f"I'll help you {normalized.lower()}. I'll process these one at a time. Let's start with the transfer to {recipient_name}."
             else:

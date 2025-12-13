@@ -19,7 +19,6 @@ def route_after_fetch(state: QueryState) -> Literal["aggregate", "format", "erro
     if flow_state == "error":
         return "error"
     
-    # Balance queries go straight to format
     if flow_state == "formatting":
         return "format"
     
@@ -57,7 +56,6 @@ def detect_continuation_type(
     
     msg_lower = message.lower().strip()
     
-    # Show more patterns
     show_more_patterns = [
         "show more",
         "more",
@@ -70,7 +68,6 @@ def detect_continuation_type(
         if pattern in msg_lower:
             return "show_more"
     
-    # Filter patterns
     filter_patterns = [
         "filter by",
         "only show",
@@ -82,7 +79,6 @@ def detect_continuation_type(
         if pattern in msg_lower:
             return "filter"
     
-    # Default to new query
     return "new_query"
 
 
@@ -90,7 +86,6 @@ def extract_filter_term(message: str) -> str:
     """Extract filter term from message."""
     msg_lower = message.lower()
     
-    # Common patterns
     patterns = [
         "filter by ",
         "only show ",
