@@ -1,4 +1,4 @@
-"""Handler for OTP_VERIFICATION screen."""
+"""Handler for METHOD_SELECTION screen."""
 
 from typing import Optional
 from pydantic import BaseModel
@@ -9,40 +9,40 @@ from apps.gateway.api.flows.response_helpers import format_error_response, forma
 from shared.services import onboarding_service
 
 
-class OtpVerificationInput(BaseModel):
-    """Input data for OTP verification screen."""
-    otp: Optional[str] = None
+class MethodSelectionInput(BaseModel):
+    """Input data for method selection screen."""
     bvn: Optional[str] = None
+    method: Optional[str] = None
 
 
-async def handle_otp_verification(
-    data: OtpVerificationInput,
+async def handle_method_selection(
+    data: MethodSelectionInput,
     flow_token: str,
     request_was_encrypted: bool,
     aes_key_bytes: bytes,
     iv_bytes: bytes,
 ) -> Response:
-    """Handle OTP_VERIFICATION screen - validates OTP and fetches bank accounts."""
+    """Handle METHOD_SELECTION screen - sends OTP via chosen method."""
     
-    result = await onboarding_service.verify_otp(flow_token, data.otp)
+    result = await onboarding_service.send_otp(flow_token, data.method)
     
     if result.success:
         return format_success_response(
-            "ACCOUNT_SELECTION",
+            "OTP_VERIFICATION",
             request_was_encrypted,
             aes_key_bytes,
             iv_bytes,
             bvn=result.data["bvn"],
-            accounts=result.data["accounts"],
             show_error=False,
             error_message="",
         )
     
     return format_error_response(
-        "OTP_VERIFICATION",
+        "METHOD_SELECTION",
         result.error,
         request_was_encrypted,
         aes_key_bytes,
         iv_bytes,
-        bvn=data.bvn or "",
+        bvn=result.data.get("bvn", "") if result.data else "",
+        methods=result.data.get("methods", []) if result.data else [],
     )

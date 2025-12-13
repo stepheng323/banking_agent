@@ -1,7 +1,7 @@
 """Request processing utilities for flow webhook."""
 
 import json
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Literal, Optional, Tuple
 
 from fastapi import Request
 from fastapi.responses import Response
@@ -9,12 +9,23 @@ from fastapi.responses import Response
 from shared.utils import decrypt_flow_data, is_encrypted
 
 
+ScreenType = Literal[
+    "BVN_ENTRY",
+    "METHOD_SELECTION",
+    "OTP_VERIFICATION",
+    "ACCOUNT_SELECTION",
+    "PIN_ENTRY",
+    "Pin",
+    "SUCCESS",
+]
+
+
 class ProcessedRequest:
     """Container for processed flow request data."""
 
     def __init__(
         self,
-        screen: Optional[str],
+        screen: Optional[ScreenType],
         data: Dict[str, Any],
         flow_token: Optional[str],
         request_was_encrypted: bool,
@@ -29,7 +40,7 @@ class ProcessedRequest:
         self.iv_bytes = iv_bytes
 
 
-async def process_flow_request(req: Request) -> Tuple[ProcessedRequest, Optional[Response]]:
+async def process_flow_request(req: Request) -> Tuple[Optional[ProcessedRequest], Optional[Response]]:
     """
     Process incoming flow request, handling encryption/decryption.
     

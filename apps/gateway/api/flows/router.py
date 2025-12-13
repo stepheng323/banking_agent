@@ -17,10 +17,11 @@ from apps.gateway.api.flows.dependencies import (
     get_transfer_service,
     get_batch_service,
 )
-from apps.gateway.api.flows.handlers.account_selection_handler import handle_account_selection
+from apps.gateway.api.flows.handlers.account_selection_handler import handle_account_selection, AccountSelectionInput
 from apps.gateway.api.flows.handlers.bvn_handler import handle_bvn_entry
-from apps.gateway.api.flows.handlers.onboarding_pin_handler import handle_onboarding_pin
-from apps.gateway.api.flows.handlers.otp_handler import handle_otp_verification
+from apps.gateway.api.flows.handlers.method_selection_handler import handle_method_selection, MethodSelectionInput
+from apps.gateway.api.flows.handlers.onboarding_pin_handler import handle_onboarding_pin, OnboardingPinInput
+from apps.gateway.api.flows.handlers.otp_handler import handle_otp_verification, OtpVerificationInput
 from apps.gateway.api.flows.handlers.transaction_pin_handler import handle_transaction_pin
 from apps.gateway.api.flows.request_processor import  process_flow_request
 
@@ -58,7 +59,17 @@ async def flow_webhook(
 
         if screen == "BVN_ENTRY":
             return await handle_bvn_entry(
-                data,
+                data.get("bvn", "").strip(),
+                flow_token or "",
+                request_was_encrypted,
+                aes_key_bytes or b"",
+                iv_bytes or b"",
+            )
+
+        elif screen == "METHOD_SELECTION":
+            method_data = MethodSelectionInput(**data)
+            return await handle_method_selection(
+                method_data,
                 flow_token or "",
                 request_was_encrypted,
                 aes_key_bytes or b"",
@@ -66,8 +77,9 @@ async def flow_webhook(
             )
 
         elif screen == "OTP_VERIFICATION":
+            otp_data = OtpVerificationInput(**data)
             return await handle_otp_verification(
-                data,
+                otp_data,
                 flow_token or "",
                 request_was_encrypted,
                 aes_key_bytes or b"",
@@ -75,8 +87,9 @@ async def flow_webhook(
             )
 
         elif screen == "ACCOUNT_SELECTION":
+            account_data = AccountSelectionInput(**data)
             return await handle_account_selection(
-                data,
+                account_data,
                 flow_token or "",
                 request_was_encrypted,
                 aes_key_bytes or b"",
@@ -84,8 +97,9 @@ async def flow_webhook(
             )
 
         elif screen == "PIN_ENTRY":
+            pin_data = OnboardingPinInput(**data)
             return await handle_onboarding_pin(
-                data,
+                pin_data,
                 flow_token or "",
                 request_was_encrypted,
                 aes_key_bytes or b"",

@@ -1,25 +1,29 @@
 """Handler for ACCOUNT_SELECTION screen."""
 
-from typing import Any, Dict
+from typing import Optional, List
+from pydantic import BaseModel
 
 from fastapi.responses import Response
 
 from apps.gateway.api.flows.response_helpers import format_error_response, format_success_response
-from apps.gateway.api.flows.verification import update_verification_data
+from shared.services import onboarding_service
+
+
+class AccountSelectionInput(BaseModel):
+    """Input data for account selection screen."""
+    bvn: Optional[str] = None
+    selected_accounts: List[str] = []
 
 
 async def handle_account_selection(
-    data: Dict[str, Any],
+    data: AccountSelectionInput,
     flow_token: str,
     request_was_encrypted: bool,
     aes_key_bytes: bytes,
     iv_bytes: bytes,
 ) -> Response:
-    """
-    Handle ACCOUNT_SELECTION screen.
+    """Handle ACCOUNT_SELECTION screen - stores selected accounts."""
     
-    Stores selected accounts and proceeds to PIN_ENTRY screen.
-    """
     if not flow_token:
         return format_error_response(
             "ACCOUNT_SELECTION",
@@ -29,16 +33,24 @@ async def handle_account_selection(
             iv_bytes,
         )
 
-    accounts = data.get("selected_accounts", [])
-    if flow_token:
-        await update_verification_data(flow_token, {"selected_accounts": accounts})
-
-    return format_success_response(
-        "PIN_ENTRY",
+    result = await onboarding_service.select_accounts(flow_token, data.selected_accounts)
+    
+    if result.success:
+        return format_success_response(
+            "PIN_ENTRY",
+            request_was_encrypted,
+            aes_key_bytes,
+            iv_bytes,
+            bvn=result.data.get("bvn", ""),
+            selected_accounts=result.data.get("selected_accounts", []),
+            show_error=False,
+            error_message="",
+        )
+    
+    return format_error_response(
+        "ACCOUNT_SELECTION",
+        result.error,
         request_was_encrypted,
         aes_key_bytes,
         iv_bytes,
-        show_error=False,
-        error_message="",
     )
-
