@@ -18,7 +18,6 @@ class AccountRepository(BaseRepository[Account]):
 
     def get_by_user(self, user_id: str) -> List[Account]:
         """Get all accounts for a user."""
-        # Convert string user_id to UUID if needed (Account.user_id is UUID type)
         user_uuid: Union[str, UUID] = user_id
         if isinstance(user_id, str):
             try:
@@ -80,13 +79,11 @@ class AccountRepository(BaseRepository[Account]):
             except ValueError:
                 pass
         
-        # Unset all existing defaults for this user
         self.db.query(Account).filter(
             Account.user_id == user_uuid,
             Account.is_default == True
         ).update({"is_default": False})
         
-        # Set new default
         account = self.get_by_account_id(account_id)
         if account and str(account.user_id) == str(user_uuid):
             account.is_default = True
@@ -109,13 +106,11 @@ class AccountRepository(BaseRepository[Account]):
         
         account = self.get_by_account_id(account_id)
         if account and str(account.user_id) == str(user_uuid):
-            # If this was the default account, unset default
             was_default = account.is_default
             
             self.db.delete(account)
             self.db.flush()
             
-            # If it was default, set first remaining account as default
             if was_default:
                 remaining_accounts = self.get_by_user(user_id)
                 if remaining_accounts:

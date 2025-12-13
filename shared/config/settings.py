@@ -27,7 +27,7 @@ class Settings:
         self.pin_confirmation_flow_id: str = os.getenv(
             "PIN_CONFIRMATION_FLOW_ID", "")
 
-        self.app_env: str = os.getenv("APP_ENV", "dev")
+        self.app_env: str = os.getenv("APP_ENV", "development")
         self.app_host: str = os.getenv("APP_HOST", "0.0.0.0")
         self.app_port: int = int(os.getenv("APP_PORT", "8000"))
 
@@ -36,11 +36,9 @@ class Settings:
 
         self.redis_url: str = os.getenv("REDIS_URL", "redis://localhost:6379")
 
-        # User context cache TTL (seconds)
         self.user_ctx_ttl_seconds: int = int(
             os.getenv("TTL_SECONDS", "6000"))
 
-        # Flow session timeout (seconds) - applies to all transaction flows
         self.flow_session_timeout: int = int(
             os.getenv("FLOW_SESSION_TIMEOUT", "600"))
 
@@ -55,7 +53,6 @@ class Settings:
 
         self.mono_api_key: str = os.getenv("MONO_API_KEY", "")
 
-        # S3 Configuration
         self.s3_bucket_name: str = os.getenv("S3_BUCKET_NAME", "")
         self.s3_region: str = os.getenv("AWS_REGION", "us-east-1")
         self.s3_receipt_prefix: str = "receipts"

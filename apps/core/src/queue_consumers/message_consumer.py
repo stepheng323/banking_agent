@@ -46,7 +46,6 @@ class MessageConsumer:
         """Handle a WhatsApp message."""
         phone_number = message.from_number
 
-        # Skip FLOW message types - handled by the flow webhook endpoint
         if message.message_type.value == "flow":
             return {"status": "skipped", "reason": "Flow messages handled by flow webhook"}
 
