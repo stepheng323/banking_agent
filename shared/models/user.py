@@ -21,6 +21,8 @@ class UserUpdate(BaseModel):
 
     full_name: Optional[str] = None
     email: Optional[str] = None
+    address: Optional[str] = None
+    mono_customer_id: Optional[str] = None
     transaction_pin: Optional[str] = None
     onboarding_status: Optional[str] = Field(default=None)
     extra_data: Optional[Dict[str, Any]] = None
