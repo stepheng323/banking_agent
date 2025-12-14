@@ -1,7 +1,7 @@
 """Handler for PIN_ENTRY screen (onboarding flow)."""
 
 import asyncio
-from typing import Optional, List
+from typing import Optional
 from pydantic import BaseModel
 
 from fastapi.responses import Response
@@ -14,8 +14,9 @@ from shared.services import onboarding_service
 class OnboardingPinInput(BaseModel):
     """Input data for PIN entry screen."""
     pin: Optional[str] = None
+    email: Optional[str] = None
+    address: Optional[str] = None
     bvn: Optional[str] = None
-    selected_accounts: List[str] = []
 
 
 async def handle_onboarding_pin(
@@ -26,7 +27,7 @@ async def handle_onboarding_pin(
     iv_bytes: bytes,
     whatsapp_client: WhatsAppClient,
 ) -> Response:
-    """Handle PIN_ENTRY screen - validates PIN, creates user, links accounts."""
+    """Handle PIN_ENTRY screen - validates PIN, email, address and completes onboarding."""
     
     if not flow_token:
         return format_error_response(
@@ -37,7 +38,12 @@ async def handle_onboarding_pin(
             iv_bytes,
         )
 
-    result = await onboarding_service.complete_onboarding(flow_token, data.pin)
+    result = await onboarding_service.complete_onboarding(
+        flow_token,
+        pin=data.pin,
+        email=data.email,
+        address=data.address,
+    )
     
     if result.success:
         phone_number = result.data.get("phone_number", "")
@@ -45,7 +51,7 @@ async def handle_onboarding_pin(
         asyncio.create_task(
             whatsapp_client.send_text(
                 to=phone_number,
-                text="🎉 Welcome to Fusepay! Your onboarding is complete. You can now start using the app to send and receive money.",
+                text="🎉 Welcome to Fusepay! Your account setup is in progress. You'll receive instructions shortly.",
             )
         )
         
@@ -57,8 +63,6 @@ async def handle_onboarding_pin(
             extension_message_response={
                 "params": {
                     "flow_token": flow_token,
-                    "bvn": result.data.get("bvn"),
-                    "accounts_count": result.data.get("accounts_count", 0),
                     "success": True,
                 }
             },
