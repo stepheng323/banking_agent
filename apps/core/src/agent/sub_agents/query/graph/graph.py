@@ -7,7 +7,7 @@ from functools import partial
 from langchain_core.runnables import Runnable
 from langgraph.graph import StateGraph, END
 
-from shared.clients.mono_client import MonoClient
+from shared.clients.mono import MonoClient
 from shared.cache.redis_client import RedisClient
 from apps.core.src.agent.sub_agents.query.parser import QueryParser
 from apps.core.src.agent.sub_agents.query.graph.state import QueryState
