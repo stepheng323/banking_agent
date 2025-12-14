@@ -1,12 +1,16 @@
 """Onboarding service for BVN verification and account linking."""
 
 from typing import Optional, List
+import asyncio
+
 from dataclasses import dataclass
 from enum import Enum
 
-from shared.clients.mono_client import mono_client, MonoApiError, BvnLookupData, BankAccount
+from shared.clients.mono import mono_client, MonoApiError, BvnLookupData, BankAccount
 from shared.cache.redis_client import RedisClient
 from shared.models import CreateAccount, UserCreate, UserUpdate
+import uuid as uuid_module
+from datetime import datetime, timedelta
 from shared.repositories.unit_of_work import UnitOfWork
 from shared.utils import hash_plaintext, is_valid_pin_format
 from shared.utils.logging import get_logger
@@ -36,7 +40,9 @@ class OnboardingSession:
     selected_method: Optional[str] = None
     otp_verified: bool = False
     accounts: Optional[List[dict]] = None
-    selected_accounts: Optional[List[str]] = None
+    selected_account: Optional[str] = None  # Single account ID
+    email: Optional[str] = None
+    address: Optional[str] = None
     step: OnboardingStep = OnboardingStep.BVN_ENTRY
 
 
@@ -86,6 +92,38 @@ class OnboardingService:
             await self.redis.set(self._session_key(flow_token), json.dumps(existing), ex=SESSION_TTL)
         except Exception as e:
             logger.error("update_session_error", error=str(e))
+
+    def _build_mandate_auth_message(
+        self,
+        account_number: str,
+        bank_name: str,
+        transfer_destinations: list,
+    ) -> str:
+        """Build WhatsApp message with mandate authorization instructions."""
+        lines = [
+            "📋 *One Last Step to Complete Setup*",
+            "",
+            f"To activate your {bank_name} account ending in {account_number[-4:]}, "
+            "transfer ₦50 from that account to any of these accounts:",
+            "",
+        ]
+        
+        for dest in transfer_destinations:
+            bank = getattr(dest, 'bank_name', dest.get('bank_name', 'Unknown'))
+            acct = getattr(dest, 'account_number', dest.get('account_number', ''))
+            lines.append(f"• *{bank}*: {acct}")
+        
+        lines.extend([
+            "",
+            "⚠️ Important:",
+            "• Transfer must come from your linked account",
+            "• Complete within 1 hour",
+            "• This ₦50 goes to NIBSS for verification",
+            "",
+            "Once done, your account will be ready in about 1 hour!",
+        ])
+        
+        return "\n".join(lines)
 
     async def initiate_bvn_verification(self, flow_token: str, bvn: str) -> ServiceResult:
         """
@@ -201,53 +239,76 @@ class OnboardingService:
             logger.error("otp_verification_failed", error=e.message)
             return ServiceResult(success=False, error="OTP verification failed. Please try again.")
 
-    async def select_accounts(self, flow_token: str, account_ids: List[str]) -> ServiceResult:
-        """
-        Store selected accounts for linking.
-        """
-        if not account_ids:
-            return ServiceResult(success=False, error="Please select at least one account.")
+    async def select_account(self, flow_token: str, account_id: Optional[str]) -> ServiceResult:
+        """Store selected account."""
+        if not account_id:
+            session = await self.get_session(flow_token)
+            return ServiceResult(
+                success=False, 
+                error="Please select an account.",
+                data={"accounts": session.accounts if session else []}
+            )
 
         session = await self.get_session(flow_token)
         if not session:
             return ServiceResult(success=False, error="Session expired. Please start over.")
 
         await self.update_session(flow_token, {
-            "selected_accounts": account_ids,
+            "selected_account": account_id,
             "step": OnboardingStep.PIN_ENTRY.value,
         })
 
-        return ServiceResult(success=True, data={
-            "bvn": session.bvn,
-            "selected_accounts": account_ids,
-        })
+        return ServiceResult(success=True, data={"bvn": session.bvn})
 
-    async def complete_onboarding(self, flow_token: str, pin: str) -> ServiceResult:
-        """
-        Complete onboarding by creating user and linking accounts.
-        """
+    async def complete_onboarding(
+        self,
+        flow_token: str,
+        pin: Optional[str],
+        email: Optional[str],
+        address: Optional[str],
+    ) -> ServiceResult:
+        """Complete onboarding by creating customer and linking account."""
         if not pin or not is_valid_pin_format(pin):
             return ServiceResult(success=False, error="Invalid PIN. Please enter a 4 or 6-digit PIN.")
+
+        if not email:
+            return ServiceResult(success=False, error="Email address is required.")
+
+        if not address:
+            return ServiceResult(success=False, error="Address is required.")
 
         session = await self.get_session(flow_token)
         if not session:
             return ServiceResult(success=False, error="Session expired. Please start over.")
 
-        logger.info("onboarding_completed", flow_token=flow_token)  
-
         phone_number = session.phone_number or flow_token.split("-")[-1]
         if not phone_number:
             return ServiceResult(success=False, error="Phone number missing.")
 
-        selected_accounts = []
-        if session.accounts and session.selected_accounts:
+        selected_account = None
+        if session.accounts and session.selected_account:
             for acc in session.accounts:
-                if acc["id"] in session.selected_accounts:
-                    selected_accounts.append(acc)
+                if acc["id"] == session.selected_account:
+                    selected_account = acc
+                    break
+
+        if not selected_account:
+            return ServiceResult(success=False, error="No account selected.")
+
+        account_name = selected_account.get("account_name", "")
+        name_parts = account_name.split(" ", 1)
+        first_name = name_parts[0] if name_parts else ""
+        last_name = name_parts[1] if len(name_parts) > 1 else ""
 
         hashed_pin = hash_plaintext(pin)
+        
+        bank_code = selected_account.get("bank_code", "")
+        if not bank_code:
+            institution = selected_account.get("institution", {})
+            bank_code = institution.get("bank_code", "")
 
         try:
+            # Sync: Update user and create account (without Mono IDs yet)
             with UnitOfWork() as uow:
                 if not uow.users or not uow.accounts:
                     return ServiceResult(success=False, error="Database error.")
@@ -257,44 +318,121 @@ class OnboardingService:
                     return ServiceResult(success=False, error="User not found. Please start over.")
 
                 uow.users.update_user(str(user.id), UserUpdate(
-                    full_name= selected_accounts[0].get("account_name", ""),
+                    full_name=account_name,
+                    email=email,
+                    address=address,
                     transaction_pin=hashed_pin,
                     onboarding_status="onboarding_completed",
-                    extra_data=session,
+                    extra_data={"bvn": session.bvn},
                 ))
 
-                for acc in selected_accounts:
-                    existing_account = uow.accounts.get_by_account_id(acc["id"])
-                    
-                    should_create = True
-                    if existing_account is not None:
-                        if getattr(existing_account, "user_id", None) == str(user.id):
-                            should_create = False
-
-                    if should_create:
-                        uow.accounts.create_account(
-                            CreateAccount(
-                                user_id=str(user.id),
-                                account_id=acc["id"],
-                                account_number=acc.get("account_number", ""),
-                                bank_name=acc.get("bank_name", ""),
-                                account_name=acc.get("account_name", ""),
-                                extra_data=acc,
-                            )
+                existing_account = uow.accounts.get_by_account_id(selected_account["id"])
+                if not existing_account or getattr(existing_account, "user_id", None) != str(user.id):
+                    uow.accounts.create_account(
+                        CreateAccount(
+                            user_id=str(user.id),
+                            account_id=selected_account["id"],
+                            account_number=selected_account.get("account_number", ""),
+                            bank_name=selected_account.get("bank_name", ""),
+                            bank_code=bank_code,
+                            account_name=account_name,
+                            mandate_status="pending",
+                            extra_data=selected_account,
                         )
+                    )
 
-            await self.update_session(flow_token, {"step": OnboardingStep.COMPLETE.value})\
+            await self.update_session(flow_token, {"step": OnboardingStep.COMPLETE.value})
+
+            asyncio.create_task(
+                self._setup_mono_customer_and_mandate(
+                    phone_number=phone_number,
+                    first_name=first_name,
+                    last_name=last_name,
+                    email=email,
+                    address=address,
+                    bvn=session.bvn or "",
+                    account_id=selected_account["id"],
+                    account_number=selected_account.get("account_number", ""),
+                    bank_code=bank_code,
+                    bank_name=selected_account.get("bank_name", ""),
+                )
+            )
 
             return ServiceResult(success=True, data={
                 "phone_number": phone_number,
                 "bvn": session.bvn,
-                "accounts": selected_accounts,
-                "accounts_count": len(selected_accounts),
+                "account": selected_account,
             })
 
         except Exception as e:
             logger.error("onboarding_complete_error", error=str(e))
             return ServiceResult(success=False, error="Failed to complete onboarding. Please try again.")
+
+    async def _setup_mono_customer_and_mandate(
+        self,
+        phone_number: str,
+        first_name: str,
+        last_name: str,
+        email: str,
+        address: str,
+        bvn: str,
+        account_id: str,
+        account_number: str,
+        bank_code: str,
+        bank_name: str,
+    ) -> None:
+        """Background task: Create Mono customer and mandate, then update DB and notify user."""
+        from shared.clients.whatsapp_client import WhatsAppClient
+        
+        try:
+            customer = await mono_client.create_customer(
+                first_name=first_name,
+                last_name=last_name,
+                phone=phone_number,
+                email=email,
+                address=address,
+                identity_number=bvn,
+                identity_type="bvn",
+            )
+            logger.info("mono_customer_created_async", phone=phone_number, customer_id=customer.id)
+
+            mandate_reference = f"FP-{uuid_module.uuid4().hex[:12].upper()}"
+            start_date = datetime.utcnow().strftime("%Y-%m-%d")
+            end_date = (datetime.utcnow() + timedelta(days=365)).strftime("%Y-%m-%d")
+
+            mandate = await mono_client.create_mandate(
+                customer_id=customer.id,
+                account_number=account_number,
+                bank_code=bank_code,
+                amount=100000000,
+                reference=mandate_reference,
+                start_date=start_date,
+                end_date=end_date,
+            )
+            logger.info("mono_mandate_created_async", mandate_id=mandate.id, phone=phone_number)
+
+            with UnitOfWork() as uow:
+                if uow.users and uow.accounts:
+                    user = uow.users.get_by_phone(phone_number)
+                    if user:
+                        uow.users.update_user(str(user.id), UserUpdate(mono_customer_id=customer.id))
+                    
+                    account = uow.accounts.get_by_account_id(account_id)
+                    if account:
+                        account.mandate_id = mandate.id
+                        account.mandate_status = "pending"
+
+            whatsapp = WhatsAppClient()
+            transfer_destinations = mandate.transfer_destinations or []
+            auth_message = self._build_mandate_auth_message(
+                account_number=account_number,
+                bank_name=bank_name,
+                transfer_destinations=transfer_destinations,
+            )
+            await whatsapp.send_text(to=phone_number, text=auth_message)
+
+        except Exception as e:
+            logger.error("mono_setup_background_error", error=str(e), phone=phone_number)
 
 
 onboarding_service = OnboardingService()
