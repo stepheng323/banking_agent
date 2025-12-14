@@ -132,3 +132,67 @@ async def whatsapp_webhook(
         logger.error("webhook_error", error=str(e), exc_info=True)
         return Response(status_code=200)
 
+
+@router.post("/webhook/mono")
+async def mono_webhook(request: Request) -> Response:
+    """Handle Mono webhook events for mandate status updates."""
+    try:
+        payload = await request.json()
+        event = payload.get("event", "")
+        data = payload.get("data", {})
+        
+        logger.info("mono_webhook_received", event=event, mandate_id=data.get("id"))
+        
+        # Map Mono events to mandate statuses
+        event_status_map = {
+            "events.mandates.approved": "approved",
+            "events.mandates.ready": "ready",
+            "events.mandates.rejected": "rejected",
+            "events.mandate.action.cancel": "cancelled",
+        }
+        
+        if event not in event_status_map:
+            logger.debug("mono_webhook_ignored", event=event)
+            return Response(status_code=200)
+        
+        mandate_id = data.get("id")
+        if not mandate_id:
+            logger.warning("mono_webhook_no_mandate_id", event=event)
+            return Response(status_code=200)
+        
+        new_status = event_status_map[event]
+        
+        # Update mandate status in database
+        from shared.repositories.unit_of_work import UnitOfWork
+        
+        with UnitOfWork() as uow:
+            if uow.accounts:
+                account = uow.accounts.update_mandate_status(mandate_id, new_status)
+                if account:
+                    logger.info(
+                        "mandate_status_updated",
+                        mandate_id=mandate_id,
+                        status=new_status,
+                        account_id=str(account.id),
+                    )
+                    
+                    if new_status == "ready":
+                        user = uow.users.get_by_id(str(account.user_id)) if uow.users else None
+                        if user and user.phone_number:
+                            try:
+                                whatsapp = get_whatsapp_client()
+                                await whatsapp.send_text(
+                                    to=user.phone_number,
+                                    text=f"✅ Great news! Your {account.bank_name} account ({account.account_number}) is now fully set up and ready to use for payments.",
+                                )
+                            except Exception as e:
+                                logger.error("mandate_ready_notification_failed", error=str(e))
+                else:
+                    logger.warning("mandate_not_found", mandate_id=mandate_id)
+        
+        return Response(status_code=200)
+        
+    except Exception as e:
+        logger.error("mono_webhook_error", error=str(e), exc_info=True)
+        return Response(status_code=200)
+

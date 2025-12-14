@@ -8,11 +8,27 @@ from .utils import debug_log
 
 def _validate_transfer_account(state: TransferState, selected: dict) -> TransferState | None:
     """
-    Transfer-specific validation: ensure source account != recipient account.
-    
-    Delegates to SelfTransferValidator for consistent validation logic.
+    Transfer-specific validation: 
+    1. Ensure mandate is ready for debiting
+    2. Ensure source account != recipient account.
     """
     from apps.core.src.agent.sub_agents.transfer.validators import SelfTransferValidator
+    
+    mandate_status = selected.get("mandate_status", "pending")
+    if mandate_status != "ready":
+        status_messages = {
+            "pending": "Your account authorization is pending. Please complete the ₦50 transfer to activate your account.",
+            "approved": "Your account is almost ready. It will be fully active within 1 hour after your authorization transfer.",
+            "rejected": "Your account authorization was rejected. Please contact support to resolve this.",
+            "cancelled": "Your account authorization was cancelled. Please restart the account setup process.",
+        }
+        error_message = status_messages.get(mandate_status, "Your account is not ready for payments yet.")
+        return {
+            **state,
+            "selected_source_account": selected,
+            "response": f"⚠️ {error_message}",
+            "llm_reply": None,
+        }
     
     recipient_account = state.get("recipient_account")
     if not recipient_account:

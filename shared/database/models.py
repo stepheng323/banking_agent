@@ -30,6 +30,8 @@ class User(Base):
     phone_number = Column(String, unique=True, index=True, nullable=False)
     full_name = Column(String, nullable=True)
     email = Column(String, unique=True, index=True, nullable=True)
+    address = Column(String, nullable=True)
+    mono_customer_id = Column(String, nullable=True, index=True)
 
     onboarding_status = Column(String, nullable=True)
     last_active = Column(DateTime, default=datetime.utcnow)
@@ -63,9 +65,13 @@ class Account(Base):
     )
     account_id = Column(String, nullable=False, unique=True)
     bank_name = Column(String, nullable=False)
+    bank_code = Column(String, nullable=True)
     account_number = Column(String, nullable=False)
     account_name = Column(String, nullable=True)
     is_default = Column(Boolean, default=False)
+    
+    mandate_id = Column(String, nullable=True, index=True)
+    mandate_status = Column(String, default="pending", nullable=False)
     extra_data = Column(JSON, default={})
     created_at = Column(DateTime, server_default=text("now()"), nullable=False)
     updated_at = Column(

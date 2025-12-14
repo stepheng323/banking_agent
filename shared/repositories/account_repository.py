@@ -6,7 +6,7 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from shared.database.models import Account
-from shared.models.account import CreateAccount
+from shared.models.account import CreateAccount, AccountUpdate
 from shared.repositories.base import BaseRepository
 
 
@@ -120,3 +120,15 @@ class AccountRepository(BaseRepository[Account]):
             return True
         
         return False
+
+    def get_by_mandate_id(self, mandate_id: str) -> Optional[Account]:
+        """Get account by Mono mandate ID."""
+        return self.db.query(Account).filter(Account.mandate_id == mandate_id).first()
+
+    def update_mandate_status(self, mandate_id: str, status: str) -> Optional[Account]:
+        """Update mandate status by mandate ID. Returns updated account or None if not found."""
+        account = self.get_by_mandate_id(mandate_id)
+        if account:
+            account.mandate_status = status
+            self.db.flush()
+        return account

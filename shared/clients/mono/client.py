@@ -1,0 +1,232 @@
+"""Mono API Client for bank data access."""
+
+from typing import Optional, List
+import aiohttp
+
+from shared.utils.logging import get_logger
+from shared.config.settings import settings
+
+from .models import (
+    MonoApiError, BvnLookupData, BankAccount, BalanceData,
+    Transaction, CustomerData, AccountData, MandateData
+)
+from . import mock_data
+
+logger = get_logger(__name__)
+
+
+class MonoClient:
+    """Client for interacting with Mono API v2/v3."""
+
+    BASE_URL = "https://api.withmono.com"
+
+    def __init__(self):
+        self.use_mock = settings.app_env == "development"
+        self.api_key = settings.mono_api_key
+
+    def _headers(self, session_id: str | None = None, real_time: bool = False) -> dict:
+        headers = {
+            "mono-sec-key": self.api_key,
+            "Content-Type": "application/json",
+            "accept": "application/json"
+        }
+        if session_id:
+            headers["x-session-id"] = session_id
+        if real_time:
+            headers["x-real-time"] = "true"
+        return headers
+
+    async def _request(
+        self,
+        method: str,
+        endpoint: str,
+        params: Optional[dict] = None,
+        body: Optional[dict] = None,
+        session_id: Optional[str] = None,
+        real_time: bool = False
+    ) -> dict:
+        """Make API request. Raises MonoApiError on failure."""
+        url = f"{self.BASE_URL}{endpoint}"
+        headers = self._headers(session_id, real_time)
+
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.request(method, url, headers=headers, params=params, json=body) as resp:
+                    raw_text = await resp.text()
+                    
+                    try:
+                        data = await resp.json() if resp.content_type == "application/json" else {}
+                    except Exception:
+                        data = {}
+                    
+                    if 200 <= resp.status < 300:
+                        return data.get("data", data)
+                    
+                    error_message = data.get("message", "Request failed")
+                    error_code = data.get("code") or data.get("error_code")
+                    
+                    logger.error("mono_api_error", http_status=resp.status, endpoint=endpoint, error_code=error_code, message=error_message)
+                    raise MonoApiError(http_status=resp.status, message=error_message, error_code=error_code, raw_response=raw_text[:500])
+                    
+        except aiohttp.ClientError as e:
+            logger.error("mono_connection_error", endpoint=endpoint, error=str(e))
+            raise MonoApiError(http_status=0, message=f"Connection error: {e}", error_code="CONNECTION_ERROR")
+
+
+    async def initiate_bvn_lookup(self, bvn: str) -> BvnLookupData:
+        """Initiate BVN lookup to get verification methods."""
+        if self.use_mock:
+            return mock_data.get_mock_bvn_lookup(bvn)
+        data = await self._request("POST", "/v2/lookup/bvn/initiate", body={"bvn": bvn, "scope": "bank_accounts"})
+        return BvnLookupData(**data)
+
+    async def verify_bvn(self, session_id: str, method: str) -> None:
+        """Send verification code via selected method."""
+        if self.use_mock:
+            return
+        await self._request("POST", "/v2/lookup/bvn/verify", body={"method": method}, session_id=session_id)
+
+    async def verify_otp(self, session_id: str, otp: str) -> List[BankAccount]:
+        """Verify OTP and get bank accounts linked to BVN."""
+        if self.use_mock:
+            return mock_data.get_mock_bank_accounts()
+        data = await self._request("POST", "/v2/lookup/bvn/details", body={"otp": otp}, session_id=session_id)
+        return [BankAccount(**acc) for acc in data]
+
+
+    async def get_account(self, account_id: str) -> AccountData:
+        """Get account details."""
+        if self.use_mock:
+            return mock_data.get_mock_account(account_id)
+        data = await self._request("GET", f"/v2/accounts/{account_id}")
+        return AccountData(**data)
+
+    async def get_balance(self, account_id: str, real_time: bool = True) -> BalanceData:
+        """Get account balance."""
+        if self.use_mock:
+            return mock_data.get_mock_balance(account_id)
+        raw = await self._request("GET", f"/v2/accounts/{account_id}/balance", real_time=real_time)
+        return BalanceData(
+            balance_kobo=raw.get("available_balance", 0),
+            balance_naira=raw.get("available_balance", 0) / 100,
+            ledger_balance_kobo=raw.get("ledger_balance", 0),
+            ledger_balance_naira=raw.get("ledger_balance", 0) / 100,
+            currency=raw.get("currency", "NGN"),
+            account_id=account_id,
+        )
+
+    async def get_transactions(
+        self,
+        account_id: str,
+        start: Optional[str] = None,
+        end: Optional[str] = None,
+        transaction_type: Optional[str] = None,
+        narration: Optional[str] = None,
+        limit: int = 50,
+        paginate: bool = True,
+        real_time: bool = False
+    ) -> List[Transaction]:
+        """Fetch transactions for an account."""
+        if self.use_mock:
+            return mock_data.get_mock_transactions(transaction_type, narration, limit)
+
+        params = {}
+        if start:
+            params["start"] = start
+        if end:
+            params["end"] = end
+        if transaction_type:
+            params["type"] = transaction_type
+        if not paginate:
+            params["paginate"] = "false"
+        if limit:
+            params["limit"] = str(limit)
+
+        raw_data = await self._request("GET", f"/v2/accounts/{account_id}/transactions", params=params, real_time=real_time)
+        raw_txns = raw_data.get("transactions", raw_data) if isinstance(raw_data, dict) else raw_data
+        transactions = [Transaction(**t) for t in raw_txns]
+        
+        if narration:
+            transactions = [t for t in transactions if narration.lower() in t.narration.lower()]
+        
+        return transactions[:limit]
+
+
+    async def create_customer(
+        self,
+        first_name: str,
+        last_name: str,
+        phone: str,
+        email: str,
+        address: str,
+        identity_number: str,
+        identity_type: str = "bvn",
+    ) -> CustomerData:
+        """Create a customer in Mono."""
+        if self.use_mock:
+            return mock_data.get_mock_customer(first_name, last_name, email, address, identity_number, identity_type)
+
+        body = {
+            "first_name": first_name,
+            "last_name": last_name,
+            "phone": phone,
+            "email": email,
+            "address": address,
+            "identity": {"type": identity_type, "number": identity_number},
+        }
+        data = await self._request("POST", "/v2/customers", body=body)
+        return CustomerData(**data)
+
+    async def create_mandate(
+        self,
+        customer_id: str,
+        account_number: str,
+        bank_code: str,
+        amount: int,
+        reference: str,
+        start_date: str,
+        end_date: str,
+        debit_type: str = "variable",
+        mandate_type: str = "e-mandate",
+        description: str = "Direct debit mandate",
+        fee_bearer: str = "customer",
+    ) -> MandateData:
+        """
+        Create a Direct Debit mandate on a customer's bank account.
+        
+        Args:
+            customer_id: Mono customer ID
+            account_number: Bank account number
+            bank_code: Bank code (e.g., "011" for First Bank)
+            amount: Maximum debit amount in kobo (for variable) or fixed amount per debit
+            reference: Unique reference for this mandate
+            start_date: Mandate start date (YYYY-MM-DD)
+            end_date: Mandate end date (YYYY-MM-DD)
+            debit_type: "variable" or "fixed"
+            mandate_type: "e-mandate" or "signed"
+            description: Description of the mandate
+            fee_bearer: "business" or "customer"
+        """
+        if self.use_mock:
+            return mock_data.get_mock_mandate(
+                customer_id, account_number, bank_code, amount, reference, start_date, end_date
+            )
+
+        body = {
+            "customer": customer_id,
+            "account_number": account_number,
+            "bank_code": bank_code,
+            "amount": amount,
+            "reference": reference,
+            "start_date": start_date,
+            "end_date": end_date,
+            "debit_type": debit_type,
+            "mandate_type": mandate_type,
+            "description": description,
+            "fee_bearer": fee_bearer,
+        }
+        data = await self._request("POST", "/v3/payments/mandates", body=body)
+        return MandateData(**data)
+
+
+mono_client = MonoClient()
