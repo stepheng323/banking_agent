@@ -104,7 +104,6 @@ async def flow_webhook(
                 request_was_encrypted,
                 aes_key_bytes or b"",
                 iv_bytes or b"",
-                whatsapp_client,
             )
 
         elif screen == "Pin":

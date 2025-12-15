@@ -109,9 +109,7 @@ class OnboardingService:
         ]
         
         for dest in transfer_destinations:
-            bank = getattr(dest, 'bank_name', dest.get('bank_name', 'Unknown'))
-            acct = getattr(dest, 'account_number', dest.get('account_number', ''))
-            lines.append(f"• *{bank}*: {acct}")
+            lines.append(f"• *{dest.bank_name}*: {dest.account_number}")
         
         lines.extend([
             "",
@@ -432,7 +430,18 @@ class OnboardingService:
             await whatsapp.send_text(to=phone_number, text=auth_message)
 
         except Exception as e:
-            logger.error("mono_setup_background_error", error=str(e), phone=phone_number)
+            import traceback
+            logger.error("mono_setup_background_error", error=str(e), phone=phone_number, traceback=traceback.format_exc())
+            # Send fallback notification so user isn't left waiting
+            try:
+                from shared.clients.whatsapp_client import WhatsAppClient
+                whatsapp = WhatsAppClient()
+                await whatsapp.send_text(
+                    to=phone_number,
+                    text="⚠️ We encountered an issue setting up your account. Our team has been notified. Please try again later or contact support."
+                )
+            except Exception:
+                pass  # Don't fail if fallback notification also fails
 
 
 onboarding_service = OnboardingService()
