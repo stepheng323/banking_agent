@@ -143,12 +143,13 @@ async def mono_webhook(request: Request) -> Response:
         
         logger.info("mono_webhook_received", event=event, mandate_id=data.get("id"))
         
-        # Map Mono events to mandate statuses
         event_status_map = {
             "events.mandates.approved": "approved",
             "events.mandates.ready": "ready",
             "events.mandates.rejected": "rejected",
             "events.mandate.action.cancel": "cancelled",
+            "events.mandate.action.pause": "paused",
+            "events.mandate.action.reinstate": "ready",
         }
         
         if event not in event_status_map:
@@ -162,7 +163,6 @@ async def mono_webhook(request: Request) -> Response:
         
         new_status = event_status_map[event]
         
-        # Update mandate status in database
         from shared.repositories.unit_of_work import UnitOfWork
         
         with UnitOfWork() as uow:
