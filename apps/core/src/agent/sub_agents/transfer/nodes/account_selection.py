@@ -1,6 +1,7 @@
 """Account selection node for transfer flow."""
 
 from apps.core.src.agent.tools.account_selection.node import select_source_account_shared
+from apps.core.src.agent.tools.account_selection.mandate_validator import validate_mandate_status
 from apps.core.src.agent.sub_agents.transfer.state import TransferState
 
 from .utils import debug_log
@@ -14,19 +15,13 @@ def _validate_transfer_account(state: TransferState, selected: dict) -> Transfer
     """
     from apps.core.src.agent.sub_agents.transfer.validators import SelfTransferValidator
     
-    mandate_status = selected.get("mandate_status", "pending")
-    if mandate_status != "ready":
-        status_messages = {
-            "pending": "Your account authorization is pending. Please complete the ₦50 transfer to activate your account.",
-            "approved": "Your account is almost ready. It will be fully active within 1 hour after your authorization transfer.",
-            "rejected": "Your account authorization was rejected. Please contact support to resolve this.",
-            "cancelled": "Your account authorization was cancelled. Please restart the account setup process.",
-        }
-        error_message = status_messages.get(mandate_status, "Your account is not ready for payments yet.")
+    # Use shared mandate validator
+    is_valid, error = validate_mandate_status(selected)
+    if not is_valid:
         return {
             **state,
             "selected_source_account": selected,
-            "response": f"⚠️ {error_message}",
+            "response": f"⚠️ {error}",
             "llm_reply": None,
         }
     
