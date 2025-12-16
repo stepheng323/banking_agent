@@ -15,8 +15,7 @@ def _validate_transfer_account(state: TransferState, selected: dict) -> Transfer
     """
     from apps.core.src.agent.sub_agents.transfer.validators import SelfTransferValidator
     
-    # Use shared mandate validator
-    is_valid, error = validate_mandate_status(selected)
+    is_valid, error, _ = validate_mandate_status(selected)
     if not is_valid:
         return {
             **state,

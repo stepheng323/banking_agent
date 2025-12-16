@@ -14,7 +14,7 @@ def _validate_airtime_account(state: AirtimeState, selected: dict) -> Optional[A
     Validate mandate status for airtime purchases.
     Blocks transactions if account mandate is not ready.
     """
-    is_valid, error = validate_mandate_status(selected)
+    is_valid, error, _ = validate_mandate_status(selected)
     if not is_valid:
         return {
             **state,
