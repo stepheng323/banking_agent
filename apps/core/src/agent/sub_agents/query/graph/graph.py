@@ -138,7 +138,7 @@ class QueryFlowGraph:
             return "You need to link a bank account before I can check your transactions."
         
         # Block queries if account mandate is not ready
-        is_valid, error = validate_mandate_status(account)
+        is_valid, error, _ = validate_mandate_status(account)
         if not is_valid:
             return f"⚠️ {error}"
         
