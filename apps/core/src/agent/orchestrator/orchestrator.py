@@ -33,6 +33,7 @@ from apps.core.src.agent.orchestrator.features.batch_authorization.handler impor
 from apps.core.src.agent.orchestrator.features.active_queue.handler import ActiveQueueHandler
 from apps.core.src.agent.orchestrator.features.task_planning.handler import NextTaskHandler
 from apps.core.src.agent.orchestrator.features.intent_routing.handler import IntentRoutingHandler
+from apps.core.src.agent.orchestrator.features.mandate.handler import MandateReinitiationHandler
 
 
 class OrchestratorAgent:
@@ -94,6 +95,7 @@ class OrchestratorAgent:
         # Handler order matters
         self._handlers = [
             ContextLoaderHandler(self.context_manager, task_queue_service),
+            MandateReinitiationHandler(),
             ClassificationHandler(self.classification_service, self.context_manager),
             FreshStartHandler(self.context_manager, transfer_service),
             BeneficiaryHandler(self.beneficiary_handler),
