@@ -77,6 +77,11 @@ def parse_payload(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
                             flow_data = json.loads(response_json_str)
                         except json.JSONDecodeError:
                             flow_data = {"raw": response_json_str}
+                    
+                    # Handle button replies (user clicked a button)
+                    elif interactive_type == "button_reply":
+                        button_reply: Dict[str, Any] = interactive.get("button_reply", {})
+                        text = button_reply.get("id", "")  # Button ID becomes the text
 
                 
                 media_id = None
