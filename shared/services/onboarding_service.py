@@ -98,15 +98,25 @@ class OnboardingService:
         account_number: str,
         bank_name: str,
         transfer_destinations: list,
+        is_reinitiation: bool = False,
     ) -> str:
         """Build WhatsApp message with mandate authorization instructions."""
-        lines = [
-            "📋 *One Last Step to Complete Setup*",
-            "",
-            f"To activate your {bank_name} account ending in {account_number[-4:]}, "
-            "transfer ₦50 from that account to any of these accounts:",
-            "",
-        ]
+        if is_reinitiation:
+            lines = [
+                "✅ *Mandate Reinitiated Successfully!*",
+                "",
+                f"To activate your {bank_name} account ending in {account_number[-4:]}, "
+                "transfer ₦50 from that account to any of these accounts:",
+                "",
+            ]
+        else:
+            lines = [
+                "📋 *One Last Step to Complete Setup*",
+                "",
+                f"To activate your {bank_name} account ending in {account_number[-4:]}, "
+                "transfer ₦50 from that account to any of these accounts:",
+                "",
+            ]
         
         for dest in transfer_destinations:
             lines.append(f"• *{dest.bank_name}*: {dest.account_number}")
@@ -419,6 +429,16 @@ class OnboardingService:
                     if account:
                         account.mandate_id = mandate.id
                         account.mandate_status = "pending"
+                        transfer_destinations = mandate.transfer_destinations or []
+                        existing_extra = account.extra_data or {}
+                        account.extra_data = {
+                            **existing_extra,
+                            "mandate_created_at": datetime.utcnow().isoformat(),
+                            "transfer_destinations": [
+                                {"bank_name": dest.bank_name, "account_number": dest.account_number}
+                                for dest in transfer_destinations
+                            ],
+                        }
 
             whatsapp = WhatsAppClient()
             transfer_destinations = mandate.transfer_destinations or []
@@ -432,7 +452,6 @@ class OnboardingService:
         except Exception as e:
             import traceback
             logger.error("mono_setup_background_error", error=str(e), phone=phone_number, traceback=traceback.format_exc())
-            # Send fallback notification so user isn't left waiting
             try:
                 from shared.clients.whatsapp_client import WhatsAppClient
                 whatsapp = WhatsAppClient()
@@ -442,6 +461,91 @@ class OnboardingService:
                 )
             except Exception:
                 pass  # Don't fail if fallback notification also fails
+
+    async def reinitiate_mandate(self, phone_number: str, account_id: str) -> ServiceResult:
+        """
+        Reinitiate mandate for an existing account.
+        
+        Used when mandate has expired (>1 hour) or was cancelled.
+        No new user data needed - uses existing account info.
+        """
+        try:
+            with UnitOfWork() as uow:
+                if not uow.users or not uow.accounts:
+                    return ServiceResult(success=False, error="Database not available")
+                
+                user = uow.users.get_by_phone(phone_number)
+                if not user:
+                    return ServiceResult(success=False, error="User not found")
+                
+                account = uow.accounts.get_by_account_id(account_id)
+                if not account:
+                    return ServiceResult(success=False, error="Account not found")
+                
+                mono_customer_id = user.mono_customer_id
+                account_number = account.account_number
+                bank_code = account.bank_code
+                bank_name = account.bank_name
+            
+            if not mono_customer_id:
+                return ServiceResult(success=False, error="Mono customer not found. Please contact support.")
+            
+            mandate_reference = f"FP-{uuid_module.uuid4().hex[:12].upper()}"
+            start_date = datetime.utcnow().strftime("%Y-%m-%d")
+            end_date = (datetime.utcnow() + timedelta(days=365)).strftime("%Y-%m-%d")
+            
+            mandate = await mono_client.create_mandate(
+                customer_id=mono_customer_id,
+                account_number=account_number,
+                bank_code=bank_code,
+                amount=100000000,  # Max amount in kobo
+                reference=mandate_reference,
+                start_date=start_date,
+                end_date=end_date,
+            )
+            logger.info("mandate_reinitiated", mandate_id=mandate.id, phone=phone_number, account_id=account_id)
+            
+            # Update account with new mandate info
+            with UnitOfWork() as uow:
+                if uow.accounts:
+                    db_account = uow.accounts.get_by_account_id(account_id)
+                    if db_account:
+                        db_account.mandate_id = mandate.id
+                        db_account.mandate_status = "pending"
+                        transfer_destinations = mandate.transfer_destinations or []
+                        existing_extra = db_account.extra_data or {}
+                        db_account.extra_data = {
+                            **existing_extra,
+                            "mandate_created_at": datetime.utcnow().isoformat(),
+                            "transfer_destinations": [
+                                {"bank_name": dest.bank_name, "account_number": dest.account_number}
+                                for dest in transfer_destinations
+                            ],
+                        }
+            
+            # Send auth message
+            from shared.clients.whatsapp_client import WhatsAppClient
+            whatsapp = WhatsAppClient()
+            transfer_destinations = mandate.transfer_destinations or []
+            auth_message = self._build_mandate_auth_message(
+                account_number=account_number,
+                bank_name=bank_name,
+                transfer_destinations=transfer_destinations,
+                is_reinitiation=True,
+            )
+            await whatsapp.send_text(to=phone_number, text=auth_message)
+            
+            return ServiceResult(
+                success=True,
+                data={"mandate_id": mandate.id, "message": "Mandate reinitiated successfully"}
+            )
+            
+        except MonoApiError as e:
+            logger.error("reinitiate_mandate_mono_error", error=str(e), phone=phone_number)
+            return ServiceResult(success=False, error=f"Failed to reinitiate mandate: {e}")
+        except Exception as e:
+            logger.error("reinitiate_mandate_error", error=str(e), phone=phone_number)
+            return ServiceResult(success=False, error="Failed to reinitiate mandate. Please try again.")
 
 
 onboarding_service = OnboardingService()
