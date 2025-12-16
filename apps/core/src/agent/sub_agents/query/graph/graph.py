@@ -9,6 +9,7 @@ from langgraph.graph import StateGraph, END
 
 from shared.clients.mono import MonoClient
 from shared.cache.redis_client import RedisClient
+from apps.core.src.agent.tools.account_selection.mandate_validator import validate_mandate_status
 from apps.core.src.agent.sub_agents.query.parser import QueryParser
 from apps.core.src.agent.sub_agents.query.graph.state import QueryState
 from apps.core.src.agent.sub_agents.query.graph.nodes import (
@@ -135,6 +136,11 @@ class QueryFlowGraph:
         
         if not account:
             return "You need to link a bank account before I can check your transactions."
+        
+        # Block queries if account mandate is not ready
+        is_valid, error, _ = validate_mandate_status(account)
+        if not is_valid:
+            return f"⚠️ {error}"
         
         account_id = account.get("account_id") or account.get("mono_account_id")
         if not account_id:

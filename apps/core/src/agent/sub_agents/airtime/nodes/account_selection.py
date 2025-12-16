@@ -1,9 +1,28 @@
 """Account selection node for airtime purchase flow."""
 
+from typing import Optional
+
 from apps.core.src.agent.tools.account_selection.node import select_source_account_shared
+from apps.core.src.agent.tools.account_selection.mandate_validator import validate_mandate_status
 from apps.core.src.agent.sub_agents.airtime.state import AirtimeState
 
 from ..graph.utils import debug_log
+
+
+def _validate_airtime_account(state: AirtimeState, selected: dict) -> Optional[AirtimeState]:
+    """
+    Validate mandate status for airtime purchases.
+    Blocks transactions if account mandate is not ready.
+    """
+    is_valid, error, _ = validate_mandate_status(selected)
+    if not is_valid:
+        return {
+            **state,
+            "selected_source_account": selected,
+            "response": f"⚠️ {error}",
+            "llm_reply": None,
+        }
+    return None
 
 
 async def select_source_account(state: AirtimeState) -> AirtimeState:
@@ -13,11 +32,10 @@ async def select_source_account(state: AirtimeState) -> AirtimeState:
     debug_log(
         f"DEBUG select_source_account: accounts={len(accounts)}, source_account_id={source_account_id}")
     
-    result = await select_source_account_shared(state, validator=None)
+    result = await select_source_account_shared(state, validator=_validate_airtime_account)
     
     selected = result.get("selected_source_account")
     debug_log(
         f"DEBUG select_source_account: selected={selected is not None}, response={bool(result.get('response'))}")
     
     return result
-

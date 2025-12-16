@@ -146,6 +146,62 @@ class WhatsAppClient:
             print(f"⚠️  Failed to send typing indicator (non-critical): {e}")
             return {}
 
+    async def send_button(
+        self,
+        to: str,
+        body_text: str,
+        buttons: list[Dict[str, str]],
+        header: str = "",
+        footer: str = "",
+    ) -> Dict[str, Any]:
+        """
+        Send an interactive button message.
+        
+        Args:
+            to: Recipient phone number
+            body_text: Main message text
+            buttons: List of button dicts with 'id' and 'title' keys (max 3)
+            header: Optional header text
+            footer: Optional footer text
+            
+        Returns:
+            API response from WhatsApp
+        """
+        url = self._get_url()
+        
+        # Build button rows (max 3 buttons)
+        button_rows = [
+            {"type": "reply", "reply": {"id": btn["id"], "title": btn["title"][:20]}}
+            for btn in buttons[:3]
+        ]
+        
+        interactive_payload: Dict[str, Any] = {
+            "type": "button",
+            "body": {"text": body_text},
+            "action": {"buttons": button_rows},
+        }
+        
+        if header and header.strip():
+            interactive_payload["header"] = {"type": "text", "text": header}
+        if footer and footer.strip():
+            interactive_payload["footer"] = {"text": footer}
+        
+        payload = {
+            "messaging_product": "whatsapp",
+            "recipient_type": "individual",
+            "to": to,
+            "type": "interactive",
+            "interactive": interactive_payload,
+        }
+        
+        try:
+            result = await self._send(url, payload)
+            print(f"✅ Button message sent to {to}")
+            return result
+        except Exception as e:
+            print(f"❌ Failed to send button message: {e}")
+            raise
+
     async def send_flow(
         self,
         to: str,
