@@ -123,6 +123,9 @@ class AccountManagementService:
         """
         Send Mono Connect flow to link a new account.
         
+        Pre-fills BVN from stored user data so user doesn't have to enter it again.
+        Flow starts at OTP verification step.
+        
         Args:
             phone_number: User's phone number
             
@@ -132,21 +135,29 @@ class AccountManagementService:
         flow_id = settings.onboarding_flow_id
         if not flow_id:
             return "Sorry, account linking is temporarily unavailable. Please contact support."
-            
+        
         timestamp = int(time.time())
         flow_token = f"link-{phone_number}-{timestamp}"
         
+        # Pre-initialize session with stored BVN (skip BVN entry screen)
+        from shared.services.onboarding import bvn_service
+        result = await bvn_service.initiate_account_linking(flow_token, phone_number)
+        
+        if not result["success"]:
+            return result.get("error", "Failed to start account linking. Please try again.")
+        
+        # Send flow starting at METHOD_SELECTION (OTP method selection)
         await self.whatsapp_client.send_flow(
             to=phone_number,
             header="Link New Account",
-            flow_cta="Link Account",
+            flow_cta="Continue",
             flow_id=flow_id,
-            screen_name="Link Account",
+            screen_name="METHOD_SELECTION",
             flow_token=flow_token,
-            text_body="Tap the button below to securely link your bank account."
+            text_body="Tap Continue to verify and link your bank account.",
         )
         
-        return "I've sent you a secure link to connect your new bank account. Please tap the 'Link Account' button below to proceed."
+        return "I've sent you a secure link to connect your new bank account. Please tap 'Continue' to verify via OTP."
 
     async def list_accounts(self, user_id: str) -> str:
         """

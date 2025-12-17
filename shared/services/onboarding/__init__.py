@@ -5,6 +5,7 @@ This package contains the modular onboarding flow components:
 - BvnVerificationService: BVN lookup and OTP verification
 - MandateService: Mandate creation and reinitiation
 - AccountLinkingService: Account selection and onboarding completion
+- AccountAddService: Adding accounts to existing users
 """
 
 from dataclasses import dataclass
@@ -14,6 +15,7 @@ from .session import SessionManager, OnboardingSession, OnboardingStep
 from .bvn_verification import BvnVerificationService
 from .mandate import MandateService
 from .account_linking import AccountLinkingService
+from .account_add import AccountAddService
 
 
 @dataclass
@@ -28,6 +30,7 @@ _session_manager = SessionManager()
 _mandate_service = MandateService()
 _bvn_service = BvnVerificationService(_session_manager)
 _account_service = AccountLinkingService(_session_manager, _mandate_service)
+_account_add_service = AccountAddService(_session_manager, _mandate_service)
 
 
 __all__ = [
@@ -35,6 +38,7 @@ __all__ = [
     "BvnVerificationService", 
     "MandateService",
     "AccountLinkingService",
+    "AccountAddService",
     "OnboardingSession",
     "OnboardingStep",
     "ServiceResult",
@@ -42,6 +46,7 @@ __all__ = [
     "mandate_service",
     "bvn_service",
     "account_service",
+    "account_add_service",
 ]
 
 
@@ -49,3 +54,5 @@ session_manager = _session_manager
 mandate_service = _mandate_service
 bvn_service = _bvn_service
 account_service = _account_service
+account_add_service = _account_add_service
+

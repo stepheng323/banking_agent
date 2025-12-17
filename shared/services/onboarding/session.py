@@ -36,6 +36,7 @@ class OnboardingSession:
     email: Optional[str] = None
     address: Optional[str] = None
     step: OnboardingStep = OnboardingStep.BVN_ENTRY
+    is_account_linking: bool = False  # True when adding account to existing user
 
 
 class SessionManager:
