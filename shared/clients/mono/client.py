@@ -228,5 +228,30 @@ class MonoClient:
         data = await self._request("POST", "/v3/payments/mandates", body=body)
         return MandateData(**data)
 
+    async def cancel_mandate(self, mandate_id: str) -> bool:
+        """
+        Cancel a Direct Debit mandate.
+        
+        Args:
+            mandate_id: The Mono mandate ID to cancel
+            
+        Returns:
+            True if successfully cancelled
+        """
+        if self.use_mock:
+            logger.info("mock_cancel_mandate", mandate_id=mandate_id)
+            return True
+        
+        try:
+            await self._request("PATCH", f"/v3/payments/mandates/{mandate_id}/cancel")
+            logger.info("mandate_cancelled", mandate_id=mandate_id)
+            return True
+        except MonoApiError as e:
+            if e.is_not_found:
+                logger.warning("mandate_not_found_for_cancel", mandate_id=mandate_id)
+                return True
+            raise
+
 
 mono_client = MonoClient()
+
