@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from enum import Enum
 
 from shared.clients.mono import mono_client, MonoApiError, BvnLookupData, BankAccount
+from shared.clients.whatsapp_client import WhatsAppClient
 from shared.cache.redis_client import RedisClient
 from shared.models import CreateAccount, UserCreate, UserUpdate
 import uuid as uuid_module
@@ -316,7 +317,6 @@ class OnboardingService:
             bank_code = institution.get("bank_code", "")
 
         try:
-            # Sync: Update user and create account (without Mono IDs yet)
             with UnitOfWork() as uow:
                 if not uow.users or not uow.accounts:
                     return ServiceResult(success=False, error="Database error.")
@@ -439,6 +439,13 @@ class OnboardingService:
                                 for dest in transfer_destinations
                             ],
                         }
+            
+            from shared.cache.user_data import UserDataCache
+            try:
+                cache = UserDataCache()
+                await cache.invalidate_accounts(phone_number)
+            except Exception:
+                pass  # Non-critical
 
             whatsapp = WhatsAppClient()
             transfer_destinations = mandate.transfer_destinations or []
@@ -505,7 +512,6 @@ class OnboardingService:
             )
             logger.info("mandate_reinitiated", mandate_id=mandate.id, phone=phone_number, account_id=account_id)
             
-            # Update account with new mandate info
             with UnitOfWork() as uow:
                 if uow.accounts:
                     db_account = uow.accounts.get_by_account_id(account_id)
@@ -523,8 +529,14 @@ class OnboardingService:
                             ],
                         }
             
-            # Send auth message
-            from shared.clients.whatsapp_client import WhatsAppClient
+            # Invalidate cache so user gets fresh account data
+            from shared.cache.user_data import UserDataCache
+            try:
+                cache = UserDataCache()
+                await cache.invalidate_accounts(phone_number)
+            except Exception:
+                pass  # Non-critical
+            
             whatsapp = WhatsAppClient()
             transfer_destinations = mandate.transfer_destinations or []
             auth_message = self._build_mandate_auth_message(

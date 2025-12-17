@@ -12,7 +12,7 @@ from shared.clients.whatsapp_client import WhatsAppClient
 from shared.repositories.beneficiary_repository import BeneficiaryRepository
 from shared.repositories.account_repository import AccountRepository
 from shared.cache.bank_cache import BankCacheService
-from apps.core.src.agent.tools.cache.user_data import UserDataCache
+from shared.cache.user_data import UserDataCache
 from shared.queue.redis_queue import RedisQueue
 from shared.config.settings import settings
 from apps.core.src.agent.tools.validation.service import AsyncValidationService

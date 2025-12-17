@@ -10,7 +10,7 @@ import asyncio
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.redis.aio import AsyncRedisSaver
 
-from apps.core.src.agent.tools.cache.user_data import UserDataCache
+from shared.cache.user_data import UserDataCache
 from shared.clients.whatsapp_client import WhatsAppClient
 from shared.repositories.account_repository import AccountRepository
 from shared.repositories.beneficiary_repository import BeneficiaryRepository

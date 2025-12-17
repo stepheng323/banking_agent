@@ -18,7 +18,7 @@ from apps.core.src.agent.sub_agents.transfer.nodes import (
     handle_cancellation,
 )
 from apps.core.src.agent.sub_agents.transfer.state import TransferState
-from apps.core.src.agent.tools.cache.user_data import UserDataCache
+from shared.cache.user_data import UserDataCache
 from shared.cache.bank_cache import BankCacheService
 from shared.repositories.beneficiary_repository import BeneficiaryRepository
 from shared.repositories.account_repository import AccountRepository

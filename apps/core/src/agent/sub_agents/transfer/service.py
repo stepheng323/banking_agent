@@ -7,7 +7,7 @@ if TYPE_CHECKING:
 
 from langchain_openai import ChatOpenAI
 
-from apps.core.src.agent.tools.cache.user_data import UserDataCache
+from shared.cache.user_data import UserDataCache
 from shared.repositories.beneficiary_repository import BeneficiaryRepository
 from shared.repositories.account_repository import AccountRepository
 from shared.clients.whatsapp_client import WhatsAppClient
