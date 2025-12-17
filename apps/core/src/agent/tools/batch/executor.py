@@ -96,7 +96,8 @@ async def execute_batch(
             if isinstance(result, Exception):
                 logger.error(f"[BATCH] Task {tasks_to_execute[i].id} raised exception: {result}")
                 failed.append({
-                    "task": tasks_to_execute[i],
+                    "task": tasks_to_execute[i].model_dump(),
+                    "task_id": tasks_to_execute[i].id,
                     "error": str(result)
                 })
             elif result.get("success"):
@@ -165,7 +166,7 @@ async def _execute_single_task(
             return {
                 "success": False,
                 "cancelled": True,
-                "task": task,
+                "task_id": task.id,
                 "task_desc": task_desc
             }
         
@@ -198,7 +199,7 @@ async def _execute_single_task(
             }
         
         result["task_desc"] = task_desc
-        result["task"] = task
+        result["task_id"] = task.id
         
         if result["success"]:
             await task_queue_service.update_task_status(
@@ -248,7 +249,7 @@ async def _execute_single_task(
         return {
             "success": False,
             "error": str(e),
-            "task": task,
+            "task_id": task.id,
             "task_desc": task_desc
         }
 
@@ -414,8 +415,8 @@ def _generate_final_summary(
     else:
         summary = f"⚠️ {completed_count} of {total} tasks completed.\n\n"
         
-        completed_map = {r.get("task").id: r for r in completed if r.get("task")}
-        failed_map = {r.get("task").id: r for r in failed if r.get("task")}
+        completed_map = {r.get("task_id"): r for r in completed if r.get("task_id")}
+        failed_map = {r.get("task_id"): r for r in failed if r.get("task_id")}
         
         total_amount = 0
         for i, task in enumerate(tasks, 1):
