@@ -1,12 +1,16 @@
 """Service for managing user bank accounts."""
 
+import asyncio
 from typing import List, Optional, Dict, Any
 import time
 from langchain_openai import ChatOpenAI
 from shared.clients.whatsapp_client import WhatsAppClient
+from shared.clients.mono import mono_client
+from shared.cache.user_data import UserDataCache
 from shared.config import settings
 from shared.repositories.account_repository import AccountRepository
 from shared.repositories.user_repository import UserRepository
+from shared.repositories.unit_of_work import UnitOfWork
 from shared.models.account import Account
 from shared.database.models import User
 from shared.utils.logging import get_logger
@@ -123,6 +127,9 @@ class AccountManagementService:
         """
         Send Mono Connect flow to link a new account.
         
+        Pre-fills BVN from stored user data so user doesn't have to enter it again.
+        Flow starts at OTP verification step.
+        
         Args:
             phone_number: User's phone number
             
@@ -132,21 +139,29 @@ class AccountManagementService:
         flow_id = settings.onboarding_flow_id
         if not flow_id:
             return "Sorry, account linking is temporarily unavailable. Please contact support."
-            
+        
         timestamp = int(time.time())
         flow_token = f"link-{phone_number}-{timestamp}"
         
+        # Pre-initialize session with stored BVN (skip BVN entry screen)
+        from shared.services.onboarding import bvn_service
+        result = await bvn_service.initiate_account_linking(flow_token, phone_number)
+        
+        if not result["success"]:
+            return result.get("error", "Failed to start account linking. Please try again.")
+        
+        # Send flow starting at METHOD_SELECTION (OTP method selection)
         await self.whatsapp_client.send_flow(
             to=phone_number,
             header="Link New Account",
-            flow_cta="Link Account",
+            flow_cta="Continue",
             flow_id=flow_id,
-            screen_name="Link Account",
+            screen_name="METHOD_SELECTION",
             flow_token=flow_token,
-            text_body="Tap the button below to securely link your bank account."
+            text_body="Tap Continue to verify and link your bank account.",
         )
         
-        return "I've sent you a secure link to connect your new bank account. Please tap the 'Link Account' button below to proceed."
+        return "I've sent you a secure link to connect your new bank account. Please tap 'Continue' to verify via OTP."
 
     async def list_accounts(self, user_id: str) -> str:
         """
@@ -244,16 +259,33 @@ class AccountManagementService:
             )
         
         try:
+            mandate_id = getattr(selected_account, "mandate_id", None)
+            if mandate_id:
+                try:
+                    await mono_client.cancel_mandate(mandate_id)
+                    logger.info("mandate_cancelled_for_unlink", mandate_id=mandate_id)
+                except Exception as e:
+                    logger.warning("cancel_mandate_failed_on_unlink", mandate_id=mandate_id, error=str(e))
+            
             success = self.account_repo.delete_account(
                 str(selected_account.account_id),
                 user_id
             )
             
             if success:
+                try:
+                    with UnitOfWork() as uow:
+                        if uow.users:
+                            user = uow.users.get_by_id(user_id)  
+                            if user:
+                                asyncio.create_task(UserDataCache().invalidate_accounts(user.phone_number))
+                except Exception:
+                    pass
+                
                 masked_number = f"***{selected_account.account_number[-4:]}"
                 return (
                     f"✅ *Account unlinked!*\n\n"
-                    f"{selected_account.bank_name} ({masked_number}) has been removed from your account.\n\n"
+                    f"{selected_account.bank_name} ({masked_number}) has been removed.\n\n"
                     f"You now have {len(accounts) - 1} linked account(s)."
                 )
             else:

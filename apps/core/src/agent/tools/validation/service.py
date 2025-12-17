@@ -32,8 +32,6 @@ class AsyncValidationService:
             return await self.provider.resolve_account(account_number, bank_code)
 
         async def _balance():
-            # Balance check is optional - not all providers support this
-            # Return None if method doesn't exist or fails
             try:
                 if hasattr(self.provider, 'get_balance'):
                     return await self.provider.get_balance(source_account_id)

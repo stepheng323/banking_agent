@@ -6,7 +6,8 @@ from pydantic import BaseModel
 from fastapi.responses import Response
 
 from apps.gateway.api.flows.response_helpers import format_error_response, format_success_response
-from shared.services.onboarding import account_service, ServiceResult
+from apps.core.src.agent.sub_agents.account_management.account_add_service import AccountAddService
+from shared.services.onboarding import account_service, session_manager, ServiceResult
 
 
 class AccountSelectionInput(BaseModel):
@@ -32,7 +33,37 @@ async def handle_account_selection(
             aes_key_bytes,
             iv_bytes,
         )
-
+    
+    session = await session_manager.get_session(flow_token)
+    is_account_linking = session.is_account_linking if session else False
+    
+    if is_account_linking:
+        account_add_service = AccountAddService()
+        result = ServiceResult(**await account_add_service.add_account(flow_token, data.selected_account))
+        
+        if result.success:
+            return format_success_response(
+                "SUCCESS",
+                request_was_encrypted,
+                aes_key_bytes,
+                iv_bytes,
+                extension_message_response={
+                    "params": {
+                        "flow_token": flow_token,
+                        "success": True,
+                    }
+                },
+            )
+        
+        return format_error_response(
+            "ACCOUNT_SELECTION",
+            result.error,
+            request_was_encrypted,
+            aes_key_bytes,
+            iv_bytes,
+            accounts=session.accounts if session else [],
+        )
+    
     result = ServiceResult(**await account_service.select_account(flow_token, data.selected_account))
     
     if result.success:
@@ -54,3 +85,4 @@ async def handle_account_selection(
         iv_bytes,
         accounts=result.data.get("accounts", []) if result.data else [],
     )
+

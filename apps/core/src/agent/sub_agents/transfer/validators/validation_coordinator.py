@@ -172,6 +172,22 @@ class ValidationCoordinator:
         if balance:
             try:
                 available = float(balance.get("available", 0))
+                
+                # Handle transfer_all: use entire balance (minus minimum for fees)
+                transfer_all = state.get("transfer_all", False)
+                if transfer_all:
+                    MIN_BALANCE_FOR_FEES = 100  # Keep ₦100 for potential fees
+                    if available <= MIN_BALANCE_FOR_FEES:
+                        return {
+                            **state,
+                            "flow_state": "error",
+                            "response": f"Insufficient balance. You have only ₦{available:,.2f} available.",
+                            "validation_errors": ["insufficient_balance_for_transfer_all"],
+                        }
+                    transfer_amount = available - MIN_BALANCE_FOR_FEES
+                    state = {**state, "amount": transfer_amount}
+                    logger.info("transfer_all_amount_resolved", balance=available, amount=transfer_amount)
+                
                 amount_value = state.get("amount")
                 if amount_value is not None and available is not None:
                     amount = float(amount_value)
