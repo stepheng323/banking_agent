@@ -85,15 +85,25 @@ class OrchestratorClassificationService:
         
 
         if active_flow in {"transfer", "airtime", "data"}:
-            amount_match = re.match(r'^[nN]?\s*(\d+)[kK]?$', text_clean)
-            if amount_match:
-                return ClassificationResult(
-                    intent=active_flow,
-                    is_complex=False,
-                    confidence=0.98,
-                    response="Amount received.",
-                    complexity_reason="Simple amount detected",
-                )
+            # Don't fast-path if message looks like a different intent
+            manage_account_patterns = {"account", "accounts", "link", "unlink", "default", "how many", "show", "list"}
+            question_patterns = {"why", "what", "how", "when", "where", "who", "explain", "help"}
+            
+            words = set(text_clean.split())
+            is_manage_accounts = bool(words & manage_account_patterns)
+            is_question = text_clean.endswith("?") or bool(words & question_patterns)
+            
+            # Only fast-path if it's clearly flow-related data (amount, not a question or account query)
+            if not is_manage_accounts and not is_question:
+                amount_match = re.match(r'^[nN]?\\s*(\\d+)[kK]?$', text_clean)
+                if amount_match:
+                    return ClassificationResult(
+                        intent=active_flow,
+                        is_complex=False,
+                        confidence=0.98,
+                        response="Amount received.",
+                        complexity_reason="Simple amount detected",
+                    )
         
         if active_flow == "transfer":
             if re.match(r'^\d{10}$', text_clean):

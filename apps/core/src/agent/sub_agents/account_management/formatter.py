@@ -41,10 +41,9 @@ class AccountManagementFormatter:
             lines.append(f"{i}. {bank_name} (****{last4}){default_badge} {status_icon}".rstrip())
         
         lines.append("")
-        lines.append("✅ Ready | ⏳ Pending | ⚠️ Needs attention")
+        lines.append("_✅=ready ⏳=pending ⚠️=action needed_")
         lines.append("")
-        lines.append("• Say \"set 2 as default\" to change")
-        lines.append("• Say \"unlink GTB\" to remove")
+        lines.append("\"set 2 as default\" | \"unlink GTB\"")
         
         return "\n".join(lines)
 
