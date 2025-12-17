@@ -24,7 +24,6 @@ class BvnVerificationService:
         Fetches user's BVN from database and starts verification.
         Returns available verification methods (phone, email).
         """
-        # Get stored BVN from user profile
         bvn = None
         try:
             with UnitOfWork() as uow:
@@ -78,10 +77,8 @@ class BvnVerificationService:
             
             methods = [{"id": m.method, "title": m.hint} for m in bvn_data.methods]
             
-            # Detect if this is account linking (link-{phone}-{timestamp}) vs onboarding
             is_linking = flow_token.startswith("link-")
             if is_linking:
-                # Format: link-{phone}-{timestamp}
                 parts = flow_token.split("-")
                 phone_number = parts[1] if len(parts) >= 2 else ""
             else:

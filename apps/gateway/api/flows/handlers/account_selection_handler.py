@@ -6,7 +6,8 @@ from pydantic import BaseModel
 from fastapi.responses import Response
 
 from apps.gateway.api.flows.response_helpers import format_error_response, format_success_response
-from shared.services.onboarding import account_service, account_add_service, session_manager, ServiceResult
+from apps.core.src.agent.sub_agents.account_management.account_add_service import AccountAddService
+from shared.services.onboarding import account_service, session_manager, ServiceResult
 
 
 class AccountSelectionInput(BaseModel):
@@ -33,12 +34,11 @@ async def handle_account_selection(
             iv_bytes,
         )
     
-    # Check if this is account linking (skip PIN screen)
     session = await session_manager.get_session(flow_token)
     is_account_linking = session.is_account_linking if session else False
     
     if is_account_linking:
-        # Account linking: complete immediately, no PIN needed
+        account_add_service = AccountAddService()
         result = ServiceResult(**await account_add_service.add_account(flow_token, data.selected_account))
         
         if result.success:
@@ -64,7 +64,6 @@ async def handle_account_selection(
             accounts=session.accounts if session else [],
         )
     
-    # Normal onboarding: continue to PIN entry
     result = ServiceResult(**await account_service.select_account(flow_token, data.selected_account))
     
     if result.success:

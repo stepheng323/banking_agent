@@ -9,9 +9,8 @@ from shared.cache.user_data import UserDataCache
 from shared.models import CreateAccount
 from shared.repositories.unit_of_work import UnitOfWork
 from shared.utils.logging import get_logger
-
-from .session import SessionManager, OnboardingStep
-from .mandate import MandateService
+from shared.services.onboarding import session_manager, mandate_service
+from shared.services.onboarding.session import OnboardingStep
 
 logger = get_logger(__name__)
 
@@ -19,7 +18,7 @@ logger = get_logger(__name__)
 class AccountAddService:
     """Handles adding new accounts to existing users (post-onboarding)."""
     
-    def __init__(self, session_manager: SessionManager, mandate_service: MandateService):
+    def __init__(self):
         self.session = session_manager
         self.mandate = mandate_service
     
