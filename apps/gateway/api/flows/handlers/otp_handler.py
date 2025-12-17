@@ -6,7 +6,7 @@ from pydantic import BaseModel
 from fastapi.responses import Response
 
 from apps.gateway.api.flows.response_helpers import format_error_response, format_success_response
-from shared.services import onboarding_service
+from shared.services.onboarding import bvn_service, ServiceResult
 
 
 class OtpVerificationInput(BaseModel):
@@ -24,7 +24,7 @@ async def handle_otp_verification(
 ) -> Response:
     """Handle OTP_VERIFICATION screen - validates OTP and fetches bank accounts."""
     
-    result = await onboarding_service.verify_otp(flow_token, data.otp)
+    result = ServiceResult(**await bvn_service.verify_otp(flow_token, data.otp))
     
     if result.success:
         return format_success_response(

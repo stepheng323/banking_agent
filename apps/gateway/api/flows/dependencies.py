@@ -10,7 +10,7 @@ from shared.cache.redis_client import RedisClient
 from shared.repositories.account_repository import AccountRepository
 from shared.repositories.beneficiary_repository import BeneficiaryRepository
 from shared.database.connection import get_db_session
-from apps.core.src.agent.tools.cache.user_data import UserDataCache
+from shared.cache.user_data import UserDataCache
 from apps.core.src.agent.orchestrator.services.task_queue_service import TaskQueueService
 
 from apps.gateway.core.config import settings

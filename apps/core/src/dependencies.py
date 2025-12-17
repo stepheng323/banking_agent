@@ -9,7 +9,7 @@ from shared.repositories import BeneficiaryRepository, AccountRepository
 from shared.repositories.user_repository import UserRepository
 from shared.cache.redis_client import RedisClient
 from shared.services.receipt_generator import ReceiptGenerator
-from apps.core.src.agent.tools.cache.user_data import UserDataCache
+from shared.cache.user_data import UserDataCache
 
 from apps.core.src.agent.orchestrator import OrchestratorAgent
 from apps.core.src.agent.orchestrator.services import ConversationResponder, TaskQueueService, TaskExecutor, MediaService

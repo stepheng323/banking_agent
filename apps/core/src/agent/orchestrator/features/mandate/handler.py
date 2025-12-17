@@ -2,7 +2,7 @@
 
 from apps.core.src.agent.orchestrator.pipeline.message_context import MessageContext
 from apps.core.src.agent.orchestrator.pipeline.message_handler import MessageHandler
-from shared.services.onboarding_service import onboarding_service
+from shared.services.onboarding import mandate_service, ServiceResult
 from shared.cache.redis_client import RedisClient
 from shared.utils.logging import get_logger
 
@@ -52,10 +52,10 @@ class MandateReinitiationHandler(MessageHandler):
                 handled=True
             )
         
-        result = await onboarding_service.reinitiate_mandate(
+        result = ServiceResult(**await mandate_service.reinitiate_mandate(
             phone_number=context.phone_number,
             account_id=account_id
-        )
+        ))
         
         await redis.delete(pending_key)
         
@@ -67,3 +67,4 @@ class MandateReinitiationHandler(MessageHandler):
                 f"⚠️ {result.error}",
                 handled=True
             )
+

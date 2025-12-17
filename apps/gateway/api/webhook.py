@@ -176,9 +176,19 @@ async def mono_webhook(request: Request) -> Response:
                         account_id=str(account.id),
                     )
                     
-                    if new_status == "ready":
-                        user = uow.users.get_by_id(str(account.user_id)) if uow.users else None
-                        if user and user.phone_number:
+                    # Invalidate account cache so user gets fresh data
+                    user = uow.users.get_by_id(str(account.user_id)) if uow.users else None
+                    if user and user.phone_number:
+                        try:
+                            from shared.cache.user_data import UserDataCache
+                            cache = UserDataCache()
+                            await cache.invalidate_accounts(user.phone_number)
+                            logger.debug("account_cache_invalidated", phone=user.phone_number)
+                        except Exception as e:
+                            logger.warning("cache_invalidation_failed", error=str(e))
+                        
+                        # Notify user when mandate is ready
+                        if new_status == "ready":
                             try:
                                 whatsapp = get_whatsapp_client()
                                 await whatsapp.send_text(

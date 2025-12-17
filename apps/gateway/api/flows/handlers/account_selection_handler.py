@@ -6,7 +6,7 @@ from pydantic import BaseModel
 from fastapi.responses import Response
 
 from apps.gateway.api.flows.response_helpers import format_error_response, format_success_response
-from shared.services import onboarding_service
+from shared.services.onboarding import account_service, ServiceResult
 
 
 class AccountSelectionInput(BaseModel):
@@ -33,7 +33,7 @@ async def handle_account_selection(
             iv_bytes,
         )
 
-    result = await onboarding_service.select_account(flow_token, data.selected_account)
+    result = ServiceResult(**await account_service.select_account(flow_token, data.selected_account))
     
     if result.success:
         return format_success_response(

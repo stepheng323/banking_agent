@@ -6,7 +6,7 @@ from pydantic import BaseModel
 from fastapi.responses import Response
 
 from apps.gateway.api.flows.response_helpers import format_error_response, format_success_response
-from shared.services import onboarding_service
+from shared.services.onboarding import account_service, ServiceResult
 
 
 class OnboardingPinInput(BaseModel):
@@ -35,12 +35,12 @@ async def handle_onboarding_pin(
             iv_bytes,
         )
 
-    result = await onboarding_service.complete_onboarding(
+    result = ServiceResult(**await account_service.complete_onboarding(
         flow_token,
         pin=data.pin,
         email=data.email,
         address=data.address,
-    )
+    ))
     
     if result.success:
         return format_success_response(

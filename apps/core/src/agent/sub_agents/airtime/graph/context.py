@@ -3,7 +3,7 @@
 from typing import Optional
 
 from apps.core.src.agent.sub_agents.airtime.extractor import AirtimeEntityExtractor
-from apps.core.src.agent.tools.cache.user_data import UserDataCache
+from shared.cache.user_data import UserDataCache
 from shared.repositories import AccountRepository, BeneficiaryRepository
 from shared.clients.whatsapp_client import WhatsAppClient
 from shared.cache.redis_client import Redis

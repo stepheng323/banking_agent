@@ -3,7 +3,7 @@
 from fastapi.responses import Response
 
 from apps.gateway.api.flows.response_helpers import format_error_response, format_success_response
-from shared.services import onboarding_service
+from shared.services.onboarding import bvn_service, ServiceResult
 
 
 async def handle_bvn_entry(
@@ -33,7 +33,7 @@ async def handle_bvn_entry(
             iv_bytes,
         )
 
-    result = await onboarding_service.initiate_bvn_verification(flow_token, bvn)
+    result = ServiceResult(**await bvn_service.initiate_bvn_verification(flow_token, bvn))
     
     if result.success:
         return format_success_response(
@@ -55,3 +55,4 @@ async def handle_bvn_entry(
         iv_bytes,
         bvn=bvn,
     )
+
