@@ -93,7 +93,6 @@ class AccountLinkingService:
             bank_code = institution.get("bank_code", "")
 
         try:
-            # Update user and create account (without Mono IDs yet)
             with UnitOfWork() as uow:
                 if not uow.users or not uow.accounts:
                     return {"success": False, "error": "Database error."}
@@ -128,7 +127,6 @@ class AccountLinkingService:
 
             await self.session.update_session(flow_token, {"step": OnboardingStep.COMPLETE.value})
 
-            # Background task: Setup Mono customer and mandate
             asyncio.create_task(
                 self._setup_mono_customer_and_mandate(
                     phone_number=phone_number,
@@ -180,14 +178,12 @@ class AccountLinkingService:
             )
             logger.info("mono_customer_created_async", phone=phone_number, customer_id=customer.id)
 
-            # Update user with Mono customer ID
             with UnitOfWork() as uow:
                 if uow.users:
                     user = uow.users.get_by_phone(phone_number)
                     if user:
                         uow.users.update_user(str(user.id), UserUpdate(mono_customer_id=customer.id))
 
-            # Create mandate
             result = await self.mandate.create_mandate(
                 phone_number=phone_number,
                 mono_customer_id=customer.id,

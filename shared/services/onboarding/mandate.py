@@ -84,7 +84,6 @@ class MandateService:
             )
             logger.info("mandate_created", mandate_id=mandate.id, phone=phone_number)
             
-            # Update account with mandate info
             with UnitOfWork() as uow:
                 if uow.accounts:
                     db_account = uow.accounts.get_by_account_id(account_id)
@@ -102,7 +101,6 @@ class MandateService:
                             ],
                         }
             
-            # Invalidate cache
             try:
                 cache = UserDataCache()
                 await cache.invalidate_accounts(phone_number)
@@ -175,14 +173,12 @@ class MandateService:
                             ],
                         }
             
-            # Invalidate cache
             try:
                 cache = UserDataCache()
                 await cache.invalidate_accounts(phone_number)
             except Exception:
                 pass
             
-            # Send auth message
             whatsapp = WhatsAppClient()
             transfer_destinations = mandate.transfer_destinations or []
             auth_message = self.build_mandate_auth_message(

@@ -24,7 +24,6 @@ class ServiceResult:
     error: Optional[str] = None
 
 
-# Create singleton instances for direct use
 _session_manager = SessionManager()
 _mandate_service = MandateService()
 _bvn_service = BvnVerificationService(_session_manager)
@@ -39,7 +38,6 @@ __all__ = [
     "OnboardingSession",
     "OnboardingStep",
     "ServiceResult",
-    # Singleton instances
     "session_manager",
     "mandate_service",
     "bvn_service",
@@ -47,7 +45,6 @@ __all__ = [
 ]
 
 
-# Expose singletons
 session_manager = _session_manager
 mandate_service = _mandate_service
 bvn_service = _bvn_service
