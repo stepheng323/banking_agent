@@ -21,6 +21,7 @@ class SimpleTransferEntities(BaseModel):
     source_bank_name: Optional[str] = Field(default=None, description="Source bank name for internal transfers (e.g., 'Access Bank', 'GTBank')")
     amount: Optional[float] = Field(default=None, description="Transfer amount as numeric value")
     narration: Optional[str] = Field(default=None, description="Transfer description/memo (optional)")
+    transfer_all: Optional[bool] = Field(default=None, description="True if user wants to transfer entire balance ('move all', 'everything', 'empty')")
 
 
 class TransferEntities(BaseModel):

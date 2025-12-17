@@ -245,6 +245,12 @@ async def extract_entities(
         updates["is_internal_transfer"] = True
         debug_log(f"🔄 [EXTRACTION] Internal transfer detected: {entities.source_bank_name} -> {entities.bank_name}")
 
+    # Handle transfer_all (move entire balance)
+    if getattr(entities, 'transfer_all', None) is True:
+        updates["transfer_all"] = True
+        updates["amount"] = None  # Will be resolved from balance during validation
+        debug_log("💰 [EXTRACTION] Transfer all detected - amount will be resolved from balance")
+
     # Debug: Log what updates will be applied
     debug_log(f"🔍 [EXTRACTION] Updates to apply: {updates}")
     
