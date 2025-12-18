@@ -34,6 +34,20 @@ class OrchestratorClassificationService:
         
         text_clean = text.strip().lower()
         
+        # Skip fast-path for complex messages with multiple intents
+        # These should go to LLM for proper classification as 'mixed'
+        transfer_keywords = {"send", "transfer", "pay"}
+        query_keywords = {"balance", "transaction", "history", "spent", "spending"}
+        has_transfer = any(kw in text_clean for kw in transfer_keywords)
+        has_query = any(kw in text_clean for kw in query_keywords)
+        # Also check for "and" which often indicates multiple operations
+        has_conjunction = " and " in text_clean or " then " in text_clean
+        
+        if has_transfer and has_query:
+            return None  # Mixed intent - let LLM handle it
+        if has_transfer and has_conjunction and len(text_clean) > 30:
+            return None  # Likely multiple recipients or operations
+        
         greeting_patterns = {
             "hi", "hello", "hey", "hey there", "hi there", "hello there",
             "good morning", "good afternoon", "good evening", "good night",

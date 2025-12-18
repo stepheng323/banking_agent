@@ -156,16 +156,44 @@ def get_batch_service() -> Optional[Any]:
         
     if _batch_service_instance is None:
         try:
+            from apps.core.src.agent.sub_agents.query.graph import QueryFlowGraph
+            from apps.core.src.agent.sub_agents.account_management.service import AccountManagementService
+            from shared.clients.mono import mono_client
+            from shared.repositories.user_repository import UserRepository
+            
+            llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+            redis_client = RedisClient.get_client()
             whatsapp_client = WhatsAppClient()
             task_queue_service = get_task_queue_service()
             transfer_service = get_transfer_service()
             airtime_service = get_airtime_service()
+            user_cache = UserDataCache(redis_client=redis_client)
+            
+            # Create query graph for executing balance queries after batch
+            query_graph = QueryFlowGraph(
+                llm=llm,
+                mono_client=mono_client,
+                redis_client=redis_client,
+            )
+            
+            # Create account management service
+            account_repo = AccountRepository(db=get_db_session())
+            user_repo = UserRepository(db=get_db_session())
+            account_management_service = AccountManagementService(
+                account_repo=account_repo,
+                user_repo=user_repo,
+                llm=llm,
+                whatsapp_client=whatsapp_client,
+            )
             
             _batch_service_instance = BatchService(
                 whatsapp_client=whatsapp_client,
                 task_queue_service=task_queue_service,
                 transfer_service=transfer_service,
-                airtime_service=airtime_service
+                airtime_service=airtime_service,
+                query_graph=query_graph,
+                user_cache=user_cache,
+                account_management_service=account_management_service,
             )
             print("✅ BatchService instance created")
         except Exception as e:

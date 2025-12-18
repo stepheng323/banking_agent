@@ -10,6 +10,9 @@ from apps.core.src.agent.tools.batch.executor import execute_batch
 if TYPE_CHECKING:
     from apps.core.src.agent.sub_agents.transfer.service import TransferService
     from apps.core.src.agent.sub_agents.airtime.service import AirtimeService
+    from apps.core.src.agent.sub_agents.query.graph import QueryFlowGraph
+    from apps.core.src.agent.sub_agents.account_management.service import AccountManagementService
+    from shared.cache.user_data import UserDataCache
 
 
 class BatchService:
@@ -21,11 +24,17 @@ class BatchService:
         task_queue_service: TaskQueueService,
         transfer_service: "TransferService",
         airtime_service: Optional["AirtimeService"] = None,
+        query_graph: Optional["QueryFlowGraph"] = None,
+        user_cache: Optional["UserDataCache"] = None,
+        account_management_service: Optional["AccountManagementService"] = None,
     ):
         self.whatsapp_client = whatsapp_client
         self.task_queue_service = task_queue_service
         self.transfer_service = transfer_service
         self.airtime_service = airtime_service
+        self.query_graph = query_graph
+        self.user_cache = user_cache
+        self.account_management_service = account_management_service
 
     async def resume_after_pin_verification(
         self,
@@ -57,6 +66,9 @@ class BatchService:
                 task_queue_service=self.task_queue_service,
                 transfer_service=self.transfer_service,
                 airtime_service=self.airtime_service,
+                query_graph=self.query_graph,
+                user_cache=self.user_cache,
+                account_management_service=self.account_management_service,
             )
         )
 

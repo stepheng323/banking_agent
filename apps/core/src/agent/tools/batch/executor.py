@@ -19,6 +19,9 @@ logger = get_logger(__name__)
 if TYPE_CHECKING:
     from apps.core.src.agent.sub_agents.transfer.service import TransferService
     from apps.core.src.agent.sub_agents.airtime.service import AirtimeService
+    from apps.core.src.agent.sub_agents.query.graph import QueryFlowGraph
+    from apps.core.src.agent.sub_agents.account_management.service import AccountManagementService
+    from shared.cache.user_data import UserDataCache
 
 
 async def execute_batch(
@@ -28,6 +31,9 @@ async def execute_batch(
     task_queue_service: TaskQueueService,
     transfer_service: "TransferService",
     airtime_service: Optional["AirtimeService"] = None,
+    query_graph: Optional["QueryFlowGraph"] = None,
+    user_cache: Optional["UserDataCache"] = None,
+    account_management_service: Optional["AccountManagementService"] = None,
 ) -> Dict[str, Any]:
     """
     Execute all tasks in parallel using asyncio.gather().
@@ -107,6 +113,40 @@ async def execute_batch(
         
         summary = _generate_final_summary(tasks_to_execute, completed, failed)
         await whatsapp_client.send_text(phone_number, summary)
+        
+        # Execute remaining non-auth tasks (query, utility, manage_accounts) that were waiting on transfers
+        remaining_tasks = [
+            task for task in planner_output.tasks
+            if task.executor in ("query", "utility", "manage_accounts") and 
+               task_results.get(task.id, {}).get("status") != TaskStatus.COMPLETED.value
+        ]
+        
+        if remaining_tasks and user_cache:
+            # Load user accounts from cache for context
+            user_data = await user_cache.get_all(phone_number)
+            accounts = user_data.get("accounts", []) if user_data else []
+            user_ctx = {"accounts": accounts}
+            
+            for task in remaining_tasks:
+                try:
+                    if task.executor == "query" and query_graph:
+                        query_message = task.instruction or "show balance"
+                        result = await query_graph.run(phone_number, query_message, user_ctx)
+                    elif task.executor == "manage_accounts" and account_management_service:
+                        task_message = task.instruction or "show accounts"
+                        result = await account_management_service.handle_account_management(
+                            phone_number, task_message, user_ctx
+                        )
+                    else:
+                        result = None
+                    
+                    if result:
+                        await whatsapp_client.send_text(phone_number, result)
+                    await task_queue_service.update_task_status(
+                        phone_number, task.id, TaskStatus.COMPLETED, {"result": result}
+                    )
+                except Exception as e:
+                    logger.error(f"[BATCH] Error executing {task.executor} task {task.id}: {e}")
         
         await task_queue_service.clear_task_queue(phone_number)
         await redis_client.delete(f"queue:{phone_number}:execution_state")
@@ -361,11 +401,14 @@ def _format_success_message(task: PlannedTask, result: Dict[str, Any]) -> str:
     if task.executor == "transfer":
         amount = result.get("amount") or (task.parameters.get("amount") if task.parameters else None)
         recipient = result.get("recipient") or (task.parameters.get("recipient") if task.parameters else None)
+        txn_id = result.get("transaction_id", "N/A")
         
         if amount and recipient:
-            return f"✅ Transfer {format_amount(amount)} to {recipient} completed"
+            return f"✅ Transfer successful! ₦{float(amount):,.0f} has been sent to {recipient}. Transaction ID: {txn_id}"
+        elif amount:
+            return f"✅ Transfer successful! ₦{float(amount):,.0f} sent. Transaction ID: {txn_id}"
         else:
-            return "✅ Transfer completed"
+            return f"✅ Transfer completed. Transaction ID: {txn_id}"
     
     elif task.executor == "airtime":
         amount = result.get("amount") or (task.parameters.get("amount") if task.parameters else None)
@@ -432,7 +475,5 @@ def _generate_final_summary(
         
         if total_amount > 0:
             summary += f"\nTotal sent: {format_amount(total_amount)}"
-    
-    summary += "\n\nIs there anything else I can help you with?"
     
     return summary

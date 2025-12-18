@@ -123,6 +123,7 @@ class OrchestratorIntentRouter:
                     acknowledgment = self._generate_task_acknowledgment(planner_output)
                     logger.debug("generated")
                     
+                    # Send acknowledgment directly
                     await self.whatsapp_client.send_text(
                         phone_number, acknowledgment
                     )
@@ -133,14 +134,17 @@ class OrchestratorIntentRouter:
                     )
                     
                     next_task_response = await self.task_planner.handle_next_task(phone_number, text)
-                    if next_task_response:
+                    if next_task_response and next_task_response.strip():
+                        # Send task prompt separately if it's different from acknowledgment
+                        await self.whatsapp_client.send_text(
+                            phone_number, next_task_response
+                        )
                         asyncio.create_task(
                             self.context_manager.save_last_response(
                                 phone_number, next_task_response)
                         )
-                        return next_task_response
-                    else:
-                        return acknowledgment
+                    # Return empty to prevent message_consumer from sending duplicate
+                    return ""
             except Exception as e:
                 logger.error("error_in")
                 traceback.print_exc()

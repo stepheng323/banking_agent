@@ -65,7 +65,7 @@ class OrchestratorFlowCompletionCallback:
     ) -> str:
         """
         Generate summary of all tasks ready for batch authorization.
-        Shows all tasks with resolved account names.
+        Optimized: shows source account once if shared, or per-transaction if different.
         
         Args:
             phone_number: User's phone number
@@ -73,11 +73,7 @@ class OrchestratorFlowCompletionCallback:
         Returns:
             Summary message string
         """
-        from apps.core.src.agent.tools.batch.utils import (
-            requires_authorization,
-            mask_account_number,
-            format_amount
-        )
+        from shared.formatters.transfer import _format_currency_naira, _calculate_transfer_fee
         
         planner_output = await self.task_queue_service.get_task_queue(phone_number)
         if not planner_output:
@@ -86,10 +82,11 @@ class OrchestratorFlowCompletionCallback:
         # Get task results to get resolved account names
         results = await self.task_queue_service.get_task_results(phone_number)
         
-        # Separate auth-required and non-auth tasks
-        auth_tasks = []
-        non_auth_tasks = []
+        # First pass: collect all transfer data and check if source accounts are the same
+        transfers = []
+        source_accounts = set()
         total_amount = 0
+        total_fee = 0
         
         for i, task in enumerate(planner_output.tasks, 1):
             task_result = results.get(task.id, {})
@@ -97,63 +94,88 @@ class OrchestratorFlowCompletionCallback:
             executor = task.executor
             
             if executor == "transfer":
-                # Get resolved account name from result
-                account_resolved = result_data.get("account_resolved") if isinstance(result_data, dict) else None
-                amount = task.parameters.get("amount") if task.parameters else None
-                recipient = task.parameters.get("recipient") if task.parameters else None
-                
+                amount = float(task.parameters.get("amount", 0)) if task.parameters else 0
                 if amount:
-                    total_amount += float(amount)
+                    total_amount += amount
+                    total_fee += _calculate_transfer_fee(amount)
                 
-                # Format task description with resolved account name
-                if account_resolved and isinstance(account_resolved, dict):
-                    account_name = account_resolved.get("account_name", recipient or "Recipient")
-                    if account_name:
-                        account_name = account_name.strip().title()
-                    
-                    account_number = result_data.get("recipient_account", "") if isinstance(result_data, dict) else ""
-                    bank_name = result_data.get("recipient_bank_name", "") if isinstance(result_data, dict) else ""
-                    
-                    # Format with masked account
-                    masked_account = mask_account_number(account_number) if account_number else ""
-                    task_line = f"{i}️⃣ Transfer {format_amount(amount)}\n   To: {account_name}\n   Account: {masked_account}\n   Bank: {bank_name}"
-                else:
-                    recipient_display = (recipient or 'Recipient').strip().title()
-                    task_line = f"{i}️⃣ Transfer {format_amount(amount)} to {recipient_display}"
+                # Get resolved account info
+                account_resolved = result_data.get("account_resolved") if isinstance(result_data, dict) else None
+                recipient_name = (
+                    account_resolved.get("account_name") if account_resolved 
+                    else task.parameters.get("recipient", "Recipient") if task.parameters 
+                    else "Recipient"
+                )
+                recipient_account = result_data.get("recipient_account", "") if isinstance(result_data, dict) else ""
+                recipient_bank = result_data.get("recipient_bank_name", "") if isinstance(result_data, dict) else ""
                 
-                auth_tasks.append(task_line)
+                # Get source account info
+                selected_source = result_data.get("selected_source_account") if isinstance(result_data, dict) else None
+                source_bank = selected_source.get("bank_name", "") if selected_source else ""
+                source_account = selected_source.get("account_number", "") if selected_source else ""
+                
+                # Track unique source accounts
+                if source_account:
+                    source_accounts.add((source_bank, source_account))
+                
+                transfers.append({
+                    "index": i,
+                    "amount": amount,
+                    "recipient_name": recipient_name.title() if recipient_name else "Recipient",
+                    "recipient_bank": recipient_bank.title() if recipient_bank else "",
+                    "recipient_account": recipient_account,
+                    "source_bank": source_bank,
+                    "source_account": source_account,
+                })
             
             elif executor == "airtime":
-                amount = task.parameters.get("amount") if task.parameters else None
-                recipient = task.parameters.get("recipient") if task.parameters else None
+                amount = float(task.parameters.get("amount", 0)) if task.parameters else 0
+                recipient = task.parameters.get("recipient") if task.parameters else "recipient"
                 if amount:
-                    total_amount += float(amount)
-                    task_line = f"{i}️⃣ Airtime {format_amount(amount)} to {recipient or 'recipient'}"
-                else:
-                    task_line = f"{i}️⃣ Airtime purchase"
-                
-                auth_tasks.append(task_line)
-            
+                    total_amount += amount
+                    transfers.append({
+                        "index": i,
+                        "type": "airtime",
+                        "amount": amount,
+                        "recipient": recipient,
+                    })
+        
+        if not transfers:
+            return "Ready to authorize transactions."
+        
+        # Check if all transfers share the same source account
+        same_source = len(source_accounts) == 1
+        shared_source = list(source_accounts)[0] if same_source and source_accounts else None
+        
+        # Build compact summary
+        lines = [f"*Authorize {len(transfers)} Transaction{'s' if len(transfers) > 1 else ''}*"]
+        
+        # Show shared source at top if applicable
+        if same_source and shared_source:
+            source_bank, source_account = shared_source
+            last4 = source_account[-4:] if source_account else "????"
+            lines.append(f"From: {source_bank} (...{last4})")
+        
+        lines.append("")  # blank line
+        
+        for t in transfers:
+            if t.get("type") == "airtime":
+                lines.append(f"{t['index']}. {_format_currency_naira(t['amount'])} → {t['recipient']} (airtime)")
             else:
-                # Non-auth task (queries, etc.)
-                task_desc = self._format_task_description(task)
-                non_auth_tasks.append(f"{i}. {task_desc}")
+                # Compact: amount, recipient name, bank on one line
+                lines.append(f"{t['index']}. {_format_currency_naira(t['amount'])} → *{t['recipient_name']}*")
+                lines.append(f"   {t['recipient_bank']} • {t['recipient_account']}")
+                
+                # Only show per-transaction source if they differ
+                if not same_source and t['source_account']:
+                    last4 = t['source_account'][-4:] if t['source_account'] else "????"
+                    lines.append(f"   From: {t['source_bank']} (...{last4})")
         
-        # Build summary with better formatting
-        task_count = len(auth_tasks) if auth_tasks else len(non_auth_tasks)
-        task_type = "Transfer" if task_count == 1 and planner_output.tasks[0].executor == "transfer" else "Task"
+        # Totals
+        lines.append("")
+        lines.append(f"Total: {_format_currency_naira(total_amount)} + {_format_currency_naira(total_fee)} fee = *{_format_currency_naira(total_amount + total_fee)}*")
         
-        summary = f"📋 Authorize {task_count} {task_type}{'s' if task_count > 1 else ''}\n\n"
-        
-        if auth_tasks:
-            summary += "\n\n".join(auth_tasks)
-        else:
-            summary += "\n".join(non_auth_tasks)
-        
-        if total_amount > 0:
-            summary += f"\n\n{'━' * 25}\n💰 Total: {format_amount(total_amount)}\n{'━' * 25}"
-        
-        return summary
+        return "\n".join(lines)
 
     async def _generate_completion_summary(
         self, phone_number: str
@@ -292,10 +314,12 @@ class OrchestratorFlowCompletionCallback:
             
             # Check if all tasks are collection_complete (ready for batch authorization)
             # Re-check after getting all_done_task_ids to ensure we have the latest status
+            # IMPORTANT: Only check transfer/airtime tasks - query/utility don't have collection phase
+            auth_required_tasks = [t for t in planner_output.tasks if t.executor in ("transfer", "airtime")]
             all_tasks_ready = all(
                 task.id in all_done_task_ids
-                for task in planner_output.tasks
-            )
+                for task in auth_required_tasks
+            ) if auth_required_tasks else False
             
             if is_collection_complete and all_tasks_ready:
                 # All tasks are ready - show summary instead of moving to next task

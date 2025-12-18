@@ -103,6 +103,7 @@ def setup_dependencies():
         transfer_service=agent_transfer_service,
         airtime_service=agent_airtime_service,
         task_queue_service=task_queue_service,
+        query_graph=query_graph,
         completion_callback=None,
     )
 

@@ -3,11 +3,11 @@ from shared.formatters.accounts import get_last4, get_bank_label
 
 
 STATUS_ICONS = {
-    "ready": "✅",
-    "pending": "⏳",
-    "awaiting_authorization": "⏳",
-    "expired": "⚠️",
-    "cancelled": "⚠️",
+    "ready": "✓",
+    "pending": "○",
+    "awaiting_authorization": "○",
+    "expired": "!",
+    "cancelled": "!",
     None: "",
 }
 
@@ -22,7 +22,7 @@ class AccountManagementFormatter:
                 "Say 'link account' to connect your bank."
             )
         
-        lines = ["🏦 *Your Bank Accounts*\n"]
+        lines = ["*Your Bank Accounts*\n"]
         
         for i, account in enumerate(accounts, 1):
             bank_name = get_bank_label(account)
@@ -35,17 +35,13 @@ class AccountManagementFormatter:
                 is_default = getattr(account, "is_default", False)
                 mandate_status = getattr(account, "mandate_status", None)
             
-            default_badge = " ⭐" if is_default else ""
+            default_badge = " (default)" if is_default else ""
             status_icon = STATUS_ICONS.get(mandate_status, "")
+            status_suffix = f" [{status_icon}]" if status_icon else ""
             
-            lines.append(f"{i}. {bank_name} (****{last4}){default_badge} {status_icon}".rstrip())
+            lines.append(f"{i}. {bank_name} (****{last4}){default_badge}{status_suffix}")
         
         lines.append("")
-        lines.append("_✅=ready ⏳=pending ⚠️=action needed_")
-        lines.append("")
-        lines.append("\"set 2 as default\" | \"unlink GTB\"")
+        lines.append("_'set 2 as default' | 'unlink GTB'_")
         
         return "\n".join(lines)
-
-
-
