@@ -19,6 +19,9 @@ logger = get_logger(__name__)
 if TYPE_CHECKING:
     from apps.core.src.agent.sub_agents.transfer.service import TransferService
     from apps.core.src.agent.sub_agents.airtime.service import AirtimeService
+    from apps.core.src.agent.sub_agents.query.graph import QueryFlowGraph
+    from apps.core.src.agent.sub_agents.account_management.service import AccountManagementService
+    from shared.cache.user_data import UserDataCache
 
 
 async def execute_batch(
@@ -28,6 +31,9 @@ async def execute_batch(
     task_queue_service: TaskQueueService,
     transfer_service: "TransferService",
     airtime_service: Optional["AirtimeService"] = None,
+    query_graph: Optional["QueryFlowGraph"] = None,
+    user_cache: Optional["UserDataCache"] = None,
+    account_management_service: Optional["AccountManagementService"] = None,
 ) -> Dict[str, Any]:
     """
     Execute all tasks in parallel using asyncio.gather().
@@ -108,46 +114,39 @@ async def execute_batch(
         summary = _generate_final_summary(tasks_to_execute, completed, failed)
         await whatsapp_client.send_text(phone_number, summary)
         
-        # Execute remaining non-auth tasks (query, utility) that were waiting on transfers
+        # Execute remaining non-auth tasks (query, utility, manage_accounts) that were waiting on transfers
         remaining_tasks = [
             task for task in planner_output.tasks
-            if task.executor in ("query", "utility") and 
+            if task.executor in ("query", "utility", "manage_accounts") and 
                task_results.get(task.id, {}).get("status") != TaskStatus.COMPLETED.value
         ]
         
-        if remaining_tasks:
-            from apps.core.src.agent.sub_agents.query.graph import QueryFlowGraph
-            from shared.clients.mono import mono_client
-            from shared.cache.user_data import UserDataCache
-            from langchain_openai import ChatOpenAI
-            
-            # Create a query graph for executing query tasks
-            llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
-            query_graph = QueryFlowGraph(
-                llm=llm,
-                mono_client=mono_client,
-                redis_client=redis_client,
-            )
-            
-            # Load user accounts from cache for query context
-            user_cache = UserDataCache(redis_client=redis_client)
+        if remaining_tasks and user_cache:
+            # Load user accounts from cache for context
             user_data = await user_cache.get_all(phone_number)
             accounts = user_data.get("accounts", []) if user_data else []
             user_ctx = {"accounts": accounts}
             
             for task in remaining_tasks:
-                if task.executor == "query":
-                    try:
-                        # Build message from task instruction
+                try:
+                    if task.executor == "query" and query_graph:
                         query_message = task.instruction or "show balance"
-                        query_result = await query_graph.run(phone_number, query_message, user_ctx)
-                        if query_result:
-                            await whatsapp_client.send_text(phone_number, query_result)
-                        await task_queue_service.update_task_status(
-                            phone_number, task.id, TaskStatus.COMPLETED, {"result": query_result}
+                        result = await query_graph.run(phone_number, query_message, user_ctx)
+                    elif task.executor == "manage_accounts" and account_management_service:
+                        task_message = task.instruction or "show accounts"
+                        result = await account_management_service.handle_account_management(
+                            phone_number, task_message, user_ctx
                         )
-                    except Exception as e:
-                        logger.error(f"[BATCH] Error executing query task {task.id}: {e}")
+                    else:
+                        result = None
+                    
+                    if result:
+                        await whatsapp_client.send_text(phone_number, result)
+                    await task_queue_service.update_task_status(
+                        phone_number, task.id, TaskStatus.COMPLETED, {"result": result}
+                    )
+                except Exception as e:
+                    logger.error(f"[BATCH] Error executing {task.executor} task {task.id}: {e}")
         
         await task_queue_service.clear_task_queue(phone_number)
         await redis_client.delete(f"queue:{phone_number}:execution_state")
