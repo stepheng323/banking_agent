@@ -96,3 +96,12 @@ class RedisQueue:
         list_len = await self._redis.llen(f"{queue_name}:list") or 0
 
         return zset_len + list_len
+
+    async def publish_flow_event(self, event: "FlowEvent") -> None:
+        """Publish a flow completion event to the flow events queue.
+        
+        Args:
+            event: FlowEvent to publish
+        """
+        from shared.queue.messages import FLOW_EVENTS_QUEUE
+        await self.enqueue_simple(FLOW_EVENTS_QUEUE, event.to_dict())
