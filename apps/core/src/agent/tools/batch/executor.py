@@ -361,11 +361,14 @@ def _format_success_message(task: PlannedTask, result: Dict[str, Any]) -> str:
     if task.executor == "transfer":
         amount = result.get("amount") or (task.parameters.get("amount") if task.parameters else None)
         recipient = result.get("recipient") or (task.parameters.get("recipient") if task.parameters else None)
+        txn_id = result.get("transaction_id", "N/A")
         
         if amount and recipient:
-            return f"✅ Transfer {format_amount(amount)} to {recipient} completed"
+            return f"✅ Transfer successful! ₦{float(amount):,.0f} has been sent to {recipient}. Transaction ID: {txn_id}"
+        elif amount:
+            return f"✅ Transfer successful! ₦{float(amount):,.0f} sent. Transaction ID: {txn_id}"
         else:
-            return "✅ Transfer completed"
+            return f"✅ Transfer completed. Transaction ID: {txn_id}"
     
     elif task.executor == "airtime":
         amount = result.get("amount") or (task.parameters.get("amount") if task.parameters else None)
