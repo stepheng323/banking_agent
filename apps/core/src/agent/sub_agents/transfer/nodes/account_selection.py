@@ -3,11 +3,16 @@
 from apps.core.src.agent.tools.account_selection.node import select_source_account_shared
 from apps.core.src.agent.tools.account_selection.mandate_validator import validate_mandate_status
 from apps.core.src.agent.sub_agents.transfer.state import TransferState
+from apps.core.src.agent.orchestrator.features.response import (
+    ResponseIntent,
+    build_response_context,
+    get_synthesizer,
+)
 
 from .utils import debug_log
 
 
-def _validate_transfer_account(state: TransferState, selected: dict) -> TransferState | None:
+async def _validate_transfer_account(state: TransferState, selected: dict) -> TransferState | None:
     """
     Transfer-specific validation: 
     1. Ensure mandate is ready for debiting
@@ -15,12 +20,20 @@ def _validate_transfer_account(state: TransferState, selected: dict) -> Transfer
     """
     from apps.core.src.agent.sub_agents.transfer.validators import SelfTransferValidator
     
+    synthesizer = get_synthesizer()
+    
     is_valid, error, _ = validate_mandate_status(selected)
     if not is_valid:
+        context = build_response_context(
+            ResponseIntent.MANDATE_REQUIRED,
+            state,
+            error_message=error
+        )
+        response = await synthesizer.synthesize(context)
         return {
             **state,
             "selected_source_account": selected,
-            "response": f"⚠️ {error}",
+            "response": response,
             "llm_reply": None,
         }
     

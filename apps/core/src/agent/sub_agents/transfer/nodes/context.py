@@ -5,6 +5,11 @@ from typing import Any, cast
 from apps.core.src.agent.tools.context import load_user_context_shared
 from apps.core.src.agent.tools.account_selection.mandate_validator import validate_mandate_status
 from apps.core.src.agent.sub_agents.transfer.state import TransferState
+from apps.core.src.agent.orchestrator.features.response import (
+    ResponseIntent,
+    build_response_context,
+    get_synthesizer,
+)
 from shared.cache.redis_client import RedisClient
 from shared.clients.whatsapp_client import WhatsAppClient
 
@@ -36,6 +41,7 @@ async def load_user_context(
             _, error_message, metadata = validate_mandate_status(default_account)
             
             phone_number = state.get("phone_number")
+            synthesizer = get_synthesizer()
             
             # If mandate needs reinitiation, store account_id and send button
             if metadata and metadata.get("needs_reinitiation") and phone_number:
@@ -47,9 +53,16 @@ async def load_user_context(
                     
                     # Send button message for reinitiation
                     whatsapp = WhatsAppClient()
+                    context = build_response_context(
+                        ResponseIntent.MANDATE_REQUIRED,
+                        result,
+                        error_message=error_message
+                    )
+                    response = await synthesizer.synthesize(context)
+                    
                     await whatsapp.send_button(
                         to=phone_number,
-                        body_text=f"⚠️ {error_message}",
+                        body_text=response,
                         buttons=[{"id": "reinitiate_mandate", "title": "Reinitiate"}],
                     )
                     
@@ -60,12 +73,16 @@ async def load_user_context(
                         "response": "",  # Empty - button already sent
                     })
             
+            context = build_response_context(
+                ResponseIntent.MANDATE_REQUIRED,
+                result,
+                error_message=error_message
+            )
+            response = await synthesizer.synthesize(context)
             return cast(TransferState, {
                 **result,
                 "flow_state": "error",
-                "response": f"⚠️ {error_message}",
+                "response": response,
             })
     
     return result
-
-
