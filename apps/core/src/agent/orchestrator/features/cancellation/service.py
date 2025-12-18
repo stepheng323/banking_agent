@@ -13,7 +13,7 @@ from shared.utils.logging import get_logger
 logger = get_logger(__name__)
 
 if TYPE_CHECKING:
-    from apps.core.src.agent.orchestrator.services.task_queue_service import TaskQueueService
+    from shared.services.task_queue import TaskQueueService
 
 
 class OrchestratorCancellationHandler:

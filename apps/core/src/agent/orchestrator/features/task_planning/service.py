@@ -4,8 +4,8 @@ from typing import Optional
 import traceback
 
 from langchain_openai import ChatOpenAI
-from apps.core.src.agent.orchestrator.models.planner import PlannerOutput
-from apps.core.src.agent.orchestrator.services.task_queue_service import TaskQueueService
+from shared.types.planner import PlannerOutput
+from shared.services.task_queue import TaskQueueService
 from apps.core.src.agent.orchestrator.services.task_executor import TaskExecutor
 from apps.core.src.agent.orchestrator.features.task_planning.prompt import PLANNER_SYSTEM_PROMPT, PLANNER_USER_PROMPT_TEMPLATE
 from shared.utils.logging import get_logger

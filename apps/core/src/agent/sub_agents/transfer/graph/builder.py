@@ -25,7 +25,7 @@ from shared.repositories.account_repository import AccountRepository
 from shared.clients.whatsapp_client import WhatsAppClient
 from shared.cache.redis_client import Redis
 from shared.queue.redis_queue import RedisQueue
-from apps.core.src.agent.tools.authorization.service import AuthorizationService
+from shared.services.auth import AuthorizationService
 
 from .routing import route_by_state, route_after_extract
 

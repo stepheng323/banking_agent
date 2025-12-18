@@ -2,8 +2,8 @@
 
 from typing import Optional, Dict, Any, TYPE_CHECKING, Union
 
-from apps.core.src.agent.orchestrator.models.planner import PlannedTask
-from apps.core.src.agent.orchestrator.services.task_queue_service import TaskQueueService
+from shared.types.planner import PlannedTask
+from shared.services.task_queue import TaskQueueService
 from apps.core.src.agent.tools.flow_completion import FlowCompletionCallback
 from shared.types.agent_types import TaskStatus
 from shared.utils.logging import get_logger
