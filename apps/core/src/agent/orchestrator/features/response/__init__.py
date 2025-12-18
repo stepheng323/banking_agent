@@ -6,6 +6,7 @@ Usage:
         ResponseContext,
         ResponseSynthesizer,
         build_response_context,
+        build_clarification_context,
     )
     
     # Build context from state
@@ -22,7 +23,7 @@ Usage:
 from .intent import ResponseIntent
 from .context import ResponseContext
 from .synthesizer import ResponseSynthesizer, get_synthesizer
-from .builder import build_response_context
+from .builder import build_response_context, build_clarification_context
 
 __all__ = [
     "ResponseIntent",
@@ -30,4 +31,6 @@ __all__ = [
     "ResponseSynthesizer",
     "get_synthesizer",
     "build_response_context",
+    "build_clarification_context",
 ]
+

@@ -4,6 +4,12 @@ from typing import Any, Optional
 
 from apps.core.src.agent.tools.validation.service import AsyncValidationService
 from apps.core.src.agent.sub_agents.transfer.state import TransferState
+from apps.core.src.agent.orchestrator.features.response import (
+    ResponseIntent,
+    ResponseContext,
+    build_response_context,
+    get_synthesizer,
+)
 from shared.cache.bank_cache import BankCacheService
 from shared.clients.whatsapp_client import WhatsAppClient
 
@@ -20,10 +26,15 @@ from apps.core.src.agent.sub_agents.transfer.validators import (
 async def validate_amount(state: TransferState) -> TransferState:
     """Validate that amount is present."""
     if not state.get("amount"):
+        # Use Response Synthesizer for unified voice
+        context = build_response_context(ResponseIntent.ASK_AMOUNT, state)
+        synthesizer = get_synthesizer()
+        response = await synthesizer.synthesize(context)
+        
         return {
             **state,
             "flow_state": "collecting_amount",
-            "response": state.get("llm_reply") or "How much should I send?",
+            "response": response,
         }
     return state
 
