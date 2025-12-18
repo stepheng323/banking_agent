@@ -13,6 +13,7 @@ logger = get_logger(__name__)
 if TYPE_CHECKING:
     from apps.core.src.agent.sub_agents.transfer import TransferService
     from apps.core.src.agent.sub_agents.airtime import AirtimeService
+    from apps.core.src.agent.sub_agents.query.graph import QueryFlowGraph
 
 
 class TaskExecutor:
@@ -23,11 +24,13 @@ class TaskExecutor:
         transfer_service: "TransferService",
         airtime_service: "AirtimeService",
         task_queue_service: TaskQueueService,
+        query_graph: Optional["QueryFlowGraph"] = None,
         completion_callback: Optional[FlowCompletionCallback] = None,
     ):
         self.transfer_service = transfer_service
         self.airtime_service = airtime_service
         self.task_queue_service = task_queue_service
+        self.query_graph = query_graph
         self.completion_callback = completion_callback
 
     async def execute_task(
@@ -103,7 +106,11 @@ class TaskExecutor:
                     phone_number, message_to_use, classification_result
                 )
             elif task.executor == "query":
-                result = "Query executor not yet implemented"
+                if self.query_graph:
+                    # Pass empty context - query graph will load from cache if needed
+                    result = await self.query_graph.run(phone_number, message_to_use, {})
+                else:
+                    result = "Query service not available"
                 # For non-async executors, mark as completed immediately
                 await self.task_queue_service.update_task_status(
                     phone_number, task.id, TaskStatus.COMPLETED, {"result": result}

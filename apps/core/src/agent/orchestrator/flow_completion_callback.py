@@ -65,7 +65,7 @@ class OrchestratorFlowCompletionCallback:
     ) -> str:
         """
         Generate summary of all tasks ready for batch authorization.
-        Uses the same format as simple transfers for consistency.
+        Optimized: shows source account once if shared, or per-transaction if different.
         
         Args:
             phone_number: User's phone number
@@ -73,7 +73,7 @@ class OrchestratorFlowCompletionCallback:
         Returns:
             Summary message string
         """
-        from shared.formatters.transfer import format_transfer_summary
+        from shared.formatters.transfer import _format_currency_naira, _calculate_transfer_fee
         
         planner_output = await self.task_queue_service.get_task_queue(phone_number)
         if not planner_output:
@@ -82,8 +82,11 @@ class OrchestratorFlowCompletionCallback:
         # Get task results to get resolved account names
         results = await self.task_queue_service.get_task_results(phone_number)
         
-        summaries = []
+        # First pass: collect all transfer data and check if source accounts are the same
+        transfers = []
+        source_accounts = set()
         total_amount = 0
+        total_fee = 0
         
         for i, task in enumerate(planner_output.tasks, 1):
             task_result = results.get(task.id, {})
@@ -91,9 +94,10 @@ class OrchestratorFlowCompletionCallback:
             executor = task.executor
             
             if executor == "transfer":
-                amount = task.parameters.get("amount") if task.parameters else 0
+                amount = float(task.parameters.get("amount", 0)) if task.parameters else 0
                 if amount:
-                    total_amount += float(amount)
+                    total_amount += amount
+                    total_fee += _calculate_transfer_fee(amount)
                 
                 # Get resolved account info
                 account_resolved = result_data.get("account_resolved") if isinstance(result_data, dict) else None
@@ -105,36 +109,74 @@ class OrchestratorFlowCompletionCallback:
                 recipient_account = result_data.get("recipient_account", "") if isinstance(result_data, dict) else ""
                 recipient_bank = result_data.get("recipient_bank_name", "") if isinstance(result_data, dict) else ""
                 
-                # Use the same formatter as simple transfers
-                summary = format_transfer_summary({
-                    "amount": float(amount or 0),
-                    "recipientName": recipient_name,
-                    "recipientBank": recipient_bank,
-                    "recipientAccount": recipient_account,
-                    "sourceBank": "",  # Will be filled by first account
-                    "sourceAccount": "",
-                    "narration": None,
-                })
+                # Get source account info
+                selected_source = result_data.get("selected_source_account") if isinstance(result_data, dict) else None
+                source_bank = selected_source.get("bank_name", "") if selected_source else ""
+                source_account = selected_source.get("account_number", "") if selected_source else ""
                 
-                # For multiple tasks, add a header
-                if len(planner_output.tasks) > 1:
-                    summaries.append(f"*Transfer {i}:*\n{summary}")
-                else:
-                    summaries.append(summary)
+                # Track unique source accounts
+                if source_account:
+                    source_accounts.add((source_bank, source_account))
+                
+                transfers.append({
+                    "index": i,
+                    "amount": amount,
+                    "recipient_name": recipient_name.title() if recipient_name else "Recipient",
+                    "recipient_bank": recipient_bank.title() if recipient_bank else "",
+                    "recipient_account": recipient_account,
+                    "source_bank": source_bank,
+                    "source_account": source_account,
+                })
             
             elif executor == "airtime":
-                amount = task.parameters.get("amount") if task.parameters else 0
+                amount = float(task.parameters.get("amount", 0)) if task.parameters else 0
                 recipient = task.parameters.get("recipient") if task.parameters else "recipient"
                 if amount:
-                    total_amount += float(amount)
-                    summaries.append(f"*Airtime {i}:* ₦{float(amount):,.0f} to {recipient}")
+                    total_amount += amount
+                    transfers.append({
+                        "index": i,
+                        "type": "airtime",
+                        "amount": amount,
+                        "recipient": recipient,
+                    })
         
-        if len(summaries) > 1:
-            return f"📋 *Authorize {len(summaries)} Transactions*\n\n" + "\n\n".join(summaries)
-        elif summaries:
-            return summaries[0]
-        else:
+        if not transfers:
             return "Ready to authorize transactions."
+        
+        # Check if all transfers share the same source account
+        same_source = len(source_accounts) == 1
+        shared_source = list(source_accounts)[0] if same_source and source_accounts else None
+        
+        # Build optimized summary
+        lines = [f"📋 *Authorize {len(transfers)} Transaction{'s' if len(transfers) > 1 else ''}*\n"]
+        
+        # Show shared source at top if applicable
+        if same_source and shared_source:
+            source_bank, source_account = shared_source
+            last4 = source_account[-4:] if source_account else "????"
+            lines.append(f"From: {source_bank} (...{last4})\n")
+        
+        for t in transfers:
+            if t.get("type") == "airtime":
+                lines.append(f"*{t['index']}. Airtime:* {_format_currency_naira(t['amount'])} to {t['recipient']}")
+            else:
+                fee = _calculate_transfer_fee(t['amount'])
+                total = t['amount'] + fee
+                lines.append(f"*{t['index']}. Transfer:* {_format_currency_naira(t['amount'])}")
+                lines.append(f"   To: *{t['recipient_name']}* ({t['recipient_bank']} - {t['recipient_account']})")
+                
+                # Only show per-transaction source if they differ
+                if not same_source and t['source_account']:
+                    last4 = t['source_account'][-4:] if t['source_account'] else "????"
+                    lines.append(f"   From: {t['source_bank']} (...{last4})")
+                
+                lines.append(f"   Fee: {_format_currency_naira(fee)} | Total: {_format_currency_naira(total)}")
+        
+        # Grand total
+        lines.append(f"\n*Grand Total:* {_format_currency_naira(total_amount + total_fee)}")
+        lines.append("\nTap *Authorize All* to enter your PIN.")
+        
+        return "\n".join(lines)
 
     async def _generate_completion_summary(
         self, phone_number: str
