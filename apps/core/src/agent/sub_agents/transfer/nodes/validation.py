@@ -26,7 +26,6 @@ from apps.core.src.agent.sub_agents.transfer.validators import (
 async def validate_amount(state: TransferState) -> TransferState:
     """Validate that amount is present."""
     if not state.get("amount"):
-        # Use Response Synthesizer for unified voice
         context = build_response_context(ResponseIntent.ASK_AMOUNT, state)
         synthesizer = get_synthesizer()
         response = await synthesizer.synthesize(context)

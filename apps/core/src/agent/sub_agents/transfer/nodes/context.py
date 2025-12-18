@@ -43,7 +43,6 @@ async def load_user_context(
             phone_number = state.get("phone_number")
             synthesizer = get_synthesizer()
             
-            # If mandate needs reinitiation, store account_id and send button
             if metadata and metadata.get("needs_reinitiation") and phone_number:
                 account_id = default_account.get("account_id")
                 if account_id:
@@ -51,7 +50,6 @@ async def load_user_context(
                     pending_key = f"mandate:pending_reinitiation:{phone_number}"
                     await redis.set(pending_key, account_id, ex=300)  # 5 min expiry
                     
-                    # Send button message for reinitiation
                     whatsapp = WhatsAppClient()
                     context = build_response_context(
                         ResponseIntent.MANDATE_REQUIRED,
