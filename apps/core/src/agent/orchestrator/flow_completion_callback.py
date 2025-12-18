@@ -147,34 +147,33 @@ class OrchestratorFlowCompletionCallback:
         same_source = len(source_accounts) == 1
         shared_source = list(source_accounts)[0] if same_source and source_accounts else None
         
-        # Build optimized summary
-        lines = [f"📋 *Authorize {len(transfers)} Transaction{'s' if len(transfers) > 1 else ''}*\n"]
+        # Build compact summary
+        lines = [f"*Authorize {len(transfers)} Transaction{'s' if len(transfers) > 1 else ''}*"]
         
         # Show shared source at top if applicable
         if same_source and shared_source:
             source_bank, source_account = shared_source
             last4 = source_account[-4:] if source_account else "????"
-            lines.append(f"From: {source_bank} (...{last4})\n")
+            lines.append(f"From: {source_bank} (...{last4})")
+        
+        lines.append("")  # blank line
         
         for t in transfers:
             if t.get("type") == "airtime":
-                lines.append(f"*{t['index']}. Airtime:* {_format_currency_naira(t['amount'])} to {t['recipient']}")
+                lines.append(f"{t['index']}. {_format_currency_naira(t['amount'])} → {t['recipient']} (airtime)")
             else:
-                fee = _calculate_transfer_fee(t['amount'])
-                total = t['amount'] + fee
-                lines.append(f"*{t['index']}. Transfer:* {_format_currency_naira(t['amount'])}")
-                lines.append(f"   To: *{t['recipient_name']}* ({t['recipient_bank']} - {t['recipient_account']})")
+                # Compact: amount, recipient name, bank on one line
+                lines.append(f"{t['index']}. {_format_currency_naira(t['amount'])} → *{t['recipient_name']}*")
+                lines.append(f"   {t['recipient_bank']} • {t['recipient_account']}")
                 
                 # Only show per-transaction source if they differ
                 if not same_source and t['source_account']:
                     last4 = t['source_account'][-4:] if t['source_account'] else "????"
                     lines.append(f"   From: {t['source_bank']} (...{last4})")
-                
-                lines.append(f"   Fee: {_format_currency_naira(fee)} | Total: {_format_currency_naira(total)}")
         
-        # Grand total
-        lines.append(f"\n*Grand Total:* {_format_currency_naira(total_amount + total_fee)}")
-        lines.append("\nTap *Authorize All* to enter your PIN.")
+        # Totals
+        lines.append("")
+        lines.append(f"Total: {_format_currency_naira(total_amount)} + {_format_currency_naira(total_fee)} fee = *{_format_currency_naira(total_amount + total_fee)}*")
         
         return "\n".join(lines)
 
