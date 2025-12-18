@@ -45,6 +45,9 @@ class ResponseIntent(Enum):
     SESSION_EXPIRED = "session_expired"
     PIN_FAILED = "pin_failed"
     MAX_ATTEMPTS_EXCEEDED = "max_attempts_exceeded"
+    INVALID_AMOUNT = "invalid_amount"
+    INVALID_PHONE_NUMBER = "invalid_phone_number"
+    INVALID_NETWORK = "invalid_network"
     
     # Flow control intents
     CANCELLED = "cancelled"

@@ -120,6 +120,18 @@ TEMPLATES: dict[ResponseIntent, dict[str, str]] = {
         "en": "Data purchase failed: {error_message}",
         "yo": "Rira data ko sise: {error_message}",
     },
+    ResponseIntent.INVALID_AMOUNT: {
+        "en": "Invalid amount. {error_message}",
+        "yo": "Iye ko tona. {error_message}",
+    },
+    ResponseIntent.INVALID_PHONE_NUMBER: {
+        "en": "Invalid phone number. Please enter a valid Nigerian number (e.g., 08012345678).",
+        "yo": "Nọmba fonu ko to. Jowo tẹ nọmba to tona (fun apẹẹrẹ, 08012345678).",
+    },
+    ResponseIntent.INVALID_NETWORK: {
+        "en": "Invalid network. Please choose from: MTN, Airtel, Glo, or 9mobile.",
+        "yo": "Network ko tona. Jowo yan lati: MTN, Airtel, Glo, tabi 9mobile.",
+    },
     
     # Flow control intents
     ResponseIntent.CANCELLED: {

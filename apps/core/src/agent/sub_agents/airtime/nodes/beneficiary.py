@@ -7,6 +7,12 @@ from shared.utils.serialization import sqlalchemy_to_dict
 
 from apps.core.src.agent.tools.beneficiary.matcher import BeneficiaryMatcher
 from apps.core.src.agent.sub_agents.airtime.state import AirtimeState
+from apps.core.src.agent.orchestrator.features.response import (
+    ResponseIntent,
+    build_response_context,
+    build_clarification_context,
+    get_synthesizer,
+)
 
 from ..graph.utils import debug_log
 
@@ -20,6 +26,7 @@ async def find_beneficiary(
     recipient_phone = state.get("recipient_phone")
     network = state.get("network")
     beneficiaries = state.get("beneficiaries", [])
+    synthesizer = get_synthesizer()
 
     # Filter beneficiaries to only airtime type
     airtime_beneficiaries = []
@@ -49,54 +56,75 @@ async def find_beneficiary(
                 "matched_beneficiary": sqlalchemy_to_dict(single) if hasattr(single, "__table__") else single,
             })
         elif status == "clarify" and candidates:
-            opts = "; ".join([
-                f"{(b.account_name or b.alias)} ({b.bank_name} • {str(b.account_number)[-4:]})"
+            candidates_data = [
+                {
+                    "name": b.account_name or b.alias,
+                    "network": b.bank_name,
+                    "phone_number": str(b.account_number) if b.account_number else "",
+                }
                 for b in candidates
-            ])
+            ]
+            context = build_clarification_context(
+                ResponseIntent.CLARIFY_BENEFICIARY,
+                candidates_data,
+                state,
+                recipient_name=rec_name,
+            )
+            response = await synthesizer.synthesize(context)
             return cast(AirtimeState, {
                 **state,
                 "matched_beneficiary": None,
                 "flow_state": "collecting_phone",
-                "response": f"I found multiple matches for '{rec_name}'. Which one? {opts}",
+                "response": response,
             })
         else:
             if recipient_phone and not network:
+                context = build_response_context(ResponseIntent.ASK_NETWORK, state)
+                response = await synthesizer.synthesize(context)
                 return cast(AirtimeState, {
                     **state,
                     "matched_beneficiary": None,
                     "flow_state": "collecting_phone",
-                    "response": "Which network is that for? (MTN, Airtel, Glo, or 9mobile)",
+                    "response": response,
                 })
             else:
+                context = build_response_context(ResponseIntent.ASK_PHONE_NUMBER, state)
+                response = await synthesizer.synthesize(context)
                 return cast(AirtimeState, {
                     **state,
                     "matched_beneficiary": None,
                     "flow_state": "collecting_phone",
-                    "response": "Please provide the phone number and network (MTN, Airtel, Glo, or 9mobile).",
+                    "response": response,
                 })
 
     if recipient_phone and not network:
+        context = build_response_context(ResponseIntent.ASK_NETWORK, state)
+        response = await synthesizer.synthesize(context)
         return cast(AirtimeState, {
             **state,
             "matched_beneficiary": None,
             "flow_state": "collecting_phone",
-            "response": "Which network is that for? (MTN, Airtel, Glo, or 9mobile)",
+            "response": response,
         })
 
     if network and not recipient_phone:
+        context = build_response_context(ResponseIntent.ASK_PHONE_NUMBER, state)
+        response = await synthesizer.synthesize(context)
         return cast(AirtimeState, {
             **state,
             "matched_beneficiary": None,
             "flow_state": "collecting_phone",
-            "response": "What is the phone number?",
+            "response": response,
         })
 
     if not recipient_phone or not network:
+        context = build_response_context(ResponseIntent.ASK_PHONE_NUMBER, state)
+        response = await synthesizer.synthesize(context)
         return cast(AirtimeState, {
             **state,
             "matched_beneficiary": None,
             "flow_state": "collecting_phone",
-            "response": "Please provide the phone number and network (MTN, Airtel, Glo, or 9mobile).",
+            "response": response,
         })
 
     matched_beneficiary = state.get("matched_beneficiary")
