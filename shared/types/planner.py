@@ -12,7 +12,7 @@ class PlannedTask(BaseModel):
 
     id: str
     action: str
-    executor: Literal["query", "transfer", "airtime", "data", "utility", "system", "tool"]
+    executor: Literal["query", "transfer", "airtime", "data", "utility", "system", "tool", "manage_accounts"]
     instruction: str
     description: Optional[str] = None
     parameters: Dict[str, Any] = Field(default_factory=dict)

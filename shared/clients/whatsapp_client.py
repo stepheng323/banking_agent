@@ -109,9 +109,27 @@ class WhatsAppClient:
     def _get_url(self) -> str:
         return f"{GRAPH_API_BASE}/{self.phone_number_id}/messages"
 
-    async def send_text(self, to: str, text: str, preview_url: bool = False) -> Dict[str, Any]:
-        """Send a text message to a WhatsApp number."""
+    async def send_text(
+        self, 
+        to: str, 
+        text: str, 
+        preview_url: bool = False, 
+        message_id: str | None = None
+    ) -> Dict[str, Any]:
+        """Send a text message to a WhatsApp number.
+        
+        Args:
+            to: Recipient phone number
+            text: Message content
+            preview_url: Whether to show URL preview
+            message_id: If provided, send typing indicator before the message
+        """
         url = self._get_url()
+        
+        # Send typing indicator before the message if we have a message_id
+        if message_id:
+            await self.send_typing_indicator(message_id)
+            await asyncio.sleep(0.2)  # Brief delay for typing to show
 
         payload = {
             "messaging_product": "whatsapp",

@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from typing import Optional, Any
 
 from apps.core.src.agent.orchestrator.models.classification import ClassificationResult
-from apps.core.src.agent.orchestrator.models.planner import PlannerOutput
+from shared.types.planner import PlannerOutput
 
 
 @dataclass

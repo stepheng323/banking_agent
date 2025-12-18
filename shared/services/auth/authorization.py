@@ -210,4 +210,3 @@ class AuthorizationService:
             )
         except (json.JSONDecodeError, KeyError):
             return None
-

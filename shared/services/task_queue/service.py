@@ -5,8 +5,8 @@ import time
 from typing import Optional, List, Dict, Any
 
 from shared.types.agent_types import TaskStatus
+from shared.types.planner import PlannerOutput, PlannedTask
 from shared.cache.redis_client import RedisClient
-from apps.core.src.agent.orchestrator.models.planner import PlannerOutput, PlannedTask
 
 
 class TaskQueueService:

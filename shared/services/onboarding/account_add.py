@@ -9,8 +9,8 @@ from shared.cache.user_data import UserDataCache
 from shared.models import CreateAccount
 from shared.repositories.unit_of_work import UnitOfWork
 from shared.utils.logging import get_logger
-from shared.services.onboarding import session_manager, mandate_service
-from shared.services.onboarding.session import OnboardingStep
+from shared.services.onboarding.session import SessionManager, OnboardingStep
+from shared.services.onboarding.mandate import MandateService
 
 logger = get_logger(__name__)
 
@@ -18,9 +18,15 @@ logger = get_logger(__name__)
 class AccountAddService:
     """Handles adding new accounts to existing users (post-onboarding)."""
     
-    def __init__(self):
-        self.session = session_manager
-        self.mandate = mandate_service
+    def __init__(self, session_manager: SessionManager = None, mandate_service: MandateService = None):
+        # Import here to avoid circular imports during module init
+        if session_manager is None or mandate_service is None:
+            from shared.services.onboarding import session_manager as sm, mandate_service as ms
+            self.session = session_manager or sm
+            self.mandate = mandate_service or ms
+        else:
+            self.session = session_manager
+            self.mandate = mandate_service
     
     async def add_account(self, flow_token: str, account_id: Optional[str] = None) -> dict:
         """

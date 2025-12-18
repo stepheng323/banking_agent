@@ -2,7 +2,6 @@
 
 import asyncio
 import json
-import traceback
 from typing import Dict, Any, Optional
 
 from shared.clients.whatsapp_client import WhatsAppClient
@@ -50,8 +49,6 @@ class BeneficiarySuggestionService:
         try:
             with UnitOfWork() as uow:
                 if not uow.users or not uow.transactions:
-                    print(
-                        f"DEBUG suggest_beneficiary ({beneficiary_type}): required repos missing (users or transactions)")
                     return
 
                 user = uow.users.get_by_phone(phone_number)
@@ -70,8 +67,6 @@ class BeneficiarySuggestionService:
                     recipient_name = recipient_data.get("name", "")
 
                     if not account_number or not bank_code:
-                        print(
-                            f"DEBUG suggest_beneficiary (transfer): missing fields account_number={account_number}, bank_code={bank_code}")
                         return
 
                     if has_beneficiary_repo:
@@ -79,13 +74,8 @@ class BeneficiarySuggestionService:
                             exists_in_beneficiaries = not uow.beneficiaries.should_suggest_beneficiary(
                                 user_id, account_number, bank_code, beneficiary_type="transfer"
                             )
-                        except Exception as e:
-                            print(
-                                f"DEBUG suggest_beneficiary (transfer): error in should_suggest_beneficiary: {e}")
+                        except Exception:
                             exists_in_beneficiaries = False
-
-                    print(
-                        f"DEBUG suggest_beneficiary (transfer): user_id={user_id}, acct={account_number}, bank_code={bank_code}, has_repo={has_beneficiary_repo}, exists_in_beneficiaries={exists_in_beneficiaries}")
 
                     if has_beneficiary_repo and not exists_in_beneficiaries:
                         if transaction_id:
@@ -96,8 +86,6 @@ class BeneficiarySuggestionService:
                                     transaction, beneficiary_suggested=True
                                 )
                                 uow.commit()
-                                print(
-                                    f"DEBUG suggest_beneficiary (transfer): marked transaction {transaction_id} beneficiary_suggested=True")
 
                         suggestion_key = f"user:{phone_number}:beneficiary_suggestion"
                         masked_acct = f"…{str(account_number)[-4:]}"
@@ -137,8 +125,6 @@ class BeneficiarySuggestionService:
                     recipient_name = recipient_data.get("name", "")
 
                     if not recipient_phone or not network:
-                        print(
-                            f"DEBUG suggest_beneficiary ({beneficiary_type}): missing fields phone={recipient_phone}, network={network}")
                         return
 
                     if has_beneficiary_repo:
@@ -147,14 +133,8 @@ class BeneficiarySuggestionService:
                             exists_in_beneficiaries = not uow.beneficiaries.should_suggest_airtime_beneficiary(
                                 user_id, recipient_phone, network
                             )
-                        except Exception as e:
-                            print(
-                                f"DEBUG suggest_beneficiary ({beneficiary_type}): error in should_suggest_airtime_beneficiary: {e}")
-                            traceback.print_exc()
+                        except Exception:
                             exists_in_beneficiaries = False
-
-                    print(
-                        f"DEBUG suggest_beneficiary ({beneficiary_type}): user_id={user_id}, phone={recipient_phone}, network={network}, has_repo={has_beneficiary_repo}, exists_in_beneficiaries={exists_in_beneficiaries}")
 
                     if has_beneficiary_repo and not exists_in_beneficiaries:
                         if transaction_id:
@@ -165,8 +145,6 @@ class BeneficiarySuggestionService:
                                     transaction, beneficiary_suggested=True
                                 )
                                 uow.commit()
-                                print(
-                                    f"DEBUG suggest_beneficiary ({beneficiary_type}): marked transaction {transaction_id} beneficiary_suggested=True")
 
                         suggestion_key = f"user:{phone_number}:beneficiary_suggestion"
                         masked_phone = f"…{recipient_phone[-4:]}" if len(recipient_phone) >= 4 else recipient_phone

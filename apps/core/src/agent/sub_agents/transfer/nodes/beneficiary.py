@@ -26,18 +26,10 @@ async def find_beneficiary(
     bank_code = state.get("recipient_bank_code")
     bank_name = state.get("recipient_bank_name")
     beneficiaries = state.get("beneficiaries", [])
-    
-    # Debug logging
-    logger.debug("Beneficiary check input", rec_name=rec_name, acct_number=acct_number, bank_code=bank_code, bank_name=bank_name)
 
-    # CRITICAL FIX: If account and bank are already provided, skip beneficiary matching
-    # This prevents re-asking for account details when user has already provided them
+    # If account and bank are already provided, skip beneficiary matching
     if acct_number and (bank_code or bank_name):
-        logger.debug("Account and bank already provided, skipping beneficiary matching")
-        # Account and bank are present, no need to match beneficiaries
-        # Just ensure we have the required fields and return state
-        if acct_number and (bank_code or bank_name):
-            return state
+        return state
 
     if rec_name and not (acct_number and (bank_code or bank_name)):
         beneficiaries_models = [

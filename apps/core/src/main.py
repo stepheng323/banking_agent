@@ -76,15 +76,16 @@ async def lifespan(_app: FastAPI):
         except Exception as e:
             logger.warning("Bank cache warmup warning", error=str(e))
 
-    message_consumer, transaction_consumer = setup_dependencies()
+    message_consumer, transaction_consumer, flow_event_consumer = setup_dependencies()
     asyncio.create_task(message_consumer.start())
     logger.info("Message consumer started in background")
     asyncio.create_task(transaction_consumer.start())
     logger.info("Transaction consumer started in background")
+    asyncio.create_task(flow_event_consumer.start())
+    logger.info("Flow event consumer started in background")
 
     yield
 
-    print("\n")     
     logger.info("Shutting down Core Banking Service...")
 
     if payment_provider:
@@ -95,6 +96,7 @@ async def lifespan(_app: FastAPI):
 
     message_consumer.stop()
     transaction_consumer.stop()
+    flow_event_consumer.stop()
     await asyncio.sleep(0.5)
     logger.info("Services stopped")
 

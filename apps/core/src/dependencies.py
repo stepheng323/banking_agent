@@ -16,6 +16,7 @@ from apps.core.src.agent.orchestrator.services import ConversationResponder, Tas
 from apps.core.src.agent.sub_agents.transfer import TransferService as AgentTransferService
 from apps.core.src.agent.sub_agents.airtime import AirtimeService
 from apps.core.src.queue_consumers import MessageConsumer, TransactionConsumer
+from apps.core.src.queue_consumers.flow_event_consumer import FlowEventConsumer
 from apps.core.src.agent.sub_agents.onboarding.executor import OnboardingExecutor
 from apps.core.src.agent.sub_agents.onboarding.service import OnboardingService
 from apps.core.src.agent.sub_agents.transfer.executor import TransferExecutor
@@ -152,4 +153,12 @@ def setup_dependencies():
         airtime_executor=airtime_executor,
     )
 
-    return message_consumer, transaction_consumer
+    # Flow event consumer for handling PIN verification events from gateway
+    flow_event_consumer = FlowEventConsumer(
+        redis_queue=redis_queue,
+        transfer_service=agent_transfer_service,
+        airtime_service=agent_airtime_service,
+        batch_service=None,  # Batch service created on-demand via BatchService
+    )
+
+    return message_consumer, transaction_consumer, flow_event_consumer

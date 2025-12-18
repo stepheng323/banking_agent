@@ -5,12 +5,12 @@ from typing import List, Dict, Any, Optional, TYPE_CHECKING
 
 from shared.cache.redis_client import RedisClient
 from shared.clients.whatsapp_client import WhatsAppClient
-from apps.core.src.agent.orchestrator.services.task_queue_service import TaskQueueService
+from shared.services.task_queue import TaskQueueService
 from apps.core.src.agent.tools.batch.utils import (
     ExecutionState,
     format_amount,
 )
-from apps.core.src.agent.orchestrator.models.planner import PlannedTask
+from shared.types.planner import PlannedTask
 from shared.types.agent_types import TaskStatus
 from shared.utils.logging import get_logger
 

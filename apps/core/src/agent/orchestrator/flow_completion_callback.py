@@ -5,7 +5,7 @@ from typing import Any, TYPE_CHECKING
 if TYPE_CHECKING:
     from apps.core.src.agent.orchestrator.orchestrator import OrchestratorAgent
 
-from apps.core.src.agent.orchestrator.services.task_queue_service import TaskQueueService
+from shared.services.task_queue import TaskQueueService
 from shared.types.agent_types import TaskStatus
 from shared.cache.redis_client import RedisClient
 from shared.config import settings
