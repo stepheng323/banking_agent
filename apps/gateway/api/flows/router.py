@@ -13,9 +13,6 @@ from shared.utils import encrypt_flow_response
 from apps.gateway.api.flows.dependencies import (
     get_redis_queue,
     get_whatsapp_client,
-    get_airtime_service,
-    get_transfer_service,
-    get_batch_service,
 )
 from apps.gateway.api.flows.handlers.account_selection_handler import handle_account_selection, AccountSelectionInput
 from apps.gateway.api.flows.handlers.bvn_handler import handle_bvn_entry
@@ -32,14 +29,13 @@ router = APIRouter()
 async def flow_webhook(
     req: Request,
     whatsapp_client: WhatsAppClient = Depends(get_whatsapp_client),
-    queue: RedisQueue = Depends(get_redis_queue),
-    airtime_service = Depends(get_airtime_service),
-    transfer_service = Depends(get_transfer_service),
-    batch_service = Depends(get_batch_service),
+    redis_queue: RedisQueue = Depends(get_redis_queue),
 ):
     """
     Handle WhatsApp Flow data exchange.
     This is called when user interacts with flow screens or for health checks.
+    
+    Note: Agent services are now called via Redis queue events, not directly.
     """
     try:
         processed_request, error_response = await process_flow_request(req)
@@ -107,6 +103,7 @@ async def flow_webhook(
             )
 
         elif screen == "Pin":
+            # Transaction PIN handler now uses queue events for agent calls
             return await handle_transaction_pin(
                 data,
                 flow_token or "",
@@ -114,9 +111,7 @@ async def flow_webhook(
                 aes_key_bytes or b"",
                 iv_bytes or b"",
                 whatsapp_client,
-                transfer_service=transfer_service,
-                airtime_service=airtime_service,
-                batch_service=batch_service,
+                redis_queue=redis_queue,
             )
 
         print(f" 🏥 Health check (unknown screen: {screen})")

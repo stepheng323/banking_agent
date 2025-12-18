@@ -1,27 +1,22 @@
-"""Unified PIN handler for all transaction types (transfer, airtime, data, batch)."""
+"""Unified PIN handler for all transaction types (transfer, airtime, data, batch).
 
-from typing import Any, Dict, Optional, TYPE_CHECKING
+This handler:
+1. Validates and verifies PIN using shared.services.auth
+2. Publishes a FlowEvent to the queue for core to handle
+3. Returns success/error response to WhatsApp Flow
+"""
+
+from typing import Any, Dict
 
 from fastapi.responses import Response
 
 from shared.cache.redis_client import RedisClient
 from shared.clients.whatsapp_client import WhatsAppClient
-from apps.core.src.agent.tools.authorization.service import AuthorizationService
+from shared.services.auth import AuthorizationService
+from shared.queue.redis_queue import RedisQueue
+from shared.queue.messages import FlowEvent, FlowEventType, FLOW_EVENTS_QUEUE
 from apps.gateway.api.flows.response_helpers import format_error_response, format_success_response
-
-if TYPE_CHECKING:
-    from apps.core.src.agent.sub_agents.transfer.service import TransferService
-    from apps.core.src.agent.sub_agents.airtime.service import AirtimeService
-    from apps.core.src.agent.tools.batch.service import BatchService
-else:
-    try:
-        from apps.core.src.agent.sub_agents.transfer.service import TransferService
-        from apps.core.src.agent.sub_agents.airtime.service import AirtimeService
-        from apps.core.src.agent.tools.batch.service import BatchService
-    except ImportError:
-        TransferService = None      
-        AirtimeService = None   
-        BatchService = None
+from apps.gateway.core.config import settings
 
 
 async def handle_transaction_pin(
@@ -31,15 +26,13 @@ async def handle_transaction_pin(
     aes_key_bytes: bytes,
     iv_bytes: bytes,
     whatsapp_client: WhatsAppClient,
-    transfer_service: Optional["TransferService"] = None,
-    airtime_service: Optional["AirtimeService"] = None,
-    batch_service: Optional["BatchService"] = None,
+    redis_queue: RedisQueue = None,
 ) -> Response:
     """
     Unified PIN handler for all transaction types.
 
-    Validates PIN, verifies against user's stored PIN, stores result in Redis,
-    and resumes appropriate graph execution.
+    Validates PIN, verifies against user's stored PIN, and publishes
+    a FlowEvent for core to handle the resume.
 
     Args:
         data: Flow data containing PIN
@@ -48,9 +41,7 @@ async def handle_transaction_pin(
         aes_key_bytes: AES key for encryption
         iv_bytes: IV for encryption
         whatsapp_client: WhatsApp client instance
-        transfer_service: Optional TransferService instance
-        airtime_service: Optional AirtimeService instance
-        batch_service: Optional BatchService instance
+        redis_queue: RedisQueue for publishing events
     """
     pin = data.get("pin")
 
@@ -63,7 +54,7 @@ async def handle_transaction_pin(
             iv_bytes,
         )
 
-
+    # Parse flow token to determine transaction type
     if not flow_token or not flow_token.startswith("transaction-pin-"):
         if flow_token and flow_token.startswith("batch-auth-"):
             transaction_type = "batch"
@@ -90,11 +81,11 @@ async def handle_transaction_pin(
             )
     else:
         idem_key = flow_token.replace("transaction-pin-", "")
-        transaction_type = None  
-  
+        transaction_type = None
 
     redis_client = RedisClient.get_client()
     
+    # Get phone number from Redis
     if transaction_type == "batch":
         parts = flow_token.split("-")
         if len(parts) >= 3:
@@ -118,6 +109,7 @@ async def handle_transaction_pin(
             iv_bytes,
         )
 
+    # Verify PIN using shared authorization service
     authorization_service = AuthorizationService(redis_client=redis_client)
 
     auth_result = await authorization_service.verify_pin(
@@ -151,53 +143,28 @@ async def handle_transaction_pin(
             iv_bytes,
         )
 
-
+    # PIN verified! Publish event for core to handle resume
     try:
-        response_message = None
+        if redis_queue is None:
+            redis_queue = RedisQueue(redis_url=settings.redis_url)
         
-        service_map = {
-            "transfer": transfer_service,
-            "airtime": airtime_service,
-            "batch": batch_service
-        }
+        flow_event = FlowEvent(
+            event_type=FlowEventType.PIN_VERIFIED,
+            phone_number=phone_number,
+            flow_type=transaction_type,
+            idempotency_key=idem_key,
+            success=True,
+        )
+        await redis_queue.publish_flow_event(flow_event)
         
-        service = service_map.get(transaction_type)
-        
-        if transaction_type == "transfer" or transaction_type == "airtime":
-            if service and hasattr(service, "graph") and hasattr(service.graph, "resume_after_pin_verification"):
-                try:
-                    response_message = await service.graph.resume_after_pin_verification(
-                        phone_number, True, None
-                    )
-                except Exception:
-                    import traceback
-                    traceback.print_exc()
-                    if transaction_type == "airtime":
-                        response_message = f"{transaction_type.capitalize()} transaction authorized. Processing your request..."
-                    else:
-                        raise
-            else:
-                raise ValueError(f"Service for {transaction_type} not properly initialized")
-                
-        elif transaction_type == "batch":
-            if service and hasattr(service, "resume_after_pin_verification"):
-                response_message = await service.resume_after_pin_verification(
-                    phone_number, True, None
-                )
-            else:
-                raise ValueError("Batch service not available")
-                
-        else:
-            return format_error_response(
-                "Pin",
-                f"Unsupported transaction type: {transaction_type}",
-                request_was_encrypted,
-                aes_key_bytes,
-                iv_bytes,
-            )
-
+        # Send immediate acknowledgment
+        response_message = f"{transaction_type.capitalize()} transaction authorized. Processing your request..."
+        await whatsapp_client.send_text(
+            to=phone_number,
+            text=response_message,
+        )
     except Exception as e:
-        print(f"Error processing transaction: {e}")
+        print(f"Error publishing flow event: {e}")
         import traceback
         traceback.print_exc()
         return format_error_response(
@@ -207,20 +174,6 @@ async def handle_transaction_pin(
             aes_key_bytes,
             iv_bytes,
         )
-
-    if not response_message or not response_message.strip():
-        response_message = f"{transaction_type.capitalize()} transaction authorized. Processing your request..."
-
-    if response_message and response_message.strip():
-        try:
-            await whatsapp_client.send_text(
-                to=phone_number,
-                text=response_message,
-            )
-        except Exception as e:
-            print(f"Error sending response: {e}")
-            import traceback
-            traceback.print_exc()
 
     return format_success_response(
         "SUCCESS",
