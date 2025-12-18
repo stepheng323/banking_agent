@@ -26,26 +26,10 @@ async def find_beneficiary(
     bank_code = state.get("recipient_bank_code")
     bank_name = state.get("recipient_bank_name")
     beneficiaries = state.get("beneficiaries", [])
-    
-    # Debug logging
-    logger.info(
-        "beneficiary_check_input", 
-        rec_name=rec_name, 
-        acct_number=acct_number, 
-        bank_code=bank_code, 
-        bank_name=bank_name,
-        beneficiaries_count=len(beneficiaries),
-        beneficiaries_names=[b.get('account_name') or b.get('alias') if isinstance(b, dict) else getattr(b, 'account_name', None) or getattr(b, 'alias', None) for b in beneficiaries[:5]]
-    )
 
-    # CRITICAL FIX: If account and bank are already provided, skip beneficiary matching
-    # This prevents re-asking for account details when user has already provided them
+    # If account and bank are already provided, skip beneficiary matching
     if acct_number and (bank_code or bank_name):
-        logger.debug("Account and bank already provided, skipping beneficiary matching")
-        # Account and bank are present, no need to match beneficiaries
-        # Just ensure we have the required fields and return state
-        if acct_number and (bank_code or bank_name):
-            return state
+        return state
 
     if rec_name and not (acct_number and (bank_code or bank_name)):
         beneficiaries_models = [
@@ -54,14 +38,6 @@ async def find_beneficiary(
         ]
         status, single, candidates = matcher.match(
             rec_name, beneficiaries_models)
-        
-        logger.info(
-            "beneficiary_match_result",
-            rec_name=rec_name,
-            status=status,
-            single_name=single.account_name if single else None,
-            candidates_count=len(candidates) if candidates else 0
-        )
 
         if status == "single" and single:
             return {

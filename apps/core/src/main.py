@@ -86,7 +86,6 @@ async def lifespan(_app: FastAPI):
 
     yield
 
-    print("\n")     
     logger.info("Shutting down Core Banking Service...")
 
     if payment_provider:

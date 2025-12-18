@@ -59,8 +59,11 @@ async def is_cancellation_intent(
                 classification_result.is_cancellation is True
             )
             if is_cancel:
-                print(
-                    f"✅ Cancellation detected via LLM classification (intent={classification_result.intent}, confidence={classification_result.confidence})")
+                logger.debug(
+                    "cancellation_detected_llm",
+                    intent=classification_result.intent,
+                    confidence=classification_result.confidence
+                )
                 return True
 
     message_lower = message.lower().strip()
@@ -73,7 +76,7 @@ async def is_cancellation_intent(
     keyword_match = any(
         keyword in message_lower for keyword in cancellation_keywords)
     if keyword_match:
-        print("""✅ Cancellation detected via keyword matching (fallback)""")
+        logger.debug("cancellation_detected_keyword")
     return keyword_match
 
 
@@ -129,8 +132,7 @@ async def cleanup_transaction_redis_keys(
     if keys_to_delete:
         try:
             deleted = await redis_client.delete(*keys_to_delete)
-            print(
-                f"✅ Cancellation ({transaction_type}): Cleared {deleted} Redis keys")
+            logger.debug("cancellation_redis_cleanup", transaction_type=transaction_type, deleted_count=deleted)
             return deleted
         except Exception as e:
             logger.error("error_cleaning_up_redis")
