@@ -1,6 +1,8 @@
 """Shared account selection node for all flows."""
 
-from typing import Callable, Optional, TypeVar, Dict, cast, TYPE_CHECKING
+import asyncio
+import inspect
+from typing import Callable, Optional, TypeVar, Dict, cast, TYPE_CHECKING, Any, Coroutine, Union
 
 from apps.core.src.agent.tools.account_selection.service import AccountSelectionService
 
@@ -10,11 +12,13 @@ if TYPE_CHECKING:
 
 StateType = TypeVar('StateType')
 
+# Validator can be sync or async
+ValidatorFunc = Callable[[StateType, Dict], Union[Optional[StateType], Coroutine[Any, Any, Optional[StateType]]]]
+
 
 async def select_source_account_shared(
     state: StateType,
-    validator: Optional[Callable[[StateType, Dict],
-                                 Optional[StateType]]] = None,
+    validator: Optional[ValidatorFunc] = None,
 ) -> StateType:
     """
     Shared account selection node for all flows.
@@ -22,7 +26,8 @@ async def select_source_account_shared(
     Args:
         state: Flow state (TransferState, AirtimeState, etc.)
         validator: Optional flow-specific validator function that takes (state, selected_account)
-                   and returns updated state if validation fails, or None if validation passes
+                   and returns updated state if validation fails, or None if validation passes.
+                   Can be sync or async.
     """
     accounts = state.get("accounts", [])
     profile = state.get("user_profile", {})
@@ -40,7 +45,12 @@ async def select_source_account_shared(
 
     if selected is not None:
         if validator:
-            validation_result = validator(state, selected)
+            # Handle both sync and async validators
+            result = validator(state, selected)
+            if asyncio.iscoroutine(result):
+                validation_result = await result
+            else:
+                validation_result = result
             if validation_result is not None:
                 return validation_result
 
