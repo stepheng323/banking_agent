@@ -273,10 +273,12 @@ class OrchestratorFlowCompletionCallback:
             
             # Check if all tasks are collection_complete (ready for batch authorization)
             # Re-check after getting all_done_task_ids to ensure we have the latest status
+            # IMPORTANT: Only check transfer/airtime tasks - query/utility don't have collection phase
+            auth_required_tasks = [t for t in planner_output.tasks if t.executor in ("transfer", "airtime")]
             all_tasks_ready = all(
                 task.id in all_done_task_ids
-                for task in planner_output.tasks
-            )
+                for task in auth_required_tasks
+            ) if auth_required_tasks else False
             
             if is_collection_complete and all_tasks_ready:
                 # All tasks are ready - show summary instead of moving to next task
