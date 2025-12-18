@@ -68,7 +68,7 @@ class MessageConsumer:
         )
 
         if response and response.strip():
-            await self.whatsapp_client.send_text(phone_number, response)
+            await self.whatsapp_client.send_text(phone_number, response, message_id=message.message_id)
             
         return {"status": "success", "response": response}
     
