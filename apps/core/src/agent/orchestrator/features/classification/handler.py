@@ -33,7 +33,7 @@ class ClassificationHandler(MessageHandler):
             classification_context["conversationState"] = context.conversation_state
         
         if context.suggestion_context:
-            classification_context["suggestionContext"] = context.suggestion_context
+            classification_context["pendingBeneficiarySuggestion"] = context.suggestion_context
         
         result = await self.classification_service.classify(
             context.text,
