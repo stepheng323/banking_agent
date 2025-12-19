@@ -65,9 +65,12 @@ async def update_conversation_state(phone_number: str, state: AirtimeState) -> N
             return
 
         should_save = False
+        amount = state.get("amount")
+        
         if (airtime_status == "pending" or
             (flow_state not in ("extracting", "error", None) and active_flow == "airtime") or
-                idem_key):
+            idem_key or
+            (flow_state == "extracting" and amount)):  # Save during extracting if we have amount
             should_save = True
 
         if should_save:

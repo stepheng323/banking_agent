@@ -104,9 +104,13 @@ async def update_conversation_state(phone_number: str, state: TransferState) -> 
         # 1. Transfer is pending (waiting for PIN)
         # 2. Flow state indicates active transaction (not just extracting)
         # 3. Has idempotency key (transaction initiated)
+        # 4. Has amount during extracting (for mid-flow interrupt resume context)
+        amount = state.get("amount")
+        
         if (transfer_status == "pending" or
             (flow_state not in ("extracting", "error", None) and active_flow == "transfer") or
-                idem_key):
+            idem_key or
+            (flow_state == "extracting" and amount)):  # Save during extracting if we have amount
             should_save = True
 
         if should_save:
