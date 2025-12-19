@@ -123,7 +123,10 @@ class TransferFlowGraph:
                 whatsapp_client=self.whatsapp_client,
                 redis_client=self.redis_client,
                 queue=self.queue,
-            ).compile(checkpointer=self._checkpointer)
+            ).compile(
+                checkpointer=self._checkpointer,
+                interrupt_before=["authorize"],  # Pause before authorize, wait for PIN
+            )
 
     async def run(
         self,
@@ -245,7 +248,15 @@ class TransferFlowGraph:
         pin_verified: bool,
         pin_error: Optional[str] = None
     ) -> str:
-        """Resume graph execution after PIN verification."""
+        """
+        Resume graph execution after PIN verification using LangGraph interrupt pattern.
+        
+        The graph is compiled with interrupt_before=["authorize"], so after confirm
+        sends the PIN flow, the graph pauses at the authorize node. This method:
+        1. Updates the state with PIN verification result
+        2. Resumes the graph with ainvoke(None, config)
+        3. The authorize node then runs and processes the transaction
+        """
         await self._ensure_checkpointer()
 
         config: RunnableConfig = {
@@ -259,29 +270,24 @@ class TransferFlowGraph:
         if not current_state or not current_state.values:
             return "No active transfer session found."
 
-        updated_state = dict(current_state.values)
-        updated_state.update({
-            "phone_number": phone_number,
-            "message": "",
-            "message_id": "",
-            "pin_verified": pin_verified,
-            "pin_verification_error": pin_error,
-            "flow_state": "authorizing",
-            "transfer_status": "pending",
-            "skip_confirmation_display": True,
-            "llm_reply": None,
-            "response": "",
-        })
+        # Update state with PIN verification result using aupdate_state
+        await self.graph.aupdate_state(
+            config,
+            {
+                "pin_verified": pin_verified,
+                "pin_verification_error": pin_error,
+            }
+        )
 
         logger.info(
-            "resume_after_pin_verification_invoking",
+            "resume_after_pin_verification_starting",
             phone=phone_number,
-            flow_state=updated_state.get("flow_state"),
-            transfer_status=updated_state.get("transfer_status"),
             pin_verified=pin_verified,
         )
 
-        final_state = await self.graph.ainvoke(cast(TransferState, updated_state), config)
+        # Resume graph execution from the interrupt point (authorize node)
+        # Passing None resumes from where the graph was interrupted
+        final_state = await self.graph.ainvoke(None, config)
 
         logger.info(
             "resume_after_pin_verification_completed",
@@ -296,8 +302,7 @@ class TransferFlowGraph:
         response = final_state.get("response", "")
         transfer_status = final_state.get("transfer_status")
 
-        if not response and pin_verified and transfer_status in ("authorized", "completed"):
-            response = "Transfer authorized. Processing your request..."
+        # No fallback message - executor sends the final notification
 
         if self.completion_callback:
             if transfer_status in ("completed", "failed", "cancelled"):

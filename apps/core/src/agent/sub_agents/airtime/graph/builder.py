@@ -98,7 +98,6 @@ def build_graph(
             "collect_amount": END,
             "select_account": "select_account",
             "collect_phone": "find_beneficiary",
-            "validate": "validate_amount",
             "confirm": "confirm",
             "cancel": "cancel",
         }
@@ -110,7 +109,6 @@ def build_graph(
         {
             "end": END,
             "collect_phone": "find_beneficiary",
-            "validate": "validate_amount",
             "confirm": "confirm",
             "cancel": "cancel",
         }
@@ -121,25 +119,14 @@ def build_graph(
         route_by_state,
         {
             "end": END,
-            "collect_phone": "find_beneficiary",
-            "validate": "validate_amount",
+            "collect_phone": END,  # Don't loop back - wait for user input
             "confirm": "confirm",
             "cancel": "cancel",
         }
     )
 
-    workflow.add_conditional_edges(
-        "confirm",
-        route_by_state,
-        {
-            "authorize": "authorize",
-            "end": END,
-            "cancel": "cancel",
-        }
-    )
-
+    workflow.add_edge("confirm", "authorize")
     workflow.add_edge("authorize", END)
-
     workflow.add_edge("cancel", END)
 
     return workflow

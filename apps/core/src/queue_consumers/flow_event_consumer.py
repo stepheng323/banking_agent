@@ -19,11 +19,13 @@ class FlowEventConsumer:
         transfer_service: Optional[Any] = None,
         airtime_service: Optional[Any] = None,
         batch_service: Optional[Any] = None,
+        whatsapp_client: Optional[Any] = None,
     ):
         self.queue = redis_queue
         self.transfer_service = transfer_service
         self.airtime_service = airtime_service
         self.batch_service = batch_service
+        self.whatsapp_client = whatsapp_client
         self.running = False
 
     async def process_event(self, event_data: Dict[str, Any]) -> None:
@@ -82,9 +84,11 @@ class FlowEventConsumer:
             return
 
         try:
+            response = None
+            
             if flow_type == "transfer":
                 if self.transfer_service and hasattr(self.transfer_service, "graph"):
-                    await self.transfer_service.graph.resume_after_pin_verification(
+                    response = await self.transfer_service.graph.resume_after_pin_verification(
                         phone_number, True, None
                     )
                     logger.info("transfer_resumed_after_pin", phone=phone_number)
@@ -93,7 +97,7 @@ class FlowEventConsumer:
 
             elif flow_type == "airtime":
                 if self.airtime_service and hasattr(self.airtime_service, "graph"):
-                    await self.airtime_service.graph.resume_after_pin_verification(
+                    response = await self.airtime_service.graph.resume_after_pin_verification(
                         phone_number, True, None
                     )
                     logger.info("airtime_resumed_after_pin", phone=phone_number)
@@ -102,7 +106,7 @@ class FlowEventConsumer:
 
             elif flow_type == "batch":
                 if self.batch_service and hasattr(self.batch_service, "resume_after_pin_verification"):
-                    await self.batch_service.resume_after_pin_verification(
+                    response = await self.batch_service.resume_after_pin_verification(
                         phone_number, True, None
                     )
                     logger.info("batch_resumed_after_pin", phone=phone_number)
@@ -111,6 +115,11 @@ class FlowEventConsumer:
 
             else:
                 logger.warning("unknown_flow_type", flow_type=flow_type)
+            
+            # Send response to user if available
+            if response and self.whatsapp_client:
+                await self.whatsapp_client.send_text(phone_number, response)
+                logger.info("pin_response_sent", phone=phone_number, flow_type=flow_type)
 
         except Exception as e:
             logger.error(
