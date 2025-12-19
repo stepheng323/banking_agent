@@ -56,6 +56,9 @@ class AirtimeCompletionService:
         transaction_id: Optional[str] = None,
     ) -> None:
         """Send success notification for airtime purchase."""
+        # Wait briefly for WhatsApp Flow to close before sending message
+        await asyncio.sleep(2.5)
+        
         try:
             amount = float(airtime_data.get("amount", 0))
             recipient = airtime_data.get("recipient", {})
