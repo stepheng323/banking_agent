@@ -34,6 +34,7 @@ from apps.core.src.agent.orchestrator.features.active_queue.handler import Activ
 from apps.core.src.agent.orchestrator.features.task_planning.handler import NextTaskHandler
 from apps.core.src.agent.orchestrator.features.intent_routing.handler import IntentRoutingHandler
 from apps.core.src.agent.orchestrator.features.mandate.handler import MandateReinitiationHandler
+from apps.core.src.agent.orchestrator.features.flow_context import FlowContextService, FlowResumeHandler
 
 
 class OrchestratorAgent:
@@ -81,6 +82,7 @@ class OrchestratorAgent:
         self.cancellation_handler = OrchestratorCancellationHandler(
             transfer_service, airtime_service, self.context_manager, task_queue_service
         )
+        self.flow_context_service = FlowContextService()
         self.intent_router = OrchestratorIntentRouter(
             task_queue_service,
             self.task_planner,
@@ -91,6 +93,7 @@ class OrchestratorAgent:
             query_graph,
             account_management_service,
             self.whatsapp_client,
+            self.flow_context_service,
         )
         # Handler order matters
         self._handlers = [
@@ -98,6 +101,7 @@ class OrchestratorAgent:
             MandateReinitiationHandler(),
             ClassificationHandler(self.classification_service, self.context_manager),
             FreshStartHandler(self.context_manager, transfer_service, airtime_service),
+            FlowResumeHandler(self.flow_context_service),  # Before beneficiary - handle "yes" to resume
             BeneficiaryHandler(self.beneficiary_handler),
             CancellationHandler(self.cancellation_handler),
             BatchAuthorizationHandler(task_queue_service, transfer_service, whatsapp_client),
