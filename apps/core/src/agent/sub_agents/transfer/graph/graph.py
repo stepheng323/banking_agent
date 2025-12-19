@@ -166,6 +166,27 @@ class TransferFlowGraph:
         if is_cancellation_decline(ctx, last_response or ""):
             return await handle_cancellation_decline_with_checkpoint(ctx, self.graph)
 
+        # Check if this is a flow resume - just replay the last question
+        is_flow_resume = (
+            classification_result and 
+            classification_result.get("complexity_reason") == "Flow resume after interrupt"
+        )
+        if is_flow_resume:
+            # User said "yes continue" - get the saved response from when flow was paused
+            paused_flow_key = f"user:{phone_number}:paused_flow"
+            paused_flow_data = await self.redis_client.get(paused_flow_key)
+            if paused_flow_data:
+                import json
+                paused = json.loads(paused_flow_data)
+                saved_response = paused.get("last_response")
+                if saved_response:
+                    logger.info(f"Flow resume detected, replaying saved response")
+                    return saved_response
+            # Fallback to current last_response if no saved response
+            if last_response:
+                logger.info(f"Flow resume detected, replaying last response")
+                return last_response
+
         # Load and prepare state
         input_state = await load_checkpoint_state(ctx, self.graph)
         
