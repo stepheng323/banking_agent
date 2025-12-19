@@ -100,7 +100,8 @@ class OrchestratorClassificationService:
 
         if active_flow in {"transfer", "airtime", "data"}:
             # Patterns that indicate a DIFFERENT intent (not continuing the flow)
-            manage_account_patterns = {"account", "accounts", "link", "unlink", "default", "show my", "list my"}
+            manage_account_keywords = {"account", "accounts", "link", "linked", "unlink", "default"}
+            manage_account_phrases = {"show my", "list my", "my accounts", "linked account"}
             query_patterns = {"balance", "history", "statement", "spent", "spending", "transaction"}
             question_patterns = {"why", "what", "how much", "how many", "when", "where", "who", "explain", "help"}
             greeting_patterns = {"hi", "hello", "hey", "good morning", "good afternoon", "good evening"}
@@ -109,15 +110,37 @@ class OrchestratorClassificationService:
             words = set(text_clean.split())
             word_count = len(text_clean.split())
             
-            is_manage_accounts = bool(words & manage_account_patterns)
+            is_manage_accounts = (
+                bool(words & manage_account_keywords) or 
+                any(phrase in text_clean for phrase in manage_account_phrases)
+            )
             is_query = bool(words & query_patterns)
             is_question = text_clean.endswith("?") or any(p in text_clean for p in question_patterns)
             is_greeting = text_clean in greeting_patterns
             is_new_transaction = bool(words & new_transaction_patterns)
             
+            # INTERRUPT DETECTION: These take priority over continuing the flow
+            if is_manage_accounts:
+                return ClassificationResult(
+                    intent="manage_accounts",
+                    is_complex=False,
+                    confidence=0.95,
+                    response="",
+                    complexity_reason="Account management request during active flow",
+                )
+            
+            if is_query:
+                return ClassificationResult(
+                    intent="query",
+                    is_complex=False,
+                    confidence=0.95,
+                    response="",
+                    complexity_reason="Query request during active flow",
+                )
+            
             # If message is SHORT (1-4 words) and NOT clearly a different intent,
             # assume it's continuing the active flow (providing missing data like bank name, amount, etc.)
-            if word_count <= 4 and not any([is_manage_accounts, is_query, is_question, is_greeting, is_new_transaction]):
+            if word_count <= 4 and not any([is_question, is_greeting, is_new_transaction]):
                 # This could be: bank name, account number, amount, recipient name, confirmation, etc.
                 return ClassificationResult(
                     intent=active_flow,
