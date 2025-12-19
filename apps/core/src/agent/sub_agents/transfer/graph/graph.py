@@ -179,13 +179,27 @@ class TransferFlowGraph:
                 import json
                 paused = json.loads(paused_flow_data)
                 saved_response = paused.get("last_response")
+                flow_summary = paused.get("flow_summary", {})
+                
                 if saved_response:
-                    logger.info(f"Flow resume detected, replaying saved response")
-                    return saved_response
+                    # Add contextual prefix
+                    amount = flow_summary.get("amount")
+                    recipient = flow_summary.get("recipient_name") or flow_summary.get("recipient_account", "")
+                    
+                    if amount and recipient:
+                        context_prefix = f"Continuing your ₦{amount:,.0f} transfer to {recipient}! "
+                    elif amount:
+                        context_prefix = f"Continuing your ₦{amount:,.0f} transfer! "
+                    else:
+                        context_prefix = "Continuing where you left off! "
+                    
+                    logger.info(f"Flow resume detected, replaying saved response with context")
+                    return f"{context_prefix}{saved_response}"
+            
             # Fallback to current last_response if no saved response
             if last_response:
                 logger.info(f"Flow resume detected, replaying last response")
-                return last_response
+                return f"Continuing your transfer! {last_response}"
 
         # Load and prepare state
         input_state = await load_checkpoint_state(ctx, self.graph)
