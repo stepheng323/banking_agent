@@ -10,7 +10,7 @@ TRANSFER_EXTRACTION_PROMPT = (
     "- bank_code: Bank code if provided\n"
     "- source_bank_name: FROM bank only ('from my access', 'use my GTB', before → or ->)\n"
     "- recipient_name: Name/alias ('to mum', 'john's access' → recipient_name='john', bank_name='Access Bank')\n"
-    "- narration: Optional memo\n"
+    "- narration: Optional memo/reason ('for rent', 'for Christmas', 'school fees')\n"
     "- transfer_all: true for 'move all', 'everything', 'empty', 'entire balance'\n\n"
     
     "ARROW SYNTAX:\n"
