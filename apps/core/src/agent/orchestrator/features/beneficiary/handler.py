@@ -14,6 +14,7 @@ class BeneficiaryHandler(MessageHandler):
     """
     
     TRANSACTION_INTENTS = {"transfer", "airtime", "data"}
+    NEGATIVE_RESPONSES = {"no", "nope", "nah", "don't", "dont", "skip", "cancel", "nevermind", "never mind"}
     
     def __init__(self, beneficiary_handler: OrchestratorBeneficiaryHandler):
         self.beneficiary_handler = beneficiary_handler
@@ -26,6 +27,13 @@ class BeneficiaryHandler(MessageHandler):
         """Handle beneficiary response."""
         if not context.classification_result or not context.suggestion_context:
             return context
+
+        text_lower = context.text.lower().strip()
+        if text_lower in self.NEGATIVE_RESPONSES or any(neg in text_lower for neg in self.NEGATIVE_RESPONSES):
+            suggestion_key = f"user:{context.phone_number}:beneficiary_suggestion"
+            redis_client = RedisClient.get_client()
+            await redis_client.delete(suggestion_key)
+            return context.with_response("Got it. I won't save this recipient as a beneficiary.", handled=True)
 
         if context.intent in self.TRANSACTION_INTENTS:
             suggestion_key = f"user:{context.phone_number}:beneficiary_suggestion"
