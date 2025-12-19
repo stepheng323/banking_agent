@@ -45,20 +45,20 @@ def format_transfer_summary(data: Dict) -> str:
     total = amount + fee
 
     lines = [
-        f"Amount: *{_format_currency_naira(amount)}*",
-        f"To: *{recipient_name.title()}* ({recipient_bank.title()} - ```{recipient_account}```)",
-        f"From: {source_bank} (...{last4})",
+        f"*Amount:* {_format_currency_naira(amount)}",
+        f"*To:* {recipient_name.title()}",
+        f"*Bank:* {recipient_bank.title()}",
+        f"*Account:* `{recipient_account}`",
     ]
-
+    
     if narration:
-        lines.append(f"Narration: _{narration}_")
+        lines.append(f"*Note:* {narration}")
 
     lines.append("")
+    lines.append(f"*From:* {source_bank} (···{last4})")
     lines.append(f"*Fee:* {_format_currency_naira(fee)}")
     lines.append(f"*Total:* {_format_currency_naira(total)}")
     lines.append("")
-    lines.append(
-        "Tap the authorize button bellow, to enter your transaction pin.\n"
-    )
+    lines.append("Tap *Authorize* to enter your PIN.")
 
     return "\n".join(lines)
