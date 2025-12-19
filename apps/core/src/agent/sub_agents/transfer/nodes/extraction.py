@@ -34,8 +34,9 @@ async def extract_entities(
 
     classification_result = state.get("classification_result")
     if classification_result:
+        intent = classification_result.get("intent", "").lower()
         is_cancellation = (
-            classification_result.get("intent", "").lower() == "cancel" or
+            intent == "cancel" or
             classification_result.get("is_cancellation") is True
         )
         if is_cancellation:
@@ -53,6 +54,16 @@ async def extract_entities(
                     "flow_state": "cancelled",
                     "response": "",  # Will be set in handle_cancellation
                 }
+        
+        # Detect other interrupts - manage_accounts or query
+        if intent in ("manage_accounts", "query"):
+            debug_log(f"🔀 Interrupt detected: {intent} - yielding to orchestrator")
+            return {
+                **state,
+                "flow_state": "paused",
+                "interrupt_intent": intent,
+                "response": "",  # Will be handled by orchestrator
+            }
 
     last_response = state.get("response") or state.get("llm_reply")
     smart_context = {}
@@ -66,6 +77,17 @@ async def extract_entities(
     language = state.get("language")
     if language:
         smart_context["language"] = language
+
+    # Add recent transactions for smart context
+    recent_transactions = state.get("recent_transactions", [])
+    if recent_transactions:
+        # Filter to just recent transfers (last 3)
+        recent_transfers = [
+            t for t in recent_transactions 
+            if t.get("type") == "transfer" and t.get("status") == "success"
+        ][:3]
+        if recent_transfers:
+            smart_context["recentTransfers"] = recent_transfers
 
     message_to_extract = state.get("message", "")
     image_data = state.get("image_data")

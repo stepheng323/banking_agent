@@ -30,9 +30,18 @@ class BeneficiaryHandler(MessageHandler):
 
         text_lower = context.text.lower().strip()
         if text_lower in self.NEGATIVE_RESPONSES or any(neg in text_lower for neg in self.NEGATIVE_RESPONSES):
-            suggestion_key = f"user:{context.phone_number}:beneficiary_suggestion"
             redis_client = RedisClient.get_client()
+            suggestion_key = f"user:{context.phone_number}:beneficiary_suggestion"
             await redis_client.delete(suggestion_key)
+            
+            # Clear conversation state - transaction is complete
+            conversation_state_key = f"user:{context.phone_number}:conversation_state"
+            await redis_client.delete(conversation_state_key)
+            
+            # Clear session start keys
+            await redis_client.delete(f"user:{context.phone_number}:transfer_session_start")
+            await redis_client.delete(f"user:{context.phone_number}:airtime_session_start")
+            
             return context.with_response("Got it. I won't save this recipient as a beneficiary.", handled=True)
 
         if context.intent in self.TRANSACTION_INTENTS:

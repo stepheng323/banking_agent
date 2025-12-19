@@ -34,6 +34,7 @@ class MessageContext:
     
     response: Optional[str] = None
     handled: bool = False
+    is_flow_resume: bool = False
     
     @property
     def intent(self) -> Optional[str]:
@@ -70,6 +71,7 @@ class MessageContext:
             planner_output=self.planner_output,
             response=response,
             handled=handled,
+            is_flow_resume=self.is_flow_resume,
         )
     
     def update(self, **kwargs) -> "MessageContext":
@@ -90,6 +92,7 @@ class MessageContext:
             "planner_output": self.planner_output,
             "response": self.response,
             "handled": self.handled,
+            "is_flow_resume": self.is_flow_resume,
         }
         current_dict.update(kwargs)
         return MessageContext(**current_dict)

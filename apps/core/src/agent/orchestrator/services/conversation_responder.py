@@ -57,7 +57,9 @@ class ConversationResponder:
             "- A friendly greeting in {language}\n"
             "- Include the user's name if available\n"
             "- Briefly mention your capabilities (transfers, airtime)\n"
-            "- Ask how you can help\n\n"
+            "- Ask how you can help\n"
+            "- **IMPORTANT**: A greeting means fresh start. Do NOT reference previous transactions as pending/active.\n"
+            "  Previous transfers in history are COMPLETED or CANCELLED, not waiting for action.\n\n"
             
             "**EXAMPLE RESPONSES:**\n"
             "- User: 'Tell me a joke' -> 'Why did the banker break up with his calculator? Because he couldn't count on it! 😅'\n"

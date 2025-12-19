@@ -166,6 +166,41 @@ class TransferFlowGraph:
         if is_cancellation_decline(ctx, last_response or ""):
             return await handle_cancellation_decline_with_checkpoint(ctx, self.graph)
 
+        # Check if this is a flow resume - just replay the last question
+        is_flow_resume = (
+            classification_result and 
+            classification_result.get("complexity_reason") == "Flow resume after interrupt"
+        )
+        if is_flow_resume:
+            # User said "yes continue" - get the saved response from when flow was paused
+            paused_flow_key = f"user:{phone_number}:paused_flow"
+            paused_flow_data = await self.redis_client.get(paused_flow_key)
+            if paused_flow_data:
+                import json
+                paused = json.loads(paused_flow_data)
+                saved_response = paused.get("last_response")
+                flow_summary = paused.get("flow_summary", {})
+                
+                if saved_response:
+                    # Add contextual prefix
+                    amount = flow_summary.get("amount")
+                    recipient = flow_summary.get("recipient_name") or flow_summary.get("recipient_account", "")
+                    
+                    if amount and recipient:
+                        context_prefix = f"Continuing your ₦{amount:,.0f} transfer to {recipient}! "
+                    elif amount:
+                        context_prefix = f"Continuing your ₦{amount:,.0f} transfer! "
+                    else:
+                        context_prefix = "Continuing where you left off! "
+                    
+                    logger.info(f"Flow resume detected, replaying saved response with context")
+                    return f"{context_prefix}{saved_response}"
+            
+            # Fallback to current last_response if no saved response
+            if last_response:
+                logger.info(f"Flow resume detected, replaying last response")
+                return f"Continuing your transfer! {last_response}"
+
         # Load and prepare state
         input_state = await load_checkpoint_state(ctx, self.graph)
         

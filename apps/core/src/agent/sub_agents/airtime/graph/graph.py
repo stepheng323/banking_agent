@@ -106,6 +106,42 @@ class AirtimeFlowGraph:
         if self.graph is None:
             raise RuntimeError("Graph not compiled")
 
+        # Check if this is a flow resume - just replay the last question
+        is_flow_resume = (
+            classification_result and 
+            classification_result.get("complexity_reason") == "Flow resume after interrupt"
+        )
+        if is_flow_resume:
+            import json
+            paused_flow_key = f"user:{phone_number}:paused_flow"
+            paused_flow_data = await self.redis_client.get(paused_flow_key)
+            if paused_flow_data:
+                paused = json.loads(paused_flow_data)
+                saved_response = paused.get("last_response")
+                flow_summary = paused.get("flow_summary", {})
+                
+                if saved_response:
+                    # Add contextual prefix for airtime
+                    amount = flow_summary.get("amount")
+                    recipient_phone = flow_summary.get("recipient_phone", "")
+                    
+                    if amount and recipient_phone:
+                        context_prefix = f"Continuing your ₦{amount:,.0f} airtime for {recipient_phone}! "
+                    elif amount:
+                        context_prefix = f"Continuing your ₦{amount:,.0f} airtime purchase! "
+                    else:
+                        context_prefix = "Continuing where you left off! "
+                    
+                    logger.info(f"Airtime flow resume detected, replaying saved response with context")
+                    return f"{context_prefix}{saved_response}"
+            
+            # Fallback to last_response
+            last_response_key = f"user:{phone_number}:last_response"
+            last_response = await self.redis_client.get(last_response_key)
+            if last_response:
+                logger.info(f"Airtime flow resume detected, replaying last response")
+                return f"Continuing your airtime purchase! {last_response}"
+
         # Try to load existing checkpoint state first
         input_state = None
         checkpoint_is_stale = False

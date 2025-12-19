@@ -1,7 +1,7 @@
 """Intent-based routing for the orchestrator."""
 
 import json
-from typing import Any
+from typing import Any, Optional
 import asyncio
 import traceback
 
@@ -15,6 +15,7 @@ from apps.core.src.agent.sub_agents.query.graph import QueryFlowGraph
 from apps.core.src.agent.sub_agents.account_management.service import AccountManagementService
 from apps.core.src.agent.orchestrator.features.task_planning.service import OrchestratorTaskPlanner
 from apps.core.src.agent.orchestrator.features.context.service import OrchestratorContextManager
+from apps.core.src.agent.orchestrator.features.flow_context.service import FlowContextService
 from shared.clients.whatsapp_client import WhatsAppClient
 from shared.utils.logging import get_logger
 
@@ -35,6 +36,7 @@ class OrchestratorIntentRouter:
         query_graph: QueryFlowGraph,
         account_management_service: AccountManagementService,
         whatsapp_client: WhatsAppClient,
+        flow_context_service: Optional[FlowContextService] = None,
     ) -> None:
         self.task_queue_service = task_queue_service
         self.task_planner = task_planner
@@ -45,6 +47,7 @@ class OrchestratorIntentRouter:
         self.whatsapp_client = whatsapp_client
         self.query_graph = query_graph
         self.account_management_service = account_management_service
+        self.flow_context_service = flow_context_service or FlowContextService()
 
     def _generate_task_acknowledgment(
         self, planner_output: PlannerOutput
@@ -169,10 +172,50 @@ class OrchestratorIntentRouter:
             response = "Data purchase flow coming soon."
 
         elif intent == "query":
+            # Check if there's an active flow to pause
+            conversation_state = await self.context_manager.get_conversation_state(phone_number)
+            if conversation_state:
+                active_flow = conversation_state.get("active_flow")
+                if active_flow in ("transfer", "airtime"):
+                    # Pause the flow before handling query
+                    flow_summary = {
+                        "amount": conversation_state.get("amount"),
+                        "recipient_name": conversation_state.get("recipient_name"),
+                        "recipient_phone": conversation_state.get("recipient_phone"),
+                    }
+                    await self.flow_context_service.pause_flow(
+                        phone_number, active_flow, "balance_query", flow_summary
+                    )
+            
             response = await self.query_graph.run(phone_number, text, user_ctx)
+            
+            # Check if we need to append resume prompt
+            resume_prompt = await self.flow_context_service.generate_resume_prompt(phone_number)
+            if resume_prompt:
+                response = f"{response}\n\n{resume_prompt}"
 
         elif intent == "manage_accounts":
+            # Check if there's an active flow to pause
+            conversation_state = await self.context_manager.get_conversation_state(phone_number)
+            if conversation_state:
+                active_flow = conversation_state.get("active_flow")
+                if active_flow in ("transfer", "airtime"):
+                    flow_summary = {
+                        "amount": conversation_state.get("amount"),
+                        "recipient_name": conversation_state.get("recipient_name"),
+                        "recipient_phone": conversation_state.get("recipient_phone"),
+                    }
+                    await self.flow_context_service.pause_flow(
+                        phone_number, active_flow, "account_management", flow_summary
+                    )
+            
             response = await self.account_management_service.handle_account_management(phone_number, text, user_ctx)
+            
+            # Check if we need to append resume prompt
+            resume_prompt = await self.flow_context_service.generate_resume_prompt(phone_number)
+            if resume_prompt:
+                response = f"{response}\n\n{resume_prompt}"
+                
         elif intent == "conversational":
 
             conv = await self.conversation_responder.generate_reply(phone_number, text, result, user_ctx)
