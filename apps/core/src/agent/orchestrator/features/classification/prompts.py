@@ -31,6 +31,10 @@ CLASSIFICATION_SYSTEM_PROMPT = (
     "- 'Send 200k to tolu and ayo and show my balance' → intent: mixed, is_complex: true, complexity_reason: 'transfer + query'\n"
     "- 'Send 5k to ayo and 20k to mum' → intent: transfer, is_complex: true, complexity_reason: 'multiple transfers'\n"
     "- '0760505261 Access bank' → intent: transfer (continuation)\n"
+    "- 'airtime 2k' → intent: airtime\n"
+    "- 'buy airtime 5k to me' → intent: airtime\n"
+    "- 'recharge 1k' → intent: airtime\n"
+    "- 'buy data 500' → intent: data\n"
     "- 'show my balance' → intent: query\n"
     "- 'how many accounts' → intent: manage_accounts\n\n"
     

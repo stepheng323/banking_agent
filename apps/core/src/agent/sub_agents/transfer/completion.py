@@ -66,6 +66,11 @@ class TransferCompletionService:
         transaction_id: Optional[str] = None,
     ) -> None:
         """Send success notification with receipt image to user."""
+        import asyncio
+        
+        # Wait briefly for WhatsApp Flow to close before sending message
+        await asyncio.sleep(2.5)
+        
         try:
             if not _receipts_enabled():
                 provider_txn_id = transfer_result.get("transaction_id", "N/A")

@@ -4,6 +4,11 @@ from typing import cast
 
 from apps.core.src.agent.sub_agents.transfer.state import TransferState
 from apps.gateway.api.flows.transaction_service import create_transfer_transaction
+from apps.core.src.agent.orchestrator.features.response import (
+    ResponseIntent,
+    build_response_context,
+    get_synthesizer,
+)
 from shared.services.auth import AuthorizationService
 from shared.cache.redis_client import Redis
 from shared.queue.redis_queue import RedisQueue
@@ -22,15 +27,18 @@ async def authorize_transaction(
     """Authorize transaction after PIN verification."""
     phone_number = state.get("phone_number")
     idem_key = state.get("idempotency_key")
+    synthesizer = get_synthesizer()
     
     debug_log(f"🔐 authorize_transaction ENTRY: phone={phone_number}, idem_key={idem_key}, flow_state={state.get('flow_state')}, transfer_status={state.get('transfer_status')}")
 
     if not idem_key:
+        context = build_response_context(ResponseIntent.SESSION_EXPIRED, state)
+        response = await synthesizer.synthesize(context)
         return cast(
             TransferState,
             {
                 **state,
-                "response": "Missing transaction identifier. Please start a new transfer.",
+                "response": response,
                 "flow_state": "error",
                 "transfer_status": "failed",
             },
@@ -50,7 +58,7 @@ async def authorize_transaction(
                 TransferState,
                 {
                     **state,
-                    "response": "PIN verification pending. Please enter your PIN.",
+                    "response": "",  # No response needed, WhatsApp Flow handles PIN
                     "flow_state": "authorizing",
                 },
             )
@@ -60,11 +68,17 @@ async def authorize_transaction(
 
         if retry_count >= 3:
             await redis_client.delete(f"user:{phone_number}:pending_transfer")
+            context = build_response_context(
+                ResponseIntent.MAX_ATTEMPTS_EXCEEDED, 
+                state,
+                error_message=error_msg
+            )
+            response = await synthesizer.synthesize(context)
             return cast(
                 TransferState,
                 {
                     **state,
-                    "response": "Maximum PIN attempts exceeded. Please start a new transfer.",
+                    "response": response,
                     "flow_state": "error",
                     "transfer_status": "failed",
                     "pin_verified": False,
@@ -73,11 +87,17 @@ async def authorize_transaction(
                 },
             )
 
+        context = build_response_context(
+            ResponseIntent.PIN_FAILED,
+            state,
+            error_message=error_msg
+        )
+        response = await synthesizer.synthesize(context)
         return cast(
             TransferState,
             {
                 **state,
-                "response": error_msg,
+                "response": response,
                 "flow_state": "confirming",
                 "pin_verified": False,
                 "pin_verification_error": error_msg,
@@ -98,9 +118,11 @@ async def authorize_transaction(
                 amount=amount,
                 recipient_account=recipient_account,
             )
+            context = build_response_context(ResponseIntent.SESSION_EXPIRED, state)
+            response = await synthesizer.synthesize(context)
             return {
                 **state,
-                "response": "Session expired or invalid. Please start a new transfer.",
+                "response": response,
                 "transfer_status": "failed",
                 "flow_state": "completed",
             }
@@ -129,11 +151,13 @@ async def authorize_transaction(
                     pin_result=bool(pin_result),
                     user_profile=bool(user_profile),
                 )
+                context = build_response_context(ResponseIntent.SESSION_EXPIRED, state)
+                response = await synthesizer.synthesize(context)
                 return cast(
                     TransferState,
                     {
                         **state,
-                        "response": "User information not available. Please try again.",
+                        "response": response,
                         "flow_state": "error",
                         "transfer_status": "failed",
                     },
@@ -165,12 +189,13 @@ async def authorize_transaction(
         await redis_client.delete(pin_verification_key)
 
         retry_count = pin_result.retry_count if pin_result else 0
-        response_message = "Transfer authorized. Processing your request..."
+        # Return empty response - the executor will send the final success/failure notification
+        # This prevents race condition between auth message and executor notification
         result = cast(
             TransferState,
             {
                 **state,
-                "response": response_message,
+                "response": "",  # Empty - executor sends final notification
                 "flow_state": "completed",
                 "transfer_status": "authorized",
                 "pin_verified": True,
@@ -186,14 +211,18 @@ async def authorize_transaction(
             phone=phone_number,
             exc_info=True,
         )
-        error_msg = "Failed to process authorization. Please try again."
+        context = build_response_context(
+            ResponseIntent.TRANSFER_FAILED,
+            state,
+            error_message="Failed to process authorization. Please try again."
+        )
+        response = await synthesizer.synthesize(context)
         return cast(
             TransferState,
             {
                 **state,
-                "response": error_msg,
+                "response": response,
                 "flow_state": "error",
                 "transfer_status": "failed",
             },
         )
-

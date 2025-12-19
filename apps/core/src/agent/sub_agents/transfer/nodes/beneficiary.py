@@ -7,6 +7,12 @@ from shared.utils.serialization import sqlalchemy_to_dict
 
 from apps.core.src.agent.tools.beneficiary.matcher import BeneficiaryMatcher
 from apps.core.src.agent.sub_agents.transfer.state import TransferState
+from apps.core.src.agent.orchestrator.features.response import (
+    ResponseIntent,
+    build_response_context,
+    build_clarification_context,
+    get_synthesizer,
+)
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -26,6 +32,8 @@ async def find_beneficiary(
     bank_code = state.get("recipient_bank_code")
     bank_name = state.get("recipient_bank_name")
     beneficiaries = state.get("beneficiaries", [])
+    
+    synthesizer = get_synthesizer()
 
     # If account and bank are already provided, skip beneficiary matching
     if acct_number and (bank_code or bank_name):
@@ -49,30 +57,41 @@ async def find_beneficiary(
                 "matched_beneficiary": sqlalchemy_to_dict(single) if hasattr(single, "__table__") else single,
             }
         elif status == "clarify" and candidates:
-            opts = "; ".join([
-                f"{(b.account_name or b.alias)} ({b.bank_name or 'N/A'} • {str(b.account_number)[-4:] if b.account_number else 'N/A'})"
+            # Build candidates list for clarification
+            candidates_data = [
+                {
+                    "name": b.account_name or b.alias,
+                    "bank_name": b.bank_name or "N/A",
+                    "account_number": str(b.account_number) if b.account_number else "",
+                }
                 for b in candidates
-            ])
+            ]
+            context = build_clarification_context(
+                ResponseIntent.CLARIFY_BENEFICIARY,
+                candidates_data,
+                state,
+                recipient_name=rec_name,
+            )
+            response = await synthesizer.synthesize(context)
             return {
                 **state,
                 "matched_beneficiary": None,
                 "flow_state": "collecting_recipient",
-                "response": f"I found multiple matches for '{rec_name}'. Which one? {opts}",
+                "response": response,
             }
         else:
             if acct_number and not (bank_code or bank_name):
+                context = build_response_context(ResponseIntent.ASK_BANK, state, recipient_name=rec_name)
+                response = await synthesizer.synthesize(context)
                 return {
                     **state,
                     "matched_beneficiary": None,
                     "flow_state": "collecting_recipient",
-                    "response": "Which bank is that for?",
+                    "response": response,
                 }
             else:
-                # Include recipient name in prompt if available
-                if rec_name:
-                    response = f"Please provide the account number and bank name for {rec_name}."
-                else:
-                    response = "Please provide the account number and bank name."
+                context = build_response_context(ResponseIntent.ASK_RECIPIENT, state, recipient_name=rec_name)
+                response = await synthesizer.synthesize(context)
                 return {
                     **state,
                     "matched_beneficiary": None,
@@ -81,11 +100,8 @@ async def find_beneficiary(
                 }
 
     if acct_number and not (bank_code or bank_name):
-        # Include recipient name in prompt if available
-        if rec_name:
-            response = f"Which bank is that for {rec_name}?"
-        else:
-            response = "Which bank is that for?"
+        context = build_response_context(ResponseIntent.ASK_BANK, state, recipient_name=rec_name)
+        response = await synthesizer.synthesize(context)
         return {
             **state,
             "matched_beneficiary": None,
@@ -94,11 +110,8 @@ async def find_beneficiary(
         }
 
     if (bank_code or bank_name) and not acct_number:
-        # Include recipient name in prompt if available
-        if rec_name:
-            response = f"What is the account number for {rec_name}?"
-        else:
-            response = "What is the account number?"
+        context = build_response_context(ResponseIntent.ASK_ACCOUNT_NUMBER, state, recipient_name=rec_name)
+        response = await synthesizer.synthesize(context)
         return {
             **state,
             "matched_beneficiary": None,
@@ -107,11 +120,8 @@ async def find_beneficiary(
         }
 
     if not acct_number or not (bank_code or bank_name):
-        # Include recipient name in prompt if available
-        if rec_name:
-            response = f"Please provide the account number and bank name for {rec_name}."
-        else:
-            response = "Please provide the account number and bank name."
+        context = build_response_context(ResponseIntent.ASK_RECIPIENT, state, recipient_name=rec_name)
+        response = await synthesizer.synthesize(context)
         return {
             **state,
             "matched_beneficiary": None,

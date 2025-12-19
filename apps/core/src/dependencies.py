@@ -159,6 +159,7 @@ def setup_dependencies():
         transfer_service=agent_transfer_service,
         airtime_service=agent_airtime_service,
         batch_service=None,  # Batch service created on-demand via BatchService
+        whatsapp_client=whatsapp_client,
     )
 
     return message_consumer, transaction_consumer, flow_event_consumer

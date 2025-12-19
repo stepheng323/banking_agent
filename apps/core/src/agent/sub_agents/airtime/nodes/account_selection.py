@@ -5,21 +5,33 @@ from typing import Optional
 from apps.core.src.agent.tools.account_selection.node import select_source_account_shared
 from apps.core.src.agent.tools.account_selection.mandate_validator import validate_mandate_status
 from apps.core.src.agent.sub_agents.airtime.state import AirtimeState
+from apps.core.src.agent.orchestrator.features.response import (
+    ResponseIntent,
+    build_response_context,
+    get_synthesizer,
+)
 
 from ..graph.utils import debug_log
 
 
-def _validate_airtime_account(state: AirtimeState, selected: dict) -> Optional[AirtimeState]:
+async def _validate_airtime_account(state: AirtimeState, selected: dict) -> Optional[AirtimeState]:
     """
     Validate mandate status for airtime purchases.
     Blocks transactions if account mandate is not ready.
     """
     is_valid, error, _ = validate_mandate_status(selected)
     if not is_valid:
+        synthesizer = get_synthesizer()
+        context = build_response_context(
+            ResponseIntent.MANDATE_REQUIRED,
+            state,
+            error_message=error
+        )
+        response = await synthesizer.synthesize(context)
         return {
             **state,
             "selected_source_account": selected,
-            "response": f"⚠️ {error}",
+            "response": response,
             "llm_reply": None,
         }
     return None

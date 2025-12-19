@@ -6,6 +6,11 @@ from typing import Any, Optional
 
 from apps.core.src.agent.tools.account_selection.service import AccountSelectionService
 from apps.core.src.agent.sub_agents.transfer.state import TransferState
+from apps.core.src.agent.orchestrator.features.response import (
+    ResponseIntent,
+    build_response_context,
+    get_synthesizer,
+)
 
 from shared.cache.bank_cache import BankCacheService
 from shared.utils.logging import get_logger
@@ -45,6 +50,7 @@ class ValidationCoordinator:
         self.beneficiary_matcher = beneficiary_matcher
         self.account_validator = account_validator
         self.bank_cache = bank_cache
+        self.synthesizer = get_synthesizer()
 
     async def validate(
         self,
@@ -108,26 +114,36 @@ class ValidationCoordinator:
                     "recipient_bank_code": resolved_code,
                 }
             else:
+                context = build_response_context(
+                    ResponseIntent.BANK_NOT_FOUND,
+                    state,
+                    bank_name=recipient_bank_name
+                )
+                response = await self.synthesizer.synthesize(context)
                 return {
                     **state,
                     "flow_state": "error",
-                    "response": state.get("llm_reply") or f"I couldn't find a bank code for '{recipient_bank_name}'. Please provide the bank name or code.",
+                    "response": response,
                     "validation_errors": ["bank_code_resolution_failed"],
                 }
 
         if not recipient_bank_code:
+            context = build_response_context(ResponseIntent.ASK_BANK, state)
+            response = await self.synthesizer.synthesize(context)
             return {
                 **state,
                 "flow_state": "error",
-                "response": state.get("llm_reply") or "Bank code is required for validation. Please provide the bank name or code.",
+                "response": response,
                 "validation_errors": ["missing_bank_code"],
             }
 
         if not recipient_account:
+            context = build_response_context(ResponseIntent.ASK_ACCOUNT_NUMBER, state)
+            response = await self.synthesizer.synthesize(context)
             return {
                 **state,
                 "flow_state": "error",
-                "response": state.get("llm_reply") or "Account number is required for validation.",
+                "response": response,
                 "validation_errors": ["missing_account_number"],
             }
 
@@ -161,10 +177,15 @@ class ValidationCoordinator:
             )
 
             if resolved is None or (isinstance(resolved, dict) and not resolved.get("success", False)):
+                context = build_response_context(
+                    ResponseIntent.ACCOUNT_VALIDATION_FAILED,
+                    state
+                )
+                response = await self.synthesizer.synthesize(context)
                 return {
                     **state,
                     "flow_state": "error",
-                    "response": state.get("llm_reply") or "I couldn't verify that account right now. Please confirm the account number and bank.",
+                    "response": response,
                     "validation_errors": ["account_resolution_failed"],
                 }
 
@@ -178,10 +199,16 @@ class ValidationCoordinator:
                 if transfer_all:
                     MIN_BALANCE_FOR_FEES = 100  # Keep ₦100 for potential fees
                     if available <= MIN_BALANCE_FOR_FEES:
+                        context = build_response_context(
+                            ResponseIntent.INSUFFICIENT_BALANCE,
+                            state,
+                            balance=available
+                        )
+                        response = await self.synthesizer.synthesize(context)
                         return {
                             **state,
                             "flow_state": "error",
-                            "response": f"Insufficient balance. You have only ₦{available:,.2f} available.",
+                            "response": response,
                             "validation_errors": ["insufficient_balance_for_transfer_all"],
                         }
                     transfer_amount = available - MIN_BALANCE_FOR_FEES
@@ -192,10 +219,16 @@ class ValidationCoordinator:
                 if amount_value is not None and available is not None:
                     amount = float(amount_value)
                     if available < amount:
+                        context = build_response_context(
+                            ResponseIntent.INSUFFICIENT_BALANCE,
+                            state,
+                            balance=available
+                        )
+                        response = await self.synthesizer.synthesize(context)
                         return {
                             **state,
                             "flow_state": "error",
-                            "response": state.get("llm_reply") or "Insufficient balance in the selected account. Choose another account.",
+                            "response": response,
                             "validation_errors": ["insufficient_balance"],
                         }
             except Exception as e:
@@ -256,10 +289,12 @@ class ValidationCoordinator:
         selected_source_account = state.get("selected_source_account")
         
         if not recipient_bank_name:
+            context = build_response_context(ResponseIntent.ASK_BANK, state)
+            response = await self.synthesizer.synthesize(context)
             return {
                 **state,
                 "flow_state": "error",
-                "response": "Please specify which account to transfer to (e.g., 'to my GTB').",
+                "response": response,
                 "validation_errors": ["missing_destination_bank"],
             }
         
@@ -268,10 +303,16 @@ class ValidationCoordinator:
         )
         
         if not destination_account:
+            context = build_response_context(
+                ResponseIntent.ACCOUNT_NOT_FOUND,
+                state,
+                bank_name=recipient_bank_name
+            )
+            response = await self.synthesizer.synthesize(context)
             return {
                 **state,
                 "flow_state": "error",
-                "response": f"I couldn't find a {recipient_bank_name} account linked to your profile. Please link it first or check the bank name.",
+                "response": response,
                 "validation_errors": ["destination_account_not_found"],
             }
         

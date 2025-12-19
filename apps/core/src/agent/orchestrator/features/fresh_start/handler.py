@@ -11,6 +11,7 @@ logger = get_logger(__name__)
 
 if TYPE_CHECKING:
     from apps.core.src.agent.sub_agents.transfer import TransferService
+    from apps.core.src.agent.sub_agents.airtime import AirtimeService
 
 
 class FreshStartHandler(MessageHandler):
@@ -31,9 +32,11 @@ class FreshStartHandler(MessageHandler):
         self,
         context_manager: OrchestratorContextManager,
         transfer_service: "TransferService",
+        airtime_service: "AirtimeService",
     ):
         self.context_manager = context_manager
         self.transfer_service = transfer_service
+        self.airtime_service = airtime_service
     
     async def can_handle(self, context: MessageContext) -> bool:
         """
@@ -52,9 +55,10 @@ class FreshStartHandler(MessageHandler):
         )
     
     async def handle(self, context: MessageContext) -> MessageContext:
-        """Clear stale conversation state and transfer checkpoint."""
+        """Clear stale conversation state and all flow checkpoints."""
         await self.context_manager.clear_conversation_state(context.phone_number)
         await self.transfer_service.graph.clear_checkpoint(context.phone_number)
+        await self.airtime_service.graph.clear_checkpoint(context.phone_number)
         
         logger.info("cleared_stale_state_for")
         

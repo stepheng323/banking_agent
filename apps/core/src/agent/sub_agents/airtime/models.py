@@ -31,6 +31,10 @@ class SimpleAirtimeEntities(BaseModel):
         default=None,
         description="Explicit source account id/reference if user specifies which account to use"
     )
+    is_self: Optional[bool] = Field(
+        default=None,
+        description="True if user wants to recharge their own line ('to me', 'my line', 'myself', 'my number', 'for me')"
+    )
 
 
 class AirtimeExtractionResult(BaseModel):

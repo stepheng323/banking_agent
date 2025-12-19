@@ -99,25 +99,44 @@ class OrchestratorClassificationService:
         
 
         if active_flow in {"transfer", "airtime", "data"}:
-            # Don't fast-path if message looks like a different intent
-            manage_account_patterns = {"account", "accounts", "link", "unlink", "default", "how many", "show", "list"}
-            question_patterns = {"why", "what", "how", "when", "where", "who", "explain", "help"}
+            # Patterns that indicate a DIFFERENT intent (not continuing the flow)
+            manage_account_patterns = {"account", "accounts", "link", "unlink", "default", "show my", "list my"}
+            query_patterns = {"balance", "history", "statement", "spent", "spending", "transaction"}
+            question_patterns = {"why", "what", "how much", "how many", "when", "where", "who", "explain", "help"}
+            greeting_patterns = {"hi", "hello", "hey", "good morning", "good afternoon", "good evening"}
+            new_transaction_patterns = {"send", "transfer", "pay", "buy", "recharge", "top up"}
             
             words = set(text_clean.split())
-            is_manage_accounts = bool(words & manage_account_patterns)
-            is_question = text_clean.endswith("?") or bool(words & question_patterns)
+            word_count = len(text_clean.split())
             
-            # Only fast-path if it's clearly flow-related data (amount, not a question or account query)
-            if not is_manage_accounts and not is_question:
-                amount_match = re.match(r'^[nN]?\\s*(\\d+)[kK]?$', text_clean)
-                if amount_match:
-                    return ClassificationResult(
-                        intent=active_flow,
-                        is_complex=False,
-                        confidence=0.98,
-                        response="Amount received.",
-                        complexity_reason="Simple amount detected",
-                    )
+            is_manage_accounts = bool(words & manage_account_patterns)
+            is_query = bool(words & query_patterns)
+            is_question = text_clean.endswith("?") or any(p in text_clean for p in question_patterns)
+            is_greeting = text_clean in greeting_patterns
+            is_new_transaction = bool(words & new_transaction_patterns)
+            
+            # If message is SHORT (1-4 words) and NOT clearly a different intent,
+            # assume it's continuing the active flow (providing missing data like bank name, amount, etc.)
+            if word_count <= 4 and not any([is_manage_accounts, is_query, is_question, is_greeting, is_new_transaction]):
+                # This could be: bank name, account number, amount, recipient name, confirmation, etc.
+                return ClassificationResult(
+                    intent=active_flow,
+                    is_complex=False,
+                    confidence=0.95,
+                    response="",
+                    complexity_reason=f"Short response continuing active {active_flow} flow",
+                )
+            
+            # Also catch specific patterns for higher confidence
+            amount_match = re.match(r'^[nN]?\s*(\d+)[kK]?$', text_clean)
+            if amount_match:
+                return ClassificationResult(
+                    intent=active_flow,
+                    is_complex=False,
+                    confidence=0.98,
+                    response="Amount received.",
+                    complexity_reason="Simple amount detected",
+                )
         
         if active_flow == "transfer":
             if re.match(r'^\d{10}$', text_clean):
@@ -165,13 +184,14 @@ class OrchestratorClassificationService:
             if context.get("conversationState"):
                 conv_state = context["conversationState"]
                 active = conv_state.get('active_flow')
+                flow_state = conv_state.get('flow_state')
                 user_content = (
                     f"{user_content}\n\n"
-                    f"[Context: Active flow: {active}, "
-                    f"Flow state: {conv_state.get('flow_state')}]\n"
-                    f"NOTE: Even with an active {active} flow, classify as manage_accounts if user asks about their accounts, "
-                    f"or conversational if they ask questions like 'why?' or 'what?'. "
-                    f"Only classify as {active} if the message provides actual transaction data (amount, account, bank, phone)."
+                    f"[Context: Active flow: {active}, Flow state: {flow_state}]\n"
+                    f"IMPORTANT: User is in an active {active} transaction. "
+                    f"Short responses (1-4 words) like bank names, amounts, account numbers, or confirmations should be classified as '{active}' to continue the flow. "
+                    f"Only classify as a DIFFERENT intent (manage_accounts, query, conversational) if the message CLEARLY asks about something else "
+                    f"(e.g., 'show my accounts', 'what's my balance', 'why?')."
                 )
 
             if context.get("pendingBeneficiarySuggestion"):

@@ -97,7 +97,7 @@ class OrchestratorAgent:
             ContextLoaderHandler(self.context_manager, task_queue_service),
             MandateReinitiationHandler(),
             ClassificationHandler(self.classification_service, self.context_manager),
-            FreshStartHandler(self.context_manager, transfer_service),
+            FreshStartHandler(self.context_manager, transfer_service, airtime_service),
             BeneficiaryHandler(self.beneficiary_handler),
             CancellationHandler(self.cancellation_handler),
             BatchAuthorizationHandler(task_queue_service, transfer_service, whatsapp_client),

@@ -65,21 +65,32 @@ async def prepare_confirmation(
     source_bank_name = (source.get("bank_name") if source else None) or (
         source.get("name") if source else None) or "Account"
 
-    recipient_display = recipient_name or recipient_phone or "Recipient"
+    # Build recipient lines - cleaner format for mobile
+    if recipient_name and recipient_name != recipient_phone:
+        recipient_lines = [
+            f"*To:* {recipient_name}",
+            f"*Phone:* `{recipient_phone}`",
+            f"*Network:* {network}",
+        ]
+    else:
+        recipient_lines = [
+            f"*To:* `{recipient_phone}`",
+            f"*Network:* {network}",
+        ]
     
     lines = [
-        f"Amount: *{_format_currency_naira(float(amount or 0))}*",
-        f"To: *{recipient_display}* ({network} - ```{recipient_phone}```)",
-        f"From: {source_bank_name} (...{source_account_number[-4:] if source_account_number else '????'})",
+        f"*Amount:* {_format_currency_naira(float(amount or 0))}",
+        *recipient_lines,
     ]
     
     if narration:
-        lines.append(f"Narration: _{narration}_")
+        lines.append(f"*Note:* {narration}")
     
+    # Separator between recipient and source
     lines.append("")
-    lines.append(
-        "Tap the authorize button below to enter your transaction PIN.\n"
-    )
+    lines.append(f"*From:* {source_bank_name} (···{source_account_number[-4:] if source_account_number else '????'})")
+    lines.append("")
+    lines.append("Tap *Authorize* to enter your PIN.")
     
     summary = "\n".join(lines)
 

@@ -181,7 +181,8 @@ def build_graph(
         }
     )
 
-    workflow.add_edge("confirm", END)
+    # Confirm routes directly to authorize - graph will interrupt before authorize
+    workflow.add_edge("confirm", "authorize")
 
     workflow.add_edge("authorize", END)
     workflow.add_edge("cancel", END)
