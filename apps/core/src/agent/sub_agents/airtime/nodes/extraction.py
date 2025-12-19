@@ -53,8 +53,8 @@ async def extract_entities(state: AirtimeState, extractor: AirtimeEntityExtracto
 
     classification_result = state.get("classification_result")
     if classification_result:
-        is_cancellation = classification_result.get("intent", "").lower(
-        ) == "cancel" or classification_result.get("is_cancellation") is True
+        intent = classification_result.get("intent", "").lower()
+        is_cancellation = intent == "cancel" or classification_result.get("is_cancellation") is True
         if is_cancellation:
             flow_state = state.get("flow_state")
             airtime_status = state.get("airtime_status")
@@ -70,6 +70,16 @@ async def extract_entities(state: AirtimeState, extractor: AirtimeEntityExtracto
                     "flow_state": "cancelled",
                     "response": "",  # Will be set in handle_cancellation
                 }
+        
+        # Detect other interrupts - manage_accounts or query
+        if intent in ("manage_accounts", "query"):
+            debug_log(f"🔀 Airtime interrupt detected: {intent} - yielding to orchestrator")
+            return {
+                **state,
+                "flow_state": "paused",
+                "interrupt_intent": intent,
+                "response": "",  # Will be handled by orchestrator
+            }
     last_response = state.get("response") or state.get("llm_reply")
     smart_context = {}
     if last_response:
