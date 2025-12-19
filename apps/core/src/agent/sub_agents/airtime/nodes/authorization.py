@@ -161,13 +161,13 @@ async def authorize_transaction(
         pin_verification_key = f"transaction:pin_verified:{idem_key}"
         await redis_client.delete(pin_verification_key)
 
-        # Success response - keeping simple for now
-        response_message = "Airtime purchase authorized. Processing..."
+        # Return empty response - the executor will send the final success/failure notification
+        # This prevents race condition between auth message and executor notification
         return cast(
             AirtimeState,
             {
                 **state,
-                "response": response_message,
+                "response": "",  # Empty - executor sends final notification
                 "flow_state": "completed",
                 "airtime_status": "authorized",
                 "pin_verified": True,

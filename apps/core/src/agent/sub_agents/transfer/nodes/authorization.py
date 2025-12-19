@@ -189,13 +189,13 @@ async def authorize_transaction(
         await redis_client.delete(pin_verification_key)
 
         retry_count = pin_result.retry_count if pin_result else 0
-        # Success response - keeping simple for now as success is shown via completion message
-        response_message = "Transfer authorized. Processing your request..."
+        # Return empty response - the executor will send the final success/failure notification
+        # This prevents race condition between auth message and executor notification
         result = cast(
             TransferState,
             {
                 **state,
-                "response": response_message,
+                "response": "",  # Empty - executor sends final notification
                 "flow_state": "completed",
                 "transfer_status": "authorized",
                 "pin_verified": True,
