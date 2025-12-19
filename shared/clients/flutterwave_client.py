@@ -85,6 +85,11 @@ class FlutterwaveClient(PaymentProvider):
         return True
 
     @property
+    def supports_airtime(self) -> bool:
+        """Flutterwave supports airtime/bills purchases."""
+        return True
+
+    @property
     def access_token(self) -> Optional[str]:
         """Get the current access token (may be expired)."""
         return self._access_token
@@ -275,6 +280,146 @@ class FlutterwaveClient(PaymentProvider):
         # TODO: Implement Flutterwave status check
         raise NotImplementedError(
             "Flutterwave status check not yet implemented")
+
+    # Nigerian network biller codes for airtime
+    # These map network names to their Flutterwave biller/item codes
+    AIRTIME_BILLERS = {
+        "MTN": {"biller_code": "BIL099", "item_code": "AT099"},
+        "AIRTEL": {"biller_code": "BIL100", "item_code": "AT100"},
+        "GLO": {"biller_code": "BIL101", "item_code": "AT101"},
+        "9MOBILE": {"biller_code": "BIL102", "item_code": "AT102"},
+        "ETISALAT": {"biller_code": "BIL102", "item_code": "AT102"},  # Alias for 9mobile
+    }
+
+    async def purchase_airtime(
+        self,
+        amount: float,
+        recipient_phone: str,
+        network: str,
+        reference: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Purchase airtime via Flutterwave Bills Payment API.
+
+        Args:
+            amount: Amount of airtime to purchase
+            recipient_phone: Phone number to credit
+            network: Network name (MTN, Airtel, Glo, 9mobile)
+            reference: Optional unique transaction reference
+
+        Returns:
+            Dictionary with:
+                - success: bool
+                - transaction_id: str (if successful)
+                - message: str
+                - amount: float
+                - recipient_phone: str
+                - network: str
+                - error: str (if failed)
+                - provider: str
+        """
+        # Normalize network name
+        network_upper = network.upper().strip()
+        
+        # Get biller codes for this network
+        biller_info = self.AIRTIME_BILLERS.get(network_upper)
+        if not biller_info:
+            return {
+                "success": False,
+                "error": f"Unsupported network: {network}. Supported: MTN, Airtel, Glo, 9mobile",
+                "amount": amount,
+                "recipient_phone": recipient_phone,
+                "network": network,
+                "provider": self.provider_name,
+            }
+
+        biller_code = biller_info["biller_code"]
+        item_code = biller_info["item_code"]
+        
+        # Generate reference if not provided
+        if not reference:
+            reference = f"AIR-{uuid.uuid4().hex[:12].upper()}"
+
+        # Normalize phone number (remove country code prefix for customer_id)
+        customer_phone = recipient_phone
+        if customer_phone.startswith("+234"):
+            customer_phone = "0" + customer_phone[4:]
+        elif customer_phone.startswith("234"):
+            customer_phone = "0" + customer_phone[3:]
+
+        url = f"{self.base_url}/v3/billers/{biller_code}/items/{item_code}/payment"
+        
+        payload = {
+            "country": "NG",
+            "customer_id": customer_phone,
+            "amount": amount,
+            "reference": reference,
+        }
+
+        try:
+            headers = await self._get_headers()
+            headers["accept"] = "application/json"
+
+            print(f"📱 Purchasing ₦{amount:,.0f} {network} airtime for {customer_phone}...")
+            
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.post(url, headers=headers, json=payload)
+                
+                result = response.json()
+                print(f"📱 Airtime API response: {json.dumps(result, indent=2)}")
+
+                if response.status_code == 200 and result.get("status") == "success":
+                    data = result.get("data", {})
+                    return {
+                        "success": True,
+                        "transaction_id": data.get("reference") or reference,
+                        "message": result.get("message", "Airtime purchase successful"),
+                        "amount": amount,
+                        "recipient_phone": recipient_phone,
+                        "network": network,
+                        "provider": self.provider_name,
+                        "raw_response": data,
+                    }
+
+                # Handle error response
+                error_msg = result.get("message") or result.get("error") or "Airtime purchase failed"
+                return {
+                    "success": False,
+                    "error": error_msg,
+                    "amount": amount,
+                    "recipient_phone": recipient_phone,
+                    "network": network,
+                    "provider": self.provider_name,
+                }
+
+        except httpx.HTTPStatusError as e:
+            error_msg = f"HTTP {e.response.status_code}"
+            try:
+                error_body = e.response.json()
+                error_msg = error_body.get("message", error_msg)
+            except Exception:
+                pass
+            
+            print(f"❌ Airtime purchase API error: {error_msg}")
+            return {
+                "success": False,
+                "error": f"API error: {error_msg}",
+                "amount": amount,
+                "recipient_phone": recipient_phone,
+                "network": network,
+                "provider": self.provider_name,
+            }
+
+        except Exception as e:
+            print(f"❌ Airtime purchase error: {e}")
+            return {
+                "success": False,
+                "error": f"Unexpected error: {str(e)}",
+                "amount": amount,
+                "recipient_phone": recipient_phone,
+                "network": network,
+                "provider": self.provider_name,
+            }
 
     async def _get_access_token(self) -> str:
         """

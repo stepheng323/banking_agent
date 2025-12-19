@@ -77,6 +77,12 @@ class AirtimeExecutor:
             network = recipient.get("network", "")
             amount = float(airtime_data.get("amount", 0))
 
+            logger.info("airtime_purchase_starting", 
+                       phone=phone_number, 
+                       recipient=recipient_phone, 
+                       network=network, 
+                       amount=amount,
+                       provider=provider.provider_name)
 
             if hasattr(provider, "purchase_airtime"):
                 purchase_result = await provider.purchase_airtime(
@@ -85,17 +91,9 @@ class AirtimeExecutor:
                     network=network,
                 )
             else:
-                # Placeholder: Provider doesn't support airtime yet
-                # Simulate successful purchase for testing until provider adds airtime support
-                import uuid
-                purchase_result = {
-                    "success": True,
-                    "transaction_id": f"TXN-{uuid.uuid4().hex[:8].upper()}",
-                    "message": "Airtime purchase simulated successfully",
-                    "amount": amount,
-                    "recipient_phone": recipient_phone,
-                    "network": network,
-                }
+                # Provider doesn't support airtime - this shouldn't happen if factory works correctly
+                logger.error("provider_missing_purchase_airtime", provider=provider.provider_name)
+                raise NotImplementedError(f"Provider {provider.provider_name} doesn't support airtime purchases")
 
             if transaction_id:
                 with UnitOfWork() as uow:

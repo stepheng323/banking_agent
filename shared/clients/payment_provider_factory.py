@@ -115,4 +115,11 @@ class PaymentProviderFactory:
                     return provider
             return None
 
+        elif service == "purchase_airtime":
+            # Find a provider that supports airtime purchases
+            for provider in providers:
+                if hasattr(provider, "supports_airtime") and provider.supports_airtime:
+                    return provider
+            return None
+
         return None
