@@ -29,6 +29,12 @@ TRANSFER_EXTRACTION_PROMPT = (
     "- EXTERNAL transfers: require recipientAccount\n"
     "- transfer_all=true: Don't mark amount as missing\n\n"
     
+    "SMART CONTEXT:\n"
+    "- Check smartContext.recentTransfers for user's recent transfer history\n"
+    "- If user says 'same as before' or 'like last time', use details from recentTransfers[0]\n"
+    "- If recipient name matches recent transfer, you can pre-fill details\n"
+    "- Reference previous transfers naturally ('To Mum again?' or 'Same ₦10,000 as usual?')\n\n"
+    
     "REPLY:\n"
     "- Be natural, acknowledge extraction\n"
     "- Ask for missing recipient fields only\n"

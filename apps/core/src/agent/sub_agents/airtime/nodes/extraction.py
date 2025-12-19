@@ -91,6 +91,16 @@ async def extract_entities(state: AirtimeState, extractor: AirtimeEntityExtracto
     if language:
         smart_context["language"] = language
 
+    # Add recent airtime transactions for smart context
+    recent_transactions = state.get("recent_transactions", [])
+    if recent_transactions:
+        recent_airtime = [
+            t for t in recent_transactions 
+            if t.get("type") == "airtime" and t.get("status") == "success"
+        ][:3]
+        if recent_airtime:
+            smart_context["recentPurchases"] = recent_airtime
+
     result: AirtimeExtractionResult = await extractor.extract(state["message"], smart_context=smart_context if smart_context else None)
 
     entities = result.entities or SimpleAirtimeEntities()

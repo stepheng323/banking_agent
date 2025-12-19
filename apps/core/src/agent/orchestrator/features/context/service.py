@@ -91,6 +91,45 @@ class OrchestratorContextManager:
         
         return context
 
+    async def get_recent_transactions(self, phone_number: str, limit: int = 5) -> list[dict[str, Any]]:
+        """
+        Get user's recent transactions for smart context.
+        
+        Returns a simplified list of recent transactions that can be passed
+        to LLM extraction prompts to enable context-aware responses.
+        """
+        from shared.repositories.transaction_repository import TransactionRepository
+        from shared.repositories.unit_of_work import UnitOfWork
+        
+        try:
+            def fetch_transactions():
+                with UnitOfWork() as uow:
+                    if not self.user_repo:
+                        return []
+                    user = self.user_repo.get_by_phone(phone_number)
+                    if not user:
+                        return []
+                    
+                    txn_repo = TransactionRepository(uow.session)
+                    txns = txn_repo.get_by_user(str(user.id), limit=limit)
+                    return [
+                        {
+                            "type": t.type,
+                            "amount": float(t.amount) if t.amount else 0,
+                            "recipient_name": t.recipient_name,
+                            "recipient_account": t.recipient_account,
+                            "recipient_bank": t.recipient_bank,
+                            "status": t.status,
+                            "date": t.created_at.isoformat() if t.created_at else None,
+                        }
+                        for t in txns
+                    ]
+            
+            return await asyncio.to_thread(fetch_transactions)
+        except Exception as e:
+            logger.error("get_recent_transactions_error", phone=phone_number, error=str(e))
+            return []
+
 
     async def get_conversation_state(self, phone_number: str) -> Optional[dict[str, Any]]:
         """Get the current conversation/flow state for this user."""

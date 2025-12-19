@@ -47,6 +47,12 @@ class ContextLoaderHandler(MessageHandler):
             if planner_output:
                 current_task_id = await self.task_queue_service.get_current_task(context.phone_number)
         
+        # Load recent transactions for smart context
+        recent_transactions = await self.context_manager.get_recent_transactions(
+            context.phone_number, limit=5
+        )
+        user_ctx["recent_transactions"] = recent_transactions
+        
         return context.update(
             user_context=user_ctx,
             conversation_state=conversation_state,

@@ -38,6 +38,11 @@ AIRTIME_EXTRACTION_PROMPT = (
     "- Only mark 'sourceAccount' missing if user explicitly requests account selection\n"
     "- Empty list = all required fields present\n\n"
 
+    "**SMART CONTEXT:**\n"
+    "- Check smartContext.recentPurchases for user's recent airtime history\n"
+    "- If user says 'same as before' or 'like last time', use details from recentPurchases[0]\n"
+    "- Reference previous purchases naturally ('Same ₦2,000 as usual?')\n\n"
+
     "**REPLY GENERATION:**\n"
     "- Use smartContext.previousResponse for tone consistency\n"
     "- Be natural, contextual, personalized (not robotic)\n"

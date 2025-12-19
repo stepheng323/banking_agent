@@ -67,6 +67,17 @@ async def extract_entities(
     if language:
         smart_context["language"] = language
 
+    # Add recent transactions for smart context
+    recent_transactions = state.get("recent_transactions", [])
+    if recent_transactions:
+        # Filter to just recent transfers (last 3)
+        recent_transfers = [
+            t for t in recent_transactions 
+            if t.get("type") == "transfer" and t.get("status") == "success"
+        ][:3]
+        if recent_transfers:
+            smart_context["recentTransfers"] = recent_transfers
+
     message_to_extract = state.get("message", "")
     image_data = state.get("image_data")
     debug_log(f"🔍 [EXTRACTION] Extracting from message: '{message_to_extract}'")
