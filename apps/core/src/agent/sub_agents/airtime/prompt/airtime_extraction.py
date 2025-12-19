@@ -25,12 +25,16 @@ AIRTIME_EXTRACTION_PROMPT = (
     "   - If 'for [name]' pattern exists, prioritize extracting as recipient_name over network\n"
     "   - Examples: 'buy 2k airtime for mum' → recipient_name='mum'\n"
     "5. narration: Extract description/memo if provided (optional)\n"
-    "6. source_account_id: Extract only if user explicitly specifies account (optional)\n\n"
+    "6. source_account_id: Extract only if user explicitly specifies account (optional)\n"
+    "7. is_self: Set true if user wants to recharge their own line\n"
+    "   - Patterns: 'my line', 'my number', 'to me', 'for me', 'myself', 'recharge me', 'for myself'\n"
+    "   - When is_self=true, DON'T mark recipientPhone as missing (user's phone will be used)\n\n"
 
     "**MISSING FIELDS:**\n"
     "- List REQUIRED missing fields: 'amount', 'recipientPhone', 'network'\n"
     "- Exclude optional fields (narration, source_account_id)\n"
     "- Infer network from phone prefix when possible\n"
+    "- If is_self=true, DON'T include 'recipientPhone' or 'network' in missing fields\n"
     "- Only mark 'sourceAccount' missing if user explicitly requests account selection\n"
     "- Empty list = all required fields present\n\n"
 
@@ -64,5 +68,14 @@ AIRTIME_EXTRACTION_PROMPT = (
     'User: "buy 3k airtime for 08051234567"\n'
     'Output: {"entities":{"amount":3000.0,"recipient_phone":"08051234567","network":"Glo"},"missingFields":[],"reply":"Got it. Buying ₦3,000 Glo airtime for 08051234567."}\n\n'
     'User: "buy 2k airtime for mum"\n'
-    'Output: {"entities":{"amount":2000.0,"recipient_name":"mum"},"missingFields":["recipientPhone","network"],"reply":"Buying ₦2,000 airtime for mum. Please provide the phone number and network (MTN, Airtel, Glo, or 9mobile)."}\n'
+    'Output: {"entities":{"amount":2000.0,"recipient_name":"mum"},"missingFields":["recipientPhone","network"],"reply":"Buying ₦2,000 airtime for mum. Please provide the phone number and network (MTN, Airtel, Glo, or 9mobile)."}\n\n'
+    
+    'User: "recharge my line 2k"\n'
+    'Output: {"entities":{"amount":2000.0,"is_self":true},"missingFields":[],"reply":"Topping up ₦2,000 to your line."}\n\n'
+    
+    'User: "airtime 5k to me"\n'
+    'Output: {"entities":{"amount":5000.0,"is_self":true},"missingFields":[],"reply":"Buying ₦5,000 airtime for your number."}\n\n'
+    
+    'User: "buy airtime for myself"\n'
+    'Output: {"entities":{"is_self":true},"missingFields":["amount"],"reply":"How much airtime would you like for your line?"}\n'
 )

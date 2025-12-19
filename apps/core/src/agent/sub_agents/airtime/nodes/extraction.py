@@ -101,6 +101,19 @@ async def extract_entities(state: AirtimeState, extractor: AirtimeEntityExtracto
     extracted_phone = entities.recipient_phone
     extracted_network = entities.network
     extracted_amount = entities.amount
+    is_self = entities.is_self
+
+    # If user wants to recharge their own line, use their phone number
+    user_phone = state.get("phone_number", "")
+    if is_self and not extracted_phone and user_phone:
+        # Convert user's WhatsApp phone to local format
+        if user_phone.startswith("234") and len(user_phone) == 13:
+            extracted_phone = "0" + user_phone[3:]
+        elif user_phone.startswith("+234"):
+            extracted_phone = "0" + user_phone[4:]
+        else:
+            extracted_phone = user_phone
+        debug_log(f"ℹ️ is_self=True, using user's phone: {extracted_phone}")
 
     normalized_phone = None
     if extracted_phone:
