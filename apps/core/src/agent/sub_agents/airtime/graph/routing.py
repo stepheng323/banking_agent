@@ -62,12 +62,9 @@ def route_by_state(state: AirtimeState) -> Literal[
         return "end"
 
     if flow_state == "authorizing":
-        pin_verified = state.get("pin_verified")
-        if pin_verified is True:
-            debug_log("✅ PIN verified, routing to authorize node")
-            return "authorize"
-        debug_log("⏳ Waiting for PIN verification")
-        return "end"
+        # Always route to authorize node - it handles waiting for PIN internally
+        debug_log("🔄 Routing to authorize node")
+        return "authorize"
 
     if flow_state == "extracting":
         if all_fields_present and has_response:

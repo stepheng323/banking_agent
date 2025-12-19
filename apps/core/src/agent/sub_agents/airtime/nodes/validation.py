@@ -204,11 +204,16 @@ async def validate_amount(state: AirtimeState) -> AirtimeState:
             )
         
         debug_log(f"validate_amount: Amount valid - ₦{amount_float:,.2f}")
+        # Clear extracting state to prevent routing loop
+        new_flow_state = state.get("flow_state")
+        if new_flow_state == "extracting":
+            new_flow_state = None  # Clear the extracting state
         return cast(
             AirtimeState,
             {
                 **state,
                 "amount": amount_float,
+                "flow_state": new_flow_state,
                 "validation_errors": [],
             },
         )
