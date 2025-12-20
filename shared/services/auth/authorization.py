@@ -81,12 +81,11 @@ class AuthorizationService:
                 retry_count=0,
             )
 
-        # Use provided transaction_type or look it up
         if not transaction_type:
             transaction_type = await self.get_transaction_type_from_pending(
                 idempotency_key, phone_number
             )
-        
+
         if not transaction_type:
             return AuthorizationResult(
                 verified=False,

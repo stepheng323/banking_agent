@@ -21,6 +21,23 @@ class TransferExecutor:
     ):
         self.transfer_service = transfer_service
 
+    def _get_user_friendly_error(self, error: str) -> str:
+        """Convert technical error messages to user-friendly messages."""
+        error_lower = error.lower()
+        
+        if "timeout" in error_lower or "connect" in error_lower:
+            return "Service temporarily unavailable. Please try again in a few minutes."
+        if "invalid" in error_lower and "account" in error_lower:
+            return "Invalid account number. Please check and try again."
+        if "insufficient" in error_lower or "balance" in error_lower:
+            return "Insufficient balance for this transfer."
+        if "limit" in error_lower:
+            return "Transfer limit exceeded. Try a smaller amount."
+        if "pending" in error_lower:
+            return "Your request is still processing. Please wait a moment."
+        
+        return "Unable to complete transfer. Please try again later."
+
     async def handle_transfer(self, transfer_request: Dict[str, Any]) -> None:
         """
         Execute a transfer request and handle notifications.
@@ -68,44 +85,62 @@ class TransferExecutor:
                 currency="NGN"
             )
 
-            logger.info("transfer_executed", phone=phone_number, result=transfer_result.get("success"), transaction_id=transfer_result.get("transaction_id"))
-
-            if transaction_id:
-                with UnitOfWork() as uow:
-                    if uow.transactions:
-                        transaction = uow.transactions.get_by_id(
-                            str(transaction_id))
-                        if transaction:
-                            if transfer_result.get("success"):
-                                uow.transactions.update(
-                                    transaction,
-                                    status="completed",
-                                    transaction_id=transfer_result.get(
-                                        "transaction_id"),
-                                    provider_response=transfer_result,
-                                    completed_at=datetime.utcnow(),
-                                )
-                            else:
-                                error_msg = transfer_result.get(
-                                    "error", "Unknown error")
-                                uow.transactions.update(
-                                    transaction,
-                                    status="failed",
-                                    error_message=error_msg,
-                                    provider_response=transfer_result,
-                                    completed_at=datetime.utcnow(),
-                                )
-                            uow.commit()
+            logger.info("transfer_executed", phone=phone_number, result=transfer_result)
 
             await self.transfer_service.cleanup_redis_keys(phone_number, idem_key)
 
             if transfer_result.get("success"):
-                await self.transfer_service.send_success_notification(
-                    phone_number, transfer_data, transfer_result, transaction_id
-                )
+                tx_status = transfer_result.get("status", "successful").lower()
+                
+                if tx_status == "pending":
+                    if transaction_id:
+                        with UnitOfWork() as uow:
+                            if uow.transactions:
+                                transaction = uow.transactions.get_by_id(str(transaction_id))
+                                if transaction:
+                                    uow.transactions.update(
+                                        transaction, status="pending",
+                                        transaction_id=transfer_result.get("transaction_id"),
+                                        provider_response=transfer_result,
+                                    )
+                                    uow.commit()
+                    logger.info("transfer_pending", phone=phone_number)
+                    await self.transfer_service.send_pending_notification(
+                        phone_number, transfer_data, transfer_result, transaction_id
+                    )
+                else:
+                    if transaction_id:
+                        with UnitOfWork() as uow:
+                            if uow.transactions:
+                                transaction = uow.transactions.get_by_id(str(transaction_id))
+                                if transaction:
+                                    uow.transactions.update(
+                                        transaction, status="completed",
+                                        transaction_id=transfer_result.get("transaction_id"),
+                                        provider_response=transfer_result,
+                                        completed_at=datetime.utcnow(),
+                                    )
+                                    uow.commit()
+                    await self.transfer_service.send_success_notification(
+                        phone_number, transfer_data, transfer_result, transaction_id
+                    )
             else:
                 error_msg = transfer_result.get("error", "Unknown error")
-                await self.transfer_service.send_failure_notification(phone_number, error_msg)
+                if transaction_id:
+                    with UnitOfWork() as uow:
+                        if uow.transactions:
+                            transaction = uow.transactions.get_by_id(str(transaction_id))
+                            if transaction:
+                                uow.transactions.update(
+                                    transaction, status="failed",
+                                    error_message=error_msg,
+                                    provider_response=transfer_result,
+                                    completed_at=datetime.utcnow(),
+                                )
+                                uow.commit()
+                logger.warning("transfer_failed", phone=phone_number, error=error_msg)
+                user_msg = self._get_user_friendly_error(error_msg)
+                await self.transfer_service.send_failure_notification(phone_number, user_msg)
 
         except Exception as e:
             logger.error("transfer_execution_error", phone=phone_number, error=str(e), exc_info=True)
@@ -126,3 +161,4 @@ class TransferExecutor:
             await self.transfer_service.send_failure_notification(
                 phone_number, "Transfer failed due to an error. Please try again later."
             )
+
