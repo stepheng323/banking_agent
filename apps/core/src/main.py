@@ -32,17 +32,16 @@ async def lifespan(_app: FastAPI):
 
     payment_provider = None
     try:
-        logger.info("Warming up payment provider...")
+        logger.info("Initializing payment provider...")
         payment_provider = PaymentProviderFactory.get_provider_for_service(
             "resolve_account")
 
         if payment_provider:
-            await payment_provider.warm_up_token()
-            logger.info(f"{payment_provider.provider_name.title()} ready with cached token")
+            logger.info(f"{payment_provider.provider_name.title()} ready")
         else:
             logger.warning("No payment provider available")
     except Exception as e:
-        logger.warning("Payment provider warmup warning", error=str(e))
+        logger.warning("Payment provider initialization warning", error=str(e))
 
     redis_client = None
     try:

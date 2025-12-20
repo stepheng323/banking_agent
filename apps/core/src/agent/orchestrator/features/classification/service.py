@@ -99,27 +99,21 @@ class OrchestratorClassificationService:
         
 
         if active_flow in {"transfer", "airtime", "data"}:
-            # Patterns that indicate a DIFFERENT intent (not continuing the flow)
+            # Only intercept CLEAR interrupts during active flows
+            # Let LLM decide for ambiguous cases (corrections, updates, etc.)
             manage_account_keywords = {"account", "accounts", "link", "linked", "unlink", "default"}
             manage_account_phrases = {"show my", "list my", "my accounts", "linked account"}
             query_patterns = {"balance", "history", "statement", "spent", "spending", "transaction"}
-            question_patterns = {"why", "what", "how much", "how many", "when", "where", "who", "explain", "help"}
-            greeting_patterns = {"hi", "hello", "hey", "good morning", "good afternoon", "good evening"}
-            new_transaction_patterns = {"send", "transfer", "pay", "buy", "recharge", "top up"}
             
             words = set(text_clean.split())
-            word_count = len(text_clean.split())
             
             is_manage_accounts = (
                 bool(words & manage_account_keywords) or 
                 any(phrase in text_clean for phrase in manage_account_phrases)
             )
             is_query = bool(words & query_patterns)
-            is_question = text_clean.endswith("?") or any(p in text_clean for p in question_patterns)
-            is_greeting = text_clean in greeting_patterns
-            is_new_transaction = bool(words & new_transaction_patterns)
             
-            # INTERRUPT DETECTION: These take priority over continuing the flow
+            # INTERRUPT DETECTION: These clearly take priority over the active flow
             if is_manage_accounts:
                 return ClassificationResult(
                     intent="manage_accounts",
@@ -138,28 +132,9 @@ class OrchestratorClassificationService:
                     complexity_reason="Query request during active flow",
                 )
             
-            # If message is SHORT (1-4 words) and NOT clearly a different intent,
-            # assume it's continuing the active flow (providing missing data like bank name, amount, etc.)
-            if word_count <= 4 and not any([is_question, is_greeting, is_new_transaction]):
-                # This could be: bank name, account number, amount, recipient name, confirmation, etc.
-                return ClassificationResult(
-                    intent=active_flow,
-                    is_complex=False,
-                    confidence=0.95,
-                    response="",
-                    complexity_reason=f"Short response continuing active {active_flow} flow",
-                )
-            
-            # Also catch specific patterns for higher confidence
-            amount_match = re.match(r'^[nN]?\s*(\d+)[kK]?$', text_clean)
-            if amount_match:
-                return ClassificationResult(
-                    intent=active_flow,
-                    is_complex=False,
-                    confidence=0.98,
-                    response="Amount received.",
-                    complexity_reason="Simple amount detected",
-                )
+            # For anything else during active flow (amounts, corrections, new transactions),
+            # let the LLM decide with full context about the pending transaction
+            return None  # Fall through to LLM classification
         
         if active_flow == "transfer":
             if re.match(r'^\d{10}$', text_clean):
@@ -190,9 +165,19 @@ class OrchestratorClassificationService:
         image_data: Optional[str] = None,
     ) -> ClassificationResult:
         """Classify user intent from text."""
+        # Debug log the conversation state for troubleshooting
+        conv_state = context.get("conversationState") if context else None
+        if conv_state:
+            logger.info("classification_with_active_flow", 
+                       active_flow=conv_state.get("active_flow"),
+                       flow_state=conv_state.get("flow_state"),
+                       text=text[:50])
+        else:
+            logger.debug("classification_no_conv_state", text=text[:50])
+        
         fast_result = self._try_fast_path(text, context)
         if fast_result and not image_data:
-            logger.info("fast")
+            logger.info("fast_path_used", intent=fast_result.intent)
             return fast_result
         
 
@@ -208,13 +193,22 @@ class OrchestratorClassificationService:
                 conv_state = context["conversationState"]
                 active = conv_state.get('active_flow')
                 flow_state = conv_state.get('flow_state')
+                amount = conv_state.get('amount')
+                recipient = conv_state.get('recipient_phone') or conv_state.get('recipient_name')
+                
+                flow_details = f"Active flow: {active}, State: {flow_state}"
+                if amount:
+                    flow_details += f", Amount: ₦{amount:,.0f}"
+                if recipient:
+                    flow_details += f", Recipient: {recipient}"
+                
                 user_content = (
                     f"{user_content}\n\n"
-                    f"[Context: Active flow: {active}, Flow state: {flow_state}]\n"
-                    f"IMPORTANT: User is in an active {active} transaction. "
-                    f"Short responses (1-4 words) like bank names, amounts, account numbers, or confirmations should be classified as '{active}' to continue the flow. "
-                    f"Only classify as a DIFFERENT intent (manage_accounts, query, conversational) if the message CLEARLY asks about something else "
-                    f"(e.g., 'show my accounts', 'what's my balance', 'why?')."
+                    f"[Context: {flow_details}]\n"
+                    f"CRITICAL: User has a PENDING {active} transaction.\n"
+                    f"- If user provides ONLY a new amount (e.g., 'make it 200', 'buy 4k instead', 'I meant 500', '2000'), classify as '{active}' - this UPDATES the pending transaction.\n"
+                    f"- If user provides a NEW recipient (different phone/name), classify as '{active}' - this may be changing recipient or starting new.\n"
+                    f"- Only classify as a DIFFERENT intent if message CLEARLY asks about something else (balance, accounts, cancel)."
                 )
 
             if context.get("pendingBeneficiarySuggestion"):
