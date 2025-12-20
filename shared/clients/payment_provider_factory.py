@@ -1,51 +1,42 @@
-"""Factory for creating and managing payment service providers."""
+"""Factory for creating and managing payment and bill payment providers."""
 from typing import List, Optional
 
 from shared.clients.payment_provider import PaymentProvider
+from shared.clients.bill_payment_provider import BillPaymentProvider
 from shared.clients.flutterwave_client import FlutterwaveClient
+from shared.clients.flutterwave_bills_client import FlutterwaveBillsClient
 
 
 class PaymentProviderFactory:
-    """
-    Factory for managing multiple payment service providers.
-    Supports provider fallback and priority ordering.
-    """
+    """Factory for managing payment and bill payment providers."""
 
-    # Provider priority order (highest priority first)
     DEFAULT_PROVIDER_ORDER = ["flutterwave"]
 
     @staticmethod
     def create_provider(provider_name: str) -> Optional[PaymentProvider]:
-        """
-        Create a payment provider instance by name.
-
-        Args:
-            provider_name: Name of the provider (e.g., "flutterwave", "paystack")
-
-        Returns:
-            Provider instance if available and configured, None otherwise
-        """
+        """Create a payment provider instance by name."""
         if provider_name == "flutterwave":
             try:
                 return FlutterwaveClient()
             except ValueError:
                 return None
+        return None
 
+    @staticmethod
+    def create_bill_payment_provider(provider_name: str) -> Optional[BillPaymentProvider]:
+        """Create a bill payment provider instance by name."""
+        if provider_name == "flutterwave":
+            try:
+                return FlutterwaveBillsClient()
+            except ValueError:
+                return None
         return None
 
     @staticmethod
     def get_available_providers(
         priority_order: Optional[List[str]] = None
     ) -> List[PaymentProvider]:
-        """
-        Get all available and configured providers in priority order.
-
-        Args:
-            priority_order: Optional custom priority order. If None, uses DEFAULT_PROVIDER_ORDER.
-
-        Returns:
-            List of available provider instances, ordered by priority
-        """
+        """Get all available payment providers in priority order."""
         if priority_order is None:
             priority_order = PaymentProviderFactory.DEFAULT_PROVIDER_ORDER
 
@@ -54,65 +45,57 @@ class PaymentProviderFactory:
             provider = PaymentProviderFactory.create_provider(provider_name)
             if provider and provider.is_available:
                 providers.append(provider)
-
         return providers
 
     @staticmethod
     def get_primary_provider() -> Optional[PaymentProvider]:
-        """
-        Get the primary (highest priority) available provider.
-
-        Returns:
-            Primary provider instance if available, None otherwise
-        """
+        """Get the primary (highest priority) available payment provider."""
         providers = PaymentProviderFactory.get_available_providers()
         return providers[0] if providers else None
 
     @staticmethod
     def get_provider_by_name(provider_name: str) -> Optional[PaymentProvider]:
-        """
-        Get a specific provider by name, if available.
-
-        Args:
-            provider_name: Name of the provider
-
-        Returns:
-            Provider instance if available and configured, None otherwise
-        """
+        """Get a specific payment provider by name."""
         provider = PaymentProviderFactory.create_provider(provider_name)
         if provider and provider.is_available:
             return provider
         return None
 
     @staticmethod
-    def get_provider_for_service(service: str) -> Optional[PaymentProvider]:
+    def get_bill_payment_provider(provider_name: str = "flutterwave") -> Optional[BillPaymentProvider]:
         """
-        Get the best available provider for a specific service.
-
+        Get a bill payment provider for airtime, data, and utility payments.
+        
         Args:
-            service: Service name (e.g., "resolve_account", "initiate_transfer")
-
+            provider_name: Name of the provider (default: "flutterwave")
+            
         Returns:
-            Best available provider for the service, None if none available
+            Bill payment provider instance if available, None otherwise
         """
+        provider = PaymentProviderFactory.create_bill_payment_provider(provider_name)
+        if provider and provider.is_available:
+            return provider
+        return None
+
+    @staticmethod
+    def get_provider_for_service(service: str) -> Optional[PaymentProvider]:
+        """Get the best available payment provider for a specific service."""
         providers = PaymentProviderFactory.get_available_providers()
 
         if service == "resolve_account":
-            # All providers support account resolution
             return providers[0] if providers else None
 
         elif service == "initiate_transfer":
-            # Find a provider that supports transfers
             for provider in providers:
                 if provider.supports_transfers:
                     return provider
             return None
 
         elif service == "get_transfer_status":
-            # Find a provider that supports status checks
             for provider in providers:
                 if provider.supports_status_checks:
                     return provider
             return None
 
         return None
+

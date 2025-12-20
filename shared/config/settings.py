@@ -42,12 +42,13 @@ class Settings:
         self.flow_session_timeout: int = int(
             os.getenv("FLOW_SESSION_TIMEOUT", "600"))
 
+        self.pending_transaction_ttl: int = int(
+            os.getenv("PENDING_TRANSACTION_TTL", "900"))
+
         self.openai_api_key: str = os.getenv("OPENAI_API_KEY", "")
 
-        self.flutterwave_client_id: str = os.getenv(
-            "FLUTTERWAVE_CLIENT_ID", "")
-        self.flutterwave_client_secret: str = os.getenv(
-            "FLUTTERWAVE_CLIENT_SECRET", "")
+        self.flutterwave_secret_key: str = os.getenv(
+            "FLUTTERWAVE_SECRET_KEY", "")
         self.flutterwave_use_sandbox: bool = os.getenv(
             "FLUTTERWAVE_USE_SANDBOX", "false").lower() == "true"
 
@@ -71,7 +72,7 @@ class Settings:
             warnings.append(
                 "META_PHONE_NUMBER_ID is not set - using development default")
 
-        if not self.onboarding_flow_id or self.onboarding_flow_id == "1212187900453009":
+        if not self.onboarding_flow_id:
             warnings.append(
                 "ONBOARDING_FLOW_ID is using default - update with your actual Flow ID")
 

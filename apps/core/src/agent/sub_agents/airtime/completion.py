@@ -107,6 +107,31 @@ class AirtimeCompletionService:
         except Exception as e:
             logger.error("airtime_success_notification_error", phone=phone_number, error=str(e), exc_info=True)
 
+    async def send_pending_notification(
+        self,
+        phone_number: str,
+        airtime_data: Dict[str, Any],
+        purchase_result: Dict[str, Any],
+        transaction_id: Optional[str] = None,
+    ) -> None:
+        """Send notification for pending airtime purchase."""
+        await asyncio.sleep(2.5)
+        
+        try:
+            amount = float(airtime_data.get("amount", 0))
+            recipient = airtime_data.get("recipient", {})
+            recipient_phone = recipient.get("phone", "")
+            
+            message = (
+                f"⏳ Your ₦{amount:,.0f} airtime purchase for {recipient_phone} is processing.\n\n"
+                "You'll receive confirmation shortly. If you don't receive it within 5 minutes, please contact support."
+            )
+            
+            await self.whatsapp_client.send_text(to=phone_number, text=message)
+            logger.info("airtime_pending_notification_sent", phone=phone_number)
+        except Exception as e:
+            logger.error("airtime_pending_notification_error", phone=phone_number, error=str(e))
+
     async def send_failure_notification(
         self, phone_number: str, error_message: str
     ) -> None:

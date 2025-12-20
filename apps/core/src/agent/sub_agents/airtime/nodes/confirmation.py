@@ -118,17 +118,17 @@ async def prepare_confirmation(
     pipe = redis_client.pipeline()
     pipe.setex(
         f"user:{state['phone_number']}:pending_airtime",
-        900,
+        settings.pending_transaction_ttl,
         json.dumps(pending)
     )
     pipe.setex(
         f"user:{state['phone_number']}:pending_airtime_flow_token",
-        900,
+        settings.pending_transaction_ttl,
         token
     )
     pipe.setex(
         f"transaction:token:{idem_key}:phone",
-        900,
+        settings.pending_transaction_ttl,
         state["phone_number"]
     )
     await pipe.execute()

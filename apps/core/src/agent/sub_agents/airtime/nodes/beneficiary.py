@@ -29,13 +29,8 @@ async def find_beneficiary(
     synthesizer = get_synthesizer()
 
     # Filter beneficiaries to only airtime type
-    airtime_beneficiaries = []
-    for b in beneficiaries:
-        if isinstance(b, dict):
-            if b.get("beneficiary_type") == "airtime":
-                airtime_beneficiaries.append(b)
-        elif hasattr(b, "beneficiary_type") and b.beneficiary_type == "airtime":
-            airtime_beneficiaries.append(b)
+    from . import filter_airtime_beneficiaries
+    airtime_beneficiaries = filter_airtime_beneficiaries(beneficiaries)
 
     if rec_name and not (recipient_phone and network):
         beneficiaries_models = [
@@ -81,50 +76,71 @@ async def find_beneficiary(
             if recipient_phone and not network:
                 context = build_response_context(ResponseIntent.ASK_NETWORK, state)
                 response = await synthesizer.synthesize(context)
+                # Prepend amount change acknowledgment if present
+                ack = state.get("_amount_changed_ack", "")
+                if ack:
+                    response = f"{ack} {response}"
                 return cast(AirtimeState, {
                     **state,
                     "matched_beneficiary": None,
                     "flow_state": "collecting_phone",
                     "response": response,
+                    "_amount_changed_ack": None,  # Clear after use
                 })
             else:
                 context = build_response_context(ResponseIntent.ASK_PHONE_NUMBER, state)
                 response = await synthesizer.synthesize(context)
+                ack = state.get("_amount_changed_ack", "")
+                if ack:
+                    response = f"{ack} {response}"
                 return cast(AirtimeState, {
                     **state,
                     "matched_beneficiary": None,
                     "flow_state": "collecting_phone",
                     "response": response,
+                    "_amount_changed_ack": None,
                 })
 
     if recipient_phone and not network:
         context = build_response_context(ResponseIntent.ASK_NETWORK, state)
         response = await synthesizer.synthesize(context)
+        ack = state.get("_amount_changed_ack", "")
+        if ack:
+            response = f"{ack} {response}"
         return cast(AirtimeState, {
             **state,
             "matched_beneficiary": None,
             "flow_state": "collecting_phone",
             "response": response,
+            "_amount_changed_ack": None,
         })
 
     if network and not recipient_phone:
         context = build_response_context(ResponseIntent.ASK_PHONE_NUMBER, state)
         response = await synthesizer.synthesize(context)
+        ack = state.get("_amount_changed_ack", "")
+        if ack:
+            response = f"{ack} {response}"
         return cast(AirtimeState, {
             **state,
             "matched_beneficiary": None,
             "flow_state": "collecting_phone",
             "response": response,
+            "_amount_changed_ack": None,
         })
 
     if not recipient_phone or not network:
         context = build_response_context(ResponseIntent.ASK_PHONE_NUMBER, state)
         response = await synthesizer.synthesize(context)
+        ack = state.get("_amount_changed_ack", "")
+        if ack:
+            response = f"{ack} {response}"
         return cast(AirtimeState, {
             **state,
             "matched_beneficiary": None,
             "flow_state": "collecting_phone",
             "response": response,
+            "_amount_changed_ack": None,
         })
 
     matched_beneficiary = state.get("matched_beneficiary")

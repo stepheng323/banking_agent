@@ -3,8 +3,9 @@
 from typing import Literal
 
 from apps.core.src.agent.sub_agents.airtime.state import AirtimeState
+from shared.utils.logging import get_logger
 
-from .utils import debug_log
+logger = get_logger(__name__)
 
 
 def route_by_state(state: AirtimeState) -> Literal[
@@ -26,10 +27,13 @@ def route_by_state(state: AirtimeState) -> Literal[
     recipient_phone = state.get("recipient_phone")
     network = state.get("network")
 
-    debug_log(
-        f"DEBUG route_by_state: flow_state={flow_state}, has_response={bool(response)}")
-    debug_log(
-        f"DEBUG route_by_state: fields amount={amount}, selected_account={'yes' if selected_account else 'no'}, recipient_phone={recipient_phone}, network={network}")
+    logger.debug("route_by_state", 
+                flow_state=flow_state,
+                has_response=bool(response),
+                has_amount=bool(amount),
+                has_account=bool(selected_account),
+                has_phone=bool(recipient_phone),
+                has_network=bool(network))
 
     if flow_state == "cancelled":
         return "cancel" if not response else "end"
@@ -44,11 +48,7 @@ def route_by_state(state: AirtimeState) -> Literal[
         seq_ok = True
         if amount_set_at is not None and recipient_established_at is not None:
             seq_ok = bool(amount_set_at >= recipient_established_at)
-            debug_log(
-                f"DEBUG route_by_state: sequencing check amt_ts={amount_set_at}, rcp_ts={recipient_established_at}, seq_ok={seq_ok}")
         if seq_ok:
-            debug_log(
-                "✅ route_by_state: All required fields present (sequence ok) -> confirm")
             return "confirm"
 
     if has_response and flow_state in ("collecting_amount", "collecting_phone", "selecting_account", "error", "confirming"):
@@ -62,30 +62,20 @@ def route_by_state(state: AirtimeState) -> Literal[
         return "end"
 
     if flow_state == "authorizing":
-        # Always route to authorize node - it handles waiting for PIN internally
-        debug_log("🔄 Routing to authorize node")
         return "authorize"
 
     if flow_state == "extracting":
         if all_fields_present and has_response:
-            debug_log(
-                "DEBUG route_by_state: All required fields present with response during extracting -> end")
             return "end"
-        debug_log("DEBUG route_by_state: extracting -> validate")
         return "validate"
 
     if not amount:
-        debug_log("DEBUG route_by_state: Missing amount -> collect_amount")
         return "collect_amount"
 
     if not selected_account:
-        debug_log(
-            "DEBUG route_by_state: No selected account, routing to select_account")
         return "select_account"
 
     if not recipient_phone or not network:
-        debug_log(
-            "DEBUG route_by_state: Missing recipient_phone or network -> collect_phone")
         return "collect_phone"
 
     return "end"
@@ -96,6 +86,5 @@ def route_after_extract(state: AirtimeState) -> str:
     flow_state = state.get("flow_state")
     response = state.get("response", "")
     if flow_state == "cancelled" and not response:
-        debug_log("🛑 Routing to cancel node after extract_entities")
         return "cancel"
     return "__route__"
