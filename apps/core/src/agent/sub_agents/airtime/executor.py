@@ -27,6 +27,48 @@ class AirtimeExecutor:
         """
         self.airtime_service = airtime_service
 
+    def _update_transaction_status(
+        self,
+        transaction_id: str,
+        status: str,
+        error_message: str | None = None,
+        provider_response: Dict[str, Any] | None = None,
+        provider_transaction_id: str | None = None,
+    ) -> None:
+        """Update transaction status in database."""
+        if not transaction_id:
+            return
+        with UnitOfWork() as uow:
+            if uow.transactions:
+                transaction = uow.transactions.get_by_id(str(transaction_id))
+                if transaction:
+                    uow.transactions.update(
+                        transaction,
+                        status=status,
+                        error_message=error_message,
+                        transaction_id=provider_transaction_id,
+                        provider_response=provider_response,
+                        completed_at=datetime.utcnow(),
+                    )
+                    uow.commit()
+
+    def _get_user_friendly_error(self, error: str) -> str:
+        """Convert technical error messages to user-friendly messages."""
+        error_lower = error.lower()
+        
+        if "timeout" in error_lower or "connect" in error_lower:
+            return "Service temporarily unavailable. Please try again in a few minutes."
+        if "invalid" in error_lower and "phone" in error_lower:
+            return "Invalid phone number format. Please check and try again."
+        if "insufficient" in error_lower or "balance" in error_lower:
+            return "Insufficient balance for this purchase. Try a smaller amount."
+        if "network" in error_lower and "unsupported" in error_lower:
+            return "Unsupported network. Please try MTN, Airtel, Glo, or 9mobile."
+        if "pending" in error_lower:
+            return "Your request is still processing. Please wait a moment."
+        
+        return "Unable to complete airtime purchase. Please try again later."
+
     async def handle_airtime(self, airtime_request: Dict[str, Any]) -> None:
         """
         Execute an airtime purchase request and handle notifications.
@@ -57,20 +99,9 @@ class AirtimeExecutor:
                         uow.commit()
 
         try:
-            # Get payment provider for airtime purchase
-            # Note: This assumes the provider supports airtime purchase
-            # If not available, we'll need to add purchase_airtime method to PaymentProvider
-            provider = PaymentProviderFactory.get_provider_for_service(
-                "purchase_airtime"
-            )
-            
-            # Fallback: Try to get any available provider if purchase_airtime service not found
+            provider = PaymentProviderFactory.get_bill_payment_provider()
             if not provider:
-                logger.warning("airtime_provider_not_found", service="purchase_airtime")
-                provider = PaymentProviderFactory.get_primary_provider()
-                if not provider:
-                    logger.error("no_payment_provider_available")
-                    raise ValueError("No payment provider available for airtime purchases")
+                raise ValueError("No payment provider available for airtime purchases")
 
             recipient = airtime_data.get("recipient", {})
             recipient_phone = recipient.get("phone", "")
@@ -84,87 +115,65 @@ class AirtimeExecutor:
                        amount=amount,
                        provider=provider.provider_name)
 
-            if hasattr(provider, "purchase_airtime"):
-                purchase_result = await provider.purchase_airtime(
-                    amount=amount,
-                    recipient_phone=recipient_phone,
-                    network=network,
-                )
-            else:
-                # Provider doesn't support airtime - this shouldn't happen if factory works correctly
-                logger.error("provider_missing_purchase_airtime", provider=provider.provider_name)
-                raise NotImplementedError(f"Provider {provider.provider_name} doesn't support airtime purchases")
+            purchase_result = await provider.purchase_airtime(
+                amount=amount,
+                recipient_phone=recipient_phone,
+                network=network,
+            )
 
-            if transaction_id:
-                with UnitOfWork() as uow:
-                    if uow.transactions:
-                        transaction = uow.transactions.get_by_id(str(transaction_id))
-                        if transaction:
-                            if purchase_result.get("success"):
-                                uow.transactions.update(
-                                    transaction,
-                                    status="completed",
-                                    transaction_id=purchase_result.get("transaction_id"),
-                                    provider_response=purchase_result,
-                                    completed_at=datetime.utcnow(),
-                                )
-                            else:
-                                error_msg = purchase_result.get("error", "Unknown error")
-                                uow.transactions.update(
-                                    transaction,
-                                    status="failed",
-                                    error_message=error_msg,
-                                    provider_response=purchase_result,
-                                    completed_at=datetime.utcnow(),
-                                )
-                            uow.commit()
+            logger.info("airtime_purchase_result", phone=phone_number, result=purchase_result)
 
             await self.airtime_service.cleanup_redis_keys(phone_number, idem_key)
 
             if purchase_result.get("success"):
-                logger.info("airtime_purchase_successful", phone=phone_number, recipient=recipient_phone)
-                await self.airtime_service.send_success_notification(
-                    phone_number, airtime_data, purchase_result, transaction_id
-                )
-                logger.debug("airtime_success_notification_sent", phone=phone_number)
+                tx_status = purchase_result.get("status", "successful").lower()
+                
+                if tx_status == "pending":
+                    self._update_transaction_status(
+                        transaction_id, "pending",
+                        provider_response=purchase_result,
+                        provider_transaction_id=purchase_result.get("transaction_id")
+                    )
+                    logger.info("airtime_purchase_pending", phone=phone_number, recipient=recipient_phone)
+                    await self.airtime_service.send_pending_notification(
+                        phone_number, airtime_data, purchase_result, transaction_id
+                    )
+                else:
+                    self._update_transaction_status(
+                        transaction_id, "completed",
+                        provider_response=purchase_result,
+                        provider_transaction_id=purchase_result.get("transaction_id")
+                    )
+                    logger.info("airtime_purchase_successful", phone=phone_number, recipient=recipient_phone)
+                    await self.airtime_service.send_success_notification(
+                        phone_number, airtime_data, purchase_result, transaction_id
+                    )
             else:
                 error_msg = purchase_result.get("error", "Unknown error")
+                self._update_transaction_status(
+                    transaction_id, "failed",
+                    error_message=error_msg,
+                    provider_response=purchase_result
+                )
                 logger.warning("airtime_purchase_failed", phone=phone_number, error=error_msg)
-                await self.airtime_service.send_failure_notification(phone_number, error_msg)
-                logger.debug("airtime_failure_notification_sent", phone=phone_number)
+                user_msg = self._get_user_friendly_error(error_msg)
+                await self.airtime_service.send_failure_notification(phone_number, user_msg)
 
         except NotImplementedError as e:
             logger.warning("airtime_not_implemented", error=str(e), exc_info=True)
-            # Mark transaction as failed
-            if transaction_id:
-                with UnitOfWork() as uow:
-                    if uow.transactions:
-                        transaction = uow.transactions.get_by_id(str(transaction_id))
-                        if transaction:
-                            uow.transactions.update(
-                                transaction,
-                                status="failed",
-                                error_message="Airtime purchase service not yet available",
-                                completed_at=datetime.utcnow(),
-                            )
-                            uow.commit()
+            self._update_transaction_status(
+                transaction_id, "failed",
+                error_message="Airtime purchase service not yet available"
+            )
             await self.airtime_service.send_failure_notification(
                 phone_number, "Airtime purchase service is not yet available. Please try again later."
             )
         except Exception as e:
             logger.error("airtime_execution_error", phone=phone_number, error=str(e), exc_info=True)
-            if transaction_id:
-                with UnitOfWork() as uow:
-                    if uow.transactions:
-                        transaction = uow.transactions.get_by_id(str(transaction_id))
-                        if transaction:
-                            uow.transactions.update(
-                                transaction,
-                                status="failed",
-                                error_message=str(e),
-                                completed_at=datetime.utcnow(),
-                            )
-                            uow.commit()
+            self._update_transaction_status(
+                transaction_id, "failed",
+                error_message=str(e)
+            )
 
             await self.airtime_service.send_failure_notification(
                 phone_number, "Airtime purchase failed due to an error. Please try again later."
