@@ -144,6 +144,30 @@ class TransferCompletionService:
         except Exception as e:
             logger.error("transfer_success_notification_error", phone=phone_number, error=str(e), exc_info=True)
 
+    async def send_pending_notification(
+        self,
+        phone_number: str,
+        transfer_data: Dict[str, Any],
+        transfer_result: Dict[str, Any],
+        transaction_id: Optional[str] = None,
+    ) -> None:
+        """Send notification for pending transfer."""
+        await asyncio.sleep(2.5)
+        
+        try:
+            amount = float(transfer_data.get("amount", 0))
+            recipient = transfer_data.get("recipient", {})
+            recipient_name = recipient.get("name", "recipient")
+            
+            message = (
+                f"⏳ Your ₦{amount:,.0f} transfer to {recipient_name} is processing.\n\n"
+                "You'll receive confirmation shortly. If you don't receive it within 5 minutes, please contact support."
+            )
+            
+            await self.whatsapp_client.send_text(to=phone_number, text=message)
+            logger.info("transfer_pending_notification_sent", phone=phone_number)
+        except Exception as e:
+            logger.error("transfer_pending_notification_error", phone=phone_number, error=str(e))
 
     async def send_failure_notification(
         self, phone_number: str, error_message: str
