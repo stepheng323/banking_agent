@@ -9,6 +9,7 @@ This handler:
 from typing import Any, Dict
 
 from fastapi.responses import Response
+import asyncio
 
 from shared.cache.redis_client import RedisClient
 from shared.clients.whatsapp_client import WhatsAppClient
@@ -109,7 +110,6 @@ async def handle_transaction_pin(
             iv_bytes,
         )
 
-    # Verify PIN using shared authorization service
     authorization_service = AuthorizationService(redis_client=redis_client)
 
     auth_result = await authorization_service.verify_pin(
@@ -143,7 +143,6 @@ async def handle_transaction_pin(
             iv_bytes,
         )
 
-    # PIN verified! Publish event for core to handle resume
     try:
         if redis_queue is None:
             redis_queue = RedisQueue(redis_url=settings.redis_url)
@@ -157,12 +156,13 @@ async def handle_transaction_pin(
         )
         await redis_queue.publish_flow_event(flow_event)
         
-        # Send immediate acknowledgment
-        response_message = f"{transaction_type.capitalize()} transaction authorized. Processing your request..."
-        await whatsapp_client.send_text(
-            to=phone_number,
-            text=response_message,
-        )
+        async def send_ack():
+            await asyncio.sleep(0.5)
+            await whatsapp_client.send_text(
+                to=phone_number,
+                text=f"✅ PIN verified! Processing your {transaction_type}...",
+            )
+        asyncio.create_task(send_ack())
     except Exception as e:
         print(f"Error publishing flow event: {e}")
         import traceback
