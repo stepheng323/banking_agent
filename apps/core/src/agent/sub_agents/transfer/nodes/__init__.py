@@ -16,6 +16,10 @@ from .funding import (
     confirm_funding,
     initiate_debits,
 )
+from .transfer_execution import (
+    execute_single_account_transfer,
+    execute_multi_account_payout,
+)
 
 __all__ = [
     "extract_entities",
@@ -34,4 +38,7 @@ __all__ = [
     "plan_funding",
     "confirm_funding",
     "initiate_debits",
+    # Transfer execution
+    "execute_single_account_transfer",
+    "execute_multi_account_payout",
 ]
