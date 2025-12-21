@@ -255,9 +255,11 @@ class MonoClient:
     async def initiate_debit(
         self,
         mandate_id: str,
-        amount: int,  # in kobo
+        amount: int,
         reference: str,
-        narration: str = "Transfer funding"
+        narration: str = "Transfer",
+        beneficiary_account: Optional[str] = None,
+        beneficiary_bank_code: Optional[str] = None,
     ) -> dict:
         """
         Initiate a one-time debit against a mandate.
@@ -267,12 +269,20 @@ class MonoClient:
             amount: Amount to debit in kobo
             reference: Unique reference for this debit
             narration: Description for the transaction
+            beneficiary_account: If provided, funds go directly to this account (direct-to-beneficiary)
+            beneficiary_bank_code: Required if beneficiary_account is provided
             
         Returns:
             Dict with debit_id and status
         """
+        is_direct_to_beneficiary = beneficiary_account and beneficiary_bank_code
+        
         if self.use_mock:
-            logger.info("mock_initiate_debit", mandate_id=mandate_id, amount=amount, reference=reference)
+            logger.info("mock_initiate_debit", 
+                       mandate_id=mandate_id, 
+                       amount=amount, 
+                       reference=reference,
+                       direct_to_beneficiary=is_direct_to_beneficiary)
             return {
                 "id": f"mock_debit_{reference}",
                 "status": "pending",
@@ -286,8 +296,20 @@ class MonoClient:
             "reference": reference,
             "narration": narration,
         }
+        
+        if is_direct_to_beneficiary:
+            body["debit_type"] = "direct-to-beneficiary"
+            body["beneficiary"] = {
+                "account_number": beneficiary_account,
+                "bank_code": beneficiary_bank_code,
+            }
+        
         data = await self._request("POST", "/v3/payments/debits/initiate", body=body)
-        logger.info("debit_initiated", mandate_id=mandate_id, debit_id=data.get("id"), reference=reference)
+        logger.info("debit_initiated", 
+                   mandate_id=mandate_id, 
+                   debit_id=data.get("id"), 
+                   reference=reference,
+                   direct_to_beneficiary=is_direct_to_beneficiary)
         return data
 
     async def get_debit_status(self, debit_id: str) -> dict:

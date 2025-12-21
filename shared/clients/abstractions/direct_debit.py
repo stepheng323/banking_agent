@@ -85,9 +85,11 @@ class DirectDebitProvider(ABC):
     async def initiate_debit(
         self,
         mandate_id: str,
-        amount: float,  # In naira
+        amount: float,
         reference: str,
-        narration: str = "Transfer funding"
+        narration: str = "Transfer",
+        beneficiary_account: Optional[str] = None,
+        beneficiary_bank_code: Optional[str] = None,
     ) -> DebitResult:
         """
         Initiate a one-time debit against a mandate.
@@ -97,6 +99,8 @@ class DirectDebitProvider(ABC):
             amount: Amount to debit in naira
             reference: Unique reference for this debit
             narration: Description for the transaction
+            beneficiary_account: If provided, direct-to-beneficiary transfer
+            beneficiary_bank_code: Required if beneficiary_account provided
             
         Returns:
             DebitResult with debit_id and initial status

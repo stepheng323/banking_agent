@@ -57,19 +57,21 @@ class MonoDirectDebitProvider(DirectDebitProvider):
         mandate_id: str,
         amount: float,
         reference: str,
-        narration: str = "Transfer funding"
+        narration: str = "Transfer",
+        beneficiary_account: Optional[str] = None,
+        beneficiary_bank_code: Optional[str] = None,
     ) -> DebitResult:
         """Initiate a one-time debit via Mono Direct Debit API."""
         try:
-            # Convert naira to kobo for Mono API
             amount_kobo = int(amount * 100)
             
-            # Call Mono API (we'll add this method to the client)
             response = await self._client.initiate_debit(
                 mandate_id=mandate_id,
                 amount=amount_kobo,
                 reference=reference,
                 narration=narration,
+                beneficiary_account=beneficiary_account,
+                beneficiary_bank_code=beneficiary_bank_code,
             )
             
             return DebitResult(
