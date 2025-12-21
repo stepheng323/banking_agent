@@ -46,7 +46,7 @@ async def validate_parallel(
     whatsapp_client: Optional[WhatsAppClient] = None,
 ) -> TransferState:
     """
-    Parallel validation: resolve account + check balance.
+    Parallel validation: resolve bank code + validate recipient account.
     
     Args:
         state: Current transfer state

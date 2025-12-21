@@ -270,8 +270,8 @@ async def extract_entities(
     # Handle transfer_all (move entire balance)
     if getattr(entities, 'transfer_all', None) is True:
         updates["transfer_all"] = True
-        updates["amount"] = None  # Will be resolved from balance during validation
-        debug_log("💰 [EXTRACTION] Transfer all detected - amount will be resolved from balance")
+        updates["amount"] = None  # Will be resolved in check_funding node
+        debug_log("💰 [EXTRACTION] Transfer all detected - amount will be set from balance in check_funding")
 
     # Debug: Log what updates will be applied
     debug_log(f"🔍 [EXTRACTION] Updates to apply: {updates}")
