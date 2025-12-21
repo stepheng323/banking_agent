@@ -132,10 +132,7 @@ class AirtimeFlowGraph:
                 logger.info("flow_resume_replay", phone=phone_number[:6])
                 return f"{prefix}{saved_response}"
         
-        # Fallback to last_response
-        last_response = await self.redis_client.get(f"user:{phone_number}:last_response")
-        if last_response:
-            return f"Continuing your airtime purchase! {last_response}"
+        # No paused flow data - the response will come from the LangGraph checkpoint
         return None
 
     async def _load_state_from_checkpoint(self, config: RunnableConfig) -> tuple[Optional[dict], bool]:
@@ -252,8 +249,10 @@ class AirtimeFlowGraph:
         if old_values["network"] != new_vals["network"] and new_vals["network"]:
             changes.append(f"network to {new_vals['network']}")
         
-        ack_msg = "Got it, changing " + " and ".join(changes) + "." if changes else "Got it, updating..."
-        await self.whatsapp_client.send_text(phone_number, ack_msg)
+        ack_msg = extracted.get("llm_reply") if extracted.get("llm_reply") else (
+            f"Got it, changing {' and '.join(changes)}." if changes else "Got it, updating..."
+        )
+        await self.whatsapp_client.send_text(phone_number, ack_msg, message_id=message_id)
         
         new_state = extracted
         for k, v in preserved.items():
