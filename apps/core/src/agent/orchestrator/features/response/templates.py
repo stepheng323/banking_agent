@@ -2,10 +2,6 @@
 
 from .intent import ResponseIntent
 
-
-# Templates support {variable} placeholders from ResponseContext
-# Use friendly, conversational language
-
 TEMPLATES: dict[ResponseIntent, dict[str, str]] = {
     # Collection intents
     ResponseIntent.ASK_AMOUNT: {
@@ -169,6 +165,16 @@ TEMPLATES: dict[ResponseIntent, dict[str, str]] = {
     ResponseIntent.AMOUNT_CHANGED: {
         "en": "Got it, updating the amount to {formatted_amount}.",
         "yo": "O ti gba, a n yi iye pada si {formatted_amount}.",
+    },
+    ResponseIntent.ACKNOWLEDGE_CHANGE: {
+        "en": "Alright, changing {changes_text}.",
+        "yo": "O dara, a n yi {changes_text} pada.",
+    },
+    
+    # Cancellation continue - when user declines cancellation
+    ResponseIntent.CANCELLATION_CONTINUE: {
+        "en": "No problem, continuing with your {formatted_amount} transfer to {recipient_name}.",
+        "yo": "O dara, a n tesiwaju pelu gbigbe owo {formatted_amount} si {recipient_name}.",
     },
 }
 

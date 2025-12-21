@@ -40,7 +40,9 @@ class BeneficiaryHandler(MessageHandler):
             await redis_client.delete(f"user:{context.phone_number}:transfer_session_start")
             await redis_client.delete(f"user:{context.phone_number}:airtime_session_start")
             
-            return context.with_response("Got it, I won't save this recipient. Is there anything else I can help with?", handled=True)
+            # Use classifier's response if available (LLM already generated it)
+            response = context.classification_result.response or "No worries! Anything else I can help with?"
+            return context.with_response(response, handled=True)
 
         if context.intent in self.TRANSACTION_INTENTS:
             suggestion_key = f"user:{context.phone_number}:beneficiary_suggestion"
