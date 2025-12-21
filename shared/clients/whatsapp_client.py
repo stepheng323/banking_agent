@@ -122,9 +122,18 @@ class WhatsAppClient:
             to: Recipient phone number
             text: Message content
             preview_url: Whether to show URL preview
-            message_id: If provided, send typing indicator before the message
+            message_id: If provided, send typing indicator. If None, auto-fetch from Redis.
         """
         url = self._get_url()
+        
+        # Auto-retrieve message_id from Redis if not provided
+        if message_id is None:
+            try:
+                from shared.cache.redis_client import RedisClient
+                redis_client = RedisClient.get_client()
+                message_id = await redis_client.get(f"user:{to}:current_message_id")
+            except Exception:
+                pass  # Typing indicator is not critical
         
         # Send typing indicator before the message if we have a message_id
         if message_id:

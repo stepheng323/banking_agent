@@ -37,6 +37,7 @@ class OrchestratorCancellationHandler:
         text: str,
         result: Optional[ClassificationResult],
         conversation_state: Optional[dict],
+        classifier_response: Optional[str] = None,
     ) -> Optional[str]:
         """
         Handle cancellation request.
@@ -46,6 +47,7 @@ class OrchestratorCancellationHandler:
             text: User's message
             result: Classification result
             conversation_state: Current conversation state
+            classifier_response: Optional LLM-generated response from classifier
 
         Returns:
             Response string if cancellation handled, None otherwise
@@ -129,37 +131,23 @@ class OrchestratorCancellationHandler:
                 logger.error(f"Error checking pending transactions: {e}")
 
         if has_active_transaction:
-            # Create default cancel classification if result is None
-            if result:
-                cancel_classification_dict = result.model_dump() if hasattr(result, 'model_dump') else {
-                    "intent": result.intent,
-                    "is_cancellation": result.is_cancellation,
-                    "confidence": result.confidence,
-                }
-            else:
-                cancel_classification_dict = {
-                    "intent": "cancel",
-                    "is_cancellation": True,
-                    "confidence": 1.0
-                }
-
+            # Clear state and checkpoints - no need to call subgraph for cancellation
+            await self.context_manager.clear_conversation_state(phone_number)
+            
             if active_flow == "transfer":
-                cancel_response = await self.transfer_service.run_simple(phone_number, text, cancel_classification_dict)
-                asyncio.create_task(
-                    self.context_manager.save_last_response(phone_number, cancel_response))
-                return cancel_response
+                await self.transfer_service.clear_checkpoint(phone_number)
             elif active_flow == "airtime":
-                cancel_response = await self.airtime_service.run_simple(phone_number, text, cancel_classification_dict)
-                asyncio.create_task(
-                    self.context_manager.save_last_response(phone_number, cancel_response))
-                return cancel_response
-            elif active_flow == "data":
-                cancel_response = "Cancellation for data flows will be implemented soon."
-                asyncio.create_task(
-                    self.context_manager.save_last_response(phone_number, cancel_response))
-                return cancel_response
+                await self.airtime_service.clear_checkpoint(phone_number)
+            
+            # Use classifier's LLM-generated response if available
+            cancel_response = classifier_response or "Transaction cancelled. Anything else I can help with?"
+            asyncio.create_task(
+                self.context_manager.save_last_response(phone_number, cancel_response))
+            logger.info("cancellation_completed", phone=phone_number, flow=active_flow)
+            return cancel_response
 
-        cancel_response = "There's no active transaction to cancel."
+        # No active transaction
+        cancel_response = classifier_response or "There's nothing to cancel right now. How can I help?"
         asyncio.create_task(
             self.context_manager.save_last_response(phone_number, cancel_response))
         return cancel_response

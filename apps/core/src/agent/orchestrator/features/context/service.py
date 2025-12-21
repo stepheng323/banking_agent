@@ -167,6 +167,24 @@ class OrchestratorContextManager:
         except Exception:
             pass
 
+    async def save_message_id(self, phone_number: str, message_id: str) -> None:
+        """Save current message_id to Redis for typing indicator support."""
+        try:
+            redis_client = RedisClient.get_client()
+            key = f"user:{phone_number}:current_message_id"
+            await redis_client.set(key, message_id, ex=300)  # 5 min TTL
+        except Exception:
+            pass
+
+    async def get_message_id(self, phone_number: str) -> Optional[str]:
+        """Get current message_id from Redis for typing indicator."""
+        try:
+            redis_client = RedisClient.get_client()
+            key = f"user:{phone_number}:current_message_id"
+            return await redis_client.get(key)
+        except Exception:
+            return None
+
     async def save_classification_result(self, phone_number: str, result: ClassificationResult) -> None:
         """Save classification result to Redis for use by transaction flows."""
         try:

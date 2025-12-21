@@ -93,6 +93,7 @@ class OrchestratorIntentRouter:
         result: ClassificationResult,
         user_ctx: dict[str, Any],
         image_data: str | None = None,
+        message_id: str | None = None,
     ) -> str:
         """
         Route intent to appropriate service.
@@ -103,6 +104,7 @@ class OrchestratorIntentRouter:
             result: Classification result
             user_ctx: User context
             image_data: Optional base64 image data
+            message_id: Optional message ID for typing indicator
 
         Returns:
             Response string
@@ -128,7 +130,7 @@ class OrchestratorIntentRouter:
                     
                     # Send acknowledgment directly
                     await self.whatsapp_client.send_text(
-                        phone_number, acknowledgment
+                        phone_number, acknowledgment, message_id=message_id
                     )
                     
                     asyncio.create_task(
@@ -140,7 +142,7 @@ class OrchestratorIntentRouter:
                     if next_task_response and next_task_response.strip():
                         # Send task prompt separately if it's different from acknowledgment
                         await self.whatsapp_client.send_text(
-                            phone_number, next_task_response
+                            phone_number, next_task_response, message_id=message_id
                         )
                         asyncio.create_task(
                             self.context_manager.save_last_response(
@@ -153,6 +155,17 @@ class OrchestratorIntentRouter:
                 traceback.print_exc()
 
         if intent == "transfer":
+            # Check if airtime is active - if so, pause it first
+            conversation_state = await self.context_manager.get_conversation_state(phone_number)
+            if conversation_state and conversation_state.get("active_flow") == "airtime":
+                flow_summary = {
+                    "amount": conversation_state.get("amount"),
+                    "recipient_phone": conversation_state.get("recipient_phone"),
+                }
+                await self.flow_context_service.pause_flow(
+                    phone_number, "airtime", "transfer", flow_summary
+                )
+                
             transfer_classification_dict = result.model_dump() if hasattr(result, 'model_dump') else {
                 "intent": result.intent,
                 "is_cancellation": result.is_cancellation,
@@ -162,6 +175,18 @@ class OrchestratorIntentRouter:
                 phone_number, text, transfer_classification_dict, image_data=image_data
             )
         elif intent == "airtime":
+            # Check if transfer is active - if so, pause it first
+            conversation_state = await self.context_manager.get_conversation_state(phone_number)
+            if conversation_state and conversation_state.get("active_flow") == "transfer":
+                flow_summary = {
+                    "amount": conversation_state.get("amount"),
+                    "recipient_name": conversation_state.get("recipient_name"),
+                    "recipient_account": conversation_state.get("recipient_account"),
+                }
+                await self.flow_context_service.pause_flow(
+                    phone_number, "transfer", "airtime", flow_summary
+                )
+                
             airtime_classification_dict = result.model_dump() if hasattr(result, 'model_dump') else {
                 "intent": result.intent,
                 "is_cancellation": result.is_cancellation,

@@ -31,7 +31,8 @@ class IntentRoutingHandler(MessageHandler):
             context.text,
             context.classification_result,
             context.user_context,
-            image_data=context.image_data
+            image_data=context.image_data,
+            message_id=context.message_id
         )
         
         return context.with_response(response, handled=True)

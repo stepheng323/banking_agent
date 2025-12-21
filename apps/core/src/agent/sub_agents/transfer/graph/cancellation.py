@@ -5,6 +5,11 @@ from typing import Optional, cast, TYPE_CHECKING
 
 from shared.cache.redis_client import RedisClient, Redis
 from apps.core.src.agent.sub_agents.transfer.state import TransferState
+from apps.core.src.agent.orchestrator.features.response import (
+    ResponseIntent,
+    build_response_context,
+    get_synthesizer,
+)
 
 from .run_context import TransferRunContext
 from .state import (
@@ -76,16 +81,12 @@ async def handle_cancellation_decline(ctx: TransferRunContext) -> str:
 
         if conv_state_data:
             conv_state = json.loads(conv_state_data)
-            prev_amount = conv_state.get("amount", 0)
-            prev_recipient_name = conv_state.get("recipient_name")
-            prev_recipient_account = conv_state.get("recipient_account", "")
-            prev_recipient = prev_recipient_name or prev_recipient_account or "the recipient"
-            transfer_status = conv_state.get("transfer_status")
-
-            if transfer_status == "pending":
-                return f"Got it. Continuing with your pending transfer of ₦{prev_amount:,.2f} to {prev_recipient}. Please enter your PIN to confirm."
-            else:
-                return f"Got it. Continuing with your transfer of ₦{prev_amount:,.2f} to {prev_recipient}."
+            context = build_response_context(
+                ResponseIntent.CANCELLATION_CONTINUE,
+                conv_state
+            )
+            synthesizer = get_synthesizer()
+            return await synthesizer.synthesize(context)
     except Exception:
         pass
 
@@ -127,18 +128,32 @@ async def should_prompt_for_cancellation(
     ctx: TransferRunContext,
     input_state: dict,
 ) -> bool:
-    """Check if we should prompt user about cancellation."""
+    """Check if we should prompt user about cancellation.
+    
+    Only prompt if message looks like a NEW transfer request, not a correction.
+    A new transfer has both an action word AND a recipient indicator.
+    
+    Examples:
+    - "Send 50k to Jackson" → action ("send") + recipient ("to") → prompt
+    - "I meant 50k" → no action, no recipient → don't prompt, let flow update
+    - "Use account 0760..." → no action → don't prompt
+    """
     message_lower = ctx.message_lower
     
-    has_amount_keywords = any(keyword in message_lower for keyword in [
+    # Action words that indicate starting a new transfer
+    has_action = any(keyword in message_lower for keyword in [
         "send", "transfer", "pay", "give"
-    ]) or any(char in ctx.message for char in ["k", "₦"]) or any(
-        word in message_lower for word in ["thousand", "naira"]
-    )
+    ])
+    
+    # Recipient indicator - "to" followed by something, or a name/account
+    has_recipient = " to " in message_lower
+    
+    # Only prompt if clearly a new transfer (action + recipient)
+    if not (has_action and has_recipient):
+        return False
     
     has_substantial_data = has_substantial_transfer_data(cast(TransferState, input_state))
-    
-    if not (has_amount_keywords and has_substantial_data):
+    if not has_substantial_data:
         return False
     
     session_age = await get_transfer_session_age(ctx.phone_number)
@@ -149,20 +164,7 @@ async def should_prompt_for_cancellation(
 
 
 def build_cancellation_prompt(input_state: dict) -> str:
-    """Build cancellation prompt message."""
+    """Build fallback cancellation prompt (classifier usually handles this via LLM)."""
     amount = input_state.get("amount", 0)
-    recipient_name = input_state.get("recipient_name")
-    recipient_account = input_state.get("recipient_account")
-
-    if recipient_name:
-        recipient_display = recipient_name
-    elif recipient_account:
-        recipient_display = f"account {recipient_account[-4:]}"
-    else:
-        recipient_display = "the recipient"
-
-    return (
-        f"You have a pending transfer of ₦{amount:,.2f} to {recipient_display}. "
-        f"Would you like to cancel it and start a new transfer? "
-        f"(Reply 'yes' to cancel, 'no' to continue with the previous transfer)"
-    )
+    recipient_name = input_state.get("recipient_name") or input_state.get("recipient_account", "recipient")
+    return f"You have a pending ₦{amount:,.0f} transfer to {recipient_name}. Cancel it and start fresh? (Yes/No)"

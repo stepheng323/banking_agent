@@ -13,13 +13,23 @@ CLASSIFICATION_SYSTEM_PROMPT = (
     "3. MANAGE_ACCOUNTS: account management ('Show accounts', 'How many accounts', 'Set default', 'Unlink account')\n"
     "4. TRANSFER: money transfers. Account numbers/bank names are continuations, not cancellations\n"
     "5. MIXED: multiple different operations in one message (e.g., transfer + query, transfer + airtime)\n"
-    "6. CANCEL: explicit abort words ('cancel', 'stop', 'nevermind'). Set is_cancellation=true\n"
+    "6. CANCEL: explicit abort words ('cancel', 'stop', 'nevermind', 'abort'). Set is_cancellation=true\n"
     "7. COMPLEX: multiple transfers OR multiple recipients → is_complex=true\n\n"
+    
+    "EXPLICIT CANCELLATION (when is_cancellation=true):\n"
+    "- If context.conversationState has pending transaction, generate helpful response:\n"
+    "  Example: 'Cancelled your ₦{amount} transfer to {recipient}. Anything else I can help with?'\n"
+    "- If no pending transaction: 'There's nothing to cancel right now. How can I help?'\n\n"
     
     "BENEFICIARY RESPONSES (when context.pendingBeneficiarySuggestion exists):\n"
     "- Affirmative: yes/sure/ok/confirm → intent: yes/confirm\n"
-    "- Negative: no/skip/cancel → intent: no/skip\n"
+    "- Negative: no/skip/cancel → intent: no/skip, response: 'No worries! Anything else I can help with?'\n"
     "- Name provided: extract as extracted_alias\n\n"
+    
+    "ACTIVE FLOW HANDLING (when context.conversationState exists with active_flow):\n"
+    "- Different transaction type (transfer→airtime, airtime→transfer): Classify as new intent (will pause current)\n"
+    "- Same transaction with corrections (amount/recipient): Just classify as continuation\n"
+    "- Account number/bank as continuation: intent=transfer (continuation)\n\n"
     
     "CONTEXT PRIORITY:\n"
     "- Messages with BOTH 'send/transfer' AND 'balance/transaction' → intent: mixed, is_complex: true\n"
@@ -36,7 +46,8 @@ CLASSIFICATION_SYSTEM_PROMPT = (
     "- 'recharge 1k' → intent: airtime\n"
     "- 'buy data 500' → intent: data\n"
     "- 'show my balance' → intent: query\n"
-    "- 'how many accounts' → intent: manage_accounts\n\n"
+    "- 'how many accounts' → intent: manage_accounts\n"
+    "- 'cancel' (during transfer) → intent: cancel, is_cancellation: true, response: 'Cancelled your ₦X transfer. Need anything else?'\n\n"
     
     "Return ONLY JSON matching the schema."
 )

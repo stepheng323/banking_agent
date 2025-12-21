@@ -58,6 +58,9 @@ class MessageConsumer:
         await self.orchestrator.context_manager.load_user_context(
             phone_number, user=user
         )
+        
+        # Save message_id for typing indicator support (all services can access it)
+        await self.orchestrator.context_manager.save_message_id(phone_number, message.message_id)
 
         response = await self.orchestrator.invoke(
             phone_number, 

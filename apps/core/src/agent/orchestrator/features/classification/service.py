@@ -68,14 +68,18 @@ class OrchestratorClassificationService:
         if context and context.get("conversationState"):
             active_flow = context["conversationState"].get("active_flow")
         
+        # Cancel: Let LLM handle if there's an active flow (for contextual response)
         cancel_patterns = {"cancel", "stop", "abort", "nevermind", "forget it", "no thanks"}
         if text_clean in cancel_patterns:
+            if active_flow:
+                # Let LLM generate contextual cancellation message
+                return None
             return ClassificationResult(
                 intent="cancel",
                 is_cancellation=True,
                 is_complex=False,
                 confidence=0.99,
-                response="Transaction cancelled.",
+                response="There's nothing to cancel. How can I help?",
                 complexity_reason="Simple single intent",
             )
         

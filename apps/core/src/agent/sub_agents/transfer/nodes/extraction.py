@@ -55,9 +55,9 @@ async def extract_entities(
                     "response": "",  # Will be set in handle_cancellation
                 }
         
-        # Detect other interrupts - manage_accounts or query
-        if intent in ("manage_accounts", "query"):
-            debug_log(f"🔀 Interrupt detected: {intent} - yielding to orchestrator")
+        # Detect other interrupts - pause for other intents (will resume after)
+        if intent in ("manage_accounts", "query", "airtime", "data"):
+            debug_log(f"🔀 Interrupt detected: {intent} - pausing transfer flow")
             return {
                 **state,
                 "flow_state": "paused",
