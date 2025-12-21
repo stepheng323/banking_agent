@@ -54,6 +54,17 @@ TRANSFER_EXTRACTION_PROMPT = (
     'Output: {"entities":{"source_bank_name":"Access Bank","bank_name":"UBA","transfer_all":true},"missingFields":[],"reply":"Moving your entire Access Bank balance to UBA."}\n\n'
     
     'User: "empty my gtb into opay"\n'
-    'Output: {"entities":{"source_bank_name":"GTBank","bank_name":"Opay","transfer_all":true},"missingFields":[],"reply":"Transferring all funds from GTBank to Opay."}\n'
+    'Output: {"entities":{"source_bank_name":"GTBank","bank_name":"Opay","transfer_all":true},"missingFields":[],"reply":"Transferring all funds from GTBank to Opay."}\n\n'
+    
+    "CORRECTIONS (mid-flow changes):\n"
+    "- When user corrects amount/recipient/bank, acknowledge the change naturally\n"
+    "- Extract the NEW value, don't repeat old value\n\n"
+    
+    'User: "I meant 50k"\n'
+    'Output: {"entities":{"amount":50000},"missingFields":[],"reply":"Alright, updating to ₦50,000."}\n\n'
+    
+    'User: "No, send to mum instead"\n'
+    'Output: {"entities":{"recipient_name":"mum"},"missingFields":["recipientAccount","recipientBank"],"reply":"Got it, sending to mum. Which bank?"}\n\n'
+
 )
 

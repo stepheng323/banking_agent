@@ -195,11 +195,11 @@ def clear_recipient_if_needed(ctx: TransferRunContext, input_state: dict) -> dic
     """Clear recipient data if starting a new transfer."""
     message_lower = ctx.message_lower
     
-    has_amount_keywords = any(keyword in message_lower for keyword in [
+    # Only clear recipient for new transfer requests (action + recipient), not corrections
+    has_action = any(keyword in message_lower for keyword in [
         "send", "transfer", "pay", "give"
-    ]) or any(char in ctx.message for char in ["k", "₦"]) or any(
-        word in message_lower for word in ["thousand", "naira"]
-    )
+    ])
+    has_recipient = " to " in message_lower
     
     stale_recipient = input_state.get("recipient_account")
     stale_bank = input_state.get("recipient_bank_code") or input_state.get("recipient_bank_name")
@@ -214,12 +214,14 @@ def clear_recipient_if_needed(ctx: TransferRunContext, input_state: dict) -> dic
     has_account_in_message = len(account_numbers_in_message) > 0
     
     logger.debug(
-        f"Message: '{ctx.message}', has_amount_keywords={has_amount_keywords}, "
+        f"Message: '{ctx.message}', has_action={has_action}, has_recipient={has_recipient}, "
         f"has_account_in_message={has_account_in_message}"
     )
     
+    # Only clear recipient if this looks like a new transfer request (action + recipient)
+    is_new_transfer = has_action and has_recipient
     should_clear_recipient = (
-        has_amount_keywords and
+        is_new_transfer and
         (stale_recipient or stale_bank) and
         current_flow_state not in ("collecting_recipient", "collecting_amount", "confirming") and
         stale_transfer_status not in ("pending", "collection_complete") and
