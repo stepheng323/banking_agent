@@ -16,6 +16,10 @@ from apps.core.src.agent.sub_agents.transfer.nodes import (
     prepare_confirmation,
     authorize_transaction,
     handle_cancellation,
+    check_funding,
+    plan_funding,
+    confirm_funding,
+    initiate_debits,
 )
 from apps.core.src.agent.sub_agents.transfer.state import TransferState
 from shared.cache.user_data import UserDataCache
@@ -23,11 +27,13 @@ from shared.cache.bank_cache import BankCacheService
 from shared.repositories.beneficiary_repository import BeneficiaryRepository
 from shared.repositories.account_repository import AccountRepository
 from shared.clients.whatsapp.client import WhatsAppClient
+from shared.clients.abstractions import DirectDebitProvider
+from shared.clients.factories import get_direct_debit_provider
 from shared.cache.redis_client import Redis
 from shared.queue.redis_queue import RedisQueue
 from shared.services.auth import AuthorizationService
 
-from .routing import route_by_state, route_after_extract
+from .routing import route_by_state, route_after_extract, route_after_funding_check
 
 
 def build_graph(
@@ -42,10 +48,13 @@ def build_graph(
     whatsapp_client: WhatsAppClient,
     redis_client: Redis,
     queue: RedisQueue,
+    direct_debit_provider: DirectDebitProvider | None = None,
 ) -> StateGraph:
     """Build the LangGraph workflow."""
     workflow = StateGraph(TransferState)
     authorization_service = AuthorizationService(redis_client=redis_client)
+    
+    dd_provider = direct_debit_provider or get_direct_debit_provider()
 
     async def extract_node(state: TransferState) -> TransferState:
         return await extract_entities(state, extractor)
@@ -59,7 +68,6 @@ def build_graph(
         return await find_beneficiary(state, matcher)
 
     async def fetch_banks_func():
-        """Helper function to fetch banks from payment provider."""
         if not payment_provider or not hasattr(payment_provider, 'fetch_banks'):
             return {"success": False, "banks": [], "error": "Provider does not support fetch_banks"}
         try:
@@ -87,11 +95,22 @@ def build_graph(
             state, whatsapp_client, redis_client
         )
 
+    async def check_funding_node(state: TransferState) -> TransferState:
+        return await check_funding(state, dd_provider)
+
+    async def plan_funding_node(state: TransferState) -> TransferState:
+        return await plan_funding(state, dd_provider)
+
+    async def confirm_funding_node(state: TransferState) -> TransferState:
+        return await confirm_funding(state, whatsapp_client)
+
+    async def initiate_debits_node(state: TransferState) -> TransferState:
+        return await initiate_debits(state, dd_provider)
+
     async def authorize_node(state: TransferState) -> TransferState:
         return await authorize_transaction(
             state, redis_client, queue, authorization_service
         )
-
 
     async def cancellation_node(state: TransferState) -> TransferState:
         return await handle_cancellation(state, redis_client)
@@ -105,6 +124,10 @@ def build_graph(
     workflow.add_node("validate_parallel", validate_parallel_node)
     workflow.add_node("check_changes", check_changes_node)
     workflow.add_node("confirm", confirm_node)
+    workflow.add_node("check_funding", check_funding_node)
+    workflow.add_node("plan_funding", plan_funding_node)
+    workflow.add_node("confirm_funding", confirm_funding_node)
+    workflow.add_node("initiate_debits", initiate_debits_node)
     workflow.add_node("authorize", authorize_node)
     workflow.add_node("cancel", cancellation_node)
 
@@ -181,10 +204,46 @@ def build_graph(
         }
     )
 
-    # Confirm routes directly to authorize - graph will interrupt before authorize
-    workflow.add_edge("confirm", "authorize")
+    # confirm → check_funding (for multi-account support)
+    workflow.add_edge("confirm", "check_funding")
+
+    # check_funding routes based on funding_required
+    workflow.add_conditional_edges(
+        "check_funding",
+        route_after_funding_check,
+        {
+            "authorize": "authorize",
+            "plan_funding": "plan_funding",
+            "error": END,
+        }
+    )
+
+    # plan_funding routes based on result
+    workflow.add_conditional_edges(
+        "plan_funding",
+        route_after_funding_check,
+        {
+            "authorize": "authorize",
+            "confirm_funding": "confirm_funding",
+            "error": END,
+        }
+    )
+
+    # confirm_funding waits for user response, then initiates debits
+    workflow.add_edge("confirm_funding", "initiate_debits")
+
+    # initiate_debits → authorize (after debits initiated)
+    workflow.add_conditional_edges(
+        "initiate_debits",
+        route_after_funding_check,
+        {
+            "authorize": "authorize",
+            "error": END,
+        }
+    )
 
     workflow.add_edge("authorize", END)
     workflow.add_edge("cancel", END)
 
     return workflow
+

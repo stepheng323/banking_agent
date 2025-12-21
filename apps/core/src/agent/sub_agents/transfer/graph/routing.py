@@ -146,3 +146,40 @@ def route_after_extract(state: TransferState) -> str:
     
     debug_log("➡️ Routing to load_context after extract")
     return "load_context"
+
+
+def route_after_funding_check(state: TransferState) -> str:
+    """Route after funding-related nodes based on funding state."""
+    flow_state = state.get("flow_state")
+    funding_required = state.get("funding_required", False)
+    funding_status = state.get("funding_status")
+    
+    debug_log(f"🔀 route_after_funding_check: flow_state={flow_state}, funding_required={funding_required}, funding_status={funding_status}")
+    
+    if flow_state == "error":
+        debug_log("❌ Funding error -> end")
+        return "error"
+    
+    if flow_state == "authorizing":
+        debug_log("✅ Funding complete -> authorize")
+        return "authorize"
+    
+    if flow_state == "planning_funding":
+        debug_log("📊 Need funding plan -> plan_funding")
+        return "plan_funding"
+    
+    if flow_state == "confirming_funding":
+        debug_log("❓ Awaiting user funding confirmation -> confirm_funding")
+        return "confirm_funding"
+    
+    if flow_state == "initiating_debits" or funding_status == "debiting":
+        debug_log("💳 Debits in progress -> authorize (will poll)")
+        return "authorize"
+    
+    if not funding_required:
+        debug_log("✅ No funding required -> authorize")
+        return "authorize"
+    
+    debug_log("📊 Funding required -> plan_funding")
+    return "plan_funding"
+
