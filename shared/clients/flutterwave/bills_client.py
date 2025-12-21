@@ -6,7 +6,7 @@ from typing import Any, Dict, Optional
 import httpx
 import structlog
 from shared.config.settings import settings
-from shared.clients.payment.bill_payment import BillPaymentProvider
+from shared.clients.bill.base import BillPaymentProvider
 
 logger = structlog.get_logger(__name__)
 

@@ -20,7 +20,6 @@ class DirectDebitProviderFactory:
     - Configuration (which real provider to use)
     """
     
-    # Singleton instance cache
     _instance: Optional[DirectDebitProvider] = None
     
     @classmethod
@@ -35,22 +34,18 @@ class DirectDebitProviderFactory:
         Returns:
             DirectDebitProvider instance
         """
-        # Use cached instance if available and no specific provider requested
         if cls._instance is not None and provider_name is None:
             return cls._instance
         
-        # Determine which provider to use
-        if provider_name:
+        if provider_name:               
             selected = provider_name
         elif settings.app_env == "development":
             selected = "mock"
         else:
-            selected = "mono"  # Default production provider
+            selected = "mono"
         
-        # Create provider
         provider = cls._create_provider(selected)
         
-        # Cache if no specific override
         if provider_name is None:
             cls._instance = provider
         
@@ -73,11 +68,7 @@ class DirectDebitProviderFactory:
     
     @classmethod
     def clear_cache(cls) -> None:
-        """Clear cached provider (useful for testing)."""
         cls._instance = None
 
-
-# Convenience function
 def get_direct_debit_provider(provider_name: Optional[str] = None) -> DirectDebitProvider:
-    """Get the configured DirectDebitProvider."""
     return DirectDebitProviderFactory.get_provider(provider_name)

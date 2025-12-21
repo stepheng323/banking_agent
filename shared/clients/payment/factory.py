@@ -2,7 +2,7 @@
 from typing import List, Optional
 
 from shared.clients.payment.base import PaymentProvider
-from shared.clients.payment.bill_payment import BillPaymentProvider
+from shared.clients.bill.base import BillPaymentProvider
 from shared.clients.flutterwave.payment_client import FlutterwaveClient
 from shared.clients.flutterwave.bills_client import FlutterwaveBillsClient
 
