@@ -22,7 +22,14 @@ class TransferState(TypedDict):
         "authorizing",
         "completed",
         "error",
-        "cancelled"
+        "cancelled",
+        # Multi-account funding states
+        "checking_funding",
+        "planning_funding",
+        "confirming_funding",
+        "initiating_debits",
+        "awaiting_debits",
+        "initiating_payout",
     ]
 
     amount: Optional[float]
@@ -70,4 +77,23 @@ class TransferState(TypedDict):
     _previous_recipient_name: NotRequired[Optional[str]]
     _change_acknowledged: NotRequired[bool]
     
-    image_data: NotRequired[Optional[str]]  # Base64 encoded image for vision extraction
+    image_data: NotRequired[Optional[str]]
+
+    # Multi-account funding fields
+    funding_required: NotRequired[bool]
+    funding_plan: NotRequired[Optional[dict]]
+    funding_steps: NotRequired[list[dict]]
+    funded_transfer_id: NotRequired[Optional[str]]
+    funding_status: NotRequired[Literal[
+        "pending",
+        "user_confirming",
+        "debiting",
+        "funded",
+        "payout_pending",
+        "completed",
+        "failed",
+        "refunding",
+        None
+    ]]
+    funding_error: NotRequired[Optional[str]]
+
