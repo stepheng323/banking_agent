@@ -4,7 +4,7 @@ import traceback
 from datetime import datetime
 from typing import Dict, Any
 
-from shared.clients.payment_provider_factory import PaymentProviderFactory
+from shared.clients.payment.factory import PaymentProviderFactory
 from shared.repositories.unit_of_work import UnitOfWork
 from apps.core.src.agent.sub_agents.airtime.completion import AirtimeCompletionService
 from shared.utils.logging import get_logger

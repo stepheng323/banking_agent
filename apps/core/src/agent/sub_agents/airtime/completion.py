@@ -4,7 +4,7 @@ import asyncio
 from shared.utils.async_helpers import create_background_task
 from typing import Dict, Any, Optional
 
-from shared.clients.whatsapp_client import WhatsAppClient
+from shared.clients.whatsapp.client import WhatsAppClient
 from shared.cache.redis_client import RedisClient
 from shared.repositories.beneficiary_repository import BeneficiaryRepository
 from apps.core.src.agent.tools.beneficiary.suggestion_service import BeneficiarySuggestionService

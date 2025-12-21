@@ -4,7 +4,7 @@ import asyncio
 from typing import List, Optional, Dict, Any
 import time
 from langchain_openai import ChatOpenAI
-from shared.clients.whatsapp_client import WhatsAppClient
+from shared.clients.whatsapp.client import WhatsAppClient
 from shared.clients.mono import mono_client
 from shared.cache.user_data import UserDataCache
 from shared.config import settings

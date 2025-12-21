@@ -4,7 +4,7 @@ Note: All agent service calls are now handled via Redis queue events.
 Gateway only needs redis queue and whatsapp client.
 """
 
-from shared.clients.whatsapp_client import WhatsAppClient
+from shared.clients.whatsapp.client import WhatsAppClient
 from shared.queue.redis_queue import RedisQueue
 from shared.services.task_queue import TaskQueueService
 

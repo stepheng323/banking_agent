@@ -1,7 +1,7 @@
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
-from shared.clients.whatsapp_client import WhatsAppClient
+from shared.clients.whatsapp.client import WhatsAppClient
 from shared.models.messages import MessagePriority, MessageType, WhatsAppMessage
 from shared.queue.redis_queue import RedisQueue
 from shared.utils.logging import get_logger

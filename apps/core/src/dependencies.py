@@ -1,8 +1,8 @@
 from langchain_openai import ChatOpenAI
 
-from shared.clients.s3_client import S3Client
+from shared.clients.storage.s3_client import S3Client
 from shared.config import settings
-from shared.clients.whatsapp_client import WhatsAppClient
+from shared.clients.whatsapp.client import WhatsAppClient
 from shared.database.connection import get_db_session
 from shared.queue.redis_queue import RedisQueue
 from shared.repositories import BeneficiaryRepository, AccountRepository

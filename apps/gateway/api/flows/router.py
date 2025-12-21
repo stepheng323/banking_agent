@@ -6,7 +6,7 @@ import traceback
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse, Response
 
-from shared.clients.whatsapp_client import WhatsAppClient
+from shared.clients.whatsapp.client import WhatsAppClient
 from shared.queue.redis_queue import RedisQueue
 from shared.utils import encrypt_flow_response
 

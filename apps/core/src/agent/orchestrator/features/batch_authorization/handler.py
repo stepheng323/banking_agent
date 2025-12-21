@@ -3,7 +3,7 @@
 import time
 from typing import TYPE_CHECKING
 
-from shared.clients.whatsapp_client import WhatsAppClient
+from shared.clients.whatsapp.client import WhatsAppClient
 from shared.cache.redis_client import RedisClient
 from shared.config import settings
 from apps.core.src.agent.orchestrator.pipeline.message_handler import MessageHandler

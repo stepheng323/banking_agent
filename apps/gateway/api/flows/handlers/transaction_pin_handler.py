@@ -12,7 +12,7 @@ from fastapi.responses import Response
 import asyncio
 
 from shared.cache.redis_client import RedisClient
-from shared.clients.whatsapp_client import WhatsAppClient
+from shared.clients.whatsapp.client import WhatsAppClient
 from shared.services.auth import AuthorizationService
 from shared.queue.redis_queue import RedisQueue
 from shared.queue.messages import FlowEvent, FlowEventType, FLOW_EVENTS_QUEUE

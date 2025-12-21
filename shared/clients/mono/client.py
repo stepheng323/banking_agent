@@ -252,6 +252,67 @@ class MonoClient:
                 return True
             raise
 
+    async def initiate_debit(
+        self,
+        mandate_id: str,
+        amount: int,  # in kobo
+        reference: str,
+        narration: str = "Transfer funding"
+    ) -> dict:
+        """
+        Initiate a one-time debit against a mandate.
+        
+        Args:
+            mandate_id: The Mono mandate ID
+            amount: Amount to debit in kobo
+            reference: Unique reference for this debit
+            narration: Description for the transaction
+            
+        Returns:
+            Dict with debit_id and status
+        """
+        if self.use_mock:
+            logger.info("mock_initiate_debit", mandate_id=mandate_id, amount=amount, reference=reference)
+            return {
+                "id": f"mock_debit_{reference}",
+                "status": "pending",
+                "reference": reference,
+                "amount": amount,
+            }
+        
+        body = {
+            "mandate": mandate_id,
+            "amount": amount,
+            "reference": reference,
+            "narration": narration,
+        }
+        data = await self._request("POST", "/v3/payments/debits/initiate", body=body)
+        logger.info("debit_initiated", mandate_id=mandate_id, debit_id=data.get("id"), reference=reference)
+        return data
+
+    async def get_debit_status(self, debit_id: str) -> dict:
+        """
+        Get the status of a debit transaction.
+        
+        Args:
+            debit_id: The Mono debit transaction ID
+            
+        Returns:
+            Dict with current status and details
+        """
+        if self.use_mock:
+            logger.info("mock_get_debit_status", debit_id=debit_id)
+            return {
+                "id": debit_id,
+                "status": "successful",
+                "reference": debit_id.replace("mock_debit_", ""),
+                "amount": 10000,  # 100 naira in kobo
+            }
+        
+        data = await self._request("GET", f"/v3/payments/debits/{debit_id}")
+        return data
+
 
 mono_client = MonoClient()
+
 

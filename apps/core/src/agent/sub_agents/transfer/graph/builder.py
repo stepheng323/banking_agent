@@ -22,7 +22,7 @@ from shared.cache.user_data import UserDataCache
 from shared.cache.bank_cache import BankCacheService
 from shared.repositories.beneficiary_repository import BeneficiaryRepository
 from shared.repositories.account_repository import AccountRepository
-from shared.clients.whatsapp_client import WhatsAppClient
+from shared.clients.whatsapp.client import WhatsAppClient
 from shared.cache.redis_client import Redis
 from shared.queue.redis_queue import RedisQueue
 from shared.services.auth import AuthorizationService

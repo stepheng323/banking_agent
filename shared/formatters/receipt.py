@@ -3,7 +3,7 @@
 
 from shared.database.models import Account, Transaction
 from shared.services.receipt_generator import ReceiptGenerator
-from shared.clients.s3_client import S3Client
+from shared.clients.storage.s3_client import S3Client
 
 
 async def generate_receipt_image(

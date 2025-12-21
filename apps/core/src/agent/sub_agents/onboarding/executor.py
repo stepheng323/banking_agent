@@ -3,7 +3,7 @@
 from typing import Any, Dict
 
 from apps.core.src.agent.sub_agents.onboarding.service import OnboardingService
-from shared.clients.whatsapp_client import WhatsAppClient
+from shared.clients.whatsapp.client import WhatsAppClient
 from shared.database.models import UserOnboardingStatusEnum
 from shared.models.messages import WhatsAppMessage
 from shared.models.user import UserCreate
