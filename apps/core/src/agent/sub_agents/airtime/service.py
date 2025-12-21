@@ -12,9 +12,12 @@ from shared.repositories.beneficiary_repository import BeneficiaryRepository
 from shared.repositories.account_repository import AccountRepository
 from shared.clients.whatsapp_client import WhatsAppClient
 from shared.queue.redis_queue import RedisQueue
+from shared.utils.logging import get_logger
 
 from apps.core.src.agent.sub_agents.airtime.extractor import AirtimeEntityExtractor
 from apps.core.src.agent.sub_agents.airtime.graph import AirtimeFlowGraph
+
+logger = get_logger(__name__)
 
 
 class AirtimeService:
@@ -44,3 +47,10 @@ class AirtimeService:
     async def run_simple(self, phone: str, text: str, classification_result: Optional[dict] = None) -> str:
         """Run the airtime purchase flow using LangGraph."""
         return await self.graph.run(phone, text, "", classification_result)
+
+    async def clear_checkpoint(self, phone_number: str) -> None:
+        """Clear airtime flow checkpoint for a user."""
+        try:
+            await self.graph.clear_checkpoint(phone_number)
+        except Exception as e:
+            logger.error("airtime_checkpoint_clear_error", phone=phone_number, error=str(e), exc_info=True)

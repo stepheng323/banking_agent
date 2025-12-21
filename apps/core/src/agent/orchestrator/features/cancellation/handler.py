@@ -30,7 +30,6 @@ class CancellationHandler(MessageHandler):
         )
         
         if execution_state == ExecutionState.EXECUTING_BATCH:
-            # Cancel batch execution by setting flag
             await self.redis_client.set(
                 f"queue:{context.phone_number}:cancel_batch",
                 "1",
@@ -46,16 +45,19 @@ class CancellationHandler(MessageHandler):
             
             return context.with_response(response, handled=True)
         
-        # Regular cancellation
+        classifier_response = None
+        if context.classification_result:
+            classifier_response = context.classification_result.response
+            
         response = await self.cancellation_handler.handle_cancellation(
             context.phone_number,
             context.text,
             context.classification_result,
-            context.conversation_state
+            context.conversation_state,
+            classifier_response=classifier_response
         )
         
         if response:
             return context.with_response(response, handled=True)
         
-        # If no response, continue to next handler
         return context

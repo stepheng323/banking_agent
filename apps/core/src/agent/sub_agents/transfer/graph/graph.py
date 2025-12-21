@@ -27,8 +27,6 @@ from .cancellation import (
     is_cancellation_decline,
     handle_cancellation_confirmation,
     handle_cancellation_decline_with_checkpoint,
-    should_prompt_for_cancellation,
-    build_cancellation_prompt,
 )
 from .checkpoint_manager import (
     load_checkpoint_state,
@@ -196,10 +194,7 @@ class TransferFlowGraph:
                     logger.info(f"Flow resume detected, replaying saved response with context")
                     return f"{context_prefix}{saved_response}"
             
-            # Fallback to current last_response if no saved response
-            if last_response:
-                logger.info(f"Flow resume detected, replaying last response")
-                return f"Continuing your transfer! {last_response}"
+            # If no saved response from pause, fall through to normal checkpoint loading
 
         # Load and prepare state
         input_state = await load_checkpoint_state(ctx, self.graph)
@@ -212,9 +207,12 @@ class TransferFlowGraph:
                 # Non-transfer intent, return empty to let orchestrator handle
                 return ""
             
-            # Check if should prompt for cancellation
-            if await should_prompt_for_cancellation(ctx, input_state):
-                return await self._handle_cancellation_prompt(ctx, input_state)
+            # Handle mid-correction during confirming state using LLM extraction
+            flow_state = input_state.get("flow_state")
+            if flow_state in ("confirming", "authorizing"):
+                input_state, should_continue = await self._handle_mid_correction(ctx, input_state)
+                if not should_continue:
+                    return ""
         else:
             input_state = create_initial_state(
                 phone_number, message, message_id, classification_result, image_data=image_data
@@ -229,23 +227,79 @@ class TransferFlowGraph:
 
         return final_state.get("response", "")
 
-    async def _handle_cancellation_prompt(
+    async def _handle_mid_correction(
         self,
         ctx: TransferRunContext,
         input_state: dict,
-    ) -> str:
-        """Handle prompting user for cancellation."""
-        cancellation_prompt = build_cancellation_prompt(input_state)
+    ) -> tuple[dict, bool]:
+        """Handle mid-confirmation corrections using LLM extraction.
         
-        input_state["response"] = cancellation_prompt
-        input_state["flow_state"] = "extracting"
-
-        prompt_state = await self.graph.ainvoke(
-            cast(TransferState, input_state), ctx.config
-        )
-        await update_conversation_state(ctx.phone_number, cast(TransferState, prompt_state))
-
-        return cancellation_prompt
+        Returns (new_state, should_continue):
+            - new_state: Updated state with corrections applied
+            - should_continue: True if we should continue processing
+        """
+        # Preserve existing values
+        old_values = {
+            "amount": input_state.get("amount"),
+            "recipient_account": input_state.get("recipient_account"),
+            "recipient_name": input_state.get("recipient_name"),
+            "recipient_bank": input_state.get("recipient_bank_name"),
+        }
+        
+        logger.info("mid_correction_attempt", old_values=old_values, message=ctx.message[:30])
+        
+        try:
+            extracted = await self.extractor.extract(
+                ctx.message,
+                ctx.phone_number,
+                image_data=ctx.image_data,
+            )
+        except Exception as e:
+            logger.warning("extraction_error", error=str(e))
+            return input_state, True
+        
+        if not extracted or not extracted.entities:
+            return input_state, True
+        
+        entities = extracted.entities
+        new_values = {
+            "amount": entities.amount,
+            "recipient_account": entities.recipient_account,
+            "recipient_name": entities.recipient_name,
+            "recipient_bank": entities.bank_name,
+        }
+        
+        changes = []
+        for key, old_val in old_values.items():
+            new_val = new_values.get(key)
+            if new_val is not None and new_val != old_val:
+                if key == "amount":
+                    changes.append(f"amount to ₦{new_val:,.0f}")
+                    input_state["amount"] = new_val
+                elif key == "recipient_account":
+                    changes.append(f"account to {new_val}")
+                    input_state["recipient_account"] = new_val
+                    input_state["account_resolved"] = None  # Need to re-resolve
+                elif key == "recipient_name":
+                    changes.append(f"recipient to {new_val}")
+                    input_state["recipient_name"] = new_val
+                elif key == "recipient_bank":
+                    changes.append(f"bank to {new_val}")
+                    input_state["recipient_bank_name"] = new_val
+                    input_state["recipient_bank_code"] = None  # Will be resolved
+        
+        if changes:
+            ack_msg = extracted.reply if extracted.reply else f"Got it, changing {' and '.join(changes)}."
+            await self.whatsapp_client.send_text(ctx.phone_number, ack_msg, message_id=ctx.message_id)
+            input_state["flow_state"] = "extracting"  # Re-process
+            input_state["transfer_status"] = None  # Clear to allow re-confirmation
+            logger.info("mid_correction_applied", changes=changes)
+        
+        # Update message for re-processing
+        input_state["message"] = ctx.message
+        input_state["message_id"] = ctx.message_id
+        
+        return input_state, True
 
     async def _handle_post_processing(
         self,
@@ -277,6 +331,8 @@ class TransferFlowGraph:
                         )
                     )
 
+
+
     async def resume_after_pin_verification(
         self,
         phone_number: str,
@@ -305,7 +361,6 @@ class TransferFlowGraph:
         if not current_state or not current_state.values:
             return "No active transfer session found."
 
-        # Update state with PIN verification result using aupdate_state
         await self.graph.aupdate_state(
             config,
             {
@@ -320,24 +375,12 @@ class TransferFlowGraph:
             pin_verified=pin_verified,
         )
 
-        # Resume graph execution from the interrupt point (authorize node)
-        # Passing None resumes from where the graph was interrupted
         final_state = await self.graph.ainvoke(None, config)
-
-        logger.info(
-            "resume_after_pin_verification_completed",
-            phone=phone_number,
-            flow_state=final_state.get("flow_state"),
-            transfer_status=final_state.get("transfer_status"),
-            response_preview=final_state.get("response", "")[:100] if final_state.get("response") else None,
-        )
 
         await update_conversation_state(phone_number, cast(TransferState, final_state))
 
         response = final_state.get("response", "")
         transfer_status = final_state.get("transfer_status")
-
-        # No fallback message - executor sends the final notification
 
         if self.completion_callback:
             if transfer_status in ("completed", "failed", "cancelled"):
