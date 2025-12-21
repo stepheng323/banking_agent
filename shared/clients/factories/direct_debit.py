@@ -5,7 +5,7 @@ Determines which provider to use based on environment and configuration.
 from typing import Optional
 
 from shared.config.settings import settings
-from shared.clients.direct_debit.base import DirectDebitProvider
+from shared.clients.abstractions.direct_debit import DirectDebitProvider
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -56,11 +56,11 @@ class DirectDebitProviderFactory:
     def _create_provider(cls, provider_name: str) -> DirectDebitProvider:
         """Create a provider by name."""
         if provider_name == "mock":
-            from shared.clients.direct_debit.mock_provider import MockDirectDebitProvider
+            from shared.clients.providers.mock.direct_debit import MockDirectDebitProvider
             return MockDirectDebitProvider()
         
         elif provider_name == "mono":
-            from shared.clients.direct_debit.mono_provider import MonoDirectDebitProvider
+            from shared.clients.providers.mono.direct_debit import MonoDirectDebitProvider
             return MonoDirectDebitProvider()
         
         else:

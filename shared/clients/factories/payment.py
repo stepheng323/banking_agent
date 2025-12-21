@@ -1,10 +1,10 @@
 """Factory for creating and managing payment and bill payment providers."""
 from typing import List, Optional
 
-from shared.clients.payment.base import PaymentProvider
-from shared.clients.bill.base import BillPaymentProvider
-from shared.clients.flutterwave.payment_client import FlutterwaveClient
-from shared.clients.flutterwave.bills_client import FlutterwaveBillsClient
+from shared.clients.abstractions.payment import PaymentProvider
+from shared.clients.abstractions.bill import BillPaymentProvider
+from shared.clients.providers.flutterwave.payment import FlutterwaveClient
+from shared.clients.providers.flutterwave.bill import FlutterwaveBillsClient
 
 
 class PaymentProviderFactory:

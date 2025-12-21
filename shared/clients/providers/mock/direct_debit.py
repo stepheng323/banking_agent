@@ -2,7 +2,7 @@
 import uuid
 from typing import Dict
 
-from shared.clients.direct_debit.base import (
+from shared.clients.abstractions.direct_debit import (
     DirectDebitProvider,
     DebitResult,
     DebitStatus,

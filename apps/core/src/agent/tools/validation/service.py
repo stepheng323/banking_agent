@@ -3,7 +3,7 @@
 from typing import Any, Dict, Optional, Tuple
 import asyncio
 
-from shared.clients.payment.base import PaymentProvider
+from shared.clients.abstractions.payment import PaymentProvider
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)

@@ -4,13 +4,13 @@ Uses Mono's Direct Debit API for pulling funds from user bank accounts.
 """
 from typing import Optional
 
-from shared.clients.direct_debit.base import (
+from shared.clients.abstractions.direct_debit import (
     DirectDebitProvider,
     DebitResult,
     DebitStatus,
     BalanceResult,
 )
-from shared.clients.mono.client import MonoClient
+from shared.clients.providers.mono.client import MonoClient
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
