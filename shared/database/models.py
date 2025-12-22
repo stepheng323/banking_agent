@@ -180,6 +180,7 @@ class FundingStepStatusEnum(str, Enum):
     PROCESSING = "processing"
     CONFIRMED = "confirmed"
     FAILED = "failed"
+    REFUND_PENDING = "refund_pending"
     REFUNDED = "refunded"
 
 

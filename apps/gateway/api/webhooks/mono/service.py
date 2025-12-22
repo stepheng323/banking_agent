@@ -163,10 +163,10 @@ class MonoWebhookService:
             return
 
         if latest_status == "failed":
-            uow.funded_transfers.update_status(str(transfer.id), "failed")
+            uow.funded_transfers.update_status(str(transfer.id), "refunding")
             uow.commit()
-            logger.warning("transfer_failed_needs_refund", transfer_id=str(transfer.id))
-            # TODO: Queue refund job for any successful steps
+            logger.warning("transfer_failed_initiating_refund", transfer_id=str(transfer.id))
+            await self._queue_refunds(uow, transfer)
             return
 
         if uow.funding_steps.are_all_confirmed(str(transfer.id)):
@@ -174,6 +174,35 @@ class MonoWebhookService:
             uow.commit()
             logger.info("all_debits_complete", transfer_id=str(transfer.id))
             await self._queue_payout(transfer)
+
+    async def _queue_refunds(self, uow, transfer) -> None:
+        """Queue refund jobs for any successful funding steps."""
+        successful_steps = uow.funding_steps.get_confirmed_for_transfer(str(transfer.id))
+        
+        if not successful_steps:
+            logger.info("no_refunds_needed", transfer_id=str(transfer.id))
+            uow.funded_transfers.update_status(str(transfer.id), "failed")
+            uow.commit()
+            return
+        
+        for step in successful_steps:
+            try:
+                await self.queue.enqueue_simple(
+                    queue_name="banking:refunds",
+                    message={
+                        "funding_step_id": str(step.id),
+                        "funded_transfer_id": str(transfer.id),
+                        "amount": float(step.amount),
+                        "account_id": str(step.source_account_id),
+                        "original_reference": step.provider_reference,
+                    },
+                )
+                uow.funding_steps.update_status(str(step.id), "refund_pending")
+                logger.info("refund_queued", step_id=str(step.id), amount=step.amount)
+            except Exception as e:
+                logger.error("refund_queue_failed", step_id=str(step.id), error=str(e))
+        
+        uow.commit()
 
     async def _queue_payout(self, transfer) -> None:
         """Queue payout job after all debits complete."""
@@ -191,3 +220,4 @@ class MonoWebhookService:
             logger.info("payout_queued", transfer_id=str(transfer.id))
         except Exception as e:
             logger.error("payout_queue_failed", transfer_id=str(transfer.id), error=str(e))
+
