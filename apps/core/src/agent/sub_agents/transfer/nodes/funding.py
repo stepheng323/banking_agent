@@ -109,7 +109,6 @@ async def plan_funding(
     
     planner = FundingPlanner(direct_debit_provider)
     
-    # Convert dict accounts to objects with required attributes
     class AccountAdapter:
         def __init__(self, data: dict):
             self.id = UUID(data["id"]) if isinstance(data.get("id"), str) else data.get("id")
@@ -137,7 +136,6 @@ async def plan_funding(
             "funding_status": "failed",
         }
     
-    # Convert plan to dict for state storage
     plan_dict = {
         "transfer_amount": plan.transfer_amount,
         "total_funded": plan.total_funded,
@@ -158,17 +156,15 @@ async def plan_funding(
     }
     
     if plan.is_single_source:
-        # Single source - can proceed directly without extra confirmation
         return {
             **state,
             "funding_plan": plan_dict,
             "funding_steps": plan_dict["steps"],
-            "funding_required": False,  # Single source doesn't need special handling
+            "funding_required": False,
             "flow_state": "authorizing",
             "funding_status": "funded",
         }
     else:
-        # Multi-source - need user confirmation
         message = format_funding_plan_message(plan)
         return {
             **state,
@@ -197,7 +193,6 @@ async def confirm_funding(
             "funding_error": "No funding plan available.",
         }
     
-    # Format and send confirmation message
     steps = funding_plan.get("steps", [])
     amount = funding_plan.get("transfer_amount", 0)
     
@@ -270,7 +265,6 @@ async def initiate_debits(
                 "error": str(e),
             })
     
-    # Check if any debits failed
     failed = [s for s in initiated_steps if s.get("status") == "failed"]
     
     if failed:

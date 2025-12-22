@@ -52,17 +52,16 @@ async def extract_entities(
                 return {
                     **state,
                     "flow_state": "cancelled",
-                    "response": "",  # Will be set in handle_cancellation
+                    "response": "",
                 }
         
-        # Detect other interrupts - pause for other intents (will resume after)
         if intent in ("manage_accounts", "query", "airtime", "data"):
             debug_log(f"🔀 Interrupt detected: {intent} - pausing transfer flow")
             return {
                 **state,
                 "flow_state": "paused",
                 "interrupt_intent": intent,
-                "response": "",  # Will be handled by orchestrator
+                "response": "",
             }
 
     last_response = state.get("response") or state.get("llm_reply")
@@ -78,10 +77,8 @@ async def extract_entities(
     if language:
         smart_context["language"] = language
 
-    # Add recent transactions for smart context
     recent_transactions = state.get("recent_transactions", [])
     if recent_transactions:
-        # Filter to just recent transfers (last 3)
         recent_transfers = [
             t for t in recent_transactions 
             if t.get("type") == "transfer" and t.get("status") == "success"

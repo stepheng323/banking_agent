@@ -23,7 +23,6 @@ class TransferState(TypedDict):
         "completed",
         "error",
         "cancelled",
-        # Multi-account funding states
         "checking_funding",
         "planning_funding",
         "confirming_funding",
