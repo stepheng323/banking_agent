@@ -101,3 +101,33 @@ class FundingStepRepository(BaseRepository[FundingStep]):
             )
             .first() is not None
         )
+
+    def get_by_transfer_id(self, transfer_id: str) -> List[FundingStep]:
+        """Alias for get_by_transfer (used by webhook handler)."""
+        return self.get_by_transfer(transfer_id)
+
+    def are_all_confirmed(self, transfer_id: str) -> bool:
+        """Alias for all_confirmed (used by webhook handler)."""
+        return self.all_confirmed(transfer_id)
+
+    def update_status(
+        self,
+        step_id: str,
+        status: str,
+        provider_response: dict | None = None,
+    ) -> Optional[FundingStep]:
+        """Update funding step status and provider response."""
+        if isinstance(step_id, str):
+            try:
+                step_id = UUID(step_id)
+            except ValueError:
+                return None
+        
+        step = self.db.query(FundingStep).filter(FundingStep.id == step_id).first()
+        if step:
+            step.status = status
+            if provider_response:
+                step.provider_response = provider_response
+            return step
+        return None
+

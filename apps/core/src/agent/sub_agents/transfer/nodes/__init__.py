@@ -15,6 +15,7 @@ from .funding import (
     plan_funding,
     confirm_funding,
     initiate_debits,
+    wait_for_debits,
 )
 from .transfer_execution import (
     execute_single_account_transfer,
@@ -33,12 +34,12 @@ __all__ = [
     "authorize_transaction",
     "handle_cancellation",
     "debug_log",
-    # Funding nodes
     "check_funding",
     "plan_funding",
     "confirm_funding",
     "initiate_debits",
-    # Transfer execution
+    "wait_for_debits",
     "execute_single_account_transfer",
     "execute_multi_account_payout",
 ]
+

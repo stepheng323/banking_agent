@@ -56,3 +56,18 @@ class FundedTransferRepository(BaseRepository[FundedTransfer]):
     def get_refunding(self) -> List[FundedTransfer]:
         """Get transfers being refunded."""
         return self.get_by_status(FundedTransferStatusEnum.REFUNDING.value)
+
+    def update_status(self, transfer_id: str, status: str) -> Optional[FundedTransfer]:
+        """Update transfer status."""
+        if isinstance(transfer_id, str):
+            try:
+                transfer_id = UUID(transfer_id)
+            except ValueError:
+                return None
+        
+        transfer = self.db.query(FundedTransfer).filter(FundedTransfer.id == transfer_id).first()
+        if transfer:
+            transfer.status = status
+            return transfer
+        return None
+

@@ -20,6 +20,7 @@ from apps.core.src.agent.sub_agents.transfer.nodes import (
     plan_funding,
     confirm_funding,
     initiate_debits,
+    wait_for_debits,
 )
 from apps.core.src.agent.sub_agents.transfer.state import TransferState
 from shared.cache.user_data import UserDataCache
@@ -107,6 +108,9 @@ def build_graph(
     async def initiate_debits_node(state: TransferState) -> TransferState:
         return await initiate_debits(state, dd_provider)
 
+    async def wait_for_debits_node(state: TransferState) -> TransferState:
+        return await wait_for_debits(state, dd_provider)
+
     async def authorize_node(state: TransferState) -> TransferState:
         return await authorize_transaction(
             state, redis_client, queue, authorization_service
@@ -128,6 +132,7 @@ def build_graph(
     workflow.add_node("plan_funding", plan_funding_node)
     workflow.add_node("confirm_funding", confirm_funding_node)
     workflow.add_node("initiate_debits", initiate_debits_node)
+    workflow.add_node("wait_for_debits", wait_for_debits_node)
     workflow.add_node("authorize", authorize_node)
     workflow.add_node("cancel", cancellation_node)
 
@@ -232,9 +237,12 @@ def build_graph(
     # confirm_funding waits for user response, then initiates debits
     workflow.add_edge("confirm_funding", "initiate_debits")
 
-    # initiate_debits → authorize (after debits initiated)
+    # initiate_debits → wait_for_debits (poll for completion)
+    workflow.add_edge("initiate_debits", "wait_for_debits")
+
+    # wait_for_debits routes based on status
     workflow.add_conditional_edges(
-        "initiate_debits",
+        "wait_for_debits",
         route_after_funding_check,
         {
             "authorize": "authorize",
