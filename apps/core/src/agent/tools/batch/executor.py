@@ -4,7 +4,7 @@ import asyncio
 from typing import List, Dict, Any, Optional, TYPE_CHECKING
 
 from shared.cache.redis_client import RedisClient
-from shared.clients.whatsapp_client import WhatsAppClient
+from shared.clients.whatsapp.client import WhatsAppClient
 from shared.services.task_queue import TaskQueueService
 from apps.core.src.agent.tools.batch.utils import (
     ExecutionState,

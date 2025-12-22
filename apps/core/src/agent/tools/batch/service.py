@@ -3,7 +3,7 @@
 import asyncio
 from typing import Optional, Any, Dict, TYPE_CHECKING
 
-from shared.clients.whatsapp_client import WhatsAppClient
+from shared.clients.whatsapp.client import WhatsAppClient
 from shared.services.task_queue import TaskQueueService
 from apps.core.src.agent.tools.batch.executor import execute_batch
 

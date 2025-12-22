@@ -11,7 +11,7 @@ from apps.core.src.agent.orchestrator.features.response import (
     get_synthesizer,
 )
 from shared.cache.bank_cache import BankCacheService
-from shared.clients.whatsapp_client import WhatsAppClient
+from shared.clients.whatsapp.client import WhatsAppClient
 
 from .utils import debug_log
 from apps.core.src.agent.sub_agents.transfer.validators import (
@@ -46,7 +46,7 @@ async def validate_parallel(
     whatsapp_client: Optional[WhatsAppClient] = None,
 ) -> TransferState:
     """
-    Parallel validation: resolve account + check balance.
+    Parallel validation: resolve bank code + validate recipient account.
     
     Args:
         state: Current transfer state

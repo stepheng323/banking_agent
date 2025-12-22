@@ -4,7 +4,7 @@ import asyncio
 import json
 from typing import Dict, Any, Optional
 
-from shared.clients.whatsapp_client import WhatsAppClient
+from shared.clients.whatsapp.client import WhatsAppClient
 from shared.cache.redis_client import RedisClient
 from shared.repositories.unit_of_work import UnitOfWork
 from shared.utils.logging import get_logger

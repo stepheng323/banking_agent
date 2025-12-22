@@ -9,6 +9,8 @@ from shared.repositories.account_repository import AccountRepository
 from shared.repositories.user_repository import UserRepository
 from shared.repositories.beneficiary_repository import BeneficiaryRepository
 from shared.repositories.transaction_repository import TransactionRepository
+from shared.repositories.funded_transfer_repository import FundedTransferRepository
+from shared.repositories.funding_step_repository import FundingStepRepository
 
 
 class UnitOfWork:
@@ -20,6 +22,8 @@ class UnitOfWork:
         self.accounts: Optional[AccountRepository] = None
         self.beneficiaries: Optional[BeneficiaryRepository] = None
         self.transactions: Optional[TransactionRepository] = None
+        self.funded_transfers: Optional[FundedTransferRepository] = None
+        self.funding_steps: Optional[FundingStepRepository] = None
         self._rolled_back = False
 
     def __enter__(self):
@@ -29,6 +33,8 @@ class UnitOfWork:
         self.accounts = AccountRepository(self.db)
         self.beneficiaries = BeneficiaryRepository(self.db)
         self.transactions = TransactionRepository(self.db)
+        self.funded_transfers = FundedTransferRepository(self.db)
+        self.funding_steps = FundingStepRepository(self.db)
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):

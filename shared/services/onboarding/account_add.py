@@ -3,8 +3,8 @@
 import asyncio
 from typing import Optional
 
-from shared.clients.mono import mono_client
-from shared.clients.whatsapp_client import WhatsAppClient
+from shared.clients.providers.mono import mono_client
+from shared.clients.whatsapp.client import WhatsAppClient
 from shared.cache.user_data import UserDataCache
 from shared.models import CreateAccount
 from shared.repositories.unit_of_work import UnitOfWork

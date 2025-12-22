@@ -5,7 +5,7 @@ import json
 from typing import cast
 
 from apps.core.src.agent.sub_agents.airtime.state import AirtimeState
-from shared.clients.whatsapp_client import WhatsAppClient
+from shared.clients.whatsapp.client import WhatsAppClient
 from shared.config import settings
 from shared.cache.redis_client import Redis
 

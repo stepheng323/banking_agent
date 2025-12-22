@@ -10,7 +10,7 @@ from langchain_openai import ChatOpenAI
 from shared.cache.user_data import UserDataCache
 from shared.repositories.beneficiary_repository import BeneficiaryRepository
 from shared.repositories.account_repository import AccountRepository
-from shared.clients.whatsapp_client import WhatsAppClient
+from shared.clients.whatsapp.client import WhatsAppClient
 from shared.queue.redis_queue import RedisQueue
 from shared.utils.logging import get_logger
 

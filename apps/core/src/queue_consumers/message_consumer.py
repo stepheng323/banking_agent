@@ -5,7 +5,7 @@ from typing import Any, Dict
 from apps.core.src.agent.orchestrator import OrchestratorAgent
 from apps.core.src.agent.sub_agents.onboarding.executor import OnboardingExecutor
 
-from shared.clients.whatsapp_client import WhatsAppClient
+from shared.clients.whatsapp.client import WhatsAppClient
 from shared.database.models import UserOnboardingStatusEnum
 from shared.models.messages import WhatsAppMessage
 from shared.queue.redis_queue import RedisQueue

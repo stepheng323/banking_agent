@@ -14,7 +14,7 @@ from shared.config import settings
 from shared.database.connection import init_db
 from shared.cache import BankCacheService
 from shared.cache.redis_client import RedisClient
-from shared.clients.payment_provider_factory import PaymentProviderFactory
+from shared.clients.factories.payment import PaymentProviderFactory
 
 from apps.core.src.dependencies import setup_dependencies
 

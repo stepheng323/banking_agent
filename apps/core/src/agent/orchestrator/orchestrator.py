@@ -5,7 +5,7 @@ import asyncio
 from shared.utils.async_helpers import create_background_task
 from langchain_openai import ChatOpenAI
 
-from shared.clients.whatsapp_client import WhatsAppClient
+from shared.clients.whatsapp.client import WhatsAppClient
 from shared.repositories import UserRepository, BeneficiaryRepository
 
 from apps.core.src.agent.orchestrator.flow_completion_callback import (

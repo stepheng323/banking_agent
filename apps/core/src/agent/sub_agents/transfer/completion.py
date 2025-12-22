@@ -9,8 +9,8 @@ from typing import Dict, Any, Optional
 
 import redis.asyncio as redis
 
-from shared.clients.whatsapp_client import WhatsAppClient
-from shared.clients.s3_client import S3Client
+from shared.clients.whatsapp.client import WhatsAppClient
+from shared.clients.storage.s3_client import S3Client
 from shared.repositories import BeneficiaryRepository
 from shared.repositories.unit_of_work import UnitOfWork
 from shared.formatters.receipt import generate_receipt_image

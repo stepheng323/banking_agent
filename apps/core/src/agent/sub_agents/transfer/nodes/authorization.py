@@ -3,7 +3,7 @@
 from typing import cast
 
 from apps.core.src.agent.sub_agents.transfer.state import TransferState
-from apps.gateway.api.flows.transaction_service import create_transfer_transaction
+from shared.services.transactions import create_transfer_transaction
 from apps.core.src.agent.orchestrator.features.response import (
     ResponseIntent,
     build_response_context,

@@ -5,7 +5,7 @@ import json
 
 from apps.core.src.agent.sub_agents.transfer.state import TransferState
 from shared.formatters.transfer import format_transfer_summary
-from shared.clients.whatsapp_client import WhatsAppClient
+from shared.clients.whatsapp.client import WhatsAppClient
 from shared.config import settings
 from shared.cache.redis_client import Redis
 

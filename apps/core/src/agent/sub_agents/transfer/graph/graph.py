@@ -7,8 +7,8 @@ from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.redis.aio import AsyncRedisSaver
 
 from shared.cache.redis_client import RedisClient
-from shared.clients.payment_provider_factory import PaymentProviderFactory
-from shared.clients.whatsapp_client import WhatsAppClient
+from shared.clients.factories.payment import PaymentProviderFactory
+from shared.clients.whatsapp.client import WhatsAppClient
 from shared.repositories.beneficiary_repository import BeneficiaryRepository
 from shared.repositories.account_repository import AccountRepository
 from shared.cache.bank_cache import BankCacheService

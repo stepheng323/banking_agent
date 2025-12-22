@@ -11,7 +11,7 @@ from apps.core.src.agent.orchestrator.features.response import (
     get_synthesizer,
 )
 from shared.cache.redis_client import RedisClient
-from shared.clients.whatsapp_client import WhatsAppClient
+from shared.clients.whatsapp.client import WhatsAppClient
 
 
 async def load_user_context(

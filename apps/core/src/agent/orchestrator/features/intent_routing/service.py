@@ -16,7 +16,7 @@ from apps.core.src.agent.sub_agents.account_management.service import AccountMan
 from apps.core.src.agent.orchestrator.features.task_planning.service import OrchestratorTaskPlanner
 from apps.core.src.agent.orchestrator.features.context.service import OrchestratorContextManager
 from apps.core.src.agent.orchestrator.features.flow_context.service import FlowContextService
-from shared.clients.whatsapp_client import WhatsAppClient
+from shared.clients.whatsapp.client import WhatsAppClient
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)

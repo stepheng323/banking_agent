@@ -1,6 +1,6 @@
-from shared.clients.whatsapp_client import WhatsAppClient
-from shared.clients.payment_provider import PaymentProvider
-from shared.clients.payment_provider_factory import PaymentProviderFactory
+from shared.clients.whatsapp.client import WhatsAppClient
+from shared.clients.abstractions.payment import PaymentProvider
+from shared.clients.factories.payment import PaymentProviderFactory
 
 __all__ = [
     "WhatsAppClient",

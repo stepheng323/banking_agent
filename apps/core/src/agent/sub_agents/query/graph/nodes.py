@@ -5,7 +5,7 @@ import json
 
 from langchain_core.runnables import Runnable
 
-from shared.clients.mono import MonoClient
+from shared.clients.providers.mono import MonoClient
 from apps.core.src.agent.sub_agents.query.parser import QueryParser
 from apps.core.src.agent.sub_agents.query.graph.state import QueryState
 from shared.utils.logging import get_logger

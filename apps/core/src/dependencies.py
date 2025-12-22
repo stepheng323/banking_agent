@@ -1,8 +1,8 @@
 from langchain_openai import ChatOpenAI
 
-from shared.clients.s3_client import S3Client
+from shared.clients.storage.s3_client import S3Client
 from shared.config import settings
-from shared.clients.whatsapp_client import WhatsAppClient
+from shared.clients.whatsapp.client import WhatsAppClient
 from shared.database.connection import get_db_session
 from shared.queue.redis_queue import RedisQueue
 from shared.repositories import BeneficiaryRepository, AccountRepository
@@ -26,7 +26,7 @@ from apps.core.src.agent.sub_agents.airtime.completion import AirtimeCompletionS
 from apps.core.src.agent.tools.beneficiary.suggestion_service import BeneficiarySuggestionService
 from apps.core.src.agent.sub_agents.query.graph import QueryFlowGraph
 from apps.core.src.agent.sub_agents.account_management.service import AccountManagementService
-from shared.clients.mono import mono_client
+from shared.clients.providers.mono import mono_client
 
 
 def setup_dependencies():

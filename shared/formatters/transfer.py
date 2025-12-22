@@ -1,6 +1,6 @@
 """Transfer summary formatting utilities."""
 
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 
 
 def _format_currency_naira(amount: float) -> str:
@@ -62,3 +62,108 @@ def format_transfer_summary(data: Dict) -> str:
     lines.append("Tap *Authorize* to enter your PIN.")
 
     return "\n".join(lines)
+
+
+def format_multi_source_transfer_summary(data: Dict) -> str:
+    """Format transfer confirmation for multi-account funding.
+
+    Expected keys in data:
+      amount: float
+      recipientName: str
+      recipientBank: str
+      recipientAccount: str
+      funding_sources: List[Dict] - each with bank_name, account_number, amount
+      narration: Optional[str]
+    """
+    amount = float(data.get("amount", 0))
+    recipient_name = str(data.get("recipientName") or "")
+    recipient_bank = str(data.get("recipientBank") or "")
+    recipient_account = str(data.get("recipientAccount") or "")
+    funding_sources: List[Dict] = data.get("funding_sources", [])
+    narration: Optional[str] = data.get("narration")
+
+    fee = _calculate_transfer_fee(amount)
+    total = amount + fee
+
+    lines = [
+        f"*Amount:* {_format_currency_naira(amount)}",
+        f"*To:* {recipient_name.title()}",
+        f"*Bank:* {recipient_bank.title()}",
+        f"*Account:* `{recipient_account}`",
+    ]
+    
+    if narration:
+        lines.append(f"*Note:* {narration}")
+
+    lines.append("")
+    lines.append("*Funding from:*")
+    
+    for source in funding_sources:
+        bank = source.get("bank_name", "Account")
+        account = source.get("account_number", "")
+        source_amount = float(source.get("amount", 0))
+        last4 = account[-4:] if account else "????"
+        lines.append(f"  • {bank} (···{last4}): {_format_currency_naira(source_amount)}")
+    
+    lines.append("")
+    lines.append(f"*Fee:* {_format_currency_naira(fee)}")
+    lines.append(f"*Total:* {_format_currency_naira(total)}")
+    lines.append("")
+    lines.append("Tap *Authorize* to enter your PIN.")
+
+    return "\n".join(lines)
+
+
+def format_multi_source_receipt(data: Dict) -> str:
+    """Format receipt for completed multi-account transfer.
+
+    Expected keys in data:
+      amount: float
+      recipientName: str
+      recipientBank: str
+      recipientAccount: str
+      funding_sources: List[Dict] - each with bank_name, account_number, amount
+      reference: str
+      timestamp: Optional[str]
+    """
+    amount = float(data.get("amount", 0))
+    recipient_name = str(data.get("recipientName") or "")
+    recipient_bank = str(data.get("recipientBank") or "")
+    recipient_account = str(data.get("recipientAccount") or "")
+    funding_sources: List[Dict] = data.get("funding_sources", [])
+    reference = data.get("reference", "")
+    timestamp = data.get("timestamp", "")
+
+    lines = [
+        "✅ *Transfer Successful!*",
+        "",
+        f"*{_format_currency_naira(amount)}* → {recipient_name.title()}",
+        f"📍 {recipient_bank.title()} (`{recipient_account}`)",
+        "",
+    ]
+    
+    if len(funding_sources) > 1:
+        lines.append("*Funded from:*")
+        for source in funding_sources:
+            bank = source.get("bank_name", "Account")
+            account = source.get("account_number", "")
+            source_amount = float(source.get("amount", 0))
+            last4 = account[-4:] if account else "????"
+            lines.append(f"  • {bank} (···{last4}): {_format_currency_naira(source_amount)}")
+        lines.append("")
+    else:
+        source = funding_sources[0] if funding_sources else {}
+        bank = source.get("bank_name", "Account")
+        account = source.get("account_number", "")
+        last4 = account[-4:] if account else "????"
+        lines.append(f"*From:* {bank} (···{last4})")
+        lines.append("")
+    
+    if reference:
+        lines.append(f"*Ref:* `{reference}`")
+    
+    if timestamp:
+        lines.append(f"*Time:* {timestamp}")
+
+    return "\n".join(lines)
+

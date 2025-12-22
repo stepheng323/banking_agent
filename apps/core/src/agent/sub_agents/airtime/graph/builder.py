@@ -19,7 +19,7 @@ from apps.core.src.agent.tools.beneficiary.matcher import BeneficiaryMatcher
 from shared.services.auth import AuthorizationService
 from shared.cache.user_data import UserDataCache
 from shared.repositories import BeneficiaryRepository, AccountRepository
-from shared.clients.whatsapp_client import WhatsAppClient
+from shared.clients.whatsapp.client import WhatsAppClient
 from shared.cache.redis_client import Redis
 from shared.queue.redis_queue import RedisQueue
 

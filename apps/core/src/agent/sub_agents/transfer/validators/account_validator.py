@@ -4,7 +4,7 @@ import asyncio
 from shared.utils.async_helpers import create_background_task
 from typing import Optional, Tuple
 from apps.core.src.agent.tools.validation.service import AsyncValidationService
-from shared.clients.whatsapp_client import WhatsAppClient
+from shared.clients.whatsapp.client import WhatsAppClient
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)

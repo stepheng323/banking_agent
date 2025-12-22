@@ -1,4 +1,4 @@
-from shared.clients.whatsapp_client import WhatsAppClient
+from shared.clients.whatsapp.client import WhatsAppClient
 from shared.config import settings
 from shared.utils.logging import get_logger
 
