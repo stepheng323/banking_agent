@@ -15,6 +15,8 @@ from shared.clients.abstractions import DirectDebitProvider
 from shared.services.funding import FundingPlanner, FundingPlan, format_funding_plan_message
 from shared.clients.whatsapp.client import WhatsAppClient
 from shared.utils.logging import get_logger
+from shared.formatters.transfer import format_multi_source_transfer_summary
+
 
 logger = get_logger(__name__)
 
@@ -182,7 +184,9 @@ async def confirm_funding(
 ) -> TransferState:
     """
     Send funding plan confirmation to user and wait for response.
+    Uses multi-source formatter for consistent presentation.
     """
+    
     phone_number = state.get("phone_number", "")
     funding_plan = state.get("funding_plan", {})
     
@@ -196,12 +200,37 @@ async def confirm_funding(
     steps = funding_plan.get("steps", [])
     amount = funding_plan.get("transfer_amount", 0)
     
-    lines = [f"To send ₦{amount:,.2f}, I'll combine:"]
-    for step in steps:
-        lines.append(f"• ₦{step['amount']:,.2f} from {step['bank_name']}")
-    lines.append("\nReply 'yes' to proceed or 'no' to cancel.")
+    # Get recipient details
+    account_resolved = state.get("account_resolved", {})
+    recipient_name = (
+        account_resolved.get("account_name") 
+        if account_resolved else state.get("recipient_name") or "Recipient"
+    )
     
-    message = "\n".join(lines)
+    # Build funding sources list
+    funding_sources = [
+        {
+            "bank_name": step.get("bank_name", "Account"),
+            "account_number": step.get("account_number", ""),
+            "amount": step.get("amount", 0),
+        }
+        for step in steps
+    ]
+    
+    summary = format_multi_source_transfer_summary({
+        "amount": amount,
+        "recipientName": recipient_name,
+        "recipientBank": state.get("recipient_bank_name", ""),
+        "recipientAccount": state.get("recipient_account", ""),
+        "funding_sources": funding_sources,
+        "narration": state.get("narration"),
+    })
+    
+    # Add confirmation prompt
+    message = summary.replace(
+        "Tap *Authorize* to enter your PIN.",
+        "Reply *yes* to proceed or *no* to cancel."
+    )
     
     await whatsapp_client.send_text_message(phone_number, message)
     
