@@ -10,7 +10,7 @@ from apps.core.src.agent.orchestrator.features.response import (
     get_synthesizer,
 )
 from shared.services.auth import AuthorizationService
-from apps.gateway.api.flows.transaction_service import create_airtime_transaction
+from shared.services.transactions import create_airtime_transaction
 from shared.cache.redis_client import Redis
 from shared.queue.redis_queue import RedisQueue
 from shared.utils.logging import get_logger

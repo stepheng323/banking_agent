@@ -26,7 +26,7 @@ from apps.core.src.agent.sub_agents.airtime.completion import AirtimeCompletionS
 from apps.core.src.agent.tools.beneficiary.suggestion_service import BeneficiarySuggestionService
 from apps.core.src.agent.sub_agents.query.graph import QueryFlowGraph
 from apps.core.src.agent.sub_agents.account_management.service import AccountManagementService
-from shared.clients.mono import mono_client
+from shared.clients.providers.mono import mono_client
 
 
 def setup_dependencies():

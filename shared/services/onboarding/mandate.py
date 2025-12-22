@@ -4,7 +4,7 @@ import uuid as uuid_module
 from datetime import datetime, timedelta
 from typing import Optional
 
-from shared.clients.mono import mono_client, MonoApiError
+from shared.clients.providers.mono import mono_client, MonoApiError
 from shared.clients.whatsapp.client import WhatsAppClient
 from shared.cache.user_data import UserDataCache
 from shared.repositories.unit_of_work import UnitOfWork

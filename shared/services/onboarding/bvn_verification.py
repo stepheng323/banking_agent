@@ -2,7 +2,7 @@
 
 from typing import List
 
-from shared.clients.mono import mono_client, MonoApiError, BvnLookupData, BankAccount
+from shared.clients.providers.mono import mono_client, MonoApiError, BvnLookupData, BankAccount
 from shared.repositories.unit_of_work import UnitOfWork
 from shared.utils.logging import get_logger
 
