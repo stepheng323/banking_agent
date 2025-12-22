@@ -16,7 +16,7 @@ from shared.clients.whatsapp.client import WhatsAppClient
 from shared.services.auth import AuthorizationService
 from shared.queue.redis_queue import RedisQueue
 from shared.queue.messages import FlowEvent, FlowEventType, FLOW_EVENTS_QUEUE
-from apps.gateway.api.flows.response_helpers import format_error_response, format_success_response
+from apps.gateway.api.webhooks.whatsapp.flows.response_helpers import format_error_response, format_success_response
 from apps.gateway.core.config import settings
 
 

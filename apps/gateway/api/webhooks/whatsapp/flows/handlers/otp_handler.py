@@ -5,7 +5,7 @@ from pydantic import BaseModel
 
 from fastapi.responses import Response
 
-from apps.gateway.api.flows.response_helpers import format_error_response, format_success_response
+from apps.gateway.api.webhooks.whatsapp.flows.response_helpers import format_error_response, format_success_response
 from shared.services.onboarding import bvn_service, ServiceResult
 
 

@@ -10,17 +10,17 @@ from shared.clients.whatsapp.client import WhatsAppClient
 from shared.queue.redis_queue import RedisQueue
 from shared.utils import encrypt_flow_response
 
-from apps.gateway.api.flows.dependencies import (
+from apps.gateway.api.webhooks.whatsapp.flows.dependencies import (
     get_redis_queue,
     get_whatsapp_client,
 )
-from apps.gateway.api.flows.handlers.account_selection_handler import handle_account_selection, AccountSelectionInput
-from apps.gateway.api.flows.handlers.bvn_handler import handle_bvn_entry
-from apps.gateway.api.flows.handlers.method_selection_handler import handle_method_selection, MethodSelectionInput
-from apps.gateway.api.flows.handlers.onboarding_pin_handler import handle_onboarding_pin, OnboardingPinInput
-from apps.gateway.api.flows.handlers.otp_handler import handle_otp_verification, OtpVerificationInput
-from apps.gateway.api.flows.handlers.transaction_pin_handler import handle_transaction_pin
-from apps.gateway.api.flows.request_processor import  process_flow_request
+from apps.gateway.api.webhooks.whatsapp.flows.handlers.account_selection_handler import handle_account_selection, AccountSelectionInput
+from apps.gateway.api.webhooks.whatsapp.flows.handlers.bvn_handler import handle_bvn_entry
+from apps.gateway.api.webhooks.whatsapp.flows.handlers.method_selection_handler import handle_method_selection, MethodSelectionInput
+from apps.gateway.api.webhooks.whatsapp.flows.handlers.onboarding_pin_handler import handle_onboarding_pin, OnboardingPinInput
+from apps.gateway.api.webhooks.whatsapp.flows.handlers.otp_handler import handle_otp_verification, OtpVerificationInput
+from apps.gateway.api.webhooks.whatsapp.flows.handlers.transaction_pin_handler import handle_transaction_pin
+from apps.gateway.api.webhooks.whatsapp.flows.request_processor import process_flow_request
 
 router = APIRouter()
 
