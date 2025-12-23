@@ -135,7 +135,7 @@ def format_multi_source_receipt(data: Dict) -> str:
     timestamp = data.get("timestamp", "")
 
     lines = [
-        "✅ *Transfer Successful!*",
+        "✓ *Transfer Successful!*",
         "",
         f"*{_format_currency_naira(amount)}* → {recipient_name.title()}",
         f"📍 {recipient_bank.title()} (`{recipient_account}`)",
@@ -167,3 +167,87 @@ def format_multi_source_receipt(data: Dict) -> str:
 
     return "\n".join(lines)
 
+
+def format_funding_plan_summary(
+    steps: List[Dict],
+    amount: float,
+    primary_bank: str,
+    balance_available: float,
+) -> str:
+    """Format funding plan summary for multi-account transfer authorization.
+
+    Args:
+        steps: List of funding steps, each with bank_name and amount
+        amount: Total transfer amount
+        primary_bank: Primary bank name (where balance is insufficient)
+        balance_available: Current balance in primary bank
+
+    Returns:
+        WhatsApp-formatted funding plan summary
+    """
+    # Find secondary bank (not the primary)
+    secondary_bank = None
+    for step in steps:
+        if step.get("bank_name") != primary_bank:
+            secondary_bank = step.get("bank_name", "another account")
+            break
+
+    lines = [
+        f"Your {primary_bank} balance is *{_format_currency_naira(balance_available)}*.",
+        "",
+        f"This transfer needs *{_format_currency_naira(amount)}*.",
+        "",
+        f"I can combine it with your {secondary_bank} balance to complete the transfer.",
+        "",
+        "*Funding plan:*",
+    ]
+
+    for step in steps:
+        bank = step.get("bank_name", "Account")
+        amt = float(step.get("amount", 0))
+        lines.append(f"- {bank}: *{_format_currency_naira(amt)}*")
+
+    lines.append("")
+    lines.append(f"*Total:* {_format_currency_naira(amount)}")
+
+    return "\n".join(lines)
+
+
+def format_transfer_success_message(
+    amount: float,
+    recipient_name: str,
+    transaction_id: str,
+) -> str:
+    """Format transfer success notification message.
+
+    Args:
+        amount: Transfer amount
+        recipient_name: Name of recipient
+        transaction_id: Provider transaction ID
+
+    Returns:
+        WhatsApp-formatted success message
+    """
+    return (
+        f"✓ Transfer successful! {_format_currency_naira(amount)} has been sent to "
+        f"{recipient_name}. Transaction ID: {transaction_id}"
+    )
+
+
+def format_transfer_pending_message(
+    amount: float,
+    recipient_name: str,
+) -> str:
+    """Format transfer pending notification message.
+
+    Args:
+        amount: Transfer amount
+        recipient_name: Name of recipient
+
+    Returns:
+        WhatsApp-formatted pending message
+    """
+    return (
+        f"⏳ Your {_format_currency_naira(amount)} transfer to {recipient_name} is processing.\n\n"
+        "You'll receive confirmation shortly. If you don't receive it within 5 minutes, please contact support."
+    )
