@@ -170,7 +170,9 @@ class OrchestratorIntentRouter:
                 "intent": result.intent,
                 "is_cancellation": result.is_cancellation,
                 "confidence": result.confidence,
+                "task_parameters": result.task_parameters,
             }
+            logger.info("route_intent_transfer_classification", classification=transfer_classification_dict)
             response = await self.transfer_service.run_simple(
                 phone_number, text, transfer_classification_dict, image_data=image_data
             )

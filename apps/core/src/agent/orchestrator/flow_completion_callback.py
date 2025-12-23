@@ -191,7 +191,7 @@ class OrchestratorFlowCompletionCallback:
         """
         planner_output = await self.task_queue_service.get_task_queue(phone_number)
         if not planner_output:
-            return "✅ All tasks completed!"
+            return "✓ All tasks completed!"
         
         # Get task results
         results = await self.task_queue_service.get_task_results(phone_number)
@@ -209,11 +209,11 @@ class OrchestratorFlowCompletionCallback:
                 completed_tasks.append(f"{i}. {task_desc} (failed)")
         
         if completed_tasks:
-            summary = "✅ All tasks completed!\n\n" + "\n".join(completed_tasks)
+            summary = "✓ All tasks completed!\n\n" + "\n".join(completed_tasks)
             summary += "\n\nIs there anything else I can help you with?"
             return summary
         else:
-            return "✅ All tasks completed!"
+            return "✓ All tasks completed!"
 
     async def _clear_conversation_state(self, phone_number: str) -> None:
         """
@@ -455,7 +455,7 @@ class OrchestratorFlowCompletionCallback:
                         if completed_status == TaskStatus.COLLECTION_COMPLETE.value:
                             transition_msg = f"📝 Details for {completed_desc} received. Now let's process {next_desc}."
                         else:
-                            transition_msg = f"✅ {completed_desc.capitalize()} completed. Now let's process {next_desc}."
+                            transition_msg = f"✓ {completed_desc.capitalize()} completed. Now let's process {next_desc}."
                         
                         # Send transition message via orchestrator's WhatsApp client
                         if hasattr(self.orchestrator, 'whatsapp_client'):

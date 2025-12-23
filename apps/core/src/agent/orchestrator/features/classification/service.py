@@ -136,29 +136,34 @@ class OrchestratorClassificationService:
                     complexity_reason="Query request during active flow",
                 )
             
+            # Fast path for account/phone numbers during active flows
+            # These are clearly continuations of the flow, not cancellations
+            if active_flow == "transfer":
+                # Match 10-digit account number (optionally with bank name after comma or space)
+                # Examples: "0860506361", "0860506361, Access", "0860506361 access bank"
+                if re.match(r'^\d{10}(\s*,?\s*\w+)?', text_clean):
+                    return ClassificationResult(
+                        intent="transfer",
+                        is_complex=False,
+                        confidence=0.97,
+                        response="",  # Let the transfer flow handle response
+                        complexity_reason="Account number detected - flow continuation",
+                    )
+            
+            if active_flow in {"airtime", "data"}:
+                if re.match(r'^0?\d{10,11}$', text_clean):
+                    return ClassificationResult(
+                        intent=active_flow,
+                        is_complex=False,
+                        confidence=0.97,
+                        response="",
+                        complexity_reason="Phone number detected - flow continuation",
+                    )
+            
             # For anything else during active flow (amounts, corrections, new transactions),
             # let the LLM decide with full context about the pending transaction
             return None  # Fall through to LLM classification
         
-        if active_flow == "transfer":
-            if re.match(r'^\d{10}$', text_clean):
-                return ClassificationResult(
-                    intent="transfer",
-                    is_complex=False,
-                    confidence=0.97,
-                    response="Account number received.",
-                    complexity_reason="Account number detected",
-                )
-        
-        if active_flow in {"airtime", "data"}:
-            if re.match(r'^0\d{10}$|^\d{10}$', text_clean):
-                return ClassificationResult(
-                    intent=active_flow,
-                    is_complex=False,
-                    confidence=0.97,
-                    response="Phone number received.",
-                    complexity_reason="Phone number detected",
-                )
         return None
 
     async def classify(
@@ -257,4 +262,20 @@ class OrchestratorClassificationService:
         messages.append(user_message)
 
         structured_llm = self.classifier_llm.with_structured_output(ClassificationResult)
-        return await structured_llm.ainvoke(messages)
+        result = await structured_llm.ainvoke(messages)
+        
+        # Override cancellation for explicit start commands
+        # This prevents "Send 50k" being classified as cancel after a previous cancellation
+        text_lower = text.lower().strip()
+        if any(text_lower.startswith(prefix) for prefix in ["send ", "pay ", "transfer ", "buy "]):
+            if result.is_cancellation:
+                logger.warning("overriding_false_cancellation", text=text[:30], original_intent=result.intent)
+                result.is_cancellation = False
+                if result.intent == "cancel":
+                    # Fallback to transfer/airtime based on keyword
+                    if "airtime" in text_lower or "recharge" in text_lower or "data" in text_lower:
+                        result.intent = "airtime" if "airtime" in text_lower else "data"
+                    else:
+                        result.intent = "transfer"
+        
+        return result

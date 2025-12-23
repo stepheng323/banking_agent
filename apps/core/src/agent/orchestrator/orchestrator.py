@@ -33,8 +33,8 @@ from apps.core.src.agent.orchestrator.features.batch_authorization.handler impor
 from apps.core.src.agent.orchestrator.features.active_queue.handler import ActiveQueueHandler
 from apps.core.src.agent.orchestrator.features.task_planning.handler import NextTaskHandler
 from apps.core.src.agent.orchestrator.features.intent_routing.handler import IntentRoutingHandler
-from apps.core.src.agent.orchestrator.features.mandate.handler import MandateReinitiationHandler
-from apps.core.src.agent.orchestrator.features.flow_context import FlowContextService, FlowResumeHandler
+from apps.core.src.agent.orchestrator.features.flow_context import FlowContextService
+from apps.core.src.agent.orchestrator.features.affirmation import AffirmationHandler
 
 
 class OrchestratorAgent:
@@ -98,10 +98,9 @@ class OrchestratorAgent:
         # Handler order matters
         self._handlers = [
             ContextLoaderHandler(self.context_manager, task_queue_service),
-            MandateReinitiationHandler(),
             ClassificationHandler(self.classification_service, self.context_manager),
             FreshStartHandler(self.context_manager, transfer_service, airtime_service),
-            FlowResumeHandler(self.flow_context_service),  # Before beneficiary - handle "yes" to resume
+            AffirmationHandler(transfer_service, airtime_service, self.flow_context_service, llm),  # Unified confirmation handler
             BeneficiaryHandler(self.beneficiary_handler),
             CancellationHandler(self.cancellation_handler),
             BatchAuthorizationHandler(task_queue_service, transfer_service, whatsapp_client),

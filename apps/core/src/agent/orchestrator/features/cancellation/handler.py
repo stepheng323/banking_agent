@@ -38,7 +38,7 @@ class CancellationHandler(MessageHandler):
             
             response = (
                 "⚠️ Cancelling batch execution...\n\n"
-                "✅ Completed tasks will remain completed.\n"
+                "✓ Completed tasks will remain completed.\n"
                 "⏳ Currently executing tasks will finish.\n"
                 "❌ Pending tasks will be cancelled."
             )
