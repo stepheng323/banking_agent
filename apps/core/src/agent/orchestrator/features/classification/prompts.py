@@ -13,8 +13,15 @@ CLASSIFICATION_SYSTEM_PROMPT = (
     "3. MANAGE_ACCOUNTS: account management ('Show accounts', 'How many accounts', 'Set default', 'Unlink account')\n"
     "4. TRANSFER: money transfers. Account numbers/bank names are continuations, not cancellations\n"
     "5. MIXED: multiple different operations in one message (e.g., transfer + query, transfer + airtime)\n"
-    "6. CANCEL: explicit abort words ('cancel', 'stop', 'nevermind', 'abort'). Set is_cancellation=true\n"
+    "6. CANCEL: explicit abort words ('cancel', 'stop', 'nevermind', 'abort'). Set is_cancellation=true. WARNING: 'Send', 'Pay', 'Transfer' are NEVER cancellations, even if user just cancelled.\n"
     "7. COMPLEX: multiple transfers OR multiple recipients → is_complex=true\n\n"
+    
+    "PARAMETER EXTRACTION (task_parameters):\n"
+    "- For 'transfer' and 'airtime', extract 'amount' and 'recipient' if present.\n"
+    "- 'amount': numeric value (e.g., 5000 from '5k').\n"
+    "- 'recipient': name or 'me'.\n"
+    "- 'bank_name': if specific bank mentioned.\n"
+    "- 'account_number': if 10-digit number present.\n\n"
     
     "EXPLICIT CANCELLATION (when is_cancellation=true):\n"
     "- If context.conversationState has pending transaction, generate helpful response:\n"
