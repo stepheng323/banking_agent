@@ -55,7 +55,7 @@ class BatchService:
         """
         await self.whatsapp_client.send_text(
             phone_number,
-            "✅ PIN verified. Processing your transactions..."
+            "✓ PIN verified. Processing your transactions..."
         )
 
         asyncio.create_task(

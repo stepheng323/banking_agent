@@ -69,7 +69,7 @@ class AirtimeCompletionService:
             provider_txn_id = purchase_result.get("transaction_id", "N/A")
             
             message = (
-                f"✅ Airtime purchase successful!\n\n"
+                f"✓ Airtime purchase successful!\n\n"
                 f"Amount: ₦{amount:,.0f}\n"
                 f"Recipient: {recipient_name} ({network})\n"
                 f"Phone: {recipient_phone}\n"

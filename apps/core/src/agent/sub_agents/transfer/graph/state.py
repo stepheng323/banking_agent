@@ -90,27 +90,21 @@ async def update_conversation_state(phone_number: str, state: TransferState) -> 
         transfer_status = state.get("transfer_status")
         idem_key = state.get("idempotency_key")
 
-        # Only save conversation_state if there's an active transaction
-        # (not in initial/extracting state unless there's a pending transfer)
         should_save = False
 
         if flow_state == "cancelled":
-            # Transaction cancelled - clear conversation_state
             key = f"user:{phone_number}:conversation_state"
             await redis_client.delete(key)
             return
 
-        # Save if:
-        # 1. Transfer is pending (waiting for PIN)
-        # 2. Flow state indicates active transaction (not just extracting)
-        # 3. Has idempotency key (transaction initiated)
-        # 4. Has amount during extracting (for mid-flow interrupt resume context)
         amount = state.get("amount")
+        awaiting_confirmation = state.get("awaiting_confirmation")
         
         if (transfer_status == "pending" or
             (flow_state not in ("extracting", "error", None) and active_flow == "transfer") or
             idem_key or
-            (flow_state == "extracting" and amount)):  # Save during extracting if we have amount
+            (flow_state == "extracting" and amount) or
+            awaiting_confirmation):
             should_save = True
 
         if should_save:
@@ -124,23 +118,24 @@ async def update_conversation_state(phone_number: str, state: TransferState) -> 
                 "recipient_name": state.get("recipient_name"),
                 "recipient_bank_code": state.get("recipient_bank_code"),
                 "recipient_bank_name": state.get("recipient_bank_name"),
+                "funding_status": state.get("funding_status"),
+                "funding_required": state.get("funding_required"),
+                "awaiting_confirmation": awaiting_confirmation,
+                "confirmation_context": state.get("confirmation_context"),
+                "max_available": state.get("max_available"),  # For amount adjustment
             }
 
             key = f"user:{phone_number}:conversation_state"
-            # Save with 1 hour TTL (same as other conversation state)
             await redis_client.set(key, json.dumps(conversation_state), ex=3600)
             debug_log(
-                f"✅ Updated conversation_state for {phone_number}: active_flow={active_flow}, flow_state={flow_state}, transfer_status={transfer_status}")
+                f"✓ Updated conversation_state for {phone_number}: active_flow={active_flow}, flow_state={flow_state}, transfer_status={transfer_status}, awaiting_confirmation={awaiting_confirmation}")
         else:
-            # No active transaction - clear conversation_state if it exists
             key = f"user:{phone_number}:conversation_state"
             await redis_client.delete(key)
     except Exception as e:
         debug_log(f"⚠️  Error updating conversation_state: {e}")
-        # Don't fail if conversation state update fails
 
 
-# Session management functions - use shared flow_session_manager
 async def get_transfer_session_age(phone_number: str) -> Optional[float]:
     """Get the age of the current transfer session in seconds, or None if no active session."""
     return await get_flow_session_age(phone_number, "transfer")
@@ -173,20 +168,15 @@ def has_substantial_transfer_data(state: TransferState) -> bool:
 async def clear_all_transfer_state(phone_number: str, redis_client, graph, config) -> None:
     """Clear all transfer-related state (checkpoint, Redis keys)."""
     try:
-        # Clear LangGraph checkpoint
         if graph and config:
             try:
-                # Fix for AsyncPostgresSaver which uses adelete_thread
                 if hasattr(graph, "checkpointer") and graph.checkpointer:
                     thread_id = config["configurable"]["thread_id"]
-                    # Check if checkpointer has adelete_thread (AsyncPostgresSaver)
                     if hasattr(graph.checkpointer, "adelete_thread"):
                         await graph.checkpointer.adelete_thread(thread_id)
-                    # Fallback for other checkpointers that might use adelete
                     elif hasattr(graph.checkpointer, "adelete"):
                         await graph.checkpointer.adelete(config)
                     else:
-                        # Try calling on graph directly as fallback
                         await graph.adelete(config)
                 else:
                     await graph.adelete(config)
@@ -195,10 +185,8 @@ async def clear_all_transfer_state(phone_number: str, redis_client, graph, confi
             except Exception as e:
                 debug_log(f"⚠️  Error clearing checkpoint (may not exist): {e}")
         
-        # Clear flow session
         await clear_flow_session(phone_number, "transfer")
         
-        # Clear Redis keys
         keys_to_delete = [
             f"user:{phone_number}:conversation_state",
             f"user:{phone_number}:pending_transfer",

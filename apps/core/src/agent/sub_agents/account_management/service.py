@@ -16,6 +16,7 @@ from shared.database.models import User
 from shared.utils.logging import get_logger
 from apps.core.src.agent.sub_agents.account_management.parser import AccountManagementParser, AccountManagementIntent
 from apps.core.src.agent.sub_agents.account_management.formatter import AccountManagementFormatter
+from shared.services.onboarding import bvn_service
 
 logger = get_logger(__name__)
 
@@ -125,10 +126,9 @@ class AccountManagementService:
 
     async def link_account(self, phone_number: str) -> str:
         """
-        Send Mono Connect flow to link a new account.
+        Send account linking flow to link a new account.
         
-        Pre-fills BVN from stored user data so user doesn't have to enter it again.
-        Flow starts at OTP verification step.
+        Uses stored BVN - flow starts at METHOD_SELECTION (OTP verification).
         
         Args:
             phone_number: User's phone number
@@ -136,21 +136,25 @@ class AccountManagementService:
         Returns:
             Instruction message
         """
-        flow_id = settings.onboarding_flow_id
+        flow_id = settings.account_linking_flow_id
+    
         if not flow_id:
             return "Sorry, account linking is temporarily unavailable. Please contact support."
         
         timestamp = int(time.time())
         flow_token = f"link-{phone_number}-{timestamp}"
         
-        # Pre-initialize session with stored BVN (skip BVN entry screen)
-        from shared.services.onboarding import bvn_service
         result = await bvn_service.initiate_account_linking(flow_token, phone_number)
         
         if not result["success"]:
-            return result.get("error", "Failed to start account linking. Please try again.")
+            error_msg = result.get("error", "Failed to start account linking.")
+            logger.error("account_linking_init_failed", phone=phone_number, error=error_msg)
+            return error_msg
         
-        # Send flow starting at METHOD_SELECTION (OTP method selection)
+        linking_data = result.get("data", {})
+        methods = linking_data.get("methods", [])
+        bvn = linking_data.get("bvn", "")
+        
         await self.whatsapp_client.send_flow(
             to=phone_number,
             header="Link New Account",
@@ -158,10 +162,17 @@ class AccountManagementService:
             flow_id=flow_id,
             screen_name="METHOD_SELECTION",
             flow_token=flow_token,
-            text_body="Tap Continue to verify and link your bank account.",
+            text_body="Tap Continue to link a new bank account.",
+            flow_action_payload={
+                "screen": "METHOD_SELECTION",
+                "data": {
+                    "methods": methods,
+                    "bvn": bvn,
+                },
+            },
         )
         
-        return "I've sent you a secure link to connect your new bank account. Please tap 'Continue' to verify via OTP."
+        return ""
 
     async def list_accounts(self, user_id: str) -> str:
         """
@@ -208,11 +219,17 @@ class AccountManagementService:
             )
         
         try:
-            self.account_repo.set_default_account(user_id, str(selected_account.account_id))
+            with UnitOfWork() as uow:
+                uow.accounts.set_default_account(user_id, str(selected_account.account_id))
+                uow.commit()
+            
+            user = self.user_repo.get_by_id(user_id)
+            if user:
+                asyncio.create_task(UserDataCache().invalidate_accounts(user.phone_number))
             
             masked_number = f"***{selected_account.account_number[-4:]}"
             return (
-                f"✅ *Default account updated!*\n\n"
+                f"✓ *Default account updated!*\n\n"
                 f"{selected_account.bank_name} ({masked_number}) is now your default account.\n\n"
                 f"All transactions will use this account unless you specify otherwise."
             )
@@ -284,7 +301,7 @@ class AccountManagementService:
                 
                 masked_number = f"***{selected_account.account_number[-4:]}"
                 return (
-                    f"✅ *Account unlinked!*\n\n"
+                    f"✓ *Account unlinked!*\n\n"
                     f"{selected_account.bank_name} ({masked_number}) has been removed.\n\n"
                     f"You now have {len(accounts) - 1} linked account(s)."
                 )

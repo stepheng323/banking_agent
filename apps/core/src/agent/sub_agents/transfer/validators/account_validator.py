@@ -72,17 +72,20 @@ class AccountValidator:
             source_account_id=str(source_account_id),
         )
 
-        if resolved:
+        is_success = resolved and isinstance(resolved, dict) and resolved.get("success", False)
+        if is_success:
             logger.info(
                 "account_validation_success",
                 account=account_number,
-                account_name=resolved.get("account_name") if isinstance(resolved, dict) else None,
+                account_name=resolved.get("account_name"),
             )
         else:
+            error_msg = resolved.get("error") if isinstance(resolved, dict) else None
             logger.warning(
                 "account_validation_failed",
                 account=account_number,
                 bank_code=bank_code,
+                error=error_msg,
             )
 
         return resolved, balance

@@ -53,6 +53,13 @@ class AccountSelectionService:
         """
         Pick a source account from the list of accounts.
         
+        Priority:
+        1. Explicit account ID
+        2. Bank name match
+        3. Account with is_default=True
+        4. Profile's default_account_id (legacy)
+        5. Single account (auto-select)
+        
         Args:
             accounts: List of account dictionaries
             profile: User profile dictionary
@@ -64,21 +71,30 @@ class AccountSelectionService:
         """
         if not accounts:
             return None
+        
         if source_account_id:
             for a in accounts:
                 if str(a.get("id")) == str(source_account_id):
                     return a
+        
         if source_bank_name:
             matched = AccountSelectionService.find_account_by_bank_name(accounts, source_bank_name)
             if matched:
                 return matched
+        
+        for a in accounts:
+            if a.get("is_default") is True:
+                return a
+        
         default_id = profile.get("default_account_id")
         if default_id:
             for a in accounts:
                 if str(a.get("id")) == str(default_id):
                     return a
+        
         if len(accounts) == 1:
             return accounts[0]
+        
         return None
 
     @staticmethod

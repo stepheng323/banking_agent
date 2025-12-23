@@ -14,6 +14,8 @@ from shared.cache.redis_client import Redis
 from shared.queue.redis_queue import RedisQueue
 from apps.core.src.agent.sub_agents.transfer.nodes.utils import debug_log
 from shared.utils.logging import get_logger
+from shared.database.connection import get_db
+from shared.database.models import FundedTransfer, FundingStep, FundedTransferStatusEnum
 
 logger = get_logger(__name__)
 
@@ -29,6 +31,7 @@ async def authorize_transaction(
     idem_key = state.get("idempotency_key")
     synthesizer = get_synthesizer()
     
+    logger.info("authorize_transaction_ENTRY", phone=phone_number, idem_key=idem_key, flow_state=state.get('flow_state'), funding_status=state.get('funding_status'))
     debug_log(f"🔐 authorize_transaction ENTRY: phone={phone_number}, idem_key={idem_key}, flow_state={state.get('flow_state')}, transfer_status={state.get('transfer_status')}")
 
     if not idem_key:
@@ -163,11 +166,97 @@ async def authorize_transaction(
                     },
                 )
 
+        # Check if this is a funded transfer (multi-account debit)
+        funding_required = state.get("funding_required", False)
+        funding_steps = state.get("funding_steps", [])
+        funded_transfer_id = None
+        
+        if funding_required and funding_steps:
+            # Create FundedTransfer parent record
+            db = next(get_db())
+            try:
+                funded_transfer = FundedTransfer(
+                    user_id=user_id,
+                    amount=amount,
+                    recipient_account_number=recipient_account,
+                    recipient_bank_code=recipient_bank_code,
+                    recipient_bank_name=recipient_bank_name,
+                    recipient_name=recipient_name,
+                    idempotency_key=idem_key,
+                    status=FundedTransferStatusEnum.PAYOUT_PENDING.value,  # Debits already completed
+                )
+                db.add(funded_transfer)
+                db.flush()  # Get the ID
+                funded_transfer_id = str(funded_transfer.id)
+                
+                # Create FundingStep records
+                from datetime import datetime
+                for idx, step in enumerate(funding_steps, start=1):
+                    # Map status from funding step to FundingStepStatusEnum
+                    step_status = step.get("status", "pending")
+                    if step_status == "successful":
+                        funding_step_status = FundingStepStatusEnum.CONFIRMED.value
+                    elif step_status == "failed":
+                        funding_step_status = FundingStepStatusEnum.FAILED.value
+                    elif step_status == "pending":
+                        funding_step_status = FundingStepStatusEnum.PENDING.value
+                    else:
+                        funding_step_status = step_status  # Use as-is if already in enum format
+                    
+                    # Detect provider from environment or default to mono for production
+                    # In development/test, we use "mock"
+                    provider_name = step.get("provider", "mono")  # Default to mono unless specified
+                    
+                    funding_step = FundingStep(
+                        funded_transfer_id=funded_transfer.id,
+                        account_id=step.get("account_id"),
+                        amount=step.get("amount"),
+                        sequence=idx,
+                        provider_name=provider_name,
+                        provider_debit_id=step.get("debit_id"),
+                        status=funding_step_status,
+                        initiated_at=datetime.utcnow(),  # Timestamp when debit was initiated
+                        confirmed_at=datetime.utcnow() if step_status == "successful" else None,
+                        error_message=step.get("error"),
+                    )
+                    db.add(funding_step)
+                
+                db.commit()
+                logger.info(
+                    "funded_transfer_created",
+                    funded_transfer_id=funded_transfer_id,
+                    num_steps=len(funding_steps),
+                    total_amount=amount
+                )
+            except Exception as e:
+                db.rollback()
+                logger.error("funded_transfer_creation_failed", error=str(e), exc_info=True)
+                # Continue anyway - transaction will still be created
+            finally:
+                db.close()
+
         transaction_id = await create_transfer_transaction(
             pending_transfer,
             user_id,
             idem_key,
         )
+        
+        # Link transaction to funded transfer if this was a multi-account funding
+        if funded_transfer_id:
+            from shared.repositories.unit_of_work import UnitOfWork
+            with UnitOfWork() as uow:
+                try:
+                    transaction = uow.transactions.get(transaction_id)
+                    if transaction:
+                        transaction.funded_transfer_id = funded_transfer_id
+                        uow.commit()
+                        logger.info("transaction_linked_to_funded_transfer", 
+                                  transaction_id=transaction_id,
+                                  funded_transfer_id=funded_transfer_id)
+                except Exception as e:
+                    uow.rollback()
+                    logger.error("failed_to_link_transaction_to_funded_transfer", 
+                               error=str(e), exc_info=True)
 
         transfer_request = {
             "type": "execute_transfer",
@@ -177,10 +266,12 @@ async def authorize_transaction(
             "transaction_id": transaction_id,
         }
 
+        logger.info("authorization_enqueueing_transfer", transaction_id=transaction_id, idem_key=idem_key)
         await queue.enqueue_simple(
             queue_name="banking:transactions",
             message=transfer_request,
         )
+        logger.info("authorization_enqueued_transfer", transaction_id=transaction_id)
 
         prev_values_key = f"transfer:prev:session:{phone_number}"
         await redis_client.delete(prev_values_key)

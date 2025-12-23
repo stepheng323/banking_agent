@@ -89,7 +89,7 @@ async def update_conversation_state(phone_number: str, state: AirtimeState) -> N
             key = f"user:{phone_number}:conversation_state"
             await redis_client.set(key, json.dumps(conversation_state), ex=3600)
             debug_log(
-                f"✅ Updated conversation_state for {phone_number}: active_flow={active_flow}, flow_state={flow_state}, airtime_status={airtime_status}")
+                f"✓ Updated conversation_state for {phone_number}: active_flow={active_flow}, flow_state={flow_state}, airtime_status={airtime_status}")
         else:
             key = f"user:{phone_number}:conversation_state"
             await redis_client.delete(key)
