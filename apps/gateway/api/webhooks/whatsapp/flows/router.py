@@ -17,6 +17,7 @@ from apps.gateway.api.webhooks.whatsapp.flows.dependencies import (
 from apps.gateway.api.webhooks.whatsapp.flows.handlers.account_selection_handler import handle_account_selection, AccountSelectionInput
 from apps.gateway.api.webhooks.whatsapp.flows.handlers.bvn_handler import handle_bvn_entry
 from apps.gateway.api.webhooks.whatsapp.flows.handlers.method_selection_handler import handle_method_selection, MethodSelectionInput
+from apps.gateway.api.webhooks.whatsapp.flows.handlers.linking_method_selection_handler import handle_linking_method_selection, LinkingMethodSelectionInput
 from apps.gateway.api.webhooks.whatsapp.flows.handlers.onboarding_pin_handler import handle_onboarding_pin, OnboardingPinInput
 from apps.gateway.api.webhooks.whatsapp.flows.handlers.otp_handler import handle_otp_verification, OtpVerificationInput
 from apps.gateway.api.webhooks.whatsapp.flows.handlers.transaction_pin_handler import handle_transaction_pin
@@ -63,14 +64,25 @@ async def flow_webhook(
             )
 
         elif screen == "METHOD_SELECTION":
-            method_data = MethodSelectionInput(**data)
-            return await handle_method_selection(
-                method_data,
-                flow_token or "",
-                request_was_encrypted,
-                aes_key_bytes or b"",
-                iv_bytes or b"",
-            )
+            is_linking_flow = flow_token and flow_token.startswith("link-")
+            if is_linking_flow:
+                method_data = LinkingMethodSelectionInput(**data)
+                return await handle_linking_method_selection(
+                    method_data,
+                    flow_token or "",
+                    request_was_encrypted,
+                    aes_key_bytes or b"",
+                    iv_bytes or b"",
+                )
+            else:
+                method_data = MethodSelectionInput(**data)
+                return await handle_method_selection(
+                    method_data,
+                    flow_token or "",
+                    request_was_encrypted,
+                    aes_key_bytes or b"",
+                    iv_bytes or b"",
+                )
 
         elif screen == "OTP_VERIFICATION":
             otp_data = OtpVerificationInput(**data)

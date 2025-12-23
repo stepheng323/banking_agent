@@ -170,10 +170,10 @@ class OrchestratorBeneficiaryHandler:
 
                     # Show confirmation message
                     if alias:
-                        response = f"✅ Saved as '{alias}'. You can now use this alias next time."
+                        response = f"✓ Saved as '{alias}'. You can now use this alias next time."
                     else:
                         recipient_name = suggestion_context.get("recipient_name", "recipient")
-                        response = f"✅ Saved {recipient_name} as a beneficiary."
+                        response = f"✓ Saved {recipient_name} as a beneficiary."
                     asyncio.create_task(
                         self.context_manager.save_last_response(phone_number, response))
                     return response
@@ -286,7 +286,7 @@ class OrchestratorBeneficiaryHandler:
                                 await redis_client.delete(f"user:{phone_number}:transfer_session_start")
                         except Exception:
                             pass
-                        response = f"✅ Saved as '{alias_text}'. You can now use this alias next time."
+                        response = f"✓ Saved as '{alias_text}'. You can now use this alias next time."
                         asyncio.create_task(
                             self.context_manager.save_last_response(phone_number, response))
                         return response

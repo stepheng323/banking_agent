@@ -12,22 +12,23 @@ from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
 
+DEFAULT_MOCK_BALANCE = 30000.0
+
 
 class MockDirectDebitProvider(DirectDebitProvider):
     """
     Mock implementation of DirectDebitProvider for development.
     
     Simulates debit operations with configurable balances and behaviors.
+    Default balance is 30k to easily test multi-account funding.
     """
     
     def __init__(self):
-        # Simulated account balances (account_id -> balance in naira)
         self._balances: Dict[str, float] = {
             "mock_account_1": 150000.0,
             "mock_account_2": 75000.0,
             "mock_account_3": 25000.0,
         }
-        # Track debits (reference -> debit info)
         self._debits: Dict[str, dict] = {}
     
     @property
@@ -37,10 +38,11 @@ class MockDirectDebitProvider(DirectDebitProvider):
     def set_balance(self, account_id: str, balance: float) -> None:
         """Set balance for testing."""
         self._balances[account_id] = balance
+        logger.info("mock_balance_set", account_id=account_id, balance=balance)
     
     async def get_balance(self, account_id: str, real_time: bool = True) -> BalanceResult:
-        """Get simulated balance."""
-        balance = self._balances.get(account_id, 50000.0)  # Default 50k
+        """Get simulated balance. Returns 30k default for unknown accounts."""
+        balance = self._balances.get(account_id, DEFAULT_MOCK_BALANCE)
         logger.info("mock_get_balance", account_id=account_id, balance=balance)
         return BalanceResult(
             success=True,
@@ -59,7 +61,6 @@ class MockDirectDebitProvider(DirectDebitProvider):
         """Simulate debit initiation."""
         debit_id = f"mock_debit_{uuid.uuid4().hex[:8]}"
         
-        # Store debit info
         self._debits[reference] = {
             "debit_id": debit_id,
             "mandate_id": mandate_id,
@@ -80,10 +81,8 @@ class MockDirectDebitProvider(DirectDebitProvider):
     
     async def get_debit_status(self, debit_id: str) -> DebitResult:
         """Get simulated debit status (always returns successful for testing)."""
-        # Find the debit by ID
         for ref, debit in self._debits.items():
             if debit["debit_id"] == debit_id:
-                # Simulate progression to successful
                 debit["status"] = DebitStatus.SUCCESSFUL
                 return DebitResult(
                     success=True,
@@ -93,7 +92,6 @@ class MockDirectDebitProvider(DirectDebitProvider):
                     amount=debit["amount"],
                 )
         
-        # Not found - return as successful anyway for testing
         return DebitResult(
             success=True,
             status=DebitStatus.SUCCESSFUL,

@@ -23,7 +23,7 @@ async def send_text(to: str, text: str) -> None:
         async with httpx.AsyncClient(timeout=10) as client:
             resp = await client.post(url, headers=headers, json=payload)
             resp.raise_for_status()
-            print(f"✅ Message sent successfully to {to}")
+            print(f"✓ Message sent successfully to {to}")
     except httpx.HTTPStatusError as e:
         if e.response.status_code == 401:
             print("❌ WhatsApp API Authentication Failed (401)")

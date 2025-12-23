@@ -31,7 +31,7 @@ def get_engine():
             pool_recycle=3600,
             pool_timeout=30
         )
-        print("✅ Database connection pool initialized (size=20, max_overflow=10)")
+        print("✓ Database connection pool initialized (size=20, max_overflow=10)")
     return _engine
 
 
@@ -60,7 +60,7 @@ def init_db():
     """Initialize application database tables."""
     try:
         Base.metadata.create_all(bind=get_engine())
-        print("✅ Database tables initialized")
+        print("✓ Database tables initialized")
     except Exception as e:
         print(f"⚠️  Database initialization error: {e}")
         raise

@@ -9,8 +9,9 @@ TEMPLATES: dict[ResponseIntent, dict[str, str]] = {
         "yo": "Elo ni o fe fi ranse?",
     },
     ResponseIntent.ASK_RECIPIENT: {
-        "en": "Who would you like to send money to? You can provide their name, account number, or both.",
-        "yo": "Tani o fe fi owo ranse si?",
+        "en": "I don't have '{recipient_name}' saved as a beneficiary yet. What's their account number and bank?",
+        "en_no_name": "Who would you like to send money to? You can provide their name, account number, or both.",
+        "yo": "Mi o ni '{recipient_name}' gege bi beneficiary. Kini nomba account ati bank won?",
     },
     ResponseIntent.ASK_BANK: {
         "en": "Which bank is that for?",
@@ -63,16 +64,16 @@ TEMPLATES: dict[ResponseIntent, dict[str, str]] = {
     
     # Success intents
     ResponseIntent.TRANSFER_SUCCESS: {
-        "en": "✅ Done! {formatted_amount} has been sent to {recipient_name}.",
-        "yo": "✅ O ti pari! {formatted_amount} ti ranse si {recipient_name}.",
+        "en": "✓ Done! {formatted_amount} has been sent to {recipient_name}.",
+        "yo": "✓ O ti pari! {formatted_amount} ti ranse si {recipient_name}.",
     },
     ResponseIntent.AIRTIME_SUCCESS: {
-        "en": "✅ Done! {formatted_amount} airtime sent to {phone_masked}.",
-        "yo": "✅ O ti pari! {formatted_amount} airtime ti ranse si {phone_masked}.",
+        "en": "✓ Done! {formatted_amount} airtime sent to {phone_masked}.",
+        "yo": "✓ O ti pari! {formatted_amount} airtime ti ranse si {phone_masked}.",
     },
     ResponseIntent.DATA_SUCCESS: {
-        "en": "✅ Done! {data_plan} data activated for {phone_masked}.",
-        "yo": "✅ O ti pari! {data_plan} data ti bere fun {phone_masked}.",
+        "en": "✓ Done! {data_plan} data activated for {phone_masked}.",
+        "yo": "✓ O ti pari! {data_plan} data ti bere fun {phone_masked}.",
     },
     
     # Error intents
@@ -153,8 +154,8 @@ TEMPLATES: dict[ResponseIntent, dict[str, str]] = {
         "yo": "Mo le ran e lowo pelu:\n• Fifiranṣẹ owo\n• Rira airtime\n• Rira data\n• Wiwo balance\n\nKini o fe se?",
     },
     ResponseIntent.BENEFICIARY_SAVED: {
-        "en": "✅ Saved {recipient_name} as a beneficiary.",
-        "yo": "✅ A ti fi {recipient_name} pamo gege bi olugba.",
+        "en": "✓ Saved {recipient_name} as a beneficiary.",
+        "yo": "✓ A ti fi {recipient_name} pamo gege bi olugba.",
     },
     
     # Acknowledgment intents
@@ -179,14 +180,24 @@ TEMPLATES: dict[ResponseIntent, dict[str, str]] = {
 }
 
 
-def get_template(intent: ResponseIntent, language: str = "en") -> str | None:
+def get_template(intent: ResponseIntent, language: str = "en", recipient_name: str | None = None) -> str | None:
     """Get template for intent in specified language.
     
     Falls back to English if language not available.
     Returns None if intent has no template (requires LLM).
+    
+    Args:
+        intent: The response intent
+        language: Language code (default: "en")
+        recipient_name: Optional recipient name for variant selection
     """
     templates = TEMPLATES.get(intent)
     if not templates:
         return None
     
+    if intent == ResponseIntent.ASK_RECIPIENT:
+        if not recipient_name or recipient_name.lower() in ("recipient", ""):
+            return templates.get(f"{language}_no_name") or templates.get("en_no_name")
+    
     return templates.get(language) or templates.get("en")
+

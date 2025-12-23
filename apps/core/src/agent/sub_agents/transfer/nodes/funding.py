@@ -8,14 +8,17 @@ These nodes handle the multi-account funding flow:
 5. check_debit_status - Poll/check if debits completed
 """
 from typing import Any, Optional
+import uuid
 from uuid import UUID
 
 from apps.core.src.agent.sub_agents.transfer.state import TransferState
 from shared.clients.abstractions import DirectDebitProvider
+from shared.cache.redis_client import RedisClient
 from shared.services.funding import FundingPlanner, FundingPlan, format_funding_plan_message
 from shared.clients.whatsapp.client import WhatsAppClient
+from shared.config import settings
 from shared.utils.logging import get_logger
-from shared.formatters.transfer import format_multi_source_transfer_summary
+from shared.formatters.transfer import format_multi_source_transfer_summary, format_funding_plan_summary
 
 
 logger = get_logger(__name__)
@@ -24,15 +27,18 @@ logger = get_logger(__name__)
 async def check_funding(
     state: TransferState,
     direct_debit_provider: DirectDebitProvider,
+    whatsapp_client: WhatsAppClient,
 ) -> TransferState:
     """
     Check if the selected source account has sufficient balance.
     
-    If sufficient: proceed to authorize (normal flow)
+    If sufficient: send PIN confirmation flow and proceed to authorize
     If insufficient: set funding_required=True for multi-account flow
     """
     amount = state.get("amount", 0)
     selected_account = state.get("selected_source_account")
+    
+    logger.info("DEBUG_TRACE_CHECK_FUNDING_ENTRY", amount=amount, selected_account=selected_account)
     
     if not selected_account:
         return {
@@ -42,14 +48,14 @@ async def check_funding(
             "funding_error": "No source account selected",
         }
     
-    account_id = selected_account.get("mono_account_id")
+    account_id = selected_account.get("account_id")
     if not account_id:
-        # No mono account - can't check balance, assume sufficient
-        logger.warning("no_mono_account_id", account=selected_account.get("id"))
+        logger.warning("no_account_id_for_balance", account=selected_account.get("id"))
         return {
             **state,
-            "funding_required": False,
-            "flow_state": "authorizing",
+            "flow_state": "error",
+            "response": "This account is not properly linked. Please unlink and re-add it.",
+            "funding_error": "No account_id for balance check",
         }
     
     try:
@@ -62,7 +68,26 @@ async def check_funding(
                     required=amount)
         
         if balance >= amount:
-            # Sufficient - proceed normally
+            token = state.get("confirmation_token", "")
+            summary = state.get("confirmation_summary", "")
+            
+            logger.info("check_funding_token_summary_check",
+                       has_token=bool(token),
+                       has_summary=bool(summary),
+                       token_preview=token[:20] if token else "NONE",
+                       summary_preview=summary[:50] if summary else "NONE")
+            
+            if token and summary:
+                await whatsapp_client.send_flow(
+                    to=state["phone_number"],
+                    header="Confirm Your Transfer",
+                    flow_cta="Authorize Transfer",
+                    flow_id=settings.pin_confirmation_flow_id,
+                    screen_name="Pin",
+                    flow_token=token,
+                    text_body=summary,
+                )
+            
             return {
                 **state,
                 "balance_available": balance,
@@ -70,7 +95,6 @@ async def check_funding(
                 "flow_state": "authorizing",
             }
         else:
-            # Insufficient - need multi-account funding
             return {
                 **state,
                 "balance_available": balance,
@@ -80,11 +104,11 @@ async def check_funding(
             }
     except Exception as e:
         logger.error("balance_check_failed", error=str(e))
-        # On error, assume sufficient and let normal flow handle it
         return {
             **state,
-            "funding_required": False,
-            "flow_state": "authorizing",
+            "flow_state": "error",
+            "response": "Unable to verify your balance. Please try again later.",
+            "funding_error": f"Balance check failed: {str(e)}",
         }
 
 
@@ -130,12 +154,15 @@ async def plan_funding(
     )
     
     if not plan.is_sufficient:
+        # Stay in flow so user can adjust amount - don't end the transfer
         return {
             **state,
-            "flow_state": "error",
+            "flow_state": "awaiting_amount_adjustment",  # Allow user to send new amount
+            "awaiting_confirmation": True,  # Keep session active so orchestrator routes here
             "funding_error": plan.error,
             "response": plan.error or "Unable to create funding plan.",
-            "funding_status": "failed",
+            "funding_status": "insufficient",
+            "max_available": plan.total_funded,  # Store for reference
         }
     
     plan_dict = {
@@ -167,28 +194,30 @@ async def plan_funding(
             "funding_status": "funded",
         }
     else:
-        message = format_funding_plan_message(plan)
+        # Multi-source: needs user confirmation - confirm_funding will send the message
         return {
             **state,
             "funding_plan": plan_dict,
             "funding_steps": plan_dict["steps"],
             "flow_state": "confirming_funding",
             "funding_status": "user_confirming",
-            "response": message,
+            # Note: Don't set 'response' - confirm_funding sends the detailed message
         }
 
 
 async def confirm_funding(
     state: TransferState,
     whatsapp_client: WhatsAppClient,
+    redis_client: RedisClient,
 ) -> TransferState:
     """
-    Send funding plan confirmation to user and wait for response.
-    Uses multi-source formatter for consistent presentation.
+    Send funding plan confirmation via Secure PIN Flow.
+    This allows user to confirm AND authorize in one step.
     """
-    
     phone_number = state.get("phone_number", "")
     funding_plan = state.get("funding_plan", {})
+    balance_available = state.get("balance_available", 0)
+    amount = state.get("amount", 0)
     
     if not funding_plan:
         return {
@@ -198,47 +227,110 @@ async def confirm_funding(
         }
     
     steps = funding_plan.get("steps", [])
-    amount = funding_plan.get("transfer_amount", 0)
+    selected_account = state.get("selected_source_account", {})
+    primary_bank = selected_account.get("bank_name", "your account")
     
-    # Get recipient details
-    account_resolved = state.get("account_resolved", {})
-    recipient_name = (
-        account_resolved.get("account_name") 
-        if account_resolved else state.get("recipient_name") or "Recipient"
+    summary = format_funding_plan_summary(
+        steps=steps,
+        amount=amount,
+        primary_bank=primary_bank,
+        balance_available=balance_available,
     )
     
-    # Build funding sources list
-    funding_sources = [
-        {
-            "bank_name": step.get("bank_name", "Account"),
-            "account_number": step.get("account_number", ""),
-            "amount": step.get("amount", 0),
-        }
-        for step in steps
-    ]
+    token = uuid.uuid4().hex
+    flow_token = f"transfer-pin-{token}"
     
-    summary = format_multi_source_transfer_summary({
-        "amount": amount,
-        "recipientName": recipient_name,
-        "recipientBank": state.get("recipient_bank_name", ""),
-        "recipientAccount": state.get("recipient_account", ""),
-        "funding_sources": funding_sources,
-        "narration": state.get("narration"),
-    })
+    # Store mapping for webhook to find phone number
+    # Key format must match handle_transaction_pin lookup: transfer:token:{token}:phone
+    await redis_client.set(f"transfer:token:{token}:phone", phone_number, ex=3600)
     
-    # Add confirmation prompt
-    message = summary.replace(
-        "Tap *Authorize* to enter your PIN.",
-        "Reply *yes* to proceed or *no* to cancel."
+    # Send Flow
+    await whatsapp_client.send_flow(
+        to=phone_number,
+        header="Confirm Funding",
+        flow_cta="Authorize Funding",
+        flow_id=settings.pin_confirmation_flow_id,
+        screen_name="Pin",
+        flow_token=flow_token,
+        text_body=summary,
     )
-    
-    await whatsapp_client.send_text_message(phone_number, message)
     
     return {
         **state,
+        "awaiting_confirmation": True,
+        "confirmation_token": token, # Store internal token
+        "confirmation_context": {
+            "flow_type": "transfer",
+            "action": "funding_approval",
+            "callback_data": {
+                "funding_plan": state.get("funding_plan"),
+                "amount": amount,
+            },
+            "clarification_prompt": (
+                "To proceed with this funding plan, please click 'Authorize Funding' above and enter your PIN.\n"
+                "Or reply 'NO' to cancel."
+            ),
+        },
         "flow_state": "confirming_funding",
-        "response": message,
+        "funding_required": True,
+        "_amount_at_confirmation": amount,
     }
+
+
+async def verify_funding_approval(
+    state: TransferState,
+    authorization_service: Any,
+) -> TransferState:
+    """
+    Verify if funding was approved via PIN flow or text.
+    Runs after extract node when flow_state is confirming_funding.
+    """
+    phone_number = state.get("phone_number", "")
+    
+    logger.info("verify_funding_approval_ENTRY", 
+               phone=phone_number,
+               pin_verified_in_state=state.get("pin_verified"),
+               funding_approved=state.get("funding_approved"),
+               flow_state=state.get("flow_state"),
+               confirmation_token=state.get("confirmation_token", "")[:20] if state.get("confirmation_token") else None)
+    
+    # Check verification result using token from this funding flow
+    # AuthorizationService stores result keyed by the inner token (token from transfer-pin-{token})
+    token = state.get("confirmation_token")
+    idempotency_key = token if token else state.get("idempotency_key", "")
+    
+    # Check if PIN was verified (via Flow event or Redis)
+    is_pin_verified_in_state = state.get("pin_verified")
+    pin_result = await authorization_service.get_pin_verification_result(idempotency_key)
+    
+    if is_pin_verified_in_state or (pin_result and pin_result.verified):
+        logger.info("funding_pin_verified_via_flow", phone=phone_number, from_state=is_pin_verified_in_state)
+        return {
+            **state,
+            "funding_approved": True,
+            "pin_verified": True,
+            "awaiting_confirmation": False,
+        }
+    
+    logger.info("funding_verification_failed", 
+                phone=phone_number, 
+                used_key=idempotency_key,
+                has_result=bool(pin_result),
+                verified=pin_result.verified if pin_result else None)
+    
+    # Check if text approval (from AffirmationHandler logic)
+    if state.get("funding_approved"):
+        logger.info("funding_approved_via_text_but_pin_missing", phone=phone_number)
+        return {
+            **state,
+            "awaiting_confirmation": True, # Still waiting
+            "funding_approved": False, # Reset to prevent loop
+            "response": "Please tap 'Authorize Funding' in the message above to confirm securely with your PIN.",
+        }
+    
+    # If explicit rejection, it's handled by cancellation logic usually, 
+    # but if valid unverified response comes through:
+    return state
 
 
 async def initiate_debits(
@@ -277,6 +369,7 @@ async def initiate_debits(
                 "reference": reference,
                 "status": result.status.value if result.success else "failed",
                 "error": result.error_message,
+                "provider": direct_debit_provider.provider_name,  # Add provider name for database records
             })
             
             logger.info("debit_initiated",
@@ -396,13 +489,21 @@ async def wait_for_debits(
         }
     
     if all_successful:
+        logger.info("wait_for_debits_ALL_SUCCESSFUL", flow_state="initiating_payout", funding_status="funded")
         return {
             **state,
             "funding_steps": updated_steps,
             "flow_state": "initiating_payout",
             "funding_status": "funded",
+            "response": None,
+            "llm_reply": None,
         }
     
+    import asyncio
+    if any_pending:
+        # Prevent tight looping and API hammering
+        await asyncio.sleep(3)
+
     return {
         **state,
         "funding_steps": updated_steps,

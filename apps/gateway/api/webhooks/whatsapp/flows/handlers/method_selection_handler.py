@@ -1,4 +1,8 @@
-"""Handler for METHOD_SELECTION screen."""
+"""Handler for METHOD_SELECTION screen in onboarding flow.
+
+This handler is for the onboarding flow where user comes from BVN_ENTRY.
+Session data is already populated by bvn_handler.
+"""
 
 from typing import Optional
 from pydantic import BaseModel
@@ -22,10 +26,8 @@ async def handle_method_selection(
     aes_key_bytes: bytes,
     iv_bytes: bytes,
 ) -> Response:
-    """Handle METHOD_SELECTION screen - sends OTP via chosen method."""
-    
+    """Handle METHOD_SELECTION screen in onboarding flow - sends OTP via chosen method."""
     result = ServiceResult(**await bvn_service.send_otp(flow_token, data.method))
-    
     if result.success:
         return format_success_response(
             "OTP_VERIFICATION",
@@ -46,3 +48,5 @@ async def handle_method_selection(
         bvn=result.data.get("bvn", "") if result.data else "",
         methods=result.data.get("methods", []) if result.data else [],
     )
+
+

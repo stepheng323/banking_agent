@@ -26,7 +26,7 @@ class MandateService:
         """Build WhatsApp message with mandate authorization instructions."""
         if is_reinitiation:
             lines = [
-                "✅ *Mandate Reinitiated Successfully!*",
+                "✓ *Mandate Reinitiated Successfully!*",
                 "",
                 f"To activate your {bank_name} account ending in {account_number[-4:]}, "
                 "transfer ₦50 from that account to any of these accounts:",

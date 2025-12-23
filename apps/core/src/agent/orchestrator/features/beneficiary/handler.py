@@ -4,6 +4,7 @@ from apps.core.src.agent.orchestrator.pipeline.message_handler import MessageHan
 from apps.core.src.agent.orchestrator.pipeline.message_context import MessageContext
 from .service import OrchestratorBeneficiaryHandler
 from shared.cache.redis_client import RedisClient
+from shared.services.affirmation import AffirmationService
 
 
 class BeneficiaryHandler(MessageHandler):
@@ -14,7 +15,6 @@ class BeneficiaryHandler(MessageHandler):
     """
     
     TRANSACTION_INTENTS = {"transfer", "airtime", "data"}
-    NEGATIVE_RESPONSES = {"no", "nope", "nah", "don't", "dont", "skip", "cancel", "nevermind", "never mind"}
     
     def __init__(self, beneficiary_handler: OrchestratorBeneficiaryHandler):
         self.beneficiary_handler = beneficiary_handler
@@ -28,8 +28,8 @@ class BeneficiaryHandler(MessageHandler):
         if not context.classification_result or not context.suggestion_context:
             return context
 
-        text_lower = context.text.lower().strip()
-        if text_lower in self.NEGATIVE_RESPONSES or any(neg in text_lower for neg in self.NEGATIVE_RESPONSES):
+        result = AffirmationService.classify_sync(context.text)
+        if result.is_rejection:
             redis_client = RedisClient.get_client()
             suggestion_key = f"user:{context.phone_number}:beneficiary_suggestion"
             await redis_client.delete(suggestion_key)
@@ -40,7 +40,6 @@ class BeneficiaryHandler(MessageHandler):
             await redis_client.delete(f"user:{context.phone_number}:transfer_session_start")
             await redis_client.delete(f"user:{context.phone_number}:airtime_session_start")
             
-            # Use classifier's response if available (LLM already generated it)
             response = context.classification_result.response or "No worries! Anything else I can help with?"
             return context.with_response(response, handled=True)
 

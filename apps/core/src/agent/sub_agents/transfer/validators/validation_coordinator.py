@@ -182,10 +182,11 @@ class ValidationCoordinator:
                     state
                 )
                 response = await self.synthesizer.synthesize(context)
+                # Return to collecting_recipient but preserve values for partial corrections
                 return {
                     **state,
-                    "flow_state": "error",
-                    "response": response,
+                    "flow_state": "collecting_recipient",
+                    "response": response + "\n\nPlease try again or provide different details.",
                     "validation_errors": ["account_resolution_failed"],
                 }
 

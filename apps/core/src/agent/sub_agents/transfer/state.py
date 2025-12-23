@@ -95,4 +95,12 @@ class TransferState(TypedDict):
         None
     ]]
     funding_error: NotRequired[Optional[str]]
+    funding_rejected: NotRequired[bool]
+    funding_approved: NotRequired[bool]
+
+    # Confirmation fields
+    awaiting_confirmation: NotRequired[bool]
+    confirmation_context: NotRequired[Optional[dict]]
+    confirmation_token: NotRequired[Optional[str]]
+    confirmation_summary: NotRequired[Optional[str]]
 

@@ -38,7 +38,7 @@ class ResponseSynthesizer:
         Returns:
             Natural language response string
         """
-        template = get_template(context.intent, context.language)
+        template = get_template(context.intent, context.language, context.recipient_name)
         if template:
             try:
                 response = self._render_template(template, context)

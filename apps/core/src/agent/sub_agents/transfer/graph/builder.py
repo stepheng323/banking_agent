@@ -15,10 +15,10 @@ from apps.core.src.agent.sub_agents.transfer.nodes import (
     check_and_acknowledge_changes,
     prepare_confirmation,
     authorize_transaction,
-    handle_cancellation,
     check_funding,
     plan_funding,
     confirm_funding,
+    verify_funding_approval,
     initiate_debits,
     wait_for_debits,
 )
@@ -34,7 +34,7 @@ from shared.cache.redis_client import Redis
 from shared.queue.redis_queue import RedisQueue
 from shared.services.auth import AuthorizationService
 
-from .routing import route_by_state, route_after_extract, route_after_funding_check
+from .routing import route_by_state, route_after_extract, route_after_funding_check, route_after_verification
 
 
 def build_graph(
@@ -97,13 +97,16 @@ def build_graph(
         )
 
     async def check_funding_node(state: TransferState) -> TransferState:
-        return await check_funding(state, dd_provider)
+        return await check_funding(state, dd_provider, whatsapp_client)
 
     async def plan_funding_node(state: TransferState) -> TransferState:
         return await plan_funding(state, dd_provider)
 
     async def confirm_funding_node(state: TransferState) -> TransferState:
-        return await confirm_funding(state, whatsapp_client)
+        return await confirm_funding(state, whatsapp_client, redis_client)
+
+    async def verify_funding_node(state: TransferState) -> TransferState:
+        return await verify_funding_approval(state, authorization_service)
 
     async def initiate_debits_node(state: TransferState) -> TransferState:
         return await initiate_debits(state, dd_provider)
@@ -131,6 +134,7 @@ def build_graph(
     workflow.add_node("check_funding", check_funding_node)
     workflow.add_node("plan_funding", plan_funding_node)
     workflow.add_node("confirm_funding", confirm_funding_node)
+    workflow.add_node("verify_funding", verify_funding_node)
     workflow.add_node("initiate_debits", initiate_debits_node)
     workflow.add_node("wait_for_debits", wait_for_debits_node)
     workflow.add_node("authorize", authorize_node)
@@ -145,6 +149,7 @@ def build_graph(
             "cancel": "cancel",
             "load_context": "load_context",
             "authorize": "authorize",
+            "verify_funding": "verify_funding",  # Route to verification instead of debit
         }
     )
     workflow.add_edge("load_context", "validate_amount")
@@ -220,6 +225,7 @@ def build_graph(
             "authorize": "authorize",
             "plan_funding": "plan_funding",
             "error": END,
+            "end": END,  # For when balance is sufficient and PIN flow sent
         }
     )
 
@@ -234,8 +240,19 @@ def build_graph(
         }
     )
 
-    # confirm_funding waits for user response, then initiates debits
-    workflow.add_edge("confirm_funding", "initiate_debits")
+    # confirm_funding sends flow and routes to verify_funding
+    # Graph will interrupt at verify_funding, waiting for PIN callback
+    workflow.add_edge("confirm_funding", "verify_funding")
+    
+    # verify_funding checks PIN status
+    workflow.add_conditional_edges(
+        "verify_funding",
+        route_after_verification,
+        {
+            "initiate_debits": "initiate_debits",
+            "end": END,
+        }
+    )
 
     # initiate_debits → wait_for_debits (poll for completion)
     workflow.add_edge("initiate_debits", "wait_for_debits")
@@ -246,6 +263,8 @@ def build_graph(
         route_after_funding_check,
         {
             "authorize": "authorize",
+            "wait_for_debits": "wait_for_debits",
+            "plan_funding": "plan_funding",  # In case debits need re-planning
             "error": END,
         }
     )

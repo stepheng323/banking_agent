@@ -26,5 +26,5 @@ async def handle_cancellation(
         redis_client=redis_client,
     )
     debug_log(
-        f"✅ handle_cancellation completed: response={result.get('response', '')[:50]}...")
+        f"✓ handle_cancellation completed: response={result.get('response', '')[:50]}...")
     return cast(AirtimeState, result)

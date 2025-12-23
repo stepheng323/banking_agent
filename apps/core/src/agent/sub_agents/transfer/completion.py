@@ -14,6 +14,7 @@ from shared.clients.storage.s3_client import S3Client
 from shared.repositories import BeneficiaryRepository
 from shared.repositories.unit_of_work import UnitOfWork
 from shared.formatters.receipt import generate_receipt_image
+from shared.formatters.transfer import format_transfer_success_message, format_transfer_pending_message
 from shared.services.receipt_generator import ReceiptGenerator
 from apps.core.src.agent.tools.beneficiary.suggestion_service import BeneficiarySuggestionService
 from shared.utils.logging import get_logger
@@ -77,9 +78,10 @@ class TransferCompletionService:
                 fallback_amount = float(transfer_data.get("amount", 0))
                 recipient_name = transfer_data.get(
                     "recipient", {}).get("name", "recipient")
-                message = (
-                    f"✅ Transfer successful! ₦{fallback_amount:,.0f} has been sent to "
-                    f"{recipient_name}. Transaction ID: {provider_txn_id}"
+                message = format_transfer_success_message(
+                    amount=fallback_amount,
+                    recipient_name=recipient_name,
+                    transaction_id=provider_txn_id,
                 )
                 await self.whatsapp_client.send_text(to=phone_number, text=message)
                 # Suggest saving beneficiary if service is available
@@ -134,9 +136,10 @@ class TransferCompletionService:
                 fallback_amount = float(transfer_data.get("amount", 0))
                 recipient_name = transfer_data.get(
                     "recipient", {}).get("name", "recipient")
-                message = (
-                    f"✅ Transfer successful! ₦{fallback_amount:,.0f} has been sent to "
-                    f"{recipient_name}. Transaction ID: {provider_txn_id}"
+                message = format_transfer_success_message(
+                    amount=fallback_amount,
+                    recipient_name=recipient_name,
+                    transaction_id=provider_txn_id,
                 )
                 await self.whatsapp_client.send_text(to=phone_number, text=message)
 
@@ -159,9 +162,9 @@ class TransferCompletionService:
             recipient = transfer_data.get("recipient", {})
             recipient_name = recipient.get("name", "recipient")
             
-            message = (
-                f"⏳ Your ₦{amount:,.0f} transfer to {recipient_name} is processing.\n\n"
-                "You'll receive confirmation shortly. If you don't receive it within 5 minutes, please contact support."
+            message = format_transfer_pending_message(
+                amount=amount,
+                recipient_name=recipient_name,
             )
             
             await self.whatsapp_client.send_text(to=phone_number, text=message)

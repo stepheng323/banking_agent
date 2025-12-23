@@ -16,7 +16,14 @@ async def prepare_confirmation(
     redis_client: Redis,
 ) -> TransferState:
     """Prepare transfer confirmation summary."""
+    from shared.utils.logging import get_logger
+    logger = get_logger(__name__)
+    
     phone_number = state.get("phone_number")
+    logger.info("prepare_confirmation_ENTRY",
+               phone_number=phone_number,
+               flow_state=state.get("flow_state"),
+               skip_confirmation_display=state.get("skip_confirmation_display"))
     
     if state.get("skip_confirmation_display"):
         return {
@@ -132,28 +139,32 @@ async def prepare_confirmation(
         )
 
     if has_active_queue:
+        logger.info("prepare_confirmation_RETURNING",
+                   has_token=bool(token),
+                   has_summary=bool(summary),
+                   token_preview=token[:20] if token else "NONE",
+                   has_active_queue=True)
         return {
             **state,
-            "response": "",
             "idempotency_key": idem_key,
             "transfer_status": "collection_complete",
             "flow_state": "confirming",
+            "confirmation_summary": summary,  # Store for later use
+            "confirmation_token": token,
         }
+    logger.info("prepare_confirmation_RETURNING_FUNDING",
+               has_token=bool(token),
+               has_active_queue=False)
     
-    await whatsapp_client.send_flow(
-        to=state["phone_number"],
-        header="Confirm Your Transfer",
-        flow_cta="Authorize Transfer",
-        flow_id=settings.pin_confirmation_flow_id,
-        screen_name="Pin",
-        flow_token=token,
-        text_body=summary,
-    )
-
+    # CRITICAL: Return correct state for checkpointing
+    # Must set flow_state to confirming_funding so verify_funding can pick it up
     return {
         **state,
-        "response": "",
         "idempotency_key": idem_key,
         "transfer_status": "pending",
-        "flow_state": "confirming",
+        "flow_state": "confirming_funding",  # Changed from confirming to confirming_funding
+        "funding_required": True,            # Explicitly persist this flag
+        "confirmation_summary": summary,
+        "confirmation_token": token,
+        "_amount_at_confirmation": amount,   # Persist amount at confirmation for double-check
     }

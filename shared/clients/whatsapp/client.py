@@ -29,7 +29,7 @@ class WhatsAppClient:
                     resp = await client.post(url, headers=headers, json=payload)
                     resp.raise_for_status()
                     result = resp.json()
-                    print(f"✅ Request successful (attempt {attempt})")
+                    print(f"✓ Request successful (attempt {attempt})")
                     return result
 
             except httpx.HTTPStatusError as e:
@@ -149,7 +149,7 @@ class WhatsAppClient:
 
         try:
             result = await self._send(url, payload)
-            print(f"✅ Text message sent to {to}")
+            print(f"✓ Text message sent to {to}")
             return result
         except Exception as e:
             print(f"❌ Failed to send text message: {e}")
@@ -223,7 +223,7 @@ class WhatsAppClient:
         
         try:
             result = await self._send(url, payload)
-            print(f"✅ Button message sent to {to}")
+            print(f"✓ Button message sent to {to}")
             return result
         except Exception as e:
             print(f"❌ Failed to send button message: {e}")
@@ -310,7 +310,7 @@ class WhatsAppClient:
                 media_id = result.get("id")
                 if not media_id:
                     raise ValueError("No media ID returned from WhatsApp")
-                print(f"✅ Media uploaded to WhatsApp: {media_id}")
+                print(f"✓ Media uploaded to WhatsApp: {media_id}")
                 return media_id
         except Exception as e:
             print(f"❌ Failed to upload media to WhatsApp: {e}")
@@ -352,7 +352,7 @@ class WhatsAppClient:
                 payload["image"].pop("caption", None)
 
             result = await self._send(url, payload)
-            print(f"✅ Image message sent to {to}")
+            print(f"✓ Image message sent to {to}")
             return result
         except Exception as e:
             print(f"❌ Failed to send image message: {e}")

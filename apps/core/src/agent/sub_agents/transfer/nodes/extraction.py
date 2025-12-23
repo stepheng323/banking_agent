@@ -7,6 +7,7 @@ from apps.core.src.agent.sub_agents.transfer.models import SimpleTransferEntitie
 from apps.core.src.agent.sub_agents.transfer.models_extraction import TransferExtractionResult
 from apps.core.src.agent.sub_agents.transfer.extractor import TransferEntityExtractor
 from apps.core.src.agent.sub_agents.transfer.state import TransferState
+from shared.utils.logging import get_logger
 
 from .utils import debug_log
 
@@ -17,15 +18,16 @@ async def extract_entities(
 ) -> TransferState:
     """Extract entities from user message."""
     
-    # Skip extraction for terminal states or authorization in progress
     transfer_status = state.get("transfer_status")
     flow_state = state.get("flow_state")
     message = state.get("message", "")
     
-    debug_log(f"📥 extract_entities ENTRY: flow_state={flow_state}, transfer_status={transfer_status}, message='{message[:50] if message else ''}'...")
+    logger = get_logger(__name__)
+    
+    logger.info("extract_entities_entry", flow_state=flow_state, transfer_status=transfer_status, message=message[:50] if message else "", pin_verified=state.get("pin_verified"))
     
     if transfer_status in ("authorized", "completed", "failed"):
-        debug_log(f"⏭️ Skipping extraction - terminal status: {transfer_status}")
+        logger.info("extract_skipping_terminal", status=transfer_status)
         return state
     
     if flow_state == "authorizing":
@@ -100,6 +102,11 @@ async def extract_entities(
     entities = result.entities or SimpleTransferEntities()
     existing_amount = state.get("amount")
     
+    logger.info("DEBUG_TRACE_AMOUNT_EXTRACTION_ENTRY", 
+               existing_amount=existing_amount, 
+               intent_new=(state.get("classification_result") or {}).get("intent"),
+               extracted_amount=entities.amount)
+
     debug_log(f"🔍 [EXTRACTION] State amount before extraction: {existing_amount}")
 
     debug_log(
@@ -193,7 +200,7 @@ async def extract_entities(
             "narration": None,
         }
         debug_log(
-            f"✅ AFTER CLEARING: recipient_account={new_state.get('recipient_account')}, recipient_bank={new_state.get('recipient_bank_code')}")
+            f"✓ AFTER CLEARING: recipient_account={new_state.get('recipient_account')}, recipient_bank={new_state.get('recipient_bank_code')}")
 
     updates: dict[str, Any] = {
         "missing_fields": result.missingFields or [],
@@ -204,12 +211,21 @@ async def extract_entities(
     if entities.amount is not None:
         updates["amount"] = entities.amount
         updates["_amount_set_at"] = time.time()
+        # CRITICAL: Reset transfer status to allow re-routing/re-checking funding
+        updates["transfer_status"] = None
+        updates["funding_required"] = False
+        updates["funding_plan"] = None
+        updates["idempotency_key"] = None  # CRITICAL: Force new key generation and Redis update
+        updates["response"] = ""  # CRITICAL: Clear stale error messages from previous attempts
+        updates["funding_error"] = None  # Clear old funding error
+        logger.info("DEBUG_TRACE_AMOUNT_UPDATED_FROM_ENTITIES", new_amount=entities.amount)
     elif existing_amount is not None:
         # Preserve existing amount when user is providing other details (e.g., account details)
         # This is important for complex transfers where amount comes from task parameters
         # Use explicit None check to preserve amount even if it's 0 (though unlikely)
         updates["amount"] = existing_amount
         # Don't update _amount_set_at to preserve original timestamp
+        logger.info("DEBUG_TRACE_AMOUNT_PRESERVED", existing_amount=existing_amount)
         debug_log(f"🔍 [EXTRACTION] Preserving existing amount: {existing_amount}")
     if entities.recipient_name is not None:
         updates["recipient_name"] = entities.recipient_name
@@ -307,11 +323,17 @@ async def extract_entities(
     
     # Only clear amount if recipient actually changed (different account/bank AND different recipient name)
     # Don't clear if user is just providing account details for the same recipient
+    # AND Don't clear if user is filling in a missing recipient for an existing amount (e.g. "Send 50k" -> "to John")
+    was_empty_recipient = not (prev_account or prev_bank_any)
+    
     if (is_new_account_post or is_new_bank_post) and new_state.get("amount") is not None:
         if not is_same_recipient:
-            debug_log(
-                "ℹ️ extract_entities: Post-update detected recipient mismatch -> clearing previous amount")
-            new_state["amount"] = None
+            if was_empty_recipient and not is_new_transfer_intent:
+                 debug_log("ℹ️ extract_entities: Filling in missing recipient for existing amount. Preserving amount.")
+            else:
+                debug_log(
+                    "ℹ️ extract_entities: Post-update detected recipient mismatch -> clearing previous amount")
+                new_state["amount"] = None
         else:
             debug_log(
                 "ℹ️ extract_entities: Same recipient, preserving amount when providing account details")
@@ -326,7 +348,7 @@ async def extract_entities(
     llm_reply = new_state.get("llm_reply")
 
     debug_log(
-        f"✅ extract_entities FINAL STATE: recipient_account={final_recipient}, recipient_bank={final_bank}, amount={final_amount}, missing_fields={missing_fields}")
+        f"✓ extract_entities FINAL STATE: recipient_account={final_recipient}, recipient_bank={final_bank}, amount={final_amount}, missing_fields={missing_fields}")
 
     # If all required fields are present and we have llm_reply, set response
     # This handles cases where user provides optional fields (like narration) after all required fields are complete
@@ -335,7 +357,7 @@ async def extract_entities(
             not new_state.get("response")):
         new_state["response"] = llm_reply
         debug_log(
-            "✅ extract_entities: All fields complete, setting response from llm_reply")
+            "✓ extract_entities: All fields complete, setting response from llm_reply")
 
     if should_clear_stale_recipient and final_recipient:
         debug_log(

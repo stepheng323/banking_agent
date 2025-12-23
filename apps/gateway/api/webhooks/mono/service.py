@@ -147,7 +147,7 @@ class MonoWebhookService:
         try:
             await self.whatsapp_client.send_text(
                 to=phone_number,
-                text=f"✅ Your {bank_name} account ({account_number}) is now ready for payments.",
+                text=f"✓ Your {bank_name} account ({account_number}) is now ready for payments.",
             )
         except Exception as e:
             logger.error("mandate_ready_notification_failed", error=str(e))

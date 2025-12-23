@@ -404,23 +404,23 @@ def _format_success_message(task: PlannedTask, result: Dict[str, Any]) -> str:
         txn_id = result.get("transaction_id", "N/A")
         
         if amount and recipient:
-            return f"✅ Transfer successful! ₦{float(amount):,.0f} has been sent to {recipient}. Transaction ID: {txn_id}"
+            return f"✓ Transfer successful! ₦{float(amount):,.0f} has been sent to {recipient}. Transaction ID: {txn_id}"
         elif amount:
-            return f"✅ Transfer successful! ₦{float(amount):,.0f} sent. Transaction ID: {txn_id}"
+            return f"✓ Transfer successful! ₦{float(amount):,.0f} sent. Transaction ID: {txn_id}"
         else:
-            return f"✅ Transfer completed. Transaction ID: {txn_id}"
+            return f"✓ Transfer completed. Transaction ID: {txn_id}"
     
     elif task.executor == "airtime":
         amount = result.get("amount") or (task.parameters.get("amount") if task.parameters else None)
         recipient = result.get("recipient") or (task.parameters.get("recipient") if task.parameters else None)
         
         if amount and recipient:
-            return f"✅ Airtime {format_amount(amount)} to {recipient} completed"
+            return f"✓ Airtime {format_amount(amount)} to {recipient} completed"
         else:
-            return "✅ Airtime completed"
+            return "✓ Airtime completed"
     
     else:
-        return f"✅ {_format_task_description(task)} completed"
+        return f"✓ {_format_task_description(task)} completed"
 
 
 def _generate_final_summary(
@@ -434,7 +434,7 @@ def _generate_final_summary(
     failed_count = len(failed)
     
     if failed_count == 0:
-        summary = f"✅ All {total} task{'s' if total > 1 else ''} completed!\n\n"
+        summary = f"✓ All {total} task{'s' if total > 1 else ''} completed!\n\n"
         
         total_amount = 0
         for i, task in enumerate(tasks, 1):

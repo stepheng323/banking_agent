@@ -13,8 +13,10 @@ logger = structlog.get_logger(__name__)
 
 
 FLUTTERWAVE_BASE_URL = "https://api.flutterwave.com"
-# FLUTTERWAVE_SANDBOX_URL = "https://developersandbox-api.flutterwave.com"
 
+# Flutterwave sandbox test account (only this works in dev mode)
+FLUTTERWAVE_TEST_ACCOUNT = "0690000032"
+FLUTTERWAVE_TEST_BANK_CODE = "044"  # Access Bank
 
 class FlutterwaveClient(PaymentProvider):
     """Flutterwave payment service provider implementation using v3 API."""
@@ -276,12 +278,26 @@ class FlutterwaveClient(PaymentProvider):
         self, account_number: str, bank_code: str, currency: str = "NGN", max_retries: int = 3
     ) -> Dict[str, Any]:
         """Resolve bank account details using Flutterwave Account Resolution API."""
-        account_info = {"account_number": account_number, "bank_code": bank_code}
+        original_account = account_number
+        original_bank = bank_code
+        
+        # In sandbox mode, swap to test account for API call but return original account info
+        if self.use_sandbox:
+            logger.info(
+                "sandbox_mode_swap",
+                original_account=account_number,
+                test_account=FLUTTERWAVE_TEST_ACCOUNT
+            )
+            account_number = FLUTTERWAVE_TEST_ACCOUNT
+            bank_code = FLUTTERWAVE_TEST_BANK_CODE
+        
+        account_info = {"account_number": original_account, "bank_code": original_bank}
         payload = {"account_number": account_number, "account_bank": bank_code}
 
         result = await self._request(
-            "POST", "/v3/accounts/resolve", 
-            payload=payload, 
+            "POST",
+            "/v3/accounts/resolve",
+            payload=payload,
             max_retries=max_retries
         )
 
@@ -289,11 +305,13 @@ class FlutterwaveClient(PaymentProvider):
             data = result.get("data", {})
             account_name = data.get("account_name", "").strip()
             if account_name:
+                # Return original account info, not the test account
                 return self._success_response(
                     account_name=account_name,
-                    account_number=data.get("account_number", account_number),
-                    bank_code=data.get("bank_code", bank_code),
+                    account_number=original_account,
+                    bank_code=original_bank,
                 )
             return self._error_response("Account name not found", **account_info)
 
         return self._error_response(result.get("error", "Account resolution failed"), **account_info)
+

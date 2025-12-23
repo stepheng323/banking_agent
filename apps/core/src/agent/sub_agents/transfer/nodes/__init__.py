@@ -14,6 +14,7 @@ from .funding import (
     check_funding,
     plan_funding,
     confirm_funding,
+    verify_funding_approval,
     initiate_debits,
     wait_for_debits,
 )
@@ -37,6 +38,7 @@ __all__ = [
     "check_funding",
     "plan_funding",
     "confirm_funding",
+    "verify_funding_approval",
     "initiate_debits",
     "wait_for_debits",
     "execute_single_account_transfer",

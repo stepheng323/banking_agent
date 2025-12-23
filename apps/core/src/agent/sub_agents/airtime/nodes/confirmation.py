@@ -38,7 +38,7 @@ async def prepare_confirmation(
             pending_airtime = json.loads(pending_data)
             if pending_airtime.get("idempotency_key") == existing_idem_key:
                 debug_log(
-                    f"✅ Airtime confirmation flow already sent for idem_key: {existing_idem_key}")
+                    f"✓ Airtime confirmation flow already sent for idem_key: {existing_idem_key}")
                 return cast(AirtimeState, {
                     **state,
                     "response": "",

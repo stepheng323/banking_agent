@@ -105,7 +105,7 @@ async def authorize_transaction(
             },
         )
 
-    debug_log(f"✅ PIN verified for airtime: {idem_key} (user_id={pin_result.user_id})")
+    debug_log(f"✓ PIN verified for airtime: {idem_key} (user_id={pin_result.user_id})")
 
     try:
         pending_data = await redis_client.get(f"user:{phone_number}:pending_airtime")
@@ -156,7 +156,7 @@ async def authorize_transaction(
             message=airtime_request,
         )
 
-        debug_log(f"✅ Airtime purchase queued for execution: {idem_key}")
+        debug_log(f"✓ Airtime purchase queued for execution: {idem_key}")
 
         pin_verification_key = f"transaction:pin_verified:{idem_key}"
         await redis_client.delete(pin_verification_key)

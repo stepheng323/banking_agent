@@ -123,7 +123,7 @@ class TransferFlowGraph:
                 queue=self.queue,
             ).compile(
                 checkpointer=self._checkpointer,
-                interrupt_before=["authorize"],  # Pause before authorize, wait for PIN
+                interrupt_before=["authorize", "verify_funding"],  # Pause before authorize AND verify_funding
             )
 
     async def run(
@@ -208,8 +208,9 @@ class TransferFlowGraph:
                 return ""
             
             # Handle mid-correction during confirming state using LLM extraction
+            # SKIP if awaiting_amount_adjustment or confirming_funding - amount update path handles this
             flow_state = input_state.get("flow_state")
-            if flow_state in ("confirming", "authorizing"):
+            if flow_state in ("confirming", "authorizing") and flow_state not in ("awaiting_amount_adjustment", "confirming_funding"):
                 input_state, should_continue = await self._handle_mid_correction(ctx, input_state)
                 if not should_continue:
                     return ""
@@ -217,6 +218,31 @@ class TransferFlowGraph:
             input_state = create_initial_state(
                 phone_number, message, message_id, classification_result, image_data=image_data
             )
+            
+            # CRITICAL FIX: When continuing a session (e.g. valid checkpoint exists), 
+            # create_initial_state sets fields like recipient_account to None.
+            # This overwrites the existing state in the checkpoint.
+            # We must filter out None values for business fields to preserve context.
+            state_keys_to_preserve = {
+                "amount", "recipient_name", "recipient_account", 
+                "recipient_bank_code", "recipient_bank_name", "beneficiaries",
+                "accounts", "selected_source_account", "matched_beneficiary",
+                "account_resolved", "narration", "confirmation_token", "confirmation_summary"
+            }
+            
+            # Only keep keys that are NOT in preserve list OR have a non-None value
+            # This allows overwriting if a new value is provided (e.g. from task_parameters)
+            filtered_input = {
+                k: v for k, v in input_state.items() 
+                if k not in state_keys_to_preserve or v is not None
+            }
+            logger.info("run_filtered_input_state", 
+                       filtered_keys=list(filtered_input.keys()),
+                       amount=filtered_input.get("amount"),
+                       rec_acct=filtered_input.get("recipient_account"),
+                       accounts_len=len(filtered_input.get("accounts", [])),
+                       beneficiaries_len=len(filtered_input.get("beneficiaries", [])))
+            input_state = filtered_input
 
         # Invoke graph
         final_state = await self.graph.ainvoke(cast(TransferState, input_state), config)
@@ -375,8 +401,40 @@ class TransferFlowGraph:
             pin_verified=pin_verified,
         )
 
+        # Resume from interrupt - aupdate_state already set pin_verified
+        # Pass None to continue from where graph was interrupted (at verify_funding or authorize)
         final_state = await self.graph.ainvoke(None, config)
-
+        
+        # CRITICAL FIX: After PIN verification, the graph routes to "authorize" but ainvoke might return before executing it.
+        # This applies to both:
+        # 1. Funded transfers: afterdebits complete (flow_state="initiating_payout")
+        # 2. Normal transfers: after PIN verified (flow_state="authorizing" with pin_verified=True)
+        # Check if we need to continue execution to the authorize node.
+        flow_state = final_state.get("flow_state")
+        transfer_status = final_state.get("transfer_status")
+        pin_verified_state = final_state.get("pin_verified", False)
+        
+        # Continue if either:
+        # - Funded transfer ready for payout OR
+        # - Normal transfer with PIN verified
+        should_continue = (
+            (flow_state == "initiating_payout" and transfer_status != "completed") or
+            (flow_state == "authorizing" and pin_verified_state and transfer_status != "completed")
+        )
+        
+        if should_continue:
+            logger.info(
+                "resume_after_pin_continuing_to_authorize",
+                phone=phone_number,
+                flow_state=flow_state,
+                transfer_status=transfer_status
+            )
+            # Continue execution - the graph should now execute the authorize node
+            final_state = await self.graph.ainvoke(None, config)
+        
+        # Note: ainvoke with input merges input into state
+        # We already did aupdate_state but passing it again ensures the run starts
+        
         await update_conversation_state(phone_number, cast(TransferState, final_state))
 
         response = final_state.get("response", "")
