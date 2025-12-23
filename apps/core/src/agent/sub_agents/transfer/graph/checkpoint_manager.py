@@ -66,6 +66,12 @@ def apply_classification_result(ctx: TransferRunContext, input_state: dict) -> d
     if "detected_language" in ctx.classification_result:
         input_state["language"] = ctx.classification_result["detected_language"]
     
+    # Extract funding approval/rejection
+    if ctx.classification_result.get("funding_approved"):
+        input_state["funding_approved"] = True
+    if ctx.classification_result.get("funding_rejected"):
+        input_state["funding_rejected"] = True
+    
     return input_state
 
 
@@ -85,6 +91,11 @@ def apply_task_parameters(ctx: TransferRunContext, input_state: dict) -> dict:
     if task_recipient:
         input_state["recipient_name"] = task_recipient
         logger.debug(f"Set recipient_name from task_parameters: {task_recipient}")
+    
+    logger.info("applied_task_parameters", 
+               amount=input_state.get("amount"), 
+               recipient=input_state.get("recipient_name"),
+               raw_params=task_params)
     
     return input_state
 
@@ -159,7 +170,9 @@ async def clear_old_transfer_values(
     is_new_transfer = is_new_transfer_intent(ctx)
     has_old_values = input_state.get("amount") or input_state.get("recipient_account")
     is_continuing_flow = input_state.get("flow_state") in (
-        "collecting_recipient", "collecting_amount", "validating", "confirming"
+        "collecting_recipient", "collecting_amount", "validating", "confirming", 
+        "awaiting_amount_adjustment", "planning_funding", "confirming_funding", 
+        "funding_approved", "initiating_debits", "awaiting_debits", "authorizing"
     )
     
     if not (is_new_transfer and has_old_values):
