@@ -13,6 +13,11 @@ from uuid import UUID
 
 from shared.clients.abstractions import DirectDebitProvider
 from shared.utils.logging import get_logger
+from shared.formatters.funding import (
+    format_insufficient_funds_single_account,
+    format_insufficient_funds_multi_account,
+    format_funding_plan_message as _format_funding_plan_message,
+)
 
 logger = get_logger(__name__)
 
@@ -213,7 +218,27 @@ class FundingPlanner:
         )
 
         if not is_sufficient:
-            plan.error = f"Insufficient funds. Need ₦{remaining:,.2f} more."
+            # Build error message - simpler for single account, detailed for multi-account
+            has_single_account = len(steps) == 1
+            
+            if has_single_account and steps:
+                account = steps[0]
+                plan.error = format_insufficient_funds_single_account(
+                    bank_name=account.bank_name,
+                    available_balance=account.amount,
+                    transfer_amount=transfer_amount,
+                )
+            else:
+                account_balances = [
+                    {"bank_name": s.bank_name, "amount": s.amount}
+                    for s in steps
+                ]
+                plan.error = format_insufficient_funds_multi_account(
+                    transfer_amount=transfer_amount,
+                    total_available=total_funded,
+                    shortfall=remaining,
+                    account_balances=account_balances,
+                )
 
         logger.info("funding_plan_created",
                     is_sufficient=is_sufficient,
@@ -255,13 +280,11 @@ def format_funding_plan_message(plan: FundingPlan) -> str:
     if not plan.is_sufficient:
         return plan.error or "Unable to create funding plan."
 
-    if plan.is_single_source:
-        step = plan.steps[0]
-        return f"₦{plan.transfer_amount:,.2f} will be debited from your {step.bank_name} account."
-
-    lines = [f"To send ₦{plan.transfer_amount:,.2f}, I'll combine:"]
-    for step in plan.steps:
-        lines.append(f"• ₦{step.amount:,.2f} from {step.bank_name}")
-    lines.append("\nProceed with this plan?")
-
-    return "\n".join(lines)
+    steps = [
+        {"bank_name": s.bank_name, "amount": s.amount}
+        for s in plan.steps
+    ]
+    return _format_funding_plan_message(
+        transfer_amount=plan.transfer_amount,
+        steps=steps,
+    )
