@@ -27,4 +27,4 @@ from shared.database.connection import drop_db
 if __name__ == "__main__":
     print("⚠️  Dropping all tables...")
     drop_db()
-    print("✅ Tables dropped")
+    print("✓ Tables dropped")

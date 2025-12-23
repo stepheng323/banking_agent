@@ -58,7 +58,7 @@ class S3Client:
 
                 # Generate public URL
                 s3_url = f"https://{self.bucket_name}.s3.{self.region}.amazonaws.com/{s3_key}"
-                print(f"✅ Receipt uploaded to S3: {s3_url}")
+                print(f"✓ Receipt uploaded to S3: {s3_url}")
                 return s3_url
 
         except ClientError as e:

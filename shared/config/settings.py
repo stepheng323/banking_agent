@@ -23,6 +23,8 @@ class Settings:
             "WHATSAPP_FLOW_PRIVATE_KEY_PATH", "")
         self.onboarding_flow_id: str = os.getenv(
             "ONBOARDING_FLOW_ID", "")
+        self.account_linking_flow_id: str = os.getenv(
+            "ACCOUNT_LINKING_FLOW_ID", "")
 
         self.pin_confirmation_flow_id: str = os.getenv(
             "PIN_CONFIRMATION_FLOW_ID", "")

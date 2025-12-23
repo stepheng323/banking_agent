@@ -160,7 +160,7 @@ async def handle_transaction_pin(
             await asyncio.sleep(0.5)
             await whatsapp_client.send_text(
                 to=phone_number,
-                text=f"✅ PIN verified! Processing your {transaction_type}...",
+                text=f"✓ PIN verified! Processing your {transaction_type}...",
             )
         asyncio.create_task(send_ack())
     except Exception as e:

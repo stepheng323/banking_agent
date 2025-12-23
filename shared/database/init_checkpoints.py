@@ -27,7 +27,7 @@ def init_checkpoint_tables() -> None:
         # Create the checkpoint tables
         checkpointer.setup()
 
-        print("✅ LangGraph checkpoint tables initialized successfully")
+        print("✓ LangGraph checkpoint tables initialized successfully")
         print("   Tables created:")
         print("   - checkpoints: Stores conversation state snapshots")
         print("   - checkpoint_writes: Stores pending writes")

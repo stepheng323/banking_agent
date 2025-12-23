@@ -150,7 +150,7 @@ class AccountAddService:
                 whatsapp = WhatsAppClient()
                 await whatsapp.send_text(
                     to=phone_number,
-                    text=f"✅ Your {bank_name} account has been added! Complete the ₦50 verification transfer to activate it."
+                    text=f"✓ Your {bank_name} account has been added! Complete the ₦50 verification transfer to activate it."
                 )
             else:
                 logger.error("mandate_creation_failed_for_add", error=result.get("error"), phone=phone_number)

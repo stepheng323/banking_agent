@@ -43,6 +43,10 @@ class TransactionConsumer:
         Args:
             transaction_data: Transaction request dictionary from queue
         """
+        if not transaction_data:
+            return
+
+        logger.info("transaction_consumer_received", type=transaction_data.get("type"))
         transaction_type = transaction_data.get("type")
         
         if not transaction_type:
