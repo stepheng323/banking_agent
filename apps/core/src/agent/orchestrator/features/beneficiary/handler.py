@@ -16,6 +16,8 @@ class BeneficiaryHandler(MessageHandler):
     
     TRANSACTION_INTENTS = {"transfer", "airtime", "data"}
     
+    POLITE_DECLINE_INTENTS = {"conversational", "unknown"}
+    
     def __init__(self, beneficiary_handler: OrchestratorBeneficiaryHandler):
         self.beneficiary_handler = beneficiary_handler
     
@@ -23,32 +25,39 @@ class BeneficiaryHandler(MessageHandler):
         """Can handle if there's suggestion context."""
         return context.suggestion_context is not None
     
+    async def _clear_suggestion_context(self, phone_number: str) -> None:
+        """Clear all suggestion-related state."""
+        redis_client = RedisClient.get_client()
+        suggestion_key = f"user:{phone_number}:beneficiary_suggestion"
+        await redis_client.delete(suggestion_key)
+        
+        conversation_state_key = f"user:{phone_number}:conversation_state"
+        await redis_client.delete(conversation_state_key)
+        
+        await redis_client.delete(f"user:{phone_number}:transfer_session_start")
+        await redis_client.delete(f"user:{phone_number}:airtime_session_start")
+    
     async def handle(self, context: MessageContext) -> MessageContext:
         """Handle beneficiary response."""
         if not context.classification_result or not context.suggestion_context:
             return context
 
         result = AffirmationService.classify_sync(context.text)
+        
         if result.is_rejection:
-            redis_client = RedisClient.get_client()
-            suggestion_key = f"user:{context.phone_number}:beneficiary_suggestion"
-            await redis_client.delete(suggestion_key)
-            
-            conversation_state_key = f"user:{context.phone_number}:conversation_state"
-            await redis_client.delete(conversation_state_key)
-            
-            await redis_client.delete(f"user:{context.phone_number}:transfer_session_start")
-            await redis_client.delete(f"user:{context.phone_number}:airtime_session_start")
-            
+            await self._clear_suggestion_context(context.phone_number)
             response = context.classification_result.response or "No worries! Anything else I can help with?"
             return context.with_response(response, handled=True)
-
+        
         if context.intent in self.TRANSACTION_INTENTS:
-            suggestion_key = f"user:{context.phone_number}:beneficiary_suggestion"
-            redis_client = RedisClient.get_client()
-            await redis_client.delete(suggestion_key)
-            
+            await self._clear_suggestion_context(context.phone_number)
             return context.update(suggestion_context=None)
+        
+        intent = context.intent.lower() if context.intent else ""
+        if intent in self.POLITE_DECLINE_INTENTS:
+            await self._clear_suggestion_context(context.phone_number)
+            response = context.classification_result.response or "You're welcome! Let me know if you need anything else."
+            return context.with_response(response, handled=True)
         
         response = await self.beneficiary_handler.handle_beneficiary_response(
             context.phone_number,
@@ -61,3 +70,4 @@ class BeneficiaryHandler(MessageHandler):
             return context.with_response(response, handled=True)
         
         return context
+

@@ -179,6 +179,9 @@ class TransferFlowGraph:
                 saved_response = paused.get("last_response")
                 flow_summary = paused.get("flow_summary", {})
                 
+                # Clear the paused flow now that we've read it
+                await self.redis_client.delete(paused_flow_key)
+                
                 if saved_response:
                     # Add contextual prefix
                     amount = flow_summary.get("amount")
@@ -193,8 +196,48 @@ class TransferFlowGraph:
                     
                     logger.info(f"Flow resume detected, replaying saved response with context")
                     return f"{context_prefix}{saved_response}"
+            else:
+                # Clear just in case (no paused data but is_flow_resume flag was set)
+                await self.redis_client.delete(paused_flow_key)
             
-            # If no saved response from pause, fall through to normal checkpoint loading
+            # If no saved response, check checkpoint state to see if we need to re-send WhatsApp flow
+            checkpoint_state = await load_checkpoint_state(ctx, self.graph)
+            if checkpoint_state:
+                flow_state = checkpoint_state.get("flow_state")
+                if flow_state in ("authorizing", "confirming", "confirming_funding"):
+                    # User was at authorization - re-send the WhatsApp flow
+                    logger.info(f"Flow resume detected, re-sending WhatsApp flow for state: {flow_state}")
+                    
+                    # Get the confirmation summary if available
+                    confirmation_summary = checkpoint_state.get("confirmation_summary", "")
+                    amount = checkpoint_state.get("amount")
+                    recipient = checkpoint_state.get("account_resolved", {})
+                    recipient_name = recipient.get("account_name", "") if isinstance(recipient, dict) else ""
+                    
+                    # Build a friendly resume message
+                    if amount and recipient_name:
+                        resume_msg = f"Continuing your ₦{amount:,.0f} transfer to {recipient_name}!"
+                    elif amount:
+                        resume_msg = f"Continuing your ₦{amount:,.0f} transfer!"
+                    else:
+                        resume_msg = "Continuing where you left off!"
+                    
+                    # Send the PIN authorization flow again
+                    token = checkpoint_state.get("confirmation_token")
+                    if token and self.whatsapp_client:
+                        from shared.config import settings
+                        await self.whatsapp_client.send_flow(
+                            to=phone_number,
+                            header="Confirm Your Transfer",
+                            flow_cta="Authorize Transfer",
+                            flow_id=settings.pin_confirmation_flow_id,
+                            screen_name="Pin",
+                            flow_token=token,
+                            text_body=confirmation_summary or resume_msg,
+                        )
+                        return resume_msg
+                    
+                    return f"{resume_msg}\n\n{confirmation_summary}" if confirmation_summary else resume_msg
 
         # Load and prepare state
         input_state = await load_checkpoint_state(ctx, self.graph)
@@ -208,9 +251,9 @@ class TransferFlowGraph:
                 return ""
             
             # Handle mid-correction during confirming state using LLM extraction
-            # SKIP if awaiting_amount_adjustment or confirming_funding - amount update path handles this
+            # SKIP if awaiting_amount_adjustment, confirming_funding, OR is_flow_resume
             flow_state = input_state.get("flow_state")
-            if flow_state in ("confirming", "authorizing") and flow_state not in ("awaiting_amount_adjustment", "confirming_funding"):
+            if flow_state in ("confirming", "authorizing") and flow_state not in ("awaiting_amount_adjustment", "confirming_funding") and not is_flow_resume:
                 input_state, should_continue = await self._handle_mid_correction(ctx, input_state)
                 if not should_continue:
                     return ""
@@ -333,13 +376,20 @@ class TransferFlowGraph:
         final_state: dict,
     ) -> None:
         """Handle post-processing after graph execution."""
+        transfer_status = final_state.get("transfer_status")
+        
         if has_substantial_transfer_data(cast(TransferState, final_state)):
             await start_transfer_session(phone_number)
-        elif final_state.get("transfer_status") not in ("pending", None):
+        elif transfer_status not in ("pending", None):
             await clear_transfer_session(phone_number)
+           
+            if transfer_status in ("completed", "failed", "cancelled", "collection_complete"):
+                try:
+                    await self.clear_checkpoint(phone_number)
+                except Exception as e:
+                    logger.warning(f"Failed to clear checkpoint after transfer: {e}")
 
             if self.completion_callback:
-                transfer_status = final_state.get("transfer_status")
                 if transfer_status in ("completed", "failed", "cancelled", "collection_complete"):
                     result = {
                         "status": transfer_status,

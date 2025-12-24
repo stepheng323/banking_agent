@@ -96,6 +96,7 @@ async def prepare_confirmation(
             "account_number": acct_number,
             "bank_code": state.get("recipient_bank_code"),
             "bank_name": bank_name,
+            "original_alias": state.get("recipient_name") or "",  # Original name user used (e.g., "Mum")
         },
         "source": {
             "id": source.get("id"),
@@ -149,8 +150,10 @@ async def prepare_confirmation(
             "idempotency_key": idem_key,
             "transfer_status": "collection_complete",
             "flow_state": "confirming",
-            "confirmation_summary": summary,  # Store for later use
+            "confirmation_summary": summary,
             "confirmation_token": token,
+            "response": "",  # Clear stale response
+            "llm_reply": None,
         }
     logger.info("prepare_confirmation_RETURNING_FUNDING",
                has_token=bool(token),
@@ -162,9 +165,11 @@ async def prepare_confirmation(
         **state,
         "idempotency_key": idem_key,
         "transfer_status": "pending",
-        "flow_state": "confirming_funding",  # Changed from confirming to confirming_funding
-        "funding_required": True,            # Explicitly persist this flag
+        "flow_state": "confirming_funding",
+        "funding_required": True,
         "confirmation_summary": summary,
         "confirmation_token": token,
-        "_amount_at_confirmation": amount,   # Persist amount at confirmation for double-check
+        "_amount_at_confirmation": amount,
+        "response": "",  # Clear stale response
+        "llm_reply": None,
     }

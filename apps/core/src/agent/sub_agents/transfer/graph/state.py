@@ -12,7 +12,7 @@ from shared.cache.flow_session_manager import (
 
 from apps.core.src.agent.sub_agents.transfer.state import TransferState
 
-from .utils import debug_log
+from apps.core.src.agent.sub_agents.transfer.nodes.utils import debug_log
 
 
 def create_initial_state(

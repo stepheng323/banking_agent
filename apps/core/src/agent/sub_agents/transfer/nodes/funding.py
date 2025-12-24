@@ -154,13 +154,40 @@ async def plan_funding(
     )
     
     if not plan.is_sufficient:
+        # Get recipient details for error message
+        recipient_name = state.get("recipient_name", "")
+        recipient_bank = state.get("recipient_bank_name", "")
+        recipient_account = state.get("recipient_account", "")
+        
+        # Use resolved name if available
+        account_resolved = state.get("account_resolved")
+        if account_resolved and isinstance(account_resolved, dict):
+            recipient_name = account_resolved.get("account_name", recipient_name)
+        
+        # Get selected account info for the error message
+        selected_account = state.get("selected_source_account", {})
+        primary_bank = selected_account.get("bank_name", "your account")
+        primary_balance = plan.steps[0].amount if plan.steps else state.get("balance_available", 0)
+        
+        # Build error message with recipient details
+        from shared.formatters.funding import format_insufficient_funds
+        error_msg = format_insufficient_funds(
+            transfer_amount=amount,
+            bank_name=primary_bank,
+            available_balance=primary_balance,
+            max_available=plan.total_funded,
+            recipient_name=recipient_name,
+            recipient_bank=recipient_bank,
+            recipient_account=recipient_account,
+        )
+        
         # Stay in flow so user can adjust amount - don't end the transfer
         return {
             **state,
             "flow_state": "awaiting_amount_adjustment",  # Allow user to send new amount
             "awaiting_confirmation": True,  # Keep session active so orchestrator routes here
-            "funding_error": plan.error,
-            "response": plan.error or "Unable to create funding plan.",
+            "funding_error": error_msg,
+            "response": error_msg,
             "funding_status": "insufficient",
             "max_available": plan.total_funded,  # Store for reference
         }
@@ -230,11 +257,24 @@ async def confirm_funding(
     selected_account = state.get("selected_source_account", {})
     primary_bank = selected_account.get("bank_name", "your account")
     
+    # Get recipient details from state
+    recipient_name = state.get("recipient_name", "")
+    recipient_bank = state.get("recipient_bank_name", "")
+    recipient_account = state.get("recipient_account", "")
+    
+    # If we have account_resolved, use the resolved name
+    account_resolved = state.get("account_resolved")
+    if account_resolved and isinstance(account_resolved, dict):
+        recipient_name = account_resolved.get("account_name", recipient_name)
+    
     summary = format_funding_plan_summary(
         steps=steps,
         amount=amount,
         primary_bank=primary_bank,
         balance_available=balance_available,
+        recipient_name=recipient_name,
+        recipient_bank=recipient_bank,
+        recipient_account=recipient_account,
     )
     
     token = uuid.uuid4().hex
@@ -274,6 +314,8 @@ async def confirm_funding(
         "flow_state": "confirming_funding",
         "funding_required": True,
         "_amount_at_confirmation": amount,
+        "response": "",  # Clear stale response - WhatsApp flow was sent directly
+        "llm_reply": None,
     }
 
 
