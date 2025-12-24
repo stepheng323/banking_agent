@@ -41,25 +41,17 @@ def format_transfer_summary(data: Dict) -> str:
     narration: Optional[str] = data.get("narration")
 
     last4 = source_account[-4:] if source_account else "????"
-    fee = _calculate_transfer_fee(amount)
-    total = amount + fee
 
     lines = [
-        f"*Amount:* {_format_currency_naira(amount)}",
-        f"*To:* {recipient_name.title()}",
-        f"*Bank:* {recipient_bank.title()}",
-        f"*Account:* `{recipient_account}`",
+        f"*{_format_currency_naira(amount)} → {recipient_name.title()}*",
+        f"{recipient_bank.title()} • {recipient_account}",
     ]
     
     if narration:
-        lines.append(f"*Note:* {narration}")
+        lines.append(f"Note: {narration}")
 
     lines.append("")
-    lines.append(f"*From:* {source_bank} (···{last4})")
-    lines.append(f"*Fee:* {_format_currency_naira(fee)}")
-    lines.append(f"*Total:* {_format_currency_naira(total)}")
-    lines.append("")
-    lines.append("Tap *Authorize* to enter your PIN.")
+    lines.append(f"From: {source_bank} (···{last4})")
 
     return "\n".join(lines)
 
@@ -173,6 +165,9 @@ def format_funding_plan_summary(
     amount: float,
     primary_bank: str,
     balance_available: float,
+    recipient_name: str = "",
+    recipient_bank: str = "",
+    recipient_account: str = "",
 ) -> str:
     """Format funding plan summary for multi-account transfer authorization.
 
@@ -181,33 +176,48 @@ def format_funding_plan_summary(
         amount: Total transfer amount
         primary_bank: Primary bank name (where balance is insufficient)
         balance_available: Current balance in primary bank
+        recipient_name: Name of the recipient
+        recipient_bank: Recipient's bank name
+        recipient_account: Recipient's account number
 
     Returns:
         WhatsApp-formatted funding plan summary
     """
-    # Find secondary bank (not the primary)
+    # Find secondary bank and the shortfall amount
     secondary_bank = None
+    secondary_amount = 0
     for step in steps:
         if step.get("bank_name") != primary_bank:
             secondary_bank = step.get("bank_name", "another account")
+            secondary_amount = float(step.get("amount", 0))
             break
 
-    lines = [
-        f"Your {primary_bank} balance is *{_format_currency_naira(balance_available)}*.",
-        "",
-        f"This transfer needs *{_format_currency_naira(amount)}*.",
-        "",
-        f"I can combine it with your {secondary_bank} balance to complete the transfer.",
-        "",
-        "*Funding plan:*",
-    ]
+    lines = []
+    
+    # Header with recipient details
+    if recipient_name and recipient_bank:
+        recipient_display = recipient_name.title()
+        lines.append(f"*{_format_currency_naira(amount)} → {recipient_display} ({recipient_bank})*")
+        if recipient_account:
+            lines.append(f"Account: {recipient_account}")
+        lines.append("")
 
+    # Balance explanation
+    lines.append(f"Your {primary_bank} has *{_format_currency_naira(balance_available)}* — not enough for this transfer.")
+    lines.append("")
+    
+    # Suggestion wording
+    lines.append(f"Would you like to use *{_format_currency_naira(secondary_amount)}* from your {secondary_bank} to complete it?")
+    lines.append("")
+    
+    # Funding breakdown
+    lines.append("*Suggested breakdown:*")
     for step in steps:
         bank = step.get("bank_name", "Account")
         amt = float(step.get("amount", 0))
-        lines.append(f"- {bank}: *{_format_currency_naira(amt)}*")
+        lines.append(f"• {bank}: *{_format_currency_naira(amt)}*")
 
-    lines.append("")
+    lines.append("─────────────")
     lines.append(f"*Total:* {_format_currency_naira(amount)}")
 
     return "\n".join(lines)
