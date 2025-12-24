@@ -91,6 +91,10 @@ class BeneficiarySuggestionService:
                         masked_acct = f"…{str(account_number)[-4:]}"
                         recipient_display = recipient_name or masked_acct
                         bank_display = recipient_data.get("bank_name", "") or bank_code
+                        
+                        # Check for original alias (e.g., "Mum" that user used to initiate transfer)
+                        original_alias = recipient_data.get("original_alias", "")
+                        
                         suggestion_context = {
                             "beneficiary_type": "transfer",
                             "transaction_id": transaction_id,
@@ -98,7 +102,8 @@ class BeneficiarySuggestionService:
                             "account_number": account_number,
                             "bank_code": bank_code,
                             "bank_name": recipient_data.get("bank_name", ""),
-                            "alias_suggested": recipient_name or "",
+                            "alias_suggested": original_alias or recipient_name or "",
+                            "original_alias": original_alias,
                         }
                         await self.redis_client.set(
                             suggestion_key,
@@ -106,11 +111,19 @@ class BeneficiarySuggestionService:
                             ex=3600,
                         )
 
-                        message = (
-                            f"Would you like to save {recipient_display} ({bank_display} • {masked_acct}) as a beneficiary?\n"
-                            f"- Reply 'yes' to save\n"
-                            f"- Or send a name (e.g., 'Mum') to save with that alias"
-                        )
+                        # Build message with alias suggestion if available
+                        if original_alias and original_alias.lower() != recipient_name.lower():
+                            message = (
+                                f"Would you like to save {recipient_display} ({bank_display} • {masked_acct}) as a beneficiary?\n"
+                                f"- Reply 'yes' to save as '{original_alias.title()}'\n"
+                                f"- Or send a different name"
+                            )
+                        else:
+                            message = (
+                                f"Would you like to save {recipient_display} ({bank_display} • {masked_acct}) as a beneficiary?\n"
+                                f"- Reply 'yes' to save\n"
+                                f"- Or send a name (e.g., 'Mum') to save with that alias"
+                            )
                         asyncio.create_task(
                             self.whatsapp_client.send_text(
                                 to=phone_number, text=message
