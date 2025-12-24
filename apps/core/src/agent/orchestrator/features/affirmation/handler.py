@@ -245,7 +245,8 @@ class AffirmationHandler(MessageHandler):
         
         flow_type = paused.get("flow_type", "")
         
-        await self.flow_context.clear_paused_flow(context.phone_number)
+        # DON'T clear paused flow here - let the subgraph clear it after reading the saved response
+        # await self.flow_context.clear_paused_flow(context.phone_number)
         
         logger.info("flow_resuming", phone=context.phone_number, flow_type=flow_type)
         
@@ -273,20 +274,11 @@ class AffirmationHandler(MessageHandler):
         pending_key = f"mandate:pending_reinitiation:{context.phone_number}"
         account_id = await redis.get(pending_key)
         
+        # CRITICAL: Only handle if there's actually a pending mandate reinitiation
+        # Don't fall back to finding any account - that causes unintended triggers
         if not account_id:
-            accounts = context.user_context.get("accounts", [])
-            default_account = next(
-                (acc for acc in accounts if acc.get("is_default")),
-                accounts[0] if accounts else None
-            )
-            if default_account:
-                account_id = default_account.get("account_id")
-        
-        if not account_id:
-            return context.with_response(
-                "⚠️ Could not find your account. Please contact support.",
-                handled=True
-            )
+            # No pending mandate reinitiation - don't handle
+            return context
         
         if not result.is_approval:
             await redis.delete(pending_key)
