@@ -4,7 +4,7 @@ from typing import Literal
 
 from apps.core.src.agent.sub_agents.transfer.state import TransferState
 
-from .utils import debug_log
+from apps.core.src.agent.sub_agents.transfer.nodes.utils import debug_log
 
 
 def route_by_state(state: TransferState) -> Literal["end", "collect_amount", "select_account", "collect_recipient", "validate", "check_changes", "confirm", "authorize", "cancel", "initiate_debits"]:
