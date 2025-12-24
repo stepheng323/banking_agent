@@ -10,6 +10,7 @@ from shared.formatters.transfer import (
 )
 from shared.formatters.receipt import generate_receipt_image
 from shared.formatters.funding import (
+    format_insufficient_funds,
     format_insufficient_funds_single_account,
     format_insufficient_funds_multi_account,
     format_funding_plan_message,
@@ -23,6 +24,7 @@ __all__ = [
     "format_transfer_success_message",
     "format_transfer_pending_message",
     "generate_receipt_image",
+    "format_insufficient_funds",
     "format_insufficient_funds_single_account",
     "format_insufficient_funds_multi_account",
     "format_funding_plan_message",

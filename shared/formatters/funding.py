@@ -12,29 +12,75 @@ def _format_currency_naira(amount: float) -> str:
     return f"₦{value:,.0f}"
 
 
-def format_insufficient_funds_single_account(
+def format_insufficient_funds(
+    transfer_amount: float,
     bank_name: str,
     available_balance: float,
-    transfer_amount: float,
+    max_available: float = 0,
+    recipient_name: str = "",
+    recipient_bank: str = "",
+    recipient_account: str = "",
 ) -> str:
-    """Format insufficient funds message for single account scenario.
+    """Format insufficient funds message.
 
     Args:
-        bank_name: Name of the bank account
-        available_balance: Current available balance
         transfer_amount: Amount user is trying to send
+        bank_name: Name of the primary bank account
+        available_balance: Current available balance in primary account
+        max_available: Maximum available across all accounts (defaults to available_balance)
+        recipient_name: Name of the recipient
+        recipient_bank: Recipient's bank name
+        recipient_account: Recipient's account number
 
     Returns:
         WhatsApp-formatted error message
     """
-    lines = [
-        f"Your *{bank_name}* balance is *{_format_currency_naira(available_balance)}*.",
-        "",
-        f"This transfer needs *{_format_currency_naira(transfer_amount)}*.",
-        "",
-        "You can change the amount, add funds, or cancel the transfer.",
-    ]
+    # If max_available not specified, use available_balance
+    if max_available <= 0:
+        max_available = available_balance
+    
+    lines = []
+    
+    # Header with recipient details if provided
+    if recipient_name and recipient_bank:
+        recipient_display = recipient_name.title()
+        lines.append(f"*{_format_currency_naira(transfer_amount)} → {recipient_display} ({recipient_bank})*")
+        if recipient_account:
+            lines.append(f"Account: {recipient_account}")
+        lines.append("")
+    
+    # Insufficient funds notice
+    lines.append("*Insufficient funds*")
+    lines.append("")
+    lines.append(f"Your {bank_name} balance is *{_format_currency_naira(available_balance)}* — not enough for this transfer.")
+    lines.append("")
+    lines.append("You can:")
+    lines.append(f"• Send a smaller amount (up to {_format_currency_naira(max_available)})")
+    lines.append("• Add funds to your account")
+    lines.append("• Cancel this transfer")
+    
     return "\n".join(lines)
+
+
+# Keep old names as aliases for backwards compatibility
+def format_insufficient_funds_single_account(
+    bank_name: str,
+    available_balance: float,
+    transfer_amount: float,
+    recipient_name: str = "",
+    recipient_bank: str = "",
+    recipient_account: str = "",
+) -> str:
+    """Deprecated: Use format_insufficient_funds instead."""
+    return format_insufficient_funds(
+        transfer_amount=transfer_amount,
+        bank_name=bank_name,
+        available_balance=available_balance,
+        max_available=available_balance,
+        recipient_name=recipient_name,
+        recipient_bank=recipient_bank,
+        recipient_account=recipient_account,
+    )
 
 
 def format_insufficient_funds_multi_account(
@@ -42,36 +88,23 @@ def format_insufficient_funds_multi_account(
     total_available: float,
     shortfall: float,
     account_balances: List[Dict[str, Any]],
+    recipient_name: str = "",
+    recipient_bank: str = "",
+    recipient_account: str = "",
 ) -> str:
-    """Format insufficient funds message for multi-account scenario.
-
-    Args:
-        transfer_amount: Amount user is trying to send
-        total_available: Total available across all accounts
-        shortfall: Amount still needed
-        account_balances: List of dicts with bank_name and amount keys
-
-    Returns:
-        WhatsApp-formatted error message with account breakdown
-    """
-    lines = [
-        f"This transfer needs *{_format_currency_naira(transfer_amount)}*.",
-        "",
-        f"Your total balance across {len(account_balances)} accounts is *{_format_currency_naira(total_available)}*.",
-        "",
-    ]
-
-    if account_balances:
-        lines.append("*Your balances:*")
-        for account in account_balances:
-            bank = account.get("bank_name", "Account")
-            amount = float(account.get("amount", 0))
-            lines.append(f"- {bank}: *{_format_currency_naira(amount)}*")
-        lines.append("")
-
-    lines.append("You can change the amount, add funds, or cancel the transfer.")
-
-    return "\n".join(lines)
+    """Deprecated: Use format_insufficient_funds instead."""
+    primary_bank = account_balances[0].get("bank_name", "Your account") if account_balances else "Your account"
+    primary_balance = float(account_balances[0].get("amount", 0)) if account_balances else 0
+    
+    return format_insufficient_funds(
+        transfer_amount=transfer_amount,
+        bank_name=primary_bank,
+        available_balance=primary_balance,
+        max_available=total_available,
+        recipient_name=recipient_name,
+        recipient_bank=recipient_bank,
+        recipient_account=recipient_account,
+    )
 
 
 def format_funding_plan_message(
