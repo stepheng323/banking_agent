@@ -183,7 +183,6 @@ def format_funding_plan_summary(
     Returns:
         WhatsApp-formatted funding plan summary
     """
-    # Find secondary bank and the shortfall amount
     secondary_bank = None
     secondary_amount = 0
     for step in steps:
@@ -194,7 +193,7 @@ def format_funding_plan_summary(
 
     lines = []
     
-    # Header with recipient details
+    # Header with recipient 
     if recipient_name and recipient_bank:
         recipient_display = recipient_name.title()
         lines.append(f"*{_format_currency_naira(amount)} → {recipient_display} ({recipient_bank})*")
@@ -202,15 +201,12 @@ def format_funding_plan_summary(
             lines.append(f"Account: {recipient_account}")
         lines.append("")
 
-    # Balance explanation
     lines.append(f"Your {primary_bank} has *{_format_currency_naira(balance_available)}* — not enough for this transfer.")
     lines.append("")
     
-    # Suggestion wording
     lines.append(f"Would you like to use *{_format_currency_naira(secondary_amount)}* from your {secondary_bank} to complete it?")
     lines.append("")
     
-    # Funding breakdown
     lines.append("*Suggested breakdown:*")
     for step in steps:
         bank = step.get("bank_name", "Account")
