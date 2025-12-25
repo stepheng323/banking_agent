@@ -126,19 +126,16 @@ class WhatsAppClient:
         """
         url = self._get_url()
         
-        # Auto-retrieve message_id from Redis if not provided
         if message_id is None:
             try:
                 from shared.cache.redis_client import RedisClient
                 redis_client = RedisClient.get_client()
                 message_id = await redis_client.get(f"user:{to}:current_message_id")
             except Exception:
-                pass  # Typing indicator is not critical
+                pass
         
-        # Send typing indicator before the message if we have a message_id
         if message_id:
             await self.send_typing_indicator(message_id)
-            await asyncio.sleep(0.2)  # Brief delay for typing to show
 
         payload = {
             "messaging_product": "whatsapp",
@@ -149,10 +146,9 @@ class WhatsAppClient:
 
         try:
             result = await self._send(url, payload)
-            print(f"✓ Text message sent to {to}")
             return result
         except Exception as e:
-            print(f"❌ Failed to send text message: {e}")
+            print(f"Failed to send text message: {e}")
             raise
 
     async def send_typing_indicator(self, message_id: str) -> Dict[str, Any]:
@@ -170,7 +166,7 @@ class WhatsAppClient:
             result = await self._send(url, payload, max_retries=1)
             return result
         except Exception as e:
-            print(f"⚠️  Failed to send typing indicator (non-critical): {e}")
+            print(f"Failed to send typing indicator (non-critical): {e}")
             return {}
 
     async def send_button(
