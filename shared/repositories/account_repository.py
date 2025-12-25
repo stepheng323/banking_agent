@@ -6,7 +6,7 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from shared.database.models import Account
-from shared.models.account import CreateAccount, AccountUpdate
+from shared.models.account import CreateAccount
 from shared.repositories.base import BaseRepository
 
 
