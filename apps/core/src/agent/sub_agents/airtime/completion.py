@@ -7,8 +7,10 @@ from typing import Dict, Any, Optional
 from shared.clients.whatsapp.client import WhatsAppClient
 from shared.cache.redis_client import RedisClient
 from shared.repositories.beneficiary_repository import BeneficiaryRepository
+from shared.repositories.actionable_message_repository import ActionableMessageRepository
 from apps.core.src.agent.tools.beneficiary.suggestion_service import BeneficiarySuggestionService
 from shared.utils.logging import get_logger
+from datetime import datetime, timedelta
 
 logger = get_logger(__name__)
 
@@ -21,6 +23,7 @@ class AirtimeCompletionService:
         whatsapp_client: WhatsAppClient,
         redis_client=None,
         beneficiary_repository: Optional[BeneficiaryRepository] = None,
+        actionable_message_repo: Optional[ActionableMessageRepository] = None,
         beneficiary_suggestion_service: Optional[BeneficiarySuggestionService] = None,
     ):
         """
@@ -35,6 +38,7 @@ class AirtimeCompletionService:
         self.whatsapp_client = whatsapp_client
         self.redis_client = redis_client or RedisClient.get_client()
         self.beneficiary_repository = beneficiary_repository
+        self.actionable_message_repo = actionable_message_repo
         self.beneficiary_suggestion_service = beneficiary_suggestion_service
 
     async def cleanup_redis_keys(self, phone_number: str, idempotency_key: str) -> None:
@@ -56,9 +60,6 @@ class AirtimeCompletionService:
         transaction_id: Optional[str] = None,
     ) -> None:
         """Send success notification for airtime purchase."""
-        # Wait briefly for WhatsApp Flow to close before sending message
-        await asyncio.sleep(2.5)
-        
         try:
             amount = float(airtime_data.get("amount", 0))
             recipient = airtime_data.get("recipient", {})
@@ -76,18 +77,24 @@ class AirtimeCompletionService:
                 f"Transaction ID: {provider_txn_id}"
             )
             
-            # Send success notification first (await to ensure it's sent before beneficiary suggestion)
-            await self.whatsapp_client.send_text(to=phone_number, text=message)
+            whatapp_res = await self.whatsapp_client.send_text(to=phone_number, text=message)
+            wa_message_id = whatapp_res.get("messages", [{}])[0].get("id", "")
             
-            logger.info("airtime_success_notification_sent", phone=phone_number, recipient=recipient_phone)
+            if self.actionable_message_repo and wa_message_id:
+                user_id = airtime_data.get("user_id")
+                if user_id:
+                    self.actionable_message_repo.create(
+                        user_id=user_id,
+                        wa_message_id=wa_message_id,
+                        message_type="airtime_success",
+                        message_data=airtime_data,
+                        expires_at=datetime.utcnow() + timedelta(days=90),
+                    )
             
-            # Check and suggest saving recipient as beneficiary if service is available
             if self.beneficiary_suggestion_service:
                 recipient = airtime_data.get("recipient", {})
                 recipient_phone = recipient.get("phone", "")
                 network = recipient.get("network", "")
-                
-                logger.debug("beneficiary_suggestion_check", phone=phone_number, has_phone=bool(recipient_phone), has_network=bool(network))
                 
                 if recipient_phone and network:
                     try:
@@ -137,11 +144,10 @@ class AirtimeCompletionService:
     ) -> None:
         """Send failure notification for airtime purchase."""
         try:
-            message = f"❌ Airtime purchase failed: {error_message}. Please try again."
+            message = f"Airtime purchase failed: {error_message}. Please try again."
             create_background_task(
                 self.whatsapp_client.send_text(to=phone_number, text=message)
             )
-            logger.info("airtime_failure_notification_queued", phone=phone_number, error=error_message)
         except Exception as e:
             logger.error("airtime_failure_notification_error", phone=phone_number, error=str(e), exc_info=True)
 
