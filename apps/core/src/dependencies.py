@@ -6,6 +6,7 @@ from shared.clients.whatsapp.client import WhatsAppClient
 from shared.database.connection import get_db_session
 from shared.queue.redis_queue import RedisQueue
 from shared.repositories import BeneficiaryRepository, AccountRepository
+from shared.repositories.actionable_message_repository import ActionableMessageRepository
 from shared.repositories.user_repository import UserRepository
 from shared.cache.redis_client import RedisClient
 from shared.services.receipt_generator import ReceiptGenerator
@@ -45,6 +46,7 @@ def setup_dependencies():
 
     beneficiary_repository = BeneficiaryRepository(db=get_db_session())
     account_repository = AccountRepository(db=get_db_session())
+    actionable_message_repository = ActionableMessageRepository(db=get_db_session())
     receipt_generator = ReceiptGenerator()
     s3_client = S3Client()
 
@@ -59,6 +61,7 @@ def setup_dependencies():
         beneficiary_repository=beneficiary_repository,
         receipt_generator=receipt_generator,
         s3_client=s3_client,
+        actionable_message_repo=actionable_message_repository,
         beneficiary_suggestion_service=beneficiary_suggestion_service,
     )
 
@@ -115,6 +118,7 @@ def setup_dependencies():
         llm=llm,
         user_repo=user_repository,
         beneficiary_repo=beneficiary_repository,
+        actionable_message_repo=actionable_message_repository,
         whatsapp_client=whatsapp_client,
         task_queue_service=task_queue_service,
         conversation_responder=conversation_responder,
@@ -142,6 +146,7 @@ def setup_dependencies():
     airtime_completion_service = AirtimeCompletionService(
         whatsapp_client=whatsapp_client,
         redis_client=shared_redis,
+        actionable_message_repo=actionable_message_repository,
         beneficiary_suggestion_service=beneficiary_suggestion_service,
     )
     airtime_executor = AirtimeExecutor(airtime_service=airtime_completion_service)
