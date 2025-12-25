@@ -14,11 +14,11 @@ from uuid import UUID
 from apps.core.src.agent.sub_agents.transfer.state import TransferState
 from shared.clients.abstractions import DirectDebitProvider
 from shared.cache.redis_client import RedisClient
-from shared.services.funding import FundingPlanner, FundingPlan, format_funding_plan_message
+from shared.services.funding import FundingPlanner
 from shared.clients.whatsapp.client import WhatsAppClient
 from shared.config import settings
 from shared.utils.logging import get_logger
-from shared.formatters.transfer import format_multi_source_transfer_summary, format_funding_plan_summary
+from shared.formatters.transfer import format_funding_plan_summary
 
 
 logger = get_logger(__name__)
@@ -244,7 +244,7 @@ async def confirm_funding(
     phone_number = state.get("phone_number", "")
     funding_plan = state.get("funding_plan", {})
     balance_available = state.get("balance_available", 0)
-    amount = state.get("amount", 0)
+    amount = state.get("amount", 0) or 0
     
     if not funding_plan:
         return {
