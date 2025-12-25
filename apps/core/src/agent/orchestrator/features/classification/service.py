@@ -174,7 +174,6 @@ class OrchestratorClassificationService:
         image_data: Optional[str] = None,
     ) -> ClassificationResult:
         """Classify user intent from text."""
-        # Debug log the conversation state for troubleshooting
         conv_state = context.get("conversationState") if context else None
         if conv_state:
             logger.info("classification_with_active_flow", 
@@ -240,6 +239,47 @@ class OrchestratorClassificationService:
                     f"or extract the alias if user provides a name. When in doubt and user provides a name-like word, extract it as extracted_alias."
                 )
 
+            if context.get("quotedMessage"):
+                quoted = context["quotedMessage"]
+                quoted_type = quoted.get("type", "unknown")
+                quoted_data = quoted.get("data", {})
+                
+                # Build a human-readable summary
+                if quoted_type == "transfer_success":
+                    amount = quoted_data.get("amount", 0)
+                    recipient = quoted_data.get("recipient_name", "unknown")
+                    quoted_summary = f"Transfer of ₦{amount:,.0f} to {recipient}"
+                elif quoted_type == "airtime_success":
+                    amount = quoted_data.get("amount", 0)
+                    phone = quoted_data.get("phone_number", "unknown")
+                    quoted_summary = f"Airtime of ₦{amount:,.0f} to {phone}"
+                elif quoted_type == "transfer_confirmation":
+                    amount = quoted_data.get("amount", 0)
+                    recipient = quoted_data.get("recipient_name", "unknown")
+                    quoted_summary = f"Pending transfer confirmation for ₦{amount:,.0f} to {recipient}"
+                elif quoted_type == "airtime_confirmation":
+                    amount = quoted_data.get("amount", 0)
+                    phone = quoted_data.get("phone_number", "unknown")
+                    quoted_summary = f"Pending airtime confirmation for ₦{amount:,.0f} to {phone}"
+                else:
+                    quoted_summary = f"Message of type '{quoted_type}'"
+                
+                user_content = (
+                    f"{user_content}\n\n"
+                    f"[Context: User is QUOTING a previous message - {quoted_summary}]\n"
+                    f"CRITICAL: User is replying to a {quoted_type} message. "
+                    f"If user says 'again', 'repeat', 'same', 'yes', '👍', 'do it' → intent: repeat_transaction. "
+                    f"If user mentions a different amount like '5k', '10k' → intent: modify_transaction, extract new_amount."
+                )
+            
+            if context.get("quotedMessageNotFound"):
+                user_content = (
+                    f"{user_content}\n\n"
+                    f"[Context: User is QUOTING a message but we could NOT find transaction details - it may be expired or not a transaction]\n"
+                    f"CRITICAL: Generate a helpful response explaining we can't repeat that transaction. "
+                    f"Suggest they start a new one. Example: 'I couldn't find that transaction details. It may be too old. "
+                    f"Want to start a new transfer? Just say \"send 5k to Mum\"'"
+                )
         
         messages = [
             {"role": "system", "content": system}

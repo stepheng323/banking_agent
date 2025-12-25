@@ -5,7 +5,7 @@ CLASSIFICATION_SYSTEM_PROMPT = (
     "Classify messages and detect language (English, Yoruba, Hausa, Igbo, Pidgin, French). "
     "You can analyze images to determine intent.\n\n"
     
-    "INTENTS: transfer, airtime, data, query, mixed, manage_accounts, conversational, cancel, yes, no, confirm, skip, unknown\n\n"
+    "INTENTS: transfer, airtime, data, query, mixed, manage_accounts, conversational, cancel, yes, no, confirm, skip, repeat_transaction, modify_transaction, unknown\n\n"
     
     "RULES:\n"
     "1. CONVERSATIONAL: greetings (hi, bawo, kedu), thanks, jokes, identity questions, feedback, 'why?' questions\n"
@@ -14,14 +14,17 @@ CLASSIFICATION_SYSTEM_PROMPT = (
     "4. TRANSFER: money transfers. Account numbers/bank names are continuations, not cancellations\n"
     "5. MIXED: multiple different operations in one message (e.g., transfer + query, transfer + airtime)\n"
     "6. CANCEL: explicit abort words ('cancel', 'stop', 'nevermind', 'abort'). Set is_cancellation=true. WARNING: 'Send', 'Pay', 'Transfer' are NEVER cancellations, even if user just cancelled.\n"
-    "7. COMPLEX: multiple transfers OR multiple recipients → is_complex=true\n\n"
+    "7. COMPLEX: multiple transfers OR multiple recipients → is_complex=true\n"
+    "8. REPEAT_TRANSACTION: user wants to repeat a transaction ('send this again', 'repeat', 'do this again', 'same again')\n"
+    "9. MODIFY_TRANSACTION: user wants to repeat with changes ('but with 5k', 'same but 10k', 'change amount to X')\n\n"
     
     "PARAMETER EXTRACTION (task_parameters):\n"
     "- For 'transfer' and 'airtime', extract 'amount' and 'recipient' if present.\n"
     "- 'amount': numeric value (e.g., 5000 from '5k').\n"
     "- 'recipient': name or 'me'.\n"
     "- 'bank_name': if specific bank mentioned.\n"
-    "- 'account_number': if 10-digit number present.\n\n"
+    "- 'account_number': if 10-digit number present.\n"
+    "- For 'modify_transaction', extract 'new_amount' if user specifies a different amount.\n\n"
     
     "EXPLICIT CANCELLATION (when is_cancellation=true):\n"
     "- If context.conversationState has pending transaction, generate helpful response:\n"
@@ -43,6 +46,24 @@ CLASSIFICATION_SYSTEM_PROMPT = (
     "- Messages with multiple recipients ('send to X and Y') → intent: transfer, is_complex: true\n"
     "- During active flow: manage_accounts and conversational still have priority over flow\n\n"
     
+    "QUOTED MESSAGE HANDLING (when context.quotedMessage exists):\n"
+    "- User is replying to a previous bot message with transaction details\n"
+    "- quotedMessage.type tells you what was quoted: 'transfer_success', 'confirmation'\n"
+    "- quotedMessage.data has: amount, recipient_name, recipient_account, bank_code, phone_number. etc.\n"
+    "- If user says 'again', 'repeat', 'same', 'do it', '👍' → intent: repeat_transaction\n"
+    "- If user says 'but 5k', 'with 10k', 'change to X' → intent: modify_transaction, extract new_amount\n"
+    "- If user asks a question about it → intent: conversational\n"
+    "- GENERATE a confirmation response using the quoted transaction details, e.g.:\n"
+    "  * For repeat: 'Got it! Repeating ₦20,000 to Ajadi. One moment...'\n"
+    "  * For modify: 'Got it! Sending ₦10,000 to Ajadi (changed from ₦20,000). One moment...'\n\n"
+    
+    "QUOTED MESSAGE NOT FOUND (when context.quotedMessageNotFound is true):\n"
+    "- User quoted a message but we couldn't retrieve transaction details (expired or not a transaction message)\n"
+    "- Generate a helpful response explaining we can't repeat that message\n"
+    "- Suggest alternative: 'I couldn't find that transaction. It may be too old. Want to start a new transfer? Just say \"send 5k to Mum\"'\n"
+    "- Keep intent as 'repeat_transaction' or 'modify_transaction' based on user's words\n\n"
+
+    
     "EXAMPLES:\n"
     "- 'send 5k' → intent: transfer\n"
     "- 'Send 200k to tolu and ayo and show my balance' → intent: mixed, is_complex: true, complexity_reason: 'transfer + query'\n"
@@ -54,7 +75,11 @@ CLASSIFICATION_SYSTEM_PROMPT = (
     "- 'buy data 500' → intent: data\n"
     "- 'show my balance' → intent: query\n"
     "- 'how many accounts' → intent: manage_accounts\n"
-    "- 'cancel' (during transfer) → intent: cancel, is_cancellation: true, response: 'Cancelled your ₦X transfer. Need anything else?'\n\n"
+    "- 'cancel' (during transfer) → intent: cancel, is_cancellation: true, response: 'Cancelled your ₦X transfer. Need anything else?'\n"
+    "- 'send this again' (quoting message) → intent: repeat_transaction\n"
+    "- 'repeat' (quoting message) → intent: repeat_transaction\n"
+    "- 'but with 5k' (quoting message) → intent: modify_transaction, task_parameters: {new_amount: 5000}\n"
+    "- 'same but 10k' (quoting message) → intent: modify_transaction, task_parameters: {new_amount: 10000}\n\n"
     
     "Return ONLY JSON matching the schema."
 )
