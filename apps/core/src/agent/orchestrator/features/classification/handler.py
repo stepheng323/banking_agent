@@ -70,7 +70,7 @@ class ClassificationHandler(MessageHandler):
             quoted_context = self._get_quoted_message_context(context.quoted_message_id)
             if quoted_context:
                 classification_context["quotedMessage"] = quoted_context
-                quoted_message_data = quoted_context  # Preserve for handler
+                quoted_message_data = quoted_context
             else:
                 classification_context["quotedMessageNotFound"] = True
         

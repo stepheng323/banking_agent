@@ -46,7 +46,6 @@ class WhatsAppClient:
                 else:
                     print(
                         f"❌ Max retries reached. Final error: {e.response.status_code}")
-                    # Print error response for debugging
                     try:
                         error_body = e.response.json()
                         print(f"   Error response: {error_body}")
@@ -257,7 +256,6 @@ class WhatsAppClient:
             },
         }
         
-        # Only include footer if it's not empty (WhatsApp requires footer text to have at least 1 character)
         if footer and footer.strip():
             interactive_payload["footer"] = {"text": footer}
         
@@ -270,7 +268,6 @@ class WhatsAppClient:
         }
 
         try:
-
             result = await self._send(url, payload)
             return result
         except Exception as e:

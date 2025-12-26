@@ -45,7 +45,7 @@ class Settings:
             os.getenv("FLOW_SESSION_TIMEOUT", "600"))
 
         self.pending_transaction_ttl: int = int(
-            os.getenv("PENDING_TRANSACTION_TTL", "900"))
+            os.getenv("PENDING_TRANSACTION_TTL", "300"))
 
         self.openai_api_key: str = os.getenv("OPENAI_API_KEY", "")
 
