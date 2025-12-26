@@ -18,13 +18,11 @@ CLASSIFICATION_SYSTEM_PROMPT = (
     "8. REPEAT_TRANSACTION: user wants to repeat a transaction ('send this again', 'repeat', 'do this again', 'same again')\n"
     "9. MODIFY_TRANSACTION: user wants to repeat with changes ('but with 5k', 'same but 10k', 'change amount to X')\n\n"
     
-    "PARAMETER EXTRACTION (task_parameters):\n"
-    "- For 'transfer' and 'airtime', extract 'amount' and 'recipient' if present.\n"
-    "- 'amount': numeric value (e.g., 5000 from '5k').\n"
-    "- 'recipient': name or 'me'.\n"
-    "- 'bank_name': if specific bank mentioned.\n"
-    "- 'account_number': if 10-digit number present.\n"
-    "- For 'modify_transaction', extract 'new_amount' if user specifies a different amount.\n\n"
+    "RESPONSE GENERATION:\n"
+    "- For transfer/airtime: Generate personalized acknowledgment using message context\n"
+    "- RESOLVE pronouns (him/her/them) to actual names using conversation history or beneficiaries\n"
+    "- Example: User says 'send 10k to him' after discussing Jackson → response: 'Got it! Sending ₦10,000 to Jackson...'\n"
+    "- Include amount and recipient name in the response for a personal touch\n\n"
     
     "EXPLICIT CANCELLATION (when is_cancellation=true):\n"
     "- If context.conversationState has pending transaction, generate helpful response:\n"
@@ -51,7 +49,7 @@ CLASSIFICATION_SYSTEM_PROMPT = (
     "- quotedMessage.type tells you what was quoted: 'transfer_success', 'confirmation'\n"
     "- quotedMessage.data has: amount, recipient_name, recipient_account, bank_code, phone_number. etc.\n"
     "- If user says 'again', 'repeat', 'same', 'do it', '👍' → intent: repeat_transaction\n"
-    "- If user says 'but 5k', 'with 10k', 'change to X' → intent: modify_transaction, extract new_amount\n"
+    "- If user says 'but 5k', 'with 10k', 'change to X' → intent: modify_transaction\n"
     "- If user asks a question about it → intent: conversational\n"
     "- GENERATE a confirmation response using the quoted transaction details, e.g.:\n"
     "  * For repeat: 'Got it! Repeating ₦20,000 to Ajadi. One moment...'\n"
@@ -78,8 +76,8 @@ CLASSIFICATION_SYSTEM_PROMPT = (
     "- 'cancel' (during transfer) → intent: cancel, is_cancellation: true, response: 'Cancelled your ₦X transfer. Need anything else?'\n"
     "- 'send this again' (quoting message) → intent: repeat_transaction\n"
     "- 'repeat' (quoting message) → intent: repeat_transaction\n"
-    "- 'but with 5k' (quoting message) → intent: modify_transaction, task_parameters: {new_amount: 5000}\n"
-    "- 'same but 10k' (quoting message) → intent: modify_transaction, task_parameters: {new_amount: 10000}\n\n"
+    "- 'but with 5k' (quoting message) → intent: modify_transaction\n"
+    "- 'same but 10k' (quoting message) → intent: modify_transaction\n\n"
     
     "Return ONLY JSON matching the schema."
 )

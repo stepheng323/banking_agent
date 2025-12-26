@@ -20,63 +20,74 @@ def create_initial_state(
     message: str, 
     message_id: str, 
     classification_result: Optional[dict] = None,
-    image_data: str | None = None
+    image_data: str | None = None,
+    quoted_data: dict | None = None
 ) -> TransferState:
-    """Create initial state for transfer flow."""
-    task_params = None
-    if classification_result and "task_parameters" in classification_result:
-        task_params = classification_result.get("task_parameters", {})
+    """Create initial state for transfer flow.
     
-    amount = None
-    recipient_name = None
+    Args:
+        quoted_data: Data from quoted transaction (for repeat/modify).
+                     Expected format: {"data": {"amount": ..., "recipient_name": ..., ...}}
+    """
     language = None
     
     if classification_result and "detected_language" in classification_result:
         language = classification_result.get("detected_language")
-
-    if task_params:
-        amount = task_params.get("amount")
-        if isinstance(amount, (int, float)):
-            amount = float(amount)
-        recipient_name = task_params.get("recipient")
+    
+    # Pre-populate from quoted transaction data if available
+    amount = None
+    recipient_name = None
+    recipient_account = None
+    recipient_bank_code = None
+    recipient_bank_name = None
+    
+    if quoted_data:
+        data = quoted_data.get("data", {})
+        amount = data.get("amount")
+        
+        # Handle both flat structure (from confirmation) and nested recipient (from success)
+        recipient = data.get("recipient", {})
+        if isinstance(recipient, dict) and recipient:
+            # Nested structure: {"recipient": {"name": ..., "account_number": ..., ...}}
+            recipient_name = recipient.get("name")
+            recipient_account = recipient.get("account_number")
+            recipient_bank_code = recipient.get("bank_code")
+            recipient_bank_name = recipient.get("bank_name")
+        else:
+            # Flat structure: {"recipient_name": ..., "recipient_account": ..., ...}
+            recipient_name = data.get("recipient_name")
+            recipient_account = data.get("recipient_account")
+            recipient_bank_code = data.get("recipient_bank_code") or data.get("bank_code")
+            recipient_bank_name = data.get("recipient_bank_name") or data.get("bank_name")
     
     return {
-        # User identification
         "phone_number": phone_number,
         "message": message,
         "message_id": message_id,
-        # Flow state
         "active_flow": "transfer",
         "flow_state": "extracting",
         "language": language,
-        # Entities - pre-populate from task parameters if available
         "amount": amount,
         "recipient_name": recipient_name,
-        "recipient_account": None,
-        "recipient_bank_code": None,
-        "recipient_bank_name": None,
+        "recipient_account": recipient_account,
+        "recipient_bank_code": recipient_bank_code,
+        "recipient_bank_name": recipient_bank_name,
         "source_account_id": None,
         "narration": None,
         "missing_fields": [],
-        # User context
         "user_profile": None,
         "accounts": [],
         "beneficiaries": [],
-        # Selected/resolved values
         "selected_source_account": None,
         "matched_beneficiary": None,
         "account_resolved": None,
         "balance_available": None,
         "validation_errors": [],
-        # Response
         "response": "",
         "llm_reply": None,
-        # Metadata
         "idempotency_key": None,
         "transfer_status": None,
-        # Classification result from orchestrator
         "classification_result": classification_result,
-        # Image data for vision extraction
         "image_data": image_data,
     }
 
