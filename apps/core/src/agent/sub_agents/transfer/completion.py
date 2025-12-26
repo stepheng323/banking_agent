@@ -1,10 +1,9 @@
 """Transfer service for handling transfer notifications and cleanup."""
 
 import asyncio
+from datetime import datetime, timedelta
 from shared.utils.async_helpers import create_background_task
 import os
-import json
-import traceback
 from typing import Dict, Any, Optional
 
 import redis.asyncio as redis
@@ -84,13 +83,21 @@ class TransferCompletionService:
                 whatapp_res = await self.whatsapp_client.send_text(to=phone_number, text=message)
                 wa_message_id = whatapp_res.get("messages", [{}])[0].get("id", "")
                 
-                await self.actionable_message_repo.create(
-                    user_id=user_id,
-                    wa_message_id=wa_message_id,
-                    message_type="transfer_success",
-                    message_data=transfer_data,
-                    expires_at=datetime.utcnow() + timedelta(days=90),
-                )
+                user_id = transfer_data.get("user_id", "")
+                
+                def save_actionable_message():
+                    with UnitOfWork() as uow:
+                        if uow.actionable_messages:
+                            uow.actionable_messages.create(
+                                user_id=user_id,
+                                wa_message_id=wa_message_id,
+                                message_type="transfer_success",
+                                message_data=transfer_data,
+                                expires_at=datetime.utcnow() + timedelta(days=90),
+                            )
+                            uow.commit()
+                
+                await asyncio.to_thread(save_actionable_message)
 
                 if self.beneficiary_suggestion_service:
                     recipient = transfer_data.get("recipient", {})
@@ -160,9 +167,7 @@ class TransferCompletionService:
         transfer_result: Dict[str, Any],
         transaction_id: Optional[str] = None,
     ) -> None:
-        """Send notification for pending transfer."""
-        await asyncio.sleep(2.5)
-        
+        """Send notification for pending transfer."""        
         try:
             amount = float(transfer_data.get("amount", 0))
             recipient = transfer_data.get("recipient", {})
