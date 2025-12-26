@@ -19,6 +19,8 @@ from shared.clients.whatsapp.client import WhatsAppClient
 from shared.config import settings
 from shared.utils.logging import get_logger
 from shared.formatters.transfer import format_funding_plan_summary
+from shared.repositories.actionable_message_repository import ActionableMessageRepository
+from datetime import datetime, timedelta
 
 
 logger = get_logger(__name__)
@@ -28,6 +30,7 @@ async def check_funding(
     state: TransferState,
     direct_debit_provider: DirectDebitProvider,
     whatsapp_client: WhatsAppClient,
+    actionable_message_repo: Optional[ActionableMessageRepository] = None,
 ) -> TransferState:
     """
     Check if the selected source account has sufficient balance.
@@ -78,7 +81,7 @@ async def check_funding(
                        summary_preview=summary[:50] if summary else "NONE")
             
             if token and summary:
-                await whatsapp_client.send_flow(
+                flow_result = await whatsapp_client.send_flow(
                     to=state["phone_number"],
                     header="Confirm Your Transfer",
                     flow_cta="Authorize Transfer",
@@ -87,6 +90,26 @@ async def check_funding(
                     flow_token=token,
                     text_body=summary,
                 )
+                
+                # Store confirmation message for quote-based repeats
+                if actionable_message_repo:
+                    wa_message_id = flow_result.get("messages", [{}])[0].get("id", "")
+                    user_id = state.get("user_profile", {}).get("id")
+                    if wa_message_id and user_id:
+                        account_resolved = state.get("account_resolved", {})
+                        actionable_message_repo.create(
+                            user_id=user_id,
+                            wa_message_id=wa_message_id,
+                            message_type="transfer_confirmation",
+                            message_data={
+                                "amount": state.get("amount"),
+                                "recipient_name": account_resolved.get("account_name"),
+                                "recipient_account": account_resolved.get("account_number"),
+                                "recipient_bank_code": state.get("recipient_bank_code"),
+                                "recipient_bank_name": state.get("recipient_bank_name"),
+                            },
+                            expires_at=datetime.utcnow() + timedelta(days=90),
+                        )
             
             return {
                 **state,

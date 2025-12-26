@@ -19,6 +19,7 @@ from apps.core.src.agent.tools.beneficiary.matcher import BeneficiaryMatcher
 from shared.services.auth import AuthorizationService
 from shared.cache.user_data import UserDataCache
 from shared.repositories import BeneficiaryRepository, AccountRepository
+from shared.repositories.actionable_message_repository import ActionableMessageRepository
 from shared.clients.whatsapp.client import WhatsAppClient
 from shared.cache.redis_client import Redis
 from shared.queue.redis_queue import RedisQueue
@@ -35,6 +36,7 @@ def build_graph(
     whatsapp_client: WhatsAppClient,
     redis_client: Redis,
     queue: RedisQueue,
+    actionable_message_repo: ActionableMessageRepository | None = None,
 ) -> StateGraph:
     """Build the airtime purchase flow graph."""
     workflow = StateGraph(AirtimeState)
@@ -52,7 +54,7 @@ def build_graph(
 
     async def confirm_node(state: AirtimeState) -> AirtimeState:
         return await prepare_confirmation(
-            state, whatsapp_client, redis_client  # type: ignore[arg-type]
+            state, whatsapp_client, redis_client, actionable_message_repo  # type: ignore[arg-type]
         )
 
     async def cancellation_node(state: AirtimeState) -> AirtimeState:

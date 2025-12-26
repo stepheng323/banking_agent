@@ -90,6 +90,7 @@ def setup_dependencies():
         account_repo=account_repository,
         whatsapp_client=whatsapp_client,
         queue=redis_queue,
+        actionable_message_repo=actionable_message_repository,
         completion_callback=None,
     )
 
@@ -100,6 +101,7 @@ def setup_dependencies():
         beneficiary_repo=beneficiary_repository,
         whatsapp_client=whatsapp_client,
         queue=redis_queue,
+        actionable_message_repo=actionable_message_repository,
         completion_callback=None,
     )
 

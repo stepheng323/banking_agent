@@ -28,6 +28,7 @@ from shared.cache.user_data import UserDataCache
 from shared.cache.bank_cache import BankCacheService
 from shared.repositories.beneficiary_repository import BeneficiaryRepository
 from shared.repositories.account_repository import AccountRepository
+from shared.repositories.actionable_message_repository import ActionableMessageRepository
 from shared.clients.whatsapp.client import WhatsAppClient
 from shared.clients.abstractions import DirectDebitProvider
 from shared.clients.factories import get_direct_debit_provider
@@ -51,6 +52,7 @@ def build_graph(
     redis_client: Redis,
     queue: RedisQueue,
     direct_debit_provider: DirectDebitProvider | None = None,
+    actionable_message_repo: ActionableMessageRepository | None = None,
 ) -> StateGraph:
     """Build the LangGraph workflow."""
     workflow = StateGraph(TransferState)
@@ -98,7 +100,7 @@ def build_graph(
         )
 
     async def check_funding_node(state: TransferState) -> TransferState:
-        return await check_funding(state, dd_provider, whatsapp_client)
+        return await check_funding(state, dd_provider, whatsapp_client, actionable_message_repo)
 
     async def plan_funding_node(state: TransferState) -> TransferState:
         return await plan_funding(state, dd_provider)
