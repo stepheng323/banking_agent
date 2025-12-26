@@ -14,12 +14,28 @@ def create_initial_state(
     phone_number: str,
     message: str,
     message_id: str,
-    classification_result: Optional[dict] = None
+    classification_result: Optional[dict] = None,
+    quoted_data: dict | None = None
 ) -> AirtimeState:
-    """Create initial state for airtime purchase flow."""
+    """Create initial state for airtime purchase flow.
+    
+    Args:
+        quoted_data: Data from quoted transaction (for repeat/modify).
+                     Expected format: {"data": {"amount": ..., "recipient_phone": ..., ...}}
+    """
     language = None
     if classification_result and "detected_language" in classification_result:
         language = classification_result.get("detected_language")
+
+    amount = None
+    recipient_phone = None
+    network = None
+    
+    if quoted_data:
+        data = quoted_data.get("data", {})
+        amount = data.get("amount")
+        recipient_phone = data.get("recipient_phone") or data.get("phone_number")
+        network = data.get("network")
 
     return {
         "phone_number": phone_number,
@@ -27,9 +43,9 @@ def create_initial_state(
         "message_id": message_id,
         "active_flow": "airtime",
         "flow_state": "extracting",
-        "amount": None,
-        "recipient_phone": None,
-        "network": None,
+        "amount": amount,
+        "recipient_phone": recipient_phone,
+        "network": network,
         "source_account_id": None,
         "narration": None,
         "missing_fields": [],
