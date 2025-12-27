@@ -59,7 +59,6 @@ class MessageConsumer:
             phone_number, user=user
         )
         
-        # Save message_id for typing indicator support (all services can access it)
         await self.orchestrator.context_manager.save_message_id(phone_number, message.message_id)
 
         response = await self.orchestrator.invoke(
@@ -67,7 +66,8 @@ class MessageConsumer:
             message.text or "", 
             message.message_id,
             message_type=message.message_type.value,
-            media_id=message.media_id
+            media_id=message.media_id,
+            quoted_message_id=message.quoted_message_id,
         )
 
         if response and response.strip():

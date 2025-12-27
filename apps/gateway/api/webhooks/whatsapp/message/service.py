@@ -1,19 +1,17 @@
 """WhatsApp webhook service - business logic for handling WhatsApp messages."""
 from datetime import datetime
-from typing import List, Optional
 
 from shared.clients.whatsapp.client import WhatsAppClient
 from shared.models.messages import MessagePriority, MessageType, WhatsAppMessage
 from shared.queue.redis_queue import RedisQueue
 from shared.utils.logging import get_logger
 
-from apps.gateway.adapters.meta_whatsapp import parse_payload
+from apps.gateway.adapters.meta_whatsapp import ParsedMessage, parse_payload
 from apps.gateway.adapters.sender import send_text
 
 logger = get_logger(__name__)
 
 
-# Temporary whitelist for testing
 ALLOWED_NUMBERS = {"2348162511023"}
 
 
@@ -43,11 +41,11 @@ class WhatsAppWebhookService:
 
         return processed
 
-    async def _process_message(self, msg: dict) -> bool:
+    async def _process_message(self, msg: ParsedMessage) -> bool:
         """Process a single message. Returns True if processed."""
-        from_id = msg["from"]
-        msg_type = msg.get("type", "text")
-        flow_data = msg.get("flow_data")
+        from_id = msg.from_number
+        msg_type = msg.type or "text"
+        flow_data = msg.flow_data
 
         # Whitelist check
         if from_id not in ALLOWED_NUMBERS:
@@ -56,7 +54,6 @@ class WhatsAppWebhookService:
 
         logger.info("webhook_message_received", from_id=from_id, msg_type=msg_type)
 
-        # Determine if this message should be processed here
         is_regular_message = msg_type in ("text", "image", "audio")
         is_interactive_without_flow = msg_type == "interactive" and not flow_data
 
@@ -65,15 +62,13 @@ class WhatsAppWebhookService:
                 logger.debug("flow_response_skipped", from_id=from_id)
             return False
 
-        # Build message object
         whatsapp_msg = self._build_message(msg)
-        
-        # Enqueue for processing
-        return await self._enqueue_message(whatsapp_msg, from_id, msg_type)
+        await self._enqueue_message(whatsapp_msg, from_id, msg_type)
+        return True
 
-    def _build_message(self, msg: dict) -> WhatsAppMessage:
-        """Build WhatsAppMessage from raw message dict."""
-        msg_type = msg.get("type", "text")
+    def _build_message(self, msg: ParsedMessage) -> WhatsAppMessage:
+        """Build WhatsAppMessage from ParsedMessage."""
+        msg_type = msg.type or "text"
         
         try:
             enum_type = MessageType(msg_type)
@@ -83,13 +78,14 @@ class WhatsAppWebhookService:
         priority = MessagePriority.HIGH if msg_type == "interactive" else MessagePriority.NORMAL
 
         return WhatsAppMessage(
-            message_id=msg.get("id", "unknown"),
-            from_number=msg["from"],
+            message_id=msg.id or "unknown",
+            from_number=msg.from_number or "",
             message_type=enum_type,
-            text=msg.get("text") or "",
-            flow_data=msg.get("flow_data"),
-            media_id=msg.get("media_id"),
-            mime_type=msg.get("mime_type"),
+            text=msg.text or "",
+            flow_data=msg.flow_data,
+            media_id=msg.media_id,
+            mime_type=msg.mime_type,
+            quoted_message_id=msg.quoted.message_id if msg.quoted else None,
             timestamp=datetime.utcnow(),
             priority=priority,
         )

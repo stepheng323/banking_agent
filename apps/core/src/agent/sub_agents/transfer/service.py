@@ -10,6 +10,7 @@ from langchain_openai import ChatOpenAI
 from shared.cache.user_data import UserDataCache
 from shared.repositories.beneficiary_repository import BeneficiaryRepository
 from shared.repositories.account_repository import AccountRepository
+from shared.repositories.actionable_message_repository import ActionableMessageRepository
 from shared.clients.whatsapp.client import WhatsAppClient
 from shared.queue.redis_queue import RedisQueue
 from shared.utils.logging import get_logger
@@ -31,6 +32,7 @@ class TransferService:
         account_repo: AccountRepository,
         whatsapp_client: WhatsAppClient,
         queue: RedisQueue,
+        actionable_message_repo: Optional[ActionableMessageRepository] = None,
         completion_callback: Optional["FlowCompletionCallback"] = None,
     ) -> None:
         self.extractor = TransferEntityExtractor(llm)
@@ -41,6 +43,7 @@ class TransferService:
             whatsapp_client=whatsapp_client,
             extractor=self.extractor,
             queue=queue,
+            actionable_message_repo=actionable_message_repo,
             completion_callback=completion_callback,
         )
 
@@ -49,11 +52,16 @@ class TransferService:
         phone: str, 
         text: str, 
         classification_result: Optional[dict] = None,
-        image_data: str | None = None
+        image_data: str | None = None,
+        quoted_data: dict | None = None
     ) -> str:
         """Run the transfer flow using LangGraph."""
         logger.debug("transfer_flow_started", phone=phone, message=text[:100])
-        return await self.graph.run(phone, text, "", classification_result, image_data=image_data)
+        return await self.graph.run(
+            phone, text, "", classification_result, 
+            image_data=image_data, 
+            quoted_data=quoted_data
+        )
     
     async def clear_checkpoint(self, phone_number: str) -> None:
         """Clear transfer flow checkpoint for a user."""

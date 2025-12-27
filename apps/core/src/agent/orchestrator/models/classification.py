@@ -26,8 +26,4 @@ class ClassificationResult(BaseModel):
         default=None,
         description="The detected language of the user's message (e.g., English, Yoruba, Hausa, Igbo, Pidgin, French). Only set this if you are confident about the language."
     )
-    task_parameters: Optional[dict] = Field(
-        default={},
-        description="Extracted key parameters for the intent (e.g., {'amount': 5000, 'recipient': 'mum'} for transfer). Use standard keys: amount, recipient, bank_name, account_number."
-    )
 

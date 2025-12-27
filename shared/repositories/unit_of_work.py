@@ -11,6 +11,7 @@ from shared.repositories.beneficiary_repository import BeneficiaryRepository
 from shared.repositories.transaction_repository import TransactionRepository
 from shared.repositories.funded_transfer_repository import FundedTransferRepository
 from shared.repositories.funding_step_repository import FundingStepRepository
+from shared.repositories.actionable_message_repository import ActionableMessageRepository
 
 
 class UnitOfWork:
@@ -24,6 +25,7 @@ class UnitOfWork:
         self.transactions: Optional[TransactionRepository] = None
         self.funded_transfers: Optional[FundedTransferRepository] = None
         self.funding_steps: Optional[FundingStepRepository] = None
+        self.actionable_messages: Optional[ActionableMessageRepository] = None
         self._rolled_back = False
 
     def __enter__(self):
@@ -35,6 +37,7 @@ class UnitOfWork:
         self.transactions = TransactionRepository(self.db)
         self.funded_transfers = FundedTransferRepository(self.db)
         self.funding_steps = FundingStepRepository(self.db)
+        self.actionable_messages = ActionableMessageRepository(self.db)
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):

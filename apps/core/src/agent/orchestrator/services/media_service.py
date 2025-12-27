@@ -3,7 +3,6 @@ import base64
 import io
 from typing import Optional
 
-from langchain_openai import ChatOpenAI
 from openai import AsyncOpenAI
 from shared.clients.whatsapp.client import WhatsAppClient
 from shared.config import settings

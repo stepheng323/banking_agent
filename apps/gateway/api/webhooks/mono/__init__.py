@@ -1,5 +1,5 @@
 """Mono webhook package."""
-from apps.gateway.api.webhooks.mono.router import router
-from apps.gateway.api.webhooks.mono.service import MonoWebhookService
+from .router import router
+from .service import MonoWebhookService
 
 __all__ = ["router", "MonoWebhookService"]

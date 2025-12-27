@@ -5,11 +5,11 @@ from datetime import datetime
 from enum import Enum
 
 from sqlalchemy import JSON, Boolean, Column, DateTime, ForeignKey, String, Float, Integer
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import text
-
+from shared.database.enums import FundedTransferStatusEnum, FundingStepStatusEnum
 Base = declarative_base()
 
 
@@ -160,30 +160,6 @@ class Transaction(Base):
         return f"<Transaction(id={self.id}, status={self.status}, amount={self.amount}, transaction_id={self.transaction_id})>"
 
 
-class FundedTransferStatusEnum(str, Enum):
-    """Status enum for multi-account funded transfers."""
-    
-    DRAFT = "draft"
-    FUNDING_PENDING = "funding_pending"
-    FUNDING_COMPLETE = "funding_complete"
-    PAYOUT_PENDING = "payout_pending"
-    COMPLETED = "completed"
-    FAILED = "failed"
-    REFUNDING = "refunding"
-    REFUNDED = "refunded"
-
-
-class FundingStepStatusEnum(str, Enum):
-    """Status enum for individual funding steps (debits)."""
-    
-    PENDING = "pending"
-    PROCESSING = "processing"
-    CONFIRMED = "confirmed"
-    FAILED = "failed"
-    REFUND_PENDING = "refund_pending"
-    REFUNDED = "refunded"
-
-
 class FundedTransfer(Base):
     """
     Logical transfer funded from multiple accounts.
@@ -279,3 +255,23 @@ class FundingStep(Base):
     
     def __repr__(self):
         return f"<FundingStep(id={self.id}, amount={self.amount}, status={self.status}, sequence={self.sequence})>"
+
+
+class ActionableMessage(Base):
+    """Actionable message database model for quote-based transaction repeats."""
+
+    __tablename__ = "actionable_messages"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", name="fk_actionable_messages_user_id"), nullable=False, index=True)
+    wa_message_id = Column(String, unique=True, nullable=False, index=True)
+    message_type = Column(String, nullable=False, index=True)
+    message_data = Column(JSON, nullable=False)
+    created_at = Column(DateTime, server_default=text("now()"), nullable=False)
+    expires_at = Column(DateTime, nullable=False, index=True)
+
+    user = relationship("User")
+
+    def __repr__(self):
+        return f"<ActionableMessage(id={self.id}, wa_message_id={self.wa_message_id}, type={self.message_type})>"
+

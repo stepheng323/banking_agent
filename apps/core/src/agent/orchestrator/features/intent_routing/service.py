@@ -165,12 +165,16 @@ class OrchestratorIntentRouter:
                 await self.flow_context_service.pause_flow(
                     phone_number, "airtime", "transfer", flow_summary
                 )
+            
+            if result.response:
+                await self.whatsapp_client.send_text(
+                    phone_number, result.response, message_id=message_id
+                )
                 
             transfer_classification_dict = result.model_dump() if hasattr(result, 'model_dump') else {
                 "intent": result.intent,
                 "is_cancellation": result.is_cancellation,
                 "confidence": result.confidence,
-                "task_parameters": result.task_parameters,
             }
             logger.info("route_intent_transfer_classification", classification=transfer_classification_dict)
             response = await self.transfer_service.run_simple(
@@ -187,6 +191,11 @@ class OrchestratorIntentRouter:
                 }
                 await self.flow_context_service.pause_flow(
                     phone_number, "transfer", "airtime", flow_summary
+                )
+            
+            if result.response:
+                await self.whatsapp_client.send_text(
+                    phone_number, result.response, message_id=message_id
                 )
                 
             airtime_classification_dict = result.model_dump() if hasattr(result, 'model_dump') else {

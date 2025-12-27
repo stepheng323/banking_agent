@@ -8,6 +8,9 @@ from apps.core.src.agent.sub_agents.airtime.state import AirtimeState
 from shared.clients.whatsapp.client import WhatsAppClient
 from shared.config import settings
 from shared.cache.redis_client import Redis
+from shared.repositories.actionable_message_repository import ActionableMessageRepository
+from datetime import datetime, timedelta
+from typing import Optional
 
 from ..graph.utils import debug_log
 
@@ -25,6 +28,7 @@ async def prepare_confirmation(
     state: AirtimeState,
     whatsapp_client: WhatsAppClient,
     redis_client: Redis,
+    actionable_message_repo: Optional[ActionableMessageRepository] = None,
 ) -> AirtimeState:
     """Prepare airtime purchase confirmation summary."""
     debug_log(
@@ -114,7 +118,7 @@ async def prepare_confirmation(
         "transaction_type": "airtime",
     }
 
-    token = f"transaction-pin-{idem_key}"
+    token = f"transaction-pin-{idem_key}-{state['phone_number']}"
     pipe = redis_client.pipeline()
     pipe.setex(
         f"user:{state['phone_number']}:pending_airtime",
@@ -133,7 +137,12 @@ async def prepare_confirmation(
     )
     await pipe.execute()
 
-    await whatsapp_client.send_flow(
+    # Add typing indicator before showing flow
+    if state.get("message_id"):
+        await whatsapp_client.send_typing_indicator(state["message_id"])
+        await asyncio.sleep(0.3)  # Allow WhatsApp to render typing indicator
+
+    flow_result = await whatsapp_client.send_flow(
         to=state["phone_number"],
         header="Confirm Your Airtime Purchase",
         flow_cta="Authorize Airtime",
@@ -142,6 +151,23 @@ async def prepare_confirmation(
         flow_token=token,
         text_body=summary,
     )
+    
+    if actionable_message_repo:
+        wa_message_id = flow_result.get("messages", [{}])[0].get("id", "")
+        user_id = state.get("user_profile", {}).get("id")
+        if wa_message_id and user_id:
+            actionable_message_repo.create(
+                user_id=user_id,
+                wa_message_id=wa_message_id,
+                message_type="airtime_confirmation",
+                message_data={
+                    "amount": amount,
+                    "phone_number": recipient_phone,
+                    "network": network,
+                    "recipient_name": recipient_name,
+                },
+                expires_at=datetime.utcnow() + timedelta(days=90),
+            )
 
     return cast(AirtimeState, {
         **state,

@@ -65,3 +65,29 @@ def format_success_response(
 
     return JSONResponse(content=response)
 
+
+def format_complete_response(
+    message: str,
+    request_was_encrypted: bool = False,
+    aes_key_bytes: bytes = None,
+    iv_bytes: bytes = None,
+    **extra_data
+) -> Response:
+    """Format a response that closes the flow permanently.
+    
+    Returns a response with screen: "COMPLETE" which closes the WhatsApp Flow
+    and prevents the user from reopening it.
+    """
+    response = {
+        "screen": "COMPLETE",
+        "data": {
+            "message": message,
+            **extra_data
+        },
+    }
+
+    if request_was_encrypted:
+        return format_encrypted_response(response, aes_key_bytes, iv_bytes)
+
+    return JSONResponse(content=response)
+

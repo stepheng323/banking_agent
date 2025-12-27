@@ -14,6 +14,7 @@ from shared.cache.user_data import UserDataCache
 from shared.clients.whatsapp.client import WhatsAppClient
 from shared.repositories.account_repository import AccountRepository
 from shared.repositories.beneficiary_repository import BeneficiaryRepository
+from shared.repositories.actionable_message_repository import ActionableMessageRepository
 from shared.cache.redis_client import RedisClient
 from shared.queue.redis_queue import RedisQueue
 from shared.config.settings import settings
@@ -45,6 +46,7 @@ class AirtimeFlowGraph:
         whatsapp_client: WhatsAppClient,
         extractor: AirtimeEntityExtractor,
         queue: RedisQueue,
+        actionable_message_repo: Optional[ActionableMessageRepository] = None,
         completion_callback: Optional["FlowCompletionCallback"] = None,
     ):
         self.user_cache = user_cache
@@ -53,6 +55,7 @@ class AirtimeFlowGraph:
         self.whatsapp_client = whatsapp_client
         self.extractor = extractor
         self.matcher = BeneficiaryMatcher()
+        self.actionable_message_repo = actionable_message_repo
         self.completion_callback = completion_callback
         self.redis_client = RedisClient.get_client()
         self.queue = queue
@@ -103,6 +106,7 @@ class AirtimeFlowGraph:
                 whatsapp_client=self.whatsapp_client,
                 redis_client=self.redis_client,
                 queue=self.queue,
+                actionable_message_repo=self.actionable_message_repo,
             ).compile(
                 checkpointer=self._checkpointer,
                 interrupt_before=["authorize"],
@@ -280,7 +284,9 @@ class AirtimeFlowGraph:
 
     async def run(
         self, phone_number: str, message: str, message_id: str,
-        classification_result: Optional[dict] = None
+        classification_result: Optional[dict] = None,
+        image_data: str | None = None,
+        quoted_data: dict | None = None
     ) -> str:
         """Run the airtime purchase flow graph."""
         await self._ensure_checkpointer()
@@ -311,7 +317,10 @@ class AirtimeFlowGraph:
             )
         
         if input_state is None:
-            input_state = create_initial_state(phone_number, message, message_id, classification_result)
+            input_state = create_initial_state(
+                phone_number, message, message_id, classification_result,
+                quoted_data=quoted_data
+            )
         else:
             # Handle mid-correction or continue
             if input_state.get("flow_state") in ("confirming", "authorizing"):
@@ -358,9 +367,14 @@ class AirtimeFlowGraph:
         if not current_state or not current_state.values:
             return "No active airtime purchase session found."
 
+        # Get the latest message_id from Redis for typing indicators
+        current_message_id = await self.redis_client.get(f"user:{phone_number}:current_message_id")
+        state_message_id = current_state.values.get("message_id")
+
         await self.graph.aupdate_state(config, {
             "pin_verified": pin_verified,
             "pin_verification_error": pin_error,
+            "message_id": current_message_id or state_message_id,  # Use fresh ID if available
         })
 
         logger.info("pin_resume_starting", phone=phone_number[:6], pin_verified=pin_verified)

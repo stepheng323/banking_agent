@@ -7,6 +7,7 @@ from langchain_openai import ChatOpenAI
 
 from shared.clients.whatsapp.client import WhatsAppClient
 from shared.repositories import UserRepository, BeneficiaryRepository
+from shared.repositories.actionable_message_repository import ActionableMessageRepository
 
 from apps.core.src.agent.orchestrator.flow_completion_callback import (
     OrchestratorFlowCompletionCallback)
@@ -35,7 +36,7 @@ from apps.core.src.agent.orchestrator.features.task_planning.handler import Next
 from apps.core.src.agent.orchestrator.features.intent_routing.handler import IntentRoutingHandler
 from apps.core.src.agent.orchestrator.features.flow_context import FlowContextService
 from apps.core.src.agent.orchestrator.features.affirmation import AffirmationHandler
-
+from apps.core.src.agent.orchestrator.features.message_quote import QuoteHandler, QuoteService
 
 class OrchestratorAgent:
     """Orchestrator agent for the banking assistant."""
@@ -45,6 +46,7 @@ class OrchestratorAgent:
         llm: ChatOpenAI,
         user_repo: UserRepository,
         beneficiary_repo: BeneficiaryRepository,
+        actionable_message_repo: ActionableMessageRepository,
         whatsapp_client: WhatsAppClient,
         task_queue_service: TaskQueueService,
         conversation_responder: ConversationResponder,
@@ -98,9 +100,10 @@ class OrchestratorAgent:
         # Handler order matters
         self._handlers = [
             ContextLoaderHandler(self.context_manager, task_queue_service),
-            ClassificationHandler(self.classification_service, self.context_manager),
+            ClassificationHandler(self.classification_service, self.context_manager, actionable_message_repo),
             FreshStartHandler(self.context_manager, transfer_service, airtime_service),
-            AffirmationHandler(transfer_service, airtime_service, self.flow_context_service, llm),  # Unified confirmation handler
+            AffirmationHandler(transfer_service, airtime_service, self.flow_context_service, llm),
+            QuoteHandler(QuoteService({"transfer": transfer_service, "airtime": airtime_service}), self.whatsapp_client),
             BeneficiaryHandler(self.beneficiary_handler),
             CancellationHandler(self.cancellation_handler),
             BatchAuthorizationHandler(task_queue_service, transfer_service, whatsapp_client),
@@ -120,7 +123,8 @@ class OrchestratorAgent:
         text: str, 
         message_id: str, 
         message_type: str = "text",
-        media_id: str | None = None
+        media_id: str | None = None,
+        quoted_message_id: str | None = None,
     ) -> str:
         """Invoke the orchestrator with a user message using the pipeline."""
         self.message_type = message_type
@@ -136,7 +140,8 @@ class OrchestratorAgent:
             phone_number=phone_number,
             text=text,
             message_id=message_id,
-            image_data=image_data
+            image_data=image_data,
+            quoted_message_id=quoted_message_id,
         )
         
         pipeline = MessagePipeline(self._handlers)

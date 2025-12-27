@@ -3,36 +3,44 @@
 import hashlib
 import hmac
 import json
-from typing import Any, Dict, List, Optional, TypedDict
+from typing import Any, Dict, List, Optional
 
 from fastapi import Request
-
-ParsedMessage = TypedDict(
-    "ParsedMessage",
-    {
-        "id": Optional[str],
-        "from": Optional[str],
-        "text": str,
-        "type": str,
-        "flow_data": Optional[Dict[str, Any]],
-        "media_id": Optional[str],
-        "mime_type": Optional[str],
-        "raw": Dict[str, Any],
-    },
-    total=False,
-)
+from pydantic import BaseModel, Field
 
 
-def parse_payload(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
+class QuotedMessage(BaseModel):
+    """Represents a quoted/replied-to message."""
+    message_id: str = Field(description="ID of the quoted message")
+    from_number: Optional[str] = Field(default=None, description="Sender of the quoted message")
+
+
+class ParsedMessage(BaseModel):
+    """Parsed WhatsApp message with standardized structure."""
+    id: Optional[str] = None
+    from_number: Optional[str] = Field(default=None, alias="from")
+    text: str = ""
+    type: str = ""
+    flow_data: Optional[Dict[str, Any]] = None
+    media_id: Optional[str] = None
+    mime_type: Optional[str] = None
+    quoted: Optional[QuotedMessage] = None
+    raw: Dict[str, Any] = Field(default_factory=dict)
+
+    class Config:
+        populate_by_name = True
+
+
+def parse_payload(payload: Dict[str, Any]) -> List[ParsedMessage]:
     """Parse WhatsApp webhook payload and extract messages.
 
     Args:
         payload: The raw webhook payload from Meta WhatsApp API
 
     Returns:
-        List of parsed message dictionaries with standardized structure
+        List of ParsedMessage objects with standardized structure
     """
-    results: List[Dict[str, Any]] = []
+    results: List[ParsedMessage] = []
     entries: List[Dict[str, Any]] = payload.get("entry", [])
 
     for entry in entries:
@@ -96,17 +104,26 @@ def parse_payload(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
                     media_id = audio_data.get("id")
                     mime_type = audio_data.get("mime_type")
 
+                quoted: QuotedMessage | None = None
+                context = message.get("context")
+                if context:
+                    quoted = QuotedMessage(
+                        message_id=context.get("id", ""),
+                        from_number=context.get("from"),
+                    )
+
                 results.append(
-                    {
-                        "id": message.get("id"),
-                        "from": message.get("from"),
-                        "text": text,
-                        "type": message_type,
-                        "flow_data": flow_data,
-                        "media_id": media_id,
-                        "mime_type": mime_type,
-                        "raw": message,
-                    }
+                    ParsedMessage(
+                        id=message.get("id"),
+                        from_number=message.get("from"),
+                        text=text,
+                        type=message_type,
+                        flow_data=flow_data,
+                        media_id=media_id,
+                        mime_type=mime_type,
+                        quoted=quoted,
+                        raw=message,
+                    )
                 )
     return results
 

@@ -15,8 +15,8 @@ from shared.cache.redis_client import RedisClient
 from shared.clients.whatsapp.client import WhatsAppClient
 from shared.services.auth import AuthorizationService
 from shared.queue.redis_queue import RedisQueue
-from shared.queue.messages import FlowEvent, FlowEventType, FLOW_EVENTS_QUEUE
-from apps.gateway.api.webhooks.whatsapp.flows.response_helpers import format_error_response, format_success_response
+from shared.queue.messages import FlowEvent, FlowEventType
+from apps.gateway.api.webhooks.whatsapp.flows.response_helpers import format_error_response, format_success_response, format_complete_response
 from apps.gateway.core.config import settings
 
 
@@ -55,16 +55,17 @@ async def handle_transaction_pin(
             iv_bytes,
         )
 
-    # Parse flow token to determine transaction type
     if not flow_token or not flow_token.startswith("transaction-pin-"):
         if flow_token and flow_token.startswith("batch-auth-"):
             transaction_type = "batch"
             idem_key = flow_token
         elif flow_token and flow_token.startswith("transfer-pin-"):
-            idem_key = flow_token.replace("transfer-pin-", "")
+            parts = flow_token.split("-")
+            idem_key = "-".join(parts[2:-1])
             transaction_type = "transfer"
         elif flow_token and flow_token.startswith("airtime-pin-"):
-            idem_key = flow_token.replace("airtime-pin-", "")
+            parts = flow_token.split("-")
+            idem_key = "-".join(parts[2:-1])
             transaction_type = "airtime"
         else:
             return format_success_response(
@@ -81,12 +82,12 @@ async def handle_transaction_pin(
                 },
             )
     else:
-        idem_key = flow_token.replace("transaction-pin-", "")
+        parts = flow_token.split("-")
+        idem_key = "-".join(parts[2:-1])
         transaction_type = None
 
     redis_client = RedisClient.get_client()
     
-    # Get phone number from Redis
     if transaction_type == "batch":
         parts = flow_token.split("-")
         if len(parts) >= 3:
@@ -102,12 +103,26 @@ async def handle_transaction_pin(
                 phone_number = await redis_client.get(f"airtime:token:{idem_key}:phone")
 
     if not phone_number:
-        return format_error_response(
-            "Pin",
-            "Transaction session expired. Please start a new transaction.",
+        phone_number = flow_token.split("-")[-1] if flow_token else None
+        
+        if phone_number:
+            asyncio.create_task(
+                whatsapp_client.send_text(
+                    to=phone_number,
+                    text="Your transaction session has expired. Please start a new transaction.",
+                )
+            )
+        
+        return format_success_response(
+            "SUCCESS",
             request_was_encrypted,
             aes_key_bytes,
             iv_bytes,
+            extension_message_response={
+                "params": {
+                    "flow_token": "expired",
+                }
+            },
         )
 
     authorization_service = AuthorizationService(redis_client=redis_client)
@@ -155,14 +170,6 @@ async def handle_transaction_pin(
             success=True,
         )
         await redis_queue.publish_flow_event(flow_event)
-        
-        async def send_ack():
-            await asyncio.sleep(0.5)
-            await whatsapp_client.send_text(
-                to=phone_number,
-                text=f"✓ PIN verified! Processing your {transaction_type}...",
-            )
-        asyncio.create_task(send_ack())
     except Exception as e:
         print(f"Error publishing flow event: {e}")
         import traceback

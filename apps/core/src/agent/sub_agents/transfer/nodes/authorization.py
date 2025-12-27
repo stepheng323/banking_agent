@@ -165,14 +165,13 @@ async def authorize_transaction(
                         "transfer_status": "failed",
                     },
                 )
-
-        # Check if this is a funded transfer (multi-account debit)
+        
+        pending_transfer["user_id"] = user_id
         funding_required = state.get("funding_required", False)
         funding_steps = state.get("funding_steps", [])
         funded_transfer_id = None
         
         if funding_required and funding_steps:
-            # Create FundedTransfer parent record
             db = next(get_db())
             try:
                 funded_transfer = FundedTransfer(

@@ -1,5 +1,5 @@
 """WhatsApp webhook router - thin controller for WhatsApp events."""
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi import APIRouter, HTTPException, Request, Response, status
 
 from shared.clients.whatsapp.client import WhatsAppClient
 from shared.queue.redis_queue import RedisQueue
@@ -7,7 +7,7 @@ from shared.utils.logging import get_logger
 
 from apps.gateway.adapters.meta_whatsapp import verify_meta_signature
 from apps.gateway.core.config import settings
-from apps.gateway.api.webhooks.whatsapp.service import WhatsAppWebhookService
+from .service import WhatsAppWebhookService
 
 router = APIRouter(prefix="/webhook", tags=["webhooks"])
 logger = get_logger(__name__)

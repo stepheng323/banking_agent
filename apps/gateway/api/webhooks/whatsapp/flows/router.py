@@ -115,7 +115,6 @@ async def flow_webhook(
             )
 
         elif screen == "Pin":
-            # Transaction PIN handler now uses queue events for agent calls
             return await handle_transaction_pin(
                 data,
                 flow_token or "",

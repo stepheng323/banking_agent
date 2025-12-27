@@ -15,6 +15,7 @@ from shared.cache.bank_cache import BankCacheService
 from shared.cache.user_data import UserDataCache
 from shared.queue.redis_queue import RedisQueue
 from shared.config.settings import settings
+from shared.repositories.actionable_message_repository import ActionableMessageRepository
 from apps.core.src.agent.tools.validation.service import AsyncValidationService
 from apps.core.src.agent.tools.beneficiary.matcher import BeneficiaryMatcher
 from apps.core.src.agent.sub_agents.transfer.extractor import TransferEntityExtractor
@@ -60,6 +61,7 @@ class TransferFlowGraph:
         whatsapp_client: WhatsAppClient,
         extractor: TransferEntityExtractor,
         queue: RedisQueue,
+        actionable_message_repo: Optional[ActionableMessageRepository] = None,
         completion_callback: Optional["FlowCompletionCallback"] = None,
     ):
         self.user_cache = user_cache
@@ -68,6 +70,7 @@ class TransferFlowGraph:
         self.whatsapp_client = whatsapp_client
         self.extractor = extractor
         self.matcher = BeneficiaryMatcher()
+        self.actionable_message_repo = actionable_message_repo
         self.completion_callback = completion_callback
 
         try:
@@ -121,6 +124,7 @@ class TransferFlowGraph:
                 whatsapp_client=self.whatsapp_client,
                 redis_client=self.redis_client,
                 queue=self.queue,
+                actionable_message_repo=self.actionable_message_repo,
             ).compile(
                 checkpointer=self._checkpointer,
                 interrupt_before=["authorize", "verify_funding"],  # Pause before authorize AND verify_funding
@@ -132,7 +136,8 @@ class TransferFlowGraph:
         message: str,
         message_id: str,
         classification_result: Optional[dict] = None,
-        image_data: str | None = None
+        image_data: str | None = None,
+        quoted_data: dict | None = None
     ) -> str:
         """Run the transfer flow graph."""
         logger.info(f"run called with message: '{message}'")
@@ -152,7 +157,14 @@ class TransferFlowGraph:
             classification_result=classification_result,
             image_data=image_data,
             config=config,
+            quoted_data=quoted_data,
         )
+
+        # For repeat/modify transaction intents, clear existing checkpoint to use quoted_data
+        intent = ctx.get_classification_intent()
+        if intent in ("repeat_transaction", "modify_transaction") and quoted_data:
+            logger.info("clearing_checkpoint_for_quote_intent", intent=intent)
+            await self.clear_checkpoint(phone_number)
 
         # Check for cancellation confirmation/decline
         last_response_key = f"user:{phone_number}:last_response"
@@ -259,7 +271,9 @@ class TransferFlowGraph:
                     return ""
         else:
             input_state = create_initial_state(
-                phone_number, message, message_id, classification_result, image_data=image_data
+                phone_number, message, message_id, classification_result, 
+                image_data=image_data,
+                quoted_data=ctx.quoted_data
             )
             
             # CRITICAL FIX: When continuing a session (e.g. valid checkpoint exists), 
@@ -273,8 +287,7 @@ class TransferFlowGraph:
                 "account_resolved", "narration", "confirmation_token", "confirmation_summary"
             }
             
-            # Only keep keys that are NOT in preserve list OR have a non-None value
-            # This allows overwriting if a new value is provided (e.g. from task_parameters)
+
             filtered_input = {
                 k: v for k, v in input_state.items() 
                 if k not in state_keys_to_preserve or v is not None
@@ -437,11 +450,16 @@ class TransferFlowGraph:
         if not current_state or not current_state.values:
             return "No active transfer session found."
 
+        # Get the latest message_id from Redis for typing indicators
+        current_message_id = await self.redis_client.get(f"user:{phone_number}:current_message_id")
+        state_message_id = current_state.values.get("message_id")
+        
         await self.graph.aupdate_state(
             config,
             {
                 "pin_verified": pin_verified,
                 "pin_verification_error": pin_error,
+                "message_id": current_message_id or state_message_id,  # Use fresh ID if available
             }
         )
 

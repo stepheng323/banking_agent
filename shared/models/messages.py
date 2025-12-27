@@ -39,6 +39,7 @@ class WhatsAppMessage(BaseModel):
     flow_data: Optional[Dict[str, Any]] = Field(None, description="Flow response data")
     media_id: Optional[str] = Field(None, description="Media ID for download")
     mime_type: Optional[str] = Field(None, description="MIME type of media")
+    quoted_message_id: Optional[str] = Field(None, description="ID of quoted/replied message")
     timestamp: datetime = Field(default_factory=datetime.utcnow)
 
     priority: MessagePriority = Field(default=MessagePriority.NORMAL)

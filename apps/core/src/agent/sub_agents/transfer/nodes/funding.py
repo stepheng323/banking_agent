@@ -8,17 +8,21 @@ These nodes handle the multi-account funding flow:
 5. check_debit_status - Poll/check if debits completed
 """
 from typing import Any, Optional
+import asyncio
 import uuid
 from uuid import UUID
 
 from apps.core.src.agent.sub_agents.transfer.state import TransferState
 from shared.clients.abstractions import DirectDebitProvider
 from shared.cache.redis_client import RedisClient
-from shared.services.funding import FundingPlanner, FundingPlan, format_funding_plan_message
+from shared.services.funding import FundingPlanner
 from shared.clients.whatsapp.client import WhatsAppClient
 from shared.config import settings
 from shared.utils.logging import get_logger
-from shared.formatters.transfer import format_multi_source_transfer_summary, format_funding_plan_summary
+from shared.formatters.transfer import format_funding_plan_summary
+from shared.repositories.actionable_message_repository import ActionableMessageRepository
+from shared.repositories.unit_of_work import UnitOfWork
+from datetime import datetime, timedelta
 
 
 logger = get_logger(__name__)
@@ -28,6 +32,7 @@ async def check_funding(
     state: TransferState,
     direct_debit_provider: DirectDebitProvider,
     whatsapp_client: WhatsAppClient,
+    actionable_message_repo: Optional[ActionableMessageRepository] = None,
 ) -> TransferState:
     """
     Check if the selected source account has sufficient balance.
@@ -78,7 +83,11 @@ async def check_funding(
                        summary_preview=summary[:50] if summary else "NONE")
             
             if token and summary:
-                await whatsapp_client.send_flow(
+                if state.get("message_id"):
+                    await whatsapp_client.send_typing_indicator(state["message_id"])
+                    await asyncio.sleep(0.3)  # Allow WhatsApp to render typing indicator
+
+                flow_result = await whatsapp_client.send_flow(
                     to=state["phone_number"],
                     header="Confirm Your Transfer",
                     flow_cta="Authorize Transfer",
@@ -87,6 +96,38 @@ async def check_funding(
                     flow_token=token,
                     text_body=summary,
                 )
+                
+                wa_message_id = flow_result.get("messages", [{}])[0].get("id", "")
+                user_id = state.get("user_profile", {}).get("id")
+                logger.info("actionable_message_check", 
+                           has_wa_message_id=bool(wa_message_id),
+                           has_user_id=bool(user_id))
+                if wa_message_id and user_id:
+                    account_resolved = state.get("account_resolved", {})
+                    
+                    def save_confirmation():
+                        with UnitOfWork() as uow:
+                            if uow.actionable_messages:
+                                uow.actionable_messages.create(
+                                    user_id=user_id,
+                                    wa_message_id=wa_message_id,
+                                    message_type="transfer_confirmation",
+                                    message_data={
+                                        "amount": state.get("amount"),
+                                        "recipient_name": account_resolved.get("account_name"),
+                                        "recipient_account": account_resolved.get("account_number"),
+                                        "recipient_bank_code": state.get("recipient_bank_code"),
+                                        "recipient_bank_name": state.get("recipient_bank_name"),
+                                    },
+                                    expires_at=datetime.utcnow() + timedelta(days=90),
+                                )
+                                uow.commit()
+                    
+                    try:
+                        await asyncio.to_thread(save_confirmation)
+                        logger.info("actionable_message_saved", message_type="transfer_confirmation")
+                    except Exception as e:
+                        logger.error("actionable_message_save_failed", error=str(e))
             
             return {
                 **state,
@@ -244,7 +285,7 @@ async def confirm_funding(
     phone_number = state.get("phone_number", "")
     funding_plan = state.get("funding_plan", {})
     balance_available = state.get("balance_available", 0)
-    amount = state.get("amount", 0)
+    amount = state.get("amount", 0) or 0
     
     if not funding_plan:
         return {
