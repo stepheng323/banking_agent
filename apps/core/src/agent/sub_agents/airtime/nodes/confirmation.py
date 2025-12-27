@@ -137,6 +137,11 @@ async def prepare_confirmation(
     )
     await pipe.execute()
 
+    # Add typing indicator before showing flow
+    if state.get("message_id"):
+        await whatsapp_client.send_typing_indicator(state["message_id"])
+        await asyncio.sleep(0.3)  # Allow WhatsApp to render typing indicator
+
     flow_result = await whatsapp_client.send_flow(
         to=state["phone_number"],
         header="Confirm Your Airtime Purchase",

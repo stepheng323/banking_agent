@@ -135,6 +135,7 @@ class WhatsAppClient:
         
         if message_id:
             await self.send_typing_indicator(message_id)
+            await asyncio.sleep(0.3)  # Allow WhatsApp to render typing indicator
 
         payload = {
             "messaging_product": "whatsapp",
