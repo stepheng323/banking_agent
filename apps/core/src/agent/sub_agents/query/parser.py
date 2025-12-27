@@ -24,6 +24,7 @@ QUERY TYPES:
 - top_recipient: who received most money from user
 - top_sender: who sent most money to user
 - affordability: checking if user can afford a specific amount (extract the amount)
+- breakdown: summarize activity by day (spending/receiving per day)
 
 DATE EXPRESSIONS:
 - "today" → today's date
@@ -37,6 +38,11 @@ AFFORDABILITY EXAMPLES:
 - "Can I afford 80k?" → query_type: affordability, amount_check: 80000
 - "Do I have enough for 50,000?" → query_type: affordability, amount_check: 50000
 - "Can I spend 100k right now?" → query_type: affordability, amount_check: 100000
+
+BREAKDOWN EXAMPLES:
+- "Show my activity this week" → query_type: breakdown, date_range: last 7 days
+- "What did I spend daily this month?" → query_type: breakdown
+- "Give me a daily summary" → query_type: breakdown
 
 Extract the query parameters from the user's question."""
 

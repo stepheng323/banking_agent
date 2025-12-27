@@ -196,6 +196,37 @@ async def aggregate_node(state: QueryState) -> Dict[str, Any]:
             "transaction_type": tx_type,
         }
     
+    elif query_type == "breakdown":
+        # Group transactions by date for daily breakdown
+        daily_totals = defaultdict(lambda: {"debit": 0, "credit": 0, "count": 0})
+        
+        for t in transactions:
+            date = t.get("date", "")[:10]
+            tx_type = t.get("type", "unknown")
+            amount = t.get("amount", 0)
+            
+            if tx_type in ("debit", "credit"):
+                daily_totals[date][tx_type] += amount
+                daily_totals[date]["count"] += 1
+        
+        # Sort by date descending
+        sorted_days = sorted(daily_totals.items(), key=lambda x: x[0], reverse=True)[:7]
+        
+        result = {
+            "type": "breakdown",
+            "days": [
+                {
+                    "date": date,
+                    "spent_naira": data["debit"] / 100,
+                    "received_naira": data["credit"] / 100,
+                    "transaction_count": data["count"],
+                }
+                for date, data in sorted_days
+            ],
+            "total_spent_naira": sum(d["debit"] for _, d in sorted_days) / 100,
+            "total_received_naira": sum(d["credit"] for _, d in sorted_days) / 100,
+        }
+    
     else:  # transaction_list, search
         result = {
             "type": "transaction_list",
@@ -312,6 +343,25 @@ async def format_node(
             response = f"✅ Yes, you can afford ₦{amount_check:,.0f}.\n\n💰 Your balance: ₦{balance_naira:,.2f}"
         else:
             response = f"❌ Not enough funds for ₦{amount_check:,.0f}.\n\n💰 Your balance: ₦{balance_naira:,.2f}\n📉 Shortfall: ₦{shortfall:,.2f}"
+    
+    elif result_type == "breakdown":
+        days = result.get("days", [])
+        total_spent = result.get("total_spent_naira", 0)
+        total_received = result.get("total_received_naira", 0)
+        
+        if not days:
+            response = "No activity found for this period."
+        else:
+            lines = ["📊 **Activity Summary:**\n"]
+            for day in days:
+                date_str = day["date"]
+                spent = day["spent_naira"]
+                received = day["received_naira"]
+                count = day["transaction_count"]
+                lines.append(f"• {date_str}: 📤 ₦{spent:,.0f} | 📥 ₦{received:,.0f} ({count} txns)")
+            
+            lines.append(f"\n**Totals:** 📤 ₦{total_spent:,.0f} spent | 📥 ₦{total_received:,.0f} received")
+            response = "\n".join(lines)
     
     else:
         response = "Query completed."
