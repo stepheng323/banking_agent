@@ -8,6 +8,7 @@ from langchain_core.runnables import Runnable
 from shared.clients.providers.mono import MonoClient
 from apps.core.src.agent.sub_agents.query.parser import QueryParser
 from apps.core.src.agent.sub_agents.query.graph.state import QueryState
+from apps.core.src.agent.sub_agents.query.validators import QueryValidator
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -19,9 +20,19 @@ async def parse_node(
 ) -> Dict[str, Any]:
     """Parse user query into structured parameters."""
     message = state["message"]
+    phone_number = state["phone_number"]
     
     try:
         params = await parser.parse(message)
+        
+        # Validate parsed parameters
+        is_valid, error_msg = QueryValidator.validate(params, phone_number)
+        if not is_valid:
+            return {
+                "flow_state": "error",
+                "response": error_msg or "Invalid query parameters.",
+            }
+        
         return {
             "flow_state": "fetching",
             "query_type": params.get("query_type", "transaction_list"),
@@ -74,7 +85,6 @@ async def fetch_node(
                 "response": "I couldn't fetch your balance right now."
             }
     
-    # Handle affordability check
     if query_type == "affordability":
         try:
             balance = await mono_client.get_balance(account_id)
@@ -106,13 +116,11 @@ async def fetch_node(
                 "response": "I couldn't check your balance right now."
             }
     
-    # Handle transaction queries
     try:
         date_range = state.get("date_range", {})
         tx_type = state.get("transaction_type", "both")
         
-        # Fetch more than needed for pagination
-        fetch_limit = state.get("page_size", 10) * 3  # Fetch 3 pages ahead
+        fetch_limit = state.get("page_size", 10) * 3
         
         transactions = await mono_client.get_transactions(
             account_id=account_id,
