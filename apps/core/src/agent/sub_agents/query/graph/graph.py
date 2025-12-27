@@ -12,14 +12,14 @@ from shared.cache.redis_client import RedisClient
 from apps.core.src.agent.tools.account_selection.mandate_validator import validate_mandate_status
 from apps.core.src.agent.sub_agents.query.parser import QueryParser
 from apps.core.src.agent.sub_agents.query.graph.state import QueryState
-from apps.core.src.agent.sub_agents.query.graph.nodes import (
+from apps.core.src.agent.sub_agents.query.nodes.parse import (
     parse_node,
-    fetch_node,
-    aggregate_node,
     paginate_node,
     refine_node,
-    format_node,
 )
+from apps.core.src.agent.sub_agents.query.nodes.fetch import fetch_node
+from apps.core.src.agent.sub_agents.query.nodes.aggregate import aggregate_node
+from apps.core.src.agent.sub_agents.query.nodes.format import format_node
 from apps.core.src.agent.sub_agents.query.graph.routing import (
     route_after_parse,
     route_after_fetch,

@@ -82,7 +82,7 @@ class QueryValidator:
                 return False, "Amount exceeds maximum allowed check."
         
         # Audit log - success
-        logger.info(
+        logger.info(_Projection based on last 30 days. Actual results may vary._
             "query_validated",
             phone=phone_number[:6],
             query_type=query_type,
