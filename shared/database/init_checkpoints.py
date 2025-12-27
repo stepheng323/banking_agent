@@ -1,8 +1,8 @@
 """Initialize LangGraph checkpoint tables in PostgreSQL."""
 
 import sys
+
 from langgraph.checkpoint.postgres import PostgresSaver
-from shared.database.connection import get_engine
 
 
 def init_checkpoint_tables() -> None:
@@ -14,6 +14,7 @@ def init_checkpoint_tables() -> None:
     """
     try:
         import os
+
         db_url = os.getenv("DATABASE_URL", "")
 
         if not db_url:

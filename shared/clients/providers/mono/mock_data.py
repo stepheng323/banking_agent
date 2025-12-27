@@ -1,9 +1,16 @@
 """Mock data for Mono API (development environment)."""
 
 from .models import (
-    BvnMethod, BvnLookupData, Institution, BankAccount,
-    BalanceData, Transaction, CustomerData, AccountData,
-    MandateData, TransferDestination
+    AccountData,
+    BalanceData,
+    BankAccount,
+    BvnLookupData,
+    BvnMethod,
+    CustomerData,
+    Institution,
+    MandateData,
+    Transaction,
+    TransferDestination,
 )
 
 
@@ -12,8 +19,14 @@ def get_mock_bvn_lookup(bvn: str) -> BvnLookupData:
         session_id="74c8fe70-ea2c-458e-a99f-3f7a6061632c",
         bvn=bvn,
         methods=[
-            BvnMethod(method="email", hint="An email with a verification code will be sent to tomi***jr@gmail.com"),
-            BvnMethod(method="phone", hint="Sms with a verification code will be sent to phone 0818***6496"),
+            BvnMethod(
+                method="email",
+                hint="An email with a verification code will be sent to tomi***jr@gmail.com",
+            ),
+            BvnMethod(
+                method="phone",
+                hint="Sms with a verification code will be sent to phone 0818***6496",
+            ),
         ],
     )
 
@@ -51,23 +64,56 @@ def get_mock_balance(account_id: str) -> BalanceData:
 
 
 def get_mock_transactions(
-    transaction_type: str | None = None,
-    narration: str | None = None,
-    limit: int = 50
+    transaction_type: str | None = None, narration: str | None = None, limit: int = 50
 ) -> list[Transaction]:
     txns = [
-        Transaction(id="txn_001", date="2024-12-10", narration="Transfer to Mum", amount=5000000, type="debit", category="transfer"),
-        Transaction(id="txn_002", date="2024-12-09", narration="Uber trip", amount=350000, type="debit", category="transport"),
-        Transaction(id="txn_003", date="2024-12-08", narration="Salary from Company Ltd", amount=35000000, type="credit", category="income"),
-        Transaction(id="txn_004", date="2024-12-07", narration="Netflix subscription", amount=500000, type="debit", category="entertainment"),
-        Transaction(id="txn_005", date="2024-12-06", narration="Transfer from John", amount=10000000, type="credit", category="transfer"),
+        Transaction(
+            id="txn_001",
+            date="2024-12-10",
+            narration="Transfer to Mum",
+            amount=5000000,
+            type="debit",
+            category="transfer",
+        ),
+        Transaction(
+            id="txn_002",
+            date="2024-12-09",
+            narration="Uber trip",
+            amount=350000,
+            type="debit",
+            category="transport",
+        ),
+        Transaction(
+            id="txn_003",
+            date="2024-12-08",
+            narration="Salary from Company Ltd",
+            amount=35000000,
+            type="credit",
+            category="income",
+        ),
+        Transaction(
+            id="txn_004",
+            date="2024-12-07",
+            narration="Netflix subscription",
+            amount=500000,
+            type="debit",
+            category="entertainment",
+        ),
+        Transaction(
+            id="txn_005",
+            date="2024-12-06",
+            narration="Transfer from John",
+            amount=10000000,
+            type="credit",
+            category="transfer",
+        ),
     ]
-    
+
     if transaction_type:
         txns = [t for t in txns if t.type == transaction_type]
     if narration:
         txns = [t for t in txns if narration.lower() in t.narration.lower()]
-    
+
     return txns[:limit]
 
 
@@ -87,7 +133,7 @@ def get_mock_customer(
     email: str,
     address: str,
     identity_number: str,
-    identity_type: str
+    identity_type: str,
 ) -> CustomerData:
     return CustomerData(
         id="mock_customer_id",
@@ -109,7 +155,7 @@ def get_mock_mandate(
     amount: int,
     reference: str,
     start_date: str,
-    end_date: str
+    end_date: str,
 ) -> MandateData:
     return MandateData(
         id="mock_mandate_id",
@@ -126,7 +172,11 @@ def get_mock_mandate(
         end_date=end_date,
         mono_url="https://mono.co/authorize/mock_mandate_id",
         transfer_destinations=[
-            TransferDestination(account_number="0123456789", bank_code="070", bank_name="Fidelity Bank"),
-            TransferDestination(account_number="9876543210", bank_code="999", bank_name="Paystack-Titan"),
+            TransferDestination(
+                account_number="0123456789", bank_code="070", bank_name="Fidelity Bank"
+            ),
+            TransferDestination(
+                account_number="9876543210", bank_code="999", bank_name="Paystack-Titan"
+            ),
         ],
     )

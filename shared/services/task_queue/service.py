@@ -2,11 +2,11 @@
 
 import json
 import time
-from typing import Optional, List, Dict, Any
+from typing import Any
 
-from shared.types.agent_types import TaskStatus
-from shared.types.planner import PlannerOutput, PlannedTask
 from shared.cache.redis_client import RedisClient
+from shared.types.agent_types import TaskStatus
+from shared.types.planner import PlannedTask, PlannerOutput
 
 
 class TaskQueueService:
@@ -15,9 +15,7 @@ class TaskQueueService:
     def __init__(self, redis_client=None):
         self.redis_client = redis_client or RedisClient.get_client()
 
-    async def create_task_queue(
-        self, phone_number: str, planner_output: PlannerOutput
-    ) -> None:
+    async def create_task_queue(self, phone_number: str, planner_output: PlannerOutput) -> None:
         """
         Store task queue from planner output.
 
@@ -31,13 +29,9 @@ class TaskQueueService:
             "tasks": [task.model_dump() for task in planner_output.tasks],
             "created_at": time.time(),
         }
-        await self.redis_client.set(
-            queue_key, json.dumps(queue_data), ex=3600
-        )
+        await self.redis_client.set(queue_key, json.dumps(queue_data), ex=3600)
 
-    async def get_task_queue(
-        self, phone_number: str
-    ) -> Optional[PlannerOutput]:
+    async def get_task_queue(self, phone_number: str) -> PlannerOutput | None:
         """
         Retrieve current task queue.
 
@@ -54,9 +48,7 @@ class TaskQueueService:
         queue_data = json.loads(data)
         return PlannerOutput.model_validate(queue_data["planner_output"])
 
-    async def get_next_task(
-        self, phone_number: str
-    ) -> Optional[PlannedTask]:
+    async def get_next_task(self, phone_number: str) -> PlannedTask | None:
         """
         Get next executable task (dependencies satisfied).
 
@@ -71,7 +63,7 @@ class TaskQueueService:
             return None
 
         completed_tasks = await self.get_completed_task_ids(phone_number)
-        
+
         # Also get collection_complete tasks (they're ready, not pending)
         results_key = f"user:{phone_number}:task_results"
         results_data = await self.redis_client.get(results_key)
@@ -79,7 +71,8 @@ class TaskQueueService:
         if results_data:
             results = json.loads(results_data)
             collection_complete_tasks = {
-                task_id for task_id, result in results.items()
+                task_id
+                for task_id, result in results.items()
                 if result.get("status") == TaskStatus.COLLECTION_COMPLETE.value
             }
 
@@ -89,12 +82,15 @@ class TaskQueueService:
                 continue
             # Only return pending tasks with satisfied dependencies
             if task.status == TaskStatus.PENDING:
-                if all(dep_id in completed_tasks or dep_id in collection_complete_tasks for dep_id in task.depends_on):
+                if all(
+                    dep_id in completed_tasks or dep_id in collection_complete_tasks
+                    for dep_id in task.depends_on
+                ):
                     return task
 
         return None
 
-    async def get_completed_task_ids(self, phone_number: str) -> List[str]:
+    async def get_completed_task_ids(self, phone_number: str) -> list[str]:
         """Get list of completed task IDs."""
         results_key = f"user:{phone_number}:task_results"
         data = await self.redis_client.get(results_key)
@@ -107,13 +103,13 @@ class TaskQueueService:
             if result.get("status") == TaskStatus.COMPLETED
         ]
 
-    async def get_task_results(self, phone_number: str) -> Dict[str, Any]:
+    async def get_task_results(self, phone_number: str) -> dict[str, Any]:
         """
         Get all task results for a user.
-        
+
         Args:
             phone_number: User's phone number
-            
+
         Returns:
             Dictionary mapping task_id to result data
         """
@@ -128,7 +124,7 @@ class TaskQueueService:
         phone_number: str,
         task_id: str,
         status: TaskStatus,
-        result: Optional[Dict[str, Any]] = None,
+        result: dict[str, Any] | None = None,
     ) -> None:
         """
         Update task status and store result.
@@ -147,17 +143,13 @@ class TaskQueueService:
                 if task["id"] == task_id:
                     task["status"] = status.value
                     break
-            await self.redis_client.set(
-                queue_key, json.dumps(queue_data), ex=3600
-            )
+            await self.redis_client.set(queue_key, json.dumps(queue_data), ex=3600)
 
         results_key = f"user:{phone_number}:task_results"
         results_data_str = await self.redis_client.get(results_key)
         results = json.loads(results_data_str) if results_data_str else {}
         results[task_id] = {"status": status.value, "result": result}
-        await self.redis_client.set(
-            results_key, json.dumps(results), ex=3600
-        )
+        await self.redis_client.set(results_key, json.dumps(results), ex=3600)
 
     async def clear_task_queue(self, phone_number: str) -> None:
         """
@@ -186,14 +178,12 @@ class TaskQueueService:
         queue_key = f"user:{phone_number}:task_queue"
         return await self.redis_client.exists(queue_key) > 0
 
-    async def get_current_task(self, phone_number: str) -> Optional[str]:
+    async def get_current_task(self, phone_number: str) -> str | None:
         """Get currently executing task ID."""
         current_task_key = f"user:{phone_number}:current_task"
         return await self.redis_client.get(current_task_key)
 
-    async def set_current_task(
-        self, phone_number: str, task_id: Optional[str]
-    ) -> None:
+    async def set_current_task(self, phone_number: str, task_id: str | None) -> None:
         """Set currently executing task ID."""
         current_task_key = f"user:{phone_number}:current_task"
         if task_id:

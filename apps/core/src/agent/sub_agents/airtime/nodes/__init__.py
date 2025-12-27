@@ -1,18 +1,18 @@
 """Airtime purchase flow nodes."""
 
-from typing import Any, List
+from typing import Any
 
-from .extraction import extract_entities
-from .validation import validate_amount, validate_phone, validate_network
 from .account_selection import select_source_account
-from .beneficiary import find_beneficiary
-from .context import load_user_context
-from .confirmation import prepare_confirmation
-from .cancellation import handle_cancellation
 from .authorization import authorize_transaction
+from .beneficiary import find_beneficiary
+from .cancellation import handle_cancellation
+from .confirmation import prepare_confirmation
+from .context import load_user_context
+from .extraction import extract_entities
+from .validation import validate_amount, validate_network, validate_phone
 
 
-def filter_airtime_beneficiaries(beneficiaries: List[Any]) -> List[Any]:
+def filter_airtime_beneficiaries(beneficiaries: list[Any]) -> list[Any]:
     """Filter beneficiaries to only include airtime type."""
     result = []
     for b in beneficiaries:
@@ -22,6 +22,7 @@ def filter_airtime_beneficiaries(beneficiaries: List[Any]) -> List[Any]:
         elif hasattr(b, "beneficiary_type") and b.beneficiary_type == "airtime":
             result.append(b)
     return result
+
 
 __all__ = [
     "extract_entities",

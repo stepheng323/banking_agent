@@ -8,22 +8,22 @@ Usage:
         build_response_context,
         build_clarification_context,
     )
-    
+
     # Build context from state
     context = build_response_context(
         intent=ResponseIntent.CONFIRM_TRANSFER,
         state=transfer_state,
     )
-    
+
     # Generate response
     synthesizer = ResponseSynthesizer()
     response = await synthesizer.synthesize(context)
 """
 
-from .intent import ResponseIntent
+from .builder import build_clarification_context, build_response_context
 from .context import ResponseContext
+from .intent import ResponseIntent
 from .synthesizer import ResponseSynthesizer, get_synthesizer
-from .builder import build_response_context, build_clarification_context
 
 __all__ = [
     "ResponseIntent",
@@ -33,4 +33,3 @@ __all__ = [
     "build_response_context",
     "build_clarification_context",
 ]
-

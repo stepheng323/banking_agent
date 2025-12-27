@@ -1,7 +1,8 @@
 """Query parsing service to extract parameters from natural language questions."""
 
-from typing import Dict, Any
 from datetime import datetime, timedelta
+from typing import Any
+
 from langchain_core.runnables import Runnable
 
 from apps.core.src.agent.sub_agents.query.models import QueryParams
@@ -23,6 +24,8 @@ QUERY TYPES:
 - search: find specific transactions by name/merchant
 - top_recipient: who received most money from user
 - top_sender: who sent most money to user
+- affordability: checking if user can afford something
+- breakdown: summarize activity by day
 
 DATE EXPRESSIONS:
 - "today" → today's date
@@ -31,6 +34,23 @@ DATE EXPRESSIONS:
 - "this month" → current month
 - "last month" → previous month
 - "last 30 days" → past 30 days
+
+AFFORDABILITY ANALYSIS TYPES:
+- immediate: can I afford this now? (default)
+- relative: what's the impact on my finances?
+- simulated: can I afford this in X months?
+- remainder: how much would I have left?
+
+AFFORDABILITY EXAMPLES:
+- "Can I afford 80k?" → query_type: affordability, amount_check: 80000, analysis_type: immediate
+- "Can I afford a MacBook Pro?" → query_type: affordability, item_name: "macbook pro", analysis_type: immediate
+- "Could I afford this in 3 months?" → query_type: affordability, projection_months: 3, analysis_type: simulated
+- "What would 50k cost relative to my spending?" → query_type: affordability, amount_check: 50000, analysis_type: relative
+- "How much would I have left after 100k?" → query_type: affordability, amount_check: 100000, analysis_type: remainder
+
+BREAKDOWN EXAMPLES:
+- "Show my activity this week" → query_type: breakdown, date_range: last 7 days
+- "Give me a daily summary" → query_type: breakdown
 
 Extract the query parameters from the user's question."""
 
@@ -42,13 +62,10 @@ class QueryParser:
         self.llm = llm
         self.structured_llm = llm.with_structured_output(QueryParams)
 
-    async def parse(self, question: str) -> Dict[str, Any]:
+    async def parse(self, question: str) -> dict[str, Any]:
         """Parse a financial question into query parameters."""
         today = datetime.now()
-        prompt = QUERY_PARSER_PROMPT.format(
-            today=today.strftime("%Y-%m-%d"),
-            question=question
-        )
+        prompt = QUERY_PARSER_PROMPT.format(today=today.strftime("%Y-%m-%d"), question=question)
 
         try:
             result: QueryParams = await self.structured_llm.ainvoke(prompt)
@@ -61,14 +78,14 @@ class QueryParser:
             logger.error("query_parse_error", error=str(e))
             return self._get_default_params()
 
-    def _add_defaults(self, params: Dict[str, Any]) -> Dict[str, Any]:
+    def _add_defaults(self, params: dict[str, Any]) -> dict[str, Any]:
         """Add default values for missing parameters."""
         today = datetime.now()
 
         if not params.get("date_range"):
             params["date_range"] = {
                 "start": (today - timedelta(days=30)).strftime("%Y-%m-%d"),
-                "end": today.strftime("%Y-%m-%d")
+                "end": today.strftime("%Y-%m-%d"),
             }
         elif isinstance(params["date_range"], dict):
             if not params["date_range"].get("start"):
@@ -78,7 +95,7 @@ class QueryParser:
 
         return params
 
-    def _get_default_params(self) -> Dict[str, Any]:
+    def _get_default_params(self) -> dict[str, Any]:
         """Get default parameters for fallback."""
         today = datetime.now()
         return {
@@ -86,8 +103,8 @@ class QueryParser:
             "transaction_type": "both",
             "date_range": {
                 "start": (today - timedelta(days=30)).strftime("%Y-%m-%d"),
-                "end": today.strftime("%Y-%m-%d")
+                "end": today.strftime("%Y-%m-%d"),
             },
             "narration_filter": None,
-            "limit": 10
+            "limit": 10,
         }

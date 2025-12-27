@@ -1,7 +1,8 @@
 """Authorization services package."""
 
 from shared.cache.redis_client import RedisClient
-from .authorization import AuthorizationService, AuthorizationResult
+
+from .authorization import AuthorizationResult, AuthorizationService
 
 __all__ = [
     "AuthorizationService",
@@ -17,9 +18,7 @@ def get_authorization_service() -> AuthorizationService:
     """Get or create the authorization service singleton."""
     global _authorization_service
     if _authorization_service is None:
-        _authorization_service = AuthorizationService(
-            redis_client=RedisClient.get_client()
-        )
+        _authorization_service = AuthorizationService(redis_client=RedisClient.get_client())
     return _authorization_service
 
 

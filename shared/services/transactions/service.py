@@ -1,6 +1,7 @@
 """Transaction creation service for transfers and airtime."""
 
-from typing import Any, Dict
+from typing import Any
+
 from sqlalchemy.exc import IntegrityError
 
 from shared.repositories.unit_of_work import UnitOfWork
@@ -10,7 +11,7 @@ logger = get_logger(__name__)
 
 
 async def create_transfer_transaction(
-    pending_transfer: Dict[str, Any],
+    pending_transfer: dict[str, Any],
     user_id: str,
     idempotency_key: str,
 ) -> str:
@@ -64,15 +65,17 @@ async def create_transfer_transaction(
                 existing = uow.transactions.get_by_idempotency_key(idempotency_key)
                 if existing:
                     existing_id = str(existing.id)
-                    logger.info("transfer_transaction_exists", 
-                               transaction_id=existing_id,
-                               idempotency_key=idempotency_key)
+                    logger.info(
+                        "transfer_transaction_exists",
+                        transaction_id=existing_id,
+                        idempotency_key=idempotency_key,
+                    )
                     return existing_id
             raise
 
 
 async def create_airtime_transaction(
-    pending_airtime: Dict[str, Any],
+    pending_airtime: dict[str, Any],
     user_id: str,
     idempotency_key: str,
 ) -> str:
@@ -129,8 +132,10 @@ async def create_airtime_transaction(
                 existing = uow.transactions.get_by_idempotency_key(idempotency_key)
                 if existing:
                     existing_id = str(existing.id)
-                    logger.info("airtime_transaction_exists",
-                               transaction_id=existing_id,
-                               idempotency_key=idempotency_key)
+                    logger.info(
+                        "airtime_transaction_exists",
+                        transaction_id=existing_id,
+                        idempotency_key=idempotency_key,
+                    )
                     return existing_id
             raise

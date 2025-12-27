@@ -1,9 +1,8 @@
 """Receipt formatter for transaction receipts - generates image receipts."""
 
-
+from shared.clients.storage.s3_client import S3Client
 from shared.database.models import Account, Transaction
 from shared.services.receipt_generator import ReceiptGenerator
-from shared.clients.storage.s3_client import S3Client
 
 
 async def generate_receipt_image(
@@ -26,9 +25,7 @@ async def generate_receipt_image(
     """
     account_name = account.account_name if account else None
 
-    image_bytes = await receipt_generator.generate_receipt_image(
-        transaction, account_name
-    )
+    image_bytes = await receipt_generator.generate_receipt_image(transaction, account_name)
 
     transaction_id = str(transaction.id)
     s3_url = await s3_client.upload_receipt_image(

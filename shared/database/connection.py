@@ -1,6 +1,7 @@
 # pyright: reportUnusedImport=false
 # pylint: disable=unused-import
 """Database connection and session management."""
+
 import os
 from collections.abc import Generator
 
@@ -20,8 +21,7 @@ def get_engine():
     if _engine is None:
         if not DATABASE_URL:
             raise ValueError("DATABASE_URL environment variable is not set")
-        db_url = DATABASE_URL.replace(
-            "postgresql://", "postgresql+psycopg://", 1)
+        db_url = DATABASE_URL.replace("postgresql://", "postgresql+psycopg://", 1)
         _engine = create_engine(
             db_url,
             echo=False,
@@ -29,7 +29,7 @@ def get_engine():
             max_overflow=10,
             pool_pre_ping=True,
             pool_recycle=3600,
-            pool_timeout=30
+            pool_timeout=30,
         )
         print("✓ Database connection pool initialized (size=20, max_overflow=10)")
     return _engine
@@ -38,14 +38,13 @@ def get_engine():
 def get_session_local():
     global _SessionLocal
     if _SessionLocal is None:
-        _SessionLocal = sessionmaker(
-            autocommit=False, autoflush=False, bind=get_engine())
+        _SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=get_engine())
     return _SessionLocal
 
 
 def get_db() -> Generator[Session, None, None]:
-    SessionLocal = get_session_local()
-    db = SessionLocal()
+    session_local = get_session_local()
+    db = session_local()
     try:
         yield db
     finally:
@@ -69,7 +68,7 @@ def init_db():
 def drop_db():
     """Drop all tables including LangGraph checkpoint tables."""
     from sqlalchemy import text
-    
+
     engine = get_engine()
     with engine.connect() as conn:
         conn.execute(text("DROP SCHEMA public CASCADE"))

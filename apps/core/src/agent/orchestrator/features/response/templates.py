@@ -33,7 +33,6 @@ TEMPLATES: dict[ResponseIntent, dict[str, str]] = {
         "en": "Which data plan would you like?",
         "yo": "Data plan wo ni o fe?",
     },
-    
     # Clarification intents
     ResponseIntent.CLARIFY_BENEFICIARY: {
         "en": "I found multiple matches for '{recipient_name}'. Which one did you mean?\n{candidates_list}",
@@ -47,7 +46,6 @@ TEMPLATES: dict[ResponseIntent, dict[str, str]] = {
         "en": "I couldn't find a bank called '{bank_name}'. Please provide the correct bank name.",
         "yo": "Mi o ri bank ti a npe ni '{bank_name}'. Jowo fun mi ni oruko bank to dara.",
     },
-    
     # Confirmation intents
     ResponseIntent.CONFIRM_TRANSFER: {
         "en": "Just to confirm: {formatted_amount} to {recipient_name} at {bank_name}?",
@@ -61,7 +59,6 @@ TEMPLATES: dict[ResponseIntent, dict[str, str]] = {
         "en": "Just to confirm: {data_plan} data for {phone_masked} ({network})?",
         "yo": "Lati se idaniloju: {data_plan} data fun {phone_masked} ({network})?",
     },
-    
     # Success intents
     ResponseIntent.TRANSFER_SUCCESS: {
         "en": "✓ Done! {formatted_amount} has been sent to {recipient_name}.",
@@ -75,7 +72,6 @@ TEMPLATES: dict[ResponseIntent, dict[str, str]] = {
         "en": "✓ Done! {data_plan} data activated for {phone_masked}.",
         "yo": "✓ O ti pari! {data_plan} data ti bere fun {phone_masked}.",
     },
-    
     # Error intents
     ResponseIntent.INSUFFICIENT_BALANCE: {
         "en": "You don't have enough balance. Available: {formatted_amount}.",
@@ -129,7 +125,6 @@ TEMPLATES: dict[ResponseIntent, dict[str, str]] = {
         "en": "Invalid network. Please choose from: MTN, Airtel, Glo, or 9mobile.",
         "yo": "Network ko tona. Jowo yan lati: MTN, Airtel, Glo, tabi 9mobile.",
     },
-    
     # Flow control intents
     ResponseIntent.CANCELLED: {
         "en": "Transaction cancelled.",
@@ -143,7 +138,6 @@ TEMPLATES: dict[ResponseIntent, dict[str, str]] = {
         "en": "Which account would you like to use?",
         "yo": "Iru account wo ni o fe lo?",
     },
-    
     # Conversational intents
     ResponseIntent.GREETING: {
         "en": "Hi{user_greeting}! How can I help you today?",
@@ -157,7 +151,6 @@ TEMPLATES: dict[ResponseIntent, dict[str, str]] = {
         "en": "✓ Saved {recipient_name} as a beneficiary.",
         "yo": "✓ A ti fi {recipient_name} pamo gege bi olugba.",
     },
-    
     # Acknowledgment intents
     ResponseIntent.RECIPIENT_CHANGED: {
         "en": "Got it, updating the recipient to {recipient_name}.",
@@ -171,7 +164,6 @@ TEMPLATES: dict[ResponseIntent, dict[str, str]] = {
         "en": "Alright, changing {changes_text}.",
         "yo": "O dara, a n yi {changes_text} pada.",
     },
-    
     # Cancellation continue - when user declines cancellation
     ResponseIntent.CANCELLATION_CONTINUE: {
         "en": "No problem, continuing with your {formatted_amount} transfer to {recipient_name}.",
@@ -180,12 +172,14 @@ TEMPLATES: dict[ResponseIntent, dict[str, str]] = {
 }
 
 
-def get_template(intent: ResponseIntent, language: str = "en", recipient_name: str | None = None) -> str | None:
+def get_template(
+    intent: ResponseIntent, language: str = "en", recipient_name: str | None = None
+) -> str | None:
     """Get template for intent in specified language.
-    
+
     Falls back to English if language not available.
     Returns None if intent has no template (requires LLM).
-    
+
     Args:
         intent: The response intent
         language: Language code (default: "en")
@@ -194,10 +188,9 @@ def get_template(intent: ResponseIntent, language: str = "en", recipient_name: s
     templates = TEMPLATES.get(intent)
     if not templates:
         return None
-    
+
     if intent == ResponseIntent.ASK_RECIPIENT:
         if not recipient_name or recipient_name.lower() in ("recipient", ""):
             return templates.get(f"{language}_no_name") or templates.get("en_no_name")
-    
-    return templates.get(language) or templates.get("en")
 
+    return templates.get(language) or templates.get("en")

@@ -1,6 +1,5 @@
 """Beneficiary matching component."""
 
-from typing import Optional, Tuple
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -11,11 +10,11 @@ class BeneficiaryMatcher:
 
     def match(
         self,
-        matched_beneficiary: Optional[dict],
-        current_account: Optional[str],
-        current_bank_code: Optional[str],
-        current_recipient_name: Optional[str] = None,
-    ) -> Tuple[bool, Optional[dict]]:
+        matched_beneficiary: dict | None,
+        current_account: str | None,
+        current_bank_code: str | None,
+        current_recipient_name: str | None = None,
+    ) -> tuple[bool, dict | None]:
         """
         Check if matched beneficiary is valid for current recipient.
 
@@ -43,8 +42,10 @@ class BeneficiaryMatcher:
             logger.debug("beneficiary_missing_fields")
             return False, None
 
-        if (str(current_account) != beneficiary_account or 
-            str(current_bank_code) != beneficiary_bank_code):
+        if (
+            str(current_account) != beneficiary_account
+            or str(current_bank_code) != beneficiary_bank_code
+        ):
             logger.debug(
                 "beneficiary_stale",
                 beneficiary_account=beneficiary_account,
@@ -63,9 +64,9 @@ class BeneficiaryMatcher:
         resolved_account = {
             "success": True,
             "account_name": (
-                current_recipient_name or
-                matched_beneficiary.get("account_name") or
-                matched_beneficiary.get("alias", "")
+                current_recipient_name
+                or matched_beneficiary.get("account_name")
+                or matched_beneficiary.get("alias", "")
             ),
             "account_number": current_account,
             "bank_code": current_bank_code,

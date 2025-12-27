@@ -1,9 +1,10 @@
-from logging.config import fileConfig
-from sqlalchemy import engine_from_config
-from sqlalchemy import pool
-from alembic import context
 import os
 import sys
+from logging.config import fileConfig
+
+from sqlalchemy import engine_from_config, pool
+
+from alembic import context
 
 project_root = os.path.dirname(os.path.dirname(__file__))
 sys.path.insert(0, project_root)
@@ -15,9 +16,8 @@ try:
 except ImportError:
     pass
 
-from shared.database.models import Base
-from shared.config import settings
-
+from shared.config import settings  # noqa: E402
+from shared.database.models import Base  # noqa: E402
 
 config = context.config
 

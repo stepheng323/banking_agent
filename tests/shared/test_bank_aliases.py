@@ -1,11 +1,9 @@
 """Unit tests for centralized bank aliases module."""
 
-import pytest
 from shared.utils.bank_aliases import (
-    BANK_ALIASES,
-    normalize_bank_name,
-    get_bank_search_terms,
     find_matching_bank_name,
+    get_bank_search_terms,
+    normalize_bank_name,
 )
 
 

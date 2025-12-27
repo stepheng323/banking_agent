@@ -1,11 +1,11 @@
 """Repository for ActionableMessage operations."""
 
 from datetime import datetime
-from typing import List, Optional
+
 from sqlalchemy.orm import Session
 
-from shared.repositories.base import BaseRepository
 from shared.database.models import ActionableMessage
+from shared.repositories.base import BaseRepository
 
 
 class ActionableMessageRepository(BaseRepository[ActionableMessage]):
@@ -14,24 +14,24 @@ class ActionableMessageRepository(BaseRepository[ActionableMessage]):
     def __init__(self, db: Session):
         super().__init__(db, ActionableMessage)
 
-    def get_by_user(self, user_id: str) -> List[ActionableMessage]:
+    def get_by_user(self, user_id: str) -> list[ActionableMessage]:
         """Get all non-expired actionable messages for a user."""
         return (
             self.db.query(ActionableMessage)
             .filter(
                 ActionableMessage.user_id == user_id,
-                ActionableMessage.expires_at > datetime.utcnow()
+                ActionableMessage.expires_at > datetime.utcnow(),
             )
             .all()
         )
 
-    def get_by_wa_message_id(self, wa_message_id: str) -> Optional[ActionableMessage]:
+    def get_by_wa_message_id(self, wa_message_id: str) -> ActionableMessage | None:
         """Get actionable message by WhatsApp message ID (if not expired)."""
         return (
             self.db.query(ActionableMessage)
             .filter(
                 ActionableMessage.wa_message_id == wa_message_id,
-                ActionableMessage.expires_at > datetime.utcnow()
+                ActionableMessage.expires_at > datetime.utcnow(),
             )
             .first()
         )

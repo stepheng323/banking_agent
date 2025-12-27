@@ -1,7 +1,7 @@
 """Verification data service for flow token storage."""
 
 import json
-from typing import Any, Dict
+from typing import Any
 
 from shared.cache.redis_client import RedisClient
 from shared.utils.logging import get_logger
@@ -11,7 +11,7 @@ logger = get_logger(__name__)
 VERIFICATION_STORAGE_TTL = 3600  # 1 hour TTL for verification data
 
 
-async def get_verification_data(flow_token: str) -> Dict[str, Any]:
+async def get_verification_data(flow_token: str) -> dict[str, Any]:
     """Get verification data from Redis for a given flow_token."""
     if not flow_token:
         return {}
@@ -29,7 +29,7 @@ async def get_verification_data(flow_token: str) -> Dict[str, Any]:
 
 async def set_verification_data(
     flow_token: str,
-    data: Dict[str, Any],
+    data: dict[str, Any],
     ttl: int = VERIFICATION_STORAGE_TTL,
 ) -> None:
     """Set verification data in Redis for a given flow_token."""
@@ -49,7 +49,7 @@ async def set_verification_data(
 
 async def update_verification_data(
     flow_token: str,
-    updates: Dict[str, Any],
+    updates: dict[str, Any],
     ttl: int = VERIFICATION_STORAGE_TTL,
 ) -> None:
     """Update verification data in Redis, merging with existing data."""

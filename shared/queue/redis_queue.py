@@ -2,15 +2,18 @@
 
 import json
 from datetime import datetime
-from typing import Any, Dict, Optional
+from typing import TYPE_CHECKING, Any
 
 import redis.asyncio as redis
+
+if TYPE_CHECKING:
+    from shared.queue.messages import FlowEvent
 
 
 class RedisQueue:
     def __init__(self, redis_url: str):
         self.redis_url = redis_url
-        self._redis: Optional[redis.Redis] = None
+        self._redis: redis.Redis | None = None
 
     async def connect(self) -> None:
         if not self._redis:
@@ -25,7 +28,7 @@ class RedisQueue:
             self._redis = None
             print("🔌 Disconnected from Redis")
 
-    async def enqueue(self, queue_name: str, message: Dict[str, Any], priority: int = 0) -> None:
+    async def enqueue(self, queue_name: str, message: dict[str, Any], priority: int = 0) -> None:
         """Add a message to the queue.
 
         Args:
@@ -45,7 +48,7 @@ class RedisQueue:
 
         print(f"📤 Enqueued message to {queue_name} (priority: {priority})")
 
-    async def dequeue(self, queue_name: str, block_timeout: int = 5) -> Optional[Dict[str, Any]]:
+    async def dequeue(self, queue_name: str, block_timeout: int = 5) -> dict[str, Any] | None:
         if not self._redis:
             await self.connect()
 
@@ -58,7 +61,7 @@ class RedisQueue:
 
         return None
 
-    async def dequeue_blocking(self, queue_name: str, timeout: int = 0) -> Optional[Dict[str, Any]]:
+    async def dequeue_blocking(self, queue_name: str, timeout: int = 0) -> dict[str, Any] | None:
         """Dequeue a message from the queue, blocking until one is available or timeout."""
         if not self._redis:
             await self.connect()
@@ -70,10 +73,10 @@ class RedisQueue:
             _, message_json = result
             message = json.loads(message_json)
             return message
-        
+
         return None
 
-    async def enqueue_simple(self, queue_name: str, message: Dict[str, Any]) -> None:
+    async def enqueue_simple(self, queue_name: str, message: dict[str, Any]) -> None:
         if not self._redis:
             await self.connect()
 
@@ -99,9 +102,10 @@ class RedisQueue:
 
     async def publish_flow_event(self, event: "FlowEvent") -> None:
         """Publish a flow completion event to the flow events queue.
-        
+
         Args:
             event: FlowEvent to publish
         """
         from shared.queue.messages import FLOW_EVENTS_QUEUE
+
         await self.enqueue_simple(FLOW_EVENTS_QUEUE, event.to_dict())

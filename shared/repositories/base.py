@@ -1,6 +1,6 @@
 """Base repository with common CRUD operations."""
 
-from typing import Any, Generic, List, Optional, Tuple, Type, TypeVar
+from typing import Any, Generic, TypeVar
 
 from sqlalchemy.orm import Session
 
@@ -12,15 +12,15 @@ ModelType = TypeVar("ModelType", bound=Base)  # type: ignore[type-arg]
 class BaseRepository(Generic[ModelType]):
     """Base repository with common CRUD operations."""
 
-    def __init__(self, db: Session, model: Type[ModelType]):
+    def __init__(self, db: Session, model: type[ModelType]):
         self.db = db
         self.model = model
 
-    def get_by_id(self, record_id: str) -> Optional[ModelType]:
+    def get_by_id(self, record_id: str) -> ModelType | None:
         """Get a record by ID."""
         return self.db.query(self.model).filter(self.model.id == record_id).first()  # type: ignore[attr-defined]
 
-    def get_all(self, skip: int = 0, limit: int = 20) -> List[ModelType]:
+    def get_all(self, skip: int = 0, limit: int = 20) -> list[ModelType]:
         """Get all records with pagination."""
         return self.db.query(self.model).offset(skip).limit(limit).all()
 
@@ -42,8 +42,8 @@ class BaseRepository(Generic[ModelType]):
         self.db.delete(instance)
 
     def get_or_create(
-        self, defaults: Optional[dict[str, Any]] = None, **kwargs: Any
-    ) -> Tuple[ModelType, bool]:
+        self, defaults: dict[str, Any] | None = None, **kwargs: Any
+    ) -> tuple[ModelType, bool]:
         """Get a record or create if it doesn't exist."""
         instance = self.db.query(self.model).filter_by(**kwargs).first()
         if instance:

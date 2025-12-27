@@ -3,7 +3,7 @@ from enum import Enum
 
 class FundedTransferStatusEnum(str, Enum):
     """Status enum for multi-account funded transfers."""
-    
+
     DRAFT = "draft"
     FUNDING_PENDING = "funding_pending"
     FUNDING_COMPLETE = "funding_complete"
@@ -16,11 +16,10 @@ class FundedTransferStatusEnum(str, Enum):
 
 class FundingStepStatusEnum(str, Enum):
     """Status enum for individual funding steps (debits)."""
-    
+
     PENDING = "pending"
     PROCESSING = "processing"
     CONFIRMED = "confirmed"
     FAILED = "failed"
     REFUND_PENDING = "refund_pending"
     REFUNDED = "refunded"
-

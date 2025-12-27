@@ -1,16 +1,21 @@
 """Mono API Client for bank data access."""
 
-from typing import Optional, List
 import aiohttp
 
-from shared.utils.logging import get_logger
 from shared.config.settings import settings
+from shared.utils.logging import get_logger
 
-from .models import (
-    MonoApiError, BvnLookupData, BankAccount, BalanceData,
-    Transaction, CustomerData, AccountData, MandateData
-)
 from . import mock_data
+from .models import (
+    AccountData,
+    BalanceData,
+    BankAccount,
+    BvnLookupData,
+    CustomerData,
+    MandateData,
+    MonoApiError,
+    Transaction,
+)
 
 logger = get_logger(__name__)
 
@@ -28,7 +33,7 @@ class MonoClient:
         headers = {
             "mono-sec-key": self.api_key,
             "Content-Type": "application/json",
-            "accept": "application/json"
+            "accept": "application/json",
         }
         if session_id:
             headers["x-session-id"] = session_id
@@ -40,59 +45,78 @@ class MonoClient:
         self,
         method: str,
         endpoint: str,
-        params: Optional[dict] = None,
-        body: Optional[dict] = None,
-        session_id: Optional[str] = None,
-        real_time: bool = False
+        params: dict | None = None,
+        body: dict | None = None,
+        session_id: str | None = None,
+        real_time: bool = False,
     ) -> dict:
         """Make API request. Raises MonoApiError on failure."""
         url = f"{self.BASE_URL}{endpoint}"
         headers = self._headers(session_id, real_time)
 
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.request(method, url, headers=headers, params=params, json=body) as resp:
-                    raw_text = await resp.text()
-                    
-                    try:
-                        data = await resp.json() if resp.content_type == "application/json" else {}
-                    except Exception:
-                        data = {}
-                    
-                    if 200 <= resp.status < 300:
-                        return data.get("data", data)
-                    
-                    error_message = data.get("message", "Request failed")
-                    error_code = data.get("code") or data.get("error_code")
-                    
-                    logger.error("mono_api_error", http_status=resp.status, endpoint=endpoint, error_code=error_code, message=error_message)
-                    raise MonoApiError(http_status=resp.status, message=error_message, error_code=error_code, raw_response=raw_text[:500])
-                    
+            async with (
+                aiohttp.ClientSession() as session,
+                session.request(method, url, headers=headers, params=params, json=body) as resp,
+            ):
+                raw_text = await resp.text()
+
+                try:
+                    data = await resp.json() if resp.content_type == "application/json" else {}
+                except Exception:
+                    data = {}
+
+                if 200 <= resp.status < 300:
+                    return data.get("data", data)
+
+                error_message = data.get("message", "Request failed")
+                error_code = data.get("code") or data.get("error_code")
+
+                logger.error(
+                    "mono_api_error",
+                    http_status=resp.status,
+                    endpoint=endpoint,
+                    error_code=error_code,
+                    message=error_message,
+                )
+                raise MonoApiError(
+                    http_status=resp.status,
+                    message=error_message,
+                    error_code=error_code,
+                    raw_response=raw_text[:500],
+                )
+
         except aiohttp.ClientError as e:
             logger.error("mono_connection_error", endpoint=endpoint, error=str(e))
-            raise MonoApiError(http_status=0, message=f"Connection error: {e}", error_code="CONNECTION_ERROR")
-
+            raise MonoApiError(
+                http_status=0, message=f"Connection error: {e}", error_code="CONNECTION_ERROR"
+            )
 
     async def initiate_bvn_lookup(self, bvn: str) -> BvnLookupData:
         """Initiate BVN lookup to get verification methods."""
         if self.use_mock:
             return mock_data.get_mock_bvn_lookup(bvn)
-        data = await self._request("POST", "/v2/lookup/bvn/initiate", body={"bvn": bvn, "scope": "bank_accounts"})
+        data = await self._request(
+            "POST", "/v2/lookup/bvn/initiate", body={"bvn": bvn, "scope": "bank_accounts"}
+        )
         return BvnLookupData(**data)
 
     async def verify_bvn(self, session_id: str, method: str) -> None:
         """Send verification code via selected method."""
         if self.use_mock:
             return
-        await self._request("POST", "/v2/lookup/bvn/verify", body={"method": method}, session_id=session_id)
+        await self._request(
+            "POST", "/v2/lookup/bvn/verify", body={"method": method}, session_id=session_id
+        )
 
-    async def verify_otp(self, session_id: str, otp: str) -> List[BankAccount]:
+    async def verify_otp(self, session_id: str, otp: str) -> list[BankAccount]:
         """Verify OTP and get bank accounts linked to BVN."""
         if self.use_mock:
             return mock_data.get_mock_bank_accounts()
-        data = await self._request("POST", "/v2/lookup/bvn/details", body={"otp": otp}, session_id=session_id)
+        data = await self._request(
+            "POST", "/v2/lookup/bvn/details", body={"otp": otp}, session_id=session_id
+        )
         return [BankAccount(**acc) for acc in data]
-
 
     async def get_account(self, account_id: str) -> AccountData:
         """Get account details."""
@@ -118,14 +142,14 @@ class MonoClient:
     async def get_transactions(
         self,
         account_id: str,
-        start: Optional[str] = None,
-        end: Optional[str] = None,
-        transaction_type: Optional[str] = None,
-        narration: Optional[str] = None,
+        start: str | None = None,
+        end: str | None = None,
+        transaction_type: str | None = None,
+        narration: str | None = None,
         limit: int = 50,
         paginate: bool = True,
-        real_time: bool = False
-    ) -> List[Transaction]:
+        real_time: bool = False,
+    ) -> list[Transaction]:
         """Fetch transactions for an account."""
         if self.use_mock:
             return mock_data.get_mock_transactions(transaction_type, narration, limit)
@@ -142,15 +166,18 @@ class MonoClient:
         if limit:
             params["limit"] = str(limit)
 
-        raw_data = await self._request("GET", f"/v2/accounts/{account_id}/transactions", params=params, real_time=real_time)
-        raw_txns = raw_data.get("transactions", raw_data) if isinstance(raw_data, dict) else raw_data
+        raw_data = await self._request(
+            "GET", f"/v2/accounts/{account_id}/transactions", params=params, real_time=real_time
+        )
+        raw_txns = (
+            raw_data.get("transactions", raw_data) if isinstance(raw_data, dict) else raw_data
+        )
         transactions = [Transaction(**t) for t in raw_txns]
-        
+
         if narration:
             transactions = [t for t in transactions if narration.lower() in t.narration.lower()]
-        
-        return transactions[:limit]
 
+        return transactions[:limit]
 
     async def create_customer(
         self,
@@ -164,7 +191,9 @@ class MonoClient:
     ) -> CustomerData:
         """Create a customer in Mono."""
         if self.use_mock:
-            return mock_data.get_mock_customer(first_name, last_name, email, address, identity_number, identity_type)
+            return mock_data.get_mock_customer(
+                first_name, last_name, email, address, identity_number, identity_type
+            )
 
         body = {
             "first_name": first_name,
@@ -193,7 +222,7 @@ class MonoClient:
     ) -> MandateData:
         """
         Create a Direct Debit mandate on a customer's bank account.
-        
+
         Args:
             customer_id: Mono customer ID
             account_number: Bank account number
@@ -231,17 +260,17 @@ class MonoClient:
     async def cancel_mandate(self, mandate_id: str) -> bool:
         """
         Cancel a Direct Debit mandate.
-        
+
         Args:
             mandate_id: The Mono mandate ID to cancel
-            
+
         Returns:
             True if successfully cancelled
         """
         if self.use_mock:
             logger.info("mock_cancel_mandate", mandate_id=mandate_id)
             return True
-        
+
         try:
             await self._request("PATCH", f"/v3/payments/mandates/{mandate_id}/cancel")
             logger.info("mandate_cancelled", mandate_id=mandate_id)
@@ -258,67 +287,72 @@ class MonoClient:
         amount: int,
         reference: str,
         narration: str = "Transfer",
-        beneficiary_account: Optional[str] = None,
-        beneficiary_bank_code: Optional[str] = None,
+        beneficiary_account: str | None = None,
+        beneficiary_bank_code: str | None = None,
     ) -> dict:
         """
         Initiate a one-time debit against a mandate.
-        
+
         Args:
             mandate_id: The Mono mandate ID
             amount: Amount to debit in kobo
             reference: Unique reference for this debit
             narration: Description for the transaction
-            beneficiary_account: If provided, funds go directly to this account (direct-to-beneficiary)
+            beneficiary_account: If provided, funds go directly to this account
+                (direct-to-beneficiary mode)
             beneficiary_bank_code: Required if beneficiary_account is provided
-            
+
         Returns:
             Dict with debit_id and status
         """
         is_direct_to_beneficiary = beneficiary_account and beneficiary_bank_code
-        
+
         if self.use_mock:
-            logger.info("mock_initiate_debit", 
-                       mandate_id=mandate_id, 
-                       amount=amount, 
-                       reference=reference,
-                       direct_to_beneficiary=is_direct_to_beneficiary)
+            logger.info(
+                "mock_initiate_debit",
+                mandate_id=mandate_id,
+                amount=amount,
+                reference=reference,
+                direct_to_beneficiary=is_direct_to_beneficiary,
+            )
             return {
                 "id": f"mock_debit_{reference}",
                 "status": "pending",
                 "reference": reference,
                 "amount": amount,
             }
-        
+
         body = {
             "mandate": mandate_id,
             "amount": amount,
             "reference": reference,
             "narration": narration,
         }
-        
+
         if is_direct_to_beneficiary:
             body["debit_type"] = "direct-to-beneficiary"
             body["beneficiary"] = {
                 "account_number": beneficiary_account,
                 "bank_code": beneficiary_bank_code,
             }
-        
+
         data = await self._request("POST", "/v3/payments/debits/initiate", body=body)
-        logger.info("debit_initiated", 
-                   mandate_id=mandate_id, 
-                   debit_id=data.get("id"), 
-                   reference=reference,
-                   direct_to_beneficiary=is_direct_to_beneficiary)
+        logger.info(
+            "debit_initiated",
+            mandate_id=mandate_id,
+            debit_id=data.get("id"),
+            reference=reference,
+            direct_to_beneficiary=is_direct_to_beneficiary,
+        )
         return data
 
     async def get_debit_status(self, debit_id: str) -> dict:
         """
         Get the status of a debit transaction.
-        
+
         Args:
             debit_id: The Mono debit transaction ID
-            
+
         Returns:
             Dict with current status and details
         """
@@ -330,11 +364,9 @@ class MonoClient:
                 "reference": debit_id.replace("mock_debit_", ""),
                 "amount": 10000,  # 100 naira in kobo
             }
-        
+
         data = await self._request("GET", f"/v3/payments/debits/{debit_id}")
         return data
 
 
 mono_client = MonoClient()
-
-

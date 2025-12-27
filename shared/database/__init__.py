@@ -1,6 +1,5 @@
 from shared.database.connection import drop_db, get_db, get_db_session, init_db
-from shared.database.models import Account, User
-from shared.database.models import Base, Beneficiary, Transaction
+from shared.database.models import Account, Base, Beneficiary, Transaction, User
 from shared.repositories.beneficiary_repository import BeneficiaryRepository
 from shared.repositories.transaction_repository import TransactionRepository
 

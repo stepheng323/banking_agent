@@ -6,22 +6,38 @@ import traceback
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse, Response
 
-from shared.clients.whatsapp.client import WhatsAppClient
-from shared.queue.redis_queue import RedisQueue
-from shared.utils import encrypt_flow_response
-
 from apps.gateway.api.webhooks.whatsapp.flows.dependencies import (
     get_redis_queue,
     get_whatsapp_client,
 )
-from apps.gateway.api.webhooks.whatsapp.flows.handlers.account_selection_handler import handle_account_selection, AccountSelectionInput
+from apps.gateway.api.webhooks.whatsapp.flows.handlers.account_selection_handler import (
+    AccountSelectionInput,
+    handle_account_selection,
+)
 from apps.gateway.api.webhooks.whatsapp.flows.handlers.bvn_handler import handle_bvn_entry
-from apps.gateway.api.webhooks.whatsapp.flows.handlers.method_selection_handler import handle_method_selection, MethodSelectionInput
-from apps.gateway.api.webhooks.whatsapp.flows.handlers.linking_method_selection_handler import handle_linking_method_selection, LinkingMethodSelectionInput
-from apps.gateway.api.webhooks.whatsapp.flows.handlers.onboarding_pin_handler import handle_onboarding_pin, OnboardingPinInput
-from apps.gateway.api.webhooks.whatsapp.flows.handlers.otp_handler import handle_otp_verification, OtpVerificationInput
-from apps.gateway.api.webhooks.whatsapp.flows.handlers.transaction_pin_handler import handle_transaction_pin
+from apps.gateway.api.webhooks.whatsapp.flows.handlers.linking_method_selection_handler import (
+    LinkingMethodSelectionInput,
+    handle_linking_method_selection,
+)
+from apps.gateway.api.webhooks.whatsapp.flows.handlers.method_selection_handler import (
+    MethodSelectionInput,
+    handle_method_selection,
+)
+from apps.gateway.api.webhooks.whatsapp.flows.handlers.onboarding_pin_handler import (
+    OnboardingPinInput,
+    handle_onboarding_pin,
+)
+from apps.gateway.api.webhooks.whatsapp.flows.handlers.otp_handler import (
+    OtpVerificationInput,
+    handle_otp_verification,
+)
+from apps.gateway.api.webhooks.whatsapp.flows.handlers.transaction_pin_handler import (
+    handle_transaction_pin,
+)
 from apps.gateway.api.webhooks.whatsapp.flows.request_processor import process_flow_request
+from shared.clients.whatsapp.client import WhatsAppClient
+from shared.queue.redis_queue import RedisQueue
+from shared.utils import encrypt_flow_response
 
 router = APIRouter()
 
@@ -35,7 +51,7 @@ async def flow_webhook(
     """
     Handle WhatsApp Flow data exchange.
     This is called when user interacts with flow screens or for health checks.
-    
+
     Note: Agent services are now called via Redis queue events, not directly.
     """
     try:
@@ -52,7 +68,6 @@ async def flow_webhook(
         request_was_encrypted = processed_request.request_was_encrypted
         aes_key_bytes = processed_request.aes_key_bytes
         iv_bytes = processed_request.iv_bytes
-
 
         if screen == "BVN_ENTRY":
             return await handle_bvn_entry(
@@ -130,12 +145,8 @@ async def flow_webhook(
 
         if request_was_encrypted:
             if aes_key_bytes is None or iv_bytes is None:
-                return JSONResponse(
-                    content={"error": "Encryption keys missing"}, status_code=500
-                )
-            encrypted_response = encrypt_flow_response(
-                health_response, aes_key_bytes, iv_bytes
-            )
+                return JSONResponse(content={"error": "Encryption keys missing"}, status_code=500)
+            encrypted_response = encrypt_flow_response(health_response, aes_key_bytes, iv_bytes)
             return Response(content=encrypted_response, media_type="text/plain")
 
         return Response(content=json.dumps(health_response), media_type="text/plain")

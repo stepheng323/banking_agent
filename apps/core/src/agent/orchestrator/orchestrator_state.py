@@ -1,5 +1,6 @@
 """State for the orchestrator."""
-from typing import Optional, TypedDict
+
+from typing import TypedDict
 
 
 class OrchestratorState(TypedDict):
@@ -9,5 +10,5 @@ class OrchestratorState(TypedDict):
     message: str
     message_id: str
     response: str
-    intent: Optional[str]
-    is_complex: Optional[bool]
+    intent: str | None
+    is_complex: bool | None

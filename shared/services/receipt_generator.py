@@ -1,13 +1,10 @@
 """Receipt generator service for creating image receipts from HTML template."""
 
-import asyncio
 from datetime import datetime
-from typing import Optional
-from io import BytesIO
 
-from playwright.async_api import async_playwright, Browser, Page
+from playwright.async_api import Browser, async_playwright
+
 from shared.database.models import Transaction
-
 
 RECEIPT_HTML_TEMPLATE = """<!DOCTYPE html>
 <html lang='en'>
@@ -159,7 +156,7 @@ class ReceiptGenerator:
     """Service for generating receipt images from HTML template."""
 
     def __init__(self):
-        self._browser: Optional[Browser] = None
+        self._browser: Browser | None = None
         self._playwright = None
 
     async def _ensure_browser(self) -> Browser:
@@ -179,7 +176,7 @@ class ReceiptGenerator:
             self._playwright = None
 
     def generate_receipt_html(
-        self, transaction: Transaction, account_name: Optional[str] = None
+        self, transaction: Transaction, account_name: str | None = None
     ) -> str:
         """
         Generate receipt HTML from template with transaction data.
@@ -215,7 +212,9 @@ class ReceiptGenerator:
         # Beneficiary details
         beneficiary_name = transaction.recipient_name or "N/A"
         beneficiary_account = transaction.recipient_account_number or "N/A"
-        beneficiary_bank = transaction.recipient_bank_name or transaction.recipient_bank_code or "N/A"
+        beneficiary_bank = (
+            transaction.recipient_bank_name or transaction.recipient_bank_code or "N/A"
+        )
 
         # Narration
         narration = transaction.narration or "No narration"
@@ -276,7 +275,7 @@ class ReceiptGenerator:
             await page.close()
 
     async def generate_receipt_image(
-        self, transaction: Transaction, account_name: Optional[str] = None
+        self, transaction: Transaction, account_name: str | None = None
     ) -> bytes:
         """
         Generate receipt image from transaction data.
@@ -291,4 +290,3 @@ class ReceiptGenerator:
         html = self.generate_receipt_html(transaction, account_name)
         image_bytes = await self.html_to_image(html)
         return image_bytes
-

@@ -1,22 +1,21 @@
 """Airtime purchase service facade using LangGraph."""
 
-from typing import Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 if TYPE_CHECKING:
     from apps.core.src.agent.tools.flow_completion import FlowCompletionCallback
 
 from langchain_openai import ChatOpenAI
 
-from shared.cache.user_data import UserDataCache
-from shared.repositories.beneficiary_repository import BeneficiaryRepository
-from shared.repositories.account_repository import AccountRepository
-from shared.repositories.actionable_message_repository import ActionableMessageRepository
-from shared.clients.whatsapp.client import WhatsAppClient
-from shared.queue.redis_queue import RedisQueue
-from shared.utils.logging import get_logger
-
 from apps.core.src.agent.sub_agents.airtime.extractor import AirtimeEntityExtractor
 from apps.core.src.agent.sub_agents.airtime.graph import AirtimeFlowGraph
+from shared.cache.user_data import UserDataCache
+from shared.clients.whatsapp.client import WhatsAppClient
+from shared.queue.redis_queue import RedisQueue
+from shared.repositories.account_repository import AccountRepository
+from shared.repositories.actionable_message_repository import ActionableMessageRepository
+from shared.repositories.beneficiary_repository import BeneficiaryRepository
+from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
 
@@ -26,13 +25,13 @@ class AirtimeService:
 
     def __init__(
         self,
-        llm: Optional[ChatOpenAI],
+        llm: ChatOpenAI | None,
         user_cache: UserDataCache,
         account_repo: AccountRepository,
         beneficiary_repo: BeneficiaryRepository,
         whatsapp_client: WhatsAppClient,
         queue: RedisQueue,
-        actionable_message_repo: Optional[ActionableMessageRepository] = None,
+        actionable_message_repo: ActionableMessageRepository | None = None,
         completion_callback: Optional["FlowCompletionCallback"] = None,
     ) -> None:
         self.extractor = AirtimeEntityExtractor(llm)
@@ -48,18 +47,16 @@ class AirtimeService:
         )
 
     async def run_simple(
-        self, 
-        phone: str, 
-        text: str, 
-        classification_result: Optional[dict] = None,
+        self,
+        phone: str,
+        text: str,
+        classification_result: dict | None = None,
         image_data: str | None = None,
-        quoted_data: dict | None = None
+        quoted_data: dict | None = None,
     ) -> str:
         """Run the airtime purchase flow using LangGraph."""
         return await self.graph.run(
-            phone, text, "", classification_result,
-            image_data=image_data,
-            quoted_data=quoted_data
+            phone, text, "", classification_result, image_data=image_data, quoted_data=quoted_data
         )
 
     async def clear_checkpoint(self, phone_number: str) -> None:
@@ -67,4 +64,6 @@ class AirtimeService:
         try:
             await self.graph.clear_checkpoint(phone_number)
         except Exception as e:
-            logger.error("airtime_checkpoint_clear_error", phone=phone_number, error=str(e), exc_info=True)
+            logger.error(
+                "airtime_checkpoint_clear_error", phone=phone_number, error=str(e), exc_info=True
+            )

@@ -1,6 +1,6 @@
 """Flow completion callback interface for multi-task execution."""
 
-from typing import Protocol, Any
+from typing import Any, Protocol
 
 
 class FlowCompletionCallback(Protocol):
@@ -21,4 +21,3 @@ class FlowCompletionCallback(Protocol):
             result: Flow execution result with status and any relevant data
         """
         ...
-

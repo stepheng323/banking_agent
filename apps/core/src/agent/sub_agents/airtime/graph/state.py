@@ -1,11 +1,9 @@
 """State management utilities for airtime purchase flow graph."""
 
 import json
-from typing import Optional
-
-from shared.cache.redis_client import RedisClient
 
 from apps.core.src.agent.sub_agents.airtime.state import AirtimeState
+from shared.cache.redis_client import RedisClient
 
 from .utils import debug_log
 
@@ -14,11 +12,11 @@ def create_initial_state(
     phone_number: str,
     message: str,
     message_id: str,
-    classification_result: Optional[dict] = None,
-    quoted_data: dict | None = None
+    classification_result: dict | None = None,
+    quoted_data: dict | None = None,
 ) -> AirtimeState:
     """Create initial state for airtime purchase flow.
-    
+
     Args:
         quoted_data: Data from quoted transaction (for repeat/modify).
                      Expected format: {"data": {"amount": ..., "recipient_phone": ..., ...}}
@@ -30,7 +28,7 @@ def create_initial_state(
     amount = None
     recipient_phone = None
     network = None
-    
+
     if quoted_data:
         data = quoted_data.get("data", {})
         amount = data.get("amount")
@@ -82,14 +80,24 @@ async def update_conversation_state(phone_number: str, state: AirtimeState) -> N
 
         should_save = False
         amount = state.get("amount")
-        
+
         # Keep conversation_state alive during active flow for mid-flow corrections
         # This ensures "I meant 400" type corrections work during confirmation
-        if (airtime_status == "pending" or
-            flow_state in ("confirming", "authorizing", "validating", "collecting_amount", "collecting_phone", "selecting_account") or
-            (flow_state not in ("extracting", "error", None) and active_flow == "airtime") or
-            idem_key or
-            (flow_state == "extracting" and amount)):
+        if (
+            airtime_status == "pending"
+            or flow_state
+            in (
+                "confirming",
+                "authorizing",
+                "validating",
+                "collecting_amount",
+                "collecting_phone",
+                "selecting_account",
+            )
+            or (flow_state not in ("extracting", "error", None) and active_flow == "airtime")
+            or idem_key
+            or (flow_state == "extracting" and amount)
+        ):
             should_save = True
 
         if should_save:
@@ -105,7 +113,8 @@ async def update_conversation_state(phone_number: str, state: AirtimeState) -> N
             key = f"user:{phone_number}:conversation_state"
             await redis_client.set(key, json.dumps(conversation_state), ex=3600)
             debug_log(
-                f"✓ Updated conversation_state for {phone_number}: active_flow={active_flow}, flow_state={flow_state}, airtime_status={airtime_status}")
+                f"✓ Updated conversation_state for {phone_number}: active_flow={active_flow}, flow_state={flow_state}, airtime_status={airtime_status}"
+            )
         else:
             key = f"user:{phone_number}:conversation_state"
             await redis_client.delete(key)

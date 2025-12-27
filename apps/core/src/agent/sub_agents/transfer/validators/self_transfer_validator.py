@@ -1,6 +1,5 @@
 """Self-transfer validation component."""
 
-from typing import Optional, Tuple
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -11,11 +10,11 @@ class SelfTransferValidator:
 
     def validate(
         self,
-        recipient_account: Optional[str],
-        recipient_bank_code: Optional[str],
-        recipient_bank_name: Optional[str],
-        source_account: Optional[dict],
-    ) -> Tuple[bool, Optional[str]]:
+        recipient_account: str | None,
+        recipient_bank_code: str | None,
+        recipient_bank_name: str | None,
+        source_account: dict | None,
+    ) -> tuple[bool, str | None]:
         """
         Check if recipient matches source account.
 
@@ -41,7 +40,7 @@ class SelfTransferValidator:
         source_bank = (source_bank_name or "").lower().strip()
 
         account_matches = recipient_account == source_account_number
-        
+
         bank_matches = False
         if recipient_bank_code and source_bank_code:
             bank_matches = recipient_bank_code == source_bank_code
@@ -60,7 +59,7 @@ class SelfTransferValidator:
                 recipient_bank=bank_identifier,
             )
             return False, error_message
-        
+
         if account_matches and not bank_matches:
             logger.debug(
                 "same_account_different_bank",

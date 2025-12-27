@@ -4,10 +4,10 @@ import hashlib
 import json
 
 from apps.core.src.agent.sub_agents.transfer.state import TransferState
-from shared.formatters.transfer import format_transfer_summary
+from shared.cache.redis_client import Redis
 from shared.clients.whatsapp.client import WhatsAppClient
 from shared.config import settings
-from shared.cache.redis_client import Redis
+from shared.formatters.transfer import format_transfer_summary
 
 
 async def prepare_confirmation(
@@ -17,24 +17,27 @@ async def prepare_confirmation(
 ) -> TransferState:
     """Prepare transfer confirmation summary."""
     from shared.utils.logging import get_logger
+
     logger = get_logger(__name__)
-    
+
     phone_number = state.get("phone_number")
-    logger.info("prepare_confirmation_ENTRY",
-               phone_number=phone_number,
-               flow_state=state.get("flow_state"),
-               skip_confirmation_display=state.get("skip_confirmation_display"))
-    
+    logger.info(
+        "prepare_confirmation_ENTRY",
+        phone_number=phone_number,
+        flow_state=state.get("flow_state"),
+        skip_confirmation_display=state.get("skip_confirmation_display"),
+    )
+
     if state.get("skip_confirmation_display"):
         return {
             **state,
             "response": "",
             "skip_confirmation_display": False,
         }
-    
+
     queue_key = f"user:{phone_number}:task_queue"
     has_active_queue = await redis_client.exists(queue_key)
-    
+
     existing_idem_key = state.get("idempotency_key")
     if existing_idem_key:
         pending_data = await redis_client.get(f"user:{phone_number}:pending_transfer")
@@ -58,11 +61,11 @@ async def prepare_confirmation(
     amount = state.get("amount")
     account_resolved = state.get("account_resolved")
     rec_name = (
-        account_resolved.get("account_name") if account_resolved and isinstance(account_resolved, dict)
+        account_resolved.get("account_name")
+        if account_resolved and isinstance(account_resolved, dict)
         else state.get("recipient_name") or "Recipient"
     )
-    bank_name = state.get("recipient_bank_name") or state.get(
-        "recipient_bank_code") or ""
+    bank_name = state.get("recipient_bank_name") or state.get("recipient_bank_code") or ""
     acct_number = state.get("recipient_account")
     source = state.get("selected_source_account", {})
     narration = state.get("narration")
@@ -70,25 +73,25 @@ async def prepare_confirmation(
     idem_key = state.get("idempotency_key")
     if not idem_key:
         idem_key = hashlib.sha256(
-            f"{state['phone_number']}|{amount}|{acct_number}|{bank_name}".encode(
-                "utf-8")
+            f"{state['phone_number']}|{amount}|{acct_number}|{bank_name}".encode()
         ).hexdigest()
 
     source_account_number = source.get("account_number") or ""
-    source_bank_name = source.get(
-        "bank_name") or source.get("name") or "Account"
+    source_bank_name = source.get("bank_name") or source.get("name") or "Account"
 
-    summary = format_transfer_summary({
-        "amount": float(amount or 0),
-        "recipientName": rec_name,
-        "recipientBank": bank_name,
-        "recipientAccount": str(acct_number),
-        "sourceBank": source_bank_name,
-        "sourceAccount": source_account_number,
-        "narration": narration,
-    })
+    summary = format_transfer_summary(
+        {
+            "amount": float(amount or 0),
+            "recipientName": rec_name,
+            "recipientBank": bank_name,
+            "recipientAccount": str(acct_number),
+            "sourceBank": source_bank_name,
+            "sourceAccount": source_account_number,
+            "narration": narration,
+        }
+    )
 
-    pending = {
+    {
         "phone": state["phone_number"],
         "amount": amount,
         "recipient": {
@@ -96,7 +99,8 @@ async def prepare_confirmation(
             "account_number": acct_number,
             "bank_code": state.get("recipient_bank_code"),
             "bank_name": bank_name,
-            "original_alias": state.get("recipient_name") or "",  # Original name user used (e.g., "Mum")
+            "original_alias": state.get("recipient_name")
+            or "",  # Original name user used (e.g., "Mum")
         },
         "source": {
             "id": source.get("id"),
@@ -114,12 +118,10 @@ async def prepare_confirmation(
     pipe.setex(
         f"user:{state['phone_number']}:pending_transfer_flow_token",
         settings.pending_transaction_ttl,
-        token
+        token,
     )
     pipe.setex(
-        f"transfer:token:{idem_key}:phone",
-        settings.pending_transaction_ttl,
-        state["phone_number"]
+        f"transfer:token:{idem_key}:phone", settings.pending_transaction_ttl, state["phone_number"]
     )
     await pipe.execute()
 
@@ -133,18 +135,16 @@ async def prepare_confirmation(
             "recipient_bank_name": bank_name,
             "recipient_name": rec_name,
         }
-        await redis_client.set(
-            prev_key,
-            json.dumps(prev_values),
-            ex=3600
-        )
+        await redis_client.set(prev_key, json.dumps(prev_values), ex=3600)
 
     if has_active_queue:
-        logger.info("prepare_confirmation_RETURNING",
-                   has_token=bool(token),
-                   has_summary=bool(summary),
-                   token_preview=token[:20] if token else "NONE",
-                   has_active_queue=True)
+        logger.info(
+            "prepare_confirmation_RETURNING",
+            has_token=bool(token),
+            has_summary=bool(summary),
+            token_preview=token[:20] if token else "NONE",
+            has_active_queue=True,
+        )
         return {
             **state,
             "idempotency_key": idem_key,
@@ -155,10 +155,10 @@ async def prepare_confirmation(
             "response": "",  # Clear stale response
             "llm_reply": None,
         }
-    logger.info("prepare_confirmation_RETURNING_FUNDING",
-               has_token=bool(token),
-               has_active_queue=False)
-    
+    logger.info(
+        "prepare_confirmation_RETURNING_FUNDING", has_token=bool(token), has_active_queue=False
+    )
+
     # CRITICAL: Return correct state for checkpointing
     # Must set flow_state to confirming_funding so verify_funding can pick it up
     return {

@@ -1,10 +1,8 @@
 """Account validation component."""
 
-import asyncio
-from shared.utils.async_helpers import create_background_task
-from typing import Optional, Tuple
 from apps.core.src.agent.tools.validation.service import AsyncValidationService
 from shared.clients.whatsapp.client import WhatsAppClient
+from shared.utils.async_helpers import create_background_task
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -16,7 +14,7 @@ class AccountValidator:
     def __init__(
         self,
         validation_service: AsyncValidationService,
-        whatsapp_client: Optional[WhatsAppClient] = None,
+        whatsapp_client: WhatsAppClient | None = None,
     ):
         """
         Initialize validator.
@@ -33,8 +31,8 @@ class AccountValidator:
         account_number: str,
         bank_code: str,
         source_account_id: str,
-        phone_number: Optional[str] = None,
-    ) -> Tuple[Optional[dict], Optional[dict]]:
+        phone_number: str | None = None,
+    ) -> tuple[dict | None, dict | None]:
         """
         Validate account and check balance.
 
@@ -52,10 +50,7 @@ class AccountValidator:
         if self.whatsapp_client and phone_number:
             try:
                 create_background_task(
-                    self.whatsapp_client.send_text(
-                        phone_number,
-                        "🔍 Validating account details..."
-                    )
+                    self.whatsapp_client.send_text(phone_number, "🔍 Validating account details...")
                 )
             except Exception as e:
                 logger.warning("validation_ack_failed", error=str(e))

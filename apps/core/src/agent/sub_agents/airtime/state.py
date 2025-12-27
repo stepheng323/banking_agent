@@ -1,6 +1,6 @@
 """LangGraph state for airtime purchase flow."""
 
-from typing import Literal, NotRequired, Optional, TypedDict
+from typing import Literal, NotRequired, TypedDict
 
 
 class AirtimeState(TypedDict):
@@ -21,40 +21,39 @@ class AirtimeState(TypedDict):
         "authorizing",
         "completed",
         "error",
-        "cancelled"
+        "cancelled",
     ]
 
-    amount: Optional[float]
-    recipient_phone: Optional[str]
-    network: Optional[str]
-    source_account_id: Optional[str]
-    narration: Optional[str]
+    amount: float | None
+    recipient_phone: str | None
+    network: str | None
+    source_account_id: str | None
+    narration: str | None
 
     missing_fields: list[str]
 
-    user_profile: Optional[dict]
+    user_profile: dict | None
     accounts: list[dict]
     beneficiaries: list[dict]
 
-    selected_source_account: Optional[dict]
-    matched_beneficiary: Optional[dict]
+    selected_source_account: dict | None
+    matched_beneficiary: dict | None
 
-    balance_available: Optional[float]
+    balance_available: float | None
     validation_errors: list[str]
 
     response: str
-    llm_reply: Optional[str]
+    llm_reply: str | None
 
-    recipient_name: Optional[str]
+    recipient_name: str | None
 
-    idempotency_key: Optional[str]
-    airtime_status: Literal["pending", "confirmed",
-                            "authorized", "completed", "failed", None]
+    idempotency_key: str | None
+    airtime_status: Literal["pending", "confirmed", "authorized", "completed", "failed", None]
 
-    classification_result: NotRequired[Optional[dict]]
+    classification_result: NotRequired[dict | None]
 
-    pin_verified: NotRequired[Optional[bool]]
-    pin_verification_error: NotRequired[Optional[str]]
+    pin_verified: NotRequired[bool | None]
+    pin_verification_error: NotRequired[str | None]
     pin_retry_count: NotRequired[int]
-    
-    language: NotRequired[Optional[str]]
+
+    language: NotRequired[str | None]

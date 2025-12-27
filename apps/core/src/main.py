@@ -1,22 +1,21 @@
 """Core Banking Service main module."""
-from shared.utils.logging import configure_logger, get_logger
-
-configure_logger()
-logger = get_logger(__name__)
 
 import asyncio
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
 import redis.asyncio as redis
+from fastapi import FastAPI
 
-from shared.config import settings
-from shared.database.connection import init_db
+from apps.core.src.dependencies import setup_dependencies
 from shared.cache import BankCacheService
 from shared.cache.redis_client import RedisClient
 from shared.clients.factories.payment import PaymentProviderFactory
+from shared.config import settings
+from shared.database.connection import init_db
+from shared.utils.logging import configure_logger, get_logger
 
-from apps.core.src.dependencies import setup_dependencies
+configure_logger()
+logger = get_logger(__name__)
 
 
 @asynccontextmanager
@@ -33,8 +32,7 @@ async def lifespan(_app: FastAPI):
     payment_provider = None
     try:
         logger.info("Initializing payment provider...")
-        payment_provider = PaymentProviderFactory.get_provider_for_service(
-            "resolve_account")
+        payment_provider = PaymentProviderFactory.get_provider_for_service("resolve_account")
 
         if payment_provider:
             logger.info(f"{payment_provider.provider_name.title()} ready")
@@ -45,11 +43,7 @@ async def lifespan(_app: FastAPI):
 
     redis_client = None
     try:
-        redis_client = redis.from_url(
-            settings.redis_url,
-            encoding="utf-8",
-            decode_responses=True
-        )
+        redis_client = redis.from_url(settings.redis_url, encoding="utf-8", decode_responses=True)
         RedisClient.set_client(redis_client)
         logger.info("Redis client initialized")
     except Exception as e:
@@ -60,7 +54,8 @@ async def lifespan(_app: FastAPI):
             logger.info("Warming up bank cache...")
             bank_cache = BankCacheService(redis_client=redis_client)
 
-            if payment_provider and hasattr(payment_provider, 'fetch_banks'):
+            if payment_provider and hasattr(payment_provider, "fetch_banks"):
+
                 async def fetch_banks():
                     return await payment_provider.fetch_banks(country="NG")
 

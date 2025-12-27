@@ -2,7 +2,6 @@
 
 import json
 from dataclasses import dataclass
-from typing import Optional
 
 from shared.cache.redis_client import RedisClient
 from shared.repositories.unit_of_work import UnitOfWork
@@ -14,9 +13,9 @@ class AuthorizationResult:
     """Result of PIN authorization attempt."""
 
     verified: bool
-    user_id: Optional[str] = None
-    transaction_type: Optional[str] = None
-    error: Optional[str] = None
+    user_id: str | None = None
+    transaction_type: str | None = None
+    error: str | None = None
     retry_count: int = 0
     attempts_remaining: int = 3
 
@@ -30,7 +29,7 @@ class AuthorizationService:
 
     async def get_transaction_type_from_pending(
         self, idempotency_key: str, phone_number: str
-    ) -> Optional[str]:
+    ) -> str | None:
         """
         Extract transaction type from pending transaction in Redis.
 
@@ -55,8 +54,7 @@ class AuthorizationService:
         return None
 
     async def verify_pin(
-        self, phone_number: str, pin: str, idempotency_key: str,
-        transaction_type: Optional[str] = None
+        self, phone_number: str, pin: str, idempotency_key: str, transaction_type: str | None = None
     ) -> AuthorizationResult:
         """
         Verify PIN for a transaction.
@@ -70,9 +68,7 @@ class AuthorizationService:
             AuthorizationResult with verification status
         """
         if not pin:
-            return AuthorizationResult(
-                verified=False, error="PIN is required", retry_count=0
-            )
+            return AuthorizationResult(verified=False, error="PIN is required", retry_count=0)
 
         if not is_valid_pin_format(str(pin)):
             return AuthorizationResult(
@@ -176,13 +172,9 @@ class AuthorizationService:
             "retry_count": result.retry_count,
             "attempts_remaining": result.attempts_remaining,
         }
-        await self.redis_client.setex(
-            pin_verification_key, 900, json.dumps(result_data)
-        )
+        await self.redis_client.setex(pin_verification_key, 900, json.dumps(result_data))
 
-    async def get_pin_verification_result(
-        self, idempotency_key: str
-    ) -> Optional[AuthorizationResult]:
+    async def get_pin_verification_result(self, idempotency_key: str) -> AuthorizationResult | None:
         """
         Retrieve PIN verification result from Redis.
 

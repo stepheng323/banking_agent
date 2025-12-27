@@ -1,6 +1,6 @@
 """Onboarding handler"""
 
-from typing import Any, Dict
+from typing import Any
 
 from apps.core.src.agent.sub_agents.onboarding.service import OnboardingService
 from shared.clients.whatsapp.client import WhatsAppClient
@@ -13,6 +13,7 @@ from shared.repositories.user_repository import UserRepository
 
 class OnboardingExecutor:
     """Onboarding handler"""
+
     def __init__(
         self,
         whatsapp_client: WhatsAppClient,
@@ -23,7 +24,7 @@ class OnboardingExecutor:
         self.user_repository = user_repository
         self.onboarding_service = onboarding_service
 
-    async def handle_onboarding(self, message: WhatsAppMessage) -> Dict[str, Any]:
+    async def handle_onboarding(self, message: WhatsAppMessage) -> dict[str, Any]:
         """Handle onboarding messages - start flow."""
         phone_number = message.from_number
         await self.onboarding_service.send_onboarding_flow(phone_number)

@@ -4,12 +4,10 @@ Note: All agent service calls are now handled via Redis queue events.
 Gateway only needs redis queue and whatsapp client.
 """
 
+from apps.gateway.core.config import settings
 from shared.clients.whatsapp.client import WhatsAppClient
 from shared.queue.redis_queue import RedisQueue
 from shared.services.task_queue import TaskQueueService
-
-from apps.gateway.core.config import settings
-
 
 _redis_queue_instance = None
 
@@ -33,4 +31,5 @@ def get_whatsapp_client() -> WhatsAppClient:
 def get_task_queue_service() -> TaskQueueService:
     """Dependency factory for TaskQueueService (from shared)."""
     from shared.services.task_queue import task_queue_service
+
     return task_queue_service

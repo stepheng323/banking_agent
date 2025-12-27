@@ -2,20 +2,25 @@
 
 from typing import cast
 
-from apps.core.src.agent.sub_agents.transfer.state import TransferState
-from shared.services.transactions import create_transfer_transaction
 from apps.core.src.agent.orchestrator.features.response import (
     ResponseIntent,
     build_response_context,
     get_synthesizer,
 )
-from shared.services.auth import AuthorizationService
-from shared.cache.redis_client import Redis
-from shared.queue.redis_queue import RedisQueue
 from apps.core.src.agent.sub_agents.transfer.nodes.utils import debug_log
-from shared.utils.logging import get_logger
+from apps.core.src.agent.sub_agents.transfer.state import TransferState
+from shared.cache.redis_client import Redis
 from shared.database.connection import get_db
-from shared.database.models import FundedTransfer, FundingStep, FundedTransferStatusEnum
+from shared.database.models import (
+    FundedTransfer,
+    FundedTransferStatusEnum,
+    FundingStep,
+    FundingStepStatusEnum,
+)
+from shared.queue.redis_queue import RedisQueue
+from shared.services.auth import AuthorizationService
+from shared.services.transactions import create_transfer_transaction
+from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
 
@@ -30,9 +35,17 @@ async def authorize_transaction(
     phone_number = state.get("phone_number")
     idem_key = state.get("idempotency_key")
     synthesizer = get_synthesizer()
-    
-    logger.info("authorize_transaction_ENTRY", phone=phone_number, idem_key=idem_key, flow_state=state.get('flow_state'), funding_status=state.get('funding_status'))
-    debug_log(f"🔐 authorize_transaction ENTRY: phone={phone_number}, idem_key={idem_key}, flow_state={state.get('flow_state')}, transfer_status={state.get('transfer_status')}")
+
+    logger.info(
+        "authorize_transaction_ENTRY",
+        phone=phone_number,
+        idem_key=idem_key,
+        flow_state=state.get("flow_state"),
+        funding_status=state.get("funding_status"),
+    )
+    debug_log(
+        f"🔐 authorize_transaction ENTRY: phone={phone_number}, idem_key={idem_key}, flow_state={state.get('flow_state')}, transfer_status={state.get('transfer_status')}"
+    )
 
     if not idem_key:
         context = build_response_context(ResponseIntent.SESSION_EXPIRED, state)
@@ -49,7 +62,7 @@ async def authorize_transaction(
 
     if not authorization_service:
         authorization_service = AuthorizationService(redis_client=redis_client)
-    
+
     pin_result = await authorization_service.get_pin_verification_result(idem_key)
     pin_verified_in_state = state.get("pin_verified")
 
@@ -71,11 +84,7 @@ async def authorize_transaction(
 
         if retry_count >= 3:
             await redis_client.delete(f"user:{phone_number}:pending_transfer")
-            context = build_response_context(
-                ResponseIntent.MAX_ATTEMPTS_EXCEEDED, 
-                state,
-                error_message=error_msg
-            )
+            context = build_response_context(ResponseIntent.MAX_ATTEMPTS_EXCEEDED, state, error_message=error_msg)
             response = await synthesizer.synthesize(context)
             return cast(
                 TransferState,
@@ -90,11 +99,7 @@ async def authorize_transaction(
                 },
             )
 
-        context = build_response_context(
-            ResponseIntent.PIN_FAILED,
-            state,
-            error_message=error_msg
-        )
+        context = build_response_context(ResponseIntent.PIN_FAILED, state, error_message=error_msg)
         response = await synthesizer.synthesize(context)
         return cast(
             TransferState,
@@ -114,7 +119,7 @@ async def authorize_transaction(
         recipient_bank_name = state.get("recipient_bank_name")
         recipient_bank_code = state.get("recipient_bank_code")
         recipient_name = state.get("recipient_name")
-        
+
         if not amount or not recipient_account:
             logger.warning(
                 "authorization_missing_data",
@@ -136,9 +141,9 @@ async def authorize_transaction(
                 "account_number": recipient_account,
                 "bank_name": recipient_bank_name,
                 "bank_code": recipient_bank_code,
-                "name": recipient_name
+                "name": recipient_name,
             },
-            "idempotency_key": state.get("idempotency_key")
+            "idempotency_key": state.get("idempotency_key"),
         }
 
         user_id = None
@@ -165,12 +170,12 @@ async def authorize_transaction(
                         "transfer_status": "failed",
                     },
                 )
-        
+
         pending_transfer["user_id"] = user_id
         funding_required = state.get("funding_required", False)
         funding_steps = state.get("funding_steps", [])
         funded_transfer_id = None
-        
+
         if funding_required and funding_steps:
             db = next(get_db())
             try:
@@ -187,9 +192,10 @@ async def authorize_transaction(
                 db.add(funded_transfer)
                 db.flush()  # Get the ID
                 funded_transfer_id = str(funded_transfer.id)
-                
+
                 # Create FundingStep records
                 from datetime import datetime
+
                 for idx, step in enumerate(funding_steps, start=1):
                     # Map status from funding step to FundingStepStatusEnum
                     step_status = step.get("status", "pending")
@@ -201,11 +207,11 @@ async def authorize_transaction(
                         funding_step_status = FundingStepStatusEnum.PENDING.value
                     else:
                         funding_step_status = step_status  # Use as-is if already in enum format
-                    
+
                     # Detect provider from environment or default to mono for production
                     # In development/test, we use "mock"
                     provider_name = step.get("provider", "mono")  # Default to mono unless specified
-                    
+
                     funding_step = FundingStep(
                         funded_transfer_id=funded_transfer.id,
                         account_id=step.get("account_id"),
@@ -219,13 +225,13 @@ async def authorize_transaction(
                         error_message=step.get("error"),
                     )
                     db.add(funding_step)
-                
+
                 db.commit()
                 logger.info(
                     "funded_transfer_created",
                     funded_transfer_id=funded_transfer_id,
                     num_steps=len(funding_steps),
-                    total_amount=amount
+                    total_amount=amount,
                 )
             except Exception as e:
                 db.rollback()
@@ -239,23 +245,25 @@ async def authorize_transaction(
             user_id,
             idem_key,
         )
-        
+
         # Link transaction to funded transfer if this was a multi-account funding
         if funded_transfer_id:
             from shared.repositories.unit_of_work import UnitOfWork
+
             with UnitOfWork() as uow:
                 try:
                     transaction = uow.transactions.get(transaction_id)
                     if transaction:
                         transaction.funded_transfer_id = funded_transfer_id
                         uow.commit()
-                        logger.info("transaction_linked_to_funded_transfer", 
-                                  transaction_id=transaction_id,
-                                  funded_transfer_id=funded_transfer_id)
+                        logger.info(
+                            "transaction_linked_to_funded_transfer",
+                            transaction_id=transaction_id,
+                            funded_transfer_id=funded_transfer_id,
+                        )
                 except Exception as e:
                     uow.rollback()
-                    logger.error("failed_to_link_transaction_to_funded_transfer", 
-                               error=str(e), exc_info=True)
+                    logger.error("failed_to_link_transaction_to_funded_transfer", error=str(e), exc_info=True)
 
         transfer_request = {
             "type": "execute_transfer",
@@ -304,7 +312,7 @@ async def authorize_transaction(
         context = build_response_context(
             ResponseIntent.TRANSFER_FAILED,
             state,
-            error_message="Failed to process authorization. Please try again."
+            error_message="Failed to process authorization. Please try again.",
         )
         response = await synthesizer.synthesize(context)
         return cast(

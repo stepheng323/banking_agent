@@ -1,6 +1,7 @@
 """Bank code resolution component."""
 
-from typing import Any, Optional
+from typing import Any
+
 from shared.cache.bank_cache import BankCacheService
 from shared.utils.logging import get_logger
 
@@ -23,7 +24,7 @@ class BankCodeResolver:
         self,
         bank_name: str,
         fetch_banks_func: Any,
-    ) -> Optional[str]:
+    ) -> str | None:
         """
         Resolve bank name to bank code.
 
@@ -43,7 +44,7 @@ class BankCodeResolver:
             return None
 
         bank_code = await self.bank_cache.get_bank_code(bank_name)
-        
+
         if bank_code:
             logger.debug("bank_code_resolved", bank_name=bank_name, code=bank_code)
         else:

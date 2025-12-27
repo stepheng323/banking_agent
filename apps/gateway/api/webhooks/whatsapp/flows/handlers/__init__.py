@@ -1,9 +1,9 @@
 """Flow screen handlers package."""
 
-from .otp_handler import handle_otp_verification, OtpVerificationInput
-from .bvn_handler import handle_bvn_entry
 from .account_selection_handler import handle_account_selection
+from .bvn_handler import handle_bvn_entry
 from .onboarding_pin_handler import handle_onboarding_pin
+from .otp_handler import OtpVerificationInput, handle_otp_verification
 from .transaction_pin_handler import handle_transaction_pin
 
 __all__ = [
@@ -12,5 +12,5 @@ __all__ = [
     "handle_account_selection",
     "handle_onboarding_pin",
     "handle_transaction_pin",
-    "OtpVerificationInput"
+    "OtpVerificationInput",
 ]

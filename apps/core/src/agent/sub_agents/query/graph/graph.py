@@ -1,31 +1,31 @@
 """LangGraph graph for query flow."""
 
 import json
-from typing import Optional, Dict, Any
 from functools import partial
+from typing import Any
 
 from langchain_core.runnables import Runnable
-from langgraph.graph import StateGraph, END
+from langgraph.graph import END, StateGraph
 
-from shared.clients.providers.mono import MonoClient
-from shared.cache.redis_client import RedisClient
-from apps.core.src.agent.tools.account_selection.mandate_validator import validate_mandate_status
-from apps.core.src.agent.sub_agents.query.parser import QueryParser
-from apps.core.src.agent.sub_agents.query.graph.state import QueryState
-from apps.core.src.agent.sub_agents.query.graph.nodes import (
-    parse_node,
-    fetch_node,
-    aggregate_node,
-    paginate_node,
-    refine_node,
-    format_node,
-)
 from apps.core.src.agent.sub_agents.query.graph.routing import (
-    route_after_parse,
-    route_after_fetch,
     detect_continuation_type,
     extract_filter_term,
+    route_after_fetch,
+    route_after_parse,
 )
+from apps.core.src.agent.sub_agents.query.graph.state import QueryState
+from apps.core.src.agent.sub_agents.query.nodes.aggregate import aggregate_node
+from apps.core.src.agent.sub_agents.query.nodes.fetch import fetch_node
+from apps.core.src.agent.sub_agents.query.nodes.format import format_node
+from apps.core.src.agent.sub_agents.query.nodes.parse import (
+    paginate_node,
+    parse_node,
+    refine_node,
+)
+from apps.core.src.agent.sub_agents.query.parser import QueryParser
+from apps.core.src.agent.tools.account_selection.mandate_validator import validate_mandate_status
+from shared.cache.redis_client import RedisClient
+from shared.clients.providers.mono import MonoClient
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -40,7 +40,7 @@ class QueryFlowGraph:
         self,
         llm: Runnable,
         mono_client: MonoClient,
-        redis_client: Optional[RedisClient] = None,
+        redis_client: RedisClient | None = None,
     ):
         """
         Initialize query flow graph.
@@ -69,16 +69,16 @@ class QueryFlowGraph:
         graph.add_node("error", self._error_node)
 
         graph.set_entry_point("parse")
-        
+
         graph.add_conditional_edges(
             "parse",
             route_after_parse,
             {
                 "fetch": "fetch",
                 "error": "error",
-            }
+            },
         )
-        
+
         graph.add_conditional_edges(
             "fetch",
             route_after_fetch,
@@ -86,9 +86,9 @@ class QueryFlowGraph:
                 "aggregate": "aggregate",
                 "format": "format",
                 "error": "error",
-            }
+            },
         )
-        
+
         graph.add_edge("aggregate", "format")
         graph.add_edge("paginate", "aggregate")
         graph.add_edge("refine", "fetch")
@@ -97,7 +97,7 @@ class QueryFlowGraph:
 
         return graph.compile()
 
-    async def _error_node(self, state: QueryState) -> Dict[str, Any]:
+    async def _error_node(self, state: QueryState) -> dict[str, Any]:
         """Handle error state."""
         response = state.get("response", "Something went wrong. Please try again.")
         return {
@@ -110,7 +110,7 @@ class QueryFlowGraph:
         self,
         phone_number: str,
         message: str,
-        user_ctx: Dict[str, Any],
+        user_ctx: dict[str, Any],
         message_id: str = "",
     ) -> str:
         """
@@ -133,42 +133,42 @@ class QueryFlowGraph:
                 break
         if not account and accounts:
             account = accounts[0]
-        
+
         if not account:
             return "You need to link a bank account before I can check your transactions."
-        
+
         # Block queries if account mandate is not ready
         is_valid, error, _ = validate_mandate_status(account)
         if not is_valid:
             return f"⚠️ {error}"
-        
+
         account_id = account.get("account_id") or account.get("mono_account_id")
         if not account_id:
             return "I couldn't find your linked account. Please try linking again."
 
         session_key = f"query:session:{phone_number}"
         session_data = await self._load_session(session_key)
-        
+
         session_active = session_data.get("session_active", False) if session_data else False
         continuation_type = detect_continuation_type(message, session_active)
-        
+
         if continuation_type == "show_more" and session_data:
             state = session_data
             state["message"] = message
             state["flow_state"] = "paginating"
             state["continuation_type"] = "show_more"
-            
+
             result = await self._run_continuation(state, "paginate")
-        
+
         elif continuation_type == "filter" and session_data:
             state = session_data
             state["message"] = message
             state["flow_state"] = "refining"
             state["continuation_type"] = "filter"
             state["new_filter"] = extract_filter_term(message)
-            
+
             result = await self._run_continuation(state, "refine")
-        
+
         else:
             state: QueryState = {
                 "phone_number": phone_number,
@@ -182,7 +182,11 @@ class QueryFlowGraph:
                 "transaction_type": "both",
                 "limit": 10,
                 "account_id": account_id,
-                "account_ids": [acc.get("account_id") or acc.get("mono_account_id") for acc in accounts if acc.get("account_id") or acc.get("mono_account_id")],
+                "account_ids": [
+                    acc.get("account_id") or acc.get("mono_account_id")
+                    for acc in accounts
+                    if acc.get("account_id") or acc.get("mono_account_id")
+                ],
                 "current_account_index": 0,
                 "account_info": account,
                 "current_page": 0,
@@ -194,7 +198,7 @@ class QueryFlowGraph:
                 "language": user_ctx.get("language", "English"),
                 "response": "",
             }
-            
+
             result = await self.graph.ainvoke(state)
 
         if result.get("session_active"):
@@ -204,7 +208,7 @@ class QueryFlowGraph:
 
         return result.get("response", "Query completed.")
 
-    async def _run_continuation(self, state: QueryState, start_node: str) -> Dict[str, Any]:
+    async def _run_continuation(self, state: QueryState, start_node: str) -> dict[str, Any]:
         """Run graph from a specific node for continuations."""
         if start_node == "paginate":
             state = {**state, **(await paginate_node(state))}
@@ -215,10 +219,10 @@ class QueryFlowGraph:
             state = {**state, **(await fetch_node(state, self.mono))}
             state = {**state, **(await aggregate_node(state))}
             state = {**state, **(await format_node(state, self.llm))}
-        
+
         return state
 
-    async def _load_session(self, key: str) -> Optional[Dict[str, Any]]:
+    async def _load_session(self, key: str) -> dict[str, Any] | None:
         """Load session state from Redis."""
         try:
             data = await self.redis.get(key)
@@ -228,17 +232,31 @@ class QueryFlowGraph:
             logger.error("load_session_error", error=str(e))
         return None
 
-    async def _save_session(self, key: str, state: Dict[str, Any]) -> None:
+    async def _save_session(self, key: str, state: dict[str, Any]) -> None:
         """Save session state to Redis."""
         try:
             save_state = {
-                k: v for k, v in state.items()
-                if k in (
-                    "phone_number", "query_type", "date_range", "narration_filter",
-                    "transaction_type", "limit", "account_id", "account_ids",
-                    "current_account_index", "account_info", "current_page",
-                    "page_size", "total_results", "has_more", "cached_transactions",
-                    "language", "session_active"
+                k: v
+                for k, v in state.items()
+                if k
+                in (
+                    "phone_number",
+                    "query_type",
+                    "date_range",
+                    "narration_filter",
+                    "transaction_type",
+                    "limit",
+                    "account_id",
+                    "account_ids",
+                    "current_account_index",
+                    "account_info",
+                    "current_page",
+                    "page_size",
+                    "total_results",
+                    "has_more",
+                    "cached_transactions",
+                    "language",
+                    "session_active",
                 )
             }
             await self.redis.set(key, json.dumps(save_state), ex=SESSION_TTL)

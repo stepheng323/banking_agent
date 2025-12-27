@@ -2,7 +2,7 @@
 
 import os
 from datetime import datetime
-from typing import Optional
+
 import aioboto3
 from botocore.exceptions import ClientError
 
@@ -19,7 +19,7 @@ class S3Client:
         self.session = aioboto3.Session()
 
     async def upload_receipt_image(
-        self, image_bytes: bytes, transaction_id: str, timestamp: Optional[datetime] = None
+        self, image_bytes: bytes, transaction_id: str, timestamp: datetime | None = None
     ) -> str:
         """
         Upload receipt image to S3.
@@ -69,8 +69,8 @@ class S3Client:
             raise
 
     async def get_receipt_url(
-        self, transaction_id: str, timestamp: Optional[datetime] = None
-    ) -> Optional[str]:
+        self, transaction_id: str, timestamp: datetime | None = None
+    ) -> str | None:
         """
         Get S3 URL for a receipt (if it exists).
 
@@ -81,11 +81,8 @@ class S3Client:
         Returns:
             S3 URL if found, None otherwise
         """
-        if timestamp is None:
-            # Try to find the most recent receipt
-            timestamp_str = "*"
-        else:
-            timestamp_str = timestamp.strftime("%Y%m%d_%H%M%S")
+        # Note: timestamp parameter reserved for future filtering
+        _ = timestamp  # Suppress unused parameter warning
 
         s3_key_prefix = f"{self.receipt_prefix}/{transaction_id}/"
 
@@ -116,4 +113,3 @@ class S3Client:
         except Exception as e:
             print(f"⚠️  Unexpected error retrieving receipt URL from S3: {e}")
             return None
-

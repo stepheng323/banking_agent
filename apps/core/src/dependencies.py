@@ -1,33 +1,37 @@
 from langchain_openai import ChatOpenAI
 
-from shared.clients.storage.s3_client import S3Client
-from shared.config import settings
-from shared.clients.whatsapp.client import WhatsAppClient
-from shared.database.connection import get_db_session
-from shared.queue.redis_queue import RedisQueue
-from shared.repositories import BeneficiaryRepository, AccountRepository
-from shared.repositories.actionable_message_repository import ActionableMessageRepository
-from shared.repositories.user_repository import UserRepository
-from shared.cache.redis_client import RedisClient
-from shared.services.receipt_generator import ReceiptGenerator
-from shared.cache.user_data import UserDataCache
-
 from apps.core.src.agent.orchestrator import OrchestratorAgent
-from apps.core.src.agent.orchestrator.services import ConversationResponder, TaskQueueService, TaskExecutor, MediaService
-from apps.core.src.agent.sub_agents.transfer import TransferService as AgentTransferService
+from apps.core.src.agent.orchestrator.services import (
+    ConversationResponder,
+    MediaService,
+    TaskExecutor,
+    TaskQueueService,
+)
+from apps.core.src.agent.sub_agents.account_management.service import AccountManagementService
 from apps.core.src.agent.sub_agents.airtime import AirtimeService
-from apps.core.src.queue_consumers import MessageConsumer, TransactionConsumer
-from apps.core.src.queue_consumers.flow_event_consumer import FlowEventConsumer
+from apps.core.src.agent.sub_agents.airtime.completion import AirtimeCompletionService
+from apps.core.src.agent.sub_agents.airtime.executor import AirtimeExecutor
 from apps.core.src.agent.sub_agents.onboarding.executor import OnboardingExecutor
 from apps.core.src.agent.sub_agents.onboarding.service import OnboardingService
-from apps.core.src.agent.sub_agents.transfer.executor import TransferExecutor
-from apps.core.src.agent.sub_agents.airtime.executor import AirtimeExecutor
-from apps.core.src.agent.sub_agents.transfer.completion import TransferCompletionService
-from apps.core.src.agent.sub_agents.airtime.completion import AirtimeCompletionService
-from apps.core.src.agent.tools.beneficiary.suggestion_service import BeneficiarySuggestionService
 from apps.core.src.agent.sub_agents.query.graph import QueryFlowGraph
-from apps.core.src.agent.sub_agents.account_management.service import AccountManagementService
+from apps.core.src.agent.sub_agents.transfer import TransferService as AgentTransferService
+from apps.core.src.agent.sub_agents.transfer.completion import TransferCompletionService
+from apps.core.src.agent.sub_agents.transfer.executor import TransferExecutor
+from apps.core.src.agent.tools.beneficiary.suggestion_service import BeneficiarySuggestionService
+from apps.core.src.queue_consumers import MessageConsumer, TransactionConsumer
+from apps.core.src.queue_consumers.flow_event_consumer import FlowEventConsumer
+from shared.cache.redis_client import RedisClient
+from shared.cache.user_data import UserDataCache
 from shared.clients.providers.mono import mono_client
+from shared.clients.storage.s3_client import S3Client
+from shared.clients.whatsapp.client import WhatsAppClient
+from shared.config import settings
+from shared.database.connection import get_db_session
+from shared.queue.redis_queue import RedisQueue
+from shared.repositories import AccountRepository, BeneficiaryRepository
+from shared.repositories.actionable_message_repository import ActionableMessageRepository
+from shared.repositories.user_repository import UserRepository
+from shared.services.receipt_generator import ReceiptGenerator
 
 
 def setup_dependencies():
@@ -41,8 +45,7 @@ def setup_dependencies():
     user_data_cache = UserDataCache(redis_client=shared_redis)
 
     onboarding_service = OnboardingService(whatsapp_client)
-    onboarding_executor = OnboardingExecutor(
-        whatsapp_client, user_repository, onboarding_service)
+    onboarding_executor = OnboardingExecutor(whatsapp_client, user_repository, onboarding_service)
 
     beneficiary_repository = BeneficiaryRepository(db=get_db_session())
     account_repository = AccountRepository(db=get_db_session())
@@ -65,7 +68,6 @@ def setup_dependencies():
         beneficiary_suggestion_service=beneficiary_suggestion_service,
     )
 
-
     llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
 
     query_graph = QueryFlowGraph(
@@ -77,7 +79,7 @@ def setup_dependencies():
         account_repo=account_repository,
         user_repo=user_repository,
         llm=llm,
-        whatsapp_client=whatsapp_client
+        whatsapp_client=whatsapp_client,
     )
 
     task_queue_service = TaskQueueService()
@@ -112,7 +114,6 @@ def setup_dependencies():
         query_graph=query_graph,
         completion_callback=None,
     )
-
 
     media_service = MediaService(whatsapp_client)
 

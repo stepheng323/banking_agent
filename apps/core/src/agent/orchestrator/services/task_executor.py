@@ -1,19 +1,19 @@
 """Task execution engine for multi-task execution."""
 
-from typing import Optional, Dict, Any, TYPE_CHECKING, Union
+from typing import TYPE_CHECKING, Any, Optional
 
-from shared.types.planner import PlannedTask
-from shared.services.task_queue import TaskQueueService
 from apps.core.src.agent.tools.flow_completion import FlowCompletionCallback
+from shared.services.task_queue import TaskQueueService
 from shared.types.agent_types import TaskStatus
+from shared.types.planner import PlannedTask
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
 
 if TYPE_CHECKING:
-    from apps.core.src.agent.sub_agents.transfer import TransferService
     from apps.core.src.agent.sub_agents.airtime import AirtimeService
     from apps.core.src.agent.sub_agents.query.graph import QueryFlowGraph
+    from apps.core.src.agent.sub_agents.transfer import TransferService
 
 
 class TaskExecutor:
@@ -25,7 +25,7 @@ class TaskExecutor:
         airtime_service: "AirtimeService",
         task_queue_service: TaskQueueService,
         query_graph: Optional["QueryFlowGraph"] = None,
-        completion_callback: Optional[FlowCompletionCallback] = None,
+        completion_callback: FlowCompletionCallback | None = None,
     ):
         self.transfer_service = transfer_service
         self.airtime_service = airtime_service
@@ -35,7 +35,7 @@ class TaskExecutor:
 
     async def execute_task(
         self, phone_number: str, task: PlannedTask, user_message: str
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Execute a single task.
 
@@ -64,31 +64,42 @@ class TaskExecutor:
             if user_message and user_message.strip():
                 # Check if user message contains account details (numbers, bank names)
                 import re
-                has_account_number = bool(re.search(r'\b\d{10}\b', user_message))
-                bank_keywords = ['bank', 'access', 'uba', 'gtb', 'zenith', 'first', 'opay', 'palmpay', 'kuda']
+
+                has_account_number = bool(re.search(r"\b\d{10}\b", user_message))
+                bank_keywords = [
+                    "bank",
+                    "access",
+                    "uba",
+                    "gtb",
+                    "zenith",
+                    "first",
+                    "opay",
+                    "palmpay",
+                    "kuda",
+                ]
                 has_bank_name = any(keyword in user_message.lower() for keyword in bank_keywords)
-                
+
                 # If user message has account details, use it directly (user is providing info)
                 if has_account_number or has_bank_name:
                     use_user_message = True
                     logger.debug("user_message_contains_account")
-            
+
             if use_user_message:
                 message_to_use = user_message
             else:
                 # Construct task-specific message from parameters for new task
                 message_to_use = self._construct_task_message(task, user_message)
                 logger.debug("using_constructed_task")
-                
+
                 # CRITICAL: When starting a NEW task (not continuing with user-provided details),
                 # clear the checkpoint to remove stale collection_complete status from previous task
-                if task.executor == "transfer" and hasattr(executor_service, 'clear_checkpoint'):
+                if task.executor == "transfer" and hasattr(executor_service, "clear_checkpoint"):
                     try:
                         await executor_service.clear_checkpoint(phone_number)
                         logger.info("cleared_transfer_checkpoint_for")
-                    except Exception as e:
+                    except Exception:
                         logger.error("error_clearing")
-            
+
             # Create classification_result with task parameters for transfer/airtime flows
             classification_result = None
             if task.executor in ("transfer", "airtime") and task.parameters:
@@ -97,11 +108,7 @@ class TaskExecutor:
                     "task_parameters": task.parameters,  # Pass task parameters
                 }
 
-            if task.executor == "transfer":
-                result = await executor_service.run_simple(
-                    phone_number, message_to_use, classification_result
-                )
-            elif task.executor == "airtime":
+            if task.executor == "transfer" or task.executor == "airtime":
                 result = await executor_service.run_simple(
                     phone_number, message_to_use, classification_result
                 )
@@ -133,7 +140,7 @@ class TaskExecutor:
             # The flow continues asynchronously and will call completion callback when done
             # The completion callback will mark the task as completed
             # Only return the initial response - completion is handled by flow's callback
-            
+
             return {"status": "in_progress", "result": result}
 
         except Exception as e:
@@ -147,16 +154,16 @@ class TaskExecutor:
     def _construct_task_message(self, task: PlannedTask, user_message: str) -> str:
         """
         Construct a task-specific message from task parameters.
-        
+
         Args:
             task: PlannedTask with parameters
             user_message: Original user message (fallback)
-            
+
         Returns:
             Task-specific message string
         """
         params = task.parameters or {}
-        
+
         # For transfer tasks, construct message from parameters
         if task.executor == "transfer":
             amount = params.get("amount")
@@ -167,21 +174,19 @@ class TaskExecutor:
                 return f"Send {amount}"
             elif recipient:
                 return f"Send to {recipient}"
-        
+
         # For airtime tasks
         elif task.executor == "airtime":
             amount = params.get("amount")
             if amount:
                 return f"Buy {amount} airtime"
-        
+
         # Fall back to original message or task instruction
         if user_message and user_message.strip():
             return user_message
         return task.instruction or task.action or ""
 
-    def can_execute_task(
-        self, task: PlannedTask, completed_task_ids: list[str]
-    ) -> bool:
+    def can_execute_task(self, task: PlannedTask, completed_task_ids: list[str]) -> bool:
         """
         Check if task dependencies are satisfied.
 
@@ -194,9 +199,7 @@ class TaskExecutor:
         """
         return all(dep_id in completed_task_ids for dep_id in task.depends_on)
 
-    def get_executor_for_task(
-        self, task: PlannedTask
-    ) -> Optional[Any]:
+    def get_executor_for_task(self, task: PlannedTask) -> Any | None:
         """
         Map task executor to service instance.
 
@@ -210,11 +213,6 @@ class TaskExecutor:
             return self.transfer_service
         elif task.executor == "airtime":
             return self.airtime_service
-        elif task.executor == "data":
-            return None
-        elif task.executor == "query":
-            return None
-        elif task.executor == "utility":
+        elif task.executor == "data" or task.executor == "query" or task.executor == "utility":
             return None
         return None
-

@@ -1,56 +1,57 @@
 """Account linking service for onboarding."""
 
 import asyncio
-from typing import Optional
 
 from shared.clients.providers.mono import mono_client
 from shared.clients.whatsapp.client import WhatsAppClient
-from shared.cache.user_data import UserDataCache
 from shared.models import CreateAccount, UserUpdate
 from shared.repositories.unit_of_work import UnitOfWork
 from shared.utils import hash_plaintext, is_valid_pin_format
 from shared.utils.logging import get_logger
 
-from .session import SessionManager, OnboardingStep
 from .mandate import MandateService
+from .session import OnboardingStep, SessionManager
 
 logger = get_logger(__name__)
 
 
 class AccountLinkingService:
     """Handles account selection and onboarding completion."""
-    
+
     def __init__(self, session_manager: SessionManager, mandate_service: MandateService):
         self.session = session_manager
         self.mandate = mandate_service
-    
-    async def select_account(self, flow_token: str, account_id: Optional[str]) -> dict:
+
+    async def select_account(self, flow_token: str, account_id: str | None) -> dict:
         """Store selected account."""
         if not account_id:
             session = await self.session.get_session(flow_token)
             return {
-                "success": False, 
+                "success": False,
                 "error": "Please select an account.",
-                "data": {"accounts": session.accounts if session else []}
+                "data": {"accounts": session.accounts if session else []},
             }
 
         session = await self.session.get_session(flow_token)
         if not session:
             return {"success": False, "error": "Session expired. Please start over."}
 
-        await self.session.update_session(flow_token, {
-            "selected_account": account_id,
-            "step": OnboardingStep.PIN_ENTRY.value,
-        })
+        await self.session.update_session(
+            flow_token,
+            {
+                "selected_account": account_id,
+                "step": OnboardingStep.PIN_ENTRY.value,
+            },
+        )
 
         return {"success": True, "data": {"bvn": session.bvn}}
-    
+
     async def complete_onboarding(
         self,
         flow_token: str,
-        pin: Optional[str],
-        email: Optional[str],
-        address: Optional[str],
+        pin: str | None,
+        email: str | None,
+        address: str | None,
     ) -> dict:
         """Complete onboarding by creating customer and linking account."""
         if not pin or not is_valid_pin_format(pin):
@@ -86,7 +87,7 @@ class AccountLinkingService:
         last_name = name_parts[1] if len(name_parts) > 1 else ""
 
         hashed_pin = hash_plaintext(pin)
-        
+
         bank_code = selected_account.get("bank_code", "")
         if not bank_code:
             institution = selected_account.get("institution", {})
@@ -101,17 +102,22 @@ class AccountLinkingService:
                 if not user:
                     return {"success": False, "error": "User not found. Please start over."}
 
-                uow.users.update_user(str(user.id), UserUpdate(
-                    full_name=account_name,
-                    email=email,
-                    address=address,
-                    transaction_pin=hashed_pin,
-                    onboarding_status="onboarding_completed",
-                    extra_data={"bvn": session.bvn},
-                ))
+                uow.users.update_user(
+                    str(user.id),
+                    UserUpdate(
+                        full_name=account_name,
+                        email=email,
+                        address=address,
+                        transaction_pin=hashed_pin,
+                        onboarding_status="onboarding_completed",
+                        extra_data={"bvn": session.bvn},
+                    ),
+                )
 
                 existing_account = uow.accounts.get_by_account_id(selected_account["id"])
-                if not existing_account or getattr(existing_account, "user_id", None) != str(user.id):
+                if not existing_account or getattr(existing_account, "user_id", None) != str(
+                    user.id
+                ):
                     uow.accounts.create_account(
                         CreateAccount(
                             user_id=str(user.id),
@@ -142,16 +148,19 @@ class AccountLinkingService:
                 )
             )
 
-            return {"success": True, "data": {
-                "phone_number": phone_number,
-                "bvn": session.bvn,
-                "account": selected_account,
-            }}
+            return {
+                "success": True,
+                "data": {
+                    "phone_number": phone_number,
+                    "bvn": session.bvn,
+                    "account": selected_account,
+                },
+            }
 
         except Exception as e:
             logger.error("onboarding_complete_error", error=str(e))
             return {"success": False, "error": "Failed to complete onboarding. Please try again."}
-    
+
     async def _setup_mono_customer_and_mandate(
         self,
         phone_number: str,
@@ -182,7 +191,9 @@ class AccountLinkingService:
                 if uow.users:
                     user = uow.users.get_by_phone(phone_number)
                     if user:
-                        uow.users.update_user(str(user.id), UserUpdate(mono_customer_id=customer.id))
+                        uow.users.update_user(
+                            str(user.id), UserUpdate(mono_customer_id=customer.id)
+                        )
 
             result = await self.mandate.create_mandate(
                 phone_number=phone_number,
@@ -192,7 +203,7 @@ class AccountLinkingService:
                 bank_code=bank_code,
                 bank_name=bank_name,
             )
-            
+
             if result["success"]:
                 mandate = result["mandate"]
                 transfer_destinations = mandate.transfer_destinations or []
@@ -205,12 +216,19 @@ class AccountLinkingService:
 
         except Exception as e:
             import traceback
-            logger.error("mono_setup_background_error", error=str(e), phone=phone_number, traceback=traceback.format_exc())
+
+            logger.error(
+                "mono_setup_background_error",
+                error=str(e),
+                phone=phone_number,
+                traceback=traceback.format_exc(),
+            )
             try:
                 whatsapp = WhatsAppClient()
-                await whatsapp.send_text(
-                    to=phone_number,
-                    text="⚠️ We encountered an issue setting up your account. Our team has been notified. Please try again later or contact support."
+                error_msg = (
+                    "⚠️ We encountered an issue setting up your account. "
+                    "Our team has been notified. Please try again later or contact support."
                 )
+                await whatsapp.send_text(to=phone_number, text=error_msg)
             except Exception:
                 pass

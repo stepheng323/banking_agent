@@ -2,8 +2,11 @@
 
 from fastapi.responses import Response
 
-from apps.gateway.api.webhooks.whatsapp.flows.response_helpers import format_error_response, format_success_response
-from shared.services.onboarding import bvn_service, ServiceResult
+from apps.gateway.api.webhooks.whatsapp.flows.response_helpers import (
+    format_error_response,
+    format_success_response,
+)
+from shared.services.onboarding import ServiceResult, bvn_service
 
 
 async def handle_bvn_entry(
@@ -14,7 +17,7 @@ async def handle_bvn_entry(
     iv_bytes: bytes,
 ) -> Response:
     """Handle BVN_ENTRY screen - validates BVN and initiates verification."""
-    
+
     if not bvn:
         return format_error_response(
             "BVN_ENTRY",
@@ -34,7 +37,7 @@ async def handle_bvn_entry(
         )
 
     result = ServiceResult(**await bvn_service.initiate_bvn_verification(flow_token, bvn))
-    
+
     if result.success:
         return format_success_response(
             "METHOD_SELECTION",
@@ -46,7 +49,7 @@ async def handle_bvn_entry(
             show_error=False,
             error_message="",
         )
-    
+
     return format_error_response(
         "BVN_ENTRY",
         result.error,
@@ -55,4 +58,3 @@ async def handle_bvn_entry(
         iv_bytes,
         bvn=bvn,
     )
-

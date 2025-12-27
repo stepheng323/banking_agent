@@ -1,12 +1,13 @@
 """WhatsApp webhook router - thin controller for WhatsApp events."""
+
 from fastapi import APIRouter, HTTPException, Request, Response, status
 
+from apps.gateway.adapters.meta_whatsapp import verify_meta_signature
+from apps.gateway.core.config import settings
 from shared.clients.whatsapp.client import WhatsAppClient
 from shared.queue.redis_queue import RedisQueue
 from shared.utils.logging import get_logger
 
-from apps.gateway.adapters.meta_whatsapp import verify_meta_signature
-from apps.gateway.core.config import settings
 from .service import WhatsAppWebhookService
 
 router = APIRouter(prefix="/webhook", tags=["webhooks"])
@@ -51,10 +52,10 @@ async def verify_webhook(request: Request) -> Response:
     mode = params.get("hub.mode")
     verify_token = params.get("hub.verify_token")
     challenge = params.get("hub.challenge")
-    
+
     if mode == "subscribe" and verify_token == settings.meta_verify_token:
         return Response(content=challenge or "", media_type="text/plain")
-    
+
     raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
 
 

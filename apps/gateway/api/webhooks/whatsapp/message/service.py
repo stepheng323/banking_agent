@@ -1,13 +1,13 @@
 """WhatsApp webhook service - business logic for handling WhatsApp messages."""
+
 from datetime import datetime
 
+from apps.gateway.adapters.meta_whatsapp import ParsedMessage, parse_payload
+from apps.gateway.adapters.sender import send_text
 from shared.clients.whatsapp.client import WhatsAppClient
 from shared.models.messages import MessagePriority, MessageType, WhatsAppMessage
 from shared.queue.redis_queue import RedisQueue
 from shared.utils.logging import get_logger
-
-from apps.gateway.adapters.meta_whatsapp import ParsedMessage, parse_payload
-from apps.gateway.adapters.sender import send_text
 
 logger = get_logger(__name__)
 
@@ -29,7 +29,7 @@ class WhatsAppWebhookService:
     async def process_payload(self, payload: dict) -> int:
         """
         Process WhatsApp webhook payload.
-        
+
         Returns number of messages processed.
         """
         messages = parse_payload(payload)
@@ -69,7 +69,7 @@ class WhatsAppWebhookService:
     def _build_message(self, msg: ParsedMessage) -> WhatsAppMessage:
         """Build WhatsAppMessage from ParsedMessage."""
         msg_type = msg.type or "text"
-        
+
         try:
             enum_type = MessageType(msg_type)
         except ValueError:
@@ -107,9 +107,7 @@ class WhatsAppWebhookService:
             # Send typing indicator for non-interactive messages
             if msg_type != "interactive":
                 try:
-                    await self.whatsapp_client.send_typing_indicator(
-                        message_id=message.message_id
-                    )
+                    await self.whatsapp_client.send_typing_indicator(message_id=message.message_id)
                 except Exception:
                     pass  # Typing indicator is not critical
 

@@ -57,4 +57,3 @@ FORMATTER_SYSTEM_PROMPT = """Format banking assistant responses concisely.
 - Format currency as ₦12,345.67
 - Keep under 4 sentences
 """
-

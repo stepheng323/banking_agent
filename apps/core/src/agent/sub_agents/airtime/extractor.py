@@ -1,26 +1,25 @@
 """LLM-based airtime entity extractor."""
 
-from typing import Optional, Dict, Any
+from typing import Any
 
 from langchain_openai import ChatOpenAI
 
 from apps.core.src.agent.sub_agents.airtime.models import AirtimeExtractionResult
-from apps.core.src.agent.sub_agents.airtime.prompt.airtime_extraction import AIRTIME_EXTRACTION_PROMPT
+from apps.core.src.agent.sub_agents.airtime.prompt.airtime_extraction import (
+    AIRTIME_EXTRACTION_PROMPT,
+)
 
 
 class AirtimeEntityExtractor:
     """Airtime entity extractor."""
 
-    def __init__(self, llm: Optional[ChatOpenAI] = None) -> None:
-        self.llm = llm or ChatOpenAI(
-            model="gpt-4o-mini",
-            temperature=0,
-            model_kwargs={"seed": 42}
-        )
-        self.structured = self.llm.with_structured_output(
-            AirtimeExtractionResult)
+    def __init__(self, llm: ChatOpenAI | None = None) -> None:
+        self.llm = llm or ChatOpenAI(model="gpt-4o-mini", temperature=0, model_kwargs={"seed": 42})
+        self.structured = self.llm.with_structured_output(AirtimeExtractionResult)
 
-    async def extract(self, text: str, smart_context: Optional[Dict[str, Any]] = None) -> AirtimeExtractionResult:
+    async def extract(
+        self, text: str, smart_context: dict[str, Any] | None = None
+    ) -> AirtimeExtractionResult:
         """Extract entities from text."""
         user_input = text.strip()
         user_content = user_input
@@ -28,8 +27,7 @@ class AirtimeEntityExtractor:
         context_parts = []
         if smart_context:
             if "previousResponse" in smart_context:
-                context_parts.append(
-                    f"Previous response: {smart_context['previousResponse']}")
+                context_parts.append(f"Previous response: {smart_context['previousResponse']}")
 
             if "beneficiaries" in smart_context and smart_context["beneficiaries"]:
                 beneficiaries = smart_context["beneficiaries"]
@@ -45,17 +43,15 @@ class AirtimeEntityExtractor:
                         aliases.append(b.account_name)
 
                 if aliases:
-                    context_parts.append(
-                        f"Saved beneficiary aliases/names: {', '.join(aliases)}")
-        
+                    context_parts.append(f"Saved beneficiary aliases/names: {', '.join(aliases)}")
+
             if "language" in smart_context:
                 context_parts.append(
                     f"CRITICAL: User's preferred language is {smart_context['language']}. GENERATE THE REPLY IN {smart_context['language'].upper()}. Adapt the tone to match user's style."
                 )
 
         if context_parts:
-            user_content = f"{user_input}\n\nsmartContext:\n" + \
-                "\n".join(context_parts)
+            user_content = f"{user_input}\n\nsmartContext:\n" + "\n".join(context_parts)
 
         result = await self.structured.ainvoke(
             [

@@ -1,12 +1,11 @@
 """Airtime purchase handler service for executing queued airtime purchases."""
 
-import traceback
 from datetime import datetime
-from typing import Dict, Any
+from typing import Any
 
+from apps.core.src.agent.sub_agents.airtime.completion import AirtimeCompletionService
 from shared.clients.factories.payment import PaymentProviderFactory
 from shared.repositories.unit_of_work import UnitOfWork
-from apps.core.src.agent.sub_agents.airtime.completion import AirtimeCompletionService
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -32,7 +31,7 @@ class AirtimeExecutor:
         transaction_id: str,
         status: str,
         error_message: str | None = None,
-        provider_response: Dict[str, Any] | None = None,
+        provider_response: dict[str, Any] | None = None,
         provider_transaction_id: str | None = None,
     ) -> None:
         """Update transaction status in database."""
@@ -55,7 +54,7 @@ class AirtimeExecutor:
     def _get_user_friendly_error(self, error: str) -> str:
         """Convert technical error messages to user-friendly messages."""
         error_lower = error.lower()
-        
+
         if "timeout" in error_lower or "connect" in error_lower:
             return "Service temporarily unavailable. Please try again in a few minutes."
         if "invalid" in error_lower and "phone" in error_lower:
@@ -66,10 +65,10 @@ class AirtimeExecutor:
             return "Unsupported network. Please try MTN, Airtel, Glo, or 9mobile."
         if "pending" in error_lower:
             return "Your request is still processing. Please wait a moment."
-        
+
         return "Unable to complete airtime purchase. Please try again later."
 
-    async def handle_airtime(self, airtime_request: Dict[str, Any]) -> None:
+    async def handle_airtime(self, airtime_request: dict[str, Any]) -> None:
         """
         Execute an airtime purchase request and handle notifications.
 
@@ -85,9 +84,13 @@ class AirtimeExecutor:
         airtime_data = airtime_request.get("airtime_data", {})
         transaction_id = airtime_request.get("transaction_id")
 
-
         if not phone_number or not idem_key or not airtime_data:
-            logger.error("invalid_airtime_request", phone=phone_number, idem_key=idem_key, has_data=bool(airtime_data))
+            logger.error(
+                "invalid_airtime_request",
+                phone=phone_number,
+                idem_key=idem_key,
+                has_data=bool(airtime_data),
+            )
             return
 
         if transaction_id:
@@ -108,12 +111,14 @@ class AirtimeExecutor:
             network = recipient.get("network", "")
             amount = float(airtime_data.get("amount", 0))
 
-            logger.info("airtime_purchase_starting", 
-                       phone=phone_number, 
-                       recipient=recipient_phone, 
-                       network=network, 
-                       amount=amount,
-                       provider=provider.provider_name)
+            logger.info(
+                "airtime_purchase_starting",
+                phone=phone_number,
+                recipient=recipient_phone,
+                network=network,
+                amount=amount,
+                provider=provider.provider_name,
+            )
 
             purchase_result = await provider.purchase_airtime(
                 amount=amount,
@@ -127,33 +132,40 @@ class AirtimeExecutor:
 
             if purchase_result.get("success"):
                 tx_status = purchase_result.get("status", "successful").lower()
-                
+
                 if tx_status == "pending":
                     self._update_transaction_status(
-                        transaction_id, "pending",
+                        transaction_id,
+                        "pending",
                         provider_response=purchase_result,
-                        provider_transaction_id=purchase_result.get("transaction_id")
+                        provider_transaction_id=purchase_result.get("transaction_id"),
                     )
-                    logger.info("airtime_purchase_pending", phone=phone_number, recipient=recipient_phone)
+                    logger.info(
+                        "airtime_purchase_pending", phone=phone_number, recipient=recipient_phone
+                    )
                     await self.airtime_service.send_pending_notification(
                         phone_number, airtime_data, purchase_result, transaction_id
                     )
                 else:
                     self._update_transaction_status(
-                        transaction_id, "completed",
+                        transaction_id,
+                        "completed",
                         provider_response=purchase_result,
-                        provider_transaction_id=purchase_result.get("transaction_id")
+                        provider_transaction_id=purchase_result.get("transaction_id"),
                     )
-                    logger.info("airtime_purchase_successful", phone=phone_number, recipient=recipient_phone)
+                    logger.info(
+                        "airtime_purchase_successful", phone=phone_number, recipient=recipient_phone
+                    )
                     await self.airtime_service.send_success_notification(
                         phone_number, airtime_data, purchase_result, transaction_id
                     )
             else:
                 error_msg = purchase_result.get("error", "Unknown error")
                 self._update_transaction_status(
-                    transaction_id, "failed",
+                    transaction_id,
+                    "failed",
                     error_message=error_msg,
-                    provider_response=purchase_result
+                    provider_response=purchase_result,
                 )
                 logger.warning("airtime_purchase_failed", phone=phone_number, error=error_msg)
                 user_msg = self._get_user_friendly_error(error_msg)
@@ -162,20 +174,16 @@ class AirtimeExecutor:
         except NotImplementedError as e:
             logger.warning("airtime_not_implemented", error=str(e), exc_info=True)
             self._update_transaction_status(
-                transaction_id, "failed",
-                error_message="Airtime purchase service not yet available"
+                transaction_id, "failed", error_message="Airtime purchase service not yet available"
             )
             await self.airtime_service.send_failure_notification(
-                phone_number, "Airtime purchase service is not yet available. Please try again later."
+                phone_number,
+                "Airtime purchase service is not yet available. Please try again later.",
             )
         except Exception as e:
             logger.error("airtime_execution_error", phone=phone_number, error=str(e), exc_info=True)
-            self._update_transaction_status(
-                transaction_id, "failed",
-                error_message=str(e)
-            )
+            self._update_transaction_status(transaction_id, "failed", error_message=str(e))
 
             await self.airtime_service.send_failure_notification(
                 phone_number, "Airtime purchase failed due to an error. Please try again later."
             )
-

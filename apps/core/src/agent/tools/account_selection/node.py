@@ -1,24 +1,25 @@
 """Shared account selection node for all flows."""
 
 import asyncio
-import inspect
-from typing import Callable, Optional, TypeVar, Dict, cast, TYPE_CHECKING, Any, Coroutine, Union
+from collections.abc import Callable, Coroutine
+from typing import TYPE_CHECKING, Any, TypeVar, cast
 
 from apps.core.src.agent.tools.account_selection.service import AccountSelectionService
 
 if TYPE_CHECKING:
-    from apps.core.src.agent.sub_agents.transfer.state import TransferState
-    from apps.core.src.agent.sub_agents.airtime.state import AirtimeState
+    pass
 
-StateType = TypeVar('StateType')
+StateType = TypeVar("StateType")
 
 # Validator can be sync or async
-ValidatorFunc = Callable[[StateType, Dict], Union[Optional[StateType], Coroutine[Any, Any, Optional[StateType]]]]
+ValidatorFunc = Callable[
+    [StateType, dict], StateType | None | Coroutine[Any, Any, StateType | None]
+]
 
 
 async def select_source_account_shared(
     state: StateType,
-    validator: Optional[ValidatorFunc] = None,
+    validator: ValidatorFunc | None = None,
 ) -> StateType:
     """
     Shared account selection node for all flows.
@@ -54,22 +55,31 @@ async def select_source_account_shared(
             if validation_result is not None:
                 return validation_result
 
-        return cast(StateType, {
-            **state,
-            "selected_source_account": selected,
-            "response": "",
-        })
+        return cast(
+            StateType,
+            {
+                **state,
+                "selected_source_account": selected,
+                "response": "",
+            },
+        )
 
     if not accounts:
         error_message = "I couldn't find any account on your profile. Please add an account first to proceed with this transaction."
-        return cast(StateType, {
-            **state,
-            "flow_state": "error",
-            "response": error_message,
-        })
+        return cast(
+            StateType,
+            {
+                **state,
+                "flow_state": "error",
+                "response": error_message,
+            },
+        )
 
-    return cast(StateType, {
-        **state,
-        "flow_state": "selecting_account",
-        "response": response or "Please select an account.",
-    })
+    return cast(
+        StateType,
+        {
+            **state,
+            "flow_state": "selecting_account",
+            "response": response or "Please select an account.",
+        },
+    )

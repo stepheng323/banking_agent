@@ -1,12 +1,13 @@
 """Flutterwave Bills client for airtime and utility payments using v3 API."""
-import asyncio
+
 import uuid
-from typing import Any, Dict, Optional
+from typing import Any
 
 import httpx
 import structlog
-from shared.config.settings import settings
+
 from shared.clients.abstractions.bill import BillPaymentProvider
+from shared.config.settings import settings
 
 logger = structlog.get_logger(__name__)
 
@@ -26,13 +27,11 @@ class FlutterwaveBillsClient(BillPaymentProvider):
 
     def __init__(
         self,
-        secret_key: Optional[str] = None,
-        use_sandbox: Optional[bool] = None,
+        secret_key: str | None = None,
+        use_sandbox: bool | None = None,
     ):
         """Initialize Flutterwave bills client with v3 secret key."""
-        self.secret_key = secret_key or getattr(
-            settings, "flutterwave_secret_key", None
-        )
+        self.secret_key = secret_key or getattr(settings, "flutterwave_secret_key", None)
 
         if not self.secret_key:
             raise ValueError(
@@ -40,8 +39,10 @@ class FlutterwaveBillsClient(BillPaymentProvider):
                 "Set FLUTTERWAVE_SECRET_KEY environment variable."
             )
 
-        self.use_sandbox = use_sandbox if use_sandbox is not None else getattr(
-            settings, "flutterwave_use_sandbox", False
+        self.use_sandbox = (
+            use_sandbox
+            if use_sandbox is not None
+            else getattr(settings, "flutterwave_use_sandbox", False)
         )
         self.base_url = FLUTTERWAVE_BASE_URL
 
@@ -65,7 +66,7 @@ class FlutterwaveBillsClient(BillPaymentProvider):
         """Flutterwave supports data purchases."""
         return True
 
-    def _get_headers(self) -> Dict[str, str]:
+    def _get_headers(self) -> dict[str, str]:
         """Get request headers with secret key authentication."""
         return {
             "Authorization": f"Bearer {self.secret_key}",
@@ -73,7 +74,7 @@ class FlutterwaveBillsClient(BillPaymentProvider):
             "accept": "application/json",
         }
 
-    def _error_response(self, error: str, **kwargs) -> Dict[str, Any]:
+    def _error_response(self, error: str, **kwargs) -> dict[str, Any]:
         """Build a standardized error response."""
         return {
             "success": False,
@@ -82,7 +83,7 @@ class FlutterwaveBillsClient(BillPaymentProvider):
             **kwargs,
         }
 
-    def _success_response(self, **kwargs) -> Dict[str, Any]:
+    def _success_response(self, **kwargs) -> dict[str, Any]:
         """Build a standardized success response."""
         return {
             "success": True,
@@ -94,9 +95,9 @@ class FlutterwaveBillsClient(BillPaymentProvider):
         self,
         method: str,
         endpoint: str,
-        payload: Optional[Dict[str, Any]] = None,
+        payload: dict[str, Any] | None = None,
         timeout: float = 30.0,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Unified HTTP request handler with error handling."""
         url = f"{self.base_url}{endpoint}"
         headers = self._get_headers()
@@ -137,8 +138,8 @@ class FlutterwaveBillsClient(BillPaymentProvider):
         amount: float,
         recipient_phone: str,
         network: str,
-        reference: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        reference: str | None = None,
+    ) -> dict[str, Any]:
         """Purchase airtime via Flutterwave Bills Payment API."""
         airtime_info = {"amount": amount, "recipient_phone": recipient_phone, "network": network}
 
@@ -147,7 +148,7 @@ class FlutterwaveBillsClient(BillPaymentProvider):
         if not biller_info:
             return self._error_response(
                 f"Unsupported network: {network}. Supported: MTN, Airtel, Glo, 9mobile",
-                **airtime_info
+                **airtime_info,
             )
 
         biller_code = biller_info["biller_code"]
@@ -170,31 +171,35 @@ class FlutterwaveBillsClient(BillPaymentProvider):
             "reference": reference,
         }
 
-        logger.info("airtime_purchase_request", network=network, amount=amount, phone=customer_phone)
+        logger.info(
+            "airtime_purchase_request", network=network, amount=amount, phone=customer_phone
+        )
         result = await self._request("POST", endpoint, payload=payload)
 
         if result["success"]:
             data = result.get("data", {})
             tx_status = data.get("status", "successful").lower()
-            
+
             return self._success_response(
                 transaction_id=data.get("reference") or reference,
-                status=tx_status, 
+                status=tx_status,
                 message=result.get("message", "Airtime purchase successful"),
                 raw_response=data,
-                **airtime_info
+                **airtime_info,
             )
 
         return self._error_response(result.get("error", "Airtime purchase failed"), **airtime_info)
 
-    async def fetch_bill_categories(self, category: str = "AIRTIME") -> Dict[str, Any]:
+    async def fetch_bill_categories(self, category: str = "AIRTIME") -> dict[str, Any]:
         """Fetch available bill categories/billers from Flutterwave."""
         result = await self._request("GET", "/v3/bills/categories")
 
         if result["success"]:
             billers = result.get("data", [])
             if category:
-                billers = [b for b in billers if category.upper() in b.get("biller_name", "").upper()]
+                billers = [
+                    b for b in billers if category.upper() in b.get("biller_name", "").upper()
+                ]
             return self._success_response(billers=billers, count=len(billers))
 
         return self._error_response(result.get("error", "Failed to fetch categories"), billers=[])

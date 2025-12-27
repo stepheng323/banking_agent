@@ -8,7 +8,9 @@ from shared.utils.logging import get_logger
 logger = get_logger(__name__)
 
 
-def route_by_state(state: AirtimeState) -> Literal[
+def route_by_state(
+    state: AirtimeState,
+) -> Literal[
     "end",
     "collect_amount",
     "collect_phone",
@@ -17,7 +19,7 @@ def route_by_state(state: AirtimeState) -> Literal[
     "confirm",
     "authorize",
     "cancel",
-    "extract"
+    "extract",
 ]:
     """Route based on current flow state and missing data."""
     flow_state = state.get("flow_state")
@@ -27,13 +29,15 @@ def route_by_state(state: AirtimeState) -> Literal[
     recipient_phone = state.get("recipient_phone")
     network = state.get("network")
 
-    logger.debug("route_by_state", 
-                flow_state=flow_state,
-                has_response=bool(response),
-                has_amount=bool(amount),
-                has_account=bool(selected_account),
-                has_phone=bool(recipient_phone),
-                has_network=bool(network))
+    logger.debug(
+        "route_by_state",
+        flow_state=flow_state,
+        has_response=bool(response),
+        has_amount=bool(amount),
+        has_account=bool(selected_account),
+        has_phone=bool(recipient_phone),
+        has_network=bool(network),
+    )
 
     if flow_state == "cancelled":
         return "cancel" if not response else "end"
@@ -51,7 +55,13 @@ def route_by_state(state: AirtimeState) -> Literal[
         if seq_ok:
             return "confirm"
 
-    if has_response and flow_state in ("collecting_amount", "collecting_phone", "selecting_account", "error", "confirming"):
+    if has_response and flow_state in (
+        "collecting_amount",
+        "collecting_phone",
+        "selecting_account",
+        "error",
+        "confirming",
+    ):
         return "end"
 
     if flow_state == "validating":

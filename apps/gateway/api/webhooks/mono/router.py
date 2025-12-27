@@ -1,12 +1,12 @@
 """Mono webhook router - thin controller for Mono events."""
+
 from fastapi import APIRouter, Request, Response
 
+from apps.gateway.api.webhooks.mono.service import MonoWebhookService
+from apps.gateway.core.config import settings
 from shared.clients.whatsapp.client import WhatsAppClient
 from shared.queue.redis_queue import RedisQueue
 from shared.utils.logging import get_logger
-
-from apps.gateway.core.config import settings
-from apps.gateway.api.webhooks.mono.service import MonoWebhookService
 
 router = APIRouter(prefix="/webhook", tags=["webhooks"])
 logger = get_logger(__name__)

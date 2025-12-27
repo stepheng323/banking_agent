@@ -1,12 +1,13 @@
 """Abstract base class for bill payment service providers."""
+
 from abc import ABC, abstractmethod
-from typing import Any, Dict, Optional
+from typing import Any
 
 
 class BillPaymentProvider(ABC):
     """
     Abstract interface for bill payment service providers.
-    
+
     Handles airtime, data, cable TV, electricity, and other bill payments.
     Separated from PaymentProvider to allow independent provider selection.
     """
@@ -39,8 +40,8 @@ class BillPaymentProvider(ABC):
         amount: float,
         recipient_phone: str,
         network: str,
-        reference: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        reference: str | None = None,
+    ) -> dict[str, Any]:
         """
         Purchase airtime for a phone number.
 
@@ -63,7 +64,7 @@ class BillPaymentProvider(ABC):
         """
         raise NotImplementedError
 
-    async def fetch_bill_categories(self, category: str = "AIRTIME") -> Dict[str, Any]:
+    async def fetch_bill_categories(self, category: str = "AIRTIME") -> dict[str, Any]:
         """
         Fetch available bill categories/billers from the provider.
 
@@ -73,6 +74,4 @@ class BillPaymentProvider(ABC):
         Returns:
             Dictionary with billers list and their codes
         """
-        raise NotImplementedError(
-            f"{self.provider_name} does not support fetching bill categories"
-        )
+        raise NotImplementedError(f"{self.provider_name} does not support fetching bill categories")

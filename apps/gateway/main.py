@@ -1,6 +1,7 @@
-from apps.gateway.api.webhooks import mono_router, message_router, flows_router
 from dotenv import load_dotenv
 from fastapi import FastAPI
+
+from apps.gateway.api.webhooks import flows_router, message_router, mono_router
 from shared.utils.logging import configure_logger
 
 load_dotenv()
@@ -16,5 +17,3 @@ if __name__ == "__main__":
     import uvicorn
 
     uvicorn.run(app, host="0.0.0.0", port=8000)
-
-
