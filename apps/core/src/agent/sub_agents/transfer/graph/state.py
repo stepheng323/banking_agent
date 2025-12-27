@@ -34,31 +34,43 @@ def create_initial_state(
     if classification_result and "detected_language" in classification_result:
         language = classification_result.get("detected_language")
     
-    # Pre-populate from quoted transaction data if available
     amount = None
     recipient_name = None
     recipient_account = None
     recipient_bank_code = None
     recipient_bank_name = None
+    account_resolved = None
     
     if quoted_data:
         data = quoted_data.get("data", {})
         amount = data.get("amount")
         
-        # Handle both flat structure (from confirmation) and nested recipient (from success)
         recipient = data.get("recipient", {})
         if isinstance(recipient, dict) and recipient:
-            # Nested structure: {"recipient": {"name": ..., "account_number": ..., ...}}
             recipient_name = recipient.get("name")
             recipient_account = recipient.get("account_number")
             recipient_bank_code = recipient.get("bank_code")
             recipient_bank_name = recipient.get("bank_name")
+            account_resolved = {
+                "account_name": recipient_name,
+                "account_number": recipient_account,
+                "bank_code": recipient_bank_code,
+                "bank_name": recipient_bank_name,
+                "success": True,
+            }
         else:
-            # Flat structure: {"recipient_name": ..., "recipient_account": ..., ...}
             recipient_name = data.get("recipient_name")
             recipient_account = data.get("recipient_account")
             recipient_bank_code = data.get("recipient_bank_code") or data.get("bank_code")
             recipient_bank_name = data.get("recipient_bank_name") or data.get("bank_name")
+            if recipient_account and recipient_bank_code:
+                account_resolved = {
+                    "account_name": recipient_name,
+                    "account_number": recipient_account,
+                    "bank_code": recipient_bank_code,
+                    "bank_name": recipient_bank_name,
+                    "success": True,
+                }
     
     return {
         "phone_number": phone_number,
@@ -80,7 +92,7 @@ def create_initial_state(
         "beneficiaries": [],
         "selected_source_account": None,
         "matched_beneficiary": None,
-        "account_resolved": None,
+        "account_resolved": account_resolved,
         "balance_available": None,
         "validation_errors": [],
         "response": "",

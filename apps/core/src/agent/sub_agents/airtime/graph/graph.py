@@ -367,9 +367,14 @@ class AirtimeFlowGraph:
         if not current_state or not current_state.values:
             return "No active airtime purchase session found."
 
+        # Get the latest message_id from Redis for typing indicators
+        current_message_id = await self.redis_client.get(f"user:{phone_number}:current_message_id")
+        state_message_id = current_state.values.get("message_id")
+
         await self.graph.aupdate_state(config, {
             "pin_verified": pin_verified,
             "pin_verification_error": pin_error,
+            "message_id": current_message_id or state_message_id,  # Use fresh ID if available
         })
 
         logger.info("pin_resume_starting", phone=phone_number[:6], pin_verified=pin_verified)
