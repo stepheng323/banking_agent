@@ -43,6 +43,9 @@ async def parse_node(
             "current_page": 0,
             "page_size": params.get("limit", 10),
             "amount_check": params.get("amount_check"),
+            "analysis_type": params.get("analysis_type", "immediate"),
+            "item_name": params.get("item_name"),
+            "projection_months": params.get("projection_months"),
         }
     except Exception as e:
         logger.error("parse_node_error", error=str(e))
@@ -86,7 +89,52 @@ async def fetch_node(
             }
     
     if query_type == "affordability":
+        from apps.core.src.agent.sub_agents.query.prices import (
+            lookup_item_price, is_variable_item, get_price_disclaimer
+        )
+        
         try:
+            # Resolve amount from item_name if present
+            item_name = state.get("item_name")
+            amount_check = state.get("amount_check")
+            price_source = None
+            
+            if item_name and not amount_check:
+                # Try to look up known item price
+                item_data = lookup_item_price(item_name)
+                if item_data:
+                    amount_check = item_data["price"]
+                    price_source = "lookup"
+                elif is_variable_item(item_name):
+                    return {
+                        "flow_state": "formatting",
+                        "aggregated_result": {
+                            "type": "affordability_prompt",
+                            "item_name": item_name,
+                            "message": f"Prices for {item_name} vary widely. What's the specific amount you're considering?",
+                        },
+                        "needs_price_input": True,
+                        "has_more": False,
+                    }
+                else:
+                    return {
+                        "flow_state": "formatting",
+                        "aggregated_result": {
+                            "type": "affordability_prompt",
+                            "item_name": item_name,
+                            "message": f"I don't have a current price for \"{item_name}\". What's the approximate cost?",
+                        },
+                        "needs_price_input": True,
+                        "has_more": False,
+                    }
+            
+            if not amount_check:
+                return {
+                    "flow_state": "error",
+                    "response": "Please specify an amount to check.",
+                }
+            
+            # Get balance
             balance = await mono_client.get_balance(account_id)
             if "error" in balance:
                 return {
@@ -94,19 +142,69 @@ async def fetch_node(
                     "response": "I couldn't check your balance right now."
                 }
             balance_naira = balance.get("balance_naira", 0)
-            amount_check = state.get("amount_check", 0)
+            
+            analysis_type = state.get("analysis_type", "immediate")
+            projection_months = state.get("projection_months")
+            
+            # Calculate historical stats for relative/simulated analysis
+            avg_daily_spend = None
+            avg_monthly_net = None
+            
+            if analysis_type in ("relative", "simulated"):
+                # Fetch 30 days of transactions for stats
+                from datetime import datetime, timedelta
+                end_date = datetime.now()
+                start_date = end_date - timedelta(days=30)
+                
+                transactions = await mono_client.get_transactions(
+                    account_id=account_id,
+                    start=start_date.strftime("%Y-%m-%d"),
+                    end=end_date.strftime("%Y-%m-%d"),
+                    limit=500
+                )
+                
+                if transactions:
+                    total_spent = sum(t.get("amount", 0) for t in transactions if t.get("type") == "debit")
+                    total_received = sum(t.get("amount", 0) for t in transactions if t.get("type") == "credit")
+                    avg_daily_spend = (total_spent / 100) / 30  # Convert kobo to naira
+                    avg_monthly_net = (total_received - total_spent) / 100
+            
+            # Build result based on analysis type
             can_afford = balance_naira >= amount_check
             shortfall = max(0, amount_check - balance_naira)
+            remaining = balance_naira - amount_check
+            
+            result = {
+                "type": "affordability",
+                "analysis_type": analysis_type,
+                "balance_naira": balance_naira,
+                "amount_check": amount_check,
+                "can_afford": can_afford,
+                "shortfall": shortfall,
+                "remaining": remaining,
+                "percentage_of_balance": (amount_check / balance_naira * 100) if balance_naira > 0 else 0,
+                "item_name": item_name,
+                "price_source": price_source,
+            }
+            
+            if analysis_type == "relative" and avg_daily_spend:
+                result["avg_daily_spend"] = avg_daily_spend
+                result["days_equivalent"] = int(amount_check / avg_daily_spend) if avg_daily_spend > 0 else 0
+            
+            if analysis_type == "simulated" and projection_months:
+                projected_balance = balance_naira
+                if avg_monthly_net:
+                    projected_balance = balance_naira + (avg_monthly_net * projection_months)
+                result["projection_months"] = projection_months
+                result["projected_balance"] = projected_balance
+                result["projected_can_afford"] = projected_balance >= amount_check
+                result["avg_monthly_net"] = avg_monthly_net
             
             return {
                 "flow_state": "formatting",
-                "aggregated_result": {
-                    "type": "affordability",
-                    "balance_naira": balance_naira,
-                    "amount_check": amount_check,
-                    "can_afford": can_afford,
-                    "shortfall": shortfall,
-                },
+                "aggregated_result": result,
+                "avg_daily_spend": avg_daily_spend,
+                "avg_monthly_net": avg_monthly_net,
                 "has_more": False,
             }
         except Exception as e:
@@ -334,15 +432,92 @@ async def format_node(
             response = "\n".join(lines)
     
     elif result_type == "affordability":
+        analysis_type = result.get("analysis_type", "immediate")
         can_afford = result.get("can_afford", False)
         balance_naira = result.get("balance_naira", 0)
         amount_check = result.get("amount_check", 0)
         shortfall = result.get("shortfall", 0)
+        remaining = result.get("remaining", 0)
+        percentage = result.get("percentage_of_balance", 0)
+        item_name = result.get("item_name")
+        price_source = result.get("price_source")
         
-        if can_afford:
-            response = f"✅ Yes, you can afford ₦{amount_check:,.0f}.\n\n💰 Your balance: ₦{balance_naira:,.2f}"
+        # Build header
+        if item_name:
+            header = f"💰 **Balance Check: {item_name.title()}**"
         else:
-            response = f"❌ Not enough funds for ₦{amount_check:,.0f}.\n\n💰 Your balance: ₦{balance_naira:,.2f}\n📉 Shortfall: ₦{shortfall:,.2f}"
+            header = "💰 **Balance Check**"
+        
+        lines = [header, ""]
+        
+        # Show amount being checked
+        lines.append(f"Amount: ₦{amount_check:,.0f}")
+        lines.append(f"Your balance: ₦{balance_naira:,.2f}")
+        lines.append("")
+        
+        # Tier-specific output (non-advisory framing)
+        if analysis_type == "immediate":
+            if can_afford:
+                lines.append(f"✅ Your balance covers this amount.")
+                lines.append(f"📊 This is {percentage:.1f}% of your available funds.")
+                lines.append(f"_Remaining after: ₦{remaining:,.0f}_")
+            else:
+                lines.append(f"⚠️ This exceeds your current balance.")
+                lines.append(f"📉 Shortfall: ₦{shortfall:,.0f}")
+        
+        elif analysis_type == "relative":
+            days_equiv = result.get("days_equivalent", 0)
+            avg_daily = result.get("avg_daily_spend", 0)
+            
+            lines.append(f"📊 **Spending Impact**")
+            lines.append("")
+            lines.append(f"Based on your 30-day average daily spend of ₦{avg_daily:,.0f}:")
+            lines.append(f"This equals approximately **{days_equiv} days** of typical spending.")
+            lines.append("")
+            if can_afford:
+                lines.append(f"_After this purchase: ₦{remaining:,.0f} remaining_")
+            else:
+                lines.append(f"_Shortfall: ₦{shortfall:,.0f}_")
+        
+        elif analysis_type == "simulated":
+            months = result.get("projection_months", 0)
+            projected = result.get("projected_balance", 0)
+            projected_afford = result.get("projected_can_afford", False)
+            avg_net = result.get("avg_monthly_net", 0)
+            
+            lines.append(f"📈 **{months}-Month Projection**")
+            lines.append("")
+            lines.append(f"Your avg monthly net: {'+' if avg_net >= 0 else ''}₦{avg_net:,.0f}")
+            lines.append(f"Projected balance in {months} months: ~₦{projected:,.0f}")
+            lines.append("")
+            if projected_afford:
+                lines.append("Based on your recent history, your projected balance would cover this.")
+            else:
+                lines.append("Based on your recent history, this may still exceed your projected balance.")
+            lines.append("")
+            lines.append("_Projection based on last 30 days. Actual results may vary._")
+        
+        elif analysis_type == "remainder":
+            lines.append(f"📊 **After Purchase**")
+            lines.append("")
+            if can_afford:
+                lines.append(f"If you proceed with this ₦{amount_check:,.0f} purchase:")
+                lines.append(f"You would have **₦{remaining:,.0f}** remaining.")
+            else:
+                lines.append(f"This purchase exceeds your current balance.")
+                lines.append(f"Shortfall: ₦{shortfall:,.0f}")
+        
+        # Add price disclaimer if from lookup
+        if price_source == "lookup":
+            lines.append("")
+            lines.append("_Prices are approximate and may have changed._")
+        
+        response = "\n".join(lines)
+    
+    elif result_type == "affordability_prompt":
+        # User needs to provide price
+        message = result.get("message", "Please specify an amount.")
+        response = f"🛒 **Price Needed**\n\n{message}"
     
     elif result_type == "breakdown":
         days = result.get("days", [])

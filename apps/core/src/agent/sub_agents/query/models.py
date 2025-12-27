@@ -30,7 +30,16 @@ class QueryParams(BaseModel):
     narration_filter: Optional[str] = Field(default=None, description="Filter by counterparty/merchant name")
     group_by: Literal["category", "recipient", "sender", "date", "none"] = Field(default="none")
     limit: int = Field(default=10, ge=1, le=100)
+    
+    # Affordability fields
     amount_check: Optional[float] = Field(default=None, description="Amount to check for affordability")
+    analysis_type: Literal["immediate", "relative", "simulated", "remainder"] = Field(
+        default="immediate", 
+        description="Type of affordability analysis"
+    )
+    item_name: Optional[str] = Field(default=None, description="Product name like 'MacBook Pro'")
+    projection_months: Optional[int] = Field(default=None, ge=1, le=6, description="Months to project")
+    pool_accounts: bool = Field(default=False, description="Consider all linked accounts")
 
 
 class BalanceResponse(BaseModel):

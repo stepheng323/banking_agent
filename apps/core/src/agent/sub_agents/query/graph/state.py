@@ -27,7 +27,17 @@ class QueryState(TypedDict):
     narration_filter: Optional[str]
     transaction_type: str
     limit: int
+    
+    # Affordability fields
     amount_check: NotRequired[Optional[float]]
+    analysis_type: NotRequired[Optional[str]]
+    item_name: NotRequired[Optional[str]]
+    projection_months: NotRequired[Optional[int]]
+    needs_price_input: NotRequired[bool]
+    
+    # Historical stats for relative/simulated analysis
+    avg_daily_spend: NotRequired[Optional[float]]
+    avg_monthly_net: NotRequired[Optional[float]]
 
     account_id: str
     account_ids: list[str]

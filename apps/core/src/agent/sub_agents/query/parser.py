@@ -23,8 +23,8 @@ QUERY TYPES:
 - search: find specific transactions by name/merchant
 - top_recipient: who received most money from user
 - top_sender: who sent most money to user
-- affordability: checking if user can afford a specific amount (extract the amount)
-- breakdown: summarize activity by day (spending/receiving per day)
+- affordability: checking if user can afford something
+- breakdown: summarize activity by day
 
 DATE EXPRESSIONS:
 - "today" → today's date
@@ -34,14 +34,21 @@ DATE EXPRESSIONS:
 - "last month" → previous month
 - "last 30 days" → past 30 days
 
+AFFORDABILITY ANALYSIS TYPES:
+- immediate: can I afford this now? (default)
+- relative: what's the impact on my finances?
+- simulated: can I afford this in X months?
+- remainder: how much would I have left?
+
 AFFORDABILITY EXAMPLES:
-- "Can I afford 80k?" → query_type: affordability, amount_check: 80000
-- "Do I have enough for 50,000?" → query_type: affordability, amount_check: 50000
-- "Can I spend 100k right now?" → query_type: affordability, amount_check: 100000
+- "Can I afford 80k?" → query_type: affordability, amount_check: 80000, analysis_type: immediate
+- "Can I afford a MacBook Pro?" → query_type: affordability, item_name: "macbook pro", analysis_type: immediate
+- "Could I afford this in 3 months?" → query_type: affordability, projection_months: 3, analysis_type: simulated
+- "What would 50k cost relative to my spending?" → query_type: affordability, amount_check: 50000, analysis_type: relative
+- "How much would I have left after 100k?" → query_type: affordability, amount_check: 100000, analysis_type: remainder
 
 BREAKDOWN EXAMPLES:
 - "Show my activity this week" → query_type: breakdown, date_range: last 7 days
-- "What did I spend daily this month?" → query_type: breakdown
 - "Give me a daily summary" → query_type: breakdown
 
 Extract the query parameters from the user's question."""
