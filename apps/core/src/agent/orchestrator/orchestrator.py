@@ -103,7 +103,7 @@ class OrchestratorAgent:
             ClassificationHandler(self.classification_service, self.context_manager, actionable_message_repo),
             FreshStartHandler(self.context_manager, transfer_service, airtime_service),
             AffirmationHandler(transfer_service, airtime_service, self.flow_context_service, llm),
-            QuoteHandler(QuoteService({"transfer": transfer_service, "airtime": airtime_service})),
+            QuoteHandler(QuoteService({"transfer": transfer_service, "airtime": airtime_service}), self.whatsapp_client),
             BeneficiaryHandler(self.beneficiary_handler),
             CancellationHandler(self.cancellation_handler),
             BatchAuthorizationHandler(task_queue_service, transfer_service, whatsapp_client),

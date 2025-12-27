@@ -2,6 +2,7 @@
 
 from apps.core.src.agent.orchestrator.pipeline.message_handler import MessageHandler
 from apps.core.src.agent.orchestrator.pipeline.message_context import MessageContext
+from shared.clients.whatsapp.client import WhatsAppClient
 from .service import QuoteService
 
 from shared.utils.logging import get_logger
@@ -20,8 +21,9 @@ class QuoteHandler(MessageHandler):
     "but with 5k", this handler detects the intent and routes appropriately.
     """
 
-    def __init__(self, quote_service: QuoteService):
+    def __init__(self, quote_service: QuoteService, whatsapp_client: WhatsAppClient):
         self.quote_service = quote_service
+        self.whatsapp_client = whatsapp_client
     
     async def can_handle(self, context: MessageContext) -> bool:
         """
@@ -42,12 +44,7 @@ class QuoteHandler(MessageHandler):
         return True
     
     async def handle(self, context: MessageContext) -> MessageContext:
-        """
-        Handle quote-based transaction request.
-        
-        Uses LLM-generated response from classification for both:
-        - Found quotes: confirmation message
-        """
+        """Handle quote-based transaction request."""
         intent = context.classification_result.intent
         
         logger.info("quote_handler_processing",
@@ -58,5 +55,13 @@ class QuoteHandler(MessageHandler):
         
         response = context.classification_result.response
         
+        if response:
+            await self.whatsapp_client.send_text(
+                to=context.phone_number,
+                text=response,
+                message_id=context.message_id
+            )
+
         await self.quote_service.initiate_transaction(context)
-        return context.with_response(response, handled=True)
+        
+        return context.with_response("", handled=True)
