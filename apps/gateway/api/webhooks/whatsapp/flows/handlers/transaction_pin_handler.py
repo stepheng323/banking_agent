@@ -6,22 +6,25 @@ This handler:
 3. Returns success/error response to WhatsApp Flow
 """
 
-from typing import Any, Dict
+import asyncio
+from typing import Any
 
 from fastapi.responses import Response
-import asyncio
 
+from apps.gateway.api.webhooks.whatsapp.flows.response_helpers import (
+    format_error_response,
+    format_success_response,
+)
+from apps.gateway.core.config import settings
 from shared.cache.redis_client import RedisClient
 from shared.clients.whatsapp.client import WhatsAppClient
-from shared.services.auth import AuthorizationService
-from shared.queue.redis_queue import RedisQueue
 from shared.queue.messages import FlowEvent, FlowEventType
-from apps.gateway.api.webhooks.whatsapp.flows.response_helpers import format_error_response, format_success_response, format_complete_response
-from apps.gateway.core.config import settings
+from shared.queue.redis_queue import RedisQueue
+from shared.services.auth import AuthorizationService
 
 
 async def handle_transaction_pin(
-    data: Dict[str, Any],
+    data: dict[str, Any],
     flow_token: str,
     request_was_encrypted: bool,
     aes_key_bytes: bytes,
@@ -87,13 +90,10 @@ async def handle_transaction_pin(
         transaction_type = None
 
     redis_client = RedisClient.get_client()
-    
+
     if transaction_type == "batch":
         parts = flow_token.split("-")
-        if len(parts) >= 3:
-            phone_number = parts[2]
-        else:
-            phone_number = None
+        phone_number = parts[2] if len(parts) >= 3 else None
     else:
         phone_number = await redis_client.get(f"transaction:token:{idem_key}:phone")
 
@@ -104,7 +104,7 @@ async def handle_transaction_pin(
 
     if not phone_number:
         phone_number = flow_token.split("-")[-1] if flow_token else None
-        
+
         if phone_number:
             asyncio.create_task(
                 whatsapp_client.send_text(
@@ -112,7 +112,7 @@ async def handle_transaction_pin(
                     text="Your transaction session has expired. Please start a new transaction.",
                 )
             )
-        
+
         return format_success_response(
             "SUCCESS",
             request_was_encrypted,
@@ -128,10 +128,7 @@ async def handle_transaction_pin(
     authorization_service = AuthorizationService(redis_client=redis_client)
 
     auth_result = await authorization_service.verify_pin(
-        phone_number, 
-        str(pin), 
-        idem_key,
-        transaction_type=transaction_type
+        phone_number, str(pin), idem_key, transaction_type=transaction_type
     )
 
     if not transaction_type:
@@ -161,7 +158,7 @@ async def handle_transaction_pin(
     try:
         if redis_queue is None:
             redis_queue = RedisQueue(redis_url=settings.redis_url)
-        
+
         flow_event = FlowEvent(
             event_type=FlowEventType.PIN_VERIFIED,
             phone_number=phone_number,
@@ -173,6 +170,7 @@ async def handle_transaction_pin(
     except Exception as e:
         print(f"Error publishing flow event: {e}")
         import traceback
+
         traceback.print_exc()
         return format_error_response(
             "Pin",

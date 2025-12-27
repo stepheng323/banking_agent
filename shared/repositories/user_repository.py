@@ -1,7 +1,6 @@
 """Repository for User model."""
 
 from datetime import datetime
-from typing import Optional
 
 from sqlalchemy.orm import Session
 
@@ -16,15 +15,15 @@ class UserRepository(BaseRepository[User]):
     def __init__(self, db: Session):
         super().__init__(db, User)
 
-    def get_by_phone(self, phone_number: str) -> Optional[User]:
+    def get_by_phone(self, phone_number: str) -> User | None:
         """Get user by phone number."""
         return self.db.query(User).filter(User.phone_number == phone_number).first()
 
-    def get_by_email(self, email: str) -> Optional[User]:
+    def get_by_email(self, email: str) -> User | None:
         """Get user by email."""
         return self.db.query(User).filter(User.email == email).first()
 
-    def get_by_whatsapp_id(self, whatsapp_id: str) -> Optional[User]:
+    def get_by_whatsapp_id(self, whatsapp_id: str) -> User | None:
         """Get user by WhatsApp ID."""
         return self.db.query(User).filter(User.whatsapp_id == whatsapp_id).first()
 
@@ -64,7 +63,7 @@ class UserRepository(BaseRepository[User]):
         """Update user's last active timestamp (doesn't commit)."""
         user = self.get_by_id(user_id)
         if user is not None:
-            setattr(user, "last_active", datetime.utcnow())
+            user.last_active = datetime.utcnow()
 
     def mark_verified(self, user_id: str) -> User:
         """Mark user as verified (doesn't commit)."""

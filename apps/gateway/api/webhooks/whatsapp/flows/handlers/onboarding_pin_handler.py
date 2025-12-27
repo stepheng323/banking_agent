@@ -1,20 +1,22 @@
 """Handler for PIN_ENTRY screen (onboarding flow)."""
 
-from typing import Optional
+from fastapi.responses import Response
 from pydantic import BaseModel
 
-from fastapi.responses import Response
-
-from apps.gateway.api.webhooks.whatsapp.flows.response_helpers import format_error_response, format_success_response
-from shared.services.onboarding import account_service, ServiceResult
+from apps.gateway.api.webhooks.whatsapp.flows.response_helpers import (
+    format_error_response,
+    format_success_response,
+)
+from shared.services.onboarding import ServiceResult, account_service
 
 
 class OnboardingPinInput(BaseModel):
     """Input data for PIN entry screen."""
-    pin: Optional[str] = None
-    email: Optional[str] = None
-    address: Optional[str] = None
-    bvn: Optional[str] = None
+
+    pin: str | None = None
+    email: str | None = None
+    address: str | None = None
+    bvn: str | None = None
 
 
 async def handle_onboarding_pin(
@@ -25,7 +27,7 @@ async def handle_onboarding_pin(
     iv_bytes: bytes,
 ) -> Response:
     """Handle PIN_ENTRY screen - validates PIN, email, address and completes onboarding."""
-    
+
     if not flow_token:
         return format_error_response(
             "PIN_ENTRY",
@@ -35,13 +37,15 @@ async def handle_onboarding_pin(
             iv_bytes,
         )
 
-    result = ServiceResult(**await account_service.complete_onboarding(
-        flow_token,
-        pin=data.pin,
-        email=data.email,
-        address=data.address,
-    ))
-    
+    result = ServiceResult(
+        **await account_service.complete_onboarding(
+            flow_token,
+            pin=data.pin,
+            email=data.email,
+            address=data.address,
+        )
+    )
+
     if result.success:
         return format_success_response(
             "SUCCESS",
@@ -55,7 +59,7 @@ async def handle_onboarding_pin(
                 }
             },
         )
-    
+
     return format_error_response(
         "PIN_ENTRY",
         result.error,

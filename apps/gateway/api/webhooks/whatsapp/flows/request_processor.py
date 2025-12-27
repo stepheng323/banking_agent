@@ -1,13 +1,12 @@
 """Request processing utilities for flow webhook."""
 
 import json
-from typing import Any, Dict, Literal, Optional, Tuple
+from typing import Any, Literal
 
 from fastapi import Request
 from fastapi.responses import Response
 
 from shared.utils import decrypt_flow_data, is_encrypted
-
 
 ScreenType = Literal[
     "BVN_ENTRY",
@@ -25,12 +24,12 @@ class ProcessedRequest:
 
     def __init__(
         self,
-        screen: Optional[ScreenType],
-        data: Dict[str, Any],
-        flow_token: Optional[str],
+        screen: ScreenType | None,
+        data: dict[str, Any],
+        flow_token: str | None,
         request_was_encrypted: bool,
-        aes_key_bytes: Optional[bytes] = None,
-        iv_bytes: Optional[bytes] = None,
+        aes_key_bytes: bytes | None = None,
+        iv_bytes: bytes | None = None,
     ):
         self.screen = screen
         self.data = data
@@ -40,10 +39,10 @@ class ProcessedRequest:
         self.iv_bytes = iv_bytes
 
 
-async def process_flow_request(req: Request) -> Tuple[Optional[ProcessedRequest], Optional[Response]]:
+async def process_flow_request(req: Request) -> tuple[ProcessedRequest | None, Response | None]:
     """
     Process incoming flow request, handling encryption/decryption.
-    
+
     Returns:
         Tuple of (ProcessedRequest, Optional[Response])
         Response is only set if there's an error that should be returned immediately
@@ -53,6 +52,7 @@ async def process_flow_request(req: Request) -> Tuple[Optional[ProcessedRequest]
     except Exception as e:
         print(f"Error parsing JSON: {e}")
         import traceback
+
         traceback.print_exc()
         return (
             None,
@@ -62,7 +62,6 @@ async def process_flow_request(req: Request) -> Tuple[Optional[ProcessedRequest]
                 status_code=400,
             ),
         )
-    
 
     request_was_encrypted = is_encrypted(body)
     aes_key_bytes = None
@@ -79,7 +78,9 @@ async def process_flow_request(req: Request) -> Tuple[Optional[ProcessedRequest]
             error_response = {
                 "errors": [
                     {
-                        "message": "Failed to decrypt request. Please check your encryption configuration."
+                        "message": (
+                            "Failed to decrypt request. Please check your encryption configuration."
+                        )
                     }
                 ]
             }
@@ -102,7 +103,6 @@ async def process_flow_request(req: Request) -> Tuple[Optional[ProcessedRequest]
         data = body.get("data", {})
         flow_token = body.get("flow_token")
 
-
     return (
         ProcessedRequest(
             screen=screen,
@@ -114,4 +114,3 @@ async def process_flow_request(req: Request) -> Tuple[Optional[ProcessedRequest]
         ),
         None,
     )
-

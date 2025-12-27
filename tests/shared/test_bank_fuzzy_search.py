@@ -1,6 +1,7 @@
 """Unit tests for bank fuzzy matching."""
 
 import pytest
+
 from shared.utils.bank_aliases import find_matching_bank_name
 
 
@@ -23,7 +24,7 @@ class TestBankFuzzyMatching:
             "Kuda Microfinance Bank",
             "Sterling Bank",
             "Wema Bank",
-            "Polaris Bank"
+            "Polaris Bank",
         ]
 
     def test_exact_match(self, bank_list):

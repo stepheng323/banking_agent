@@ -1,5 +1,5 @@
 """Unified affirmation/decline detection service."""
 
-from .service import AffirmationService, AffirmationResult
+from .service import AffirmationResult, AffirmationService
 
 __all__ = ["AffirmationService", "AffirmationResult"]

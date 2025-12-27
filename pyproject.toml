@@ -33,7 +33,7 @@ strictSetInference = false
 
 # Ruff (linting) configuration
 [tool.ruff]
-line-length = 100
+line-length = 120
 target-version = "py311"
 exclude = [
     ".git",
@@ -61,10 +61,14 @@ select = [
     "SIM", # flake8-simplify
 ]
 ignore = [
-    "E501",  # line too long (handled by formatter)
-    "B008",  # do not perform function calls in argument defaults
-    "B904",  # raise from exception
-    "N805",  # first argument should be self
+    "B008",   # do not perform function calls in argument defaults
+    "B904",   # raise from exception
+    "N805",   # first argument should be self
+    "SIM103", # return condition directly (often less readable)
+    "SIM105", # use contextlib.suppress (often less clear)
+    "SIM112", # use capitalized env var (intentional lowercase sometimes)
+    "E712",   # comparison to True/False (intentional for SQLAlchemy)
+    "SIM102", # nested if statements (often clearer to keep)
 ]
 
 [tool.ruff.lint.per-file-ignores]

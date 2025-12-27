@@ -11,19 +11,20 @@ This package contains the modular onboarding flow components:
 from dataclasses import dataclass
 from typing import Optional
 
-from .session import SessionManager, OnboardingSession, OnboardingStep
+from .account_add import AccountAddService
+from .account_linking import AccountLinkingService
 from .bvn_verification import BvnVerificationService
 from .mandate import MandateService
-from .account_linking import AccountLinkingService
-from .account_add import AccountAddService
+from .session import OnboardingSession, OnboardingStep, SessionManager
 
 
 @dataclass
 class ServiceResult:
     """Result from service operations."""
+
     success: bool
-    data: Optional[dict] = None
-    error: Optional[str] = None
+    data: dict | None = None
+    error: str | None = None
 
 
 _session_manager = SessionManager()
@@ -35,7 +36,7 @@ _account_add_service = AccountAddService(_session_manager, _mandate_service)
 
 __all__ = [
     "SessionManager",
-    "BvnVerificationService", 
+    "BvnVerificationService",
     "MandateService",
     "AccountLinkingService",
     "AccountAddService",

@@ -1,42 +1,47 @@
 """Graph construction for transfer flow."""
 
-from langgraph.graph import StateGraph, END
+from langgraph.graph import END, StateGraph
 
 from apps.core.src.agent.sub_agents.transfer.extractor import TransferEntityExtractor
-from apps.core.src.agent.tools.beneficiary.matcher import BeneficiaryMatcher
-from apps.core.src.agent.tools.validation.service import AsyncValidationService
 from apps.core.src.agent.sub_agents.transfer.nodes import (
-    extract_entities,
-    load_user_context,
-    validate_amount,
-    select_source_account,
-    find_beneficiary,
-    validate_parallel,
-    check_and_acknowledge_changes,
-    prepare_confirmation,
     authorize_transaction,
-    handle_cancellation,
+    check_and_acknowledge_changes,
     check_funding,
-    plan_funding,
     confirm_funding,
-    verify_funding_approval,
+    extract_entities,
+    find_beneficiary,
+    handle_cancellation,
     initiate_debits,
+    load_user_context,
+    plan_funding,
+    prepare_confirmation,
+    select_source_account,
+    validate_amount,
+    validate_parallel,
+    verify_funding_approval,
     wait_for_debits,
 )
 from apps.core.src.agent.sub_agents.transfer.state import TransferState
-from shared.cache.user_data import UserDataCache
+from apps.core.src.agent.tools.beneficiary.matcher import BeneficiaryMatcher
+from apps.core.src.agent.tools.validation.service import AsyncValidationService
 from shared.cache.bank_cache import BankCacheService
-from shared.repositories.beneficiary_repository import BeneficiaryRepository
-from shared.repositories.account_repository import AccountRepository
-from shared.repositories.actionable_message_repository import ActionableMessageRepository
-from shared.clients.whatsapp.client import WhatsAppClient
+from shared.cache.redis_client import Redis
+from shared.cache.user_data import UserDataCache
 from shared.clients.abstractions import DirectDebitProvider
 from shared.clients.factories import get_direct_debit_provider
-from shared.cache.redis_client import Redis
+from shared.clients.whatsapp.client import WhatsAppClient
 from shared.queue.redis_queue import RedisQueue
+from shared.repositories.account_repository import AccountRepository
+from shared.repositories.actionable_message_repository import ActionableMessageRepository
+from shared.repositories.beneficiary_repository import BeneficiaryRepository
 from shared.services.auth import AuthorizationService
 
-from .routing import route_by_state, route_after_extract, route_after_funding_check, route_after_verification
+from .routing import (
+    route_after_extract,
+    route_after_funding_check,
+    route_after_verification,
+    route_by_state,
+)
 
 
 def build_graph(
@@ -57,22 +62,20 @@ def build_graph(
     """Build the LangGraph workflow."""
     workflow = StateGraph(TransferState)
     authorization_service = AuthorizationService(redis_client=redis_client)
-    
+
     dd_provider = direct_debit_provider or get_direct_debit_provider()
 
     async def extract_node(state: TransferState) -> TransferState:
         return await extract_entities(state, extractor)
 
     async def load_context_node(state: TransferState) -> TransferState:
-        return await load_user_context(
-            state, user_cache, account_repo, beneficiary_repo
-        )
+        return await load_user_context(state, user_cache, account_repo, beneficiary_repo)
 
     async def find_beneficiary_node(state: TransferState) -> TransferState:
         return await find_beneficiary(state, matcher)
 
     async def fetch_banks_func():
-        if not payment_provider or not hasattr(payment_provider, 'fetch_banks'):
+        if not payment_provider or not hasattr(payment_provider, "fetch_banks"):
             return {"success": False, "banks": [], "error": "Provider does not support fetch_banks"}
         try:
             result = await payment_provider.fetch_banks(country="NG")
@@ -95,9 +98,7 @@ def build_graph(
         return await check_and_acknowledge_changes(state, bank_cache)
 
     async def confirm_node(state: TransferState) -> TransferState:
-        return await prepare_confirmation(
-            state, whatsapp_client, redis_client
-        )
+        return await prepare_confirmation(state, whatsapp_client, redis_client)
 
     async def check_funding_node(state: TransferState) -> TransferState:
         return await check_funding(state, dd_provider, whatsapp_client, actionable_message_repo)
@@ -118,9 +119,7 @@ def build_graph(
         return await wait_for_debits(state, dd_provider)
 
     async def authorize_node(state: TransferState) -> TransferState:
-        return await authorize_transaction(
-            state, redis_client, queue, authorization_service
-        )
+        return await authorize_transaction(state, redis_client, queue, authorization_service)
 
     async def cancellation_node(state: TransferState) -> TransferState:
         return await handle_cancellation(state, redis_client)
@@ -153,7 +152,7 @@ def build_graph(
             "load_context": "load_context",
             "authorize": "authorize",
             "verify_funding": "verify_funding",  # Route to verification instead of debit
-        }
+        },
     )
     workflow.add_edge("load_context", "validate_amount")
 
@@ -168,7 +167,7 @@ def build_graph(
             "validate": "validate_parallel",
             "confirm": "confirm",
             "cancel": "cancel",
-        }
+        },
     )
 
     workflow.add_conditional_edges(
@@ -180,7 +179,7 @@ def build_graph(
             "validate": "validate_parallel",
             "confirm": "confirm",
             "cancel": "cancel",
-        }
+        },
     )
 
     workflow.add_conditional_edges(
@@ -191,7 +190,7 @@ def build_graph(
             "validate": "validate_parallel",
             "confirm": "confirm",
             "cancel": "cancel",
-        }
+        },
     )
 
     workflow.add_conditional_edges(
@@ -203,18 +202,18 @@ def build_graph(
             "check_changes": "check_changes",
             "confirm": "confirm",
             "cancel": "cancel",
-        }
+        },
     )
 
     workflow.add_conditional_edges(
         "check_changes",
         route_by_state,
         {
-            "end": END, 
-            "validate": "validate_parallel", 
-            "confirm": "confirm", 
+            "end": END,
+            "validate": "validate_parallel",
+            "confirm": "confirm",
             "cancel": "cancel",
-        }
+        },
     )
 
     # confirm → check_funding (for multi-account support)
@@ -229,7 +228,7 @@ def build_graph(
             "plan_funding": "plan_funding",
             "error": END,
             "end": END,  # For when balance is sufficient and PIN flow sent
-        }
+        },
     )
 
     # plan_funding routes based on result
@@ -240,13 +239,13 @@ def build_graph(
             "authorize": "authorize",
             "confirm_funding": "confirm_funding",
             "error": END,
-        }
+        },
     )
 
     # confirm_funding sends flow and routes to verify_funding
     # Graph will interrupt at verify_funding, waiting for PIN callback
     workflow.add_edge("confirm_funding", "verify_funding")
-    
+
     # verify_funding checks PIN status
     workflow.add_conditional_edges(
         "verify_funding",
@@ -254,7 +253,7 @@ def build_graph(
         {
             "initiate_debits": "initiate_debits",
             "end": END,
-        }
+        },
     )
 
     # initiate_debits → wait_for_debits (poll for completion)
@@ -269,11 +268,10 @@ def build_graph(
             "wait_for_debits": "wait_for_debits",
             "plan_funding": "plan_funding",  # In case debits need re-planning
             "error": END,
-        }
+        },
     )
 
     workflow.add_edge("authorize", END)
     workflow.add_edge("cancel", END)
 
     return workflow
-

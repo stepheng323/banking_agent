@@ -2,7 +2,7 @@
 
 from datetime import datetime
 from enum import Enum
-from typing import Any, Dict, Optional
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -35,11 +35,11 @@ class WhatsAppMessage(BaseModel):
     message_id: str = Field(..., description="WhatsApp message ID")
     from_number: str = Field(..., description="Sender's phone number")
     message_type: MessageType = Field(..., description="Type of message")
-    text: Optional[str] = Field(None, description="Text content")
-    flow_data: Optional[Dict[str, Any]] = Field(None, description="Flow response data")
-    media_id: Optional[str] = Field(None, description="Media ID for download")
-    mime_type: Optional[str] = Field(None, description="MIME type of media")
-    quoted_message_id: Optional[str] = Field(None, description="ID of quoted/replied message")
+    text: str | None = Field(None, description="Text content")
+    flow_data: dict[str, Any] | None = Field(None, description="Flow response data")
+    media_id: str | None = Field(None, description="Media ID for download")
+    mime_type: str | None = Field(None, description="MIME type of media")
+    quoted_message_id: str | None = Field(None, description="ID of quoted/replied message")
     timestamp: datetime = Field(default_factory=datetime.utcnow)
 
     priority: MessagePriority = Field(default=MessagePriority.NORMAL)
@@ -47,7 +47,8 @@ class WhatsAppMessage(BaseModel):
 
     class Config:
         """Pydantic config."""
-        json_encoders = {datetime: lambda v: v.isoformat()} 
+
+        json_encoders = {datetime: lambda v: v.isoformat()}
 
 
 class ProcessedMessage(BaseModel):
@@ -55,14 +56,15 @@ class ProcessedMessage(BaseModel):
 
     message_id: str
     from_number: str
-    intent: Optional[str] = None
-    entities: Dict[str, Any] = Field(default_factory=dict)
-    response: Optional[str] = None
+    intent: str | None = None
+    entities: dict[str, Any] = Field(default_factory=dict)
+    response: str | None = None
     actions: list[str] = Field(default_factory=list)
     processed_at: datetime = Field(default_factory=datetime.utcnow)
     success: bool = True
-    error: Optional[str] = None
+    error: str | None = None
 
     class Config:
         """Pydantic config."""
+
         json_encoders = {datetime: lambda v: v.isoformat()}

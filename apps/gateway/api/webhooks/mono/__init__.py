@@ -1,4 +1,5 @@
 """Mono webhook package."""
+
 from .router import router
 from .service import MonoWebhookService
 

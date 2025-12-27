@@ -1,9 +1,9 @@
 """Shared cancellation utilities for all transaction flows (transfer, airtime, data)."""
 
 import json
-from typing import Dict, Any, Literal, Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Literal, Optional
 
-from shared.cache.redis_client import RedisClient, Redis
+from shared.cache.redis_client import Redis, RedisClient
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -24,6 +24,7 @@ async def get_classification_result(phone_number: str) -> Optional["Classificati
     """
     try:
         from apps.core.src.agent.orchestrator.models.classification import ClassificationResult
+
         redis_client = RedisClient.get_client()
         key = f"user:{phone_number}:last_classification"
         data = await redis_client.get(key)
@@ -37,11 +38,13 @@ async def get_classification_result(phone_number: str) -> Optional["Classificati
 
 async def is_cancellation_intent(
     message: str,
-    phone_number: Optional[str] = None,
+    phone_number: str | None = None,
 ) -> bool:
     """
     Check if user message indicates cancellation intent.
-    Uses classification result from orchestrator if available, otherwise falls back to keyword detection.
+
+    Uses classification result from orchestrator if available,
+    otherwise falls back to keyword detection.
 
     Args:
         message: User's message
@@ -55,26 +58,37 @@ async def is_cancellation_intent(
         classification_result = await get_classification_result(phone_number)
         if classification_result:
             is_cancel = (
-                classification_result.intent.lower() == "cancel" or
-                classification_result.is_cancellation is True
+                classification_result.intent.lower() == "cancel"
+                or classification_result.is_cancellation is True
             )
             if is_cancel:
                 logger.debug(
                     "cancellation_detected_llm",
                     intent=classification_result.intent,
-                    confidence=classification_result.confidence
+                    confidence=classification_result.confidence,
                 )
                 return True
 
     message_lower = message.lower().strip()
     cancellation_keywords = [
-        "cancel", "abort", "stop", "nevermind", "never mind",
-        "forget it", "forgetit", "don't send", "dont send",
-        "don't do it", "dont do it", "ignore", "skip",
-        "no thanks", "not now", "maybe later"
+        "cancel",
+        "abort",
+        "stop",
+        "nevermind",
+        "never mind",
+        "forget it",
+        "forgetit",
+        "don't send",
+        "dont send",
+        "don't do it",
+        "dont do it",
+        "ignore",
+        "skip",
+        "no thanks",
+        "not now",
+        "maybe later",
     ]
-    keyword_match = any(
-        keyword in message_lower for keyword in cancellation_keywords)
+    keyword_match = any(keyword in message_lower for keyword in cancellation_keywords)
     if keyword_match:
         logger.debug("cancellation_detected_keyword")
     return keyword_match
@@ -83,8 +97,8 @@ async def is_cancellation_intent(
 async def cleanup_transaction_redis_keys(
     phone_number: str,
     transaction_type: Literal["transfer", "airtime", "data"],
-    idempotency_key: Optional[str] = None,
-    redis_client: Optional[Redis] = None,
+    idempotency_key: str | None = None,
+    redis_client: Redis | None = None,
 ) -> int:
     """
     Clean up all Redis keys related to a transaction.
@@ -104,37 +118,49 @@ async def cleanup_transaction_redis_keys(
     keys_to_delete = []
 
     if phone_number:
-        keys_to_delete.extend([
-            f"user:{phone_number}:pending_{transaction_type}",
-            f"user:{phone_number}:pending_{transaction_type}_flow_token",
-        ])
+        keys_to_delete.extend(
+            [
+                f"user:{phone_number}:pending_{transaction_type}",
+                f"user:{phone_number}:pending_{transaction_type}_flow_token",
+            ]
+        )
 
     if phone_number and idempotency_key:
         if transaction_type == "transfer":
-            keys_to_delete.extend([
-                f"transfer:token:{idempotency_key}:phone",
-                f"transfer:retry:{idempotency_key}",
-                f"transfer:prev:{phone_number}:{idempotency_key}",
-            ])
+            keys_to_delete.extend(
+                [
+                    f"transfer:token:{idempotency_key}:phone",
+                    f"transfer:retry:{idempotency_key}",
+                    f"transfer:prev:{phone_number}:{idempotency_key}",
+                ]
+            )
         elif transaction_type == "airtime":
-            keys_to_delete.extend([
-                f"airtime:token:{idempotency_key}:phone",
-                f"airtime:retry:{idempotency_key}",
-                f"airtime:prev:{phone_number}:{idempotency_key}",
-            ])
+            keys_to_delete.extend(
+                [
+                    f"airtime:token:{idempotency_key}:phone",
+                    f"airtime:retry:{idempotency_key}",
+                    f"airtime:prev:{phone_number}:{idempotency_key}",
+                ]
+            )
         elif transaction_type == "data":
-            keys_to_delete.extend([
-                f"data:token:{idempotency_key}:phone",
-                f"data:retry:{idempotency_key}",
-                f"data:prev:{phone_number}:{idempotency_key}",
-            ])
+            keys_to_delete.extend(
+                [
+                    f"data:token:{idempotency_key}:phone",
+                    f"data:retry:{idempotency_key}",
+                    f"data:prev:{phone_number}:{idempotency_key}",
+                ]
+            )
 
     if keys_to_delete:
         try:
             deleted = await redis_client.delete(*keys_to_delete)
-            logger.debug("cancellation_redis_cleanup", transaction_type=transaction_type, deleted_count=deleted)
+            logger.debug(
+                "cancellation_redis_cleanup",
+                transaction_type=transaction_type,
+                deleted_count=deleted,
+            )
             return deleted
-        except Exception as e:
+        except Exception:
             logger.error("error_cleaning_up_redis")
             return 0
 
@@ -143,9 +169,9 @@ async def cleanup_transaction_redis_keys(
 
 def get_cancellation_message(
     transaction_type: Literal["transfer", "airtime", "data"],
-    amount: Optional[float] = None,
-    recipient_name: Optional[str] = None,
-    phone_number: Optional[str] = None,
+    amount: float | None = None,
+    recipient_name: str | None = None,
+    phone_number: str | None = None,
 ) -> str:
     """
     Generate appropriate cancellation message based on transaction type.
@@ -163,12 +189,15 @@ def get_cancellation_message(
         if amount and recipient_name:
             amount_str = f"₦{amount:,.0f}"
             if amount == int(amount):
-                amount_str = amount_str.replace('.0', '')
-            return f"Transfer cancelled. The transfer of {amount_str} to {recipient_name} has been cancelled."
+                amount_str = amount_str.replace(".0", "")
+            return (
+                f"Transfer cancelled. The transfer of {amount_str} to "
+                f"{recipient_name} has been cancelled."
+            )
         elif amount:
             amount_str = f"₦{amount:,.0f}"
             if amount == int(amount):
-                amount_str = amount_str.replace('.0', '')
+                amount_str = amount_str.replace(".0", "")
             return f"Transfer cancelled. The transfer of {amount_str} has been cancelled."
         else:
             return "Transfer cancelled. The transaction has been cancelled."
@@ -177,13 +206,19 @@ def get_cancellation_message(
         if amount and phone_number:
             amount_str = f"₦{amount:,.0f}"
             if amount == int(amount):
-                amount_str = amount_str.replace('.0', '')
-            return f"Airtime purchase cancelled. The purchase of {amount_str} airtime for {phone_number} has been cancelled."
+                amount_str = amount_str.replace(".0", "")
+            return (
+                f"Airtime purchase cancelled. The purchase of {amount_str} "
+                f"airtime for {phone_number} has been cancelled."
+            )
         elif amount:
             amount_str = f"₦{amount:,.0f}"
             if amount == int(amount):
-                amount_str = amount_str.replace('.0', '')
-            return f"Airtime purchase cancelled. The purchase of {amount_str} airtime has been cancelled."
+                amount_str = amount_str.replace(".0", "")
+            return (
+                f"Airtime purchase cancelled. The purchase of {amount_str} "
+                "airtime has been cancelled."
+            )
         else:
             return "Airtime purchase cancelled. The transaction has been cancelled."
 
@@ -191,22 +226,25 @@ def get_cancellation_message(
         if amount and phone_number:
             amount_str = f"₦{amount:,.0f}"
             if amount == int(amount):
-                amount_str = amount_str.replace('.0', '')
-            return f"Data purchase cancelled. The purchase of {amount_str} data for {phone_number} has been cancelled."
+                amount_str = amount_str.replace(".0", "")
+            return (
+                f"Data purchase cancelled. The purchase of {amount_str} "
+                f"data for {phone_number} has been cancelled."
+            )
         elif amount:
             amount_str = f"₦{amount:,.0f}"
             if amount == int(amount):
-                amount_str = amount_str.replace('.0', '')
+                amount_str = amount_str.replace(".0", "")
             return f"Data purchase cancelled. The purchase of {amount_str} data has been cancelled."
         else:
             return "Data purchase cancelled. The transaction has been cancelled."
 
 
 async def handle_transaction_cancellation(
-    state: Dict[str, Any],
+    state: dict[str, Any],
     transaction_type: Literal["transfer", "airtime", "data"],
-    redis_client: Optional[Redis] = None,
-) -> Dict[str, Any]:
+    redis_client: Redis | None = None,
+) -> dict[str, Any]:
     """
     Generic cancellation handler for any transaction type.
 
@@ -231,8 +269,7 @@ async def handle_transaction_cancellation(
     if transaction_type == "transfer":
         recipient_name = state.get("recipient_name")
     elif transaction_type in ("airtime", "data"):
-        recipient_phone = state.get(
-            "recipient_phone") or state.get("phone_number")
+        recipient_phone = state.get("recipient_phone") or state.get("phone_number")
 
     await cleanup_transaction_redis_keys(
         phone_number=str(phone_number),
@@ -245,7 +282,7 @@ async def handle_transaction_cancellation(
         key = f"user:{phone_number}:conversation_state"
         await redis_client.delete(key)
         logger.info("cleared_for_cancelled")
-    except Exception as e:
+    except Exception:
         logger.error("error_clearing")
 
     message = get_cancellation_message(

@@ -1,10 +1,9 @@
 """Factory for creating and managing payment and bill payment providers."""
-from typing import List, Optional
 
-from shared.clients.abstractions.payment import PaymentProvider
 from shared.clients.abstractions.bill import BillPaymentProvider
-from shared.clients.providers.flutterwave.payment import FlutterwaveClient
+from shared.clients.abstractions.payment import PaymentProvider
 from shared.clients.providers.flutterwave.bill import FlutterwaveBillsClient
+from shared.clients.providers.flutterwave.payment import FlutterwaveClient
 
 
 class PaymentProviderFactory:
@@ -13,7 +12,7 @@ class PaymentProviderFactory:
     DEFAULT_PROVIDER_ORDER = ["flutterwave"]
 
     @staticmethod
-    def create_provider(provider_name: str) -> Optional[PaymentProvider]:
+    def create_provider(provider_name: str) -> PaymentProvider | None:
         """Create a payment provider instance by name."""
         if provider_name == "flutterwave":
             try:
@@ -23,7 +22,7 @@ class PaymentProviderFactory:
         return None
 
     @staticmethod
-    def create_bill_payment_provider(provider_name: str) -> Optional[BillPaymentProvider]:
+    def create_bill_payment_provider(provider_name: str) -> BillPaymentProvider | None:
         """Create a bill payment provider instance by name."""
         if provider_name == "flutterwave":
             try:
@@ -33,9 +32,7 @@ class PaymentProviderFactory:
         return None
 
     @staticmethod
-    def get_available_providers(
-        priority_order: Optional[List[str]] = None
-    ) -> List[PaymentProvider]:
+    def get_available_providers(priority_order: list[str] | None = None) -> list[PaymentProvider]:
         """Get all available payment providers in priority order."""
         if priority_order is None:
             priority_order = PaymentProviderFactory.DEFAULT_PROVIDER_ORDER
@@ -48,13 +45,13 @@ class PaymentProviderFactory:
         return providers
 
     @staticmethod
-    def get_primary_provider() -> Optional[PaymentProvider]:
+    def get_primary_provider() -> PaymentProvider | None:
         """Get the primary (highest priority) available payment provider."""
         providers = PaymentProviderFactory.get_available_providers()
         return providers[0] if providers else None
 
     @staticmethod
-    def get_provider_by_name(provider_name: str) -> Optional[PaymentProvider]:
+    def get_provider_by_name(provider_name: str) -> PaymentProvider | None:
         """Get a specific payment provider by name."""
         provider = PaymentProviderFactory.create_provider(provider_name)
         if provider and provider.is_available:
@@ -62,13 +59,13 @@ class PaymentProviderFactory:
         return None
 
     @staticmethod
-    def get_bill_payment_provider(provider_name: str = "flutterwave") -> Optional[BillPaymentProvider]:
+    def get_bill_payment_provider(provider_name: str = "flutterwave") -> BillPaymentProvider | None:
         """
         Get a bill payment provider for airtime, data, and utility payments.
-        
+
         Args:
             provider_name: Name of the provider (default: "flutterwave")
-            
+
         Returns:
             Bill payment provider instance if available, None otherwise
         """
@@ -78,7 +75,7 @@ class PaymentProviderFactory:
         return None
 
     @staticmethod
-    def get_provider_for_service(service: str) -> Optional[PaymentProvider]:
+    def get_provider_for_service(service: str) -> PaymentProvider | None:
         """Get the best available payment provider for a specific service."""
         providers = PaymentProviderFactory.get_available_providers()
 
@@ -98,4 +95,3 @@ class PaymentProviderFactory:
             return None
 
         return None
-

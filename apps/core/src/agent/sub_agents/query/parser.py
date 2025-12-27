@@ -1,7 +1,8 @@
 """Query parsing service to extract parameters from natural language questions."""
 
-from typing import Dict, Any
 from datetime import datetime, timedelta
+from typing import Any
+
 from langchain_core.runnables import Runnable
 
 from apps.core.src.agent.sub_agents.query.models import QueryParams
@@ -61,13 +62,10 @@ class QueryParser:
         self.llm = llm
         self.structured_llm = llm.with_structured_output(QueryParams)
 
-    async def parse(self, question: str) -> Dict[str, Any]:
+    async def parse(self, question: str) -> dict[str, Any]:
         """Parse a financial question into query parameters."""
         today = datetime.now()
-        prompt = QUERY_PARSER_PROMPT.format(
-            today=today.strftime("%Y-%m-%d"),
-            question=question
-        )
+        prompt = QUERY_PARSER_PROMPT.format(today=today.strftime("%Y-%m-%d"), question=question)
 
         try:
             result: QueryParams = await self.structured_llm.ainvoke(prompt)
@@ -80,14 +78,14 @@ class QueryParser:
             logger.error("query_parse_error", error=str(e))
             return self._get_default_params()
 
-    def _add_defaults(self, params: Dict[str, Any]) -> Dict[str, Any]:
+    def _add_defaults(self, params: dict[str, Any]) -> dict[str, Any]:
         """Add default values for missing parameters."""
         today = datetime.now()
 
         if not params.get("date_range"):
             params["date_range"] = {
                 "start": (today - timedelta(days=30)).strftime("%Y-%m-%d"),
-                "end": today.strftime("%Y-%m-%d")
+                "end": today.strftime("%Y-%m-%d"),
             }
         elif isinstance(params["date_range"], dict):
             if not params["date_range"].get("start"):
@@ -97,7 +95,7 @@ class QueryParser:
 
         return params
 
-    def _get_default_params(self) -> Dict[str, Any]:
+    def _get_default_params(self) -> dict[str, Any]:
         """Get default parameters for fallback."""
         today = datetime.now()
         return {
@@ -105,8 +103,8 @@ class QueryParser:
             "transaction_type": "both",
             "date_range": {
                 "start": (today - timedelta(days=30)).strftime("%Y-%m-%d"),
-                "end": today.strftime("%Y-%m-%d")
+                "end": today.strftime("%Y-%m-%d"),
             },
             "narration_filter": None,
-            "limit": 10
+            "limit": 10,
         }

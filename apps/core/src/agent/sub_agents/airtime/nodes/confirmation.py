@@ -1,16 +1,16 @@
 """Confirmation node for airtime purchase flow."""
 
+import asyncio
 import hashlib
 import json
+from datetime import datetime, timedelta
 from typing import cast
 
 from apps.core.src.agent.sub_agents.airtime.state import AirtimeState
+from shared.cache.redis_client import Redis
 from shared.clients.whatsapp.client import WhatsAppClient
 from shared.config import settings
-from shared.cache.redis_client import Redis
 from shared.repositories.actionable_message_repository import ActionableMessageRepository
-from datetime import datetime, timedelta
-from typing import Optional
 
 from ..graph.utils import debug_log
 
@@ -28,11 +28,12 @@ async def prepare_confirmation(
     state: AirtimeState,
     whatsapp_client: WhatsAppClient,
     redis_client: Redis,
-    actionable_message_repo: Optional[ActionableMessageRepository] = None,
+    actionable_message_repo: ActionableMessageRepository | None = None,
 ) -> AirtimeState:
     """Prepare airtime purchase confirmation summary."""
     debug_log(
-        f"DEBUG prepare_confirmation: amount={state.get('amount')}, recipient_phone={state.get('recipient_phone')}, network={state.get('network')}")
+        f"DEBUG prepare_confirmation: amount={state.get('amount')}, recipient_phone={state.get('recipient_phone')}, network={state.get('network')}"
+    )
 
     phone_number = state.get("phone_number")
     existing_idem_key = state.get("idempotency_key")
@@ -42,13 +43,17 @@ async def prepare_confirmation(
             pending_airtime = json.loads(pending_data)
             if pending_airtime.get("idempotency_key") == existing_idem_key:
                 debug_log(
-                    f"✓ Airtime confirmation flow already sent for idem_key: {existing_idem_key}")
-                return cast(AirtimeState, {
-                    **state,
-                    "response": "",
-                    "airtime_status": "pending",
-                    "flow_state": "authorizing",
-                })
+                    f"✓ Airtime confirmation flow already sent for idem_key: {existing_idem_key}"
+                )
+                return cast(
+                    AirtimeState,
+                    {
+                        **state,
+                        "response": "",
+                        "airtime_status": "pending",
+                        "flow_state": "authorizing",
+                    },
+                )
 
     amount = state.get("amount")
     recipient_phone = state.get("recipient_phone")
@@ -60,14 +65,15 @@ async def prepare_confirmation(
     idem_key = state.get("idempotency_key")
     if not idem_key:
         idem_key = hashlib.sha256(
-            f"{state['phone_number']}|{amount}|{recipient_phone}|{network}".encode(
-                "utf-8")
+            f"{state['phone_number']}|{amount}|{recipient_phone}|{network}".encode()
         ).hexdigest()
 
-    source_account_number = (source.get(
-        "account_number") if source else None) or ""
-    source_bank_name = (source.get("bank_name") if source else None) or (
-        source.get("name") if source else None) or "Account"
+    source_account_number = (source.get("account_number") if source else None) or ""
+    source_bank_name = (
+        (source.get("bank_name") if source else None)
+        or (source.get("name") if source else None)
+        or "Account"
+    )
 
     # Build recipient lines - cleaner format for mobile
     if recipient_name and recipient_name != recipient_phone:
@@ -81,21 +87,23 @@ async def prepare_confirmation(
             f"*To:* `{recipient_phone}`",
             f"*Network:* {network}",
         ]
-    
+
     lines = [
         f"*Amount:* {_format_currency_naira(float(amount or 0))}",
         *recipient_lines,
     ]
-    
+
     if narration:
         lines.append(f"*Note:* {narration}")
-    
+
     # Separator between recipient and source
     lines.append("")
-    lines.append(f"*From:* {source_bank_name} (···{source_account_number[-4:] if source_account_number else '????'})")
+    lines.append(
+        f"*From:* {source_bank_name} (···{source_account_number[-4:] if source_account_number else '????'})"
+    )
     lines.append("")
     lines.append("Tap *Authorize* to enter your PIN.")
-    
+
     summary = "\n".join(lines)
 
     pending = {
@@ -109,7 +117,8 @@ async def prepare_confirmation(
         "source": {
             "id": source.get("id") if source else None,
             "account_number": source_account_number,
-            "account_name": (source.get("account_name") if source else None) or (source.get("name") if source else None),
+            "account_name": (source.get("account_name") if source else None)
+            or (source.get("name") if source else None),
             "bank_name": source_bank_name,
         },
         "narration": narration,
@@ -123,17 +132,17 @@ async def prepare_confirmation(
     pipe.setex(
         f"user:{state['phone_number']}:pending_airtime",
         settings.pending_transaction_ttl,
-        json.dumps(pending)
+        json.dumps(pending),
     )
     pipe.setex(
         f"user:{state['phone_number']}:pending_airtime_flow_token",
         settings.pending_transaction_ttl,
-        token
+        token,
     )
     pipe.setex(
         f"transaction:token:{idem_key}:phone",
         settings.pending_transaction_ttl,
-        state["phone_number"]
+        state["phone_number"],
     )
     await pipe.execute()
 
@@ -151,7 +160,7 @@ async def prepare_confirmation(
         flow_token=token,
         text_body=summary,
     )
-    
+
     if actionable_message_repo:
         wa_message_id = flow_result.get("messages", [{}])[0].get("id", "")
         user_id = state.get("user_profile", {}).get("id")
@@ -169,10 +178,13 @@ async def prepare_confirmation(
                 expires_at=datetime.utcnow() + timedelta(days=90),
             )
 
-    return cast(AirtimeState, {
-        **state,
-        "response": "", 
-        "idempotency_key": idem_key,
-        "airtime_status": "pending",
-        "flow_state": "authorizing",
-    })
+    return cast(
+        AirtimeState,
+        {
+            **state,
+            "response": "",
+            "idempotency_key": idem_key,
+            "airtime_status": "pending",
+            "flow_state": "authorizing",
+        },
+    )

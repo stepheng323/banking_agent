@@ -1,6 +1,5 @@
 """Shared Redis client singleton."""
 
-from typing import Optional
 import redis.asyncio as redis
 
 from shared.config import settings
@@ -11,11 +10,11 @@ Redis = redis.Redis
 class RedisClient:
     """Singleton Redis client for use across all cache services."""
 
-    _instance: Optional[redis.Redis] = None
-    _redis_url: Optional[str] = None
+    _instance: redis.Redis | None = None
+    _redis_url: str | None = None
 
     @classmethod
-    def get_client(cls, redis_url: Optional[str] = None) -> redis.Redis:
+    def get_client(cls, redis_url: str | None = None) -> redis.Redis:
         """
         Get or create the shared Redis client instance.
 

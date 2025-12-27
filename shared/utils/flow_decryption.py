@@ -13,7 +13,7 @@ According to Meta docs:
 import base64
 import json
 import os
-from typing import Any, Dict, Tuple
+from typing import Any
 
 from Crypto.Cipher import AES, PKCS1_OAEP
 from Crypto.Hash import SHA256
@@ -39,9 +39,7 @@ def get_private_key_from_env() -> str:
         )
 
     if not os.path.exists(key_path):
-        raise FileNotFoundError(
-            f"Private key file not found at: {key_path}"
-        )
+        raise FileNotFoundError(f"Private key file not found at: {key_path}")
 
     with open(key_path, encoding="utf-8") as f:
         return f.read()
@@ -49,7 +47,7 @@ def get_private_key_from_env() -> str:
 
 def decrypt_flow_data(
     encrypted_data: str, encrypted_key: str, iv: str, private_key_pem: str = ""
-) -> Tuple[Dict[str, Any], bytes, bytes] | None:
+) -> tuple[dict[str, Any], bytes, bytes] | None:
     """
     Decrypt WhatsApp Flow encrypted data.
 
@@ -114,7 +112,7 @@ def decrypt_flow_data(
         return None
 
 
-def is_encrypted(body: Dict[str, Any]) -> bool:
+def is_encrypted(body: dict[str, Any]) -> bool:
     """
     Check if the incoming request body contains encrypted flow data.
 

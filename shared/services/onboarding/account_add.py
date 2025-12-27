@@ -15,19 +15,9 @@ logger = get_logger(__name__)
 class AccountAddService:
     """Handles adding new accounts to existing users (post-onboarding)."""
 
-    def __init__(
-        self, session_manager: SessionManager = None, mandate_service: MandateService = None
-    ):
-        # Import here to avoid circular imports during module init
-        if session_manager is None or mandate_service is None:
-            from shared.services.onboarding import mandate_service as ms
-            from shared.services.onboarding import session_manager as sm
-
-            self.session = session_manager or sm
-            self.mandate = mandate_service or ms
-        else:
-            self.session = session_manager
-            self.mandate = mandate_service
+    def __init__(self, session_manager: SessionManager, mandate_service: MandateService):
+        self.session = session_manager
+        self.mandate = mandate_service
 
     async def add_account(self, flow_token: str, account_id: str | None = None) -> dict:
         """

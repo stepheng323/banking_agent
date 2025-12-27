@@ -3,37 +3,37 @@
 from typing import Optional
 
 from apps.core.src.agent.sub_agents.airtime.extractor import AirtimeEntityExtractor
-from shared.cache.user_data import UserDataCache
-from shared.repositories import AccountRepository, BeneficiaryRepository
-from shared.clients.whatsapp.client import WhatsAppClient
-from shared.cache.redis_client import Redis
-from shared.queue.redis_queue import RedisQueue
 from apps.core.src.agent.tools.beneficiary.matcher import BeneficiaryMatcher
+from shared.cache.redis_client import Redis
+from shared.cache.user_data import UserDataCache
+from shared.clients.whatsapp.client import WhatsAppClient
+from shared.queue.redis_queue import RedisQueue
+from shared.repositories import AccountRepository, BeneficiaryRepository
 from shared.services.auth import AuthorizationService
 
 
 class AirtimeNodeContext:
     """Service context for airtime flow nodes.
-    
+
     This allows nodes to access dependencies without requiring them as parameters,
     making all nodes have the signature: (state: AirtimeState) -> AirtimeState
     """
 
-    _instance: Optional['AirtimeNodeContext'] = None
+    _instance: Optional["AirtimeNodeContext"] = None
 
     def __init__(self):
-        self.extractor: Optional[AirtimeEntityExtractor] = None
-        self.user_cache: Optional[UserDataCache] = None
-        self.account_repo: Optional[AccountRepository] = None
-        self.beneficiary_repo: Optional[BeneficiaryRepository] = None
-        self.whatsapp_client: Optional[WhatsAppClient] = None
-        self.redis_client: Optional[Redis] = None
-        self.queue: Optional[RedisQueue] = None
-        self.matcher: Optional[BeneficiaryMatcher] = None
-        self._authorization_service: Optional[AuthorizationService] = None
+        self.extractor: AirtimeEntityExtractor | None = None
+        self.user_cache: UserDataCache | None = None
+        self.account_repo: AccountRepository | None = None
+        self.beneficiary_repo: BeneficiaryRepository | None = None
+        self.whatsapp_client: WhatsAppClient | None = None
+        self.redis_client: Redis | None = None
+        self.queue: RedisQueue | None = None
+        self.matcher: BeneficiaryMatcher | None = None
+        self._authorization_service: AuthorizationService | None = None
 
     @classmethod
-    def get(cls) -> 'AirtimeNodeContext':
+    def get(cls) -> "AirtimeNodeContext":
         """Get the singleton instance of the context."""
         if cls._instance is None:
             cls._instance = cls()
@@ -73,4 +73,3 @@ class AirtimeNodeContext:
         self.redis_client = redis_client
         self.queue = queue
         self.matcher = matcher
-

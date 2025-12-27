@@ -1,10 +1,11 @@
 """Repository for FundedTransfer model."""
+
 from uuid import UUID
-from typing import List, Optional
+
 from sqlalchemy.orm import Session
 
-from shared.repositories.base import BaseRepository
 from shared.database.models import FundedTransfer, FundedTransferStatusEnum
+from shared.repositories.base import BaseRepository
 
 
 class FundedTransferRepository(BaseRepository[FundedTransfer]):
@@ -13,7 +14,7 @@ class FundedTransferRepository(BaseRepository[FundedTransfer]):
     def __init__(self, db: Session):
         super().__init__(db, FundedTransfer)
 
-    def get_by_user(self, user_id: str, limit: int = 20) -> List[FundedTransfer]:
+    def get_by_user(self, user_id: str, limit: int = 20) -> list[FundedTransfer]:
         """Get all funded transfers for a user, ordered by created_at descending."""
         if isinstance(user_id, str):
             try:
@@ -28,7 +29,7 @@ class FundedTransferRepository(BaseRepository[FundedTransfer]):
             .all()
         )
 
-    def get_by_idempotency_key(self, idempotency_key: str) -> Optional[FundedTransfer]:
+    def get_by_idempotency_key(self, idempotency_key: str) -> FundedTransfer | None:
         """Get a funded transfer by idempotency key."""
         return (
             self.db.query(FundedTransfer)
@@ -36,7 +37,7 @@ class FundedTransferRepository(BaseRepository[FundedTransfer]):
             .first()
         )
 
-    def get_by_status(self, status: str) -> List[FundedTransfer]:
+    def get_by_status(self, status: str) -> list[FundedTransfer]:
         """Get funded transfers by status (for background processing)."""
         return (
             self.db.query(FundedTransfer)
@@ -45,29 +46,28 @@ class FundedTransferRepository(BaseRepository[FundedTransfer]):
             .all()
         )
 
-    def get_pending_funding(self) -> List[FundedTransfer]:
+    def get_pending_funding(self) -> list[FundedTransfer]:
         """Get transfers waiting for funding to complete."""
         return self.get_by_status(FundedTransferStatusEnum.FUNDING_PENDING.value)
 
-    def get_pending_payout(self) -> List[FundedTransfer]:
+    def get_pending_payout(self) -> list[FundedTransfer]:
         """Get transfers ready for payout."""
         return self.get_by_status(FundedTransferStatusEnum.PAYOUT_PENDING.value)
 
-    def get_refunding(self) -> List[FundedTransfer]:
+    def get_refunding(self) -> list[FundedTransfer]:
         """Get transfers being refunded."""
         return self.get_by_status(FundedTransferStatusEnum.REFUNDING.value)
 
-    def update_status(self, transfer_id: str, status: str) -> Optional[FundedTransfer]:
+    def update_status(self, transfer_id: str, status: str) -> FundedTransfer | None:
         """Update transfer status."""
         if isinstance(transfer_id, str):
             try:
                 transfer_id = UUID(transfer_id)
             except ValueError:
                 return None
-        
+
         transfer = self.db.query(FundedTransfer).filter(FundedTransfer.id == transfer_id).first()
         if transfer:
             transfer.status = status
             return transfer
         return None
-

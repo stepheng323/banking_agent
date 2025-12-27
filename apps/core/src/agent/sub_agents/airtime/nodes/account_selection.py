@@ -1,20 +1,18 @@
 """Account selection node for airtime purchase flow."""
 
-from typing import Optional
-
-from apps.core.src.agent.tools.account_selection.node import select_source_account_shared
-from apps.core.src.agent.tools.account_selection.mandate_validator import validate_mandate_status
-from apps.core.src.agent.sub_agents.airtime.state import AirtimeState
 from apps.core.src.agent.orchestrator.features.response import (
     ResponseIntent,
     build_response_context,
     get_synthesizer,
 )
+from apps.core.src.agent.sub_agents.airtime.state import AirtimeState
+from apps.core.src.agent.tools.account_selection.mandate_validator import validate_mandate_status
+from apps.core.src.agent.tools.account_selection.node import select_source_account_shared
 
 from ..graph.utils import debug_log
 
 
-async def _validate_airtime_account(state: AirtimeState, selected: dict) -> Optional[AirtimeState]:
+async def _validate_airtime_account(state: AirtimeState, selected: dict) -> AirtimeState | None:
     """
     Validate mandate status for airtime purchases.
     Blocks transactions if account mandate is not ready.
@@ -23,9 +21,7 @@ async def _validate_airtime_account(state: AirtimeState, selected: dict) -> Opti
     if not is_valid:
         synthesizer = get_synthesizer()
         context = build_response_context(
-            ResponseIntent.MANDATE_REQUIRED,
-            state,
-            error_message=error
+            ResponseIntent.MANDATE_REQUIRED, state, error_message=error
         )
         response = await synthesizer.synthesize(context)
         return {
@@ -42,12 +38,14 @@ async def select_source_account(state: AirtimeState) -> AirtimeState:
     accounts = state.get("accounts", [])
     source_account_id = state.get("source_account_id")
     debug_log(
-        f"DEBUG select_source_account: accounts={len(accounts)}, source_account_id={source_account_id}")
-    
+        f"DEBUG select_source_account: accounts={len(accounts)}, source_account_id={source_account_id}"
+    )
+
     result = await select_source_account_shared(state, validator=_validate_airtime_account)
-    
+
     selected = result.get("selected_source_account")
     debug_log(
-        f"DEBUG select_source_account: selected={selected is not None}, response={bool(result.get('response'))}")
-    
+        f"DEBUG select_source_account: selected={selected is not None}, response={bool(result.get('response'))}"
+    )
+
     return result

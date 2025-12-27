@@ -1,30 +1,29 @@
 """Graph builder for airtime purchase flow."""
 
-from langgraph.graph import StateGraph, END
+from langgraph.graph import END, StateGraph
 
 from apps.core.src.agent.sub_agents.airtime.extractor import AirtimeEntityExtractor
-from apps.core.src.agent.sub_agents.airtime.state import AirtimeState
 from apps.core.src.agent.sub_agents.airtime.nodes import (
-    extract_entities,
-    load_user_context,
-    validate_amount,
-    select_source_account,
-    find_beneficiary,
-    prepare_confirmation,
-    handle_cancellation,
     authorize_transaction,
+    extract_entities,
+    find_beneficiary,
+    handle_cancellation,
+    load_user_context,
+    prepare_confirmation,
+    select_source_account,
+    validate_amount,
 )
-
+from apps.core.src.agent.sub_agents.airtime.state import AirtimeState
 from apps.core.src.agent.tools.beneficiary.matcher import BeneficiaryMatcher
-from shared.services.auth import AuthorizationService
-from shared.cache.user_data import UserDataCache
-from shared.repositories import BeneficiaryRepository, AccountRepository
-from shared.repositories.actionable_message_repository import ActionableMessageRepository
-from shared.clients.whatsapp.client import WhatsAppClient
 from shared.cache.redis_client import Redis
+from shared.cache.user_data import UserDataCache
+from shared.clients.whatsapp.client import WhatsAppClient
 from shared.queue.redis_queue import RedisQueue
+from shared.repositories import AccountRepository, BeneficiaryRepository
+from shared.repositories.actionable_message_repository import ActionableMessageRepository
+from shared.services.auth import AuthorizationService
 
-from .routing import route_by_state, route_after_extract
+from .routing import route_after_extract, route_by_state
 
 
 def build_graph(
@@ -45,29 +44,26 @@ def build_graph(
         return await extract_entities(state, extractor)
 
     async def load_context_node(state: AirtimeState) -> AirtimeState:
-        return await load_user_context(
-            state, user_cache, account_repo, beneficiary_repo
-        )
+        return await load_user_context(state, user_cache, account_repo, beneficiary_repo)
 
     async def find_beneficiary_node(state: AirtimeState) -> AirtimeState:
         return await find_beneficiary(state, matcher)
 
     async def confirm_node(state: AirtimeState) -> AirtimeState:
         return await prepare_confirmation(
-            state, whatsapp_client, redis_client, actionable_message_repo  # type: ignore[arg-type]
+            state,
+            whatsapp_client,
+            redis_client,
+            actionable_message_repo,  # type: ignore[arg-type]
         )
 
     async def cancellation_node(state: AirtimeState) -> AirtimeState:
-        return await handle_cancellation(
-            state, redis_client
-        )
+        return await handle_cancellation(state, redis_client)
 
     authorization_service = AuthorizationService(redis_client=redis_client)
 
     async def authorize_node(state: AirtimeState) -> AirtimeState:
-        return await authorize_transaction(
-            state, redis_client, queue, authorization_service
-        )
+        return await authorize_transaction(state, redis_client, queue, authorization_service)
 
     # Add nodes
     workflow.add_node("extract", extract_node)
@@ -87,7 +83,7 @@ def build_graph(
         {
             "cancel": "cancel",
             "__route__": "load_context",
-        }
+        },
     )
 
     workflow.add_edge("load_context", "validate_amount")
@@ -102,7 +98,7 @@ def build_graph(
             "collect_phone": "find_beneficiary",
             "confirm": "confirm",
             "cancel": "cancel",
-        }
+        },
     )
 
     workflow.add_conditional_edges(
@@ -113,7 +109,7 @@ def build_graph(
             "collect_phone": "find_beneficiary",
             "confirm": "confirm",
             "cancel": "cancel",
-        }
+        },
     )
 
     workflow.add_conditional_edges(
@@ -124,7 +120,7 @@ def build_graph(
             "collect_phone": END,  # Don't loop back - wait for user input
             "confirm": "confirm",
             "cancel": "cancel",
-        }
+        },
     )
 
     workflow.add_edge("confirm", "authorize")

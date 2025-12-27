@@ -1,26 +1,23 @@
 """Parse and control nodes for query flow."""
 
-from typing import Dict, Any
+from typing import Any
 
-from apps.core.src.agent.sub_agents.query.parser import QueryParser
 from apps.core.src.agent.sub_agents.query.graph.state import QueryState
+from apps.core.src.agent.sub_agents.query.parser import QueryParser
 from apps.core.src.agent.sub_agents.query.validators import QueryValidator
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
 
 
-async def parse_node(
-    state: QueryState,
-    parser: QueryParser
-) -> Dict[str, Any]:
+async def parse_node(state: QueryState, parser: QueryParser) -> dict[str, Any]:
     """Parse user query into structured parameters."""
     message = state["message"]
     phone_number = state["phone_number"]
-    
+
     try:
         params = await parser.parse(message)
-        
+
         # Validate parsed parameters
         is_valid, error_msg = QueryValidator.validate(params, phone_number)
         if not is_valid:
@@ -28,7 +25,7 @@ async def parse_node(
                 "flow_state": "error",
                 "response": error_msg or "Invalid query parameters.",
             }
-        
+
         return {
             "flow_state": "fetching",
             "query_type": params.get("query_type", "transaction_list"),
@@ -47,32 +44,29 @@ async def parse_node(
         logger.error("parse_node_error", error=str(e))
         return {
             "flow_state": "error",
-            "response": "I couldn't understand your query. Could you rephrase it?"
+            "response": "I couldn't understand your query. Could you rephrase it?",
         }
 
 
-async def paginate_node(state: QueryState) -> Dict[str, Any]:
+async def paginate_node(state: QueryState) -> dict[str, Any]:
     """Handle pagination - load next page."""
     current_page = state.get("current_page", 0)
-    
+
     return {
         "flow_state": "aggregating",
         "current_page": current_page + 1,
     }
 
 
-async def refine_node(
-    state: QueryState,
-    parser: QueryParser
-) -> Dict[str, Any]:
+async def refine_node(state: QueryState, parser: QueryParser) -> dict[str, Any]:
     """Apply filter refinement to existing results."""
     new_filter = state.get("new_filter")
-    
+
     if new_filter:
         return {
             "flow_state": "fetching",
             "narration_filter": new_filter,
             "current_page": 0,
         }
-    
+
     return {"flow_state": "aggregating"}

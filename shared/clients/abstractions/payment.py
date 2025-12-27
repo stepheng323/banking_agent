@@ -1,6 +1,7 @@
 """Abstract base class for payment service providers."""
+
 from abc import ABC, abstractmethod
-from typing import Any, Dict, Optional
+from typing import Any
 
 
 class PaymentProvider(ABC):
@@ -18,7 +19,7 @@ class PaymentProvider(ABC):
     @abstractmethod
     async def resolve_account(
         self, account_number: str, bank_code: str, currency: str = "NGN"
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Resolve bank account details using the provider's API.
 
@@ -47,10 +48,10 @@ class PaymentProvider(ABC):
         amount: float,
         recipient_account_number: str,
         recipient_bank_code: str,
-        sender_account_number: Optional[str] = None,
-        narration: Optional[str] = None,
+        sender_account_number: str | None = None,
+        narration: str | None = None,
         currency: str = "NGN",
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Initiate a bank transfer.
 
@@ -73,13 +74,10 @@ class PaymentProvider(ABC):
         Raises:
             NotImplementedError: If provider doesn't support transfers yet
         """
-        raise NotImplementedError(
-            f"{self.provider_name} does not support transfers yet")
+        raise NotImplementedError(f"{self.provider_name} does not support transfers yet")
 
     @abstractmethod
-    async def get_transfer_status(
-        self, transaction_id: str
-    ) -> Dict[str, Any]:
+    async def get_transfer_status(self, transaction_id: str) -> dict[str, Any]:
         """
         Get the status of a transfer transaction.
 
@@ -97,8 +95,7 @@ class PaymentProvider(ABC):
         Raises:
             NotImplementedError: If provider doesn't support status checks yet
         """
-        raise NotImplementedError(
-            f"{self.provider_name} does not support status checks yet")
+        raise NotImplementedError(f"{self.provider_name} does not support status checks yet")
 
     @property
     @abstractmethod
@@ -127,7 +124,7 @@ class PaymentProvider(ABC):
         """Check if the provider supports fetching bank lists."""
         return False
 
-    async def fetch_banks(self, country: str = "NG") -> Dict[str, Any]:
+    async def fetch_banks(self, country: str = "NG") -> dict[str, Any]:
         """
         Fetch list of supported banks from the provider.
 
@@ -145,5 +142,4 @@ class PaymentProvider(ABC):
         Raises:
             NotImplementedError: If provider doesn't support bank list fetching
         """
-        raise NotImplementedError(
-            f"{self.provider_name} does not support bank list fetching")
+        raise NotImplementedError(f"{self.provider_name} does not support bank list fetching")

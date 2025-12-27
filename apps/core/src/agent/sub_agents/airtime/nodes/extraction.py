@@ -3,11 +3,14 @@
 import time
 from typing import Any, cast
 
-from apps.core.src.agent.sub_agents.airtime.state import AirtimeState
 from apps.core.src.agent.sub_agents.airtime.extractor import AirtimeEntityExtractor
-from apps.core.src.agent.sub_agents.airtime.models import AirtimeExtractionResult, SimpleAirtimeEntities
-from shared.utils.phone_utils import normalize_phone, detect_network_from_phone
+from apps.core.src.agent.sub_agents.airtime.models import (
+    AirtimeExtractionResult,
+    SimpleAirtimeEntities,
+)
+from apps.core.src.agent.sub_agents.airtime.state import AirtimeState
 from shared.utils.logging import get_logger
+from shared.utils.phone_utils import detect_network_from_phone, normalize_phone
 
 logger = get_logger(__name__)
 
@@ -24,16 +27,18 @@ async def extract_entities(state: AirtimeState, extractor: AirtimeEntityExtracto
             airtime_status = state.get("airtime_status")
             idempotency_key = state.get("idempotency_key")
 
-            if (flow_state not in ("extracting", "error", "cancelled", None) or
-                airtime_status == "pending" or
-                    idempotency_key):
+            if (
+                flow_state not in ("extracting", "error", "cancelled", None)
+                or airtime_status == "pending"
+                or idempotency_key
+            ):
                 logger.info("cancellation_detected", flow_state=flow_state)
                 return {
                     **state,
                     "flow_state": "cancelled",
                     "response": "",
                 }
-        
+
         # Detect other interrupts - pause for other intents (will resume after)
         if intent in ("manage_accounts", "query", "transfer", "data"):
             logger.info("airtime_interrupt", intent=intent)
@@ -43,7 +48,7 @@ async def extract_entities(state: AirtimeState, extractor: AirtimeEntityExtracto
                 "interrupt_intent": intent,
                 "response": "",
             }
-    
+
     # Build smart context for extractor
     last_response = state.get("response") or state.get("llm_reply")
     smart_context = {}
@@ -52,10 +57,11 @@ async def extract_entities(state: AirtimeState, extractor: AirtimeEntityExtracto
 
     beneficiaries = state.get("beneficiaries", [])
     from . import filter_airtime_beneficiaries
+
     airtime_beneficiaries = filter_airtime_beneficiaries(beneficiaries)
     if airtime_beneficiaries:
         smart_context["beneficiaries"] = airtime_beneficiaries
-    
+
     language = state.get("language")
     if language:
         smart_context["language"] = language
@@ -63,7 +69,8 @@ async def extract_entities(state: AirtimeState, extractor: AirtimeEntityExtracto
     recent_transactions = state.get("recent_transactions", [])
     if recent_transactions:
         recent_airtime = [
-            t for t in recent_transactions 
+            t
+            for t in recent_transactions
             if t.get("type") == "airtime" and t.get("status") == "success"
         ][:3]
         if recent_airtime:
@@ -112,7 +119,6 @@ async def extract_entities(state: AirtimeState, extractor: AirtimeEntityExtracto
 
     phone_changed = bool(normalized_phone and prev_phone and normalized_phone != prev_phone)
     network_changed = bool(extracted_network and prev_network and extracted_network != prev_network)
-    recipient_changed = phone_changed or network_changed
     had_prev_recipient = bool(prev_phone or prev_network)
 
     # Clear stale amount if recipient changed
@@ -170,7 +176,9 @@ async def extract_entities(state: AirtimeState, extractor: AirtimeEntityExtracto
     post_existing_network = new_state.get("network")
 
     is_new_phone_post = bool(post_incoming_phone and post_incoming_phone != post_existing_phone)
-    is_new_network_post = bool(post_incoming_network and post_incoming_network != post_existing_network)
+    is_new_network_post = bool(
+        post_incoming_network and post_incoming_network != post_existing_network
+    )
 
     if (is_new_phone_post or is_new_network_post) and new_state.get("amount") is not None:
         new_state["amount"] = None
@@ -182,15 +190,22 @@ async def extract_entities(state: AirtimeState, extractor: AirtimeEntityExtracto
     llm_reply = new_state.get("llm_reply")
 
     # Set response if all fields complete
-    if (final_amount and final_phone and final_network and
-        not missing_fields and llm_reply and
-            not new_state.get("response")):
+    if (
+        final_amount
+        and final_phone
+        and final_network
+        and not missing_fields
+        and llm_reply
+        and not new_state.get("response")
+    ):
         new_state["response"] = llm_reply
 
-    logger.debug("extract_entities_complete",
-                 amount=final_amount,
-                 phone=final_phone,
-                 network=final_network,
-                 missing=missing_fields)
+    logger.debug(
+        "extract_entities_complete",
+        amount=final_amount,
+        phone=final_phone,
+        network=final_network,
+        missing=missing_fields,
+    )
 
     return cast(AirtimeState, new_state)

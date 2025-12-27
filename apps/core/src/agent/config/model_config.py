@@ -5,7 +5,7 @@ from typing import Literal
 
 ModelType = Literal[
     "classification",
-    "extraction", 
+    "extraction",
     "planning",
     "conversation",
     "vision",
@@ -15,6 +15,7 @@ ModelType = Literal[
 @dataclass(frozen=True)
 class ModelConfig:
     """Configuration for a specific model."""
+
     name: str
     temperature: float = 0.0
     seed: int | None = 42

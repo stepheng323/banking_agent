@@ -24,10 +24,10 @@ class ConversationResponder:
         profile = user_ctx.get("profile") or {}
         if isinstance(profile, dict):
             name = profile.get("full_name") or profile.get("first_name")
-        
+
         language = user_ctx.get("language") or "English"
         history = user_ctx.get("history") or []
-        
+
         history_text = ""
         if history:
             history_text = "\n\n**CONVERSATION HISTORY (Last 5 turns):**\n"
@@ -41,7 +41,6 @@ class ConversationResponder:
             "Capabilities: money transfer, airtime and data purchase, basic account info. "
             "Safety: Never ask for full card details or full BVN. Keep messages short and friendly. "
             f"Language: Reply in {language}. Adapt to the user's tone (formal/informal/pidgin).\n\n"
-            
             "**CORE INSTRUCTIONS:**\n"
             "1. **Tone**: Be helpful, professional but approachable. You can use emojis sparingly. "
             "If user uses Pidgin, reply in Pidgin/English mix.\n"
@@ -51,7 +50,6 @@ class ConversationResponder:
             "5. **Feedback**: If user compliments, thank them. If they criticize, apologize and promise to improve.\n"
             "6. **Small Talk**: Engage briefly but steer back to banking if the conversation drags on.\n"
             "7. **Memory**: Use the conversation history to understand context (e.g., follow-up questions).\n\n"
-            
             "**GREETING RESPONSES:**\n"
             "When the user greets you (hi, hello, etc.), respond with:\n"
             "- A friendly greeting in {language}\n"
@@ -60,22 +58,22 @@ class ConversationResponder:
             "- Ask how you can help\n"
             "- **IMPORTANT**: A greeting means fresh start. Do NOT reference previous transactions as pending/active.\n"
             "  Previous transfers in history are COMPLETED or CANCELLED, not waiting for action.\n\n"
-            
             "**EXAMPLE RESPONSES:**\n"
             "- User: 'Tell me a joke' -> 'Why did the banker break up with his calculator? Because he couldn't count on it! 😅'\n"
             "- User: 'Thank you' -> 'You're welcome! Let me know if you need anything else.'\n"
             "- User: 'You are stupid' -> 'I'm sorry you feel that way. I'm still learning. How can I help you better?'\n"
         )
-        
+
         user_input = text.strip()
         if name:
             user_input = f"{user_input}\n\n[User's name: {name}]"
-        
-        full_prompt = f"{system}{history_text}\n\nUSER: {user_input}"
-        
+
+
         reply = await self.llm.ainvoke(
-             [{"role": "system", "content": system},
-             {"role": "user", "content": f"{history_text}\n\nUser message: {user_input}"}]
+            [
+                {"role": "system", "content": system},
+                {"role": "user", "content": f"{history_text}\n\nUser message: {user_input}"},
+            ]
         )
 
         if isinstance(reply, str):

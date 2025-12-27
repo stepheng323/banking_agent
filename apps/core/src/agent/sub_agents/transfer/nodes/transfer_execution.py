@@ -2,8 +2,8 @@
 
 Handles both single-account (direct-to-beneficiary) and multi-account (settlement + payout).
 """
-from typing import Any, Optional
-from uuid import UUID
+
+from typing import Any
 
 from apps.core.src.agent.sub_agents.transfer.state import TransferState
 from shared.clients.abstractions import DirectDebitProvider
@@ -18,7 +18,7 @@ async def execute_single_account_transfer(
 ) -> TransferState:
     """
     Execute transfer using Mono direct-to-beneficiary.
-    
+
     One API call: debit from source → credit to recipient.
     """
     amount = state.get("amount", 0)
@@ -26,7 +26,7 @@ async def execute_single_account_transfer(
     recipient_account = state.get("recipient_account")
     recipient_bank_code = state.get("recipient_bank_code")
     idempotency_key = state.get("idempotency_key", "")
-    
+
     mandate_id = selected_account.get("mandate_id")
     if not mandate_id:
         return {
@@ -35,7 +35,7 @@ async def execute_single_account_transfer(
             "transfer_status": "failed",
             "response": "Your account is not set up for transfers. Please complete mandate setup first.",
         }
-    
+
     if not recipient_account or not recipient_bank_code:
         return {
             **state,
@@ -43,7 +43,7 @@ async def execute_single_account_transfer(
             "transfer_status": "failed",
             "response": "Recipient account details missing.",
         }
-    
+
     try:
         result = await direct_debit_provider.initiate_debit(
             mandate_id=mandate_id,
@@ -53,36 +53,39 @@ async def execute_single_account_transfer(
             beneficiary_account=recipient_account,
             beneficiary_bank_code=recipient_bank_code,
         )
-        
+
         if result.success:
-            logger.info("single_account_transfer_initiated",
-                       debit_id=result.debit_id,
-                       amount=amount,
-                       recipient=recipient_account)
-            
+            logger.info(
+                "single_account_transfer_initiated",
+                debit_id=result.debit_id,
+                amount=amount,
+                recipient=recipient_account,
+            )
+
             return {
                 **state,
                 "flow_state": "awaiting_debits",
                 "transfer_status": "authorized",
                 "funding_status": "debiting",
-                "funding_steps": [{
-                    "debit_id": result.debit_id,
-                    "reference": idempotency_key,
-                    "amount": amount,
-                    "status": result.status.value,
-                    "is_direct_to_beneficiary": True,
-                }],
+                "funding_steps": [
+                    {
+                        "debit_id": result.debit_id,
+                        "reference": idempotency_key,
+                        "amount": amount,
+                        "status": result.status.value,
+                        "is_direct_to_beneficiary": True,
+                    }
+                ],
             }
         else:
-            logger.error("single_account_transfer_failed",
-                        error=result.error_message)
+            logger.error("single_account_transfer_failed", error=result.error_message)
             return {
                 **state,
                 "flow_state": "error",
                 "transfer_status": "failed",
                 "response": result.error_message or "Transfer failed. Please try again.",
             }
-            
+
     except Exception as e:
         logger.error("single_account_transfer_exception", error=str(e))
         return {
@@ -99,7 +102,7 @@ async def execute_multi_account_payout(
 ) -> TransferState:
     """
     Execute payout after multi-account debits are complete.
-    
+
     Uses Flutterwave to send aggregated funds to recipient.
     """
     amount = state.get("amount", 0)
@@ -108,7 +111,7 @@ async def execute_multi_account_payout(
     recipient_name = state.get("recipient_name", "")
     idempotency_key = state.get("idempotency_key", "")
     narration = state.get("narration", f"Transfer to {recipient_name}")
-    
+
     if not recipient_account or not recipient_bank_code:
         return {
             **state,
@@ -116,7 +119,7 @@ async def execute_multi_account_payout(
             "transfer_status": "failed",
             "response": "Recipient account details missing.",
         }
-    
+
     try:
         result = await payment_provider.initiate_transfer(
             amount=amount,
@@ -125,12 +128,14 @@ async def execute_multi_account_payout(
             narration=narration,
             reference=idempotency_key,
         )
-        
+
         if result.get("success"):
-            logger.info("multi_account_payout_initiated",
-                       transfer_id=result.get("transfer_id"),
-                       amount=amount)
-            
+            logger.info(
+                "multi_account_payout_initiated",
+                transfer_id=result.get("transfer_id"),
+                amount=amount,
+            )
+
             return {
                 **state,
                 "flow_state": "completed",
@@ -138,15 +143,15 @@ async def execute_multi_account_payout(
                 "funding_status": "completed",
             }
         else:
-            logger.error("multi_account_payout_failed",
-                        error=result.get("error"))
+            logger.error("multi_account_payout_failed", error=result.get("error"))
             return {
                 **state,
                 "flow_state": "error",
                 "transfer_status": "failed",
-                "response": result.get("error") or "Payout failed. Your funds are safe and will be refunded.",
+                "response": result.get("error")
+                or "Payout failed. Your funds are safe and will be refunded.",
             }
-            
+
     except Exception as e:
         logger.error("multi_account_payout_exception", error=str(e))
         return {

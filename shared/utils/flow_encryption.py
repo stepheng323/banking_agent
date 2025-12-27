@@ -6,12 +6,12 @@ Encrypts flow responses using AES-GCM with flipped IV as per Meta's spec.
 
 import base64
 import json
-from typing import Any, Dict
+from typing import Any
 
 from Crypto.Cipher import AES
 
 
-def encrypt_flow_response(response: Dict[str, Any], aes_key: bytes, iv: bytes) -> str:
+def encrypt_flow_response(response: dict[str, Any], aes_key: bytes, iv: bytes) -> str:
     """
     Encrypt a flow response using AES-GCM with flipped IV.
 

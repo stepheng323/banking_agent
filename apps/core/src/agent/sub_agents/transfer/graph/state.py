@@ -1,50 +1,47 @@
 """State management utilities for transfer flow graph."""
 
 import json
-from typing import Optional
-
-from shared.cache.redis_client import RedisClient
-from shared.cache.flow_session_manager import (
-    get_flow_session_age,
-    start_flow_session,
-    clear_flow_session,
-)
-
-from apps.core.src.agent.sub_agents.transfer.state import TransferState
 
 from apps.core.src.agent.sub_agents.transfer.nodes.utils import debug_log
+from apps.core.src.agent.sub_agents.transfer.state import TransferState
+from shared.cache.flow_session_manager import (
+    clear_flow_session,
+    get_flow_session_age,
+    start_flow_session,
+)
+from shared.cache.redis_client import RedisClient
 
 
 def create_initial_state(
-    phone_number: str, 
-    message: str, 
-    message_id: str, 
-    classification_result: Optional[dict] = None,
+    phone_number: str,
+    message: str,
+    message_id: str,
+    classification_result: dict | None = None,
     image_data: str | None = None,
-    quoted_data: dict | None = None
+    quoted_data: dict | None = None,
 ) -> TransferState:
     """Create initial state for transfer flow.
-    
+
     Args:
         quoted_data: Data from quoted transaction (for repeat/modify).
                      Expected format: {"data": {"amount": ..., "recipient_name": ..., ...}}
     """
     language = None
-    
+
     if classification_result and "detected_language" in classification_result:
         language = classification_result.get("detected_language")
-    
+
     amount = None
     recipient_name = None
     recipient_account = None
     recipient_bank_code = None
     recipient_bank_name = None
     account_resolved = None
-    
+
     if quoted_data:
         data = quoted_data.get("data", {})
         amount = data.get("amount")
-        
+
         recipient = data.get("recipient", {})
         if isinstance(recipient, dict) and recipient:
             recipient_name = recipient.get("name")
@@ -71,7 +68,7 @@ def create_initial_state(
                     "bank_name": recipient_bank_name,
                     "success": True,
                 }
-    
+
     return {
         "phone_number": phone_number,
         "message": message,
@@ -122,12 +119,14 @@ async def update_conversation_state(phone_number: str, state: TransferState) -> 
 
         amount = state.get("amount")
         awaiting_confirmation = state.get("awaiting_confirmation")
-        
-        if (transfer_status == "pending" or
-            (flow_state not in ("extracting", "error", None) and active_flow == "transfer") or
-            idem_key or
-            (flow_state == "extracting" and amount) or
-            awaiting_confirmation):
+
+        if (
+            transfer_status == "pending"
+            or (flow_state not in ("extracting", "error", None) and active_flow == "transfer")
+            or idem_key
+            or (flow_state == "extracting" and amount)
+            or awaiting_confirmation
+        ):
             should_save = True
 
         if should_save:
@@ -151,7 +150,8 @@ async def update_conversation_state(phone_number: str, state: TransferState) -> 
             key = f"user:{phone_number}:conversation_state"
             await redis_client.set(key, json.dumps(conversation_state), ex=3600)
             debug_log(
-                f"✓ Updated conversation_state for {phone_number}: active_flow={active_flow}, flow_state={flow_state}, transfer_status={transfer_status}, awaiting_confirmation={awaiting_confirmation}")
+                f"✓ Updated conversation_state for {phone_number}: active_flow={active_flow}, flow_state={flow_state}, transfer_status={transfer_status}, awaiting_confirmation={awaiting_confirmation}"
+            )
         else:
             key = f"user:{phone_number}:conversation_state"
             await redis_client.delete(key)
@@ -159,7 +159,7 @@ async def update_conversation_state(phone_number: str, state: TransferState) -> 
         debug_log(f"⚠️  Error updating conversation_state: {e}")
 
 
-async def get_transfer_session_age(phone_number: str) -> Optional[float]:
+async def get_transfer_session_age(phone_number: str) -> float | None:
     """Get the age of the current transfer session in seconds, or None if no active session."""
     return await get_flow_session_age(phone_number, "transfer")
 
@@ -180,11 +180,11 @@ def has_substantial_transfer_data(state: TransferState) -> bool:
     recipient_account = state.get("recipient_account")
     recipient_name = state.get("recipient_name")
     transfer_status = state.get("transfer_status")
-    
+
     has_amount = amount is not None and amount > 0
     has_recipient = recipient_account is not None or recipient_name is not None
     is_pending = transfer_status == "pending"
-    
+
     return has_amount and has_recipient and is_pending
 
 
@@ -203,23 +203,22 @@ async def clear_all_transfer_state(phone_number: str, redis_client, graph, confi
                         await graph.adelete(config)
                 else:
                     await graph.adelete(config)
-                    
+
                 debug_log(f"🧹 Cleared LangGraph checkpoint for {phone_number}")
             except Exception as e:
                 debug_log(f"⚠️  Error clearing checkpoint (may not exist): {e}")
-        
+
         await clear_flow_session(phone_number, "transfer")
-        
+
         keys_to_delete = [
             f"user:{phone_number}:conversation_state",
             f"user:{phone_number}:pending_transfer",
             f"user:{phone_number}:pending_transfer_flow_token",
         ]
-        
+
         for key in keys_to_delete:
             await redis_client.delete(key)
-        
+
         debug_log(f"🧹 Cleared all transfer state for {phone_number}")
     except Exception as e:
         debug_log(f"⚠️  Error clearing transfer state: {e}")
-

@@ -2,13 +2,12 @@
 
 Uses Mono's Direct Debit API for pulling funds from user bank accounts.
 """
-from typing import Optional
 
 from shared.clients.abstractions.direct_debit import (
-    DirectDebitProvider,
+    BalanceResult,
     DebitResult,
     DebitStatus,
-    BalanceResult,
+    DirectDebitProvider,
 )
 from shared.clients.providers.mono.client import MonoClient
 from shared.utils.logging import get_logger
@@ -19,21 +18,21 @@ logger = get_logger(__name__)
 class MonoDirectDebitProvider(DirectDebitProvider):
     """
     Mono implementation of DirectDebitProvider.
-    
+
     Uses Mono's v3 Direct Debit API for:
     - Balance checks (via account_id)
     - One-time debits (via mandate_id)
     - Debit status checks
     - Reversals/refunds
     """
-    
-    def __init__(self, mono_client: Optional[MonoClient] = None):
+
+    def __init__(self, mono_client: MonoClient | None = None):
         self._client = mono_client or MonoClient()
-    
+
     @property
     def provider_name(self) -> str:
         return "mono"
-    
+
     async def get_balance(self, account_id: str, real_time: bool = True) -> BalanceResult:
         """Get account balance via Mono."""
         try:
@@ -51,20 +50,20 @@ class MonoDirectDebitProvider(DirectDebitProvider):
                 available_balance=0,
                 error_message=str(e),
             )
-    
+
     async def initiate_debit(
         self,
         mandate_id: str,
         amount: float,
         reference: str,
         narration: str = "Transfer",
-        beneficiary_account: Optional[str] = None,
-        beneficiary_bank_code: Optional[str] = None,
+        beneficiary_account: str | None = None,
+        beneficiary_bank_code: str | None = None,
     ) -> DebitResult:
         """Initiate a one-time debit via Mono Direct Debit API."""
         try:
             amount_kobo = int(amount * 100)
-            
+
             response = await self._client.initiate_debit(
                 mandate_id=mandate_id,
                 amount=amount_kobo,
@@ -73,7 +72,7 @@ class MonoDirectDebitProvider(DirectDebitProvider):
                 beneficiary_account=beneficiary_account,
                 beneficiary_bank_code=beneficiary_bank_code,
             )
-            
+
             return DebitResult(
                 success=True,
                 status=self._map_status(response.get("status", "pending")),
@@ -91,12 +90,12 @@ class MonoDirectDebitProvider(DirectDebitProvider):
                 amount=amount,
                 error_message=str(e),
             )
-    
+
     async def get_debit_status(self, debit_id: str) -> DebitResult:
         """Get debit status from Mono."""
         try:
             response = await self._client.get_debit_status(debit_id)
-            
+
             return DebitResult(
                 success=True,
                 status=self._map_status(response.get("status", "pending")),
@@ -113,7 +112,7 @@ class MonoDirectDebitProvider(DirectDebitProvider):
                 debit_id=debit_id,
                 error_message=str(e),
             )
-    
+
     async def reverse_debit(self, debit_id: str, reason: str = "Refund") -> DebitResult:
         """Reverse a debit via Mono (if supported)."""
         # Note: Mono may not support direct reversals - this would trigger a refund flow
@@ -124,7 +123,7 @@ class MonoDirectDebitProvider(DirectDebitProvider):
             debit_id=debit_id,
             error_message="Direct debit reversal not yet implemented for Mono",
         )
-    
+
     def _map_status(self, mono_status: str) -> DebitStatus:
         """Map Mono status to our DebitStatus enum."""
         status_map = {

@@ -2,11 +2,10 @@
 
 import uuid as uuid_module
 from datetime import datetime, timedelta
-from typing import Optional
 
-from shared.clients.providers.mono import mono_client, MonoApiError
-from shared.clients.whatsapp.client import WhatsAppClient
 from shared.cache.user_data import UserDataCache
+from shared.clients.providers.mono import MonoApiError, mono_client
+from shared.clients.whatsapp.client import WhatsAppClient
 from shared.repositories.unit_of_work import UnitOfWork
 from shared.utils.logging import get_logger
 
@@ -15,7 +14,7 @@ logger = get_logger(__name__)
 
 class MandateService:
     """Handles mandate creation, reinitiation, and notifications."""
-    
+
     def build_mandate_auth_message(
         self,
         account_number: str,
@@ -40,24 +39,26 @@ class MandateService:
                 "transfer ₦50 from that account to any of these accounts:",
                 "",
             ]
-        
+
         for dest in transfer_destinations:
             bank = dest.get("bank_name") if isinstance(dest, dict) else dest.bank_name
             acct = dest.get("account_number") if isinstance(dest, dict) else dest.account_number
             lines.append(f"• *{bank}*: {acct}")
-        
-        lines.extend([
-            "",
-            "⚠️ Important:",
-            "• Transfer must come from your linked account",
-            "• Complete within 1 hour",
-            "• This ₦50 goes to NIBSS for verification",
-            "",
-            "Once done, your account will be ready in about 1 hour!",
-        ])
-        
+
+        lines.extend(
+            [
+                "",
+                "⚠️ Important:",
+                "• Transfer must come from your linked account",
+                "• Complete within 1 hour",
+                "• This ₦50 goes to NIBSS for verification",
+                "",
+                "Once done, your account will be ready in about 1 hour!",
+            ]
+        )
+
         return "\n".join(lines)
-    
+
     async def create_mandate(
         self,
         phone_number: str,
@@ -83,7 +84,7 @@ class MandateService:
                 end_date=end_date,
             )
             logger.info("mandate_created", mandate_id=mandate.id, phone=phone_number)
-            
+
             with UnitOfWork() as uow:
                 if uow.accounts:
                     db_account = uow.accounts.get_by_account_id(account_id)
@@ -100,50 +101,53 @@ class MandateService:
                                 for dest in transfer_destinations
                             ],
                         }
-            
+
             try:
                 cache = UserDataCache()
                 await cache.invalidate_accounts(phone_number)
             except Exception:
                 pass
-            
+
             return {"success": True, "mandate": mandate}
-            
+
         except MonoApiError as e:
             logger.error("mandate_creation_failed", error=str(e), phone=phone_number)
             return {"success": False, "error": str(e)}
-    
+
     async def reinitiate_mandate(self, phone_number: str, account_id: str) -> dict:
         """
         Reinitiate mandate for an existing account.
-        
+
         Used when mandate has expired (>1 hour) or was cancelled.
         """
         try:
             with UnitOfWork() as uow:
                 if not uow.users or not uow.accounts:
                     return {"success": False, "error": "Database not available"}
-                
+
                 user = uow.users.get_by_phone(phone_number)
                 if not user:
                     return {"success": False, "error": "User not found"}
-                
+
                 account = uow.accounts.get_by_account_id(account_id)
                 if not account:
                     return {"success": False, "error": "Account not found"}
-                
+
                 mono_customer_id = user.mono_customer_id
                 account_number = account.account_number
                 bank_code = account.bank_code
                 bank_name = account.bank_name
-            
+
             if not mono_customer_id:
-                return {"success": False, "error": "Mono customer not found. Please contact support."}
-            
+                return {
+                    "success": False,
+                    "error": "Mono customer not found. Please contact support.",
+                }
+
             mandate_reference = f"FP-{uuid_module.uuid4().hex[:12].upper()}"
             start_date = datetime.utcnow().strftime("%Y-%m-%d")
             end_date = (datetime.utcnow() + timedelta(days=365)).strftime("%Y-%m-%d")
-            
+
             mandate = await mono_client.create_mandate(
                 customer_id=mono_customer_id,
                 account_number=account_number,
@@ -153,8 +157,13 @@ class MandateService:
                 start_date=start_date,
                 end_date=end_date,
             )
-            logger.info("mandate_reinitiated", mandate_id=mandate.id, phone=phone_number, account_id=account_id)
-            
+            logger.info(
+                "mandate_reinitiated",
+                mandate_id=mandate.id,
+                phone=phone_number,
+                account_id=account_id,
+            )
+
             # Update account with new mandate info
             with UnitOfWork() as uow:
                 if uow.accounts:
@@ -172,13 +181,13 @@ class MandateService:
                                 for dest in transfer_destinations
                             ],
                         }
-            
+
             try:
                 cache = UserDataCache()
                 await cache.invalidate_accounts(phone_number)
             except Exception:
                 pass
-            
+
             whatsapp = WhatsAppClient()
             transfer_destinations = mandate.transfer_destinations or []
             auth_message = self.build_mandate_auth_message(
@@ -188,19 +197,19 @@ class MandateService:
                 is_reinitiation=True,
             )
             await whatsapp.send_text(to=phone_number, text=auth_message)
-            
+
             return {
                 "success": True,
-                "data": {"mandate_id": mandate.id, "message": "Mandate reinitiated successfully"}
+                "data": {"mandate_id": mandate.id, "message": "Mandate reinitiated successfully"},
             }
-            
+
         except MonoApiError as e:
             logger.error("reinitiate_mandate_mono_error", error=str(e), phone=phone_number)
             return {"success": False, "error": f"Failed to reinitiate mandate: {e}"}
         except Exception as e:
             logger.error("reinitiate_mandate_error", error=str(e), phone=phone_number)
             return {"success": False, "error": "Failed to reinitiate mandate. Please try again."}
-    
+
     async def send_auth_instructions(
         self,
         phone_number: str,

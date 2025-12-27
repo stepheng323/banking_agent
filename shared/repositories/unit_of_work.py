@@ -1,31 +1,29 @@
 """Unit of Work pattern for managing database transactions."""
 
-from typing import Optional
-
 from sqlalchemy.orm import Session
 
 from shared.database.connection import get_db_session
 from shared.repositories.account_repository import AccountRepository
-from shared.repositories.user_repository import UserRepository
+from shared.repositories.actionable_message_repository import ActionableMessageRepository
 from shared.repositories.beneficiary_repository import BeneficiaryRepository
-from shared.repositories.transaction_repository import TransactionRepository
 from shared.repositories.funded_transfer_repository import FundedTransferRepository
 from shared.repositories.funding_step_repository import FundingStepRepository
-from shared.repositories.actionable_message_repository import ActionableMessageRepository
+from shared.repositories.transaction_repository import TransactionRepository
+from shared.repositories.user_repository import UserRepository
 
 
 class UnitOfWork:
     """Manages database transactions and repositories."""
 
     def __init__(self):
-        self.db: Optional[Session] = None
-        self.users: Optional[UserRepository] = None
-        self.accounts: Optional[AccountRepository] = None
-        self.beneficiaries: Optional[BeneficiaryRepository] = None
-        self.transactions: Optional[TransactionRepository] = None
-        self.funded_transfers: Optional[FundedTransferRepository] = None
-        self.funding_steps: Optional[FundingStepRepository] = None
-        self.actionable_messages: Optional[ActionableMessageRepository] = None
+        self.db: Session | None = None
+        self.users: UserRepository | None = None
+        self.accounts: AccountRepository | None = None
+        self.beneficiaries: BeneficiaryRepository | None = None
+        self.transactions: TransactionRepository | None = None
+        self.funded_transfers: FundedTransferRepository | None = None
+        self.funding_steps: FundingStepRepository | None = None
+        self.actionable_messages: ActionableMessageRepository | None = None
         self._rolled_back = False
 
     def __enter__(self):

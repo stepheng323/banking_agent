@@ -1,6 +1,6 @@
 """Models for task planning and normalization."""
 
-from typing import Any, Dict, List, Optional, Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -12,12 +12,14 @@ class PlannedTask(BaseModel):
 
     id: str
     action: str
-    executor: Literal["query", "transfer", "airtime", "data", "utility", "system", "tool", "manage_accounts"]
+    executor: Literal[
+        "query", "transfer", "airtime", "data", "utility", "system", "tool", "manage_accounts"
+    ]
     instruction: str
-    description: Optional[str] = None
-    parameters: Dict[str, Any] = Field(default_factory=dict)
-    depends_on: List[str] = Field(default_factory=list)
-    condition: Optional[str] = None
+    description: str | None = None
+    parameters: dict[str, Any] = Field(default_factory=dict)
+    depends_on: list[str] = Field(default_factory=list)
+    condition: str | None = None
     status: TaskStatus = TaskStatus.PENDING
 
 
@@ -25,7 +27,6 @@ class PlannerOutput(BaseModel):
     """Structured output returned by the planner LLM."""
 
     normalized_instruction: str
-    primary_intent: Literal["query", "transfer",
-                            "utility", "mixed", "conversational"]
-    tasks: List[PlannedTask] = Field(default_factory=list)
-    notes: Optional[str] = None
+    primary_intent: Literal["query", "transfer", "utility", "mixed", "conversational"]
+    tasks: list[PlannedTask] = Field(default_factory=list)
+    notes: str | None = None

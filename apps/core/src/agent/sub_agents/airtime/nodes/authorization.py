@@ -3,16 +3,16 @@
 import json
 from typing import cast
 
-from apps.core.src.agent.sub_agents.airtime.state import AirtimeState
 from apps.core.src.agent.orchestrator.features.response import (
     ResponseIntent,
     build_response_context,
     get_synthesizer,
 )
-from shared.services.auth import AuthorizationService
-from shared.services.transactions import create_airtime_transaction
+from apps.core.src.agent.sub_agents.airtime.state import AirtimeState
 from shared.cache.redis_client import Redis
 from shared.queue.redis_queue import RedisQueue
+from shared.services.auth import AuthorizationService
+from shared.services.transactions import create_airtime_transaction
 from shared.utils.logging import get_logger
 
 from ..graph.utils import debug_log
@@ -47,8 +47,7 @@ async def authorize_transaction(
     pin_result = await authorization_service.get_pin_verification_result(idem_key)
 
     if not pin_result:
-        debug_log(
-            f"⚠️  No PIN verification result found for idem_key: {idem_key}")
+        debug_log(f"⚠️  No PIN verification result found for idem_key: {idem_key}")
         return cast(
             AirtimeState,
             {
@@ -63,13 +62,10 @@ async def authorize_transaction(
         retry_count = pin_result.retry_count
 
         if retry_count >= 3:
-            debug_log(
-                f"❌ Max PIN retries exceeded for airtime: {idem_key}")
+            debug_log(f"❌ Max PIN retries exceeded for airtime: {idem_key}")
             await redis_client.delete(f"user:{phone_number}:pending_airtime")
             context = build_response_context(
-                ResponseIntent.MAX_ATTEMPTS_EXCEEDED,
-                state,
-                error_message=error_msg
+                ResponseIntent.MAX_ATTEMPTS_EXCEEDED, state, error_message=error_msg
             )
             response = await synthesizer.synthesize(context)
             return cast(
@@ -85,13 +81,8 @@ async def authorize_transaction(
                 },
             )
 
-        debug_log(
-            f"⚠️  PIN verification failed (attempt {retry_count}/3) for airtime: {idem_key}")
-        context = build_response_context(
-            ResponseIntent.PIN_FAILED,
-            state,
-            error_message=error_msg
-        )
+        debug_log(f"⚠️  PIN verification failed (attempt {retry_count}/3) for airtime: {idem_key}")
+        context = build_response_context(ResponseIntent.PIN_FAILED, state, error_message=error_msg)
         response = await synthesizer.synthesize(context)
         return cast(
             AirtimeState,
@@ -185,7 +176,7 @@ async def authorize_transaction(
         context = build_response_context(
             ResponseIntent.AIRTIME_FAILED,
             state,
-            error_message="Failed to process authorization. Please try again."
+            error_message="Failed to process authorization. Please try again.",
         )
         response = await synthesizer.synthesize(context)
         return cast(

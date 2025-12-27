@@ -1,5 +1,4 @@
 """Mono webhook service - business logic for handling Mono events."""
-from typing import Optional
 
 from shared.cache.user_data import UserDataCache
 from shared.clients.whatsapp.client import WhatsAppClient
@@ -40,7 +39,7 @@ class MonoWebhookService:
     async def handle_mandate_event(self, event: str, data: dict) -> bool:
         """
         Handle mandate lifecycle events.
-        
+
         Returns True if event was processed, False if ignored.
         """
         new_status = self.MANDATE_STATUS_MAP.get(event)
@@ -56,7 +55,7 @@ class MonoWebhookService:
         with UnitOfWork() as uow:
             if not uow.accounts:
                 return False
-                
+
             account = uow.accounts.update_mandate_status(mandate_id, new_status)
             if not account:
                 logger.warning("mandate_not_found", mandate_id=mandate_id)
@@ -72,7 +71,7 @@ class MonoWebhookService:
             user = uow.users.get_by_id(str(account.user_id)) if uow.users else None
             if user and user.phone_number:
                 await self._invalidate_cache(user.phone_number)
-                
+
                 if new_status == "ready":
                     await self._notify_mandate_ready(
                         user.phone_number,
@@ -85,7 +84,7 @@ class MonoWebhookService:
     async def handle_debit_event(self, event: str, data: dict) -> bool:
         """
         Handle direct debit transaction events.
-        
+
         Returns True if event was processed, False if ignored.
         """
         new_status = self.DEBIT_STATUS_MAP.get(event)
@@ -101,7 +100,7 @@ class MonoWebhookService:
         with UnitOfWork() as uow:
             if not uow.funding_steps:
                 return False
-                
+
             step = uow.funding_steps.get_by_provider_reference(reference)
             if not step:
                 logger.warning("funding_step_not_found", reference=reference)
@@ -121,10 +120,12 @@ class MonoWebhookService:
                 status=new_status,
             )
 
-            transfer = uow.funded_transfers.get_by_id(
-                str(step.funded_transfer_id)
-            ) if uow.funded_transfers else None
-            
+            transfer = (
+                uow.funded_transfers.get_by_id(str(step.funded_transfer_id))
+                if uow.funded_transfers
+                else None
+            )
+
             if transfer:
                 await self._check_transfer_completion(uow, transfer, new_status)
 
@@ -178,13 +179,13 @@ class MonoWebhookService:
     async def _queue_refunds(self, uow, transfer) -> None:
         """Queue refund jobs for any successful funding steps."""
         successful_steps = uow.funding_steps.get_confirmed_for_transfer(str(transfer.id))
-        
+
         if not successful_steps:
             logger.info("no_refunds_needed", transfer_id=str(transfer.id))
             uow.funded_transfers.update_status(str(transfer.id), "failed")
             uow.commit()
             return
-        
+
         for step in successful_steps:
             try:
                 await self.queue.enqueue_simple(
@@ -201,7 +202,7 @@ class MonoWebhookService:
                 logger.info("refund_queued", step_id=str(step.id), amount=step.amount)
             except Exception as e:
                 logger.error("refund_queue_failed", step_id=str(step.id), error=str(e))
-        
+
         uow.commit()
 
     async def _queue_payout(self, transfer) -> None:
@@ -220,4 +221,3 @@ class MonoWebhookService:
             logger.info("payout_queued", transfer_id=str(transfer.id))
         except Exception as e:
             logger.error("payout_queue_failed", transfer_id=str(transfer.id), error=str(e))
-

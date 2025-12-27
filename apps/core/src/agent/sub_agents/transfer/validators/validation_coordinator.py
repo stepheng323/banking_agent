@@ -2,24 +2,22 @@
 
 import hashlib
 import json
-from typing import Any, Optional
+from typing import Any
 
-from apps.core.src.agent.tools.account_selection.service import AccountSelectionService
-from apps.core.src.agent.sub_agents.transfer.state import TransferState
 from apps.core.src.agent.orchestrator.features.response import (
     ResponseIntent,
     build_response_context,
     get_synthesizer,
 )
-
+from apps.core.src.agent.sub_agents.transfer.state import TransferState
+from apps.core.src.agent.tools.account_selection.service import AccountSelectionService
 from shared.cache.bank_cache import BankCacheService
 from shared.utils.logging import get_logger
 
-from .self_transfer_validator import SelfTransferValidator
+from .account_validator import AccountValidator
 from .bank_code_resolver import BankCodeResolver
 from .beneficiary_matcher import BeneficiaryMatcher
-from .account_validator import AccountValidator
-
+from .self_transfer_validator import SelfTransferValidator
 
 logger = get_logger(__name__)
 
@@ -114,11 +112,7 @@ class ValidationCoordinator:
                     "recipient_bank_code": resolved_code,
                 }
             else:
-                context = build_response_context(
-                    ResponseIntent.BANK_NOT_FOUND,
-                    state,
-                    bank_name=recipient_bank_name
-                )
+                context = build_response_context(ResponseIntent.BANK_NOT_FOUND, state, bank_name=recipient_bank_name)
                 response = await self.synthesizer.synthesize(context)
                 return {
                     **state,
@@ -177,10 +171,7 @@ class ValidationCoordinator:
             )
 
             if resolved is None or (isinstance(resolved, dict) and not resolved.get("success", False)):
-                context = build_response_context(
-                    ResponseIntent.ACCOUNT_VALIDATION_FAILED,
-                    state
-                )
+                context = build_response_context(ResponseIntent.ACCOUNT_VALIDATION_FAILED, state)
                 response = await self.synthesizer.synthesize(context)
                 # Return to collecting_recipient but preserve values for partial corrections
                 return {
@@ -194,17 +185,13 @@ class ValidationCoordinator:
         if balance:
             try:
                 available = float(balance.get("available", 0))
-                
+
                 # Handle transfer_all: use entire balance (minus minimum for fees)
                 transfer_all = state.get("transfer_all", False)
                 if transfer_all:
-                    MIN_BALANCE_FOR_FEES = 100  # Keep ₦100 for potential fees
-                    if available <= MIN_BALANCE_FOR_FEES:
-                        context = build_response_context(
-                            ResponseIntent.INSUFFICIENT_BALANCE,
-                            state,
-                            balance=available
-                        )
+                    min_balance_for_fees = 100  # Keep ₦100 for potential fees
+                    if available <= min_balance_for_fees:
+                        context = build_response_context(ResponseIntent.INSUFFICIENT_BALANCE, state, balance=available)
                         response = await self.synthesizer.synthesize(context)
                         return {
                             **state,
@@ -212,19 +199,15 @@ class ValidationCoordinator:
                             "response": response,
                             "validation_errors": ["insufficient_balance_for_transfer_all"],
                         }
-                    transfer_amount = available - MIN_BALANCE_FOR_FEES
+                    transfer_amount = available - min_balance_for_fees
                     state = {**state, "amount": transfer_amount}
                     logger.info("transfer_all_amount_resolved", balance=available, amount=transfer_amount)
-                
+
                 amount_value = state.get("amount")
                 if amount_value is not None and available is not None:
                     amount = float(amount_value)
                     if available < amount:
-                        context = build_response_context(
-                            ResponseIntent.INSUFFICIENT_BALANCE,
-                            state,
-                            balance=available
-                        )
+                        context = build_response_context(ResponseIntent.INSUFFICIENT_BALANCE, state, balance=available)
                         response = await self.synthesizer.synthesize(context)
                         return {
                             **state,
@@ -239,7 +222,7 @@ class ValidationCoordinator:
         idem_key = state.get("idempotency_key")
         if not idem_key:
             idem_key = hashlib.sha256(
-                f"{phone_number}|{state.get('amount')}|{recipient_account}|{recipient_bank_name}".encode("utf-8")
+                f"{phone_number}|{state.get('amount')}|{recipient_account}|{recipient_bank_name}".encode()
             ).hexdigest()
 
         if phone_number and idem_key:
@@ -249,16 +232,20 @@ class ValidationCoordinator:
                 "recipient_account": recipient_account,
                 "recipient_bank_code": recipient_bank_code,
                 "recipient_bank_name": recipient_bank_name,
-                "recipient_name": resolved.get("account_name") if isinstance(resolved, dict) else state.get("recipient_name"),
+                "recipient_name": resolved.get("account_name")
+                if isinstance(resolved, dict)
+                else state.get("recipient_name"),
             }
             await self.bank_cache.redis.set(
                 prev_key,
                 json.dumps(prev_values),
-                ex=3600  # 1 hour expiry
+                ex=3600,  # 1 hour expiry
             )
 
         # Extract recipient_name for the state
-        resolved_recipient_name = resolved.get("account_name") if isinstance(resolved, dict) else state.get("recipient_name")
+        resolved_recipient_name = (
+            resolved.get("account_name") if isinstance(resolved, dict) else state.get("recipient_name")
+        )
 
         return {
             **state,
@@ -274,21 +261,21 @@ class ValidationCoordinator:
     async def _resolve_internal_transfer(self, state: TransferState) -> TransferState:
         """
         Resolve internal transfer destination by finding user's account by bank name.
-        
+
         For internal transfers, the recipient is the user's own account at the destination bank.
         This method finds that account and populates the recipient fields.
-        
+
         Args:
             state: Current transfer state with is_internal_transfer=True
-            
+
         Returns:
             Updated state with recipient_account and recipient_bank populated from user's account
         """
-        
+
         accounts = state.get("accounts", [])
         recipient_bank_name = state.get("recipient_bank_name")
         selected_source_account = state.get("selected_source_account")
-        
+
         if not recipient_bank_name:
             context = build_response_context(ResponseIntent.ASK_BANK, state)
             response = await self.synthesizer.synthesize(context)
@@ -298,17 +285,11 @@ class ValidationCoordinator:
                 "response": response,
                 "validation_errors": ["missing_destination_bank"],
             }
-        
-        destination_account = AccountSelectionService.find_account_by_bank_name(
-            accounts, recipient_bank_name
-        )
-        
+
+        destination_account = AccountSelectionService.find_account_by_bank_name(accounts, recipient_bank_name)
+
         if not destination_account:
-            context = build_response_context(
-                ResponseIntent.ACCOUNT_NOT_FOUND,
-                state,
-                bank_name=recipient_bank_name
-            )
+            context = build_response_context(ResponseIntent.ACCOUNT_NOT_FOUND, state, bank_name=recipient_bank_name)
             response = await self.synthesizer.synthesize(context)
             return {
                 **state,
@@ -316,7 +297,7 @@ class ValidationCoordinator:
                 "response": response,
                 "validation_errors": ["destination_account_not_found"],
             }
-        
+
         if selected_source_account:
             is_valid, error_message = self.self_transfer_validator.validate(
                 recipient_account=destination_account.get("account_number"),
@@ -328,17 +309,18 @@ class ValidationCoordinator:
                 return {
                     **state,
                     "flow_state": "error",
-                    "response": error_message or "Source and destination accounts are the same. Please specify different accounts.",
+                    "response": error_message
+                    or "Source and destination accounts are the same. Please specify different accounts.",
                     "validation_errors": ["same_source_destination"],
                 }
-        
+
         logger.info(
             "internal_transfer_resolved",
             source_bank=selected_source_account.get("bank_name") if selected_source_account else None,
             destination_bank=destination_account.get("bank_name"),
             destination_account=destination_account.get("account_number"),
         )
-        
+
         return {
             **state,
             "recipient_account": destination_account.get("account_number"),

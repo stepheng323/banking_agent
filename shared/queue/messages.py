@@ -1,12 +1,13 @@
 """Message types for queue-based inter-service communication."""
 
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass
 from enum import Enum
-from typing import Optional, Dict, Any
+from typing import Any
 
 
 class FlowEventType(str, Enum):
     """Types of flow events."""
+
     PIN_VERIFIED = "pin_verified"
     PIN_FAILED = "pin_failed"
     FLOW_COMPLETED = "flow_completed"
@@ -16,14 +17,14 @@ class FlowEventType(str, Enum):
 @dataclass
 class FlowEvent:
     """Event published when a flow completes (e.g., PIN verification)."""
-    
+
     event_type: FlowEventType
     phone_number: str
     flow_type: str  # "transfer", "airtime", "batch"
     idempotency_key: str
     success: bool
-    error: Optional[str] = None
-    extra_data: Optional[Dict[str, Any]] = None
+    error: str | None = None
+    extra_data: dict[str, Any] | None = None
 
     def to_dict(self) -> dict:
         """Convert to dictionary for JSON serialization."""

@@ -1,7 +1,7 @@
 """Unified transaction consumer for processing all transaction types."""
 
 import asyncio
-from typing import Optional, Any
+from typing import Any
 
 from shared.queue.redis_queue import RedisQueue
 from shared.utils.logging import get_logger
@@ -15,9 +15,9 @@ class TransactionConsumer:
     def __init__(
         self,
         redis_queue: RedisQueue,
-        transfer_executor: Optional[Any] = None,
-        airtime_executor: Optional[Any] = None,
-        data_handler: Optional[Any] = None,
+        transfer_executor: Any | None = None,
+        airtime_executor: Any | None = None,
+        data_handler: Any | None = None,
     ):
         """
         Initialize transaction consumer.
@@ -48,7 +48,7 @@ class TransactionConsumer:
 
         logger.info("transaction_consumer_received", type=transaction_data.get("type"))
         transaction_type = transaction_data.get("type")
-        
+
         if not transaction_type:
             logger.error("invalid_transaction_request", error="missing type field")
             return
@@ -62,7 +62,7 @@ class TransactionConsumer:
                     await self.transfer_executor.handle_transfer(transaction_data)
                 else:
                     logger.error("transfer_executor_missing_method", method="handle_transfer")
-            
+
             elif transaction_type == "execute_airtime":
                 if not self.airtime_executor:
                     logger.error("airtime_executor_not_available")
@@ -71,7 +71,7 @@ class TransactionConsumer:
                     await self.airtime_executor.handle_airtime(transaction_data)
                 else:
                     logger.error("airtime_executor_missing_method", method="handle_airtime")
-            
+
             elif transaction_type == "execute_data":
                 if not self.data_handler:
                     logger.error("data_handler_not_available")
@@ -80,12 +80,17 @@ class TransactionConsumer:
                     await self.data_handler.handle_data(transaction_data)
                 else:
                     logger.error("data_handler_missing_method", method="handle_data")
-            
+
             else:
                 logger.warning("unknown_transaction_type", transaction_type=transaction_type)
-        
+
         except Exception as e:
-            logger.error("transaction_processing_failed", transaction_type=transaction_type, error=str(e), exc_info=True)
+            logger.error(
+                "transaction_processing_failed",
+                transaction_type=transaction_type,
+                error=str(e),
+                exc_info=True,
+            )
 
     async def start(self, queue_name: str = "banking:transactions"):
         """
@@ -98,7 +103,7 @@ class TransactionConsumer:
         logger.info("transaction_consumer_started", queue_name=queue_name)
 
         await self.queue.connect()
-        
+
         while self.running:
             try:
                 transaction_data = await self.queue.dequeue_blocking(
@@ -118,4 +123,3 @@ class TransactionConsumer:
     def stop(self):
         """Stop the transaction consumer."""
         self.running = False
-

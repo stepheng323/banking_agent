@@ -3,8 +3,8 @@
 Run Alembic commands with proper environment setup.
 """
 
-import sys
 import os
+import sys
 from pathlib import Path
 
 # Add project root to Python path
@@ -22,8 +22,7 @@ if env_file.exists():
                 os.environ[key.strip()] = value.strip()
 
 # Import Alembic and run
-import alembic
-from alembic.config import main as alembic_main
+from alembic.config import main as alembic_main  # noqa: E402
 
 if __name__ == "__main__":
     # Get Alembic arguments (skip script name)

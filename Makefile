@@ -36,28 +36,28 @@ help: ## Show this help message
 
 lint: ## Run ruff linter (check only, no fixes)
 	@echo "$(BLUE)🔍 Running Ruff linter...$(RESET)"
-	@ruff check .
+	@.venv/bin/ruff check .
 
 lint-fix: ## Run ruff linter with auto-fix
 	@echo "$(GREEN)🔧 Running Ruff linter with auto-fix...$(RESET)"
-	@ruff check --fix .
+	@.venv/bin/ruff check --fix . || true
 
 type-check: ## Run mypy type checker
 	@echo "$(BLUE)🔍 Running MyPy type checker...$(RESET)"
-	@mypy apps/ shared/ || true
+	@.venv/bin/mypy apps/ shared/ || true
 
 format: ## Format code with ruff
 	@echo "$(GREEN)✨ Formatting code with ruff...$(RESET)"
-	@ruff format .
+	@.venv/bin/ruff format .
 
 format-check: ## Check code formatting (no changes)
 	@echo "$(BLUE)🔍 Checking code formatting...$(RESET)"
-	@ruff format --check .
+	@.venv/bin/ruff format --check .
 
 check-all: lint type-check format-check ## Run all checks (lint + type-check + format-check)
 	@echo "$(GREEN)✅ All checks passed!$(RESET)"
 
-fix: lint-fix format ## Auto-fix linting issues and format code
+fix: format lint-fix ## Auto-fix: format first (whitespace), then lint fixes
 	@echo "$(GREEN)✅ Auto-fixes applied!$(RESET)"
 
 # ============================================================================
@@ -256,26 +256,26 @@ install-hooks: ## Install pre-commit Git hooks
 
 lint-file: ## Lint specific file (usage: make lint-file FILE=path/to/file.py)
 	@echo "$(BLUE)🔍 Linting: $(FILE)...$(RESET)"
-	@ruff check $(FILE)
+	@.venv/bin/ruff check $(FILE)
 
 check-file: ## Type-check specific file (usage: make check-file FILE=path/to/file.py)
 	@echo "$(BLUE)🔍 Type-checking: $(FILE)...$(RESET)"
-	@mypy $(FILE) || true
+	@.venv/bin/mypy $(FILE) || true
 
 format-file: ## Format specific file (usage: make format-file FILE=path/to/file.py)
 	@echo "$(GREEN)✨ Formatting: $(FILE)...$(RESET)"
-	@ruff format $(FILE)
+	@.venv/bin/ruff format $(FILE)
 
 check-orchestrator: ## Check orchestrator.py specifically
 	@echo "$(BLUE)🔍 Checking orchestrator...$(RESET)"
-	@ruff check apps/core/src/agent/orchestrator/
-	@mypy apps/core/src/agent/orchestrator/ || true
+	@.venv/bin/ruff check apps/core/src/agent/orchestrator/
+	@.venv/bin/mypy apps/core/src/agent/orchestrator/ || true
 	@echo "$(GREEN)✅ Orchestrator check complete!$(RESET)"
 
 check-agent: ## Check all agent files
 	@echo "$(BLUE)🔍 Checking all agent files...$(RESET)"
-	@ruff check apps/core/src/agent/
-	@mypy apps/core/src/agent/ || true
+	@.venv/bin/ruff check apps/core/src/agent/
+	@.venv/bin/mypy apps/core/src/agent/ || true
 	@echo "$(GREEN)✅ Agent check complete!$(RESET)"
 
 # ============================================================================

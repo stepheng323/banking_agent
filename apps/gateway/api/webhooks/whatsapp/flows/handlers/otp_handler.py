@@ -1,18 +1,20 @@
 """Handler for OTP_VERIFICATION screen."""
 
-from typing import Optional
+from fastapi.responses import Response
 from pydantic import BaseModel
 
-from fastapi.responses import Response
-
-from apps.gateway.api.webhooks.whatsapp.flows.response_helpers import format_error_response, format_success_response
-from shared.services.onboarding import bvn_service, ServiceResult
+from apps.gateway.api.webhooks.whatsapp.flows.response_helpers import (
+    format_error_response,
+    format_success_response,
+)
+from shared.services.onboarding import ServiceResult, bvn_service
 
 
 class OtpVerificationInput(BaseModel):
     """Input data for OTP verification screen."""
-    otp: Optional[str] = None
-    bvn: Optional[str] = None
+
+    otp: str | None = None
+    bvn: str | None = None
 
 
 async def handle_otp_verification(
@@ -23,9 +25,9 @@ async def handle_otp_verification(
     iv_bytes: bytes,
 ) -> Response:
     """Handle OTP_VERIFICATION screen - validates OTP and fetches bank accounts."""
-    
+
     result = ServiceResult(**await bvn_service.verify_otp(flow_token, data.otp))
-    
+
     if result.success:
         return format_success_response(
             "ACCOUNT_SELECTION",
@@ -37,7 +39,7 @@ async def handle_otp_verification(
             show_error=False,
             error_message="",
         )
-    
+
     return format_error_response(
         "OTP_VERIFICATION",
         result.error,

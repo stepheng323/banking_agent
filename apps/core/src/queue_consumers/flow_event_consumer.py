@@ -1,10 +1,10 @@
 """Flow event consumer for processing PIN verification and other flow events."""
 
 import asyncio
-from typing import Any, Dict, Optional
+from typing import Any
 
-from shared.queue.redis_queue import RedisQueue
 from shared.queue.messages import FLOW_EVENTS_QUEUE, FlowEventType
+from shared.queue.redis_queue import RedisQueue
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -16,10 +16,10 @@ class FlowEventConsumer:
     def __init__(
         self,
         redis_queue: RedisQueue,
-        transfer_service: Optional[Any] = None,
-        airtime_service: Optional[Any] = None,
-        batch_service: Optional[Any] = None,
-        whatsapp_client: Optional[Any] = None,
+        transfer_service: Any | None = None,
+        airtime_service: Any | None = None,
+        batch_service: Any | None = None,
+        whatsapp_client: Any | None = None,
     ):
         self.queue = redis_queue
         self.transfer_service = transfer_service
@@ -28,7 +28,7 @@ class FlowEventConsumer:
         self.whatsapp_client = whatsapp_client
         self.running = False
 
-    async def process_event(self, event_data: Dict[str, Any]) -> None:
+    async def process_event(self, event_data: dict[str, Any]) -> None:
         """Process a flow event from the queue."""
         try:
             event_type = event_data.get("event_type")
@@ -85,7 +85,7 @@ class FlowEventConsumer:
 
         try:
             response = None
-            
+
             if flow_type == "transfer":
                 if self.transfer_service and hasattr(self.transfer_service, "graph"):
                     response = await self.transfer_service.graph.resume_after_pin_verification(
@@ -105,7 +105,9 @@ class FlowEventConsumer:
                     logger.error("airtime_service_not_available")
 
             elif flow_type == "batch":
-                if self.batch_service and hasattr(self.batch_service, "resume_after_pin_verification"):
+                if self.batch_service and hasattr(
+                    self.batch_service, "resume_after_pin_verification"
+                ):
                     response = await self.batch_service.resume_after_pin_verification(
                         phone_number, True, None
                     )
@@ -115,7 +117,7 @@ class FlowEventConsumer:
 
             else:
                 logger.warning("unknown_flow_type", flow_type=flow_type)
-            
+
             # Send response to user if available
             if response and self.whatsapp_client:
                 await self.whatsapp_client.send_text(phone_number, response)
@@ -138,10 +140,7 @@ class FlowEventConsumer:
         await self.queue.connect()
         while self.running:
             try:
-                event_data = await self.queue.dequeue_blocking(
-                    queue_name=queue_name, 
-                    timeout=5
-                )
+                event_data = await self.queue.dequeue_blocking(queue_name=queue_name, timeout=5)
                 if event_data:
                     # Process in background to not block the consumer
                     asyncio.create_task(self.process_event(event_data))

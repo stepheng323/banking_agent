@@ -1,8 +1,9 @@
 """Unit tests for BankCacheService."""
 
-import pytest
 import json
 from unittest.mock import AsyncMock
+
+import pytest
 
 from shared.cache.bank_cache import BankCacheService
 
@@ -63,7 +64,7 @@ class TestBankCacheServiceGetBankCode:
         """Empty cache should return None."""
         mock_redis.get = AsyncMock(return_value=None)
         bank_cache = BankCacheService(redis_client=mock_redis)
-        
+
         code = await bank_cache.get_bank_code("GTB")
         assert code is None
 

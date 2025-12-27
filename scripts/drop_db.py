@@ -21,8 +21,7 @@ if env_file.exists():
                     key, value = line.split("=", 1)
                     os.environ[key.strip()] = value.strip()
 
-from shared.database.connection import drop_db
-
+from shared.database.connection import drop_db  # noqa: E402
 
 if __name__ == "__main__":
     print("⚠️  Dropping all tables...")

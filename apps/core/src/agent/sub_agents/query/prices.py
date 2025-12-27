@@ -4,12 +4,11 @@ This is a curated, limited list. Items not found here will prompt
 the user for a price rather than guessing.
 """
 
-from typing import Optional, Dict, Any
-
+from typing import Any
 
 # Prices in Naira (NGN) - approximate retail prices
 # Last updated: December 2024
-KNOWN_ITEMS: Dict[str, Dict[str, Any]] = {
+KNOWN_ITEMS: dict[str, dict[str, Any]] = {
     # Electronics - Apple
     "macbook pro": {"price": 2_500_000, "category": "electronics"},
     "macbook air": {"price": 1_200_000, "category": "electronics"},
@@ -20,11 +19,9 @@ KNOWN_ITEMS: Dict[str, Dict[str, Any]] = {
     "ipad air": {"price": 800_000, "category": "electronics"},
     "apple watch": {"price": 450_000, "category": "electronics"},
     "airpods pro": {"price": 180_000, "category": "electronics"},
-    
     # Electronics - Samsung
     "samsung galaxy s24": {"price": 750_000, "category": "electronics"},
     "samsung galaxy s24 ultra": {"price": 1_200_000, "category": "electronics"},
-    
     # Electronics - General
     "playstation 5": {"price": 550_000, "category": "electronics"},
     "ps5": {"price": 550_000, "category": "electronics"},
@@ -34,31 +31,41 @@ KNOWN_ITEMS: Dict[str, Dict[str, Any]] = {
 
 # Items that require user input (too variable)
 VARIABLE_ITEMS = {
-    "car", "vehicle", "house", "apartment", "land", "property",
-    "laptop", "phone", "television", "tv", "sofa", "furniture"
+    "car",
+    "vehicle",
+    "house",
+    "apartment",
+    "land",
+    "property",
+    "laptop",
+    "phone",
+    "television",
+    "tv",
+    "sofa",
+    "furniture",
 }
 
 
-def lookup_item_price(item_name: str) -> Optional[Dict[str, Any]]:
+def lookup_item_price(item_name: str) -> dict[str, Any] | None:
     """Look up a known item's price.
-    
+
     Returns:
         Dict with 'price' and 'category' if found, None otherwise.
     """
     if not item_name:
         return None
-    
+
     normalized = item_name.lower().strip()
-    
+
     # Direct lookup
     if normalized in KNOWN_ITEMS:
         return KNOWN_ITEMS[normalized]
-    
+
     # Partial match (e.g., "a macbook" -> "macbook")
     for known_name, data in KNOWN_ITEMS.items():
         if known_name in normalized or normalized in known_name:
             return data
-    
+
     return None
 
 
@@ -66,14 +73,10 @@ def is_variable_item(item_name: str) -> bool:
     """Check if item has too variable pricing to guess."""
     if not item_name:
         return False
-    
+
     normalized = item_name.lower().strip()
-    
-    for variable in VARIABLE_ITEMS:
-        if variable in normalized:
-            return True
-    
-    return False
+
+    return any(variable in normalized for variable in VARIABLE_ITEMS)
 
 
 def get_price_disclaimer() -> str:

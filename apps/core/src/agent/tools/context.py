@@ -5,13 +5,13 @@ from typing import Any, TypeVar, cast
 
 from shared.database import Account
 from shared.database.models import Beneficiary
-from shared.utils.serialization import sqlalchemy_to_dict
 from shared.utils.logging import get_logger
+from shared.utils.serialization import sqlalchemy_to_dict
 
 logger = get_logger(__name__)
 
 
-StateType = TypeVar('StateType')
+StateType = TypeVar("StateType")
 
 
 async def load_user_context_shared(
@@ -36,7 +36,7 @@ async def load_user_context_shared(
     """
     state_dict = cast(dict[str, Any], state)
     phone = state_dict["phone_number"]
-    
+
     # Load from UserDataCache
     cached = await user_cache.get_all_user_data(phone)
     profile = cached.get("profile") or {}
@@ -48,15 +48,15 @@ async def load_user_context_shared(
     user_id = profile.get("id") if isinstance(profile, dict) else None
     if user_id:
         logger.info("user_id")
-        
+
         # Determine what needs to be loaded
         need_beneficiaries = not beneficiaries_list
         need_accounts = not accounts
-        
+
         # If both need loading, fetch in parallel for better performance
         if need_beneficiaries and need_accounts:
             logger.info("loading_both_beneficiaries_and")
-            
+
             def load_beneficiaries_sync():
                 """Load beneficiaries from database (sync)."""
                 try:
@@ -65,29 +65,27 @@ async def load_user_context_shared(
                     )
                 except Exception as ben_error:
                     error_msg = str(ben_error).lower()
-                    if "beneficiary_type" in error_msg and ("does not exist" in error_msg or "undefinedcolumn" in error_msg):
+                    if "beneficiary_type" in error_msg and (
+                        "does not exist" in error_msg or "undefinedcolumn" in error_msg
+                    ):
                         logger.warning("column_not")
                         return beneficiary_repo.get_by_user(str(user_id), beneficiary_type=None)
                     else:
                         raise
-            
+
             def load_accounts_sync():
                 """Load accounts from database (sync)."""
                 return account_repo.get_by_user(str(user_id))
-            
+
             # Run both queries in parallel using thread pool for sync DB calls
             try:
-                beneficiaries_task = asyncio.create_task(
-                    asyncio.to_thread(load_beneficiaries_sync)
-                )
-                accounts_task = asyncio.create_task(
-                    asyncio.to_thread(load_accounts_sync)
-                )
-                
+                beneficiaries_task = asyncio.create_task(asyncio.to_thread(load_beneficiaries_sync))
+                accounts_task = asyncio.create_task(asyncio.to_thread(load_accounts_sync))
+
                 beneficiaries_result, accounts_result = await asyncio.gather(
                     beneficiaries_task, accounts_task, return_exceptions=True
                 )
-                
+
                 # Handle beneficiaries result
                 if isinstance(beneficiaries_result, Exception):
                     logger.error("error_loading")
@@ -95,7 +93,7 @@ async def load_user_context_shared(
                 else:
                     beneficiaries_list = beneficiaries_result or []
                     logger.info("loaded_beneficiaries_from")
-                
+
                 # Handle accounts result
                 if isinstance(accounts_result, Exception):
                     logger.error("error_loading")
@@ -103,17 +101,18 @@ async def load_user_context_shared(
                 else:
                     accounts = accounts_result or []
                     logger.info("loaded_accounts_from")
-                    
-            except Exception as e:
+
+            except Exception:
                 logger.error("error_in_parallel")
                 import traceback
+
                 traceback.print_exc()
                 # Fallback to empty lists
                 if need_beneficiaries:
                     beneficiaries_list = []
                 if need_accounts:
                     accounts = []
-        
+
         else:
             # Load sequentially if only one needs loading
             try:
@@ -125,15 +124,19 @@ async def load_user_context_shared(
                         )
                     except Exception as ben_error:
                         error_msg = str(ben_error).lower()
-                        if "beneficiary_type" in error_msg and ("does not exist" in error_msg or "undefinedcolumn" in error_msg):
+                        if "beneficiary_type" in error_msg and (
+                            "does not exist" in error_msg or "undefinedcolumn" in error_msg
+                        ):
                             logger.warning("column_not")
-                            beneficiaries_list = beneficiary_repo.get_by_user(str(user_id), beneficiary_type=None)
+                            beneficiaries_list = beneficiary_repo.get_by_user(
+                                str(user_id), beneficiary_type=None
+                            )
                         else:
                             raise
                     logger.info("loaded_beneficiaries_from")
                 else:
                     logger.info("using_beneficiaries_from")
-                    
+
                 if need_accounts:
                     logger.info("loading_accounts_from_database")
                     db_accounts = account_repo.get_by_user(str(user_id))
@@ -141,22 +144,21 @@ async def load_user_context_shared(
                     logger.info("loaded_accounts_from")
                 else:
                     logger.info("using_accounts_from")
-            except Exception as e:
+            except Exception:
                 logger.error("error_loading_data_from")
                 import traceback
+
                 traceback.print_exc()
     else:
         logger.warning("no_found_in")
 
     accounts_dict = [
-        sqlalchemy_to_dict(acc) if isinstance(acc, Account) else acc
-        for acc in accounts
+        sqlalchemy_to_dict(acc) if isinstance(acc, Account) else acc for acc in accounts
     ]
     beneficiaries_dict = [
-        sqlalchemy_to_dict(b) if isinstance(b, Beneficiary) else b
-        for b in beneficiaries_list
+        sqlalchemy_to_dict(b) if isinstance(b, Beneficiary) else b for b in beneficiaries_list
     ]
-    
+
     # Cache the loaded data
     if beneficiaries_dict:
         await user_cache.set_beneficiaries(phone, beneficiaries_dict)

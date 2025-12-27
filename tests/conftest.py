@@ -1,12 +1,11 @@
 """Pytest configuration and shared fixtures."""
 
-import pytest
-from unittest.mock import AsyncMock, MagicMock
-from typing import List, Dict
+from unittest.mock import AsyncMock
 
+import pytest
 
 # Sample bank data for testing
-SAMPLE_BANKS: List[Dict[str, str]] = [
+SAMPLE_BANKS: list[dict[str, str]] = [
     {"id": "1", "code": "058", "name": "GTBank Plc"},
     {"id": "2", "code": "033", "name": "United Bank For Africa"},
     {"id": "3", "code": "044", "name": "Access Bank"},
@@ -19,7 +18,7 @@ SAMPLE_BANKS: List[Dict[str, str]] = [
 
 
 @pytest.fixture
-def sample_banks() -> List[Dict[str, str]]:
+def sample_banks() -> list[dict[str, str]]:
     """Provide sample bank data for tests."""
     return SAMPLE_BANKS.copy()
 
@@ -38,7 +37,9 @@ def mock_redis():
 def mock_bank_cache_with_banks(mock_redis, sample_banks):
     """Provide a BankCacheService with mocked Redis containing sample banks."""
     import json
+
     mock_redis.get = AsyncMock(return_value=json.dumps(sample_banks))
-    
+
     from shared.cache.bank_cache import BankCacheService
+
     return BankCacheService(redis_client=mock_redis)

@@ -1,13 +1,13 @@
 """Cancellation handler for the orchestrator."""
 
-from typing import Optional, TYPE_CHECKING
 import asyncio
+from typing import TYPE_CHECKING, Optional
 
-from shared.cache.redis_client import RedisClient
-from apps.core.src.agent.orchestrator.models.classification import ClassificationResult
-from apps.core.src.agent.sub_agents.transfer import TransferService
-from apps.core.src.agent.sub_agents.airtime import AirtimeService
 from apps.core.src.agent.orchestrator.features.context.service import OrchestratorContextManager
+from apps.core.src.agent.orchestrator.models.classification import ClassificationResult
+from apps.core.src.agent.sub_agents.airtime import AirtimeService
+from apps.core.src.agent.sub_agents.transfer import TransferService
+from shared.cache.redis_client import RedisClient
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -35,10 +35,10 @@ class OrchestratorCancellationHandler:
         self,
         phone_number: str,
         text: str,
-        result: Optional[ClassificationResult],
-        conversation_state: Optional[dict],
-        classifier_response: Optional[str] = None,
-    ) -> Optional[str]:
+        result: ClassificationResult | None,
+        conversation_state: dict | None,
+        classifier_response: str | None = None,
+    ) -> str | None:
         """
         Handle cancellation request.
 
@@ -57,36 +57,37 @@ class OrchestratorCancellationHandler:
             has_active_queue = await self.task_queue_service.has_active_queue(phone_number)
             if has_active_queue:
                 logger.info(f"Cancellation detected during active task queue for {phone_number}")
-                
+
                 # Get current task to determine if we need to clear transfer checkpoint
                 current_task_id = await self.task_queue_service.get_current_task(phone_number)
                 planner_output = await self.task_queue_service.get_task_queue(phone_number)
                 current_task_executor = None
-                
+
                 if planner_output and current_task_id:
                     for task in planner_output.tasks:
                         if task.id == current_task_id:
                             current_task_executor = task.executor
                             break
-                
+
                 # Clear task queue
                 await self.task_queue_service.clear_task_queue(phone_number)
                 logger.info(f"Cleared task queue for {phone_number}")
-                
+
                 # Clear conversation state
                 await self.context_manager.clear_conversation_state(phone_number)
                 logger.info(f"Cleared conversation state for {phone_number}")
-                
+
                 # Clear transfer checkpoint if current task is a transfer
                 if current_task_executor == "transfer":
                     await self.transfer_service.clear_checkpoint(phone_number)
                     logger.info(f"Cleared transfer checkpoint for {phone_number}")
-                
+
                 cancel_response = "All pending transfers have been cancelled."
                 asyncio.create_task(
-                    self.context_manager.save_last_response(phone_number, cancel_response))
+                    self.context_manager.save_last_response(phone_number, cancel_response)
+                )
                 return cancel_response
-        
+
         # SECOND: Check for active single transactions
         has_active_transaction = False
         active_flow = None
@@ -100,10 +101,11 @@ class OrchestratorCancellationHandler:
             transfer_status = conversation_state.get("transfer_status")
             airtime_status = conversation_state.get("airtime_status")
 
-            if (active_flow and
-                (flow_state not in ("extracting", "error", "cancelled", None) or
-                 transfer_status == "pending" or
-                 airtime_status == "pending")):
+            if active_flow and (
+                flow_state not in ("extracting", "error", "cancelled", None)
+                or transfer_status == "pending"
+                or airtime_status == "pending"
+            ):
                 has_active_transaction = True
 
         if not has_active_transaction:
@@ -115,9 +117,8 @@ class OrchestratorCancellationHandler:
                     has_active_transaction = True
                     active_flow = "transfer"
                     transfer_status = "pending"
-                    logger.info(
-                        "Found active transaction via pending_transfer fallback")
-                
+                    logger.info("Found active transaction via pending_transfer fallback")
+
                 # Check for pending airtime
                 if not has_active_transaction:
                     pending_airtime = await redis_client.get(f"user:{phone_number}:pending_airtime")
@@ -125,30 +126,32 @@ class OrchestratorCancellationHandler:
                         has_active_transaction = True
                         active_flow = "airtime"
                         airtime_status = "pending"
-                        logger.info(
-                            "Found active transaction via pending_airtime fallback")
+                        logger.info("Found active transaction via pending_airtime fallback")
             except Exception as e:
                 logger.error(f"Error checking pending transactions: {e}")
 
         if has_active_transaction:
             # Clear state and checkpoints - no need to call subgraph for cancellation
             await self.context_manager.clear_conversation_state(phone_number)
-            
+
             if active_flow == "transfer":
                 await self.transfer_service.clear_checkpoint(phone_number)
             elif active_flow == "airtime":
                 await self.airtime_service.clear_checkpoint(phone_number)
-            
+
             # Use classifier's LLM-generated response if available
-            cancel_response = classifier_response or "Transaction cancelled. Anything else I can help with?"
+            cancel_response = (
+                classifier_response or "Transaction cancelled. Anything else I can help with?"
+            )
             asyncio.create_task(
-                self.context_manager.save_last_response(phone_number, cancel_response))
+                self.context_manager.save_last_response(phone_number, cancel_response)
+            )
             logger.info("cancellation_completed", phone=phone_number, flow=active_flow)
             return cancel_response
 
         # No active transaction
-        cancel_response = classifier_response or "There's nothing to cancel right now. How can I help?"
-        asyncio.create_task(
-            self.context_manager.save_last_response(phone_number, cancel_response))
+        cancel_response = (
+            classifier_response or "There's nothing to cancel right now. How can I help?"
+        )
+        asyncio.create_task(self.context_manager.save_last_response(phone_number, cancel_response))
         return cancel_response
-

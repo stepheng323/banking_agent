@@ -1,10 +1,8 @@
 """Beneficiary fuzzy matcher service."""
 
-from typing import List, Optional, Tuple
 import difflib
 
 from shared.database import Beneficiary
-
 
 
 class BeneficiaryMatcher:
@@ -16,34 +14,37 @@ class BeneficiaryMatcher:
       - candidates: top-N candidates when status == "clarify"
     """
 
-    def __init__(self, max_candidates: int = 3, threshold_single: float = 0.9, threshold_min: float = 0.6) -> None:
+    def __init__(
+        self, max_candidates: int = 3, threshold_single: float = 0.9, threshold_min: float = 0.6
+    ) -> None:
         self.max_candidates = max_candidates
         self.threshold_single = threshold_single
         self.threshold_min = threshold_min
 
-    def match(self, name: str, beneficiaries: List[Beneficiary]) -> Tuple[str, Optional[Beneficiary], List[Beneficiary]]:
+    def match(
+        self, name: str, beneficiaries: list[Beneficiary]
+    ) -> tuple[str, Beneficiary | None, list[Beneficiary]]:
         """Match a beneficiary name to a list of beneficiaries."""
         if not name or not beneficiaries:
             return "ask_details", None, []
 
         name_lower = name.lower().strip()
-        
+
         # First, check for exact alias match (case-insensitive) - highest priority
         for b in beneficiaries:
             alias = str(b.alias or "").lower().strip() if b.alias else ""
             account_name = str(b.account_name or "").lower().strip() if b.account_name else ""
-            
+
             # Exact alias match takes priority
             if alias and alias == name_lower:
                 return "single", b, []
-            
+
             # Exact account_name match (secondary priority)
             if account_name and account_name == name_lower:
                 return "single", b, []
-        
+
         # If no exact match, fall back to fuzzy matching
-        names = [str(b.account_name or b.alias or "")
-                 for b in beneficiaries]
+        names = [str(b.account_name or b.alias or "") for b in beneficiaries]
         ratios = [
             (i, difflib.SequenceMatcher(a=name_lower, b=n.lower()).ratio())
             for i, n in enumerate(names)

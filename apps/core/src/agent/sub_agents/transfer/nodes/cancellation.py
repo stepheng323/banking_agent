@@ -2,8 +2,8 @@
 
 from typing import cast
 
-from apps.core.src.agent.tools.cancellation import handle_transaction_cancellation
 from apps.core.src.agent.sub_agents.transfer.state import TransferState
+from apps.core.src.agent.tools.cancellation import handle_transaction_cancellation
 from shared.cache.redis_client import Redis
 
 from .utils import debug_log
@@ -18,13 +18,13 @@ async def handle_cancellation(
     Uses shared cancellation utilities for consistency across transaction types.
     """
     debug_log(
-        f"🛑 handle_cancellation called: flow_state={state.get('flow_state')}, amount={state.get('amount')}, recipient={state.get('recipient_name')}")
+        f"🛑 handle_cancellation called: flow_state={state.get('flow_state')}, amount={state.get('amount')}, recipient={state.get('recipient_name')}"
+    )
     state_dict = dict(state)
     result = await handle_transaction_cancellation(
         state=state_dict,
         transaction_type="transfer",
         redis_client=redis_client,
     )
-    debug_log(
-        f"✓ handle_cancellation completed: response={result.get('response', '')[:50]}...")
+    debug_log(f"✓ handle_cancellation completed: response={result.get('response', '')[:50]}...")
     return cast(TransferState, result)

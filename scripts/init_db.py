@@ -21,7 +21,7 @@ if env_file.exists():
                     os.environ[key.strip()] = value.strip()
 
 # Now import and run
-from shared.database.connection import init_db
+from shared.database.connection import init_db  # noqa: E402
 
 if __name__ == "__main__":
     print("🗄️  Initializing database...")

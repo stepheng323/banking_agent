@@ -1,39 +1,43 @@
 """Service for managing user bank accounts."""
 
 import asyncio
-from typing import List, Optional, Dict, Any
 import time
+from typing import Any
+
 from langchain_openai import ChatOpenAI
-from shared.clients.whatsapp.client import WhatsAppClient
-from shared.clients.providers.mono import mono_client
-from shared.cache.user_data import UserDataCache
-from shared.config import settings
-from shared.repositories.account_repository import AccountRepository
-from shared.repositories.user_repository import UserRepository
-from shared.repositories.unit_of_work import UnitOfWork
-from shared.models.account import Account
-from shared.database.models import User
-from shared.utils.logging import get_logger
-from apps.core.src.agent.sub_agents.account_management.parser import AccountManagementParser, AccountManagementIntent
+
 from apps.core.src.agent.sub_agents.account_management.formatter import AccountManagementFormatter
+from apps.core.src.agent.sub_agents.account_management.parser import (
+    AccountManagementIntent,
+    AccountManagementParser,
+)
+from shared.cache.user_data import UserDataCache
+from shared.clients.providers.mono import mono_client
+from shared.clients.whatsapp.client import WhatsAppClient
+from shared.config import settings
+from shared.models.account import Account
+from shared.repositories.account_repository import AccountRepository
+from shared.repositories.unit_of_work import UnitOfWork
+from shared.repositories.user_repository import UserRepository
 from shared.services.onboarding import bvn_service
+from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
 
 
 class AccountManagementService:
     """Service for managing user bank accounts (link, unlink, list, set default)."""
-    
+
     def __init__(
-        self, 
-        account_repo: AccountRepository, 
+        self,
+        account_repo: AccountRepository,
         user_repo: UserRepository,
         llm: ChatOpenAI,
-        whatsapp_client: WhatsAppClient
+        whatsapp_client: WhatsAppClient,
     ):
         """
         Initialize account management service.
-        
+
         Args:
             account_repo: Repository for account operations
             user_repo: Repository for user operations
@@ -45,21 +49,18 @@ class AccountManagementService:
         self.llm = llm
         self.whatsapp_client = whatsapp_client
         self.parser = AccountManagementParser(llm)
-    
+
     async def handle_account_management(
-        self,
-        phone_number: str,
-        text: str,
-        user_ctx: Dict[str, Any]
+        self, phone_number: str, text: str, user_ctx: dict[str, Any]
     ) -> str:
         """
         Handle account management intent.
-        
+
         Args:
             phone_number: User's phone number
             text: User's command text
             user_ctx: User context
-            
+
         Returns:
             Response message
         """
@@ -67,11 +68,11 @@ class AccountManagementService:
         if not profile:
             return "User not found."
         user_id = str(profile["id"])
-        
+
         parsed: AccountManagementIntent = await self.parser.parse(text)
         action = parsed.action
         identifier = parsed.identifier
-        
+
         response = ""
         if action == "unlink":
             if identifier:
@@ -84,28 +85,28 @@ class AccountManagementService:
                 response = await self.set_default(user_id, identifier)
             else:
                 response = "Which account should be your default? Say 'set [bank name] as default'."
-            
+
         elif action == "link":
             response = await self.link_account(phone_number)
-                 
+
         elif action == "list":
             accounts = user_ctx.get("accounts")
             if accounts:
                 response = AccountManagementFormatter.format_account_list(accounts)
             else:
                 response = await self.list_accounts(user_id)
-            
+
         else:
             accounts = user_ctx.get("accounts")
             if accounts:
                 response = AccountManagementFormatter.format_account_list(accounts)
             else:
                 response = await self.list_accounts(user_id)
-                
+
         language = user_ctx.get("language")
         if language and language.lower() not in ("english", "en"):
             return await self._translate_response(response, language)
-            
+
         return response
 
     async def _translate_response(self, text: str, language: str) -> str:
@@ -118,7 +119,7 @@ class AccountManagementService:
                 f"Original Response:\n{text}"
             )
             result = await self.llm.ainvoke(prompt)
-            if hasattr(result, 'content'):
+            if hasattr(result, "content"):
                 return result.content
             return str(result)
         except Exception:
@@ -127,34 +128,34 @@ class AccountManagementService:
     async def link_account(self, phone_number: str) -> str:
         """
         Send account linking flow to link a new account.
-        
+
         Uses stored BVN - flow starts at METHOD_SELECTION (OTP verification).
-        
+
         Args:
             phone_number: User's phone number
-            
+
         Returns:
             Instruction message
         """
         flow_id = settings.account_linking_flow_id
-    
+
         if not flow_id:
             return "Sorry, account linking is temporarily unavailable. Please contact support."
-        
+
         timestamp = int(time.time())
         flow_token = f"link-{phone_number}-{timestamp}"
-        
+
         result = await bvn_service.initiate_account_linking(flow_token, phone_number)
-        
+
         if not result["success"]:
             error_msg = result.get("error", "Failed to start account linking.")
             logger.error("account_linking_init_failed", phone=phone_number, error=error_msg)
             return error_msg
-        
+
         linking_data = result.get("data", {})
         methods = linking_data.get("methods", [])
         bvn = linking_data.get("bvn", "")
-        
+
         await self.whatsapp_client.send_flow(
             to=phone_number,
             header="Link New Account",
@@ -171,38 +172,38 @@ class AccountManagementService:
                 },
             },
         )
-        
+
         return ""
 
     async def list_accounts(self, user_id: str) -> str:
         """
         List all linked accounts for a user.
-        
+
         Args:
             user_id: User ID
-            
+
         Returns:
             Formatted message with account list
         """
         accounts = self.account_repo.get_by_user(user_id)
         return AccountManagementFormatter.format_account_list(accounts)
-    
+
     async def set_default(self, user_id: str, account_identifier: str) -> str:
         """
         Set an account as default by its index (1-based) or bank name.
-        
+
         Args:
             user_id: User ID
             account_identifier: Account index (1, 2, etc.) or bank name (GTB, UBA, etc.)
-            
+
         Returns:
             Success or error message
         """
         accounts = self.account_repo.get_by_user(user_id)
-        
+
         if not accounts:
             return "You don't have any linked accounts."
-        
+
         selected_account = None
         try:
             account_index = int(account_identifier)
@@ -210,23 +211,23 @@ class AccountManagementService:
                 selected_account = accounts[account_index - 1]
         except ValueError:
             selected_account = self._find_account_by_bank_name(accounts, account_identifier)
-        
+
         if not selected_account:
             return (
                 f"I couldn't find an account matching '{account_identifier}'.\n\n"
                 f"You have {len(accounts)} linked account(s). "
                 f"Please use a number (1-{len(accounts)}) or a bank name like 'GTB', 'UBA', 'Access', etc."
             )
-        
+
         try:
             with UnitOfWork() as uow:
                 uow.accounts.set_default_account(user_id, str(selected_account.account_id))
                 uow.commit()
-            
+
             user = self.user_repo.get_by_id(user_id)
             if user:
                 asyncio.create_task(UserDataCache().invalidate_accounts(user.phone_number))
-            
+
             masked_number = f"***{selected_account.account_number[-4:]}"
             return (
                 f"✓ *Default account updated!*\n\n"
@@ -234,32 +235,38 @@ class AccountManagementService:
                 f"All transactions will use this account unless you specify otherwise."
             )
         except Exception as e:
-            logger.error("set_default_account_error", user_id=user_id, account_id=str(selected_account.account_id), error=str(e), exc_info=True)
+            logger.error(
+                "set_default_account_error",
+                user_id=user_id,
+                account_id=str(selected_account.account_id),
+                error=str(e),
+                exc_info=True,
+            )
             return "Sorry, I couldn't update your default account. Please try again."
-    
+
     async def unlink_account(self, user_id: str, account_identifier: str) -> str:
         """
         Unlink (delete) an account by its index (1-based) or bank name.
-        
+
         Args:
             user_id: User ID
             account_identifier: Account index (1, 2, etc.) or bank name (GTB, UBA, etc.)
-            
+
         Returns:
             Success or error message
         """
         accounts = self.account_repo.get_by_user(user_id)
-        
+
         if not accounts:
             return "You don't have any linked accounts."
-        
+
         if len(accounts) == 1:
             return (
                 "⚠️ You can't unlink your only account.\n\n"
                 "You need at least one account to use the banking agent. "
                 "If you want to switch accounts, link a new one first, then unlink this one."
             )
-        
+
         selected_account = None
         try:
             account_index = int(account_identifier)
@@ -267,14 +274,14 @@ class AccountManagementService:
                 selected_account = accounts[account_index - 1]
         except ValueError:
             selected_account = self._find_account_by_bank_name(accounts, account_identifier)
-        
+
         if not selected_account:
             return (
                 f"I couldn't find an account matching '{account_identifier}'.\n\n"
                 f"You have {len(accounts)} linked account(s). "
                 f"Please use a number (1-{len(accounts)}) or a bank name like 'GTB', 'UBA', 'Access', etc."
             )
-        
+
         try:
             mandate_id = getattr(selected_account, "mandate_id", None)
             if mandate_id:
@@ -282,23 +289,24 @@ class AccountManagementService:
                     await mono_client.cancel_mandate(mandate_id)
                     logger.info("mandate_cancelled_for_unlink", mandate_id=mandate_id)
                 except Exception as e:
-                    logger.warning("cancel_mandate_failed_on_unlink", mandate_id=mandate_id, error=str(e))
-            
-            success = self.account_repo.delete_account(
-                str(selected_account.account_id),
-                user_id
-            )
-            
+                    logger.warning(
+                        "cancel_mandate_failed_on_unlink", mandate_id=mandate_id, error=str(e)
+                    )
+
+            success = self.account_repo.delete_account(str(selected_account.account_id), user_id)
+
             if success:
                 try:
                     with UnitOfWork() as uow:
                         if uow.users:
-                            user = uow.users.get_by_id(user_id)  
+                            user = uow.users.get_by_id(user_id)
                             if user:
-                                asyncio.create_task(UserDataCache().invalidate_accounts(user.phone_number))
+                                asyncio.create_task(
+                                    UserDataCache().invalidate_accounts(user.phone_number)
+                                )
                 except Exception:
                     pass
-                
+
                 masked_number = f"***{selected_account.account_number[-4:]}"
                 return (
                     f"✓ *Account unlinked!*\n\n"
@@ -308,31 +316,38 @@ class AccountManagementService:
             else:
                 return "Sorry, I couldn't unlink that account. Please try again."
         except Exception as e:
-            logger.error("unlink_account_error", user_id=user_id, account_id=str(selected_account.account_id), error=str(e), exc_info=True)
+            logger.error(
+                "unlink_account_error",
+                user_id=user_id,
+                account_id=str(selected_account.account_id),
+                error=str(e),
+                exc_info=True,
+            )
             return "Sorry, I couldn't unlink that account. Please try again."
-    
-    def _find_account_by_bank_name(self, accounts: List[Account], bank_name: str) -> Optional[Account]:
+
+    def _find_account_by_bank_name(self, accounts: list[Account], bank_name: str) -> Account | None:
         """
         Find an account by bank name (fuzzy matching).
-        
+
         Args:
             accounts: List of accounts to search
             bank_name: Bank name or abbreviation (case-insensitive)
-            
+
         Returns:
             Matching account or None
         """
         from shared.utils.bank_aliases import normalize_bank_name
-        
+
         bank_name_lower = bank_name.lower().strip()
         normalized_search = normalize_bank_name(bank_name)
-        
+
         for account in accounts:
             account_bank_lower = account.bank_name.lower()
-            if (normalized_search in account_bank_lower or 
-                account_bank_lower in normalized_search or
-                bank_name_lower in account_bank_lower):
+            if (
+                normalized_search in account_bank_lower
+                or account_bank_lower in normalized_search
+                or bank_name_lower in account_bank_lower
+            ):
                 return account
-        
-        return None
 
+        return None

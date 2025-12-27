@@ -1,9 +1,10 @@
 """Media service for handling voice and image messages."""
+
 import base64
 import io
-from typing import Optional
 
 from openai import AsyncOpenAI
+
 from shared.clients.whatsapp.client import WhatsAppClient
 from shared.config import settings
 from shared.utils.logging import get_logger
@@ -42,20 +43,18 @@ class MediaService:
             buffer.name = "voice_note.ogg"
 
             transcription = await self.openai_client.audio.transcriptions.create(
-                model="whisper-1",
-                file=buffer,
-                response_format="text"
+                model="whisper-1", file=buffer, response_format="text"
             )
 
             text = str(transcription).strip()
             logger.info("transcribed")
             return text
 
-        except Exception as e:
+        except Exception:
             logger.error("failed_to_process")
             return "Attributes of the audio could not be processed."
 
-    async def get_image_data(self, media_id: str) -> Optional[str]:
+    async def get_image_data(self, media_id: str) -> str | None:
         """
         Get image data as base64 string for LLM consumption.
 
@@ -69,9 +68,9 @@ class MediaService:
             media_url = await self.whatsapp_client.get_media_url(media_id)
             image_content = await self.whatsapp_client.download_media(media_url)
 
-            base64_image = base64.b64encode(image_content).decode('utf-8')
+            base64_image = base64.b64encode(image_content).decode("utf-8")
             return f"data:image/jpeg;base64,{base64_image}"
 
-        except Exception as e:
+        except Exception:
             logger.error("failed_to_get_image")
             return None

@@ -1,17 +1,17 @@
 """Batch service for handling batch transaction execution."""
 
 import asyncio
-from typing import Optional, Any, Dict, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Optional
 
+from apps.core.src.agent.tools.batch.executor import execute_batch
 from shared.clients.whatsapp.client import WhatsAppClient
 from shared.services.task_queue import TaskQueueService
-from apps.core.src.agent.tools.batch.executor import execute_batch
 
 if TYPE_CHECKING:
-    from apps.core.src.agent.sub_agents.transfer.service import TransferService
+    from apps.core.src.agent.sub_agents.account_management.service import AccountManagementService
     from apps.core.src.agent.sub_agents.airtime.service import AirtimeService
     from apps.core.src.agent.sub_agents.query.graph import QueryFlowGraph
-    from apps.core.src.agent.sub_agents.account_management.service import AccountManagementService
+    from apps.core.src.agent.sub_agents.transfer.service import TransferService
     from shared.cache.user_data import UserDataCache
 
 
@@ -40,22 +40,21 @@ class BatchService:
         self,
         phone_number: str,
         pin_verified: bool,
-        extra_data: Optional[Dict[str, Any]] = None,
+        extra_data: dict[str, Any] | None = None,
     ) -> str:
         """
         Resume batch execution after PIN verification.
-        
+
         Args:
             phone_number: User's phone number
             pin_verified: Whether PIN was verified successfully
             extra_data: Optional extra data (unused for batch)
-            
+
         Returns:
             Response message to display to user
         """
         await self.whatsapp_client.send_text(
-            phone_number,
-            "✓ PIN verified. Processing your transactions..."
+            phone_number, "✓ PIN verified. Processing your transactions..."
         )
 
         asyncio.create_task(
@@ -73,4 +72,3 @@ class BatchService:
         )
 
         return "Processing transactions..."
-
