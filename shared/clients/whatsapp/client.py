@@ -1,25 +1,27 @@
 """WhatsApp client for sending messages and flows."""
+
 import asyncio
 import json
-from typing import Any, Dict
-import httpx
-from shared.config.settings import settings
+from typing import Any
 
+import httpx
+
+from shared.config.settings import settings
 
 GRAPH_API_BASE = "https://graph.facebook.com/v21.0"
 
 
 class WhatsAppClient:
     """WhatsApp client for sending messages and flows."""
+
     def __init__(self):
         self.access_token = settings.meta_access_token
         self.phone_number_id = settings.meta_phone_number_id
         self._validate_config()
 
     async def _send(
-        self, url: str, payload: Dict[str, Any], max_retries: int = 3
-    ) -> Dict[str, Any]:
-
+        self, url: str, payload: dict[str, Any], max_retries: int = 3
+    ) -> dict[str, Any]:
         headers = self._get_headers()
         last_error = None
 
@@ -39,26 +41,23 @@ class WhatsAppClient:
                     print("   Check your META_ACCESS_TOKEN")
                     raise
                 elif attempt < max_retries:
-                    print(
-                        f"⚠️  HTTP {e.response.status_code} error (attempt {attempt}/{max_retries}), retrying..."
-                    )
+                    status = e.response.status_code
+                    print(f"⚠️  HTTP {status} error (attempt {attempt}/{max_retries}), retrying...")
                     await asyncio.sleep(1 * attempt)
                 else:
-                    print(
-                        f"❌ Max retries reached. Final error: {e.response.status_code}")
+                    print(f"❌ Max retries reached. Final error: {e.response.status_code}")
                     try:
                         error_body = e.response.json()
                         print(f"   Error response: {error_body}")
-                    except:
+                    except Exception:
                         print(f"   Error response: {e.response.text}")
                     raise
 
             except httpx.ConnectError as e:
                 last_error = e
                 if attempt < max_retries:
-                    print(
-                        f"⚠️  Connection failed (attempt {attempt}/{max_retries}): Network unreachable"
-                    )
+                    msg = f"⚠️  Connection failed (attempt {attempt}/{max_retries})"
+                    print(f"{msg}: Network unreachable")
 
                     await asyncio.sleep(2 * attempt)
                 else:
@@ -84,14 +83,12 @@ class WhatsAppClient:
         if not self.access_token:
             errors.append("META_ACCESS_TOKEN is not set")
         elif self.access_token == "development_access_token":
-            print(
-                "⚠️  Using development META_ACCESS_TOKEN - messages will fail in production")
+            print("⚠️  Using development META_ACCESS_TOKEN - messages will fail in production")
 
         if not self.phone_number_id:
             errors.append("META_PHONE_NUMBER_ID is not set")
         elif self.phone_number_id == "development_phone_id":
-            print(
-                "⚠️  Using development META_PHONE_NUMBER_ID - messages will fail in production")
+            print("⚠️  Using development META_PHONE_NUMBER_ID - messages will fail in production")
 
         if errors:
             error_msg = "WhatsApp client configuration errors:\n" + "\n".join(
@@ -99,7 +96,7 @@ class WhatsAppClient:
             )
             raise ValueError(error_msg)
 
-    def _get_headers(self) -> Dict[str, str]:
+    def _get_headers(self) -> dict[str, str]:
         return {
             "Authorization": f"Bearer {self.access_token}",
             "Content-Type": "application/json",
@@ -109,14 +106,10 @@ class WhatsAppClient:
         return f"{GRAPH_API_BASE}/{self.phone_number_id}/messages"
 
     async def send_text(
-        self, 
-        to: str, 
-        text: str, 
-        preview_url: bool = False, 
-        message_id: str | None = None
-    ) -> Dict[str, Any]:
+        self, to: str, text: str, preview_url: bool = False, message_id: str | None = None
+    ) -> dict[str, Any]:
         """Send a text message to a WhatsApp number.
-        
+
         Args:
             to: Recipient phone number
             text: Message content
@@ -124,15 +117,16 @@ class WhatsAppClient:
             message_id: If provided, send typing indicator. If None, auto-fetch from Redis.
         """
         url = self._get_url()
-        
+
         if message_id is None:
             try:
                 from shared.cache.redis_client import RedisClient
+
                 redis_client = RedisClient.get_client()
                 message_id = await redis_client.get(f"user:{to}:current_message_id")
             except Exception:
                 pass
-        
+
         if message_id:
             await self.send_typing_indicator(message_id)
             await asyncio.sleep(0.3)  # Allow WhatsApp to render typing indicator
@@ -151,7 +145,7 @@ class WhatsAppClient:
             print(f"Failed to send text message: {e}")
             raise
 
-    async def send_typing_indicator(self, message_id: str) -> Dict[str, Any]:
+    async def send_typing_indicator(self, message_id: str) -> dict[str, Any]:
         """Send a typing indicator to a WhatsApp number."""
         url = self._get_url()
 
@@ -173,42 +167,42 @@ class WhatsAppClient:
         self,
         to: str,
         body_text: str,
-        buttons: list[Dict[str, str]],
+        buttons: list[dict[str, str]],
         header: str = "",
         footer: str = "",
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Send an interactive button message.
-        
+
         Args:
             to: Recipient phone number
             body_text: Main message text
             buttons: List of button dicts with 'id' and 'title' keys (max 3)
             header: Optional header text
             footer: Optional footer text
-            
+
         Returns:
             API response from WhatsApp
         """
         url = self._get_url()
-        
+
         # Build button rows (max 3 buttons)
         button_rows = [
             {"type": "reply", "reply": {"id": btn["id"], "title": btn["title"][:20]}}
             for btn in buttons[:3]
         ]
-        
-        interactive_payload: Dict[str, Any] = {
+
+        interactive_payload: dict[str, Any] = {
             "type": "button",
             "body": {"text": body_text},
             "action": {"buttons": button_rows},
         }
-        
+
         if header and header.strip():
             interactive_payload["header"] = {"type": "text", "text": header}
         if footer and footer.strip():
             interactive_payload["footer"] = {"text": footer}
-        
+
         payload = {
             "messaging_product": "whatsapp",
             "recipient_type": "individual",
@@ -216,7 +210,7 @@ class WhatsAppClient:
             "type": "interactive",
             "interactive": interactive_payload,
         }
-        
+
         try:
             result = await self._send(url, payload)
             print(f"✓ Button message sent to {to}")
@@ -233,10 +227,10 @@ class WhatsAppClient:
         screen_name: str,
         header: str,
         text_body: str,
-        footer: str = '',
-        flow_token: str = '',
-        flow_action_payload: Dict[str, Any] = {},
-    ) -> Dict[str, Any]:
+        footer: str = "",
+        flow_token: str = "",
+        flow_action_payload: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         """Send a flow to a WhatsApp number."""
         url = self._get_url()
 
@@ -252,14 +246,16 @@ class WhatsAppClient:
                     "flow_id": flow_id,
                     "flow_cta": flow_cta,
                     "flow_action": "navigate",
-                    "flow_action_payload": flow_action_payload or {"screen": screen_name},
+                    "flow_action_payload": flow_action_payload
+                    if flow_action_payload
+                    else {"screen": screen_name},
                 },
             },
         }
-        
+
         if footer and footer.strip():
             interactive_payload["footer"] = {"text": footer}
-        
+
         payload = {
             "messaging_product": "whatsapp",
             "recipient_type": "individual",
@@ -310,9 +306,7 @@ class WhatsAppClient:
             print(f"❌ Failed to upload media to WhatsApp: {e}")
             raise
 
-    async def send_image(
-        self, to: str, image_url: str, caption: str = ""
-    ) -> Dict[str, Any]:
+    async def send_image(self, to: str, image_url: str, caption: str = "") -> dict[str, Any]:
         """
         Send an image to a WhatsApp number.
 
@@ -355,45 +349,45 @@ class WhatsAppClient:
     async def get_media_url(self, media_id: str) -> str:
         """
         Get the download URL for a media ID.
-        
+
         Args:
             media_id: Media ID from Meta
-            
+
         Returns:
             Publicly accessible URL (with auth token appended) or internal URL
         """
         url = f"{GRAPH_API_BASE}/{media_id}"
         headers = self._get_headers()
-        
+
         try:
-             async with httpx.AsyncClient(timeout=10) as client:
-                 resp = await client.get(url, headers=headers)
-                 resp.raise_for_status()
-                 result = resp.json()
-                 media_url = result.get("url")
-                 if not media_url:
-                     raise ValueError("No URL returned for media")
-                 return media_url
+            async with httpx.AsyncClient(timeout=10) as client:
+                resp = await client.get(url, headers=headers)
+                resp.raise_for_status()
+                result = resp.json()
+                media_url = result.get("url")
+                if not media_url:
+                    raise ValueError("No URL returned for media")
+                return media_url
         except Exception as e:
-             print(f"❌ Failed to get media URL: {e}")
-             raise
+            print(f"❌ Failed to get media URL: {e}")
+            raise
 
     async def download_media(self, media_url: str) -> bytes:
         """
         Download media binary content.
-        
+
         Args:
             media_url: URL obtained from get_media_url
-            
+
         Returns:
             Binary content
         """
         headers = self._get_headers()
         try:
-             async with httpx.AsyncClient(timeout=30) as client:
-                 resp = await client.get(media_url, headers=headers)
-                 resp.raise_for_status()
-                 return resp.content
+            async with httpx.AsyncClient(timeout=30) as client:
+                resp = await client.get(media_url, headers=headers)
+                resp.raise_for_status()
+                return resp.content
         except Exception as e:
-             print(f"❌ Failed to download media: {e}")
-             raise
+            print(f"❌ Failed to download media: {e}")
+            raise

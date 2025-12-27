@@ -1,12 +1,14 @@
 """Redis-based cache for Nigerian banks data."""
 
 import json
-from typing import List, Dict, Optional, Callable, Awaitable, Any
+from collections.abc import Awaitable, Callable
 from datetime import datetime
+from typing import Any
+
 import redis.asyncio as redis
 
 from shared.cache.redis_client import RedisClient
-from shared.utils.bank_aliases import normalize_bank_name, get_bank_search_terms
+from shared.utils.bank_aliases import get_bank_search_terms, normalize_bank_name
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -18,11 +20,11 @@ class BankCacheService:
     CACHE_KEY = "nigerian_banks"
     TIMESTAMP_KEY = "nigerian_banks:timestamp"
 
-    def __init__(self, redis_client: Optional[redis.Redis] = None):
+    def __init__(self, redis_client: redis.Redis | None = None):
         """Initialize bank cache service."""
         self.redis = redis_client or RedisClient.get_client()
 
-    async def get_banks(self) -> Optional[List[Dict[str, str]]]:
+    async def get_banks(self) -> list[dict[str, str]] | None:
         """Get banks from Redis cache."""
         try:
             cached_data = await self.redis.get(self.CACHE_KEY)
@@ -37,7 +39,7 @@ class BankCacheService:
             logger.error("banks_cache_get_error", error=str(e), exc_info=True)
             return None
 
-    async def set_banks(self, banks: List[Dict[str, str]], ttl: int = 86400) -> bool:
+    async def set_banks(self, banks: list[dict[str, str]], ttl: int = 86400) -> bool:
         """
         Store banks in Redis cache with TTL.
 
@@ -61,7 +63,7 @@ class BankCacheService:
             logger.error("banks_cache_set_error", error=str(e), exc_info=True)
             return False
 
-    async def get_last_updated(self) -> Optional[str]:
+    async def get_last_updated(self) -> str | None:
         """
         Get timestamp of when cache was last updated.
 
@@ -72,13 +74,15 @@ class BankCacheService:
             timestamp = await self.redis.get(self.TIMESTAMP_KEY)
             if timestamp:
                 # Redis is configured with decode_responses=True, so no need to decode
-                return timestamp if isinstance(timestamp, str) else timestamp.decode('utf-8')
+                return timestamp if isinstance(timestamp, str) else timestamp.decode("utf-8")
             return None
         except Exception as e:
             logger.error("banks_timestamp_get_error", error=str(e), exc_info=True)
             return None
 
-    async def refresh_banks(self, fetch_banks_func: Callable[[], Awaitable[Dict[str, Any]]]) -> Optional[List[Dict[str, str]]]:
+    async def refresh_banks(
+        self, fetch_banks_func: Callable[[], Awaitable[dict[str, Any]]]
+    ) -> list[dict[str, str]] | None:
         """
         Force refresh banks from Flutterwave and update cache.
 
@@ -121,7 +125,7 @@ class BankCacheService:
             logger.error("banks_cache_clear_error", error=str(e), exc_info=True)
             return False
 
-    async def get_bank_code(self, bank_name: str) -> Optional[str]:
+    async def get_bank_code(self, bank_name: str) -> str | None:
         """
         Lookup bank code from bank name using cached bank list.
 
@@ -137,7 +141,12 @@ class BankCacheService:
             return None
 
         normalized_name = bank_name.lower().strip()
-        logger.debug("bank_code_lookup_started", bank_name=bank_name, normalized=normalized_name, total_banks=len(banks))
+        logger.debug(
+            "bank_code_lookup_started",
+            bank_name=bank_name,
+            normalized=normalized_name,
+            total_banks=len(banks),
+        )
 
         # Use centralized bank aliases for search terms
         search_terms = get_bank_search_terms(bank_name)
@@ -149,25 +158,50 @@ class BankCacheService:
             for term in search_terms:
                 if term in bank_name_lower or bank_name_lower in term:
                     code = bank.get("code")
-                    logger.info("bank_code_found", match_type="alias", bank_name=bank.get('name'), code=code, search_term=bank_name)
+                    logger.info(
+                        "bank_code_found",
+                        match_type="alias",
+                        bank_name=bank.get("name"),
+                        code=code,
+                        search_term=bank_name,
+                    )
                     return code
 
         # Try exact match
         for bank in banks:
             bank_name_field = bank.get("name", "").lower().strip()
-            if bank_name_field == normalized_name or bank_name_field == normalized:
+            if bank_name_field in (normalized_name, normalized):
                 code = bank.get("code")
-                logger.info("bank_code_found", match_type="exact", bank_name=bank.get('name'), code=code, search_term=bank_name)
+                logger.info(
+                    "bank_code_found",
+                    match_type="exact",
+                    bank_name=bank.get("name"),
+                    code=code,
+                    search_term=bank_name,
+                )
                 return code
 
         # Try matching without common suffixes
-        normalized_no_suffix = normalized_name.replace(" bank", "").replace(" plc", "").replace(" limited", "").strip()
+        normalized_no_suffix = (
+            normalized_name.replace(" bank", "").replace(" plc", "").replace(" limited", "").strip()
+        )
         for bank in banks:
             bank_name_field = bank.get("name", "").lower().strip()
-            bank_name_no_suffix = bank_name_field.replace(" bank", "").replace(" plc", "").replace(" limited", "").strip()
+            bank_name_no_suffix = (
+                bank_name_field.replace(" bank", "")
+                .replace(" plc", "")
+                .replace(" limited", "")
+                .strip()
+            )
             if normalized_no_suffix == bank_name_no_suffix:
                 code = bank.get("code")
-                logger.info("bank_code_found", match_type="suffix_stripped", bank_name=bank.get('name'), code=code, search_term=bank_name)
+                logger.info(
+                    "bank_code_found",
+                    match_type="suffix_stripped",
+                    bank_name=bank.get("name"),
+                    code=code,
+                    search_term=bank_name,
+                )
                 return code
 
         # For short abbreviations (3 chars or less), check if they appear as standalone words
@@ -177,7 +211,13 @@ class BankCacheService:
                 bank_words = bank_name_field.split()
                 if normalized_name in bank_words:
                     code = bank.get("code")
-                    logger.info("bank_code_found", match_type="word", bank_name=bank.get('name'), code=code, search_term=bank_name)
+                    logger.info(
+                        "bank_code_found",
+                        match_type="word",
+                        bank_name=bank.get("name"),
+                        code=code,
+                        search_term=bank_name,
+                    )
                     return code
 
         # For longer names, check word matches
@@ -185,17 +225,25 @@ class BankCacheService:
         for bank in banks:
             bank_name_field = bank.get("name", "").lower().strip()
             bank_words = bank_name_field.split()
-            if any(word in bank_words for word in normalized_words if len(word) >= 3) or normalized_name in bank_words:
+            if (
+                any(word in bank_words for word in normalized_words if len(word) >= 3)
+                or normalized_name in bank_words
+            ):
                 code = bank.get("code")
-                logger.info("bank_code_found", match_type="word", bank_name=bank.get('name'), code=code, search_term=bank_name)
+                logger.info(
+                    "bank_code_found",
+                    match_type="word",
+                    bank_name=bank.get("name"),
+                    code=code,
+                    search_term=bank_name,
+                )
                 return code
 
         logger.warning("bank_code_not_found", bank_name=bank_name)
         return None
 
     async def ensure_banks_cached(
-        self,
-        fetch_banks_func: Callable[[], Awaitable[Dict[str, Any]]]
+        self, fetch_banks_func: Callable[[], Awaitable[dict[str, Any]]]
     ) -> bool:
         """
         Ensure banks are cached. Fetch from provider if cache is empty.
