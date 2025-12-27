@@ -27,6 +27,7 @@ class QueryState(TypedDict):
     narration_filter: Optional[str]
     transaction_type: str
     limit: int
+    amount_check: NotRequired[Optional[float]]
 
     account_id: str
     account_ids: list[str]

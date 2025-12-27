@@ -23,6 +23,7 @@ QUERY TYPES:
 - search: find specific transactions by name/merchant
 - top_recipient: who received most money from user
 - top_sender: who sent most money to user
+- affordability: checking if user can afford a specific amount (extract the amount)
 
 DATE EXPRESSIONS:
 - "today" → today's date
@@ -31,6 +32,11 @@ DATE EXPRESSIONS:
 - "this month" → current month
 - "last month" → previous month
 - "last 30 days" → past 30 days
+
+AFFORDABILITY EXAMPLES:
+- "Can I afford 80k?" → query_type: affordability, amount_check: 80000
+- "Do I have enough for 50,000?" → query_type: affordability, amount_check: 50000
+- "Can I spend 100k right now?" → query_type: affordability, amount_check: 100000
 
 Extract the query parameters from the user's question."""
 

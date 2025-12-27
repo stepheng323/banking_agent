@@ -31,6 +31,7 @@ async def parse_node(
             "limit": params.get("limit", 10),
             "current_page": 0,
             "page_size": params.get("limit", 10),
+            "amount_check": params.get("amount_check"),
         }
     except Exception as e:
         logger.error("parse_node_error", error=str(e))
@@ -71,6 +72,38 @@ async def fetch_node(
             return {
                 "flow_state": "error",
                 "response": "I couldn't fetch your balance right now."
+            }
+    
+    # Handle affordability check
+    if query_type == "affordability":
+        try:
+            balance = await mono_client.get_balance(account_id)
+            if "error" in balance:
+                return {
+                    "flow_state": "error",
+                    "response": "I couldn't check your balance right now."
+                }
+            balance_naira = balance.get("balance_naira", 0)
+            amount_check = state.get("amount_check", 0)
+            can_afford = balance_naira >= amount_check
+            shortfall = max(0, amount_check - balance_naira)
+            
+            return {
+                "flow_state": "formatting",
+                "aggregated_result": {
+                    "type": "affordability",
+                    "balance_naira": balance_naira,
+                    "amount_check": amount_check,
+                    "can_afford": can_afford,
+                    "shortfall": shortfall,
+                },
+                "has_more": False,
+            }
+        except Exception as e:
+            logger.error("fetch_affordability_error", error=str(e))
+            return {
+                "flow_state": "error",
+                "response": "I couldn't check your balance right now."
             }
     
     # Handle transaction queries
@@ -260,6 +293,17 @@ async def format_node(
                 emoji = "📤" if t["type"] == "debit" else "📥"
                 lines.append(f"{i}. {emoji} {t['date']} - {t['narration'][:30]} - ₦{t['amount_naira']:,.2f}")
             response = "\n".join(lines)
+    
+    elif result_type == "affordability":
+        can_afford = result.get("can_afford", False)
+        balance_naira = result.get("balance_naira", 0)
+        amount_check = result.get("amount_check", 0)
+        shortfall = result.get("shortfall", 0)
+        
+        if can_afford:
+            response = f"✅ Yes, you can afford ₦{amount_check:,.0f}.\n\n💰 Your balance: ₦{balance_naira:,.2f}"
+        else:
+            response = f"❌ Not enough funds for ₦{amount_check:,.0f}.\n\n💰 Your balance: ₦{balance_naira:,.2f}\n📉 Shortfall: ₦{shortfall:,.2f}"
     
     else:
         response = "Query completed."

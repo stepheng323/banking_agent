@@ -21,7 +21,8 @@ class QueryParams(BaseModel):
         "search",
         "top_recipient",
         "top_sender",
-        "breakdown"
+        "breakdown",
+        "affordability"
     ] = Field(default="transaction_list")
     
     transaction_type: Literal["debit", "credit", "both"] = Field(default="both")
@@ -29,6 +30,7 @@ class QueryParams(BaseModel):
     narration_filter: Optional[str] = Field(default=None, description="Filter by counterparty/merchant name")
     group_by: Literal["category", "recipient", "sender", "date", "none"] = Field(default="none")
     limit: int = Field(default=10, ge=1, le=100)
+    amount_check: Optional[float] = Field(default=None, description="Amount to check for affordability")
 
 
 class BalanceResponse(BaseModel):
