@@ -170,14 +170,6 @@ async def handle_transaction_pin(
             success=True,
         )
         await redis_queue.publish_flow_event(flow_event)
-        
-        async def send_ack():
-            await asyncio.sleep(0.5)
-            await whatsapp_client.send_text(
-                to=phone_number,
-                text=f"✓ PIN verified! Processing your {transaction_type}...",
-            )
-        asyncio.create_task(send_ack())
     except Exception as e:
         print(f"Error publishing flow event: {e}")
         import traceback
