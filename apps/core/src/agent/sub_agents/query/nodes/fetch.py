@@ -38,7 +38,6 @@ async def fetch_affordability(state: QueryState, mono_client: MonoClient) -> dic
     account_id = state["account_id"]
 
     try:
-        # Resolve amount from item_name if present
         item_name = state.get("item_name")
         amount_check = state.get("amount_check")
         price_source = None
@@ -54,7 +53,7 @@ async def fetch_affordability(state: QueryState, mono_client: MonoClient) -> dic
                     "aggregated_result": {
                         "type": "affordability_prompt",
                         "item_name": item_name,
-                        "message": f"Prices for {item_name} vary widely. What's the specific amount you're considering?",
+                        "message": f"Prices for {item_name} vary widely. What's the specific amount you're considering?"
                     },
                     "needs_price_input": True,
                     "has_more": False,

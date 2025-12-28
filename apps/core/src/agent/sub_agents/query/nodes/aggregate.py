@@ -9,6 +9,13 @@ from shared.utils.logging import get_logger
 logger = get_logger(__name__)
 
 
+def _get_attr(obj: Any, key: str, default: Any = None) -> Any:
+    """Get attribute from dict or Pydantic model."""
+    if isinstance(obj, dict):
+        return obj.get(key, default)
+    return getattr(obj, key, default)
+
+
 async def aggregate_node(state: QueryState) -> dict[str, Any]:
     """Aggregate transaction data based on query type."""
     query_type = state.get("query_type", "transaction_list")
@@ -16,7 +23,6 @@ async def aggregate_node(state: QueryState) -> dict[str, Any]:
     page = state.get("current_page", 0)
     page_size = state.get("page_size", 10)
 
-    # Paginate
     start_idx = page * page_size
     end_idx = start_idx + page_size
     page_transactions = transactions[start_idx:end_idx]
@@ -30,7 +36,7 @@ async def aggregate_node(state: QueryState) -> dict[str, Any]:
     elif query_type == "breakdown":
         result = _aggregate_breakdown(transactions)
 
-    else:  # transaction_list, search
+    else:
         result = _aggregate_transaction_list(page_transactions, page, len(transactions))
 
     return {
@@ -43,8 +49,8 @@ async def aggregate_node(state: QueryState) -> dict[str, Any]:
 def _aggregate_totals(transactions: list, query_type: str) -> dict[str, Any]:
     """Aggregate total spent or received."""
     tx_type = "debit" if query_type == "total_spent" else "credit"
-    filtered = [t for t in transactions if t.get("type") == tx_type]
-    total_kobo = sum(t.get("amount", 0) for t in filtered)
+    filtered = [t for t in transactions if _get_attr(t, "type") == tx_type]
+    total_kobo = sum(_get_attr(t, "amount", 0) for t in filtered)
 
     return {
         "type": "total",
@@ -57,23 +63,20 @@ def _aggregate_totals(transactions: list, query_type: str) -> dict[str, Any]:
 def _aggregate_top_counterparties(transactions: list, query_type: str) -> dict[str, Any]:
     """Aggregate top recipients or senders."""
     tx_type = "debit" if query_type == "top_recipient" else "credit"
-    filtered = [t for t in transactions if t.get("type") == tx_type]
+    filtered = [t for t in transactions if _get_attr(t, "type") == tx_type]
 
     counterparty_totals = defaultdict(lambda: {"total": 0, "count": 0})
     for t in filtered:
-        counterparty = _extract_counterparty(t.get("narration", "Unknown"))
-        counterparty_totals[counterparty]["total"] += t.get("amount", 0)
+        counterparty = _extract_counterparty(_get_attr(t, "narration", "Unknown"))
+        counterparty_totals[counterparty]["total"] += _get_attr(t, "amount", 0)
         counterparty_totals[counterparty]["count"] += 1
 
-    sorted_items = sorted(counterparty_totals.items(), key=lambda x: x[1]["total"], reverse=True)[
-        :5
-    ]
+    sorted_items = sorted(counterparty_totals.items(), key=lambda x: x[1]["total"], reverse=True)[:5]
 
     return {
         "type": "top_counterparties",
         "items": [
-            {"name": name, "total_naira": data["total"] / 100, "count": data["count"]}
-            for name, data in sorted_items
+            {"name": name, "total_naira": data["total"] / 100, "count": data["count"]} for name, data in sorted_items
         ],
         "transaction_type": tx_type,
     }
@@ -84,9 +87,10 @@ def _aggregate_breakdown(transactions: list) -> dict[str, Any]:
     daily_totals = defaultdict(lambda: {"debit": 0, "credit": 0, "count": 0})
 
     for t in transactions:
-        date = t.get("date", "")[:10]
-        tx_type = t.get("type", "unknown")
-        amount = t.get("amount", 0)
+        date_val = _get_attr(t, "date", "")
+        date = date_val[:10] if date_val else ""
+        tx_type = _get_attr(t, "type", "unknown")
+        amount = _get_attr(t, "amount", 0)
 
         if tx_type in ("debit", "credit"):
             daily_totals[date][tx_type] += amount
@@ -111,18 +115,26 @@ def _aggregate_breakdown(transactions: list) -> dict[str, Any]:
 
 
 def _aggregate_transaction_list(page_transactions: list, page: int, total: int) -> dict[str, Any]:
-    """Format transaction list for page."""
+    """Format transaction list for page, grouped by date."""
+    from collections import OrderedDict
+
+    grouped = OrderedDict()
+    for t in page_transactions:
+        date_val = _get_attr(t, "date", "")
+        date_key = date_val[:10] if date_val else "Unknown"
+        if date_key not in grouped:
+            grouped[date_key] = []
+        grouped[date_key].append(
+            {
+                "narration": _get_attr(t, "narration", "Unknown"),
+                "amount_naira": _get_attr(t, "amount", 0) / 100,
+                "type": _get_attr(t, "type", "unknown"),
+            }
+        )
+
     return {
         "type": "transaction_list",
-        "transactions": [
-            {
-                "date": t.get("date", "")[:10],
-                "narration": t.get("narration", "Unknown"),
-                "amount_naira": t.get("amount", 0) / 100,
-                "type": t.get("type", "unknown"),
-            }
-            for t in page_transactions
-        ],
+        "grouped_transactions": dict(grouped),
         "page": page,
         "total": total,
     }

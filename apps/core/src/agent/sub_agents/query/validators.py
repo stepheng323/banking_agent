@@ -22,7 +22,7 @@ ALLOWED_QUERY_TYPES = {
 MAX_DATE_RANGE_DAYS = 365
 MAX_LIMIT = 100
 MIN_AMOUNT_CHECK = 1.0
-MAX_AMOUNT_CHECK = 100_000_000.0  # 100 million naira
+MAX_AMOUNT_CHECK = 100_000_000.0
 
 
 class QueryValidator:
@@ -48,7 +48,6 @@ class QueryValidator:
         """
         query_type = params.get("query_type", "")
 
-        # Guardrail 1: Only allow known query types
         if query_type not in ALLOWED_QUERY_TYPES:
             logger.warning(
                 "query_type_rejected",
@@ -57,19 +56,15 @@ class QueryValidator:
             )
             return False, f"Unsupported query type: {query_type}"
 
-        # Guardrail 2: Validate date range
         date_range = params.get("date_range")
         if date_range:
             validation_result = QueryValidator._validate_date_range(date_range)
             if not validation_result[0]:
                 return validation_result
 
-        # Guardrail 3: Validate limit
         limit = params.get("limit", 10)
         if limit > MAX_LIMIT:
             return False, f"Maximum limit is {MAX_LIMIT} results."
-
-        # Guardrail 4: Validate affordability amount
         if query_type == "affordability":
             amount_check = params.get("amount_check")
             if amount_check is None:
@@ -97,22 +92,16 @@ class QueryValidator:
             end_str = date_range.get("end")
 
             if not start_str or not end_str:
-                return True, None  # Missing dates use defaults
+                return True, None
 
             start = datetime.strptime(start_str, "%Y-%m-%d")
             end = datetime.strptime(end_str, "%Y-%m-%d")
-
-            # Check range isn't in the future
             today = datetime.now()
             if start > today or end > today:
                 return False, "Cannot query future dates."
-
-            # Check range isn't too large
             delta = (end - start).days
             if delta > MAX_DATE_RANGE_DAYS:
                 return False, f"Date range cannot exceed {MAX_DATE_RANGE_DAYS} days."
-
-            # Check start is before end
             if start > end:
                 return False, "Start date must be before end date."
 
