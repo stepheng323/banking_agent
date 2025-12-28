@@ -1,30 +1,26 @@
 """LangGraph graph for query flow."""
 
 import json
+from datetime import date
 from functools import partial
 from typing import Any
 
+import redis.asyncio as redis
 from langchain_core.runnables import Runnable
 from langgraph.graph import END, StateGraph
 
-from apps.core.src.agent.sub_agents.query.graph.routing import (
-    detect_continuation_type,
-    extract_filter_term,
-    route_after_fetch,
-    route_after_parse,
-)
+from apps.core.src.agent.sub_agents.query.continuity import ContinuationClassifier
+from apps.core.src.agent.sub_agents.query.executor import QueryExecutor
 from apps.core.src.agent.sub_agents.query.graph.state import QueryState
-from apps.core.src.agent.sub_agents.query.nodes.aggregate import aggregate_node
-from apps.core.src.agent.sub_agents.query.nodes.fetch import fetch_node
+from apps.core.src.agent.sub_agents.query.nodes.execute import execute_node
 from apps.core.src.agent.sub_agents.query.nodes.format import format_node
 from apps.core.src.agent.sub_agents.query.nodes.parse import (
+    classify_continuation_node,
     paginate_node,
     parse_node,
-    refine_node,
 )
 from apps.core.src.agent.sub_agents.query.parser import QueryParser
 from apps.core.src.agent.tools.account_selection.mandate_validator import validate_mandate_status
-from shared.cache.redis_client import RedisClient
 from shared.clients.providers.mono import MonoClient
 from shared.utils.logging import get_logger
 
@@ -33,27 +29,51 @@ logger = get_logger(__name__)
 SESSION_TTL = 300
 
 
+def route_after_parse(state: QueryState) -> str:
+    """Route after parsing based on state."""
+    flow_state = state.get("flow_state", "")
+    if flow_state == "error":
+        return "error"
+    if flow_state == "clarification_needed":
+        return "end"
+    return "execute"
+
+
+def route_after_execute(state: QueryState) -> str:
+    """Route after execution based on state."""
+    flow_state = state.get("flow_state", "")
+    if flow_state == "error":
+        return "error"
+    return "format"
+
+
+def route_continuation(state: QueryState) -> str:
+    """Route continuation based on classified type."""
+    cont_type = state.get("continuation_type")
+    if cont_type == "show_more":
+        return "paginate"
+    elif cont_type in ("time_delta", "filter_delta"):
+        return "execute"
+    elif cont_type == "drill_down":
+        return "format"
+    return "parse"
+
+
 class QueryFlowGraph:
-    """LangGraph-based query flow with pagination and refinement support."""
+    """LangGraph-based query flow with NormalizedQuery and QueryExecutor."""
 
     def __init__(
         self,
         llm: Runnable,
         mono_client: MonoClient,
-        redis_client: RedisClient | None = None,
+        redis_client: redis.Redis,
     ):
-        """
-        Initialize query flow graph.
-
-        Args:
-            llm: Language model for parsing and formatting
-            mono_client: Mono API client
-            redis_client: Redis client for session state
-        """
         self.llm = llm
         self.mono = mono_client
-        self.redis = redis_client or RedisClient.get_client()
+        self.redis = redis_client
         self.parser = QueryParser(llm)
+        self.executor = QueryExecutor(mono_client)
+        self.continuation_classifier = ContinuationClassifier(llm)
         self.graph = self._build_graph()
 
     def _build_graph(self) -> StateGraph:
@@ -61,10 +81,16 @@ class QueryFlowGraph:
         graph = StateGraph(QueryState)
 
         graph.add_node("parse", partial(parse_node, parser=self.parser))
-        graph.add_node("fetch", partial(fetch_node, mono_client=self.mono))
-        graph.add_node("aggregate", aggregate_node)
+        graph.add_node(
+            "classify_continuation",
+            partial(
+                classify_continuation_node,
+                classifier=self.continuation_classifier,
+                today=date.today().isoformat(),
+            ),
+        )
+        graph.add_node("execute", partial(execute_node, executor=self.executor))
         graph.add_node("paginate", paginate_node)
-        graph.add_node("refine", partial(refine_node, parser=self.parser))
         graph.add_node("format", partial(format_node, llm=self.llm))
         graph.add_node("error", self._error_node)
 
@@ -74,24 +100,33 @@ class QueryFlowGraph:
             "parse",
             route_after_parse,
             {
-                "fetch": "fetch",
+                "execute": "execute",
                 "error": "error",
+                "end": END,
             },
         )
 
         graph.add_conditional_edges(
-            "fetch",
-            route_after_fetch,
+            "execute",
+            route_after_execute,
             {
-                "aggregate": "aggregate",
                 "format": "format",
                 "error": "error",
             },
         )
 
-        graph.add_edge("aggregate", "format")
-        graph.add_edge("paginate", "aggregate")
-        graph.add_edge("refine", "fetch")
+        graph.add_conditional_edges(
+            "classify_continuation",
+            route_continuation,
+            {
+                "paginate": "paginate",
+                "execute": "execute",
+                "format": "format",
+                "parse": "parse",
+            },
+        )
+
+        graph.add_edge("paginate", "execute")
         graph.add_edge("format", END)
         graph.add_edge("error", END)
 
@@ -113,31 +148,13 @@ class QueryFlowGraph:
         user_ctx: dict[str, Any],
         message_id: str = "",
     ) -> str:
-        """
-        Run the query flow.
-
-        Args:
-            phone_number: User's phone number
-            message: User's query message
-            user_ctx: User context with profile, accounts, language
-            message_id: Optional message ID
-
-        Returns:
-            Response string
-        """
+        """Run the query flow."""
         accounts = user_ctx.get("accounts", [])
-        account = None
-        for acc in accounts:
-            if acc.get("is_default"):
-                account = acc
-                break
-        if not account and accounts:
-            account = accounts[0]
+        account = next((a for a in accounts if a.get("is_default")), accounts[0] if accounts else None)
 
         if not account:
             return "You need to link a bank account before I can check your transactions."
 
-        # Block queries if account mandate is not ready
         is_valid, error, _ = validate_mandate_status(account)
         if not is_valid:
             return f"⚠️ {error}"
@@ -148,57 +165,42 @@ class QueryFlowGraph:
 
         session_key = f"query:session:{phone_number}"
         session_data = await self._load_session(session_key)
-
         session_active = session_data.get("session_active", False) if session_data else False
-        continuation_type = detect_continuation_type(message, session_active)
 
-        if continuation_type == "show_more" and session_data:
-            state = session_data
-            state["message"] = message
-            state["flow_state"] = "paginating"
-            state["continuation_type"] = "show_more"
-
-            result = await self._run_continuation(state, "paginate")
-
-        elif continuation_type == "filter" and session_data:
-            state = session_data
-            state["message"] = message
-            state["flow_state"] = "refining"
-            state["continuation_type"] = "filter"
-            state["new_filter"] = extract_filter_term(message)
-
-            result = await self._run_continuation(state, "refine")
-
-        else:
+        if session_active and session_data:
+            # Use classify_continuation_node via direct call for continuations
             state: QueryState = {
-                "phone_number": phone_number,
+                **session_data,
                 "message": message,
                 "message_id": message_id,
-                "flow_state": "parsing",
-                "session_active": False,
-                "query_type": "transaction_list",
-                "date_range": {},
-                "narration_filter": None,
-                "transaction_type": "both",
-                "limit": 10,
-                "account_id": account_id,
-                "account_ids": [
-                    acc.get("account_id") or acc.get("mono_account_id")
-                    for acc in accounts
-                    if acc.get("account_id") or acc.get("mono_account_id")
-                ],
-                "current_account_index": 0,
-                "account_info": account,
-                "current_page": 0,
-                "page_size": 10,
-                "total_results": 0,
-                "has_more": False,
-                "cached_transactions": [],
-                "aggregated_result": None,
-                "language": user_ctx.get("language", "English"),
-                "response": "",
             }
+            cont_result = await classify_continuation_node(
+                state,
+                self.continuation_classifier,
+                date.today().isoformat(),
+            )
+            state.update(cont_result)
 
+            if state.get("continuation_type") == "show_more":
+                state.update(await paginate_node(state))
+                state.update(await execute_node(state, self.executor))
+                state.update(await format_node(state, self.llm))
+            elif state.get("continuation_type") in ("time_delta", "filter_delta"):
+                state.update(await execute_node(state, self.executor))
+                state.update(await format_node(state, self.llm))
+            elif state.get("continuation_type") == "drill_down":
+                # Resolve drill-down from previous result
+                drill_result = await self._handle_drill_down(state)
+                state.update(drill_result)
+                state.update(await format_node(state, self.llm))
+            else:
+                # New query
+                state = await self._run_new_query(
+                    state, phone_number, message, message_id, account_id, accounts, user_ctx
+                )
+            result = state
+        else:
+            state = self._create_initial_state(phone_number, message, message_id, account_id, accounts, user_ctx)
             result = await self.graph.ainvoke(state)
 
         if result.get("session_active"):
@@ -208,26 +210,109 @@ class QueryFlowGraph:
 
         return result.get("response", "Query completed.")
 
-    async def _run_continuation(self, state: QueryState, start_node: str) -> dict[str, Any]:
-        """Run graph from a specific node for continuations."""
-        if start_node == "paginate":
-            state = {**state, **(await paginate_node(state))}
-            state = {**state, **(await aggregate_node(state))}
-            state = {**state, **(await format_node(state, self.llm))}
-        elif start_node == "refine":
-            state = {**state, **(await refine_node(state, self.parser))}
-            state = {**state, **(await fetch_node(state, self.mono))}
-            state = {**state, **(await aggregate_node(state))}
-            state = {**state, **(await format_node(state, self.llm))}
+    def _create_initial_state(
+        self,
+        phone_number: str,
+        message: str,
+        message_id: str,
+        account_id: str,
+        accounts: list,
+        user_ctx: dict,
+    ) -> QueryState:
+        """Create initial state for new query."""
+        return {
+            "phone_number": phone_number,
+            "message": message,
+            "message_id": message_id,
+            "flow_state": "parsing",
+            "session_active": False,
+            "account_id": account_id,
+            "account_ids": [
+                acc.get("account_id") or acc.get("mono_account_id")
+                for acc in accounts
+                if acc.get("account_id") or acc.get("mono_account_id")
+            ],
+            "current_account_index": 0,
+            "account_info": accounts[0] if accounts else None,
+            "current_page": 0,
+            "page_size": 10,
+            "total_results": 0,
+            "has_more": False,
+            "cached_transactions": [],
+            "language": user_ctx.get("language", "English"),
+            "response": "",
+        }
 
-        return state
+    async def _handle_drill_down(self, state: QueryState) -> dict[str, Any]:
+        """Handle drill-down by resolving item from previous result."""
+        from apps.core.src.agent.sub_agents.query.continuity import resolve_drill_down
+        from apps.core.src.agent.sub_agents.query.models import QueryResult
+
+        query_result = state.get("query_result")
+        reference = state.get("drill_down_ref", "")
+
+        if not query_result or not query_result.items:
+            return {"response": "No items to drill down into."}
+
+        item = resolve_drill_down(reference, query_result)
+
+        if not item:
+            return {"response": "I couldn't find that item. Try specifying differently."}
+
+        # Create a focused result for the single item
+        focused_result = QueryResult(
+            summary_text=f"Details for {item.description}",
+            items=[item],
+            has_more=False,
+        )
+
+        return {
+            "query_result": focused_result,
+            "has_more": False,
+        }
+
+    async def _run_new_query(
+        self,
+        state: QueryState,
+        phone_number: str,
+        message: str,
+        message_id: str,
+        account_id: str,
+        accounts: list,
+        user_ctx: dict,
+    ) -> QueryState:
+        """Run a completely new query."""
+        new_state = self._create_initial_state(phone_number, message, message_id, account_id, accounts, user_ctx)
+        return await self.graph.ainvoke(new_state)
 
     async def _load_session(self, key: str) -> dict[str, Any] | None:
-        """Load session state from Redis."""
+        """Load session state from Redis and restore Pydantic models."""
+        from apps.core.src.agent.sub_agents.query.models import NormalizedQuery, QueryResult
+
         try:
             data = await self.redis.get(key)
-            if data:
-                return json.loads(data)
+            if not data:
+                return None
+
+            session = json.loads(data)
+
+            # Restore NormalizedQuery
+            if session.get("query") and isinstance(session["query"], dict):
+                try:
+                    session["query"] = NormalizedQuery.model_validate(session["query"])
+                except Exception as e:
+                    logger.warning("query_restore_error", error=str(e))
+                    session["query"] = None
+
+            # Restore QueryResult
+            if session.get("query_result") and isinstance(session["query_result"], dict):
+                try:
+                    session["query_result"] = QueryResult.model_validate(session["query_result"])
+                except Exception as e:
+                    logger.warning("query_result_restore_error", error=str(e))
+                    session["query_result"] = None
+
+            return session
         except Exception as e:
             logger.error("load_session_error", error=str(e))
         return None
@@ -235,30 +320,32 @@ class QueryFlowGraph:
     async def _save_session(self, key: str, state: dict[str, Any]) -> None:
         """Save session state to Redis."""
         try:
-            save_state = {
-                k: v
-                for k, v in state.items()
-                if k
-                in (
-                    "phone_number",
-                    "query_type",
-                    "date_range",
-                    "narration_filter",
-                    "transaction_type",
-                    "limit",
-                    "account_id",
-                    "account_ids",
-                    "current_account_index",
-                    "account_info",
-                    "current_page",
-                    "page_size",
-                    "total_results",
-                    "has_more",
-                    "cached_transactions",
-                    "language",
-                    "session_active",
-                )
-            }
+            save_state = {}
+            allowed_keys = (
+                "phone_number",
+                "account_id",
+                "account_ids",
+                "current_account_index",
+                "account_info",
+                "current_page",
+                "page_size",
+                "total_results",
+                "has_more",
+                "cached_transactions",
+                "language",
+                "session_active",
+                "query",
+                "query_result",
+            )
+            for k, v in state.items():
+                if k not in allowed_keys:
+                    continue
+                if k in ("query", "query_result") and v and hasattr(v, "model_dump"):
+                    save_state[k] = v.model_dump()
+                elif k == "cached_transactions" and v:
+                    save_state[k] = [t.model_dump() if hasattr(t, "model_dump") else t for t in v]
+                else:
+                    save_state[k] = v
             await self.redis.set(key, json.dumps(save_state), ex=SESSION_TTL)
         except Exception as e:
             logger.error("save_session_error", error=str(e))
