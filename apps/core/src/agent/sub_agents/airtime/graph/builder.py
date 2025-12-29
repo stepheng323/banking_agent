@@ -3,7 +3,7 @@
 from langgraph.graph import END, StateGraph
 
 from apps.core.src.agent.sub_agents.airtime.extractor import AirtimeEntityExtractor
-from apps.core.src.agent.sub_agents.airtime.nodes import (
+from apps.core.src.agent.sub_agents.airtime.graph.nodes import (
     authorize_transaction,
     extract_entities,
     find_beneficiary,

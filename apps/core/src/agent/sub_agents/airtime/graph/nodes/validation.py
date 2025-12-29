@@ -17,7 +17,7 @@ from shared.utils.phone_utils import (
     validate_phone_format,
 )
 
-from ..graph.utils import debug_log
+from ..utils import debug_log
 
 MIN_AIRTIME_AMOUNT = 50.0
 MAX_AIRTIME_AMOUNT = 50000.0

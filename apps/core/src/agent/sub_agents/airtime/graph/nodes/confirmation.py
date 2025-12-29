@@ -12,7 +12,7 @@ from shared.clients.whatsapp.client import WhatsAppClient
 from shared.config import settings
 from shared.repositories.actionable_message_repository import ActionableMessageRepository
 
-from ..graph.utils import debug_log
+from ..utils import debug_log
 
 
 def _format_currency_naira(amount: float) -> str:

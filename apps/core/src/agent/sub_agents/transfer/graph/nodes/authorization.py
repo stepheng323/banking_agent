@@ -7,7 +7,7 @@ from apps.core.src.agent.tools.response import (
     build_response_context,
     get_synthesizer,
 )
-from apps.core.src.agent.sub_agents.transfer.nodes.utils import debug_log
+from apps.core.src.agent.sub_agents.transfer.graph.nodes.utils import debug_log
 from apps.core.src.agent.sub_agents.transfer.state import TransferState
 from shared.cache.redis_client import Redis
 from shared.database.connection import get_db

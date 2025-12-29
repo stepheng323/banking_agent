@@ -13,7 +13,7 @@ from apps.core.src.agent.tools.beneficiary.matcher import BeneficiaryMatcher
 from shared.database.models import Beneficiary
 from shared.utils.serialization import sqlalchemy_to_dict
 
-from ..graph.utils import debug_log
+from ..utils import debug_log
 
 
 async def find_beneficiary(
