@@ -2,7 +2,7 @@
 
 from typing import cast
 
-from apps.core.src.agent.orchestrator.features.response import (
+from apps.core.src.agent.tools.response import (
     ResponseIntent,
     build_clarification_context,
     build_response_context,

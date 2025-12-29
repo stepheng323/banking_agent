@@ -17,6 +17,7 @@ CLASSIFICATION_SYSTEM_PROMPT = (
     "9. MODIFY_TRANSACTION: user wants to repeat with changes ('but with 5k', 'same but 10k', 'change amount to X')\n\n"
     "RESPONSE GENERATION:\n"
     "- For transfer/airtime: Generate personalized acknowledgment using message context\n"
+    "- For query: Generate short ack like 'Checking your balance...' or 'Looking up your transactions...'\n"
     "- RESOLVE pronouns (him/her/them) to actual names using conversation history or beneficiaries\n"
     "- Example: User says 'send 10k to him' after discussing Jackson → response: 'Got it! Sending ₦10,000 to Jackson...'\n"
     "- Include amount and recipient name in the response for a personal touch\n\n"

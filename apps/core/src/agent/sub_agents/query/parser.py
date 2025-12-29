@@ -1,110 +1,114 @@
-"""Query parsing service to extract parameters from natural language questions."""
+"""Query parsing service - extracts NormalizedQuery from natural language."""
 
-from datetime import datetime, timedelta
+from datetime import date, timedelta
 from typing import Any
 
 from langchain_core.runnables import Runnable
 
-from apps.core.src.agent.sub_agents.query.models import QueryParams
+from apps.core.src.agent.sub_agents.query.models import (
+    Aggregation,
+    NormalizedQuery,
+    QueryIntent,
+    TimeRange,
+)
+from apps.core.src.agent.sub_agents.query.prompts import QUERY_PARSER_PROMPT
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
 
 
-QUERY_PARSER_PROMPT = """Parse this financial query into structured parameters.
-
-Today's date: {today}
-Question: {question}
-
-QUERY TYPES:
-- balance: asking about current balance
-- total_spent: asking how much was spent/debited
-- total_received: asking how much was received/credited
-- transaction_list: show list of transactions
-- search: find specific transactions by name/merchant
-- top_recipient: who received most money from user
-- top_sender: who sent most money to user
-- affordability: checking if user can afford something
-- breakdown: summarize activity by day
-
-DATE EXPRESSIONS:
-- "today" → today's date
-- "yesterday" → yesterday
-- "this week" → last 7 days
-- "this month" → current month
-- "last month" → previous month
-- "last 30 days" → past 30 days
-
-AFFORDABILITY ANALYSIS TYPES:
-- immediate: can I afford this now? (default)
-- relative: what's the impact on my finances?
-- simulated: can I afford this in X months?
-- remainder: how much would I have left?
-
-AFFORDABILITY EXAMPLES:
-- "Can I afford 80k?" → query_type: affordability, amount_check: 80000, analysis_type: immediate
-- "Can I afford a MacBook Pro?" → query_type: affordability, item_name: "macbook pro", analysis_type: immediate
-- "Could I afford this in 3 months?" → query_type: affordability, projection_months: 3, analysis_type: simulated
-- "What would 50k cost relative to my spending?" → query_type: affordability, amount_check: 50000, analysis_type: relative
-- "How much would I have left after 100k?" → query_type: affordability, amount_check: 100000, analysis_type: remainder
-
-BREAKDOWN EXAMPLES:
-- "Show my activity this week" → query_type: breakdown, date_range: last 7 days
-- "Give me a daily summary" → query_type: breakdown
-
-Extract the query parameters from the user's question."""
-
-
 class QueryParser:
-    """Parse natural language financial questions into structured parameters."""
+    """Parse natural language financial questions into NormalizedQuery."""
 
     def __init__(self, llm: Runnable):
         self.llm = llm
-        self.structured_llm = llm.with_structured_output(QueryParams)
+        self.structured_llm = llm.with_structured_output(NormalizedQuery)
 
-    async def parse(self, question: str) -> dict[str, Any]:
-        """Parse a financial question into query parameters."""
-        today = datetime.now()
-        prompt = QUERY_PARSER_PROMPT.format(today=today.strftime("%Y-%m-%d"), question=question)
+    async def parse(self, question: str, message_id: str | None = None) -> NormalizedQuery:
+        """
+        Parse a financial question into a NormalizedQuery.
+
+        Args:
+            question: User's natural language query
+            message_id: Optional message ID for tracing
+
+        Returns:
+            NormalizedQuery with resolved dates and extracted parameters
+        """
+        today = date.today()
+        prompt = QUERY_PARSER_PROMPT.format(
+            today=today.isoformat(),
+            question=question,
+        )
 
         try:
-            result: QueryParams = await self.structured_llm.ainvoke(prompt)
-            params = result.model_dump()
-            params = self._add_defaults(params)
-            logger.info("query_parsed", query_type=params.get("query_type"))
-            return params
+            result: NormalizedQuery = await self.structured_llm.ainvoke(prompt)
+
+            if message_id:
+                result = result.model_copy(update={"source_message_id": message_id})
+
+            result = self._add_defaults(result, today)
+
+            logger.info("query_parsed", intent=result.intent.value)
+            return result
 
         except Exception as e:
             logger.error("query_parse_error", error=str(e))
-            return self._get_default_params()
+            return self._get_default_query(today)
 
-    def _add_defaults(self, params: dict[str, Any]) -> dict[str, Any]:
+    def _add_defaults(self, query: NormalizedQuery, today: date) -> NormalizedQuery:
         """Add default values for missing parameters."""
-        today = datetime.now()
+        updates: dict[str, Any] = {}
 
-        if not params.get("date_range"):
-            params["date_range"] = {
-                "start": (today - timedelta(days=30)).strftime("%Y-%m-%d"),
-                "end": today.strftime("%Y-%m-%d"),
-            }
-        elif isinstance(params["date_range"], dict):
-            if not params["date_range"].get("start"):
-                params["date_range"]["start"] = (today - timedelta(days=30)).strftime("%Y-%m-%d")
-            if not params["date_range"].get("end"):
-                params["date_range"]["end"] = today.strftime("%Y-%m-%d")
+        if not query.time_range:
+            updates["time_range"] = TimeRange(
+                start=today - timedelta(days=30),
+                end=today,
+                granularity="day",
+            )
 
-        return params
+        if query.intent == QueryIntent.ANALYTICS_SUMMARY and not query.aggregation:
+            updates["aggregation"] = Aggregation(type="sum", limit=10)
 
-    def _get_default_params(self) -> dict[str, Any]:
-        """Get default parameters for fallback."""
-        today = datetime.now()
-        return {
-            "query_type": "transaction_list",
-            "transaction_type": "both",
-            "date_range": {
-                "start": (today - timedelta(days=30)).strftime("%Y-%m-%d"),
-                "end": today.strftime("%Y-%m-%d"),
-            },
-            "narration_filter": None,
-            "limit": 10,
-        }
+        if query.intent == QueryIntent.BENEFICIARY_SUMMARY and not query.aggregation:
+            updates["aggregation"] = Aggregation(type="sum", group_by="merchant", limit=5)
+
+        if updates:
+            return query.model_copy(update=updates)
+        return query
+
+    def _get_default_query(self, today: date) -> NormalizedQuery:
+        """Get default query for fallback."""
+        return NormalizedQuery(
+            intent=QueryIntent.TRANSACTION_LIST,
+            time_range=TimeRange(
+                start=today - timedelta(days=30),
+                end=today,
+                granularity="day",
+            ),
+            accounts_scope="all",
+        )
+
+    async def parse_with_validation(
+        self,
+        question: str,
+        message_id: str | None = None,
+    ) -> tuple[NormalizedQuery | None, str | None]:
+        """
+        Parse query with validation, returning clarification request if needed.
+
+        Returns:
+            Tuple of (query, clarification_message)
+            - If successful: (query, None)
+            - If clarification needed: (None, clarification_message)
+        """
+        query = await self.parse(question, message_id)
+
+        if query.intent == QueryIntent.AFFORDABILITY:
+            if not query.amount_check and not query.item_name:
+                return None, "How much would you like to check? Please specify an amount."
+        if query.intent == QueryIntent.TIME_COMPARISON:
+            if not query.time_range:
+                return None, "What time period would you like to compare?"
+
+        return query, None

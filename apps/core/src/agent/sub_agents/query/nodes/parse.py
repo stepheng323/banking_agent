@@ -2,43 +2,40 @@
 
 from typing import Any
 
+from apps.core.src.agent.sub_agents.query.continuity import (
+    ContinuationClassifier,
+    ContinuationType,
+    apply_filter_delta,
+    apply_time_delta,
+)
 from apps.core.src.agent.sub_agents.query.graph.state import QueryState
 from apps.core.src.agent.sub_agents.query.parser import QueryParser
-from apps.core.src.agent.sub_agents.query.validators import QueryValidator
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
 
 
 async def parse_node(state: QueryState, parser: QueryParser) -> dict[str, Any]:
-    """Parse user query into structured parameters."""
+    """Parse user query into NormalizedQuery."""
     message = state["message"]
-    phone_number = state["phone_number"]
+    message_id = state.get("message_id", "")
 
     try:
-        params = await parser.parse(message)
+        query, clarification = await parser.parse_with_validation(message, message_id)
 
-        # Validate parsed parameters
-        is_valid, error_msg = QueryValidator.validate(params, phone_number)
-        if not is_valid:
+        if clarification:
             return {
-                "flow_state": "error",
-                "response": error_msg or "Invalid query parameters.",
+                "flow_state": "clarification_needed",
+                "clarification_message": clarification,
+                "response": clarification,
             }
 
         return {
             "flow_state": "fetching",
-            "query_type": params.get("query_type", "transaction_list"),
-            "date_range": params.get("date_range", {}),
-            "narration_filter": params.get("narration_filter"),
-            "transaction_type": params.get("transaction_type", "both"),
-            "limit": params.get("limit", 10),
+            "query": query,
             "current_page": 0,
-            "page_size": params.get("limit", 10),
-            "amount_check": params.get("amount_check"),
-            "analysis_type": params.get("analysis_type", "immediate"),
-            "item_name": params.get("item_name"),
-            "projection_months": params.get("projection_months"),
+            "page_size": query.aggregation.limit if query.aggregation else 10,
+            "session_active": True,
         }
     except Exception as e:
         logger.error("parse_node_error", error=str(e))
@@ -46,6 +43,62 @@ async def parse_node(state: QueryState, parser: QueryParser) -> dict[str, Any]:
             "flow_state": "error",
             "response": "I couldn't understand your query. Could you rephrase it?",
         }
+
+
+async def classify_continuation_node(
+    state: QueryState,
+    classifier: ContinuationClassifier,
+    today: str,
+) -> dict[str, Any]:
+    """Classify continuation type using LLM."""
+    message = state["message"]
+
+    try:
+        cont_type, data = await classifier.classify(message, True, today)
+
+        if cont_type == ContinuationType.SHOW_MORE:
+            return {
+                "continuation_type": "show_more",
+                "flow_state": "paginating",
+            }
+
+        elif cont_type == ContinuationType.TIME_DELTA:
+            query = state.get("query")
+            if query and data.get("time_range"):
+                updated_query = apply_time_delta(query, data["time_range"])
+                return {
+                    "continuation_type": "time_delta",
+                    "query": updated_query,
+                    "flow_state": "fetching",
+                    "current_page": 0,
+                }
+            return {"flow_state": "parsing"}
+
+        elif cont_type == ContinuationType.FILTER_DELTA:
+            query = state.get("query")
+            if query and data.get("filters"):
+                updated_query = apply_filter_delta(query, data["filters"])
+                return {
+                    "continuation_type": "filter_delta",
+                    "query": updated_query,
+                    "flow_state": "fetching",
+                    "current_page": 0,
+                }
+            return {"flow_state": "parsing"}
+
+        elif cont_type == ContinuationType.DRILL_DOWN:
+            return {
+                "continuation_type": "drill_down",
+                "flow_state": "formatting",
+                "drill_down_ref": data.get("reference"),
+            }
+
+        else:
+            return {"flow_state": "parsing"}
+
+    except Exception as e:
+        logger.error("classify_continuation_error", error=str(e))
+        return {"flow_state": "parsing"}
 
 
 async def paginate_node(state: QueryState) -> dict[str, Any]:
@@ -56,17 +109,3 @@ async def paginate_node(state: QueryState) -> dict[str, Any]:
         "flow_state": "aggregating",
         "current_page": current_page + 1,
     }
-
-
-async def refine_node(state: QueryState, parser: QueryParser) -> dict[str, Any]:
-    """Apply filter refinement to existing results."""
-    new_filter = state.get("new_filter")
-
-    if new_filter:
-        return {
-            "flow_state": "fetching",
-            "narration_filter": new_filter,
-            "current_page": 0,
-        }
-
-    return {"flow_state": "aggregating"}

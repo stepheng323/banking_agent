@@ -108,9 +108,7 @@ class OrchestratorIntentRouter:
         """
         intent = result.intent.lower()
 
-        is_multiple_transactions = (
-            result.is_complex and "multiple" in result.complexity_reason.lower()
-        )
+        is_multiple_transactions = result.is_complex and "multiple" in result.complexity_reason.lower()
 
         if intent == "mixed" or is_multiple_transactions:
             try:
@@ -123,27 +121,15 @@ class OrchestratorIntentRouter:
                     logger.debug("generated")
 
                     # Send acknowledgment directly
-                    await self.whatsapp_client.send_text(
-                        phone_number, acknowledgment, message_id=message_id
-                    )
+                    await self.whatsapp_client.send_text(phone_number, acknowledgment, message_id=message_id)
 
-                    asyncio.create_task(
-                        self.context_manager.save_last_response(phone_number, acknowledgment)
-                    )
+                    asyncio.create_task(self.context_manager.save_last_response(phone_number, acknowledgment))
 
-                    next_task_response = await self.task_planner.handle_next_task(
-                        phone_number, text
-                    )
+                    next_task_response = await self.task_planner.handle_next_task(phone_number, text)
                     if next_task_response and next_task_response.strip():
                         # Send task prompt separately if it's different from acknowledgment
-                        await self.whatsapp_client.send_text(
-                            phone_number, next_task_response, message_id=message_id
-                        )
-                        asyncio.create_task(
-                            self.context_manager.save_last_response(
-                                phone_number, next_task_response
-                            )
-                        )
+                        await self.whatsapp_client.send_text(phone_number, next_task_response, message_id=message_id)
+                        asyncio.create_task(self.context_manager.save_last_response(phone_number, next_task_response))
                     # Return empty to prevent message_consumer from sending duplicate
                     return ""
             except Exception:
@@ -158,14 +144,10 @@ class OrchestratorIntentRouter:
                     "amount": conversation_state.get("amount"),
                     "recipient_phone": conversation_state.get("recipient_phone"),
                 }
-                await self.flow_context_service.pause_flow(
-                    phone_number, "airtime", "transfer", flow_summary
-                )
+                await self.flow_context_service.pause_flow(phone_number, "airtime", "transfer", flow_summary)
 
             if result.response:
-                await self.whatsapp_client.send_text(
-                    phone_number, result.response, message_id=message_id
-                )
+                await self.whatsapp_client.send_text(phone_number, result.response, message_id=message_id)
 
             transfer_classification_dict = (
                 result.model_dump()
@@ -176,9 +158,7 @@ class OrchestratorIntentRouter:
                     "confidence": result.confidence,
                 }
             )
-            logger.info(
-                "route_intent_transfer_classification", classification=transfer_classification_dict
-            )
+            logger.info("route_intent_transfer_classification", classification=transfer_classification_dict)
             response = await self.transfer_service.run_simple(
                 phone_number, text, transfer_classification_dict, image_data=image_data
             )
@@ -191,14 +171,10 @@ class OrchestratorIntentRouter:
                     "recipient_name": conversation_state.get("recipient_name"),
                     "recipient_account": conversation_state.get("recipient_account"),
                 }
-                await self.flow_context_service.pause_flow(
-                    phone_number, "transfer", "airtime", flow_summary
-                )
+                await self.flow_context_service.pause_flow(phone_number, "transfer", "airtime", flow_summary)
 
             if result.response:
-                await self.whatsapp_client.send_text(
-                    phone_number, result.response, message_id=message_id
-                )
+                await self.whatsapp_client.send_text(phone_number, result.response, message_id=message_id)
 
             airtime_classification_dict = (
                 result.model_dump()
@@ -209,9 +185,7 @@ class OrchestratorIntentRouter:
                     "confidence": result.confidence,
                 }
             )
-            response = await self.airtime_service.run_simple(
-                phone_number, text, airtime_classification_dict
-            )
+            response = await self.airtime_service.run_simple(phone_number, text, airtime_classification_dict)
         elif intent == "data":
             response = "Data purchase flow coming soon."
 
@@ -227,9 +201,11 @@ class OrchestratorIntentRouter:
                         "recipient_name": conversation_state.get("recipient_name"),
                         "recipient_phone": conversation_state.get("recipient_phone"),
                     }
-                    await self.flow_context_service.pause_flow(
-                        phone_number, active_flow, "balance_query", flow_summary
-                    )
+                    await self.flow_context_service.pause_flow(phone_number, active_flow, "balance_query", flow_summary)
+
+            # Send ack before processing (from classification LLM)
+            if result.response:
+                await self.whatsapp_client.send_text(phone_number, result.response, message_id=message_id)
 
             response = await self.query_graph.run(phone_number, text, user_ctx)
 
@@ -253,9 +229,7 @@ class OrchestratorIntentRouter:
                         phone_number, active_flow, "account_management", flow_summary
                     )
 
-            response = await self.account_management_service.handle_account_management(
-                phone_number, text, user_ctx
-            )
+            response = await self.account_management_service.handle_account_management(phone_number, text, user_ctx)
 
             # Check if we need to append resume prompt
             resume_prompt = await self.flow_context_service.generate_resume_prompt(phone_number)
@@ -263,15 +237,11 @@ class OrchestratorIntentRouter:
                 response = f"{response}\n\n{resume_prompt}"
 
         elif intent == "conversational":
-            conv = await self.conversation_responder.generate_reply(
-                phone_number, text, result, user_ctx
-            )
+            conv = await self.conversation_responder.generate_reply(phone_number, text, result, user_ctx)
             logger.info("conversation")
             response = conv
         else:
-            conv = await self.conversation_responder.generate_reply(
-                phone_number, text, result, user_ctx
-            )
+            conv = await self.conversation_responder.generate_reply(phone_number, text, result, user_ctx)
             response = conv
 
         return response
