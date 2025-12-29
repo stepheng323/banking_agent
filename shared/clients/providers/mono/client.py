@@ -88,34 +88,26 @@ class MonoClient:
 
         except aiohttp.ClientError as e:
             logger.error("mono_connection_error", endpoint=endpoint, error=str(e))
-            raise MonoApiError(
-                http_status=0, message=f"Connection error: {e}", error_code="CONNECTION_ERROR"
-            )
+            raise MonoApiError(http_status=0, message=f"Connection error: {e}", error_code="CONNECTION_ERROR")
 
     async def initiate_bvn_lookup(self, bvn: str) -> BvnLookupData:
         """Initiate BVN lookup to get verification methods."""
         if self.use_mock:
             return mock_data.get_mock_bvn_lookup(bvn)
-        data = await self._request(
-            "POST", "/v2/lookup/bvn/initiate", body={"bvn": bvn, "scope": "bank_accounts"}
-        )
+        data = await self._request("POST", "/v2/lookup/bvn/initiate", body={"bvn": bvn, "scope": "bank_accounts"})
         return BvnLookupData(**data)
 
     async def verify_bvn(self, session_id: str, method: str) -> None:
         """Send verification code via selected method."""
         if self.use_mock:
             return
-        await self._request(
-            "POST", "/v2/lookup/bvn/verify", body={"method": method}, session_id=session_id
-        )
+        await self._request("POST", "/v2/lookup/bvn/verify", body={"method": method}, session_id=session_id)
 
     async def verify_otp(self, session_id: str, otp: str) -> list[BankAccount]:
         """Verify OTP and get bank accounts linked to BVN."""
         if self.use_mock:
             return mock_data.get_mock_bank_accounts()
-        data = await self._request(
-            "POST", "/v2/lookup/bvn/details", body={"otp": otp}, session_id=session_id
-        )
+        data = await self._request("POST", "/v2/lookup/bvn/details", body={"otp": otp}, session_id=session_id)
         return [BankAccount(**acc) for acc in data]
 
     async def get_account(self, account_id: str) -> AccountData:
@@ -161,6 +153,8 @@ class MonoClient:
             params["end"] = end
         if transaction_type:
             params["type"] = transaction_type
+        if narration:
+            params["narration"] = narration
         if not paginate:
             params["paginate"] = "false"
         if limit:
@@ -169,13 +163,8 @@ class MonoClient:
         raw_data = await self._request(
             "GET", f"/v2/accounts/{account_id}/transactions", params=params, real_time=real_time
         )
-        raw_txns = (
-            raw_data.get("transactions", raw_data) if isinstance(raw_data, dict) else raw_data
-        )
+        raw_txns = raw_data.get("transactions", raw_data) if isinstance(raw_data, dict) else raw_data
         transactions = [Transaction(**t) for t in raw_txns]
-
-        if narration:
-            transactions = [t for t in transactions if narration.lower() in t.narration.lower()]
 
         return transactions[:limit]
 
@@ -191,9 +180,7 @@ class MonoClient:
     ) -> CustomerData:
         """Create a customer in Mono."""
         if self.use_mock:
-            return mock_data.get_mock_customer(
-                first_name, last_name, email, address, identity_number, identity_type
-            )
+            return mock_data.get_mock_customer(first_name, last_name, email, address, identity_number, identity_type)
 
         body = {
             "first_name": first_name,
