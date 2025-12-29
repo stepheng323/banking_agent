@@ -82,12 +82,6 @@ async def lifespan(_app: FastAPI):
 
     logger.info("Shutting down Core Banking Service...")
 
-    if payment_provider:
-        try:
-            await payment_provider.shutdown()
-        except Exception as e:
-            logger.warning("Payment provider shutdown error", error=str(e))
-
     message_consumer.stop()
     transaction_consumer.stop()
     flow_event_consumer.stop()

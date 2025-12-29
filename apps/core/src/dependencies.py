@@ -161,7 +161,6 @@ def setup_dependencies():
         airtime_executor=airtime_executor,
     )
 
-    # Flow event consumer for handling PIN verification events from gateway
     flow_event_consumer = FlowEventConsumer(
         redis_queue=redis_queue,
         transfer_service=agent_transfer_service,
