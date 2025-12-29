@@ -10,6 +10,7 @@ from apps.core.src.agent.sub_agents.query.models import (
     QueryResultItem,
     match_category,
 )
+from apps.core.src.agent.tools.account_selection.service import AccountSelectionService
 from shared.clients.providers.mono import MonoClient
 from shared.utils.logging import get_logger
 
@@ -32,6 +33,7 @@ class QueryExecutor:
         query: NormalizedQuery,
         account_id: str,
         account_ids: list[str] | None = None,
+        accounts_info: list[dict] | None = None,
     ) -> QueryResult:
         """
         Execute a normalized query.
@@ -40,10 +42,26 @@ class QueryExecutor:
             query: The normalized query to execute
             account_id: Primary account ID
             account_ids: All account IDs for multi-account queries
+            accounts_info: Account details for name resolution
 
         Returns:
             QueryResult with context_key for follow-ups
         """
+        all_account_ids = account_ids or [account_id]
+
+        # Resolve account scope
+        if query.accounts_scope == "single" and query.account_name and accounts_info:
+            resolved_id = self._resolve_account_by_name(query.account_name, accounts_info)
+            if resolved_id:
+                account_id = resolved_id
+                all_account_ids = [resolved_id]
+            else:
+                return QueryResult(
+                    summary_text=f"I couldn't find an account matching '{query.account_name}'.",
+                )
+        elif query.accounts_scope == "single":
+            all_account_ids = [account_id]
+
         handlers = {
             QueryIntent.BALANCE_QUERY: self._handle_balance,
             QueryIntent.TRANSACTION_LIST: self._handle_transaction_list,
@@ -60,17 +78,24 @@ class QueryExecutor:
             return QueryResult(summary_text="I couldn't understand that query.")
 
         try:
-            result = await handler(query, account_id, account_ids or [account_id])
+            result = await handler(query, account_id, all_account_ids)
             result.query_snapshot = query
             return result
         except Exception as e:
             logger.error("query_execution_error", intent=query.intent, error=str(e))
             return QueryResult(summary_text="Something went wrong. Please try again.")
 
+    def _resolve_account_by_name(self, name: str, accounts: list[dict]) -> str | None:
+        """Resolve account name to account ID using existing AccountSelectionService."""
+
+        matched = AccountSelectionService.find_account_by_bank_name(accounts, name)
+        if matched:
+            return matched.get("account_id") or matched.get("mono_account_id")
+        return None
+
     async def _handle_balance(self, query: NormalizedQuery, account_id: str, account_ids: list[str]) -> QueryResult:
         """Handle balance queries."""
         if query.accounts_scope == "all" and len(account_ids) > 1:
-            # Multi-account balance
             total = 0.0
             items = []
             for acc_id in account_ids:

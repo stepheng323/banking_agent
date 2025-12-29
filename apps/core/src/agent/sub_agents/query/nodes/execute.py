@@ -20,9 +20,10 @@ async def execute_node(state: QueryState, executor: QueryExecutor) -> dict[str, 
 
     account_id = state["account_id"]
     account_ids = state.get("account_ids", [account_id])
+    accounts = state.get("accounts", [])
 
     try:
-        result = await executor.execute(query, account_id, account_ids)
+        result = await executor.execute(query, account_id, account_ids, accounts)
 
         return {
             "flow_state": "formatting",

@@ -232,6 +232,7 @@ class QueryFlowGraph:
                 for acc in accounts
                 if acc.get("account_id") or acc.get("mono_account_id")
             ],
+            "accounts": accounts,
             "current_account_index": 0,
             "account_info": accounts[0] if accounts else None,
             "current_page": 0,
