@@ -1,5 +1,6 @@
 """Factory for creating and managing payment and bill payment providers."""
 
+from shared.clients.abstractions.banking import BankingDataProvider
 from shared.clients.abstractions.bill import BillPaymentProvider
 from shared.clients.abstractions.payment import PaymentProvider
 from shared.clients.providers.flutterwave.bill import FlutterwaveBillsClient
@@ -28,6 +29,18 @@ class PaymentProviderFactory:
             try:
                 return FlutterwaveBillsClient()
             except ValueError:
+                return None
+        return None
+
+    @staticmethod
+    def create_banking_data_provider(provider_name: str) -> BankingDataProvider | None:
+        """Create a banking data provider instance by name."""
+        if provider_name == "mono":
+            try:
+                from shared.clients.providers.mono.banking import MonoBankingProvider
+
+                return MonoBankingProvider()
+            except (ValueError, ImportError):
                 return None
         return None
 
@@ -70,6 +83,22 @@ class PaymentProviderFactory:
             Bill payment provider instance if available, None otherwise
         """
         provider = PaymentProviderFactory.create_bill_payment_provider(provider_name)
+        if provider and provider.is_available:
+            return provider
+        return None
+
+    @staticmethod
+    def get_banking_data_provider(provider_name: str = "mono") -> BankingDataProvider | None:
+        """
+        Get a banking data provider for accounts, transactions, and BVN.
+
+        Args:
+            provider_name: Name of the provider (default: "mono")
+
+        Returns:
+            Banking data provider instance if available, None otherwise
+        """
+        provider = PaymentProviderFactory.create_banking_data_provider(provider_name)
         if provider and provider.is_available:
             return provider
         return None
