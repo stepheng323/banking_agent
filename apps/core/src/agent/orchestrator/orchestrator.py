@@ -43,6 +43,7 @@ from apps.core.src.agent.orchestrator.services import (
 )
 from apps.core.src.agent.sub_agents.account_management.service import AccountManagementService
 from apps.core.src.agent.sub_agents.airtime import AirtimeService
+from apps.core.src.agent.sub_agents.data import DataPurchaseGraph
 from apps.core.src.agent.sub_agents.query.graph import QueryFlowGraph
 from apps.core.src.agent.sub_agents.transfer import TransferService
 from shared.clients.whatsapp.client import WhatsAppClient
@@ -69,6 +70,7 @@ class OrchestratorAgent:
         query_graph: QueryFlowGraph,
         account_management_service: AccountManagementService,
         media_service: Any = None,
+        data_graph: DataPurchaseGraph | None = None,
     ) -> None:
         self.llm = llm
         self.user_repo = user_repo
@@ -81,6 +83,7 @@ class OrchestratorAgent:
         self.query_graph = query_graph
         self.account_management_service = account_management_service
         self.media_service = media_service
+        self.data_graph = data_graph
 
         self.context_manager = OrchestratorContextManager(user_repo, beneficiary_repo)
         self.classification_service = OrchestratorClassificationService(llm)
@@ -99,6 +102,7 @@ class OrchestratorAgent:
             conversation_responder,
             self.context_manager,
             query_graph,
+            data_graph,
             account_management_service,
             self.whatsapp_client,
             self.flow_context_service,
@@ -106,9 +110,7 @@ class OrchestratorAgent:
         # Handler order matters
         self._handlers = [
             ContextLoaderHandler(self.context_manager, task_queue_service),
-            ClassificationHandler(
-                self.classification_service, self.context_manager, actionable_message_repo
-            ),
+            ClassificationHandler(self.classification_service, self.context_manager, actionable_message_repo),
             FreshStartHandler(self.context_manager, transfer_service, airtime_service),
             AffirmationHandler(transfer_service, airtime_service, self.flow_context_service, llm),
             QuoteHandler(
@@ -158,11 +160,7 @@ class OrchestratorAgent:
         pipeline = MessagePipeline(self._handlers)
         response = await pipeline.process(initial_context)
 
-        create_background_task(
-            self.context_manager.add_conversation_turn(phone_number, "user", text)
-        )
-        create_background_task(
-            self.context_manager.add_conversation_turn(phone_number, "assistant", response)
-        )
+        create_background_task(self.context_manager.add_conversation_turn(phone_number, "user", text))
+        create_background_task(self.context_manager.add_conversation_turn(phone_number, "assistant", response))
 
         return response

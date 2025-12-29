@@ -11,6 +11,7 @@ from apps.core.src.agent.orchestrator.models.classification import Classificatio
 from apps.core.src.agent.orchestrator.services.conversation_responder import ConversationResponder
 from apps.core.src.agent.sub_agents.account_management.service import AccountManagementService
 from apps.core.src.agent.sub_agents.airtime import AirtimeService
+from apps.core.src.agent.sub_agents.data import DataPurchaseGraph
 from apps.core.src.agent.sub_agents.query.graph import QueryFlowGraph
 from apps.core.src.agent.sub_agents.transfer import TransferService
 from shared.clients.whatsapp.client import WhatsAppClient
@@ -33,8 +34,9 @@ class OrchestratorIntentRouter:
         conversation_responder: ConversationResponder,
         context_manager: OrchestratorContextManager,
         query_graph: QueryFlowGraph,
-        account_management_service: AccountManagementService,
-        whatsapp_client: WhatsAppClient,
+        data_graph: DataPurchaseGraph | None = None,
+        account_management_service: AccountManagementService = None,
+        whatsapp_client: WhatsAppClient = None,
         flow_context_service: FlowContextService | None = None,
     ) -> None:
         self.task_queue_service = task_queue_service
@@ -46,6 +48,7 @@ class OrchestratorIntentRouter:
         self.whatsapp_client = whatsapp_client
         self.query_graph = query_graph
         self.account_management_service = account_management_service
+        self.data_graph = data_graph
         self.flow_context_service = flow_context_service or FlowContextService()
 
     def _generate_task_acknowledgment(self, planner_output: PlannerOutput) -> str:
@@ -187,15 +190,34 @@ class OrchestratorIntentRouter:
             )
             response = await self.airtime_service.run_simple(phone_number, text, airtime_classification_dict)
         elif intent == "data":
-            response = "Data purchase flow coming soon."
-
-        elif intent == "query":
-            # Check if there's an active flow to pause
             conversation_state = await self.context_manager.get_conversation_state(phone_number)
             if conversation_state:
                 active_flow = conversation_state.get("active_flow")
                 if active_flow in ("transfer", "airtime"):
-                    # Pause the flow before handling query
+                    flow_summary = {
+                        "amount": conversation_state.get("amount"),
+                        "recipient_name": conversation_state.get("recipient_name"),
+                        "recipient_phone": conversation_state.get("recipient_phone"),
+                    }
+                    await self.flow_context_service.pause_flow(phone_number, active_flow, "data", flow_summary)
+
+            if result.response:
+                await self.whatsapp_client.send_text(phone_number, result.response, message_id=message_id)
+
+            if self.data_graph:
+                response = await self.data_graph.run(phone_number, text, user_ctx)
+            else:
+                response = "Data purchase is not available at the moment. Please try again later."
+
+            resume_prompt = await self.flow_context_service.generate_resume_prompt(phone_number)
+            if resume_prompt:
+                response = f"{response}\n\n{resume_prompt}"
+
+        elif intent == "query":
+            conversation_state = await self.context_manager.get_conversation_state(phone_number)
+            if conversation_state:
+                active_flow = conversation_state.get("active_flow")
+                if active_flow in ("transfer", "airtime"):
                     flow_summary = {
                         "amount": conversation_state.get("amount"),
                         "recipient_name": conversation_state.get("recipient_name"),
@@ -203,19 +225,16 @@ class OrchestratorIntentRouter:
                     }
                     await self.flow_context_service.pause_flow(phone_number, active_flow, "balance_query", flow_summary)
 
-            # Send ack before processing (from classification LLM)
             if result.response:
                 await self.whatsapp_client.send_text(phone_number, result.response, message_id=message_id)
 
             response = await self.query_graph.run(phone_number, text, user_ctx)
 
-            # Check if we need to append resume prompt
             resume_prompt = await self.flow_context_service.generate_resume_prompt(phone_number)
             if resume_prompt:
                 response = f"{response}\n\n{resume_prompt}"
 
         elif intent == "manage_accounts":
-            # Check if there's an active flow to pause
             conversation_state = await self.context_manager.get_conversation_state(phone_number)
             if conversation_state:
                 active_flow = conversation_state.get("active_flow")
@@ -231,7 +250,6 @@ class OrchestratorIntentRouter:
 
             response = await self.account_management_service.handle_account_management(phone_number, text, user_ctx)
 
-            # Check if we need to append resume prompt
             resume_prompt = await self.flow_context_service.generate_resume_prompt(phone_number)
             if resume_prompt:
                 response = f"{response}\n\n{resume_prompt}"
