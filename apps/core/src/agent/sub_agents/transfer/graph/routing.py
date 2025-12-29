@@ -2,7 +2,7 @@
 
 from typing import Literal
 
-from apps.core.src.agent.sub_agents.transfer.nodes.utils import debug_log
+from apps.core.src.agent.sub_agents.transfer.graph.nodes.utils import debug_log
 from apps.core.src.agent.sub_agents.transfer.state import TransferState
 
 

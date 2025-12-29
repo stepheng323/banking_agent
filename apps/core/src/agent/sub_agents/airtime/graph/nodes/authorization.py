@@ -15,7 +15,7 @@ from shared.services.auth import AuthorizationService
 from shared.services.transactions import create_airtime_transaction
 from shared.utils.logging import get_logger
 
-from ..graph.utils import debug_log
+from ..utils import debug_log
 
 logger = get_logger(__name__)
 

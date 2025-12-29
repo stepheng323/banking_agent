@@ -5,7 +5,7 @@ from typing import cast
 
 from apps.core.src.agent.sub_agents.airtime.state import AirtimeState
 
-from ..graph.context import AirtimeNodeContext
+from ..context import AirtimeNodeContext
 
 
 async def check_and_acknowledge_changes(state: AirtimeState) -> AirtimeState:

@@ -221,7 +221,7 @@ class AirtimeFlowGraph:
         classification_result: dict | None,
     ) -> tuple[dict | None, bool]:
         """Handle mid-confirmation corrections. Returns (new_state, should_return_early)."""
-        from apps.core.src.agent.sub_agents.airtime.nodes.extraction import extract_entities
+        from apps.core.src.agent.sub_agents.airtime.graph.nodes.extraction import extract_entities
 
         preserved = self._preserve_transaction_data(input_state)
         old_values = {k: preserved[k] for k in ("amount", "recipient_phone", "network")}

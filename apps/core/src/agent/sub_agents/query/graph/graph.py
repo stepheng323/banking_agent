@@ -12,9 +12,9 @@ from langgraph.graph import END, StateGraph
 from apps.core.src.agent.sub_agents.query.continuity import ContinuationClassifier
 from apps.core.src.agent.sub_agents.query.executor import QueryExecutor
 from apps.core.src.agent.sub_agents.query.graph.state import QueryState
-from apps.core.src.agent.sub_agents.query.nodes.execute import execute_node
-from apps.core.src.agent.sub_agents.query.nodes.format import format_node
-from apps.core.src.agent.sub_agents.query.nodes.parse import (
+from apps.core.src.agent.sub_agents.query.graph.nodes.execute import execute_node
+from apps.core.src.agent.sub_agents.query.graph.nodes.format import format_node
+from apps.core.src.agent.sub_agents.query.graph.nodes.parse import (
     classify_continuation_node,
     paginate_node,
     parse_node,

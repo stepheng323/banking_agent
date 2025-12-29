@@ -3,7 +3,7 @@
 from langgraph.graph import END, StateGraph
 
 from apps.core.src.agent.sub_agents.transfer.extractor import TransferEntityExtractor
-from apps.core.src.agent.sub_agents.transfer.nodes import (
+from apps.core.src.agent.sub_agents.transfer.graph.nodes import (
     authorize_transaction,
     check_and_acknowledge_changes,
     check_funding,
