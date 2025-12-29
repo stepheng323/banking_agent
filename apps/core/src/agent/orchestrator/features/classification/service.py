@@ -225,6 +225,51 @@ class OrchestratorClassificationService:
                 complexity_reason="Simple airtime pattern",
             )
 
+        data_pattern1 = re.match(
+            r"^(?:buy\s+)?data\s+(\d+(?:k|,\d+)?)",
+            text_clean,
+        )
+        data_pattern2 = re.match(
+            r"^(?:buy\s+)?data\s+(?:for\s+)?(0\d{10}|\+?234\d{10})",
+            text_clean,
+        )
+        data_pattern2 = re.match(
+            r"^(?:buy\s+)?data\s+(?:for\s+)?(0\d{10}|\+?234\d{10})",
+            text_clean,
+        )
+        data_pattern3 = re.match(
+            r"^(?:buy\s+|i\s+(?:need|want)\s+)?data$",
+            text_clean,
+        )
+
+        if data_pattern1:
+            amount_raw = data_pattern1.group(1)
+            amount = int(amount_raw[:-1]) * 1000 if amount_raw.endswith("k") else int(amount_raw.replace(",", ""))
+            return ClassificationResult(
+                intent="data",
+                is_complex=False,
+                confidence=0.92,
+                response=f"Looking for data plans within ₦{amount:,}...",
+                complexity_reason="Simple data pattern with budget",
+            )
+        if data_pattern2:
+            phone = data_pattern2.group(1)
+            return ClassificationResult(
+                intent="data",
+                is_complex=False,
+                confidence=0.92,
+                response=f"I'll help you buy data for {phone[:4]}•••{phone[-4:]}...",
+                complexity_reason="Simple data pattern with phone",
+            )
+        if data_pattern3:
+            return ClassificationResult(
+                intent="data",
+                is_complex=False,
+                confidence=0.92,
+                response="I'll help you get a data plan...",
+                complexity_reason="Simple data request",
+            )
+
         query_patterns = {
             "balance": "Checking your balance...",
             "my balance": "Checking your balance...",
