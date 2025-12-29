@@ -61,6 +61,17 @@ Parse queries in ANY language including:
 - Igbo: "Gosi m ego m"
 - Hausa: "Nuna mini kudina"
 
+## ACCOUNT SCOPE
+
+Determine which accounts the user is asking about:
+- **accounts_scope: "all"** - User wants data from all accounts (default)
+  - "across all my accounts", "total balance", "all accounts"
+- **accounts_scope: "single"** - User wants data from one specific account
+  - If specific: also set **account_name** to the bank/account mentioned
+  - Examples: "my GTB account", "from Access Bank", "UBA balance"
+
+Common Nigerian bank names: GTB, Access, Zenith, UBA, First Bank, Kuda, Opay, Moniepoint
+
 ## EXAMPLES
 
 "How much did I spend on food this month?"
@@ -75,11 +86,14 @@ Parse queries in ANY language including:
 "Can I afford 80,000?"
 → intent: affordability, amount_check: 80000
 
-"What did I spend on Christmas?"
-→ intent: transaction_list, time_range: {start: "YYYY-12-25", end: "YYYY-12-25"}
+"What's my total balance across all accounts?"
+→ intent: balance_query, accounts_scope: "all"
 
-"Show me wetin I spend for food" (Pidgin)
-→ intent: analytics_summary, filters.category: ["food"], aggregation.type: sum
+"Show my GTB transactions"
+→ intent: transaction_list, accounts_scope: "single", account_name: "GTB"
+
+"How much did I receive in my Access Bank account?"
+→ intent: analytics_summary, accounts_scope: "single", account_name: "Access", filters.transaction_type: "credit", aggregation.type: sum
 """  # noqa: E501
 
 

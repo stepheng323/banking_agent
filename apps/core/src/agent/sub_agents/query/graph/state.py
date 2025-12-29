@@ -30,6 +30,7 @@ class QueryState(TypedDict):
 
     account_id: str
     account_ids: list[str]
+    accounts: NotRequired[list[dict]]
     current_account_index: int
     account_info: dict | None
 

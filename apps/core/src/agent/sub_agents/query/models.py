@@ -59,6 +59,7 @@ class NormalizedQuery(BaseModel):
     filters: Filters | None = None
     aggregation: Aggregation | None = None
     accounts_scope: Literal["single", "all"] = Field(default="all")
+    account_name: str | None = Field(default=None, description="Specific account name if user mentions one")
     source_message_id: str | None = None
 
     amount_check: float | None = Field(default=None, description="Amount for affordability check")
@@ -88,6 +89,7 @@ class QueryResult(BaseModel):
     context_key: str = Field(default_factory=lambda: f"qr:{uuid4()}")
     has_more: bool = False
     query_snapshot: NormalizedQuery | None = None  # For follow-up deltas
+
 
 CATEGORY_KEYWORDS: dict[str, list[str]] = {
     "food": ["restaurant", "food", "chicken", "pizza", "chowdeck", "jumia food", "mr biggs", "kfc", "dominos"],
