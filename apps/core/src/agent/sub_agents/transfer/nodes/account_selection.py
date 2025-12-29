@@ -1,6 +1,6 @@
 """Account selection node for transfer flow."""
 
-from apps.core.src.agent.orchestrator.features.response import (
+from apps.core.src.agent.tools.response import (
     ResponseIntent,
     build_response_context,
     get_synthesizer,

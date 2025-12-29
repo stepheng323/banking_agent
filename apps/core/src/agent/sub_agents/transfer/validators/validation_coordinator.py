@@ -4,7 +4,7 @@ import hashlib
 import json
 from typing import Any
 
-from apps.core.src.agent.orchestrator.features.response import (
+from apps.core.src.agent.tools.response import (
     ResponseIntent,
     build_response_context,
     get_synthesizer,

@@ -3,7 +3,7 @@
 import json
 from typing import TYPE_CHECKING, cast
 
-from apps.core.src.agent.orchestrator.features.response import (
+from apps.core.src.agent.tools.response import (
     ResponseIntent,
     build_response_context,
     get_synthesizer,
