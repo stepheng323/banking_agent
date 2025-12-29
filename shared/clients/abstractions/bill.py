@@ -69,9 +69,53 @@ class BillPaymentProvider(ABC):
         Fetch available bill categories/billers from the provider.
 
         Args:
-            category: Category to filter (e.g., "AIRTIME", "DATA", "CABLE")
+            category: Category to filter (e.g., "AIRTIME", "MOBILEDATA", "CABLE")
 
         Returns:
             Dictionary with billers list and their codes
         """
         raise NotImplementedError(f"{self.provider_name} does not support fetching bill categories")
+
+    async def get_data_plans(self, network: str) -> dict[str, Any]:
+        """
+        Get available data plans for a network.
+
+        Args:
+            network: Network provider (MTN, AIRTEL, GLO, 9MOBILE)
+
+        Returns:
+            Dictionary with:
+                - success: bool
+                - plans: list of dicts with item_code, name, amount, validity
+                - error: str (if failed)
+        """
+        raise NotImplementedError(f"{self.provider_name} does not support fetching data plans")
+
+    async def purchase_data(
+        self,
+        plan_code: str,
+        recipient_phone: str,
+        network: str,
+        reference: str | None = None,
+    ) -> dict[str, Any]:
+        """
+        Purchase a data plan for a phone number.
+
+        Args:
+            plan_code: The item_code of the data plan
+            recipient_phone: Phone number to credit
+            network: Network provider (MTN, AIRTEL, GLO, 9MOBILE)
+            reference: Optional unique transaction reference
+
+        Returns:
+            Dictionary with:
+                - success: bool
+                - transaction_id: str (if successful)
+                - message: str
+                - plan_code: str
+                - recipient_phone: str
+                - network: str
+                - error: str (if failed)
+                - provider: str
+        """
+        raise NotImplementedError(f"{self.provider_name} does not support data purchases")
