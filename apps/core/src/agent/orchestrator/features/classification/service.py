@@ -37,19 +37,16 @@ class OrchestratorClassificationService:
 
         text_clean = text.strip().lower()
 
-        # Skip fast-path for complex messages with multiple intents
-        # These should go to LLM for proper classification as 'mixed'
         transfer_keywords = {"send", "transfer", "pay"}
         query_keywords = {"balance", "transaction", "history", "spent", "spending"}
         has_transfer = any(kw in text_clean for kw in transfer_keywords)
         has_query = any(kw in text_clean for kw in query_keywords)
-        # Also check for "and" which often indicates multiple operations
         has_conjunction = " and " in text_clean or " then " in text_clean
 
         if has_transfer and has_query:
-            return None  # Mixed intent - let LLM handle it
+            return None
         if has_transfer and has_conjunction and len(text_clean) > 30:
-            return None  # Likely multiple recipients or operations
+            return None
 
         greeting_patterns = {
             "hi",
@@ -91,11 +88,9 @@ class OrchestratorClassificationService:
         if context and context.get("conversationState"):
             active_flow = context["conversationState"].get("active_flow")
 
-        # Cancel: Let LLM handle if there's an active flow (for contextual response)
         cancel_patterns = {"cancel", "stop", "abort", "nevermind", "forget it", "no thanks"}
         if text_clean in cancel_patterns:
             if active_flow:
-                # Let LLM generate contextual cancellation message
                 return None
             return ClassificationResult(
                 intent="cancel",
@@ -125,8 +120,6 @@ class OrchestratorClassificationService:
                 )
 
         if active_flow in {"transfer", "airtime", "data"}:
-            # Only intercept CLEAR interrupts during active flows
-            # Let LLM decide for ambiguous cases (corrections, updates, etc.)
             manage_account_keywords = {"account", "accounts", "link", "linked", "unlink", "default"}
             manage_account_phrases = {"show my", "list my", "my accounts", "linked account"}
             query_patterns = {"balance", "history", "statement", "spent", "spending", "transaction"}
@@ -138,7 +131,6 @@ class OrchestratorClassificationService:
             )
             is_query = bool(words & query_patterns)
 
-            # INTERRUPT DETECTION: These clearly take priority over the active flow
             if is_manage_accounts:
                 return ClassificationResult(
                     intent="manage_accounts",
@@ -157,11 +149,7 @@ class OrchestratorClassificationService:
                     complexity_reason="Query request during active flow",
                 )
 
-            # Fast path for account/phone numbers during active flows
-            # These are clearly continuations of the flow, not cancellations
             if active_flow == "transfer":
-                # Match 10-digit account number (optionally with bank name after comma or space)
-                # Examples: "0860506361", "0860506361, Access", "0860506361 access bank"
                 if re.match(r"^\d{10}(\s*,?\s*\w+)?", text_clean):
                     return ClassificationResult(
                         intent="transfer",
@@ -181,11 +169,7 @@ class OrchestratorClassificationService:
                         complexity_reason="Phone number detected - flow continuation",
                     )
 
-            # For anything else during active flow (amounts, corrections, new transactions),
-            # let the LLM decide with full context about the pending transaction
-            return None  # Fall through to LLM classification
-
-        # === NO ACTIVE FLOW: Fast-path for initial intents ===
+            return None
 
         # Reject multiple recipients - let LLM handle
         if " and " in text_clean and any(kw in text_clean for kw in ["send", "transfer", "pay"]):
@@ -241,7 +225,6 @@ class OrchestratorClassificationService:
                 complexity_reason="Simple airtime pattern",
             )
 
-        # QUERY: balance, transactions, spending
         query_patterns = {
             "balance": "Checking your balance...",
             "my balance": "Checking your balance...",
@@ -400,15 +383,12 @@ class OrchestratorClassificationService:
         structured_llm = self.classifier_llm.with_structured_output(ClassificationResult)
         result = await structured_llm.ainvoke(messages)
 
-        # Override cancellation for explicit start commands
-        # This prevents "Send 50k" being classified as cancel after a previous cancellation
         text_lower = text.lower().strip()
         if any(text_lower.startswith(prefix) for prefix in ["send ", "pay ", "transfer ", "buy "]):
             if result.is_cancellation:
                 logger.warning("overriding_false_cancellation", text=text[:30], original_intent=result.intent)
                 result.is_cancellation = False
                 if result.intent == "cancel":
-                    # Fallback to transfer/airtime based on keyword
                     if "airtime" in text_lower or "recharge" in text_lower or "data" in text_lower:
                         result.intent = "airtime" if "airtime" in text_lower else "data"
                     else:
