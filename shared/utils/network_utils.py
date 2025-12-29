@@ -1,6 +1,5 @@
 """Network utilities for Nigerian mobile networks."""
 
-# Nigerian mobile network prefixes (source: NCC)
 NETWORK_PREFIXES = {
     # MTN Nigeria
     "0803": "MTN",
