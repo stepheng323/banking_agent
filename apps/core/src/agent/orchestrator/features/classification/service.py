@@ -185,6 +185,87 @@ class OrchestratorClassificationService:
             # let the LLM decide with full context about the pending transaction
             return None  # Fall through to LLM classification
 
+        # === NO ACTIVE FLOW: Fast-path for initial intents ===
+
+        # Reject multiple recipients - let LLM handle
+        if " and " in text_clean and any(kw in text_clean for kw in ["send", "transfer", "pay"]):
+            return None
+
+        # TRANSFER: "send 5k to mum", "transfer 10000 to john", "pay tolu 10k"
+        # Pattern 1: send/transfer/pay AMOUNT to NAME
+        transfer_pattern1 = re.match(
+            r"^(send|transfer|pay)\s+(\d+(?:k|,\d+)?)\s+(?:to\s+)?(\w+)$",
+            text_clean,
+        )
+        # Pattern 2: pay NAME AMOUNT (e.g., "pay tolu 10k")
+        transfer_pattern2 = re.match(
+            r"^pay\s+(\w+)\s+(\d+(?:k|,\d+)?)$",
+            text_clean,
+        )
+        if transfer_pattern1:
+            amount_raw = transfer_pattern1.group(2)
+            recipient = transfer_pattern1.group(3)
+            amount = int(amount_raw[:-1]) * 1000 if amount_raw.endswith("k") else int(amount_raw.replace(",", ""))
+            return ClassificationResult(
+                intent="transfer",
+                is_complex=False,
+                confidence=0.92,
+                response=f"Got it! Sending ₦{amount:,} to {recipient.title()}...",
+                complexity_reason="Simple transfer pattern",
+            )
+        if transfer_pattern2:
+            recipient = transfer_pattern2.group(1)
+            amount_raw = transfer_pattern2.group(2)
+            amount = int(amount_raw[:-1]) * 1000 if amount_raw.endswith("k") else int(amount_raw.replace(",", ""))
+            return ClassificationResult(
+                intent="transfer",
+                is_complex=False,
+                confidence=0.92,
+                response=f"Got it! Sending ₦{amount:,} to {recipient.title()}...",
+                complexity_reason="Simple transfer pattern",
+            )
+
+        # AIRTIME: "airtime 1k", "recharge 500", "buy airtime 2k"
+        airtime_pattern = re.match(
+            r"^(?:buy\s+)?(?:airtime|recharge|topup|top up)\s+(\d+(?:k|,\d+)?)",
+            text_clean,
+        )
+        if airtime_pattern:
+            amount_raw = airtime_pattern.group(1)
+            amount = int(amount_raw[:-1]) * 1000 if amount_raw.endswith("k") else int(amount_raw.replace(",", ""))
+            return ClassificationResult(
+                intent="airtime",
+                is_complex=False,
+                confidence=0.92,
+                response=f"Got it! Processing ₦{amount:,} airtime...",
+                complexity_reason="Simple airtime pattern",
+            )
+
+        # QUERY: balance, transactions, spending
+        query_patterns = {
+            "balance": "Checking your balance...",
+            "my balance": "Checking your balance...",
+            "check balance": "Checking your balance...",
+            "show balance": "Checking your balance...",
+            "how much do i have": "Checking your balance...",
+            "wetin dey my account": "Checking your balance...",
+            "transactions": "Looking up your transactions...",
+            "my transactions": "Looking up your transactions...",
+            "show transactions": "Looking up your transactions...",
+            "show my transactions": "Looking up your transactions...",
+            "recent transactions": "Looking up your transactions...",
+            "transaction history": "Looking up your transactions...",
+        }
+
+        if text_clean in query_patterns:
+            return ClassificationResult(
+                intent="query",
+                is_complex=False,
+                confidence=0.95,
+                response=query_patterns[text_clean],
+                complexity_reason="Simple query pattern",
+            )
+
         return None
 
     async def classify(
@@ -245,9 +326,7 @@ class OrchestratorClassificationService:
                 recipient_name = suggestion.get("recipient_name", "this recipient")
                 beneficiary_type = suggestion.get("beneficiary_type", "transfer")
 
-                context_message = (
-                    f"The assistant just asked about saving a beneficiary: {recipient_name}."
-                )
+                context_message = f"The assistant just asked about saving a beneficiary: {recipient_name}."
                 if last_response:
                     context_message = f"The assistant's last message was: '{last_response}'"
 
@@ -278,9 +357,7 @@ class OrchestratorClassificationService:
                 elif quoted_type == "transfer_confirmation":
                     amount = quoted_data.get("amount", 0)
                     recipient = quoted_data.get("recipient_name", "unknown")
-                    quoted_summary = (
-                        f"Pending transfer confirmation for ₦{amount:,.0f} to {recipient}"
-                    )
+                    quoted_summary = f"Pending transfer confirmation for ₦{amount:,.0f} to {recipient}"
                 elif quoted_type == "airtime_confirmation":
                     amount = quoted_data.get("amount", 0)
                     phone = quoted_data.get("phone_number", "unknown")
@@ -328,9 +405,7 @@ class OrchestratorClassificationService:
         text_lower = text.lower().strip()
         if any(text_lower.startswith(prefix) for prefix in ["send ", "pay ", "transfer ", "buy "]):
             if result.is_cancellation:
-                logger.warning(
-                    "overriding_false_cancellation", text=text[:30], original_intent=result.intent
-                )
+                logger.warning("overriding_false_cancellation", text=text[:30], original_intent=result.intent)
                 result.is_cancellation = False
                 if result.intent == "cancel":
                     # Fallback to transfer/airtime based on keyword
