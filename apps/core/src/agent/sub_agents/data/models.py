@@ -15,7 +15,6 @@ class DataPlan(BaseModel):
     network: str = Field(..., description="Network provider (MTN, AIRTEL, GLO, 9MOBILE)")
     amount: int = Field(..., description="Price in Naira")
 
-    # Parsed from name (optional, extracted when possible)
     size_gb: float | None = Field(None, description="Data size in GB")
     validity_days: int | None = Field(None, description="Validity period in days")
 

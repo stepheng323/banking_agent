@@ -1,5 +1,6 @@
 """Data subscription sub-agent."""
 
+from apps.core.src.agent.sub_agents.data.graph import DataPurchaseGraph
 from apps.core.src.agent.sub_agents.data.models import (
     DataPlan,
     DataPurchaseDraft,
@@ -11,5 +12,6 @@ __all__ = [
     "DataPlan",
     "DataPlanService",
     "DataPurchaseDraft",
+    "DataPurchaseGraph",
     "DataPurchaseResult",
 ]

@@ -1,13 +1,18 @@
 """Data plan service for fetching and selecting data plans."""
 
+import json
 import re
 from typing import Any
+
+import redis.asyncio as redis
 
 from apps.core.src.agent.sub_agents.data.models import DataPlan
 from shared.clients.abstractions.bill import BillPaymentProvider
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
+
+CACHE_TTL = 3600
 
 
 class DataPlanService:
@@ -16,11 +21,15 @@ class DataPlanService:
 
     Handles plan fetching, filtering, and selection without LLM calls.
     Uses provider abstraction for easy provider swapping.
+    Caches plans in Redis with TTL.
     """
 
-    def __init__(self, bill_provider: BillPaymentProvider):
+    def __init__(self, bill_provider: BillPaymentProvider, redis_client: redis.Redis):
         self.provider = bill_provider
-        self._cache: dict[str, list[DataPlan]] = {}
+        self.redis = redis_client
+
+    def _cache_key(self, network: str) -> str:
+        return f"data_plans:{network.upper()}"
 
     async def get_plans(self, network: str) -> list[DataPlan]:
         """
@@ -33,10 +42,15 @@ class DataPlanService:
             List of DataPlan objects
         """
         network_upper = network.upper().strip()
+        cache_key = self._cache_key(network_upper)
 
-        # Check cache first
-        if network_upper in self._cache:
-            return self._cache[network_upper]
+        cached = await self.redis.get(cache_key)
+        if cached:
+            try:
+                plans_data = json.loads(cached)
+                return [DataPlan(**p) for p in plans_data]
+            except Exception as e:
+                logger.warning("cache_parse_failed", error=str(e))
 
         result = await self.provider.get_data_plans(network_upper)
 
@@ -50,8 +64,10 @@ class DataPlanService:
             if plan:
                 plans.append(plan)
 
-        # Cache the results
-        self._cache[network_upper] = plans
+        if plans:
+            plans_json = json.dumps([p.model_dump() for p in plans])
+            await self.redis.setex(cache_key, CACHE_TTL, plans_json)
+
         return plans
 
     def _parse_plan(self, item: dict[str, Any], network: str) -> DataPlan | None:
@@ -63,7 +79,6 @@ class DataPlanService:
             if not name or amount is None:
                 return None
 
-            # Try to extract size and validity from name
             size_gb = self._extract_size_gb(name)
             validity_days = self._extract_validity_days(name)
 
@@ -82,7 +97,6 @@ class DataPlanService:
 
     def _extract_size_gb(self, name: str) -> float | None:
         """Extract data size in GB from plan name."""
-        # Match patterns like "1GB", "500MB", "1.5GB"
         gb_match = re.search(r"(\d+(?:\.\d+)?)\s*GB", name, re.IGNORECASE)
         if gb_match:
             return float(gb_match.group(1))
@@ -95,7 +109,6 @@ class DataPlanService:
 
     def _extract_validity_days(self, name: str) -> int | None:
         """Extract validity period in days from plan name."""
-        # Match patterns like "30 Days", "7Days", "1 Month"
         day_match = re.search(r"(\d+)\s*day", name, re.IGNORECASE)
         if day_match:
             return int(day_match.group(1))
@@ -124,10 +137,8 @@ class DataPlanService:
         all_plans = await self.get_plans(network)
         filtered = [p for p in all_plans if p.amount <= max_price]
 
-        # Sort by value (GB per Naira), highest first
         def value_score(plan: DataPlan) -> float:
             if plan.size_gb and plan.amount > 0:
-                # Factor in validity for better scoring
                 validity_factor = (plan.validity_days or 1) / 30
                 return (plan.size_gb / plan.amount) * validity_factor
             return 0
@@ -173,16 +184,14 @@ class DataPlanService:
             List of plans sorted by closest match to target validity
         """
         all_plans = await self.get_plans(network)
-
-        # Filter plans with known validity
         with_validity = [p for p in all_plans if p.validity_days]
-
-        # Sort by closest match to target days
         return sorted(with_validity, key=lambda p: abs((p.validity_days or 0) - days))
 
-    def clear_cache(self, network: str | None = None):
-        """Clear cached plans."""
+    async def clear_cache(self, network: str | None = None):
+        """Clear cached plans from Redis."""
         if network:
-            self._cache.pop(network.upper(), None)
+            await self.redis.delete(self._cache_key(network))
         else:
-            self._cache.clear()
+            keys = await self.redis.keys("data_plans:*")
+            if keys:
+                await self.redis.delete(*keys)
