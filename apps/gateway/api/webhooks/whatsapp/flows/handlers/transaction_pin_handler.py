@@ -30,7 +30,7 @@ async def handle_transaction_pin(
     aes_key_bytes: bytes,
     iv_bytes: bytes,
     whatsapp_client: WhatsAppClient,
-    redis_queue: RedisQueue = None,
+    redis_queue: RedisQueue,
 ) -> Response:
     """
     Unified PIN handler for all transaction types.
