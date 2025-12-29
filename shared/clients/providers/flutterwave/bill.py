@@ -25,7 +25,6 @@ class FlutterwaveBillsClient(BillPaymentProvider):
         "ETISALAT": {"biller_code": "BIL102", "item_code": "AT102"},
     }
 
-    # Data biller codes from Flutterwave MOBILEDATA category
     DATA_BILLERS = {
         "MTN": {"biller_code": "BIL108"},
         "AIRTEL": {"biller_code": "BIL109"},
