@@ -11,6 +11,7 @@ from apps.core.src.agent.sub_agents.account_management.service import AccountMan
 from apps.core.src.agent.sub_agents.airtime import AirtimeService
 from apps.core.src.agent.sub_agents.airtime.completion import AirtimeCompletionService
 from apps.core.src.agent.sub_agents.airtime.executor import AirtimeExecutor
+from apps.core.src.agent.sub_agents.data import DataPurchaseGraph
 from apps.core.src.agent.sub_agents.onboarding.executor import OnboardingExecutor
 from apps.core.src.agent.sub_agents.onboarding.service import OnboardingService
 from apps.core.src.agent.sub_agents.query.graph import QueryFlowGraph
@@ -22,6 +23,7 @@ from apps.core.src.queue_consumers import MessageConsumer, TransactionConsumer
 from apps.core.src.queue_consumers.flow_event_consumer import FlowEventConsumer
 from shared.cache.redis_client import RedisClient
 from shared.cache.user_data import UserDataCache
+from shared.clients.factories.payment import PaymentProviderFactory
 from shared.clients.providers.mono import mono_client
 from shared.clients.storage.s3_client import S3Client
 from shared.clients.whatsapp.client import WhatsAppClient
@@ -82,6 +84,15 @@ def setup_dependencies():
         whatsapp_client=whatsapp_client,
     )
 
+
+    bill_provider = PaymentProviderFactory.get_bill_payment_provider()
+    data_graph = None
+    if bill_provider:
+        data_graph = DataPurchaseGraph(
+            bill_provider=bill_provider,
+            redis_client=shared_redis,
+        )
+
     task_queue_service = TaskQueueService()
     conversation_responder = ConversationResponder(llm)
 
@@ -131,6 +142,7 @@ def setup_dependencies():
         query_graph=query_graph,
         account_management_service=account_management_service,
         media_service=media_service,
+        data_graph=data_graph,
     )
 
     completion_callback = orchestrator.completion_callback
