@@ -231,7 +231,24 @@ class OrchestratorIntentRouter:
             if result.response:
                 await self.whatsapp_client.send_text(phone_number, result.response, message_id=message_id)
 
-            response = await self.query_graph.run(phone_number, text, user_ctx)
+            query_result = await self.query_graph.run(phone_number, text, user_ctx)
+
+            # Check if query graph wants to route to support (for issue reports)
+            if isinstance(query_result, dict) and query_result.get("route_to_support"):
+                if self.support_graph:
+                    user_id = query_result.get("user_id", user_ctx.get("user_id", ""))
+                    response = await self.support_graph.run(
+                        phone_number=phone_number,
+                        message=query_result.get("message", text),
+                        user_id=user_id,
+                        transaction=query_result.get("transaction"),
+                    )
+                    if response is None:
+                        response = "I'm having trouble processing your issue. Please try again."
+                else:
+                    response = "Support is temporarily unavailable. Please try again later."
+            else:
+                response = query_result if isinstance(query_result, str) else "Query completed."
 
             resume_prompt = await self.flow_context_service.generate_resume_prompt(phone_number)
             if resume_prompt:
