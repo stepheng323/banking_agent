@@ -15,6 +15,7 @@ from apps.core.src.agent.sub_agents.data import DataPurchaseGraph
 from apps.core.src.agent.sub_agents.onboarding.executor import OnboardingExecutor
 from apps.core.src.agent.sub_agents.onboarding.service import OnboardingService
 from apps.core.src.agent.sub_agents.query.graph import QueryFlowGraph
+from apps.core.src.agent.sub_agents.support.graph import SupportFlowGraph
 from apps.core.src.agent.sub_agents.transfer import TransferService as AgentTransferService
 from apps.core.src.agent.sub_agents.transfer.completion import TransferCompletionService
 from apps.core.src.agent.sub_agents.transfer.executor import TransferExecutor
@@ -33,6 +34,7 @@ from shared.database.connection import get_db_session
 from shared.queue.redis_queue import RedisQueue
 from shared.repositories import AccountRepository, BeneficiaryRepository
 from shared.repositories.actionable_message_repository import ActionableMessageRepository
+from shared.repositories.transaction_repository import TransactionRepository
 from shared.repositories.user_repository import UserRepository
 from shared.services.receipt_generator import ReceiptGenerator
 
@@ -97,6 +99,14 @@ def setup_dependencies():
             redis_client=shared_redis,
         )
 
+    transaction_repository = TransactionRepository(db=get_db_session())
+    support_graph = SupportFlowGraph(
+        llm=llm,
+        transaction_repo=transaction_repository,
+        actionable_message_repo=actionable_message_repository,
+        redis_client=shared_redis,
+    )
+
     task_queue_service = TaskQueueService()
     conversation_responder = ConversationResponder(llm)
 
@@ -147,6 +157,7 @@ def setup_dependencies():
         account_management_service=account_management_service,
         media_service=media_service,
         data_graph=data_graph,
+        support_graph=support_graph,
     )
 
     completion_callback = orchestrator.completion_callback
