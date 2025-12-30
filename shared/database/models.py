@@ -39,9 +39,7 @@ class User(Base):
     extra_data = Column(JSON, default={})
     transaction_pin = Column(String, nullable=True)
     created_at = Column(DateTime, server_default=text("now()"), nullable=False)
-    updated_at = Column(
-        DateTime, server_default=text("now()"), onupdate=datetime.utcnow, nullable=False
-    )
+    updated_at = Column(DateTime, server_default=text("now()"), onupdate=datetime.utcnow, nullable=False)
 
     accounts = relationship("Account", back_populates="user")
     beneficiaries = relationship("Beneficiary", back_populates="user")
@@ -74,9 +72,7 @@ class Account(Base):
     mandate_status = Column(String, default="pending", nullable=False)
     extra_data = Column(JSON, default={})
     created_at = Column(DateTime, server_default=text("now()"), nullable=False)
-    updated_at = Column(
-        DateTime, server_default=text("now()"), onupdate=datetime.utcnow, nullable=False
-    )
+    updated_at = Column(DateTime, server_default=text("now()"), onupdate=datetime.utcnow, nullable=False)
 
     user = relationship("User", back_populates="accounts")
 
@@ -103,9 +99,7 @@ class Beneficiary(Base):
     bank_code = Column(String, nullable=True)
     bank_name = Column(String, nullable=True)
     created_at = Column(DateTime, server_default=text("now()"), nullable=False)
-    updated_at = Column(
-        DateTime, server_default=text("now()"), onupdate=datetime.utcnow, nullable=False
-    )
+    updated_at = Column(DateTime, server_default=text("now()"), onupdate=datetime.utcnow, nullable=False)
 
     user = relationship("User", back_populates="beneficiaries")
 
@@ -148,21 +142,18 @@ class Transaction(Base):
     idempotency_key = Column(String, unique=True, nullable=False, index=True)
     error_message = Column(String, nullable=True)
     provider_response = Column(JSON, nullable=True)
+    provider_status = Column(String, nullable=True)  # Provider's transaction status
+    provider_error_code = Column(String, nullable=True)  # Provider-specific error code
     receipt_sent = Column(Boolean, default=False, nullable=False)
     beneficiary_suggested = Column(Boolean, default=False, nullable=False)
     created_at = Column(DateTime, server_default=text("now()"), nullable=False, index=True)
-    updated_at = Column(
-        DateTime, server_default=text("now()"), onupdate=datetime.utcnow, nullable=False
-    )
+    updated_at = Column(DateTime, server_default=text("now()"), onupdate=datetime.utcnow, nullable=False)
     completed_at = Column(DateTime, nullable=True)
 
     user = relationship("User", back_populates="transactions")
 
     def __repr__(self):
-        return (
-            f"<Transaction(id={self.id}, status={self.status}, "
-            f"amount={self.amount}, tx_id={self.transaction_id})>"
-        )
+        return f"<Transaction(id={self.id}, status={self.status}, amount={self.amount}, tx_id={self.transaction_id})>"
 
 
 class FundedTransfer(Base):
@@ -193,9 +184,7 @@ class FundedTransfer(Base):
     recipient_name = Column(String, nullable=False)
     narration = Column(String, nullable=True)
 
-    status = Column(
-        String, default=FundedTransferStatusEnum.DRAFT.value, nullable=False, index=True
-    )
+    status = Column(String, default=FundedTransferStatusEnum.DRAFT.value, nullable=False, index=True)
 
     payout_provider = Column(String, nullable=True)
     payout_reference = Column(String, nullable=True, index=True)
@@ -207,17 +196,13 @@ class FundedTransfer(Base):
     error_message = Column(String, nullable=True)
 
     created_at = Column(DateTime, server_default=text("now()"), nullable=False, index=True)
-    updated_at = Column(
-        DateTime, server_default=text("now()"), onupdate=datetime.utcnow, nullable=False
-    )
+    updated_at = Column(DateTime, server_default=text("now()"), onupdate=datetime.utcnow, nullable=False)
     funding_completed_at = Column(DateTime, nullable=True)
     payout_initiated_at = Column(DateTime, nullable=True)
     completed_at = Column(DateTime, nullable=True)
 
     user = relationship("User")
-    funding_steps = relationship(
-        "FundingStep", back_populates="funded_transfer", order_by="FundingStep.sequence"
-    )
+    funding_steps = relationship("FundingStep", back_populates="funded_transfer", order_by="FundingStep.sequence")
 
     def __repr__(self):
         return f"<FundedTransfer(id={self.id}, amount={self.amount}, status={self.status})>"
@@ -265,10 +250,7 @@ class FundingStep(Base):
     account = relationship("Account")
 
     def __repr__(self):
-        return (
-            f"<FundingStep(id={self.id}, amount={self.amount}, "
-            f"status={self.status}, seq={self.sequence})>"
-        )
+        return f"<FundingStep(id={self.id}, amount={self.amount}, status={self.status}, seq={self.sequence})>"
 
 
 class ActionableMessage(Base):
@@ -292,7 +274,4 @@ class ActionableMessage(Base):
     user = relationship("User")
 
     def __repr__(self):
-        return (
-            f"<ActionableMessage(id={self.id}, "
-            f"wa_msg_id={self.wa_message_id}, type={self.message_type})>"
-        )
+        return f"<ActionableMessage(id={self.id}, wa_msg_id={self.wa_message_id}, type={self.message_type})>"
