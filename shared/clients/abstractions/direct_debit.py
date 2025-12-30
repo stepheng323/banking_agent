@@ -138,6 +138,19 @@ class DirectDebitProvider(ABC):
         """
         pass
 
+    @abstractmethod
+    async def cancel_mandate(self, mandate_id: str) -> bool:
+        """
+        Cancel/revoke a mandate.
+
+        Args:
+            mandate_id: Provider's mandate identifier
+
+        Returns:
+            True if cancellation was successful
+        """
+        pass
+
     def is_mandate_ready(self, account: AccountInfo) -> bool:
         """Check if an account's mandate is ready for debiting."""
         return account.mandate_status == "ready" and account.mandate_id is not None
