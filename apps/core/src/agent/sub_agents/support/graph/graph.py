@@ -115,6 +115,14 @@ class SupportFlowGraph:
 
     async def _resolve_node(self, state: SupportGraphState) -> dict[str, Any]:
         """Resolve which transaction the user is referring to."""
+        # Skip resolution if transaction was pre-provided
+        if state.get("transaction"):
+            return {
+                "transaction": state["transaction"],
+                "resolution_method": "pre_resolved",
+                "needs_clarification": False,
+            }
+
         user_id = state.get("user_id", "")
         classification = state.get("classification")
         quoted_message_id = state.get("quoted_message_id")
@@ -210,9 +218,18 @@ class SupportFlowGraph:
         user_id: str,
         message_id: str = "",
         quoted_message_id: str | None = None,
+        transaction: dict[str, Any] | None = None,
     ) -> str | None:
         """
         Run the support flow.
+
+        Args:
+            phone_number: User's phone number
+            message: User's message
+            user_id: User's ID
+            message_id: Message ID
+            quoted_message_id: ID of quoted message if any
+            transaction: Pre-resolved transaction data (skips resolve step)
 
         Returns:
             Response message, or None if not a support query.
@@ -223,6 +240,7 @@ class SupportFlowGraph:
             "message_id": message_id,
             "user_id": user_id,
             "quoted_message_id": quoted_message_id,
+            "transaction": transaction,
         }
 
         try:
