@@ -124,6 +124,14 @@ class MonoDirectDebitProvider(DirectDebitProvider):
             error_message="Direct debit reversal not yet implemented for Mono",
         )
 
+    async def cancel_mandate(self, mandate_id: str) -> bool:
+        """Cancel a mandate via Mono."""
+        try:
+            return await self._client.cancel_mandate(mandate_id)
+        except Exception as e:
+            logger.error("mono_cancel_mandate_failed", mandate_id=mandate_id, error=str(e))
+            return False
+
     def _map_status(self, mono_status: str) -> DebitStatus:
         """Map Mono status to our DebitStatus enum."""
         status_map = {

@@ -52,7 +52,13 @@ class MockDirectDebitProvider(DirectDebitProvider):
         )
 
     async def initiate_debit(
-        self, mandate_id: str, amount: float, reference: str, narration: str = "Transfer funding"
+        self,
+        mandate_id: str,
+        amount: float,
+        reference: str,
+        narration: str = "Transfer",
+        beneficiary_account: str | None = None,
+        beneficiary_bank_code: str | None = None,
     ) -> DebitResult:
         """Simulate debit initiation."""
         debit_id = f"mock_debit_{uuid.uuid4().hex[:8]}"
@@ -102,6 +108,11 @@ class MockDirectDebitProvider(DirectDebitProvider):
             status=DebitStatus.REVERSED,
             debit_id=debit_id,
         )
+
+    async def cancel_mandate(self, mandate_id: str) -> bool:
+        """Simulate mandate cancellation."""
+        logger.info("mock_cancel_mandate", mandate_id=mandate_id)
+        return True
 
     def simulate_debit_success(self, reference: str) -> None:
         """Mark a debit as successful (for testing webhooks)."""

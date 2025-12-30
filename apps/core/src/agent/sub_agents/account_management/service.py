@@ -12,7 +12,7 @@ from apps.core.src.agent.sub_agents.account_management.parser import (
     AccountManagementParser,
 )
 from shared.cache.user_data import UserDataCache
-from shared.clients.providers.mono import mono_client
+from shared.clients.abstractions.direct_debit import DirectDebitProvider
 from shared.clients.whatsapp.client import WhatsAppClient
 from shared.config import settings
 from shared.models.account import Account
@@ -34,6 +34,7 @@ class AccountManagementService:
         user_repo: UserRepository,
         llm: ChatOpenAI,
         whatsapp_client: WhatsAppClient,
+        direct_debit_provider: DirectDebitProvider | None = None,
     ):
         """
         Initialize account management service.
@@ -48,11 +49,10 @@ class AccountManagementService:
         self.user_repo = user_repo
         self.llm = llm
         self.whatsapp_client = whatsapp_client
+        self.direct_debit_provider = direct_debit_provider
         self.parser = AccountManagementParser(llm)
 
-    async def handle_account_management(
-        self, phone_number: str, text: str, user_ctx: dict[str, Any]
-    ) -> str:
+    async def handle_account_management(self, phone_number: str, text: str, user_ctx: dict[str, Any]) -> str:
         """
         Handle account management intent.
 
@@ -78,7 +78,9 @@ class AccountManagementService:
             if identifier:
                 response = await self.unlink_account(user_id, identifier)
             else:
-                response = "Which account would you like to unlink? Please say 'unlink [bank name]' or 'unlink [number]'."
+                response = (
+                    "Which account would you like to unlink? Please say 'unlink [bank name]' or 'unlink [number]'."
+                )
 
         elif action == "set_default":
             if identifier:
@@ -284,14 +286,12 @@ class AccountManagementService:
 
         try:
             mandate_id = getattr(selected_account, "mandate_id", None)
-            if mandate_id:
+            if mandate_id and self.direct_debit_provider:
                 try:
-                    await mono_client.cancel_mandate(mandate_id)
+                    await self.direct_debit_provider.cancel_mandate(mandate_id)
                     logger.info("mandate_cancelled_for_unlink", mandate_id=mandate_id)
                 except Exception as e:
-                    logger.warning(
-                        "cancel_mandate_failed_on_unlink", mandate_id=mandate_id, error=str(e)
-                    )
+                    logger.warning("cancel_mandate_failed_on_unlink", mandate_id=mandate_id, error=str(e))
 
             success = self.account_repo.delete_account(str(selected_account.account_id), user_id)
 
@@ -301,9 +301,7 @@ class AccountManagementService:
                         if uow.users:
                             user = uow.users.get_by_id(user_id)
                             if user:
-                                asyncio.create_task(
-                                    UserDataCache().invalidate_accounts(user.phone_number)
-                                )
+                                asyncio.create_task(UserDataCache().invalidate_accounts(user.phone_number))
                 except Exception:
                     pass
 

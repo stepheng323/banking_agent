@@ -11,7 +11,6 @@ from langgraph.graph import END, StateGraph
 
 from apps.core.src.agent.sub_agents.query.continuity import ContinuationClassifier
 from apps.core.src.agent.sub_agents.query.executor import QueryExecutor
-from apps.core.src.agent.sub_agents.query.graph.state import QueryState
 from apps.core.src.agent.sub_agents.query.graph.nodes.execute import execute_node
 from apps.core.src.agent.sub_agents.query.graph.nodes.format import format_node
 from apps.core.src.agent.sub_agents.query.graph.nodes.parse import (
@@ -19,9 +18,10 @@ from apps.core.src.agent.sub_agents.query.graph.nodes.parse import (
     paginate_node,
     parse_node,
 )
+from apps.core.src.agent.sub_agents.query.graph.state import QueryState
 from apps.core.src.agent.sub_agents.query.parser import QueryParser
 from apps.core.src.agent.tools.account_selection.mandate_validator import validate_mandate_status
-from shared.clients.providers.mono import MonoClient
+from shared.clients.abstractions.banking import BankingDataProvider
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -65,14 +65,14 @@ class QueryFlowGraph:
     def __init__(
         self,
         llm: Runnable,
-        mono_client: MonoClient,
+        banking_provider: BankingDataProvider,
         redis_client: redis.Redis,
     ):
         self.llm = llm
-        self.mono = mono_client
+        self.provider = banking_provider
         self.redis = redis_client
         self.parser = QueryParser(llm)
-        self.executor = QueryExecutor(mono_client)
+        self.executor = QueryExecutor(banking_provider)
         self.continuation_classifier = ContinuationClassifier(llm)
         self.graph = self._build_graph()
 
