@@ -19,6 +19,7 @@ from apps.core.src.agent.sub_agents.query.graph.nodes.parse import (
     parse_node,
 )
 from apps.core.src.agent.sub_agents.query.graph.state import QueryState
+from apps.core.src.agent.sub_agents.query.models import QueryResult
 from apps.core.src.agent.sub_agents.query.parser import QueryParser
 from apps.core.src.agent.tools.account_selection.mandate_validator import validate_mandate_status
 from shared.clients.abstractions.banking import BankingDataProvider
@@ -47,18 +48,6 @@ def route_after_execute(state: QueryState) -> str:
     return "format"
 
 
-def route_continuation(state: QueryState) -> str:
-    """Route continuation based on classified type."""
-    cont_type = state.get("continuation_type")
-    if cont_type == "show_more":
-        return "paginate"
-    elif cont_type in ("time_delta", "filter_delta"):
-        return "execute"
-    elif cont_type == "drill_down":
-        return "format"
-    return "parse"
-
-
 class QueryFlowGraph:
     """LangGraph-based query flow with NormalizedQuery and QueryExecutor."""
 
@@ -81,14 +70,6 @@ class QueryFlowGraph:
         graph = StateGraph(QueryState)
 
         graph.add_node("parse", partial(parse_node, parser=self.parser))
-        graph.add_node(
-            "classify_continuation",
-            partial(
-                classify_continuation_node,
-                classifier=self.continuation_classifier,
-                today=date.today().isoformat(),
-            ),
-        )
         graph.add_node("execute", partial(execute_node, executor=self.executor))
         graph.add_node("paginate", paginate_node)
         graph.add_node("format", partial(format_node, llm=self.llm))
@@ -115,17 +96,6 @@ class QueryFlowGraph:
             },
         )
 
-        graph.add_conditional_edges(
-            "classify_continuation",
-            route_continuation,
-            {
-                "paginate": "paginate",
-                "execute": "execute",
-                "format": "format",
-                "parse": "parse",
-            },
-        )
-
         graph.add_edge("paginate", "execute")
         graph.add_edge("format", END)
         graph.add_edge("error", END)
@@ -147,7 +117,7 @@ class QueryFlowGraph:
         message: str,
         user_ctx: dict[str, Any],
         message_id: str = "",
-    ) -> str:
+    ) -> str | dict[str, Any]:
         """Run the query flow."""
         accounts = user_ctx.get("accounts", [])
         account = next((a for a in accounts if a.get("is_default")), accounts[0] if accounts else None)
@@ -168,6 +138,18 @@ class QueryFlowGraph:
         session_active = session_data.get("session_active", False) if session_data else False
 
         if session_active and session_data:
+            # Check if there's a pending support issue to route
+            pending_support_item = session_data.get("pending_support_item")
+            if pending_support_item:
+                await self._clear_session(session_key)
+                return {
+                    "route_to_support": True,
+                    "transaction": pending_support_item,
+                    "message": message,
+                    "phone_number": phone_number,
+                    "user_id": user_ctx.get("user_id", ""),
+                }
+
             # Use classify_continuation_node via direct call for continuations
             state: QueryState = {
                 **session_data,
@@ -245,22 +227,42 @@ class QueryFlowGraph:
         }
 
     async def _handle_drill_down(self, state: QueryState) -> dict[str, Any]:
-        """Handle drill-down by resolving item from previous result."""
-        from apps.core.src.agent.sub_agents.query.continuity import resolve_drill_down
-        from apps.core.src.agent.sub_agents.query.models import QueryResult
+        """Handle drill-down using index and action from classifier."""
+        from apps.core.src.agent.sub_agents.query.receipt import format_text_receipt
 
         query_result = state.get("query_result")
-        reference = state.get("drill_down_ref", "")
+        drill_down_index = state.get("drill_down_index", 0)
+        drill_down_action = state.get("drill_down_action", "view_details")
 
         if not query_result or not query_result.items:
             return {"response": "No items to drill down into."}
 
-        item = resolve_drill_down(reference, query_result)
+        index = max(0, min(drill_down_index, len(query_result.items) - 1))
+        item = query_result.items[index]
 
-        if not item:
-            return {"response": "I couldn't find that item. Try specifying differently."}
+        if drill_down_action == "get_receipt":
+            receipt = format_text_receipt(item)
+            return {
+                "response": receipt,
+                "session_active": True,
+            }
 
-        # Create a focused result for the single item
+        elif drill_down_action == "report_issue":
+            return {
+                "response": (
+                    f"I understand you have an issue with this transaction:\n\n"
+                    f"*{item.description}* - ₦{item.amount:,.2f}\n\n"
+                    f"Please describe the issue:\n"
+                    f"1️⃣ Transaction failed but I was debited\n"
+                    f"2️⃣ I don't recognize this transaction\n"
+                    f"3️⃣ Wrong amount was charged\n"
+                    f"4️⃣ Other issue\n\n"
+                    f"_Reply with the number or describe your issue._"
+                ),
+                "pending_support_item": item.model_dump() if hasattr(item, "model_dump") else item,
+                "session_active": True,
+            }
+
         focused_result = QueryResult(
             summary_text=f"Details for {item.description}",
             items=[item],
@@ -337,6 +339,7 @@ class QueryFlowGraph:
                 "session_active",
                 "query",
                 "query_result",
+                "pending_support_item",
             )
             for k, v in state.items():
                 if k not in allowed_keys:

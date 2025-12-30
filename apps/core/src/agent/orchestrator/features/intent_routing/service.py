@@ -13,6 +13,7 @@ from apps.core.src.agent.sub_agents.account_management.service import AccountMan
 from apps.core.src.agent.sub_agents.airtime import AirtimeService
 from apps.core.src.agent.sub_agents.data import DataPurchaseGraph
 from apps.core.src.agent.sub_agents.query.graph import QueryFlowGraph
+from apps.core.src.agent.sub_agents.support.graph import SupportFlowGraph
 from apps.core.src.agent.sub_agents.transfer import TransferService
 from shared.clients.whatsapp.client import WhatsAppClient
 from shared.services.task_queue import TaskQueueService
@@ -38,6 +39,7 @@ class OrchestratorIntentRouter:
         account_management_service: AccountManagementService = None,
         whatsapp_client: WhatsAppClient = None,
         flow_context_service: FlowContextService | None = None,
+        support_graph: SupportFlowGraph | None = None,
     ) -> None:
         self.task_queue_service = task_queue_service
         self.task_planner = task_planner
@@ -49,6 +51,7 @@ class OrchestratorIntentRouter:
         self.query_graph = query_graph
         self.account_management_service = account_management_service
         self.data_graph = data_graph
+        self.support_graph = support_graph
         self.flow_context_service = flow_context_service or FlowContextService()
 
     def _generate_task_acknowledgment(self, planner_output: PlannerOutput) -> str:
@@ -228,11 +231,47 @@ class OrchestratorIntentRouter:
             if result.response:
                 await self.whatsapp_client.send_text(phone_number, result.response, message_id=message_id)
 
-            response = await self.query_graph.run(phone_number, text, user_ctx)
+            query_result = await self.query_graph.run(phone_number, text, user_ctx)
+
+            # Check if query graph wants to route to support (for issue reports)
+            if isinstance(query_result, dict) and query_result.get("route_to_support"):
+                if self.support_graph:
+                    user_id = query_result.get("user_id", user_ctx.get("user_id", ""))
+                    response = await self.support_graph.run(
+                        phone_number=phone_number,
+                        message=query_result.get("message", text),
+                        user_id=user_id,
+                        transaction=query_result.get("transaction"),
+                    )
+                    if response is None:
+                        response = "I'm having trouble processing your issue. Please try again."
+                else:
+                    response = "Support is temporarily unavailable. Please try again later."
+            else:
+                response = query_result if isinstance(query_result, str) else "Query completed."
 
             resume_prompt = await self.flow_context_service.generate_resume_prompt(phone_number)
             if resume_prompt:
                 response = f"{response}\n\n{resume_prompt}"
+
+        elif intent == "support":
+            if self.support_graph:
+                if result.response:
+                    await self.whatsapp_client.send_text(phone_number, result.response, message_id=message_id)
+
+                user_id = user_ctx.get("user_id", "")
+                response = await self.support_graph.run(
+                    phone_number=phone_number,
+                    message=text,
+                    user_id=user_id,
+                    message_id=message_id or "",
+                )
+
+                # If support graph returns None, it's not a support query - fallback
+                if response is None:
+                    response = await self.conversation_responder.generate_reply(phone_number, text, result, user_ctx)
+            else:
+                response = "Support is temporarily unavailable. Please try again later."
 
         elif intent == "manage_accounts":
             conversation_state = await self.context_manager.get_conversation_state(phone_number)

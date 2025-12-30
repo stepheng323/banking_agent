@@ -70,11 +70,9 @@ async def fetch_and_filter(
     account_ids: list[str],
 ) -> list[dict]:
     """Fetch transactions and apply filters."""
-    # Determine date range
     start = query.time_range.start.isoformat() if query.time_range else None
     end = query.time_range.end.isoformat() if query.time_range else None
 
-    # Fetch transactions
     if query.accounts_scope == "all" and len(account_ids) > 1:
         all_txns: list[dict[str, Any]] = []
         for acc_id in account_ids:
@@ -85,7 +83,6 @@ async def fetch_and_filter(
         txns = await provider.get_transactions(account_id, start_date=start, end_date=end, limit=100)
         transactions = [t.model_dump() if hasattr(t, "model_dump") else t for t in txns]
 
-    # Apply filters
     if query.filters:
         transactions = apply_filters(transactions, query.filters)
 

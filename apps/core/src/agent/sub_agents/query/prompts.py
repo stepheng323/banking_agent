@@ -96,14 +96,13 @@ Common Nigerian bank names: GTB, Access, Zenith, UBA, First Bank, Kuda, Opay, Mo
 → intent: analytics_summary, accounts_scope: "single", account_name: "Access", filters.transaction_type: "credit", aggregation.type: sum
 """  # noqa: E501
 
-
 CONTINUATION_CLASSIFIER_PROMPT = """You are classifying a follow-up message in a banking query conversation.
 
 Today's date: {today}
 Previous query context exists: The user was viewing their transactions/balance.
 
 User message: {message}
-
+{items_section}
 Classify this message into one of these types:
 
 1. **show_more** - User wants to see more results (e.g., "show more", "next", "continue", "wetin else", "siwaju")
@@ -114,8 +113,13 @@ Classify this message into one of these types:
 3. **filter_delta** - User wants to filter results (e.g., "only credits", "over 10k", "just food", "excluding transfers")
    - If this type, extract the filter changes
 
-4. **drill_down** - User wants details about a specific item (e.g., "tell me more about the 150k one", "the first one", "that Uber transaction")
-   - If this type, note what they're referencing
+4. **drill_down** - User wants details about a specific item OR wants to take action on it
+   - If this type AND items are provided above, set drill_down_index to the item number (0-indexed)
+   - Match based on: amount ("150k"), ordinal ("first", "second"), description ("Netflix"), or relative ("largest")
+   - Set drill_down_action based on intent:
+     - **view_details** (default): "tell me more", "show details", "what was this?"
+     - **get_receipt**: "send receipt", "proof", "evidence", "I need receipt"
+     - **report_issue**: "something's wrong", "I was debited", "failed", "problem", "issue"
 
 5. **new_query** - User is asking something completely different
 

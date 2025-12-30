@@ -117,7 +117,8 @@ class AccountManagementService:
             prompt = (
                 f"Translate the following banking assistant response to {language}. "
                 "Keep the formatting (markdown, emojis) exactly the same. "
-                "Adapt the tone to be natural in the target language (e.g., Use Pidgin English style if language is Pidgin).\n\n"
+                "Adapt the tone to be natural in the target language\n\n"
+                "(e.g., Use Pidgin English style if language is Pidgin).\n\n"
                 f"Original Response:\n{text}"
             )
             result = await self.llm.ainvoke(prompt)
