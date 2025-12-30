@@ -52,9 +52,11 @@ async def classify_continuation_node(
 ) -> dict[str, Any]:
     """Classify continuation type using LLM."""
     message = state["message"]
+    query_result = state.get("query_result")
+    items = query_result.items if query_result else None
 
     try:
-        cont_type, data = await classifier.classify(message, True, today)
+        cont_type, data = await classifier.classify(message, True, today, items)
 
         if cont_type == ContinuationType.SHOW_MORE:
             return {
@@ -90,7 +92,8 @@ async def classify_continuation_node(
             return {
                 "continuation_type": "drill_down",
                 "flow_state": "formatting",
-                "drill_down_ref": data.get("reference"),
+                "drill_down_index": data.get("drill_down_index", 0),
+                "drill_down_action": data.get("drill_down_action", "view_details"),
             }
 
         else:
