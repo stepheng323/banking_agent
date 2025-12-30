@@ -24,7 +24,8 @@ from apps.core.src.queue_consumers.flow_event_consumer import FlowEventConsumer
 from shared.cache.redis_client import RedisClient
 from shared.cache.user_data import UserDataCache
 from shared.clients.factories.payment import PaymentProviderFactory
-from shared.clients.providers.mono import mono_client
+from shared.clients.providers.mono.banking import MonoBankingProvider
+from shared.clients.providers.mono.direct_debit import MonoDirectDebitProvider
 from shared.clients.storage.s3_client import S3Client
 from shared.clients.whatsapp.client import WhatsAppClient
 from shared.config import settings
@@ -72,9 +73,12 @@ def setup_dependencies():
 
     llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
 
+    banking_provider = MonoBankingProvider()
+    direct_debit_provider = MonoDirectDebitProvider()
+
     query_graph = QueryFlowGraph(
         llm=llm,
-        mono_client=mono_client,
+        banking_provider=banking_provider,
         redis_client=shared_redis,
     )
     account_management_service = AccountManagementService(
@@ -82,8 +86,8 @@ def setup_dependencies():
         user_repo=user_repository,
         llm=llm,
         whatsapp_client=whatsapp_client,
+        direct_debit_provider=direct_debit_provider,
     )
-
 
     bill_provider = PaymentProviderFactory.get_bill_payment_provider()
     data_graph = None
