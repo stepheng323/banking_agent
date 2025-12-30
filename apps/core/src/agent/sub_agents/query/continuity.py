@@ -16,7 +16,6 @@ from pydantic import BaseModel, Field
 from apps.core.src.agent.sub_agents.query.models import (
     Filters,
     NormalizedQuery,
-    QueryResult,
     QueryResultItem,
     TimeRange,
 )
@@ -43,15 +42,16 @@ class ContinuationClassification(BaseModel):
         description="Type of continuation the user is requesting"
     )
 
-    # For time_delta
     time_range: TimeRange | None = Field(default=None, description="Resolved date range if time_delta")
 
-    # For filter_delta
     filters: Filters | None = Field(default=None, description="Filter modifications if filter_delta")
 
-    # For drill_down
-    drill_down_reference: str | None = Field(
-        default=None, description="What user is referencing (amount, index, description)"
+    drill_down_index: int | None = Field(
+        default=None, description="Index of item user is referencing (0-indexed) if drill_down"
+    )
+
+    drill_down_action: Literal["view_details", "get_receipt", "report_issue"] | None = Field(
+        default=None, description="What user wants to do with the item if drill_down"
     )
 
 
@@ -67,6 +67,7 @@ class ContinuationClassifier:
         message: str,
         has_active_session: bool,
         today: str,
+        items: list[QueryResultItem] | None = None,
     ) -> tuple[str, dict[str, Any]]:
         """
         Classify a user message as a continuation type.
@@ -75,6 +76,7 @@ class ContinuationClassifier:
             message: User's message
             has_active_session: Whether there's an active query session
             today: Today's date in YYYY-MM-DD format
+            items: Optional list of items for drill-down resolution
 
         Returns:
             Tuple of (continuation_type, extracted_data)
@@ -83,9 +85,19 @@ class ContinuationClassifier:
             return ContinuationType.NEW_QUERY, {}
 
         try:
+            items_section = ""
+            if items:
+                items_list = "\n".join(
+                    f"{i}: {item.description} - ₦{item.amount:,.2f} ({item.date})" for i, item in enumerate(items)
+                )
+                items_section = (
+                    f"\nAvailable items (for drill_down, set drill_down_index to item number):\n{items_list}\n"
+                )
+
             prompt = CONTINUATION_CLASSIFIER_PROMPT.format(
                 today=today,
                 message=message,
+                items_section=items_section,
             )
 
             result: ContinuationClassification = await self.structured_llm.ainvoke(prompt)
@@ -98,15 +110,15 @@ class ContinuationClassifier:
             elif result.continuation_type == "filter_delta" and result.filters:
                 data["filters"] = result.filters
 
-            elif result.continuation_type == "drill_down" and result.drill_down_reference:
-                data["reference"] = result.drill_down_reference
+            elif result.continuation_type == "drill_down" and result.drill_down_index is not None:
+                data["drill_down_index"] = result.drill_down_index
+                data["drill_down_action"] = result.drill_down_action or "view_details"
 
             logger.info("continuation_classified", type=result.continuation_type)
             return result.continuation_type, data
 
         except Exception as e:
             logger.error("continuation_classification_error", error=str(e))
-            # Fallback to new query on error
             return ContinuationType.NEW_QUERY, {}
 
 
@@ -157,92 +169,3 @@ def apply_time_delta(
     query_dict = original_query.model_dump()
     query_dict["time_range"] = time_range.model_dump()
     return NormalizedQuery.model_validate(query_dict)
-
-
-def resolve_drill_down(
-    reference: str,
-    last_result: QueryResult,
-) -> QueryResultItem | None:
-    """
-    Resolve a drill-down reference against the last query result.
-
-    Args:
-        reference: What the user is referencing (from LLM)
-        last_result: The last QueryResult to search in
-
-    Returns:
-        The matched QueryResultItem or None
-    """
-    if not last_result.items:
-        return None
-
-    items = last_result.items
-    ref_lower = reference.lower()
-
-    # Try to extract amount reference (e.g., "150k", "50000")
-    amount = _try_parse_amount(ref_lower)
-    if amount:
-        # Find item with closest amount
-        for item in items:
-            if abs(item.amount - amount) / max(amount, 1) < 0.1:
-                return item
-        # Return closest match
-        return min(items, key=lambda i: abs(i.amount - amount))
-
-    # Try ordinal/index reference
-    ordinal_map = {
-        "first": 0,
-        "1st": 0,
-        "1": 0,
-        "second": 1,
-        "2nd": 1,
-        "2": 1,
-        "third": 2,
-        "3rd": 2,
-        "3": 2,
-        "fourth": 3,
-        "4th": 3,
-        "4": 3,
-        "fifth": 4,
-        "5th": 4,
-        "5": 4,
-        "last": -1,
-    }
-    for key, idx in ordinal_map.items():
-        if key in ref_lower:
-            if idx == -1:
-                return items[-1]
-            if idx < len(items):
-                return items[idx]
-
-    # Try description match
-    for item in items:
-        if ref_lower in item.description.lower():
-            return item
-
-    # Default to first item
-    return items[0] if items else None
-
-
-def _try_parse_amount(text: str) -> float | None:
-    """Try to parse an amount from text."""
-    import re
-
-    # Match patterns like "150k", "50000", "₦150,000"
-    patterns = [
-        r"(\d+)k\b",  # 150k
-        r"(\d{1,3}(?:,\d{3})+)",  # 150,000
-        r"(\d+)",  # 50000
-    ]
-
-    for pattern in patterns:
-        match = re.search(pattern, text)
-        if match:
-            value = match.group(1).replace(",", "")
-            amount = float(value)
-            if "k" in text.lower():
-                amount *= 1000
-            if amount >= 100:  # Likely an amount, not an index
-                return amount
-
-    return None
