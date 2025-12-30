@@ -11,7 +11,6 @@ from apps.core.src.agent.sub_agents.query.handlers.transactions import (
 )
 from apps.core.src.agent.sub_agents.query.models import QueryIntent
 
-# Handler registry mapping intents to handler functions
 HANDLER_REGISTRY = {
     QueryIntent.BALANCE_QUERY: handle_balance,
     QueryIntent.TRANSACTION_LIST: handle_transaction_list,

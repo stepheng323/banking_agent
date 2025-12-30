@@ -41,7 +41,6 @@ class QueryExecutor:
         """
         all_account_ids = account_ids or [account_id]
 
-        # Resolve account scope
         if query.accounts_scope == "single" and query.account_name and accounts_info:
             resolved_id = self._resolve_account_by_name(query.account_name, accounts_info)
             if resolved_id:
@@ -54,7 +53,6 @@ class QueryExecutor:
         elif query.accounts_scope == "single":
             all_account_ids = [account_id]
 
-        # Get handler from registry
         handler = HANDLER_REGISTRY.get(query.intent)
         if not handler:
             logger.error("unknown_query_intent", intent=query.intent)
