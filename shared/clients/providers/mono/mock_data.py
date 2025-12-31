@@ -63,11 +63,48 @@ def get_mock_balance(account_id: str) -> BalanceData:
     )
 
 
+# Track account ordering to assign different transaction sets
+_account_order: list[str] = []
+
+
+def reset_mock_transaction_state() -> None:
+    """Reset the account order tracker - useful between test runs."""
+    _account_order.clear()
+
+
 def get_mock_transactions(
-    transaction_type: str | None = None, narration: str | None = None, limit: int = 50
+    account_id: str | None = None,
+    transaction_type: str | None = None,
+    narration: str | None = None,
+    limit: int = 50,
 ) -> list[Transaction]:
-    txns = [
-        # Recent transfers
+    # Determine which account set to use based on order seen
+    if account_id:
+        if account_id not in _account_order:
+            _account_order.append(account_id)
+        account_index = _account_order.index(account_id)
+    else:
+        account_index = 0
+
+    # First account: Set A, Second account: Set B, Third+: empty
+    if account_index == 0:
+        txns = _get_account_a_transactions()
+    elif account_index == 1:
+        txns = _get_account_b_transactions()
+    else:
+        return []  # Third+ accounts get empty
+
+    if transaction_type:
+        txns = [t for t in txns if t.type == transaction_type]
+    if narration:
+        txns = [t for t in txns if narration.lower() in t.narration.lower()]
+
+    return txns[:limit]
+
+
+def _get_account_a_transactions() -> list[Transaction]:
+    """First Bank transactions - transfers, transport, subscriptions."""
+    return [
         Transaction(
             id="txn_001",
             date="2024-12-28T10:30:00.000Z",
@@ -322,12 +359,67 @@ def get_mock_transactions(
         ),
     ]
 
-    if transaction_type:
-        txns = [t for t in txns if t.type == transaction_type]
-    if narration:
-        txns = [t for t in txns if narration.lower() in t.narration.lower()]
 
-    return txns[:limit]
+def _get_account_b_transactions() -> list[Transaction]:
+    """Zenith Bank transactions - salary, investments, different merchants."""
+    return [
+        Transaction(
+            id="txn_b01",
+            date="2024-12-28T09:00:00.000Z",
+            narration="Salary from Acme Corp",
+            amount=95000000,
+            type="credit",
+            category="income",
+        ),
+        Transaction(
+            id="txn_b02",
+            date="2024-12-27T16:30:00.000Z",
+            narration="Transfer to Dad",
+            amount=3000000,
+            type="debit",
+            category="transfer",
+        ),
+        Transaction(
+            id="txn_b03",
+            date="2024-12-26T12:00:00.000Z",
+            narration="COWRYWISE Auto-Invest",
+            amount=5000000,
+            type="debit",
+            category="investment",
+        ),
+        Transaction(
+            id="txn_b04",
+            date="2024-12-25T19:00:00.000Z",
+            narration="GLOVO Food Delivery",
+            amount=450000,
+            type="debit",
+            category="food",
+        ),
+        Transaction(
+            id="txn_b05",
+            date="2024-12-24T11:00:00.000Z",
+            narration="Freelance Payment - Design",
+            amount=12000000,
+            type="credit",
+            category="income",
+        ),
+        Transaction(
+            id="txn_b06",
+            date="2024-12-23T08:30:00.000Z",
+            narration="TAXIFY/BOLT Ride",
+            amount=320000,
+            type="debit",
+            category="transport",
+        ),
+        Transaction(
+            id="txn_b07",
+            date="2024-12-22T20:15:00.000Z",
+            narration="Amazon Prime Subscription",
+            amount=850000,
+            type="debit",
+            category="entertainment",
+        ),
+    ]
 
 
 def get_mock_account(account_id: str) -> AccountData:
