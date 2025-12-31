@@ -270,30 +270,6 @@ class OrchestratorClassificationService:
                 complexity_reason="Simple data request",
             )
 
-        query_patterns = {
-            "balance": "Checking your balance...",
-            "my balance": "Checking your balance...",
-            "check balance": "Checking your balance...",
-            "show balance": "Checking your balance...",
-            "how much do i have": "Checking your balance...",
-            "wetin dey my account": "Checking your balance...",
-            "transactions": "Looking up your transactions...",
-            "my transactions": "Looking up your transactions...",
-            "show transactions": "Looking up your transactions...",
-            "show my transactions": "Looking up your transactions...",
-            "recent transactions": "Looking up your transactions...",
-            "transaction history": "Looking up your transactions...",
-        }
-
-        if text_clean in query_patterns:
-            return ClassificationResult(
-                intent="query",
-                is_complex=False,
-                confidence=0.95,
-                response=query_patterns[text_clean],
-                complexity_reason="Simple query pattern",
-            )
-
         return None
 
     async def classify(
@@ -344,9 +320,12 @@ class OrchestratorClassificationService:
                     f"{user_content}\n\n"
                     f"[Context: {flow_details}]\n"
                     f"CRITICAL: User has a PENDING {active} transaction.\n"
-                    f"- If user provides ONLY a new amount (e.g., 'make it 200', 'buy 4k instead', 'I meant 500', '2000'), classify as '{active}' - this UPDATES the pending transaction.\n"
-                    f"- If user provides a NEW recipient (different phone/name), classify as '{active}' - this may be changing recipient or starting new.\n"
-                    f"- Only classify as a DIFFERENT intent if message CLEARLY asks about something else (balance, accounts, cancel)."
+                    f"- If user provides ONLY a new amount (e.g., 'make it 200', 'buy 4k instead',\n"
+                    f"'I meant 500', '2000'), classify as '{active}' - this UPDATES the pending transaction.\n"
+                    f"- If user provides a NEW recipient (different phone/name), classify as '{active}'\n"
+                    f"- this may be changing recipient or starting new.\n"
+                    f"- Only classify as a DIFFERENT intent if message CLEARLY asks about something else\n"
+                    f"- (balance, accounts, cancel)."
                 )
 
             if context.get("pendingBeneficiarySuggestion"):
@@ -363,9 +342,11 @@ class OrchestratorClassificationService:
                     f"[Context: {context_message}]\n"
                     f"Beneficiary type: {beneficiary_type}. "
                     f"This message is a response to that question. "
-                    f"CRITICAL: If the last message asked for a name/alias and user provides just a name (even a single word like 'Gaines'), you MUST extract it as extracted_alias. "
+                    f"CRITICAL: If the last message asked for a name/alias and user provides just a name /n"
+                    f"(even a single word like 'Gaines'), you MUST extract it as extracted_alias. /n"
                     f"Classify as 'yes'/'confirm' if user wants to save, 'no'/'skip' if user declines, "
-                    f"or extract the alias if user provides a name. When in doubt and user provides a name-like word, extract it as extracted_alias."
+                    f"or extract the alias if user provides a name. When in doubt and user provides a name-like word,"
+                    f"extract it as extracted_alias."
                 )
 
             if context.get("quotedMessage"):
@@ -398,16 +379,18 @@ class OrchestratorClassificationService:
                     f"[Context: User is QUOTING a previous message - {quoted_summary}]\n"
                     f"CRITICAL: User is replying to a {quoted_type} message. "
                     f"If user says 'again', 'repeat', 'same', 'yes', '👍', 'do it' → intent: repeat_transaction. "
-                    f"If user mentions a different amount like '5k', '10k' → intent: modify_transaction, extract new_amount."
+                    f"If user mentions a different amount like '5k',\n"
+                    f"'10k' → intent: modify_transaction, extract new_amount."
                 )
 
             if context.get("quotedMessageNotFound"):
                 user_content = (
                     f"{user_content}\n\n"
-                    f"[Context: User is QUOTING a message but we could NOT find transaction details - it may be expired or not a transaction]\n"
+                    f"[Context: User is QUOTING a message but we could NOT find transaction details\n"
+                    f"- it may be expired or not a transaction]\n"
                     f"CRITICAL: Generate a helpful response explaining we can't repeat that transaction. "
-                    f"Suggest they start a new one. Example: 'I couldn't find that transaction details. It may be too old. "
-                    f'Want to start a new transfer? Just say "send 5k to Mum"\''
+                    f"Suggest they start a new one. Example: 'I couldn't find that transaction details.\n"
+                    f'It may be too old. Want to start a new transfer? Just say "send 5k to Mum"\''
                 )
 
         messages = [{"role": "system", "content": system}]
