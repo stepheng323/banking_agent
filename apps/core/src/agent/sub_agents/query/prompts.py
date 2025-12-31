@@ -107,10 +107,13 @@ Classify this message into one of these types:
 
 1. **show_more** - User wants to see more results (e.g., "show more", "next", "continue", "wetin else", "siwaju")
 
-2. **time_delta** - User wants to change the time period (e.g., "what about last month?", "for December", "on Christmas")
+2. **time_delta** - User wants to change the time period
+(e.g., "what about last month?", "for December", "on Christmas")
    - If this type, also resolve the actual dates
 
-3. **filter_delta** - User wants to filter results (e.g., "only credits", "over 10k", "just food", "excluding transfers")
+3. **filter_delta** - User wants to filter results
+(e.g., "only credits", "over 10k", "just food", "excluding transfers")
+   - Bank/account filter: "just Zenith", "only First Bank", "from GTBank" → set filters.account_filter
    - If this type, extract the filter changes
 
 4. **drill_down** - User wants details about a specific item OR wants to take action on it
@@ -124,4 +127,4 @@ Classify this message into one of these types:
 5. **new_query** - User is asking something completely different
 
 IMPORTANT: Support all languages including Nigerian Pidgin, Yoruba, Igbo, Hausa.
-"""  # noqa: E501
+"""

@@ -61,6 +61,10 @@ def apply_filters(transactions: list[dict], filters: Filters) -> list[dict]:
     if filters.exclude:
         result = [t for t in result if not any(e.lower() in t.get("narration", "").lower() for e in filters.exclude)]
 
+    if filters.account_filter:
+        filter_term = filters.account_filter.lower()
+        result = [t for t in result if filter_term in t.get("bank_name", "").lower()]
+
     return result
 
 
