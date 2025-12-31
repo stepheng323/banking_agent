@@ -111,6 +111,12 @@ class QueryFlowGraph:
             "session_active": False,
         }
 
+    async def has_active_session(self, phone_number: str) -> bool:
+        """Check if there's an active query session for this user."""
+        session_key = f"query:session:{phone_number}"
+        session_data = await self._load_session(session_key)
+        return session_data.get("session_active", False) if session_data else False
+
     async def run(
         self,
         phone_number: str,
@@ -218,7 +224,7 @@ class QueryFlowGraph:
             "current_account_index": 0,
             "account_info": accounts[0] if accounts else None,
             "current_page": 0,
-            "page_size": 10,
+            "page_size": 5,
             "total_results": 0,
             "has_more": False,
             "cached_transactions": [],
@@ -350,7 +356,7 @@ class QueryFlowGraph:
                     save_state[k] = [t.model_dump() if hasattr(t, "model_dump") else t for t in v]
                 else:
                     save_state[k] = v
-            await self.redis.set(key, json.dumps(save_state), ex=SESSION_TTL)
+            await self.redis.set(key, json.dumps(save_state, default=str), ex=SESSION_TTL)
         except Exception as e:
             logger.error("save_session_error", error=str(e))
 

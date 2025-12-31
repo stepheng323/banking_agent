@@ -14,9 +14,12 @@ async def handle_beneficiary_summary(
     query: NormalizedQuery,
     account_id: str,
     account_ids: list[str],
+    accounts_info: list[dict] | None = None,
+    current_page: int = 0,
+    page_size: int = 5,
 ) -> QueryResult:
     """Handle beneficiary summary queries."""
-    transactions = await fetch_and_filter(provider, query, account_id, account_ids)
+    transactions = await fetch_and_filter(provider, query, account_id, account_ids, accounts_info)
 
     debits = [t for t in transactions if t.get("type") == "debit"]
 

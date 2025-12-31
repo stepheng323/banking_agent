@@ -34,7 +34,7 @@ async def parse_node(state: QueryState, parser: QueryParser) -> dict[str, Any]:
             "flow_state": "fetching",
             "query": query,
             "current_page": 0,
-            "page_size": query.aggregation.limit if query.aggregation else 10,
+            "page_size": query.aggregation.limit if query.aggregation else 5,
             "session_active": True,
         }
     except Exception as e:
