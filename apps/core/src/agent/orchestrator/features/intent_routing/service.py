@@ -267,7 +267,6 @@ class OrchestratorIntentRouter:
                     message_id=message_id or "",
                 )
 
-                # If support graph returns None, it's not a support query - fallback
                 if response is None:
                     response = await self.conversation_responder.generate_reply(phone_number, text, result, user_ctx)
             else:
@@ -294,11 +293,19 @@ class OrchestratorIntentRouter:
                 response = f"{response}\n\n{resume_prompt}"
 
         elif intent == "conversational":
-            conv = await self.conversation_responder.generate_reply(phone_number, text, result, user_ctx)
-            logger.info("conversation")
-            response = conv
+            if self.query_graph and await self.query_graph.has_active_session(phone_number):
+                query_result = await self.query_graph.run(phone_number, text, user_ctx)
+                response = query_result if isinstance(query_result, str) else "Query completed."
+            else:
+                conv = await self.conversation_responder.generate_reply(phone_number, text, result, user_ctx)
+                logger.info("conversation")
+                response = conv
         else:
-            conv = await self.conversation_responder.generate_reply(phone_number, text, result, user_ctx)
-            response = conv
+            if self.query_graph and await self.query_graph.has_active_session(phone_number):
+                query_result = await self.query_graph.run(phone_number, text, user_ctx)
+                response = query_result if isinstance(query_result, str) else "Query completed."
+            else:
+                conv = await self.conversation_responder.generate_reply(phone_number, text, result, user_ctx)
+                response = conv
 
         return response

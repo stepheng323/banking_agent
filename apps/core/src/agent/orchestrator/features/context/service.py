@@ -39,10 +39,11 @@ class OrchestratorContextManager:
         """
         cached_data = await self.data_cache.get_all_user_data(phone_number)
 
-        if cached_data["profile"]:
+        # Only use cache if both profile AND accounts are present (avoid TTL mismatch)
+        if cached_data["profile"] and cached_data["accounts"]:
             return {
                 "profile": cached_data["profile"],
-                "accounts": cached_data["accounts"] or [],
+                "accounts": cached_data["accounts"],
                 "beneficiaries": cached_data["beneficiaries"] or [],
             }
 
@@ -65,9 +66,7 @@ class OrchestratorContextManager:
 
         profile, accounts, beneficiaries = await asyncio.to_thread(fetch_db_data)
 
-        safe_profile: dict[str, Any] | None = (
-            sqlalchemy_to_dict(profile) if profile is not None else None
-        )
+        safe_profile: dict[str, Any] | None = sqlalchemy_to_dict(profile) if profile is not None else None
 
         safe_accounts = [sqlalchemy_to_dict(acc) for acc in accounts]
 
@@ -88,9 +87,7 @@ class OrchestratorContextManager:
 
         return context
 
-    async def get_recent_transactions(
-        self, phone_number: str, limit: int = 5
-    ) -> list[dict[str, Any]]:
+    async def get_recent_transactions(self, phone_number: str, limit: int = 5) -> list[dict[str, Any]]:
         """
         Get user's recent transactions for smart context.
 
@@ -184,9 +181,7 @@ class OrchestratorContextManager:
         except Exception:
             return None
 
-    async def save_classification_result(
-        self, phone_number: str, result: ClassificationResult
-    ) -> None:
+    async def save_classification_result(self, phone_number: str, result: ClassificationResult) -> None:
         """Save classification result to Redis for use by transaction flows."""
         try:
             redis_client = RedisClient.get_client()
@@ -195,9 +190,7 @@ class OrchestratorContextManager:
         except Exception:
             pass
 
-    async def get_conversation_history(
-        self, phone_number: str, limit: int = 10
-    ) -> list[dict[str, str]]:
+    async def get_conversation_history(self, phone_number: str, limit: int = 10) -> list[dict[str, str]]:
         """Get recent conversation history."""
         try:
             redis_client = RedisClient.get_client()
