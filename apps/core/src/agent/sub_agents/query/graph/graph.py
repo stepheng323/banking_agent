@@ -334,6 +334,7 @@ class QueryFlowGraph:
                 "phone_number",
                 "account_id",
                 "account_ids",
+                "accounts",
                 "current_account_index",
                 "account_info",
                 "current_page",
