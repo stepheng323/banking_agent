@@ -3,6 +3,8 @@
 from datetime import date, datetime
 from typing import Any
 
+from langchain_core.runnables import Runnable
+
 from apps.core.src.agent.sub_agents.query.graph.state import QueryState
 from apps.core.src.agent.sub_agents.query.models import QueryResult, QueryResultItem
 from shared.utils.logging import get_logger
@@ -53,8 +55,8 @@ def _humanize_narration(narration: str) -> str:
             result = new + result[len(old) :].title()
             break
 
-    if len(result) > 35:
-        result = result[:32] + "..."
+    if len(result) > 30:
+        result = result[:27].rsplit(" ", 1)[0] + "…"
 
     return result
 
@@ -66,7 +68,7 @@ def _format_amount(amount: float) -> str:
     return f"₦{amount:.0f}"
 
 
-async def format_node(state: QueryState, llm: Any = None) -> dict[str, Any]:
+async def format_node(state: QueryState, llm: Runnable = None) -> dict[str, Any]:
     """Format QueryResult into user-facing response."""
     query_result = state.get("query_result")
     has_more = state.get("has_more", False)
@@ -91,9 +93,9 @@ def _format_query_result(result: QueryResult, has_more: bool) -> str:
     """Format QueryResult to response string."""
     lines = []
 
-    if result.summary_text:
-        lines.append(f"*{result.summary_text}*")
-        lines.append("")
+    header = result.summary_text if result.summary_text else "Transactions"
+    lines.append(f"📋 *{header}*")
+    lines.append("")
 
     if result.items:
         grouped = _group_items_by_date(result.items)
@@ -102,7 +104,13 @@ def _format_query_result(result: QueryResult, has_more: bool) -> str:
             for item in items:
                 narration = _humanize_narration(item.description)
                 amount = _format_amount(item.amount)
-                lines.append(f"• {narration} — {amount}")
+                tx_type = item.metadata.get("type", "") if item.metadata else ""
+                label = "received" if tx_type == "credit" else "sent"
+                bank_name = item.metadata.get("bank_name", "") if item.metadata else ""
+                if bank_name:
+                    lines.append(f"{amount} {label} • {narration} _({bank_name})_")
+                else:
+                    lines.append(f"{amount} {label} • {narration}")
             lines.append("")
 
         if lines and lines[-1] == "":
@@ -110,7 +118,7 @@ def _format_query_result(result: QueryResult, has_more: bool) -> str:
 
     if has_more:
         lines.append("")
-        lines.append("_Reply *show more* to see earlier activity._")
+        lines.append("_*more* for next page_")
 
     return "\n".join(lines) if lines else "Query completed."
 
