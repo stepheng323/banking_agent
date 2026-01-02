@@ -22,6 +22,9 @@ async def handle_time_comparison(
     query: NormalizedQuery,
     account_id: str,
     account_ids: list[str],
+    accounts_info: list[dict] | None = None,
+    current_page: int = 0,
+    page_size: int = 5,
 ) -> QueryResult:
     """Handle time comparison queries (this month vs last month, etc.)."""
     if not query.time_range:
@@ -35,8 +38,8 @@ async def handle_time_comparison(
     comparison_query = query.model_copy(update={"time_range": comparison_period})
 
     # Fetch transactions for both periods
-    current_txns = await fetch_and_filter(provider, query, account_id, account_ids)
-    comparison_txns = await fetch_and_filter(provider, comparison_query, account_id, account_ids)
+    current_txns = await fetch_and_filter(provider, query, account_id, account_ids, accounts_info)
+    comparison_txns = await fetch_and_filter(provider, comparison_query, account_id, account_ids, accounts_info)
 
     # Calculate totals
     current_stats = _calculate_stats(current_txns)

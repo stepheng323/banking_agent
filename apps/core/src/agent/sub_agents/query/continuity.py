@@ -31,16 +31,26 @@ class ContinuationType:
     SHOW_MORE = "show_more"
     TIME_DELTA = "time_delta"
     FILTER_DELTA = "filter_delta"
+    EXPAND = "expand"
     DRILL_DOWN = "drill_down"
+    RECIPIENT_DRILL_DOWN = "recipient_drill_down"
+    END_SESSION = "end_session"
     NEW_QUERY = "new_query"
 
 
 class ContinuationClassification(BaseModel):
     """LLM output for continuation classification."""
 
-    continuation_type: Literal["show_more", "time_delta", "filter_delta", "drill_down", "new_query"] = Field(
-        description="Type of continuation the user is requesting"
-    )
+    continuation_type: Literal[
+        "show_more",
+        "time_delta",
+        "filter_delta",
+        "expand",
+        "drill_down",
+        "recipient_drill_down",
+        "end_session",
+        "new_query",
+    ] = Field(description="Type of continuation the user is requesting")
 
     time_range: TimeRange | None = Field(default=None, description="Resolved date range if time_delta")
 
@@ -52,6 +62,14 @@ class ContinuationClassification(BaseModel):
 
     drill_down_action: Literal["view_details", "get_receipt", "report_issue"] | None = Field(
         default=None, description="What user wants to do with the item if drill_down"
+    )
+
+    end_session_response: str | None = Field(
+        default=None, description="Witty goodbye response in matching language if end_session"
+    )
+
+    recipient_name: str | None = Field(
+        default=None, description="Recipient name if recipient_drill_down (e.g., 'Uber', 'Mum')"
     )
 
 
@@ -114,6 +132,9 @@ class ContinuationClassifier:
                 data["drill_down_index"] = result.drill_down_index
                 data["drill_down_action"] = result.drill_down_action or "view_details"
 
+            elif result.continuation_type == "end_session":
+                data["end_session_response"] = result.end_session_response or "You're welcome! 😊"
+
             logger.info("continuation_classified", type=result.continuation_type)
             return result.continuation_type, data
 
@@ -139,13 +160,14 @@ def apply_filter_delta(
     query_dict = original_query.model_dump()
     existing_filters = query_dict.get("filters") or {}
 
-    # Merge new filters with existing
+    # Apply new filters - replace most, append excludes
     new_filters = filters.model_dump(exclude_none=True)
     for key, value in new_filters.items():
         if key == "exclude" and existing_filters.get("exclude"):
             # Append to existing excludes
             existing_filters["exclude"] = existing_filters["exclude"] + value
         else:
+            # Replace other filters (merchant, category, type, amount, account)
             existing_filters[key] = value
 
     query_dict["filters"] = existing_filters

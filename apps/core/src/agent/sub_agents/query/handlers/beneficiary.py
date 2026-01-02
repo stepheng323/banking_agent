@@ -14,33 +14,67 @@ async def handle_beneficiary_summary(
     query: NormalizedQuery,
     account_id: str,
     account_ids: list[str],
+    accounts_info: list[dict] | None = None,
+    current_page: int = 0,
+    page_size: int = 5,
 ) -> QueryResult:
     """Handle beneficiary summary queries."""
-    transactions = await fetch_and_filter(provider, query, account_id, account_ids)
+    transactions = await fetch_and_filter(provider, query, account_id, account_ids, accounts_info)
 
-    debits = [t for t in transactions if t.get("type") == "debit"]
+    # Filter to actual transfers (exclude bank charges, fees, etc.)
+    exclude_patterns = ("CHARGE", "FEE", "STAMP DUTY", "VAT", "SMS ALERT", "CARD MAINTENANCE", "COT", "NOTIFICATION")
+    debits = [
+        t
+        for t in transactions
+        if t.get("type") == "debit" and not any(pat in t.get("narration", "").upper() for pat in exclude_patterns)
+    ]
 
-    counterparties: dict[str, dict[str, Any]] = defaultdict(lambda: {"total": 0, "count": 0})
+    # Group by counterparty
+    counterparties: dict[str, dict[str, Any]] = defaultdict(lambda: {"total": 0, "count": 0, "transactions": []})
     for t in debits:
         name = extract_counterparty(t.get("narration", ""))
-        counterparties[name]["total"] += t.get("amount", 0)
+        counterparties[name]["total"] += abs(t.get("amount", 0))
         counterparties[name]["count"] += 1
+        counterparties[name]["transactions"].append(t)
 
     sorted_cp = sorted(counterparties.items(), key=lambda x: x[1]["total"], reverse=True)
     limit = query.aggregation.limit if query.aggregation else 5
 
-    items = [
-        QueryResultItem(
-            id=str(i),
-            description=name,
-            amount=data["total"] / 100,
-            date=query.time_range.end if query.time_range else date.today(),
-            metadata={"count": data["count"]},
+    # Determine timeframe text
+    if query.time_range:
+        start_str = query.time_range.start.strftime("%b %d")
+        end_str = query.time_range.end.strftime("%b %d")
+        timeframe = f"{start_str} – {end_str}"
+    else:
+        timeframe = "last 30 days"
+
+    # Build response
+    lines = [f"*Top Recipients* ({timeframe})\n"]
+    items = []
+
+    for i, (name, data) in enumerate(sorted_cp[:limit]):
+        total = abs(data["total"]) / 100
+        count = data["count"]
+        lines.append(f"{name} • ₦{total:,.0f} ({count}x)")
+
+        # Store transactions for drill-down
+        items.append(
+            QueryResultItem(
+                id=str(i),
+                description=name,
+                amount=total,
+                date=query.time_range.end if query.time_range else date.today(),
+                metadata={"count": count, "transactions": data["transactions"]},
+            )
         )
-        for i, (name, data) in enumerate(sorted_cp[:limit])
-    ]
+
+    if not items:
+        return QueryResult(summary_text="No outgoing transfers found.")
+
+    lines.append("")
+    lines.append("_Reply with a name to see those transactions_")
 
     return QueryResult(
-        summary_text=f"Top {len(items)} recipients",
+        summary_text="\n".join(lines),
         items=items,
     )

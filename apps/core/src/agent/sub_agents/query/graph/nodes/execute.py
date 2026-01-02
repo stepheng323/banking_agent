@@ -21,9 +21,11 @@ async def execute_node(state: QueryState, executor: QueryExecutor) -> dict[str, 
     account_id = state["account_id"]
     account_ids = state.get("account_ids", [account_id])
     accounts = state.get("accounts", [])
+    current_page = state.get("current_page", 0)
+    page_size = state.get("page_size", 5)
 
     try:
-        result = await executor.execute(query, account_id, account_ids, accounts)
+        result = await executor.execute(query, account_id, account_ids, accounts, current_page, page_size)
 
         return {
             "flow_state": "formatting",

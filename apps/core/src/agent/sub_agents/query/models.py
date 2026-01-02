@@ -37,6 +37,7 @@ class Filters(BaseModel):
     max_amount: float | None = Field(default=None, description="Maximum amount in naira")
     transaction_type: Literal["credit", "debit"] | None = Field(default=None, description="Filter by type")
     exclude: list[str] | None = Field(default=None, description="Exclude patterns")
+    account_filter: str | None = Field(default=None, description="Bank/account name to filter by")
 
 
 class Aggregation(BaseModel):

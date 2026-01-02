@@ -144,7 +144,7 @@ class MonoClient:
     ) -> list[Transaction]:
         """Fetch transactions for an account."""
         if self.use_mock:
-            return mock_data.get_mock_transactions(transaction_type, narration, limit)
+            return mock_data.get_mock_transactions(account_id, transaction_type, narration, limit)
 
         params = {}
         if start:

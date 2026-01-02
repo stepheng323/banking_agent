@@ -26,6 +26,8 @@ class QueryExecutor:
         account_id: str,
         account_ids: list[str] | None = None,
         accounts_info: list[dict] | None = None,
+        current_page: int = 0,
+        page_size: int = 5,
     ) -> QueryResult:
         """
         Execute a normalized query.
@@ -35,6 +37,8 @@ class QueryExecutor:
             account_id: Primary account ID
             account_ids: All account IDs for multi-account queries
             accounts_info: Account details for name resolution
+            current_page: Pagination page (0-indexed)
+            page_size: Number of items per page
 
         Returns:
             QueryResult with context_key for follow-ups
@@ -59,7 +63,9 @@ class QueryExecutor:
             return QueryResult(summary_text="I couldn't understand that query.")
 
         try:
-            result = await handler(self.provider, query, account_id, all_account_ids)
+            result = await handler(
+                self.provider, query, account_id, all_account_ids, accounts_info, current_page, page_size
+            )
             result.query_snapshot = query
             return result
         except Exception as e:

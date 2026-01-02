@@ -10,26 +10,37 @@ async def handle_transaction_list(
     query: NormalizedQuery,
     account_id: str,
     account_ids: list[str],
+    accounts_info: list[dict] | None = None,
+    current_page: int = 0,
+    page_size: int = 5,
 ) -> QueryResult:
     """Handle transaction list queries."""
-    transactions = await fetch_and_filter(provider, query, account_id, account_ids)
-    limit = query.aggregation.limit if query.aggregation else 10
+    transactions = await fetch_and_filter(provider, query, account_id, account_ids, accounts_info)
+
+    offset = current_page * page_size
+    paginated = transactions[offset : offset + page_size]
 
     items = [
         QueryResultItem(
             id=t.get("id", "")[:8] if t.get("id") else str(i),
             description=t.get("narration", "Transaction"),
-            amount=t.get("amount", 0) / 100,
+            amount=abs(t.get("amount", 0)),  # Provider already returns Naira
             date=parse_date(t.get("date", "")),
-            metadata={"type": t.get("type")},
+            metadata={"type": t.get("type"), "bank_name": t.get("bank_name", "")},
         )
-        for i, t in enumerate(transactions[:limit])
+        for i, t in enumerate(paginated)
     ]
 
+    total = len(transactions)
+    showing_end = offset + len(paginated)
+    account_count = len(account_ids) if account_ids else 1
+
+    summary_text = f"accounts:{account_count}|showing:{offset + 1}-{showing_end}|total:{total}"
+
     return QueryResult(
-        summary_text=f"Found {len(transactions)} transactions",
+        summary_text=summary_text,
         items=items,
-        has_more=len(transactions) > limit,
+        has_more=showing_end < total,
     )
 
 
@@ -38,6 +49,11 @@ async def handle_transaction_search(
     query: NormalizedQuery,
     account_id: str,
     account_ids: list[str],
+    accounts_info: list[dict] | None = None,
+    current_page: int = 0,
+    page_size: int = 5,
 ) -> QueryResult:
     """Handle transaction search (same as list but with merchant filter)."""
-    return await handle_transaction_list(provider, query, account_id, account_ids)
+    return await handle_transaction_list(
+        provider, query, account_id, account_ids, accounts_info, current_page, page_size
+    )

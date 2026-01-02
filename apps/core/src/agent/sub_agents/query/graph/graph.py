@@ -111,6 +111,12 @@ class QueryFlowGraph:
             "session_active": False,
         }
 
+    async def has_active_session(self, phone_number: str) -> bool:
+        """Check if there's an active query session for this user."""
+        session_key = f"query:session:{phone_number}"
+        session_data = await self._load_session(session_key)
+        return session_data.get("session_active", False) if session_data else False
+
     async def run(
         self,
         phone_number: str,
@@ -165,16 +171,36 @@ class QueryFlowGraph:
 
             if state.get("continuation_type") == "show_more":
                 state.update(await paginate_node(state))
-                state.update(await execute_node(state, self.executor))
+                # Only re-execute if NOT expanding (expanded items are already in state)
+                if not state.get("show_expanded"):
+                    state.update(await execute_node(state, self.executor))
                 state.update(await format_node(state, self.llm))
             elif state.get("continuation_type") in ("time_delta", "filter_delta"):
-                state.update(await execute_node(state, self.executor))
+                # If in recipient/expanded context, filter locally instead of re-fetching
+                if state.get("show_expanded") and state.get("continuation_type") == "filter_delta":
+                    filter_result = await self._handle_local_filter(state)
+                    state.update(filter_result)
+                else:
+                    state.update(await execute_node(state, self.executor))
+                state.update(await format_node(state, self.llm))
+            elif state.get("continuation_type") == "expand":
+                # Show underlying transactions from analytics result
+                state["show_expanded"] = True
                 state.update(await format_node(state, self.llm))
             elif state.get("continuation_type") == "drill_down":
                 # Resolve drill-down from previous result
                 drill_result = await self._handle_drill_down(state)
                 state.update(drill_result)
                 state.update(await format_node(state, self.llm))
+            elif state.get("continuation_type") == "recipient_drill_down":
+                # Show transactions for a specific recipient from beneficiary summary
+                recipient_result = await self._handle_recipient_drill_down(state)
+                state.update(recipient_result)
+                if not state.get("response"):
+                    state.update(await format_node(state, self.llm))
+            elif state.get("continuation_type") == "end_session":
+                # Response already set by parse node, session ends here
+                pass
             else:
                 # New query
                 state = await self._run_new_query(
@@ -218,7 +244,7 @@ class QueryFlowGraph:
             "current_account_index": 0,
             "account_info": accounts[0] if accounts else None,
             "current_page": 0,
-            "page_size": 10,
+            "page_size": 5,
             "total_results": 0,
             "has_more": False,
             "cached_transactions": [],
@@ -272,6 +298,124 @@ class QueryFlowGraph:
         return {
             "query_result": focused_result,
             "has_more": False,
+        }
+
+    async def _handle_recipient_drill_down(self, state: QueryState) -> dict[str, Any]:
+        """Handle drill-down into a specific recipient's transactions."""
+        from datetime import datetime
+
+        from apps.core.src.agent.sub_agents.query.models import QueryResult, QueryResultItem
+
+        query_result = state.get("query_result")
+        recipient_name = state.get("recipient_name", "").lower()
+
+        if not query_result or not query_result.items:
+            return {
+                "response": "No recipient data available.",
+                "session_active": False,
+            }
+
+        # Find matching recipient in the items
+        matched_item = None
+        for item in query_result.items:
+            if item.description.lower() == recipient_name or recipient_name in item.description.lower():
+                matched_item = item
+                break
+
+        if not matched_item:
+            return {
+                "response": f"I couldn't find '{recipient_name}' in your top recipients. Try typing the exact name.",
+                "session_active": True,
+            }
+
+        # Get transactions from metadata
+        transactions = matched_item.metadata.get("transactions", []) if matched_item.metadata else []
+
+        if not transactions:
+            return {
+                "response": f"No transaction details available for {matched_item.description}.",
+                "session_active": True,
+            }
+
+        # Build transaction items for display
+        items = []
+        for i, t in enumerate(transactions[:10]):  # Limit to 10
+            items.append(
+                QueryResultItem(
+                    id=t.get("id", str(i))[:8],
+                    description=t.get("narration", "Transaction"),
+                    amount=abs(t.get("amount", 0)) / 100,
+                    date=datetime.strptime(t.get("date", "")[:10], "%Y-%m-%d").date() if t.get("date") else None,
+                    metadata={"bank_name": t.get("bank_name", ""), "type": t.get("type", "")},
+                )
+            )
+
+        count = matched_item.metadata.get("count", len(transactions))
+        total = matched_item.amount
+
+        result = QueryResult(
+            summary_text=f"*{matched_item.description}* — ₦{total:,.0f} ({count}x)\n",
+            items=items,
+        )
+
+        return {
+            "query_result": result,
+            "show_expanded": True,
+            "current_page": 0,
+            "response": None,  # Will be formatted by format_node
+            "session_active": True,
+        }
+
+    async def _handle_local_filter(self, state: QueryState) -> dict[str, Any]:
+        """Apply filter to current expanded items without re-fetching."""
+        from apps.core.src.agent.sub_agents.query.models import QueryResult
+
+        query_result = state.get("query_result")
+        filters = state.get("filters")  # From continuation classification
+
+        if not query_result or not query_result.items:
+            return {"response": "No items to filter.", "session_active": False}
+
+        filtered_items = list(query_result.items)
+
+        if filters:
+            # Filter by account/bank name
+            if filters.account_filter:
+                bank_filter = filters.account_filter.lower()
+                filtered_items = [
+                    item
+                    for item in filtered_items
+                    if item.metadata and bank_filter in item.metadata.get("bank_name", "").lower()
+                ]
+
+            # Filter by transaction type
+            if filters.transaction_type:
+                filtered_items = [
+                    item
+                    for item in filtered_items
+                    if item.metadata and item.metadata.get("type") == filters.transaction_type
+                ]
+
+        if not filtered_items:
+            filter_desc = filters.account_filter if filters and filters.account_filter else "those criteria"
+            return {
+                "response": f"No transactions matching {filter_desc}.",
+                "session_active": True,
+            }
+
+        # Update summary to reflect filter
+        filter_label = ""
+        if filters and filters.account_filter:
+            filter_label = f" ({filters.account_filter})"
+
+        new_result = QueryResult(
+            summary_text=f"*Filtered Transactions*{filter_label}\n",
+            items=filtered_items,
+        )
+
+        return {
+            "query_result": new_result,
+            "current_page": 0,
         }
 
     async def _run_new_query(
@@ -328,6 +472,7 @@ class QueryFlowGraph:
                 "phone_number",
                 "account_id",
                 "account_ids",
+                "accounts",
                 "current_account_index",
                 "account_info",
                 "current_page",
@@ -340,6 +485,7 @@ class QueryFlowGraph:
                 "query",
                 "query_result",
                 "pending_support_item",
+                "show_expanded",
             )
             for k, v in state.items():
                 if k not in allowed_keys:
@@ -350,7 +496,7 @@ class QueryFlowGraph:
                     save_state[k] = [t.model_dump() if hasattr(t, "model_dump") else t for t in v]
                 else:
                     save_state[k] = v
-            await self.redis.set(key, json.dumps(save_state), ex=SESSION_TTL)
+            await self.redis.set(key, json.dumps(save_state, default=str), ex=SESSION_TTL)
         except Exception as e:
             logger.error("save_session_error", error=str(e))
 
