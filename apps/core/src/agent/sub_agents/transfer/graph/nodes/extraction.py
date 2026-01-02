@@ -49,11 +49,7 @@ async def extract_entities(
             transfer_status = state.get("transfer_status")
             idem_key = state.get("idempotency_key")
 
-            if (
-                flow_state not in ("extracting", "error", "cancelled", None)
-                or transfer_status == "pending"
-                or idem_key
-            ):
+            if flow_state not in ("extracting", "error", "cancelled", None) or transfer_status == "pending" or idem_key:
                 debug_log(
                     f"🚫 Cancellation detected via classification result: flow_state={flow_state}, transfer_status={transfer_status}, idem_key={idem_key}"
                 )
@@ -88,9 +84,7 @@ async def extract_entities(
     recent_transactions = state.get("recent_transactions", [])
     if recent_transactions:
         recent_transfers = [
-            t
-            for t in recent_transactions
-            if t.get("type") == "transfer" and t.get("status") == "success"
+            t for t in recent_transactions if t.get("type") == "transfer" and t.get("status") == "success"
         ][:3]
         if recent_transfers:
             smart_context["recentTransfers"] = recent_transfers
@@ -123,7 +117,7 @@ async def extract_entities(
     debug_log(
         f"🔍 [EXTRACTION] Raw extraction - account='{entities.recipient_account}', bank_name='{entities.bank_name}', bank_code='{entities.bank_code}', amount='{entities.amount}'"
     )
-    debug_log(f"🔍 [EXTRACTION] Missing fields: {result.missingFields}")
+    debug_log(f"🔍 [EXTRACTION] Missing fields: {result.missing_fields}")
     debug_log(f"🔍 [EXTRACTION] LLM reply: {result.reply}")
 
     existing_recipient_in_state = state.get("recipient_account")
@@ -143,9 +137,7 @@ async def extract_entities(
         and entities.recipient_name is None
         and (existing_recipient_in_state or existing_bank_in_state)
     ):
-        debug_log(
-            "ℹ️ extract_entities: Amount provided without new recipient; preserving existing recipient/bank."
-        )
+        debug_log("ℹ️ extract_entities: Amount provided without new recipient; preserving existing recipient/bank.")
         should_clear_stale_recipient = False
 
     # Determine if this turn introduces a new recipient BEFORE applying updates
@@ -155,19 +147,13 @@ async def extract_entities(
     incoming_account_raw = entities.recipient_account
     incoming_account_norm = None
     if incoming_account_raw is not None:
-        incoming_account_norm = (
-            str(incoming_account_raw).replace(" ", "").replace("-", "").replace("_", "").strip()
-        )
+        incoming_account_norm = str(incoming_account_raw).replace(" ", "").replace("-", "").replace("_", "").strip()
 
     incoming_bank_any = entities.bank_code or entities.bank_name
 
     # Detect actual changes only when the previous field existed.
-    account_changed_pre_update = bool(
-        incoming_account_norm and prev_account and incoming_account_norm != prev_account
-    )
-    bank_changed_pre_update = bool(
-        incoming_bank_any and prev_bank_any and incoming_bank_any != prev_bank_any
-    )
+    account_changed_pre_update = bool(incoming_account_norm and prev_account and incoming_account_norm != prev_account)
+    bank_changed_pre_update = bool(incoming_bank_any and prev_bank_any and incoming_bank_any != prev_bank_any)
     recipient_changed_pre_update = account_changed_pre_update or bank_changed_pre_update
     had_prev_recipient = bool(prev_account or prev_bank_any)
     debug_log(
@@ -184,9 +170,7 @@ async def extract_entities(
         "send money",
         "send",
     }
-    recipient_arrives_this_turn = bool(
-        incoming_account_norm or incoming_bank_any or entities.recipient_name
-    )
+    recipient_arrives_this_turn = bool(incoming_account_norm or incoming_bank_any or entities.recipient_name)
 
     should_clear_amount_pre_update = False
     if existing_amount is not None:
@@ -223,7 +207,7 @@ async def extract_entities(
         )
 
     updates: dict[str, Any] = {
-        "missing_fields": result.missingFields or [],
+        "missing_fields": result.missing_fields or [],
         "llm_reply": result.reply,
         "flow_state": "extracting",
     }
@@ -251,13 +235,7 @@ async def extract_entities(
         updates["recipient_name"] = entities.recipient_name
 
     if entities.recipient_account is not None:
-        normalized_account = (
-            str(entities.recipient_account)
-            .replace(" ", "")
-            .replace("-", "")
-            .replace("_", "")
-            .strip()
-        )
+        normalized_account = str(entities.recipient_account).replace(" ", "").replace("-", "").replace("_", "").strip()
         updates["recipient_account"] = normalized_account
         debug_log(
             f"DEBUG extract_entities: Normalized account '{entities.recipient_account}' -> '{normalized_account}'"
@@ -290,9 +268,7 @@ async def extract_entities(
         updates["source_account_id"] = entities.source_account_id
     if entities.source_bank_name is not None:
         updates["source_bank_name"] = entities.source_bank_name
-        debug_log(
-            f"🔍 [EXTRACTION] Adding source_bank_name to updates: '{entities.source_bank_name}'"
-        )
+        debug_log(f"🔍 [EXTRACTION] Adding source_bank_name to updates: '{entities.source_bank_name}'")
     if entities.narration is not None:
         updates["narration"] = entities.narration
 
@@ -307,17 +283,13 @@ async def extract_entities(
     )
     if is_internal_transfer:
         updates["is_internal_transfer"] = True
-        debug_log(
-            f"🔄 [EXTRACTION] Internal transfer detected: {entities.source_bank_name} -> {entities.bank_name}"
-        )
+        debug_log(f"🔄 [EXTRACTION] Internal transfer detected: {entities.source_bank_name} -> {entities.bank_name}")
 
     # Handle transfer_all (move entire balance)
     if getattr(entities, "transfer_all", None) is True:
         updates["transfer_all"] = True
         updates["amount"] = None  # Will be resolved in check_funding node
-        debug_log(
-            "💰 [EXTRACTION] Transfer all detected - amount will be set from balance in check_funding"
-        )
+        debug_log("💰 [EXTRACTION] Transfer all detected - amount will be set from balance in check_funding")
 
     # Debug: Log what updates will be applied
     debug_log(f"🔍 [EXTRACTION] Updates to apply: {updates}")
@@ -335,9 +307,7 @@ async def extract_entities(
     post_incoming_account = incoming_account_norm
     post_incoming_bank = incoming_bank_any
     post_existing_account = new_state.get("recipient_account")
-    post_existing_bank_any = new_state.get("recipient_bank_code") or new_state.get(
-        "recipient_bank_name"
-    )
+    post_existing_bank_any = new_state.get("recipient_bank_code") or new_state.get("recipient_bank_name")
     post_existing_recipient_name = new_state.get("recipient_name")
     incoming_recipient_name = entities.recipient_name
 
@@ -352,9 +322,7 @@ async def extract_entities(
         and post_existing_recipient_name  # User providing account details without repeating name
     )
 
-    is_new_account_post = bool(
-        post_incoming_account and post_incoming_account != post_existing_account
-    )
+    is_new_account_post = bool(post_incoming_account and post_incoming_account != post_existing_account)
     is_new_bank_post = bool(post_incoming_bank and post_incoming_bank != post_existing_bank_any)
 
     # Only clear amount if recipient actually changed (different account/bank AND different recipient name)
@@ -365,18 +333,12 @@ async def extract_entities(
     if (is_new_account_post or is_new_bank_post) and new_state.get("amount") is not None:
         if not is_same_recipient:
             if was_empty_recipient and not is_new_transfer_intent:
-                debug_log(
-                    "ℹ️ extract_entities: Filling in missing recipient for existing amount. Preserving amount."
-                )
+                debug_log("ℹ️ extract_entities: Filling in missing recipient for existing amount. Preserving amount.")
             else:
-                debug_log(
-                    "ℹ️ extract_entities: Post-update detected recipient mismatch -> clearing previous amount"
-                )
+                debug_log("ℹ️ extract_entities: Post-update detected recipient mismatch -> clearing previous amount")
                 new_state["amount"] = None
         else:
-            debug_log(
-                "ℹ️ extract_entities: Same recipient, preserving amount when providing account details"
-            )
+            debug_log("ℹ️ extract_entities: Same recipient, preserving amount when providing account details")
     debug_log(
         f"DEBUG extract_entities: Timestamps - _recipient_established_at={new_state.get('_recipient_established_at')}, _amount_set_at={new_state.get('_amount_set_at')}"
     )
@@ -405,9 +367,7 @@ async def extract_entities(
         debug_log("✓ extract_entities: All fields complete, setting response from llm_reply")
 
     if should_clear_stale_recipient and final_recipient:
-        debug_log(
-            f"❌ ERROR: Stale data clearing failed! recipient_account should be None but is {final_recipient}"
-        )
+        debug_log(f"❌ ERROR: Stale data clearing failed! recipient_account should be None but is {final_recipient}")
         new_state["recipient_account"] = None
         new_state["recipient_bank_code"] = None
         new_state["recipient_bank_name"] = None
