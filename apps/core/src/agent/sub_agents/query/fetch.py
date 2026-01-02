@@ -26,17 +26,56 @@ def extract_counterparty(narration: str) -> str:
     if not narration:
         return "Unknown"
 
-    narration = narration.strip()
-    prefixes = ["Transfer to ", "Transfer from ", "Payment to ", "From ", "To "]
-    for prefix in prefixes:
+    narration = narration.strip().upper()
+
+    # NIP Transfer pattern: "0000132312091322123456789012345 NIP TRANSFER TO ADEBAYO JAMES"
+    if "NIP TRANSFER" in narration or narration.startswith("0000"):
+        for direction in ("TO ", "FROM "):
+            if direction in narration:
+                idx = narration.index(direction) + len(direction)
+                name = narration[idx:].strip()
+                return name.title()[:25] if name else "Bank Transfer"
+        return "Bank Transfer"
+
+    for prefix in ("TRANSFER TO ", "TRANSFER FROM ", "PAYMENT TO ", "FROM ", "TO "):
         if narration.startswith(prefix):
-            narration = narration[len(prefix) :]
-            break
+            name = narration[len(prefix) :].strip()
+            parts = name.split(" - ")
+            return parts[0].title()[:25] if parts[0] else "Transfer"
 
-    if len(narration) > 25:
-        narration = narration[:22] + "..."
+    if narration.startswith("POS PURCHASE"):
+        merchant = narration[14:].strip(" -")
+        return merchant.title()[:25] if merchant else "POS Purchase"
 
-    return narration
+    known = {
+        "UBER": "Uber",
+        "BOLT": "Bolt",
+        "TAXIFY": "Bolt",
+        "NETFLIX": "Netflix",
+        "SPOTIFY": "Spotify",
+        "MTN": "MTN",
+        "GLO": "Glo",
+        "AIRTEL": "Airtel",
+        "9MOBILE": "9mobile",
+    }
+    for key, name in known.items():
+        if key in narration:
+            return name
+
+    if any(x in narration for x in ("CHARGE", "FEE", "STAMP DUTY", "VAT", "SMS ALERT")):
+        return "Bank Charges"
+
+    if "AIRTIME" in narration:
+        return "Airtime"
+
+    if "ATM" in narration:
+        return "ATM Withdrawal"
+
+    parts = narration.split(" - ")
+    result = parts[0].strip().title()
+    if len(result) > 25:
+        result = result[:22] + "..."
+    return result if result else "Unknown"
 
 
 def apply_filters(transactions: list[dict], filters: Filters) -> list[dict]:
@@ -82,8 +121,9 @@ async def fetch_and_filter(
     else:
         from datetime import timedelta
 
+        days = 30 if query.intent == "analytics_summary" else 7
         end = date.today().isoformat()
-        start = (date.today() - timedelta(days=7)).isoformat()
+        start = (date.today() - timedelta(days=days)).isoformat()
 
     bank_map: dict[str, str] = {}
     if accounts_info:
@@ -119,6 +159,8 @@ async def fetch_and_filter(
     else:
         txns = await provider.get_transactions(account_id, start_date=start, end_date=end, limit=100)
         transactions = [to_dict(t) for t in txns]
+
+    transactions = [t for t in transactions if start <= t.get("date", "")[:10] <= end]
 
     if query.filters:
         transactions = apply_filters(transactions, query.filters)

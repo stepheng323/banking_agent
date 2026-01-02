@@ -31,17 +31,80 @@ async def handle_analytics(
     agg_type = query.aggregation.type
 
     if agg_type == "sum":
-        total = sum(t.get("amount", 0) for t in transactions) / 100
-        return QueryResult(summary_text=f"Total: ₦{total:,.2f}")
+        # Use absolute values for spending totals
+        total = sum(abs(t.get("amount", 0)) for t in transactions) / 100
+        count = len(transactions)
+        if count == 0:
+            return QueryResult(summary_text="No matching transactions found.")
+        merchant = query.filters.merchant[0] if query.filters and query.filters.merchant else "your search"
+
+        # Determine timeframe text
+        timeframe = " (last 30 days)"
+        if query.time_range:
+            start_str = query.time_range.start.strftime("%b %d")
+            end_str = query.time_range.end.strftime("%b %d")
+            timeframe = f" ({start_str} - {end_str})"
+
+        # Include items for drill-down capability
+        items = [
+            QueryResultItem(
+                id=t.get("id", "")[:8] if t.get("id") else str(i),
+                description=t.get("narration", "Transaction"),
+                amount=abs(t.get("amount", 0)) / 100,
+                date=parse_date(t.get("date", "")),
+                metadata={
+                    "bank_name": t.get("bank_name", ""),
+                    "type": t.get("type", ""),
+                    "counterparty": t.get("counterparty"),
+                },
+            )
+            for i, t in enumerate(transactions)
+        ]
+
+        return QueryResult(
+            summary_text=f"💸 You spent *₦{total:,.2f}* on {merchant}{timeframe} ({count} transaction{'s' if count > 1 else ''}).\n\n_'show transactions' to see details_",
+            items=items,
+            total_count=count,
+        )
 
     elif agg_type == "average":
         if transactions:
-            avg = sum(t.get("amount", 0) for t in transactions) / len(transactions) / 100
-            return QueryResult(summary_text=f"Average: ₦{avg:,.2f}")
+            avg = sum(abs(t.get("amount", 0)) for t in transactions) / len(transactions) / 100
+            count = len(transactions)
+
+            # Determine timeframe text
+            timeframe = " (last 30 days)"
+            if query.time_range:
+                start_str = query.time_range.start.strftime("%b %d")
+                end_str = query.time_range.end.strftime("%b %d")
+                timeframe = f" ({start_str} - {end_str})"
+
+            # Include items for drill-down capability
+            items = [
+                QueryResultItem(
+                    id=t.get("id", "")[:8] if t.get("id") else str(i),
+                    description=t.get("narration", "Transaction"),
+                    amount=abs(t.get("amount", 0)) / 100,
+                    date=parse_date(t.get("date", "")),
+                    metadata={
+                        "bank_name": t.get("bank_name", ""),
+                        "type": t.get("type", ""),
+                        "counterparty": t.get("counterparty"),
+                    },
+                )
+                for i, t in enumerate(transactions)
+            ]
+
+            return QueryResult(
+                summary_text=f"Your average transaction is *₦{int(avg):,}*{timeframe} ({count} transaction{'s' if count > 1 else ''}).\n\n_'show transactions' to see details_",
+                items=items,
+                total_count=count,
+            )
         return QueryResult(summary_text="No transactions found.")
 
     elif agg_type == "count":
-        return QueryResult(summary_text=f"Count: {len(transactions)} transactions")
+        count = len(transactions)
+        return QueryResult(summary_text=f"You made *{count}* transaction{'s' if count != 1 else ''}{timeframe}.")
 
     elif agg_type == "largest":
         limit = query.aggregation.limit or 5

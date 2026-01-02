@@ -88,12 +88,35 @@ async def classify_continuation_node(
                 }
             return {"flow_state": "parsing"}
 
+        elif cont_type == ContinuationType.EXPAND:
+            # User wants to see underlying transactions from analytics summary
+            return {
+                "continuation_type": "expand",
+                "flow_state": "formatting",
+            }
+
         elif cont_type == ContinuationType.DRILL_DOWN:
             return {
                 "continuation_type": "drill_down",
                 "flow_state": "formatting",
                 "drill_down_index": data.get("drill_down_index", 0),
                 "drill_down_action": data.get("drill_down_action", "view_details"),
+            }
+
+        elif cont_type == ContinuationType.RECIPIENT_DRILL_DOWN:
+            return {
+                "continuation_type": "recipient_drill_down",
+                "flow_state": "formatting",
+                "recipient_name": data.get("recipient_name", ""),
+            }
+
+        elif cont_type == ContinuationType.END_SESSION:
+            # End session with witty response
+            return {
+                "continuation_type": "end_session",
+                "flow_state": "complete",
+                "response": data.get("end_session_response", "You're welcome! 😊"),
+                "session_active": False,
             }
 
         else:

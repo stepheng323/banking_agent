@@ -17,7 +17,6 @@ async def handle_transaction_list(
     """Handle transaction list queries."""
     transactions = await fetch_and_filter(provider, query, account_id, account_ids, accounts_info)
 
-    # Calculate offset for pagination
     offset = current_page * page_size
     paginated = transactions[offset : offset + page_size]
 
@@ -34,9 +33,12 @@ async def handle_transaction_list(
 
     total = len(transactions)
     showing_end = offset + len(paginated)
+    account_count = len(account_ids) if account_ids else 1
+
+    summary_text = f"accounts:{account_count}|showing:{offset + 1}-{showing_end}|total:{total}"
 
     return QueryResult(
-        summary_text=f"Showing {offset + 1}-{showing_end} of {total}",
+        summary_text=summary_text,
         items=items,
         has_more=showing_end < total,
     )

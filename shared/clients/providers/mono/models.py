@@ -83,6 +83,7 @@ class Transaction(BaseModel):
     amount: int
     type: str
     category: str | None = None
+    counterparty: str | None = None
 
 
 class CustomerData(BaseModel):

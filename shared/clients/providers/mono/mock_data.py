@@ -1,5 +1,7 @@
 """Mock data for Mono API (development environment)."""
 
+from datetime import datetime, timedelta
+
 from .models import (
     AccountData,
     BalanceData,
@@ -12,6 +14,13 @@ from .models import (
     Transaction,
     TransferDestination,
 )
+
+
+def _days_ago(days: int, hour: int = 12, minute: int = 0) -> str:
+    """Generate ISO date string for N days ago."""
+    dt = datetime.now() - timedelta(days=days)
+    dt = dt.replace(hour=hour, minute=minute, second=0, microsecond=0)
+    return dt.strftime("%Y-%m-%dT%H:%M:%S.000Z")
 
 
 def get_mock_bvn_lookup(bvn: str) -> BvnLookupData:
@@ -92,7 +101,13 @@ def get_mock_transactions(
     elif account_index == 1:
         txns = _get_account_b_transactions()
     else:
-        return []  # Third+ accounts get empty
+        txns = []
+
+    # Merge local DB transactions (transfers made through app)
+    local_txns = _get_local_db_transactions()
+    if local_txns:
+        txns = txns + local_txns
+        txns = sorted(txns, key=lambda t: t.date, reverse=True)
 
     if transaction_type:
         txns = [t for t in txns if t.type == transaction_type]
@@ -102,12 +117,48 @@ def get_mock_transactions(
     return txns[:limit]
 
 
+def _get_local_db_transactions() -> list[Transaction]:
+    """Fetch local transactions from DB and convert to Transaction format."""
+    try:
+        from shared.repositories.unit_of_work import UnitOfWork
+
+        with UnitOfWork() as uow:
+            # Get all recent transactions from all users (dev mode)
+            db_txns = (
+                uow.db.query(uow.transactions.model)
+                .filter(uow.transactions.model.status.in_(["completed", "successful", "success"]))
+                .order_by(uow.transactions.model.created_at.desc())
+                .limit(50)
+                .all()
+            )
+
+            result = []
+            for t in db_txns:
+                tx_date = t.created_at.strftime("%Y-%m-%dT%H:%M:%S.000Z") if t.created_at else ""
+                narration = f"Transfer to {t.recipient_name}" if t.recipient_name else t.narration or "Transfer"
+
+                result.append(
+                    Transaction(
+                        id=str(t.id)[:8],
+                        date=tx_date,
+                        narration=narration,
+                        amount=int(t.amount * 100),  # Convert to kobo
+                        type="debit",
+                        category="transfer",
+                    )
+                )
+            return result
+    except Exception:
+        # If DB not available, return empty
+        return []
+
+
 def _get_account_a_transactions() -> list[Transaction]:
     """First Bank transactions - transfers, transport, subscriptions."""
     return [
         Transaction(
             id="txn_001",
-            date="2024-12-28T10:30:00.000Z",
+            date=_days_ago(3, 10, 30),
             narration="Transfer to Mum",
             amount=5000000,
             type="debit",
@@ -115,7 +166,7 @@ def _get_account_a_transactions() -> list[Transaction]:
         ),
         Transaction(
             id="txn_002",
-            date="2024-12-27T14:22:00.000Z",
+            date=_days_ago(4, 14, 22),
             narration="0000132312091322123456789012345 NIP TRANSFER TO ADEBAYO JAMES",
             amount=2500000,
             type="debit",
@@ -123,7 +174,7 @@ def _get_account_a_transactions() -> list[Transaction]:
         ),
         Transaction(
             id="txn_003",
-            date="2024-12-27T09:15:00.000Z",
+            date=_days_ago(4, 14, 22),
             narration="Transfer from OKONKWO CHIDI - Rent payment",
             amount=15000000,
             type="credit",
@@ -132,7 +183,7 @@ def _get_account_a_transactions() -> list[Transaction]:
         # Transport
         Transaction(
             id="txn_004",
-            date="2024-12-26T18:45:00.000Z",
+            date=_days_ago(5, 18, 45),
             narration="UBER TRIP - Lagos to VI",
             amount=350000,
             type="debit",
@@ -140,7 +191,7 @@ def _get_account_a_transactions() -> list[Transaction]:
         ),
         Transaction(
             id="txn_005",
-            date="2024-12-26T08:30:00.000Z",
+            date=_days_ago(5, 18, 45),
             narration="BOLT RIDE - Home to Office",
             amount=280000,
             type="debit",
@@ -149,7 +200,7 @@ def _get_account_a_transactions() -> list[Transaction]:
         # POS Payments
         Transaction(
             id="txn_006",
-            date="2024-12-25T20:15:00.000Z",
+            date=_days_ago(6, 20, 15),
             narration="POS PURCHASE - SHOPRITE IKEJA MALL",
             amount=4500000,
             type="debit",
@@ -157,7 +208,7 @@ def _get_account_a_transactions() -> list[Transaction]:
         ),
         Transaction(
             id="txn_007",
-            date="2024-12-25T13:00:00.000Z",
+            date=_days_ago(6, 20, 15),
             narration="POS PURCHASE - CHICKEN REPUBLIC",
             amount=450000,
             type="debit",
@@ -166,7 +217,7 @@ def _get_account_a_transactions() -> list[Transaction]:
         # Salary & Income
         Transaction(
             id="txn_008",
-            date="2024-12-24T10:00:00.000Z",
+            date=_days_ago(7, 10, 0),
             narration="Salary from TechCorp Nigeria Ltd",
             amount=85000000,
             type="credit",
@@ -174,7 +225,7 @@ def _get_account_a_transactions() -> list[Transaction]:
         ),
         Transaction(
             id="txn_009",
-            date="2024-12-23T16:30:00.000Z",
+            date=_days_ago(8, 16, 30),
             narration="Freelance payment - Website Design",
             amount=15000000,
             type="credit",
@@ -183,7 +234,7 @@ def _get_account_a_transactions() -> list[Transaction]:
         # Subscriptions
         Transaction(
             id="txn_010",
-            date="2024-12-22T00:05:00.000Z",
+            date=_days_ago(9, 0, 5),
             narration="Netflix Monthly Subscription",
             amount=650000,
             type="debit",
@@ -191,7 +242,7 @@ def _get_account_a_transactions() -> list[Transaction]:
         ),
         Transaction(
             id="txn_011",
-            date="2024-12-21T00:02:00.000Z",
+            date=_days_ago(10, 0, 2),
             narration="Spotify Premium",
             amount=350000,
             type="debit",
@@ -199,7 +250,7 @@ def _get_account_a_transactions() -> list[Transaction]:
         ),
         Transaction(
             id="txn_012",
-            date="2024-12-20T00:01:00.000Z",
+            date=_days_ago(11, 0, 1),
             narration="YouTube Premium Family",
             amount=750000,
             type="debit",
@@ -208,7 +259,7 @@ def _get_account_a_transactions() -> list[Transaction]:
         # Utilities
         Transaction(
             id="txn_013",
-            date="2024-12-19T11:20:00.000Z",
+            date=_days_ago(12, 11, 20),
             narration="IKEDC PREPAID METER RECHARGE",
             amount=2000000,
             type="debit",
@@ -216,7 +267,7 @@ def _get_account_a_transactions() -> list[Transaction]:
         ),
         Transaction(
             id="txn_014",
-            date="2024-12-18T09:00:00.000Z",
+            date=_days_ago(13, 9, 0),
             narration="MTN DATA BUNDLE - 75GB",
             amount=1500000,
             type="debit",
@@ -224,7 +275,7 @@ def _get_account_a_transactions() -> list[Transaction]:
         ),
         Transaction(
             id="txn_015",
-            date="2024-12-17T15:45:00.000Z",
+            date=_days_ago(14, 15, 45),
             narration="AIRTIME PURCHASE - GLO",
             amount=100000,
             type="debit",
@@ -233,7 +284,7 @@ def _get_account_a_transactions() -> list[Transaction]:
         # Bank charges
         Transaction(
             id="txn_016",
-            date="2024-12-16T00:00:00.000Z",
+            date=_days_ago(15, 0, 0),
             narration="SMS ALERT CHARGES - NOV 2024",
             amount=5200,
             type="debit",
@@ -241,7 +292,7 @@ def _get_account_a_transactions() -> list[Transaction]:
         ),
         Transaction(
             id="txn_017",
-            date="2024-12-15T00:00:00.000Z",
+            date=_days_ago(16, 0, 0),
             narration="CARD MAINTENANCE FEE",
             amount=50000,
             type="debit",
@@ -250,7 +301,7 @@ def _get_account_a_transactions() -> list[Transaction]:
         # Food & Delivery
         Transaction(
             id="txn_018",
-            date="2024-12-14T19:30:00.000Z",
+            date=_days_ago(17, 19, 30),
             narration="JUMIA FOOD - Order #JF789456",
             amount=850000,
             type="debit",
@@ -258,7 +309,7 @@ def _get_account_a_transactions() -> list[Transaction]:
         ),
         Transaction(
             id="txn_019",
-            date="2024-12-13T13:15:00.000Z",
+            date=_days_ago(18, 13, 15),
             narration="CHOWDECK - Lunch delivery",
             amount=650000,
             type="debit",
@@ -267,7 +318,7 @@ def _get_account_a_transactions() -> list[Transaction]:
         # More transfers
         Transaction(
             id="txn_020",
-            date="2024-12-12T16:00:00.000Z",
+            date=_days_ago(19, 16, 0),
             narration="Transfer to ADESANYA KUNLE - Birthday gift",
             amount=5000000,
             type="debit",
@@ -275,7 +326,7 @@ def _get_account_a_transactions() -> list[Transaction]:
         ),
         Transaction(
             id="txn_021",
-            date="2024-12-11T10:30:00.000Z",
+            date=_days_ago(20, 10, 30),
             narration="Transfer from JOHNSON MARY - Refund",
             amount=3500000,
             type="credit",
@@ -283,7 +334,7 @@ def _get_account_a_transactions() -> list[Transaction]:
         ),
         Transaction(
             id="txn_022",
-            date="2024-12-10T14:20:00.000Z",
+            date=_days_ago(21, 14, 20),
             narration="NIP/OPAY/EMMANUEL OKORO",
             amount=7500000,
             type="debit",
@@ -292,7 +343,7 @@ def _get_account_a_transactions() -> list[Transaction]:
         # Shopping
         Transaction(
             id="txn_023",
-            date="2024-12-09T17:00:00.000Z",
+            date=_days_ago(22, 17, 0),
             narration="WEB PURCHASE - JUMIA.COM.NG",
             amount=12500000,
             type="debit",
@@ -300,7 +351,7 @@ def _get_account_a_transactions() -> list[Transaction]:
         ),
         Transaction(
             id="txn_024",
-            date="2024-12-08T11:45:00.000Z",
+            date=_days_ago(23, 11, 45),
             narration="POS PURCHASE - SLOT SYSTEMS LTD",
             amount=45000000,
             type="debit",
@@ -309,7 +360,7 @@ def _get_account_a_transactions() -> list[Transaction]:
         # Investment/Savings
         Transaction(
             id="txn_025",
-            date="2024-12-07T08:00:00.000Z",
+            date=_days_ago(24, 8, 0),
             narration="PIGGYVEST SAVINGS - Auto-save",
             amount=5000000,
             type="debit",
@@ -317,7 +368,7 @@ def _get_account_a_transactions() -> list[Transaction]:
         ),
         Transaction(
             id="txn_026",
-            date="2024-12-06T09:30:00.000Z",
+            date=_days_ago(25, 9, 30),
             narration="COWRYWISE - Investment deposit",
             amount=10000000,
             type="debit",
@@ -326,7 +377,7 @@ def _get_account_a_transactions() -> list[Transaction]:
         # ATM
         Transaction(
             id="txn_027",
-            date="2024-12-05T22:15:00.000Z",
+            date=_days_ago(26, 22, 15),
             narration="ATM WITHDRAWAL - VI BRANCH",
             amount=5000000,
             type="debit",
@@ -335,7 +386,7 @@ def _get_account_a_transactions() -> list[Transaction]:
         # Additional credits
         Transaction(
             id="txn_028",
-            date="2024-12-04T12:00:00.000Z",
+            date=_days_ago(27, 12, 0),
             narration="PAYSTACK - Revenue payout",
             amount=25000000,
             type="credit",
@@ -343,7 +394,7 @@ def _get_account_a_transactions() -> list[Transaction]:
         ),
         Transaction(
             id="txn_029",
-            date="2024-12-03T10:00:00.000Z",
+            date=_days_ago(28, 10, 0),
             narration="Interest credited - Q4 2024",
             amount=125000,
             type="credit",
@@ -351,7 +402,7 @@ def _get_account_a_transactions() -> list[Transaction]:
         ),
         Transaction(
             id="txn_030",
-            date="2024-12-02T15:30:00.000Z",
+            date=_days_ago(29, 15, 30),
             narration="Transfer from BAKARE FEMI",
             amount=2000000,
             type="credit",
@@ -365,7 +416,7 @@ def _get_account_b_transactions() -> list[Transaction]:
     return [
         Transaction(
             id="txn_b01",
-            date="2024-12-28T09:00:00.000Z",
+            date=_days_ago(3, 10, 30),
             narration="Salary from Acme Corp",
             amount=95000000,
             type="credit",
@@ -373,7 +424,7 @@ def _get_account_b_transactions() -> list[Transaction]:
         ),
         Transaction(
             id="txn_b02",
-            date="2024-12-27T16:30:00.000Z",
+            date=_days_ago(4, 14, 22),
             narration="Transfer to Dad",
             amount=3000000,
             type="debit",
@@ -381,7 +432,7 @@ def _get_account_b_transactions() -> list[Transaction]:
         ),
         Transaction(
             id="txn_b03",
-            date="2024-12-26T12:00:00.000Z",
+            date=_days_ago(5, 18, 45),
             narration="COWRYWISE Auto-Invest",
             amount=5000000,
             type="debit",
@@ -389,7 +440,7 @@ def _get_account_b_transactions() -> list[Transaction]:
         ),
         Transaction(
             id="txn_b04",
-            date="2024-12-25T19:00:00.000Z",
+            date=_days_ago(6, 20, 15),
             narration="GLOVO Food Delivery",
             amount=450000,
             type="debit",
@@ -397,7 +448,7 @@ def _get_account_b_transactions() -> list[Transaction]:
         ),
         Transaction(
             id="txn_b05",
-            date="2024-12-24T11:00:00.000Z",
+            date=_days_ago(7, 10, 0),
             narration="Freelance Payment - Design",
             amount=12000000,
             type="credit",
@@ -405,7 +456,7 @@ def _get_account_b_transactions() -> list[Transaction]:
         ),
         Transaction(
             id="txn_b06",
-            date="2024-12-23T08:30:00.000Z",
+            date=_days_ago(8, 16, 30),
             narration="TAXIFY/BOLT Ride",
             amount=320000,
             type="debit",
@@ -413,7 +464,7 @@ def _get_account_b_transactions() -> list[Transaction]:
         ),
         Transaction(
             id="txn_b07",
-            date="2024-12-22T20:15:00.000Z",
+            date=_days_ago(9, 0, 5),
             narration="Amazon Prime Subscription",
             amount=850000,
             type="debit",

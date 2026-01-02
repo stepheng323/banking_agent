@@ -13,7 +13,7 @@ Choose exactly one:
 - **analytics_summary**: Aggregate calculations (totals, averages, largest)
 - **time_comparison**: Compare periods (vs last month, year-over-year)
 - **balance_query**: Current account balance
-- **beneficiary_summary**: Who user sends money to / receives from
+- **beneficiary_summary**: Who user sends money to / receives from (e.g., "Who do I send money to the most", "Top recipients", "Who pays me")
 - **affordability**: Can user afford something
 
 ## DATE RESOLUTION
@@ -24,8 +24,8 @@ Resolve ALL date expressions to actual YYYY-MM-DD dates:
 - "this week" → Monday of current week to {today}
 - "this month" → first day of current month to {today}
 - "last month" → first to last day of previous month
-- "December" → Dec 1 to Dec 31 of most recent December
-- "Christmas" → December 25 of most recent Christmas
+- "December" → Dec 1 to Dec 31 of the MOST RECENT PAST December (if today is Jan 2026, December = Dec 2025)
+- "Christmas" → December 25 of the most recent past Christmas
 - "Thanksgiving" → appropriate date
 - "last 7 days" → 7 days ago to {today}
 
@@ -111,20 +111,35 @@ Classify this message into one of these types:
 (e.g., "what about last month?", "for December", "on Christmas")
    - If this type, also resolve the actual dates
 
-3. **filter_delta** - User wants to filter results
+3. **filter_delta** - User wants to filter or search for different results
 (e.g., "only credits", "over 10k", "just food", "excluding transfers")
-   - Bank/account filter: "just Zenith", "only First Bank", "from GTBank" → set filters.account_filter
-   - If this type, extract the filter changes
+   - Merchant/keyword: "Show only Uber", "Uber related", "just Netflix", "related to food" → set filters.merchant=["keyword"]
+   - Transaction type: "only credits", "just debits", "only sent" → set filters.transaction_type
+   - Bank/account filter: "just Zenith", "only First Bank" → set filters.account_filter
+   - If this type, extract the filter changes (replaces previous filter of same type)
 
-4. **drill_down** - User wants details about a specific item OR wants to take action on it
+4. **expand** - User wants to see the underlying transactions after a summary
+   - e.g., "show transactions", "show details", "show me the items", "which ones"
+   - Use this when expanding from an analytics summary (like "You spent ₦X on Y")
+
+5. **drill_down** - User wants details about a specific item OR wants to take action on it
    - If this type AND items are provided above, set drill_down_index to the item number (0-indexed)
    - Match based on: amount ("150k"), ordinal ("first", "second"), description ("Netflix"), or relative ("largest")
    - Set drill_down_action based on intent:
-     - **view_details** (default): "tell me more", "show details", "what was this?"
+     - **view_details** (default): "tell me more", "what was this?"
      - **get_receipt**: "send receipt", "proof", "evidence", "I need receipt"
      - **report_issue**: "something's wrong", "I was debited", "failed", "problem", "issue"
 
-5. **new_query** - User is asking something completely different
+6. **recipient_drill_down** - User names a recipient after seeing Top Recipients list
+   - e.g., "Uber", "Mum", "Shoprite", "show Uber transactions"
+   - Set recipient_name to the matched name (normalize capitalization)
+   - Only use this if the context shows a Top Recipients list
 
-IMPORTANT: Support all languages including Nigerian Pidgin, Yoruba, Igbo, Hausa.
+7. **end_session** - User is expressing gratitude or ending the conversation
+   - e.g., "thank you", "thanks", "arigato", "e se", "na gode", "daalụ", "merci", "gracias", "I'm done", "that's all"
+   - Respond with a witty, matching thanks in the same language/style
+
+8. **new_query** - User is asking something completely different
+
+IMPORTANT: Support all languages including Nigerian Pidgin, Yoruba, Igbo, Hausa, Japanese, etc.
 """

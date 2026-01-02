@@ -83,11 +83,11 @@ class OrchestratorIntentRouter:
 
         if task_count > 1:
             if recipient_name:
-                return f"I'll help you {normalized.lower()}. I'll process these one at a time. Let's start with the transfer to {recipient_name}."
+                return f"I'll help you {normalized.lower()}.\nI'll process these one at a time.\n\nLet's start with the transfer to {recipient_name}."
             else:
-                return f"I'll help you {normalized.lower()}. I'll process these one at a time. Let's start with the first {first_task_type}."
+                return f"I'll help you {normalized.lower()}.\nI'll process these one at a time.\n\nLet's start with the first {first_task_type}."
         else:
-            return f"I'll help you {normalized.lower()}. Let's get started."
+            return f"I'll help you {normalized.lower()}.\nLet's get started."
 
     async def route_intent(
         self,
@@ -126,7 +126,6 @@ class OrchestratorIntentRouter:
                     acknowledgment = self._generate_task_acknowledgment(planner_output)
                     logger.debug("generated")
 
-                    # Send acknowledgment directly
                     await self.whatsapp_client.send_text(phone_number, acknowledgment, message_id=message_id)
 
                     asyncio.create_task(self.context_manager.save_last_response(phone_number, acknowledgment))
@@ -217,19 +216,26 @@ class OrchestratorIntentRouter:
                 response = f"{response}\n\n{resume_prompt}"
 
         elif intent == "query":
-            conversation_state = await self.context_manager.get_conversation_state(phone_number)
-            if conversation_state:
-                active_flow = conversation_state.get("active_flow")
-                if active_flow in ("transfer", "airtime"):
-                    flow_summary = {
-                        "amount": conversation_state.get("amount"),
-                        "recipient_name": conversation_state.get("recipient_name"),
-                        "recipient_phone": conversation_state.get("recipient_phone"),
-                    }
-                    await self.flow_context_service.pause_flow(phone_number, active_flow, "balance_query", flow_summary)
+            # Check for active session first - skip ack for continuations
+            is_continuation = self.query_graph and await self.query_graph.has_active_session(phone_number)
 
-            if result.response:
-                await self.whatsapp_client.send_text(phone_number, result.response, message_id=message_id)
+            if not is_continuation:
+                conversation_state = await self.context_manager.get_conversation_state(phone_number)
+                if conversation_state:
+                    active_flow = conversation_state.get("active_flow")
+                    if active_flow in ("transfer", "airtime"):
+                        flow_summary = {
+                            "amount": conversation_state.get("amount"),
+                            "recipient_name": conversation_state.get("recipient_name"),
+                            "recipient_phone": conversation_state.get("recipient_phone"),
+                        }
+                        await self.flow_context_service.pause_flow(
+                            phone_number, active_flow, "balance_query", flow_summary
+                        )
+
+                # Only send ack for new queries, not continuations
+                if result.response:
+                    await self.whatsapp_client.send_text(phone_number, result.response, message_id=message_id)
 
             query_result = await self.query_graph.run(phone_number, text, user_ctx)
 
@@ -273,20 +279,25 @@ class OrchestratorIntentRouter:
                 response = "Support is temporarily unavailable. Please try again later."
 
         elif intent == "manage_accounts":
-            conversation_state = await self.context_manager.get_conversation_state(phone_number)
-            if conversation_state:
-                active_flow = conversation_state.get("active_flow")
-                if active_flow in ("transfer", "airtime"):
-                    flow_summary = {
-                        "amount": conversation_state.get("amount"),
-                        "recipient_name": conversation_state.get("recipient_name"),
-                        "recipient_phone": conversation_state.get("recipient_phone"),
-                    }
-                    await self.flow_context_service.pause_flow(
-                        phone_number, active_flow, "account_management", flow_summary
-                    )
+            # Check for active query session first - user might be filtering by bank
+            if self.query_graph and await self.query_graph.has_active_session(phone_number):
+                query_result = await self.query_graph.run(phone_number, text, user_ctx)
+                response = query_result if isinstance(query_result, str) else "Query completed."
+            else:
+                conversation_state = await self.context_manager.get_conversation_state(phone_number)
+                if conversation_state:
+                    active_flow = conversation_state.get("active_flow")
+                    if active_flow in ("transfer", "airtime"):
+                        flow_summary = {
+                            "amount": conversation_state.get("amount"),
+                            "recipient_name": conversation_state.get("recipient_name"),
+                            "recipient_phone": conversation_state.get("recipient_phone"),
+                        }
+                        await self.flow_context_service.pause_flow(
+                            phone_number, active_flow, "account_management", flow_summary
+                        )
 
-            response = await self.account_management_service.handle_account_management(phone_number, text, user_ctx)
+                response = await self.account_management_service.handle_account_management(phone_number, text, user_ctx)
 
             resume_prompt = await self.flow_context_service.generate_resume_prompt(phone_number)
             if resume_prompt:
