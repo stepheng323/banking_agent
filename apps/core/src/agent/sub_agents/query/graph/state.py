@@ -26,7 +26,19 @@ class QueryState(TypedDict):
     session_active: bool
 
     query: NotRequired[NormalizedQuery | None]
-    continuation_type: NotRequired[Literal["show_more", "time_delta", "filter_delta", "drill_down", "new_query"] | None]
+    continuation_type: NotRequired[
+        Literal[
+            "show_more",
+            "time_delta",
+            "filter_delta",
+            "expand",
+            "drill_down",
+            "recipient_drill_down",
+            "end_session",
+            "new_query",
+        ]
+        | None
+    ]
 
     account_id: str
     account_ids: list[str]
@@ -47,3 +59,13 @@ class QueryState(TypedDict):
     response: str
 
     clarification_message: NotRequired[str | None]
+
+    # Fault-tolerance fields
+    show_expanded: NotRequired[bool]
+    recipient_name: NotRequired[str | None]
+    filters: NotRequired[dict | None]
+    drill_down_index: NotRequired[int | None]
+    drill_down_action: NotRequired[str | None]
+    clarification_attempts: NotRequired[int]
+    last_successful_query: NotRequired[dict | None]
+    confidence_level: NotRequired[str]  # "high", "medium", "low"
