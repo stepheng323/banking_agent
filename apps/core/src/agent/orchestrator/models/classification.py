@@ -2,6 +2,8 @@
 
 from pydantic import BaseModel, Field
 
+from shared.models.conversation_state import ConfidenceLevel
+
 
 class ClassificationResult(BaseModel):
     """Result for the classification task."""
@@ -11,9 +13,7 @@ class ClassificationResult(BaseModel):
         description="The intent of the user's message (transfer, airtime, data, conversational, cancel, unknown)."
     )
     is_complex: bool = Field(description="Whether the user's message is complex.")
-    complexity_reason: str = Field(
-        description="The reason for the complexity of the user's message."
-    )
+    complexity_reason: str = Field(description="The reason for the complexity of the user's message.")
     confidence: float = Field(description="How sure in percentage you, about this classification")
     is_cancellation: bool | None = Field(
         default=None,
@@ -27,3 +27,8 @@ class ClassificationResult(BaseModel):
         default=None,
         description="The detected language of the user's message (e.g., English, Yoruba, Hausa, Igbo, Pidgin, French). Only set this if you are confident about the language.",
     )
+
+    @property
+    def confidence_level(self) -> ConfidenceLevel:
+        """Convert confidence score to categorical level for behavior branching."""
+        return ConfidenceLevel.from_score(self.confidence)
