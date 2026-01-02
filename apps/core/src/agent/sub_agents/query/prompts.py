@@ -135,11 +135,15 @@ Classify this message into one of these types:
    - Set recipient_name to the matched name (normalize capitalization)
    - Only use this if the context shows a Top Recipients list
 
-7. **end_session** - User is expressing gratitude or ending the conversation
+7. **unclear** - You cannot understand what the user wants
+   - Use this when the message is ambiguous, gibberish, or doesn't match any category
+   - IMPORTANT: This preserves context and asks for clarification
+
+8. **end_session** - User is expressing gratitude or ending the conversation
    - e.g., "thank you", "thanks", "arigato", "e se", "na gode", "daalụ", "merci", "gracias", "I'm done", "that's all"
    - Respond with a witty, matching thanks in the same language/style
 
-8. **new_query** - User is asking something completely different
+9. **new_query** - User is asking something completely different
 
 IMPORTANT: Support all languages including Nigerian Pidgin, Yoruba, Igbo, Hausa, Japanese, etc.
 """

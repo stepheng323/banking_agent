@@ -34,6 +34,7 @@ class ContinuationType:
     EXPAND = "expand"
     DRILL_DOWN = "drill_down"
     RECIPIENT_DRILL_DOWN = "recipient_drill_down"
+    UNCLEAR = "unclear"
     END_SESSION = "end_session"
     NEW_QUERY = "new_query"
 
@@ -48,6 +49,7 @@ class ContinuationClassification(BaseModel):
         "expand",
         "drill_down",
         "recipient_drill_down",
+        "unclear",
         "end_session",
         "new_query",
     ] = Field(description="Type of continuation the user is requesting")
@@ -160,14 +162,11 @@ def apply_filter_delta(
     query_dict = original_query.model_dump()
     existing_filters = query_dict.get("filters") or {}
 
-    # Apply new filters - replace most, append excludes
     new_filters = filters.model_dump(exclude_none=True)
     for key, value in new_filters.items():
         if key == "exclude" and existing_filters.get("exclude"):
-            # Append to existing excludes
             existing_filters["exclude"] = existing_filters["exclude"] + value
         else:
-            # Replace other filters (merchant, category, type, amount, account)
             existing_filters[key] = value
 
     query_dict["filters"] = existing_filters
@@ -191,3 +190,46 @@ def apply_time_delta(
     query_dict = original_query.model_dump()
     query_dict["time_range"] = time_range.model_dump()
     return NormalizedQuery.model_validate(query_dict)
+
+
+def build_soft_clarification(items: list[QueryResultItem], context: str = "") -> str:
+    """Build a graceful clarification message without resetting context.
+
+    Args:
+        items: List of items to offer as options
+        context: Optional context string (e.g., "Which transaction")
+
+    Returns:
+        Formatted clarification message with numbered options
+    """
+    if not items:
+        return "I'm not sure what you're referring to. Could you rephrase?"
+
+    lines = [f"I'm not sure which one you mean{' (' + context + ')' if context else ''}."]
+    lines.append("")
+    lines.append("Are you referring to:")
+
+    for i, item in enumerate(items[:5], 1):  # Max 5 options
+        amount = f"₦{abs(item.amount):,.0f}" if item.amount else ""
+        lines.append(f"{i}️⃣ {amount} — {item.description[:30]}")
+
+    lines.append("")
+    lines.append("Reply with the number or rephrase.")
+
+    return "\n".join(lines)
+
+
+def get_recovery_message() -> str:
+    """Get the recovery message for total failure scenario (3+ clarification attempts)."""
+    return (
+        "I'm having trouble understanding, and I don't want to waste your time.\n\n"
+        "You can:\n"
+        "• Rephrase what you want to do\n"
+        "• Start a new request\n"
+        "• Talk to support"
+    )
+
+
+def should_offer_recovery(clarification_attempts: int, max_attempts: int = 3) -> bool:
+    """Check if we should offer recovery options based on attempt count."""
+    return clarification_attempts >= max_attempts

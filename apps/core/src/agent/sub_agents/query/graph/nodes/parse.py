@@ -110,8 +110,13 @@ async def classify_continuation_node(
                 "recipient_name": data.get("recipient_name", ""),
             }
 
+        elif cont_type == ContinuationType.UNCLEAR:
+            return {
+                "continuation_type": "unclear",
+                "flow_state": "clarification_needed",
+            }
+
         elif cont_type == ContinuationType.END_SESSION:
-            # End session with witty response
             return {
                 "continuation_type": "end_session",
                 "flow_state": "complete",
