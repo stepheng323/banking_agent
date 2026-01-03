@@ -69,3 +69,4 @@ class QueryState(TypedDict):
     clarification_attempts: NotRequired[int]
     last_successful_query: NotRequired[dict | None]
     confidence_level: NotRequired[str]  # "high", "medium", "low"
+    user_profile: NotRequired[dict]  # User profile for context

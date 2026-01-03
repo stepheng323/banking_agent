@@ -28,6 +28,7 @@ class QueryExecutor:
         accounts_info: list[dict] | None = None,
         current_page: int = 0,
         page_size: int = 5,
+        user_id: str | None = None,
     ) -> QueryResult:
         """
         Execute a normalized query.
@@ -39,6 +40,7 @@ class QueryExecutor:
             accounts_info: Account details for name resolution
             current_page: Pagination page (0-indexed)
             page_size: Number of items per page
+            user_id: ID of the user for local DB lookups
 
         Returns:
             QueryResult with context_key for follow-ups
@@ -64,7 +66,14 @@ class QueryExecutor:
 
         try:
             result = await handler(
-                self.provider, query, account_id, all_account_ids, accounts_info, current_page, page_size
+                self.provider,
+                query,
+                account_id,
+                all_account_ids,
+                accounts_info,
+                current_page,
+                page_size,
+                user_id=user_id,  # Explicitly passing it
             )
             result.query_snapshot = query
             return result
