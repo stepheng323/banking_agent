@@ -20,6 +20,7 @@ async def load_user_context_shared(
     account_repo: Any,
     beneficiary_repo: Any,
     beneficiary_type: str = "transfer",
+    user_repo: Any = None,  # Optional: UserRepository for DB fallback
 ) -> StateType:
     """
     Shared context loading node for all flows.
@@ -30,6 +31,7 @@ async def load_user_context_shared(
         account_repo: Account repository
         beneficiary_repo: Beneficiary repository
         beneficiary_type: Type of beneficiaries to load ("transfer" or "airtime")
+        user_repo: Optional user repository for DB fallback when cache is empty
 
     Returns:
         Updated state with user profile, accounts, and beneficiaries
@@ -46,23 +48,35 @@ async def load_user_context_shared(
     logger.info("log_event")
 
     user_id = profile.get("id") if isinstance(profile, dict) else None
+
+    if not user_id and user_repo:
+        logger.info("profile_not_in_cache_fetching_from_db")
+
+        def fetch_profile_sync():
+            user = user_repo.get_by_phone(phone)
+            if user:
+                return sqlalchemy_to_dict(user)
+            return None
+
+        profile = await asyncio.to_thread(fetch_profile_sync)
+        if profile:
+            user_id = profile.get("id")
+            await user_cache.set_user_profile(phone, profile)
+            logger.info("loaded_profile_from_db", user_id=user_id)
+
     if user_id:
         logger.info("user_id")
 
-        # Determine what needs to be loaded
         need_beneficiaries = not beneficiaries_list
         need_accounts = not accounts
 
-        # If both need loading, fetch in parallel for better performance
         if need_beneficiaries and need_accounts:
             logger.info("loading_both_beneficiaries_and")
 
             def load_beneficiaries_sync():
                 """Load beneficiaries from database (sync)."""
                 try:
-                    return beneficiary_repo.get_by_user(
-                        str(user_id), beneficiary_type=beneficiary_type
-                    )
+                    return beneficiary_repo.get_by_user(str(user_id), beneficiary_type=beneficiary_type)
                 except Exception as ben_error:
                     error_msg = str(ben_error).lower()
                     if "beneficiary_type" in error_msg and (
@@ -128,9 +142,7 @@ async def load_user_context_shared(
                             "does not exist" in error_msg or "undefinedcolumn" in error_msg
                         ):
                             logger.warning("column_not")
-                            beneficiaries_list = beneficiary_repo.get_by_user(
-                                str(user_id), beneficiary_type=None
-                            )
+                            beneficiaries_list = beneficiary_repo.get_by_user(str(user_id), beneficiary_type=None)
                         else:
                             raise
                     logger.info("loaded_beneficiaries_from")
@@ -152,12 +164,8 @@ async def load_user_context_shared(
     else:
         logger.warning("no_found_in")
 
-    accounts_dict = [
-        sqlalchemy_to_dict(acc) if isinstance(acc, Account) else acc for acc in accounts
-    ]
-    beneficiaries_dict = [
-        sqlalchemy_to_dict(b) if isinstance(b, Beneficiary) else b for b in beneficiaries_list
-    ]
+    accounts_dict = [sqlalchemy_to_dict(acc) if isinstance(acc, Account) else acc for acc in accounts]
+    beneficiaries_dict = [sqlalchemy_to_dict(b) if isinstance(b, Beneficiary) else b for b in beneficiaries_list]
 
     # Cache the loaded data
     if beneficiaries_dict:
