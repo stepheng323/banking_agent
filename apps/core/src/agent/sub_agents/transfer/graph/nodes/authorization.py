@@ -2,13 +2,12 @@
 
 from typing import cast
 
+from apps.core.src.agent.sub_agents.transfer.state import TransferState
 from apps.core.src.agent.tools.response import (
     ResponseIntent,
     build_response_context,
     get_synthesizer,
 )
-from apps.core.src.agent.sub_agents.transfer.graph.nodes.utils import debug_log
-from apps.core.src.agent.sub_agents.transfer.state import TransferState
 from shared.cache.redis_client import Redis
 from shared.database.connection import get_db
 from shared.database.models import (
@@ -17,6 +16,7 @@ from shared.database.models import (
     FundingStep,
     FundingStepStatusEnum,
 )
+from shared.formatters.transfer import format_transfer_queued_message
 from shared.queue.redis_queue import RedisQueue
 from shared.services.auth import AuthorizationService
 from shared.services.transactions import create_transfer_transaction
@@ -35,17 +35,6 @@ async def authorize_transaction(
     phone_number = state.get("phone_number")
     idem_key = state.get("idempotency_key")
     synthesizer = get_synthesizer()
-
-    logger.info(
-        "authorize_transaction_ENTRY",
-        phone=phone_number,
-        idem_key=idem_key,
-        flow_state=state.get("flow_state"),
-        funding_status=state.get("funding_status"),
-    )
-    debug_log(
-        f"🔐 authorize_transaction ENTRY: phone={phone_number}, idem_key={idem_key}, flow_state={state.get('flow_state')}, transfer_status={state.get('transfer_status')}"
-    )
 
     if not idem_key:
         context = build_response_context(ResponseIntent.SESSION_EXPIRED, state)
@@ -135,6 +124,7 @@ async def authorize_transaction(
                 "flow_state": "completed",
             }
 
+        source_account = state.get("selected_source_account", {})
         pending_transfer = {
             "amount": amount,
             "recipient": {
@@ -143,6 +133,13 @@ async def authorize_transaction(
                 "bank_code": recipient_bank_code,
                 "name": recipient_name,
             },
+            "source": {
+                "id": source_account.get("id"),
+                "account_number": source_account.get("account_number", ""),
+                "account_name": source_account.get("account_name") or source_account.get("name", ""),
+                "bank_name": source_account.get("bank_name", ""),
+            },
+            "narration": state.get("narration"),
             "idempotency_key": state.get("idempotency_key"),
         }
 
@@ -190,14 +187,12 @@ async def authorize_transaction(
                     status=FundedTransferStatusEnum.PAYOUT_PENDING.value,  # Debits already completed
                 )
                 db.add(funded_transfer)
-                db.flush()  # Get the ID
+                db.flush()
                 funded_transfer_id = str(funded_transfer.id)
 
-                # Create FundingStep records
                 from datetime import datetime
 
                 for idx, step in enumerate(funding_steps, start=1):
-                    # Map status from funding step to FundingStepStatusEnum
                     step_status = step.get("status", "pending")
                     if step_status == "successful":
                         funding_step_status = FundingStepStatusEnum.CONFIRMED.value
@@ -206,11 +201,9 @@ async def authorize_transaction(
                     elif step_status == "pending":
                         funding_step_status = FundingStepStatusEnum.PENDING.value
                     else:
-                        funding_step_status = step_status  # Use as-is if already in enum format
+                        funding_step_status = step_status
 
-                    # Detect provider from environment or default to mono for production
-                    # In development/test, we use "mock"
-                    provider_name = step.get("provider", "mono")  # Default to mono unless specified
+                    provider_name = step.get("provider", "mono")
 
                     funding_step = FundingStep(
                         funded_transfer_id=funded_transfer.id,
@@ -220,7 +213,7 @@ async def authorize_transaction(
                         provider_name=provider_name,
                         provider_debit_id=step.get("debit_id"),
                         status=funding_step_status,
-                        initiated_at=datetime.utcnow(),  # Timestamp when debit was initiated
+                        initiated_at=datetime.utcnow(),
                         confirmed_at=datetime.utcnow() if step_status == "successful" else None,
                         error_message=step.get("error"),
                     )
@@ -236,7 +229,6 @@ async def authorize_transaction(
             except Exception as e:
                 db.rollback()
                 logger.error("funded_transfer_creation_failed", error=str(e), exc_info=True)
-                # Continue anyway - transaction will still be created
             finally:
                 db.close()
 
@@ -246,7 +238,6 @@ async def authorize_transaction(
             idem_key,
         )
 
-        # Link transaction to funded transfer if this was a multi-account funding
         if funded_transfer_id:
             from shared.repositories.unit_of_work import UnitOfWork
 
@@ -287,13 +278,17 @@ async def authorize_transaction(
         await redis_client.delete(pin_verification_key)
 
         retry_count = pin_result.retry_count if pin_result else 0
-        # Return empty response - the executor will send the final success/failure notification
-        # This prevents race condition between auth message and executor notification
+
+        queued_message = format_transfer_queued_message(
+            amount=float(amount),
+            recipient_name=recipient_name or "recipient",
+        )
+
         result = cast(
             TransferState,
             {
                 **state,
-                "response": "",  # Empty - executor sends final notification
+                "response": queued_message,
                 "flow_state": "completed",
                 "transfer_status": "authorized",
                 "pin_verified": True,
