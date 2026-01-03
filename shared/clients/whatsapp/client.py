@@ -19,18 +19,16 @@ class WhatsAppClient:
         self.phone_number_id = settings.meta_phone_number_id
         self._validate_config()
 
-    async def _send(
-        self, url: str, payload: dict[str, Any], max_retries: int = 3
-    ) -> dict[str, Any]:
+    async def _send(self, url: str, payload: dict[str, Any], max_retries: int = 3) -> dict[str, Any]:
         headers = self._get_headers()
-        last_error = None
+        last_error: Exception | None = None
 
         for attempt in range(1, max_retries + 1):
             try:
                 async with httpx.AsyncClient(timeout=10) as client:
                     resp = await client.post(url, headers=headers, json=payload)
                     resp.raise_for_status()
-                    result = resp.json()
+                    result: dict[str, Any] = resp.json()
                     print(f"✓ Request successful (attempt {attempt})")
                     return result
 
@@ -91,9 +89,7 @@ class WhatsAppClient:
             print("⚠️  Using development META_PHONE_NUMBER_ID - messages will fail in production")
 
         if errors:
-            error_msg = "WhatsApp client configuration errors:\n" + "\n".join(
-                f"  - {error}" for error in errors
-            )
+            error_msg = "WhatsApp client configuration errors:\n" + "\n".join(f"  - {error}" for error in errors)
             raise ValueError(error_msg)
 
     def _get_headers(self) -> dict[str, str]:
@@ -129,8 +125,7 @@ class WhatsAppClient:
 
         if message_id:
             await self.send_typing_indicator(message_id)
-            await asyncio.sleep(0.3)  # Allow WhatsApp to render typing indicator
-
+            await asyncio.sleep(0.3)
         payload = {
             "messaging_product": "whatsapp",
             "to": to,
@@ -187,10 +182,7 @@ class WhatsAppClient:
         url = self._get_url()
 
         # Build button rows (max 3 buttons)
-        button_rows = [
-            {"type": "reply", "reply": {"id": btn["id"], "title": btn["title"][:20]}}
-            for btn in buttons[:3]
-        ]
+        button_rows = [{"type": "reply", "reply": {"id": btn["id"], "title": btn["title"][:20]}} for btn in buttons[:3]]
 
         interactive_payload: dict[str, Any] = {
             "type": "button",
@@ -246,9 +238,7 @@ class WhatsAppClient:
                     "flow_id": flow_id,
                     "flow_cta": flow_cta,
                     "flow_action": "navigate",
-                    "flow_action_payload": flow_action_payload
-                    if flow_action_payload
-                    else {"screen": screen_name},
+                    "flow_action_payload": flow_action_payload if flow_action_payload else {"screen": screen_name},
                 },
             },
         }
@@ -297,7 +287,7 @@ class WhatsAppClient:
                 resp = await client.post(upload_url, headers=headers, json=payload)
                 resp.raise_for_status()
                 result = resp.json()
-                media_id = result.get("id")
+                media_id: str | None = result.get("id")
                 if not media_id:
                     raise ValueError("No media ID returned from WhatsApp")
                 print(f"✓ Media uploaded to WhatsApp: {media_id}")
@@ -319,31 +309,75 @@ class WhatsAppClient:
             API response from WhatsApp
         """
         try:
-            # First, upload media to WhatsApp to get media ID
             media_id = await self._upload_media_to_whatsapp(image_url)
-
-            # Then send message with media ID
             url = self._get_url()
-            payload = {
+            image_payload: dict[str, Any] = {
+                "id": media_id,
+            }
+            if caption:
+                image_payload["caption"] = caption
+
+            payload: dict[str, Any] = {
                 "messaging_product": "whatsapp",
                 "recipient_type": "individual",
                 "to": to,
                 "type": "image",
-                "image": {
-                    "id": media_id,
-                    "caption": caption if caption else None,
-                },
+                "image": image_payload,
             }
-
-            # Remove caption if empty (WhatsApp doesn't accept empty captions)
-            if not caption:
-                payload["image"].pop("caption", None)
 
             result = await self._send(url, payload)
             print(f"✓ Image message sent to {to}")
             return result
         except Exception as e:
             print(f"❌ Failed to send image message: {e}")
+            raise
+
+    async def send_image_data(
+        self,
+        to: str,
+        data: bytes,
+        caption: str = "",
+        mime_type: str = "image/png",
+    ) -> dict[str, Any]:
+        """
+        Send an image from bytes data to a WhatsApp number.
+
+        Args:
+            to: Recipient phone number
+            data: Image content as bytes (e.g., from PIL or generated images)
+            caption: Optional caption text
+            mime_type: MIME type of the image (default: image/png)
+
+        Returns:
+            API response from WhatsApp
+        """
+        try:
+            # Generate a filename based on mime type
+            extension = mime_type.split("/")[-1]
+            filename = f"image.{extension}"
+
+            media_id = await self._upload_buffer(data, filename, mime_type)
+
+            url = self._get_url()
+            image_payload: dict[str, Any] = {
+                "id": media_id,
+            }
+            if caption:
+                image_payload["caption"] = caption
+
+            payload: dict[str, Any] = {
+                "messaging_product": "whatsapp",
+                "recipient_type": "individual",
+                "to": to,
+                "type": "image",
+                "image": image_payload,
+            }
+
+            result = await self._send(url, payload)
+            print(f"✓ Image (from data) sent to {to}")
+            return result
+        except Exception as e:
+            print(f"❌ Failed to send image from data: {e}")
             raise
 
     async def get_media_url(self, media_id: str) -> str:
@@ -364,7 +398,7 @@ class WhatsAppClient:
                 resp = await client.get(url, headers=headers)
                 resp.raise_for_status()
                 result = resp.json()
-                media_url = result.get("url")
+                media_url: str | None = result.get("url")
                 if not media_url:
                     raise ValueError("No URL returned for media")
                 return media_url
@@ -390,4 +424,92 @@ class WhatsAppClient:
                 return resp.content
         except Exception as e:
             print(f"❌ Failed to download media: {e}")
+            raise
+
+    async def _upload_buffer(
+        self,
+        data: bytes,
+        filename: str,
+        mime_type: str = "application/pdf",
+    ) -> str:
+        """
+        Upload a buffer/blob to WhatsApp and get media ID.
+
+        Args:
+            data: File content as bytes
+            filename: Display filename for the upload
+            mime_type: MIME type of the file (default: application/pdf)
+
+        Returns:
+            Media ID from WhatsApp
+        """
+        upload_url = f"{GRAPH_API_BASE}/{self.phone_number_id}/media"
+
+        try:
+            async with httpx.AsyncClient(timeout=60) as client:
+                files: dict[str, tuple[str | None, bytes | str, str] | tuple[str | None, str]] = {
+                    "file": (filename, data, mime_type),
+                    "messaging_product": (None, "whatsapp"),
+                    "type": (None, mime_type),
+                }
+                headers = {"Authorization": f"Bearer {self.access_token}"}
+
+                resp = await client.post(upload_url, headers=headers, files=files)
+                resp.raise_for_status()
+                result = resp.json()
+                media_id: str | None = result.get("id")
+                if not media_id:
+                    raise ValueError("No media ID returned from WhatsApp")
+                print(f"✓ Buffer uploaded to WhatsApp: {media_id}")
+                return media_id
+        except Exception as e:
+            print(f"❌ Failed to upload buffer to WhatsApp: {e}")
+            raise
+
+    async def send_document(
+        self,
+        to: str,
+        data: bytes,
+        filename: str,
+        caption: str = "",
+        mime_type: str = "application/pdf",
+    ) -> dict[str, Any]:
+        """
+        Send a document (PDF, etc.) to a WhatsApp number.
+
+        Args:
+            to: Recipient phone number
+            data: Document content as bytes
+            filename: Display filename for the document
+            caption: Optional caption text
+            mime_type: MIME type (default: application/pdf)
+
+        Returns:
+            API response from WhatsApp
+        """
+        try:
+            media_id = await self._upload_buffer(data, filename, mime_type)
+
+            url = self._get_url()
+            document_payload: dict[str, Any] = {
+                "id": media_id,
+                "filename": filename,
+            }
+
+            if caption:
+                document_payload["caption"] = caption
+
+            payload = {
+                "messaging_product": "whatsapp",
+                "recipient_type": "individual",
+                "to": to,
+                "type": "document",
+                "document": document_payload,
+            }
+
+            result = await self._send(url, payload)
+            print(f"✓ Document sent to {to}: {filename}")
+            return result
+        except Exception as e:
+            print(f"❌ Failed to send document: {e}")
             raise
