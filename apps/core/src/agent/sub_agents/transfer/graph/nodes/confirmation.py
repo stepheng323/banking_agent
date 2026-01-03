@@ -1,6 +1,5 @@
 """Confirmation node for transfer flow."""
 
-import hashlib
 import json
 
 from apps.core.src.agent.sub_agents.transfer.state import TransferState
@@ -8,6 +7,7 @@ from shared.cache.redis_client import Redis
 from shared.clients.whatsapp.client import WhatsAppClient
 from shared.config import settings
 from shared.formatters.transfer import format_transfer_summary
+from shared.utils.logging import get_logger
 
 
 async def prepare_confirmation(
@@ -16,7 +16,6 @@ async def prepare_confirmation(
     redis_client: Redis,
 ) -> TransferState:
     """Prepare transfer confirmation summary."""
-    from shared.utils.logging import get_logger
 
     logger = get_logger(__name__)
 
@@ -72,9 +71,8 @@ async def prepare_confirmation(
 
     idem_key = state.get("idempotency_key")
     if not idem_key:
-        idem_key = hashlib.sha256(
-            f"{state['phone_number']}|{amount}|{acct_number}|{bank_name}".encode()
-        ).hexdigest()
+        import uuid
+        idem_key = str(uuid.uuid4())
 
     source_account_number = source.get("account_number") or ""
     source_bank_name = source.get("bank_name") or source.get("name") or "Account"
@@ -99,8 +97,7 @@ async def prepare_confirmation(
             "account_number": acct_number,
             "bank_code": state.get("recipient_bank_code"),
             "bank_name": bank_name,
-            "original_alias": state.get("recipient_name")
-            or "",  # Original name user used (e.g., "Mum")
+            "original_alias": state.get("recipient_name") or "",
         },
         "source": {
             "id": source.get("id"),
@@ -120,9 +117,7 @@ async def prepare_confirmation(
         settings.pending_transaction_ttl,
         token,
     )
-    pipe.setex(
-        f"transfer:token:{idem_key}:phone", settings.pending_transaction_ttl, state["phone_number"]
-    )
+    pipe.setex(f"transfer:token:{idem_key}:phone", settings.pending_transaction_ttl, state["phone_number"])
     await pipe.execute()
 
     prev_key = f"transfer:prev:{state['phone_number']}:{idem_key}"
@@ -152,15 +147,11 @@ async def prepare_confirmation(
             "flow_state": "confirming",
             "confirmation_summary": summary,
             "confirmation_token": token,
-            "response": "",  # Clear stale response
+            "response": "",
             "llm_reply": None,
         }
-    logger.info(
-        "prepare_confirmation_RETURNING_FUNDING", has_token=bool(token), has_active_queue=False
-    )
+    logger.info("prepare_confirmation_RETURNING_FUNDING", has_token=bool(token), has_active_queue=False)
 
-    # CRITICAL: Return correct state for checkpointing
-    # Must set flow_state to confirming_funding so verify_funding can pick it up
     return {
         **state,
         "idempotency_key": idem_key,
