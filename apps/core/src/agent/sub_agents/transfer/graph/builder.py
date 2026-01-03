@@ -34,6 +34,7 @@ from shared.queue.redis_queue import RedisQueue
 from shared.repositories.account_repository import AccountRepository
 from shared.repositories.actionable_message_repository import ActionableMessageRepository
 from shared.repositories.beneficiary_repository import BeneficiaryRepository
+from shared.repositories.user_repository import UserRepository
 from shared.services.auth import AuthorizationService
 
 from .routing import (
@@ -58,6 +59,7 @@ def build_graph(
     queue: RedisQueue,
     direct_debit_provider: DirectDebitProvider | None = None,
     actionable_message_repo: ActionableMessageRepository | None = None,
+    user_repo: UserRepository | None = None,
 ) -> StateGraph:
     """Build the LangGraph workflow."""
     workflow = StateGraph(TransferState)
@@ -69,7 +71,7 @@ def build_graph(
         return await extract_entities(state, extractor)
 
     async def load_context_node(state: TransferState) -> TransferState:
-        return await load_user_context(state, user_cache, account_repo, beneficiary_repo)
+        return await load_user_context(state, user_cache, account_repo, beneficiary_repo, user_repo=user_repo)
 
     async def find_beneficiary_node(state: TransferState) -> TransferState:
         return await find_beneficiary(state, matcher)

@@ -20,6 +20,7 @@ from shared.queue.redis_queue import RedisQueue
 from shared.repositories.account_repository import AccountRepository
 from shared.repositories.actionable_message_repository import ActionableMessageRepository
 from shared.repositories.beneficiary_repository import BeneficiaryRepository
+from shared.repositories.user_repository import UserRepository
 from shared.utils.logging import get_logger
 
 from .builder import build_graph
@@ -61,6 +62,7 @@ class TransferFlowGraph:
         queue: RedisQueue,
         actionable_message_repo: ActionableMessageRepository | None = None,
         completion_callback: Optional["FlowCompletionCallback"] = None,
+        user_repo: UserRepository | None = None,
     ):
         self.user_cache = user_cache
         self.beneficiary_repo = beneficiary_repo
@@ -70,6 +72,7 @@ class TransferFlowGraph:
         self.matcher = BeneficiaryMatcher()
         self.actionable_message_repo = actionable_message_repo
         self.completion_callback = completion_callback
+        self.user_repo = user_repo
 
         try:
             provider = PaymentProviderFactory.get_provider_for_service("resolve_account")
@@ -96,9 +99,7 @@ class TransferFlowGraph:
                 await self._checkpointer.adelete_thread(thread_id)
                 logger.info(f"Cleared transfer checkpoint for {phone_number}")
             else:
-                logger.warning(
-                    f"Checkpointer not initialized, cannot clear checkpoint for {phone_number}"
-                )
+                logger.warning(f"Checkpointer not initialized, cannot clear checkpoint for {phone_number}")
         except Exception as e:
             logger.error(f"Error clearing transfer checkpoint: {e}")
 
@@ -123,6 +124,7 @@ class TransferFlowGraph:
                 redis_client=self.redis_client,
                 queue=self.queue,
                 actionable_message_repo=self.actionable_message_repo,
+                user_repo=self.user_repo,
             ).compile(
                 checkpointer=self._checkpointer,
                 interrupt_before=[
@@ -177,8 +179,7 @@ class TransferFlowGraph:
 
         # Check if this is a flow resume - just replay the last question
         is_flow_resume = (
-            classification_result
-            and classification_result.get("complexity_reason") == "Flow resume after interrupt"
+            classification_result and classification_result.get("complexity_reason") == "Flow resume after interrupt"
         )
         if is_flow_resume:
             # User said "yes continue" - get the saved response from when flow was paused
@@ -197,9 +198,7 @@ class TransferFlowGraph:
                 if saved_response:
                     # Add contextual prefix
                     amount = flow_summary.get("amount")
-                    recipient = flow_summary.get("recipient_name") or flow_summary.get(
-                        "recipient_account", ""
-                    )
+                    recipient = flow_summary.get("recipient_name") or flow_summary.get("recipient_account", "")
 
                     if amount and recipient:
                         context_prefix = f"Continuing your ₦{amount:,.0f} transfer to {recipient}! "
@@ -219,20 +218,12 @@ class TransferFlowGraph:
             if checkpoint_state:
                 flow_state = checkpoint_state.get("flow_state")
                 if flow_state in ("authorizing", "confirming", "confirming_funding"):
-                    # User was at authorization - re-send the WhatsApp flow
-                    logger.info(
-                        f"Flow resume detected, re-sending WhatsApp flow for state: {flow_state}"
-                    )
+                    logger.info(f"Flow resume detected, re-sending WhatsApp flow for state: {flow_state}")
 
-                    # Get the confirmation summary if available
                     confirmation_summary = checkpoint_state.get("confirmation_summary", "")
                     amount = checkpoint_state.get("amount")
                     recipient = checkpoint_state.get("account_resolved", {})
-                    recipient_name = (
-                        recipient.get("account_name", "") if isinstance(recipient, dict) else ""
-                    )
-
-                    # Build a friendly resume message
+                    recipient_name = recipient.get("account_name", "") if isinstance(recipient, dict) else ""
                     if amount and recipient_name:
                         resume_msg = f"Continuing your ₦{amount:,.0f} transfer to {recipient_name}!"
                     elif amount:
@@ -240,7 +231,6 @@ class TransferFlowGraph:
                     else:
                         resume_msg = "Continuing where you left off!"
 
-                    # Send the PIN authorization flow again
                     token = checkpoint_state.get("confirmation_token")
                     if token and self.whatsapp_client:
                         from shared.config import settings
@@ -256,25 +246,15 @@ class TransferFlowGraph:
                         )
                         return resume_msg
 
-                    return (
-                        f"{resume_msg}\n\n{confirmation_summary}"
-                        if confirmation_summary
-                        else resume_msg
-                    )
+                    return f"{resume_msg}\n\n{confirmation_summary}" if confirmation_summary else resume_msg
 
-        # Load and prepare state
         input_state = await load_checkpoint_state(ctx, self.graph)
 
         if input_state:
-            input_state = await prepare_checkpoint_state(
-                ctx, input_state, self.graph, self.redis_client
-            )
+            input_state = await prepare_checkpoint_state(ctx, input_state, self.graph, self.redis_client)
             if input_state is None:
-                # Non-transfer intent, return empty to let orchestrator handle
                 return ""
 
-            # Handle mid-correction during confirming state using LLM extraction
-            # SKIP if awaiting_amount_adjustment, confirming_funding, OR is_flow_resume
             flow_state = input_state.get("flow_state")
             if (
                 flow_state in ("confirming", "authorizing")
@@ -314,11 +294,7 @@ class TransferFlowGraph:
                 "confirmation_summary",
             }
 
-            filtered_input = {
-                k: v
-                for k, v in input_state.items()
-                if k not in state_keys_to_preserve or v is not None
-            }
+            filtered_input = {k: v for k, v in input_state.items() if k not in state_keys_to_preserve or v is not None}
             logger.info(
                 "run_filtered_input_state",
                 filtered_keys=list(filtered_input.keys()),
@@ -329,11 +305,9 @@ class TransferFlowGraph:
             )
             input_state = filtered_input
 
-        # Invoke graph
         final_state = await self.graph.ainvoke(cast(TransferState, input_state), config)
         await update_conversation_state(phone_number, cast(TransferState, final_state))
 
-        # Post-processing
         await self._handle_post_processing(phone_number, final_state)
 
         return final_state.get("response", "")
@@ -349,7 +323,6 @@ class TransferFlowGraph:
             - new_state: Updated state with corrections applied
             - should_continue: True if we should continue processing
         """
-        # Preserve existing values
         old_values = {
             "amount": input_state.get("amount"),
             "recipient_account": input_state.get("recipient_account"),
@@ -390,27 +363,22 @@ class TransferFlowGraph:
                 elif key == "recipient_account":
                     changes.append(f"account to {new_val}")
                     input_state["recipient_account"] = new_val
-                    input_state["account_resolved"] = None  # Need to re-resolve
+                    input_state["account_resolved"] = None
                 elif key == "recipient_name":
                     changes.append(f"recipient to {new_val}")
                     input_state["recipient_name"] = new_val
                 elif key == "recipient_bank":
                     changes.append(f"bank to {new_val}")
                     input_state["recipient_bank_name"] = new_val
-                    input_state["recipient_bank_code"] = None  # Will be resolved
+                    input_state["recipient_bank_code"] = None
 
         if changes:
-            ack_msg = (
-                extracted.reply if extracted.reply else f"Got it, changing {' and '.join(changes)}."
-            )
-            await self.whatsapp_client.send_text(
-                ctx.phone_number, ack_msg, message_id=ctx.message_id
-            )
-            input_state["flow_state"] = "extracting"  # Re-process
-            input_state["transfer_status"] = None  # Clear to allow re-confirmation
+            ack_msg = extracted.reply if extracted.reply else f"Got it, changing {' and '.join(changes)}."
+            await self.whatsapp_client.send_text(ctx.phone_number, ack_msg, message_id=ctx.message_id)
+            input_state["flow_state"] = "extracting"
+            input_state["transfer_status"] = None
             logger.info("mid_correction_applied", changes=changes)
 
-        # Update message for re-processing
         input_state["message"] = ctx.message
         input_state["message_id"] = ctx.message_id
 
@@ -447,9 +415,7 @@ class TransferFlowGraph:
                         "selected_source_account": final_state.get("selected_source_account"),
                         "response": final_state.get("response", ""),
                     }
-                    asyncio.create_task(
-                        self.completion_callback.on_flow_complete(phone_number, "transfer", result)
-                    )
+                    asyncio.create_task(self.completion_callback.on_flow_complete(phone_number, "transfer", result))
 
     async def resume_after_pin_verification(
         self, phone_number: str, pin_verified: bool, pin_error: str | None = None
@@ -474,7 +440,6 @@ class TransferFlowGraph:
         if not current_state or not current_state.values:
             return "No active transfer session found."
 
-        # Get the latest message_id from Redis for typing indicators
         current_message_id = await self.redis_client.get(f"user:{phone_number}:current_message_id")
         state_message_id = current_state.values.get("message_id")
 
@@ -492,26 +457,14 @@ class TransferFlowGraph:
             phone=phone_number,
             pin_verified=pin_verified,
         )
-
-        # Resume from interrupt - aupdate_state already set pin_verified
-        # Pass None to continue from where graph was interrupted (at verify_funding or authorize)
         final_state = await self.graph.ainvoke(None, config)
-
-        # CRITICAL FIX: After PIN verification, the graph routes to "authorize" but ainvoke might return before executing it.
-        # This applies to both:
-        # 1. Funded transfers: afterdebits complete (flow_state="initiating_payout")
-        # 2. Normal transfers: after PIN verified (flow_state="authorizing" with pin_verified=True)
-        # Check if we need to continue execution to the authorize node.
         flow_state = final_state.get("flow_state")
         transfer_status = final_state.get("transfer_status")
         pin_verified_state = final_state.get("pin_verified", False)
 
-        # Continue if either:
-        # - Funded transfer ready for payout OR
-        # - Normal transfer with PIN verified
-        should_continue = (
-            flow_state == "initiating_payout" and transfer_status != "completed"
-        ) or (flow_state == "authorizing" and pin_verified_state and transfer_status != "completed")
+        should_continue = (flow_state == "initiating_payout" and transfer_status != "completed") or (
+            flow_state == "authorizing" and pin_verified_state and transfer_status != "completed"
+        )
 
         if should_continue:
             logger.info(
@@ -520,11 +473,7 @@ class TransferFlowGraph:
                 flow_state=flow_state,
                 transfer_status=transfer_status,
             )
-            # Continue execution - the graph should now execute the authorize node
             final_state = await self.graph.ainvoke(None, config)
-
-        # Note: ainvoke with input merges input into state
-        # We already did aupdate_state but passing it again ensures the run starts
 
         await update_conversation_state(phone_number, cast(TransferState, final_state))
 
@@ -540,9 +489,7 @@ class TransferFlowGraph:
                     "response": response,
                 }
                 asyncio.create_task(
-                    self.completion_callback.on_flow_complete(
-                        phone_number, "transfer", completion_result
-                    )
+                    self.completion_callback.on_flow_complete(phone_number, "transfer", completion_result)
                 )
 
         return response
