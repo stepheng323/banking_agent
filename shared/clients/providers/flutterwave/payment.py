@@ -41,15 +41,10 @@ class FlutterwaveClient(PaymentProvider):
         self.secret_key = secret_key or getattr(settings, "flutterwave_secret_key", None)
 
         if not self.secret_key:
-            raise ValueError(
-                "Flutterwave secret key not configured. "
-                "Set FLUTTERWAVE_SECRET_KEY environment variable."
-            )
+            raise ValueError("Flutterwave secret key not configured. Set FLUTTERWAVE_SECRET_KEY environment variable.")
 
         self.use_sandbox = (
-            use_sandbox
-            if use_sandbox is not None
-            else getattr(settings, "flutterwave_use_sandbox", False)
+            use_sandbox if use_sandbox is not None else getattr(settings, "flutterwave_use_sandbox", False)
         )
         self.base_url = FLUTTERWAVE_BASE_URL
 
@@ -252,11 +247,14 @@ class FlutterwaveClient(PaymentProvider):
         TODO: Implement Flutterwave transfer API integration.
         This is a placeholder implementation that returns a mock success response.
         """
-        transaction_id = f"mock_txn_{uuid.uuid4().hex[:16]}"
+        # Generate professional transaction ID: FP-YYYYMMDD-XXXX
+        from datetime import datetime
 
-        msg = (
-            f"🔍 Placeholder transfer initiated: {amount} {currency} to {recipient_account_number}"
-        )
+        date_part = datetime.utcnow().strftime("%Y%m%d")
+        random_part = uuid.uuid4().hex[:8].upper()
+        transaction_id = f"FP-{date_part}-{random_part}"
+
+        msg = f"🔍 Placeholder transfer initiated: {amount} {currency} to {recipient_account_number}"
         print(f"{msg} ({recipient_bank_code})")
         print(f"   Transaction ID: {transaction_id}")
 
@@ -299,9 +297,7 @@ class FlutterwaveClient(PaymentProvider):
         account_info = {"account_number": original_account, "bank_code": original_bank}
         payload = {"account_number": account_number, "account_bank": bank_code}
 
-        result = await self._request(
-            "POST", "/v3/accounts/resolve", payload=payload, max_retries=max_retries
-        )
+        result = await self._request("POST", "/v3/accounts/resolve", payload=payload, max_retries=max_retries)
 
         if result["success"]:
             data = result.get("data", {})
@@ -315,6 +311,4 @@ class FlutterwaveClient(PaymentProvider):
                 )
             return self._error_response("Account name not found", **account_info)
 
-        return self._error_response(
-            result.get("error", "Account resolution failed"), **account_info
-        )
+        return self._error_response(result.get("error", "Account resolution failed"), **account_info)
