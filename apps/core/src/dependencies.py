@@ -27,7 +27,6 @@ from shared.cache.user_data import UserDataCache
 from shared.clients.factories.payment import PaymentProviderFactory
 from shared.clients.providers.mono.banking import MonoBankingProvider
 from shared.clients.providers.mono.direct_debit import MonoDirectDebitProvider
-from shared.clients.storage.s3_client import S3Client
 from shared.clients.whatsapp.client import WhatsAppClient
 from shared.config import settings
 from shared.database.connection import get_db_session
@@ -36,7 +35,6 @@ from shared.repositories import AccountRepository, BeneficiaryRepository
 from shared.repositories.actionable_message_repository import ActionableMessageRepository
 from shared.repositories.transaction_repository import TransactionRepository
 from shared.repositories.user_repository import UserRepository
-from shared.services.receipt_generator import ReceiptGenerator
 
 
 def setup_dependencies():
@@ -55,8 +53,6 @@ def setup_dependencies():
     beneficiary_repository = BeneficiaryRepository(db=get_db_session())
     account_repository = AccountRepository(db=get_db_session())
     actionable_message_repository = ActionableMessageRepository(db=get_db_session())
-    receipt_generator = ReceiptGenerator()
-    s3_client = S3Client()
 
     beneficiary_suggestion_service = BeneficiarySuggestionService(
         whatsapp_client=whatsapp_client,
@@ -67,8 +63,6 @@ def setup_dependencies():
         whatsapp_client=whatsapp_client,
         redis_client=shared_redis,
         beneficiary_repository=beneficiary_repository,
-        receipt_generator=receipt_generator,
-        s3_client=s3_client,
         actionable_message_repo=actionable_message_repository,
         beneficiary_suggestion_service=beneficiary_suggestion_service,
     )
@@ -119,6 +113,7 @@ def setup_dependencies():
         queue=redis_queue,
         actionable_message_repo=actionable_message_repository,
         completion_callback=None,
+        user_repo=user_repository,
     )
 
     agent_airtime_service = AirtimeService(
@@ -186,6 +181,7 @@ def setup_dependencies():
         redis_queue=redis_queue,
         transfer_executor=transfer_executor,
         airtime_executor=airtime_executor,
+        data_handler=data_graph,
     )
 
     flow_event_consumer = FlowEventConsumer(
