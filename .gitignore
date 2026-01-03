@@ -63,3 +63,4 @@ whatsapp_flow_public_key.pem
 # Logs
 *.log
 logs/
+.uv.lock
