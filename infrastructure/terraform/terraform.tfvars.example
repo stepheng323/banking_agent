@@ -1,0 +1,21 @@
+# Oracle Cloud Authentication
+# Get these values from your Oracle Cloud Console -> User Settings -> API Keys
+tenancy_ocid     = "ocid1.tenancy.oc1..aaaaaaaaxxxxxx"
+user_ocid        = "ocid1.user.oc1..aaaaaaaaxxxxxx"
+fingerprint      = "xx:xx:xx:xx:xx:xx:xx:xx:xx:xx:xx:xx:xx:xx:xx:xx"
+private_key_path = "/path/to/your/private_key.pem"
+region           = "us-ashburn-1"
+
+# Compartment
+# usually the same as tenancy_ocid for root compartment, or a specific compartment OCID
+compartment_ocid = "ocid1.tenancy.oc1..aaaaaaaaxxxxxx"
+
+# SSH Access
+# Paste your public key content here (e.g., contents of ~/.ssh/id_rsa.pub)
+ssh_public_key = "ssh-rsa AAAA..."
+
+# Instance Configuration
+# Default is the Free Tier ARM amp (VM.Standard.A1.Flex)
+instance_shape         = "VM.Standard.A1.Flex"
+instance_ocpus         = 4
+instance_memory_in_gbs = 24
