@@ -24,8 +24,15 @@ async def execute_node(state: QueryState, executor: QueryExecutor) -> dict[str, 
     current_page = state.get("current_page", 0)
     page_size = state.get("page_size", 5)
 
+    user_profile = state.get("user_profile", {})
+    user_id = user_profile.get("id") if isinstance(user_profile, dict) else None
+
+    # If user_id is missing but we have account info, we might be able to deduce it, but simpler to rely on profile.
+
     try:
-        result = await executor.execute(query, account_id, account_ids, accounts, current_page, page_size)
+        result = await executor.execute(
+            query, account_id, account_ids, accounts, current_page, page_size, user_id=user_id
+        )
 
         return {
             "flow_state": "formatting",

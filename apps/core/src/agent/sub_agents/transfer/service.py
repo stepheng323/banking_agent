@@ -15,6 +15,7 @@ from shared.queue.redis_queue import RedisQueue
 from shared.repositories.account_repository import AccountRepository
 from shared.repositories.actionable_message_repository import ActionableMessageRepository
 from shared.repositories.beneficiary_repository import BeneficiaryRepository
+from shared.repositories.user_repository import UserRepository
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -33,6 +34,7 @@ class TransferService:
         queue: RedisQueue,
         actionable_message_repo: ActionableMessageRepository | None = None,
         completion_callback: Optional["FlowCompletionCallback"] = None,
+        user_repo: UserRepository | None = None,
     ) -> None:
         self.extractor = TransferEntityExtractor(llm)
         self.graph = TransferFlowGraph(
@@ -44,6 +46,7 @@ class TransferService:
             queue=queue,
             actionable_message_repo=actionable_message_repo,
             completion_callback=completion_callback,
+            user_repo=user_repo,
         )
 
     async def run_simple(
@@ -65,6 +68,4 @@ class TransferService:
         try:
             await self.graph.clear_checkpoint(phone_number)
         except Exception as e:
-            logger.error(
-                "transfer_checkpoint_clear_error", phone=phone_number, error=str(e), exc_info=True
-            )
+            logger.error("transfer_checkpoint_clear_error", phone=phone_number, error=str(e), exc_info=True)

@@ -113,6 +113,7 @@ async def fetch_and_filter(
     account_id: str,
     account_ids: list[str],
     accounts_info: list[dict] | None = None,
+    user_id: str | None = None,
 ) -> list[dict]:
     """Fetch transactions and apply filters."""
     if query.time_range:
@@ -159,6 +160,52 @@ async def fetch_and_filter(
     else:
         txns = await provider.get_transactions(account_id, start_date=start, end_date=end, limit=100)
         transactions = [to_dict(t) for t in txns]
+
+    # --- MERGE LOCAL TRANSACTIONS ---
+    if user_id:
+        try:
+            from shared.repositories.unit_of_work import UnitOfWork
+
+            with UnitOfWork() as uow:
+                if uow.transactions:
+                    local_txns = uow.transactions.get_by_user(user_id, limit=20)
+                    for l_txn in local_txns:
+                        # Convert SQL model to dict format matching provider
+                        raw_date = l_txn.created_at
+                        txn_dict = {
+                            "id": str(l_txn.id),
+                            "type": "debit" if l_txn.transaction_type == "transfer" else "credit",
+                            "amount": l_txn.amount,
+                            "narration": l_txn.narration or f"Transfer to {l_txn.recipient_name}",
+                            "date": raw_date.isoformat(),
+                            "currency": l_txn.currency,
+                            "status": l_txn.status,
+                            "bank_name": l_txn.source_bank_name or "Wallet",
+                        }
+
+                        # Avoid duplicates if provider already returned it (check via amount/date/narration match roughly)
+                        # or if we have a transaction_id match.
+                        # Simple de-dupe logic: if ID matches any 'id' or 'transaction_id' in transactions list.
+                        is_duplicate = False
+                        l_prov_id = l_txn.transaction_id
+                        for existing in transactions:
+                            if l_prov_id and l_prov_id == existing.get("id"):
+                                is_duplicate = True
+                                break
+                            # Fallback fuzzy match for very recent transactions
+                            if getattr(l_txn, "amount", 0) == existing.get(
+                                "amount"
+                            ) and l_txn.narration == existing.get("narration"):
+                                is_duplicate = True
+                                break
+
+                        if not is_duplicate:
+                            transactions.append(txn_dict)
+
+                    # Re-sort mixed list
+                    transactions = sorted(transactions, key=lambda t: t.get("date", ""), reverse=True)
+        except Exception as e:
+            logger.warning("failed_to_merge_local_transactions", error=str(e))
 
     transactions = [t for t in transactions if start <= t.get("date", "")[:10] <= end]
 

@@ -1,8 +1,10 @@
 """Unified transaction consumer for processing all transaction types."""
 
 import asyncio
-from typing import Any
 
+from apps.core.src.agent.sub_agents.airtime.executor import AirtimeExecutor
+from apps.core.src.agent.sub_agents.data import DataPurchaseGraph
+from apps.core.src.agent.sub_agents.transfer.executor import TransferExecutor
 from shared.queue.redis_queue import RedisQueue
 from shared.utils.logging import get_logger
 
@@ -15,9 +17,9 @@ class TransactionConsumer:
     def __init__(
         self,
         redis_queue: RedisQueue,
-        transfer_executor: Any | None = None,
-        airtime_executor: Any | None = None,
-        data_handler: Any | None = None,
+        transfer_executor: TransferExecutor,
+        airtime_executor: AirtimeExecutor,
+        data_handler: DataPurchaseGraph,
     ):
         """
         Initialize transaction consumer.
@@ -106,9 +108,7 @@ class TransactionConsumer:
 
         while self.running:
             try:
-                transaction_data = await self.queue.dequeue_blocking(
-                    queue_name=queue_name, timeout=5
-                )
+                transaction_data = await self.queue.dequeue_blocking(queue_name=queue_name, timeout=5)
                 if transaction_data:
                     await self.process_transaction(transaction_data)
 

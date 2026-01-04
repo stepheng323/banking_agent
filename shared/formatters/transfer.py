@@ -257,3 +257,23 @@ def format_transfer_pending_message(
         "You'll receive confirmation shortly. If you don't receive it within 5 minutes,\n"
         "please contact support."
     )
+
+
+def format_transfer_queued_message(
+    amount: float,
+    recipient_name: str,
+) -> str:
+    """
+    Sent immediately after PIN verification when transfer is queued for processing.
+
+    Args:
+        amount: Transfer amount
+        recipient_name: Name of recipient
+
+    Returns:
+        WhatsApp-formatted acknowledgment message
+    """
+    return (
+        f"✓ Your transfer of {_format_currency_naira(amount)} to {recipient_name} "
+        "has been authorized and is being processed."
+    )

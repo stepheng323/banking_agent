@@ -55,13 +55,6 @@ async def execute_single_account_transfer(
         )
 
         if result.success:
-            logger.info(
-                "single_account_transfer_initiated",
-                debit_id=result.debit_id,
-                amount=amount,
-                recipient=recipient_account,
-            )
-
             return {
                 **state,
                 "flow_state": "awaiting_debits",

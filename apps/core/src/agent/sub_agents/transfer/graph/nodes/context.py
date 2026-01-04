@@ -2,14 +2,14 @@
 
 from typing import Any, cast
 
+from apps.core.src.agent.sub_agents.transfer.state import TransferState
+from apps.core.src.agent.tools.account_selection.mandate_validator import validate_mandate_status
+from apps.core.src.agent.tools.context import load_user_context_shared
 from apps.core.src.agent.tools.response import (
     ResponseIntent,
     build_response_context,
     get_synthesizer,
 )
-from apps.core.src.agent.sub_agents.transfer.state import TransferState
-from apps.core.src.agent.tools.account_selection.mandate_validator import validate_mandate_status
-from apps.core.src.agent.tools.context import load_user_context_shared
 from shared.cache.redis_client import RedisClient
 from shared.clients.whatsapp.client import WhatsAppClient
 
@@ -19,12 +19,18 @@ async def load_user_context(
     user_cache: Any,
     account_repo: Any,
     beneficiary_repo: Any,
+    user_repo: Any = None,
 ) -> TransferState:
     """Load user context (profile, accounts, beneficiaries) for transfer flow."""
     result = cast(
         TransferState,
         await load_user_context_shared(
-            state, user_cache, account_repo, beneficiary_repo, beneficiary_type="transfer"
+            state,
+            user_cache,
+            account_repo,
+            beneficiary_repo,
+            beneficiary_type="transfer",
+            user_repo=user_repo,
         ),
     )
 
@@ -67,9 +73,7 @@ async def load_user_context(
                         },
                     )
 
-            context = build_response_context(
-                ResponseIntent.MANDATE_REQUIRED, result, error_message=error_message
-            )
+            context = build_response_context(ResponseIntent.MANDATE_REQUIRED, result, error_message=error_message)
             response = await synthesizer.synthesize(context)
             return cast(
                 TransferState,

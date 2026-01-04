@@ -100,6 +100,20 @@ services:
       - ./shared:/app/shared
     restart: unless-stopped
 
+  # Receipt Worker (HTML to Image rendering with Playwright)
+  receipt-worker:
+    build:
+      context: .
+      dockerfile: apps/receipt_worker/Dockerfile
+    environment:
+      - REDIS_URL=redis://redis:6379
+      - META_ACCESS_TOKEN=${META_ACCESS_TOKEN}
+      - WHATSAPP_PHONE_NUMBER_ID=${WHATSAPP_PHONE_NUMBER_ID}
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
 volumes:
   postgres_data:
   redis_data:
