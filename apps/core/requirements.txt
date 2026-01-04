@@ -1,0 +1,35 @@
+fastapi>=0.110.0
+uvicorn[standard]==0.27.1
+pydantic>=2.9.0
+pydantic-settings>=2.5.0
+
+# AI & Agents
+langchain==0.3.14
+langchain-community==0.3.13
+langgraph==0.2.60
+langchain-openai==0.2.14
+langgraph-checkpoint-redis==0.2.1
+
+# Database & Redis
+psycopg[binary]>=3.1.0
+sqlalchemy==2.0.44
+alembic==1.13.0
+redis==5.0.1
+
+# Auth & Utils
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+bcrypt==4.0.1
+structlog>=25.5.0
+python-dotenv==1.0.1
+
+# HTTP & S3
+httpx==0.26.0
+requests==2.31.0
+aioboto3==12.3.0
+python-multipart==0.0.9
+
+# Encryption
+pycryptodome==3.20.0
+
+# Note: Playwright/Pillow removed (moved to shared receipt worker)

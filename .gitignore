@@ -64,3 +64,6 @@ whatsapp_flow_public_key.pem
 *.log
 logs/
 .uv.lock
+*.tfvars
+.terraform/
+terraform.tfstate*
