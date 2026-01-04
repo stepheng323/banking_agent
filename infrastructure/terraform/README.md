@@ -59,10 +59,19 @@ After Terraform finishes building, it prints these out:
     - Windows: `choco install terraform`
     - Linux: `sudo apt install terraform`
 
-2.  **Create your config file**:
-    Copy `terraform.tfvars.example` to `terraform.tfvars` and fill in your details (OCIDs from Oracle Console).
+2.  **Setup Oracle Auth (Secure)**:
 
-3.  **Run commands**:
+    - Install OCI CLI (or just create the config manually).
+    - Run `oci setup config`.
+    - This saves your existing credentials to `~/.oci/config` (like AWS).
+
+3.  **Configure Instance**:
+
+    - Copy `terraform.tfvars.example` to `terraform.tfvars`.
+    - Fill in `compartment_ocid` and `ssh_public_key`.
+    - (No sensitive keys needed here anymore!)
+
+4.  **Run commands**:
 
     ```bash
     # Initialize (download plugins)

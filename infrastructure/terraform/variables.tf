@@ -1,23 +1,3 @@
-variable "tenancy_ocid" {
-  description = "Oracle Cloud Tenancy OCID"
-  type        = string
-}
-
-variable "user_ocid" {
-  description = "Oracle Cloud User OCID"
-  type        = string
-}
-
-variable "fingerprint" {
-  description = "Oracle Cloud API Key Fingerprint"
-  type        = string
-}
-
-variable "private_key_path" {
-  description = "Path to the private key used for Oracle Cloud API authentication"
-  type        = string
-}
-
 variable "region" {
   description = "Oracle Cloud Region (e.g., us-ashburn-1)"
   type        = string
