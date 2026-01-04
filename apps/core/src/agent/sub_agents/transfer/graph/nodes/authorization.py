@@ -125,6 +125,16 @@ async def authorize_transaction(
             }
 
         source_account = state.get("selected_source_account", {})
+        sender_name = source_account.get("account_name") or source_account.get("name", "")
+
+        narration = state.get("narration")
+        if not narration:
+            narration = (
+                f"{sender_name.upper()} transfer to {recipient_name.upper()}"
+                if sender_name
+                else f"Transfer to {recipient_name}"
+            )
+
         pending_transfer = {
             "amount": amount,
             "recipient": {
@@ -139,7 +149,7 @@ async def authorize_transaction(
                 "account_name": source_account.get("account_name") or source_account.get("name", ""),
                 "bank_name": source_account.get("bank_name", ""),
             },
-            "narration": state.get("narration"),
+            "narration": narration,
             "idempotency_key": state.get("idempotency_key"),
         }
 

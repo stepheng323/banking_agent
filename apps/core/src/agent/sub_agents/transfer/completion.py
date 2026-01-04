@@ -9,7 +9,6 @@ from apps.core.src.agent.tools.beneficiary.suggestion_service import Beneficiary
 from shared.clients.whatsapp.client import WhatsAppClient
 from shared.formatters.transfer import format_transfer_pending_message
 from shared.receipts import DebitSource, TransferReceiptData
-from shared.receipts.image_generator import generate_transfer_receipt_image
 from shared.repositories import BeneficiaryRepository
 from shared.repositories.actionable_message_repository import ActionableMessageRepository
 from shared.repositories.unit_of_work import UnitOfWork
@@ -97,36 +96,40 @@ class TransferCompletionService:
         transfer_result: dict[str, Any],
         transaction_id: str | None = None,
     ) -> None:
-        """Send success notification with image receipt to user."""
+        """Send success notification with image receipt to user.
+
+        Pushes receipt job to queue for async processing by receipt worker.
+        """
         try:
             logger.info(
-                "Sending transfer success notification", transfer_data=transfer_data, transfer_result=transfer_result
+                "queuing_receipt_job",
+                phone=phone_number,
+                transaction_id=transfer_result.get("transaction_id"),
             )
-            receipt_data = self._build_receipt_data(transfer_data, transfer_result)
-            image_bytes = generate_transfer_receipt_image(receipt_data)
 
-            await self.whatsapp_client.send_image_data(
-                to=phone_number,
-                data=image_bytes,
-                caption=f"Transfer receipt for {receipt_data.recipient_name}",
+            # Push receipt job to queue for async processing
+            import json
+
+            receipt_job = {
+                "phone_number": phone_number,
+                "transfer_data": transfer_data,
+                "transfer_result": transfer_result,
+                "transaction_id": transaction_id,
+            }
+            await self.redis_client.rpush(
+                "banking:receipt_jobs",
+                json.dumps(receipt_job, default=str),
             )
+
+            logger.info("receipt_job_queued", phone=phone_number)
 
             if transaction_id:
                 with UnitOfWork() as uow:
                     if uow.transactions:
                         txn = uow.transactions.get_by_id(str(transaction_id))
                         if txn:
-                            uow.transactions.update(txn, receipt_sent=True)
+                            uow.transactions.update(txn, receipt_sent=False)
                             uow.commit()
-
-            if self.beneficiary_suggestion_service:
-                recipient = transfer_data.get("recipient", {})
-                await self.beneficiary_suggestion_service.check_and_suggest_beneficiary(
-                    phone_number=phone_number,
-                    beneficiary_type="transfer",
-                    recipient_data=recipient,
-                    transaction_id=transaction_id,
-                )
 
         except Exception as e:
             logger.error(
