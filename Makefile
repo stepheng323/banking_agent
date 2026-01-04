@@ -111,7 +111,18 @@ run-core: ## Run core agent service (FastAPI with uvicorn + message consumer)
 run-all: ## Run all services (gateway + core)
 	@echo "$(GREEN)🚀 Starting all services...$(RESET)"
 	@echo "$(YELLOW)Note: Run in separate terminals or use docker-up instead$(RESET)"
-	@make run-gateway & make run-core
+	@make run-gateway & make run-core & make run-receipt-worker
+
+run-receipt-worker: ## Run receipt worker service (FastAPI with uvicorn)
+	@echo "$(GREEN)🧾 Starting Receipt Worker service on port 8002...$(RESET)"
+	@if [ -d ".venv" ] && [ -f ".venv/bin/python" ]; then \
+		PYTHONPATH="$$(pwd)" .venv/bin/python -m uvicorn apps.receipt_worker.main:app --host 0.0.0.0 --port 8002 --reload --reload-dir apps --reload-dir shared; \
+	elif command -v python3 &> /dev/null; then \
+		PYTHONPATH="$$(pwd)" python3 -m uvicorn apps.receipt_worker.main:app --host 0.0.0.0 --port 8002 --reload --reload-dir apps --reload-dir shared; \
+	else \
+		echo "$(RED)❌ Error: Python not found.$(RESET)"; \
+		exit 1; \
+	fi
 
 # ============================================================================
 # DOCKER
