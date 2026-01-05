@@ -9,7 +9,7 @@ data "oci_core_images" "ubuntu_images" {
 }
 
 resource "oci_core_instance" "banking_server" {
-  availability_domain = data.oci_identity_availability_domains.ads.availability_domains[0].name
+  availability_domain = data.oci_identity_availability_domains.ads.availability_domains[2].name
   compartment_id      = var.compartment_ocid
   display_name        = "banking-agent-server"
   shape               = var.instance_shape
