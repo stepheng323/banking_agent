@@ -44,6 +44,7 @@ from apps.core.src.agent.orchestrator.services import (
 from apps.core.src.agent.sub_agents.account_management.service import AccountManagementService
 from apps.core.src.agent.sub_agents.airtime import AirtimeService
 from apps.core.src.agent.sub_agents.data import DataPurchaseGraph
+from apps.core.src.agent.sub_agents.faq import FAQFlowGraph
 from apps.core.src.agent.sub_agents.query.graph import QueryFlowGraph
 from apps.core.src.agent.sub_agents.support.graph import SupportFlowGraph
 from apps.core.src.agent.sub_agents.transfer import TransferService
@@ -73,6 +74,7 @@ class OrchestratorAgent:
         media_service: Any = None,
         data_graph: DataPurchaseGraph | None = None,
         support_graph: SupportFlowGraph | None = None,
+        faq_graph: FAQFlowGraph | None = None,
     ) -> None:
         self.llm = llm
         self.user_repo = user_repo
@@ -87,6 +89,7 @@ class OrchestratorAgent:
         self.media_service = media_service
         self.data_graph = data_graph
         self.support_graph = support_graph
+        self.faq_graph = faq_graph
 
         self.context_manager = OrchestratorContextManager(user_repo, beneficiary_repo)
         self.classification_service = OrchestratorClassificationService(llm)
@@ -110,6 +113,7 @@ class OrchestratorAgent:
             self.whatsapp_client,
             self.flow_context_service,
             support_graph,
+            faq_graph,
         )
         # Handler order matters
         self._handlers = [

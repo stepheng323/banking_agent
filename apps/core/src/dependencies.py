@@ -12,6 +12,7 @@ from apps.core.src.agent.sub_agents.airtime import AirtimeService
 from apps.core.src.agent.sub_agents.airtime.completion import AirtimeCompletionService
 from apps.core.src.agent.sub_agents.airtime.executor import AirtimeExecutor
 from apps.core.src.agent.sub_agents.data import DataPurchaseGraph
+from apps.core.src.agent.sub_agents.faq import FAQFlowGraph
 from apps.core.src.agent.sub_agents.onboarding.executor import OnboardingExecutor
 from apps.core.src.agent.sub_agents.onboarding.service import OnboardingService
 from apps.core.src.agent.sub_agents.query.graph import QueryFlowGraph
@@ -101,6 +102,12 @@ def setup_dependencies():
         redis_client=shared_redis,
     )
 
+    # FAQ graph for informational queries
+    faq_graph = FAQFlowGraph(
+        llm=llm,
+        get_db=get_db_session,
+    )
+
     task_queue_service = TaskQueueService()
     conversation_responder = ConversationResponder(llm)
 
@@ -153,6 +160,7 @@ def setup_dependencies():
         media_service=media_service,
         data_graph=data_graph,
         support_graph=support_graph,
+        faq_graph=faq_graph,
     )
 
     completion_callback = orchestrator.completion_callback
