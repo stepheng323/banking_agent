@@ -6,6 +6,18 @@ from typing import Any
 
 from apps.core.src.agent.orchestrator.features.context.service import OrchestratorContextManager
 from apps.core.src.agent.orchestrator.features.flow_context.service import FlowContextService
+from apps.core.src.agent.orchestrator.features.intent_routing.intent_handlers import (
+    AccountsHandler,
+    AirtimeHandler,
+    ConversationalHandler,
+    DataHandler,
+    FAQHandler,
+    IntentHandler,
+    QueryHandler,
+    SupportHandler,
+    TransferHandler,
+)
+from apps.core.src.agent.orchestrator.features.intent_routing.routing_context import RoutingContext
 from apps.core.src.agent.orchestrator.features.task_planning.service import OrchestratorTaskPlanner
 from apps.core.src.agent.orchestrator.models.classification import ClassificationResult
 from apps.core.src.agent.orchestrator.services.conversation_responder import ConversationResponder
@@ -25,7 +37,7 @@ logger = get_logger(__name__)
 
 
 class OrchestratorIntentRouter:
-    """Routes intents to appropriate services."""
+    """Routes intents to appropriate services using handler pattern."""
 
     def __init__(
         self,
@@ -45,28 +57,31 @@ class OrchestratorIntentRouter:
     ) -> None:
         self.task_queue_service = task_queue_service
         self.task_planner = task_planner
-        self.transfer_service = transfer_service
-        self.airtime_service = airtime_service
-        self.conversation_responder = conversation_responder
         self.context_manager = context_manager
         self.whatsapp_client = whatsapp_client
-        self.query_graph = query_graph
-        self.account_management_service = account_management_service
-        self.data_graph = data_graph
-        self.support_graph = support_graph
-        self.faq_graph = faq_graph
         self.flow_context_service = flow_context_service or FlowContextService()
 
+        # Build handler registry (order matters - first match wins)
+        self._handlers: list[IntentHandler] = [
+            TransferHandler(transfer_service),
+            AirtimeHandler(airtime_service),
+            DataHandler(data_graph),
+            QueryHandler(query_graph, support_graph),
+            SupportHandler(support_graph, conversation_responder),
+            FAQHandler(faq_graph, support_graph, conversation_responder),
+            AccountsHandler(account_management_service, query_graph),
+            ConversationalHandler(conversation_responder, query_graph),  # Fallback
+        ]
+
+    def _get_handler(self, intent: str) -> IntentHandler | None:
+        """Find handler for the given intent."""
+        for handler in self._handlers:
+            if handler.can_handle(intent):
+                return handler
+        return None
+
     def _generate_task_acknowledgment(self, planner_output: PlannerOutput) -> str:
-        """
-        Generate friendly acknowledgment message for multi-task requests.
-
-        Args:
-            planner_output: Planner output with tasks
-
-        Returns:
-            Acknowledgment message string
-        """
+        """Generate friendly acknowledgment message for multi-task requests."""
         task_count = len(planner_output.tasks)
         normalized = planner_output.normalized_instruction
 
@@ -86,13 +101,78 @@ class OrchestratorIntentRouter:
 
         if task_count > 1:
             if recipient_name:
-                return f"""I'll help you {normalized.lower()}.\nI'll process these one at a time.\n\n
-                Let's start with the transfer to {recipient_name}."""
-            else:
-                return f"""I'll help you {normalized.lower()}.\nI'll process these one at a time.\n\n
-                Let's start with the first {first_task_type}."""
-        else:
-            return f"I'll help you {normalized.lower()}.\nLet's get started."
+                return (
+                    f"I'll help you {normalized.lower()}.\n"
+                    f"I'll process these one at a time.\n\n"
+                    f"Let's start with the transfer to {recipient_name}."
+                )
+            return (
+                f"I'll help you {normalized.lower()}.\n"
+                f"I'll process these one at a time.\n\n"
+                f"Let's start with the first {first_task_type}."
+            )
+        return f"I'll help you {normalized.lower()}.\nLet's get started."
+
+    async def _handle_multi_task(
+        self,
+        ctx: RoutingContext,
+    ) -> str:
+        """Handle multi-task/mixed intent requests."""
+        try:
+            planner_output = await self.task_planner.plan_tasks(ctx.phone_number, ctx.text)
+            logger.info("multi_task_planned", task_count=len(planner_output.tasks))
+
+            if planner_output.tasks:
+                await self.task_queue_service.create_task_queue(ctx.phone_number, planner_output)
+                acknowledgment = self._generate_task_acknowledgment(planner_output)
+
+                await self.whatsapp_client.send_text(ctx.phone_number, acknowledgment, message_id=ctx.message_id)
+                asyncio.create_task(self.context_manager.save_last_response(ctx.phone_number, acknowledgment))
+
+                next_task_response = await self.task_planner.handle_next_task(ctx.phone_number, ctx.text)
+                if next_task_response and next_task_response.strip():
+                    await self.whatsapp_client.send_text(
+                        ctx.phone_number, next_task_response, message_id=ctx.message_id
+                    )
+                    asyncio.create_task(self.context_manager.save_last_response(ctx.phone_number, next_task_response))
+                return ""  # Prevent duplicate from message_consumer
+        except Exception:
+            logger.error("multi_task_error", exc_info=True)
+            traceback.print_exc()
+        return ""
+
+    async def _pause_if_needed(
+        self,
+        ctx: RoutingContext,
+        pausable_flows: tuple[str, ...],
+    ) -> None:
+        """Pause active flow if it's in the pausable list."""
+        if not pausable_flows or not ctx.active_flow:
+            return
+
+        if ctx.active_flow in pausable_flows:
+            await self.flow_context_service.pause_flow(
+                ctx.phone_number,
+                ctx.active_flow,
+                ctx.intent,
+                ctx.get_flow_summary(),
+            )
+
+    async def _send_ack(self, ctx: RoutingContext) -> None:
+        """Send acknowledgment message if present."""
+        if ctx.result.response:
+            await self.whatsapp_client.send_text(
+                ctx.phone_number,
+                ctx.result.response,
+                message_id=ctx.message_id,
+            )
+
+    async def _append_resume_prompt(self, response: str, phone_number: str) -> str:
+        """Append resume prompt if there's a paused flow."""
+        resume_prompt = await self.flow_context_service.generate_resume_prompt(phone_number)
+        if resume_prompt:
+            return f"{response}\n\n{resume_prompt}"
+        return response
 
     async def route_intent(
         self,
@@ -117,237 +197,34 @@ class OrchestratorIntentRouter:
         Returns:
             Response string
         """
-        intent = result.intent.lower()
+        conversation_state = await self.context_manager.get_conversation_state(phone_number)
+        ctx = RoutingContext(
+            phone_number=phone_number,
+            text=text,
+            result=result,
+            user_ctx=user_ctx,
+            image_data=image_data,
+            message_id=message_id,
+            conversation_state=conversation_state,
+        )
 
-        is_multiple_transactions = result.is_complex and "multiple" in result.complexity_reason.lower()
+        is_multiple = result.is_complex and "multiple" in result.complexity_reason.lower()
+        if ctx.intent == "mixed" or is_multiple:
+            return await self._handle_multi_task(ctx)
 
-        if intent == "mixed" or is_multiple_transactions:
-            try:
-                planner_output = await self.task_planner.plan_tasks(phone_number, text)
-                logger.info("log_event")
-                if planner_output.tasks:
-                    await self.task_queue_service.create_task_queue(phone_number, planner_output)
+        handler = self._get_handler(ctx.intent)
+        if not handler:
+            logger.warning("no_handler_found", intent=ctx.intent)
+            handler = self._handlers[-1]  # Fallback to conversational
 
-                    acknowledgment = self._generate_task_acknowledgment(planner_output)
-                    logger.debug("generated")
+        await self._pause_if_needed(ctx, handler.pausable_flows)
 
-                    await self.whatsapp_client.send_text(phone_number, acknowledgment, message_id=message_id)
+        if handler.send_ack_before_handling and ctx.result.response:
+            await self._send_ack(ctx)
 
-                    asyncio.create_task(self.context_manager.save_last_response(phone_number, acknowledgment))
+        response = await handler.handle(ctx)
 
-                    next_task_response = await self.task_planner.handle_next_task(phone_number, text)
-                    if next_task_response and next_task_response.strip():
-                        # Send task prompt separately if it's different from acknowledgment
-                        await self.whatsapp_client.send_text(phone_number, next_task_response, message_id=message_id)
-                        asyncio.create_task(self.context_manager.save_last_response(phone_number, next_task_response))
-                    # Return empty to prevent message_consumer from sending duplicate
-                    return ""
-            except Exception:
-                logger.error("error_in")
-                traceback.print_exc()
-
-        if intent == "transfer":
-            # Check if airtime is active - if so, pause it first
-            conversation_state = await self.context_manager.get_conversation_state(phone_number)
-            if conversation_state and conversation_state.get("active_flow") == "airtime":
-                flow_summary = {
-                    "amount": conversation_state.get("amount"),
-                    "recipient_phone": conversation_state.get("recipient_phone"),
-                }
-                await self.flow_context_service.pause_flow(phone_number, "airtime", "transfer", flow_summary)
-
-            if result.response:
-                await self.whatsapp_client.send_text(phone_number, result.response, message_id=message_id)
-
-            transfer_classification_dict = (
-                result.model_dump()
-                if hasattr(result, "model_dump")
-                else {
-                    "intent": result.intent,
-                    "is_cancellation": result.is_cancellation,
-                    "confidence": result.confidence,
-                }
-            )
-            logger.info("route_intent_transfer_classification", classification=transfer_classification_dict)
-            response = await self.transfer_service.run_simple(
-                phone_number, text, transfer_classification_dict, image_data=image_data
-            )
-        elif intent == "airtime":
-            # Check if transfer is active - if so, pause it first
-            conversation_state = await self.context_manager.get_conversation_state(phone_number)
-            if conversation_state and conversation_state.get("active_flow") == "transfer":
-                flow_summary = {
-                    "amount": conversation_state.get("amount"),
-                    "recipient_name": conversation_state.get("recipient_name"),
-                    "recipient_account": conversation_state.get("recipient_account"),
-                }
-                await self.flow_context_service.pause_flow(phone_number, "transfer", "airtime", flow_summary)
-
-            if result.response:
-                await self.whatsapp_client.send_text(phone_number, result.response, message_id=message_id)
-
-            airtime_classification_dict = (
-                result.model_dump()
-                if hasattr(result, "model_dump")
-                else {
-                    "intent": result.intent,
-                    "is_cancellation": result.is_cancellation,
-                    "confidence": result.confidence,
-                }
-            )
-            response = await self.airtime_service.run_simple(phone_number, text, airtime_classification_dict)
-        elif intent == "data":
-            conversation_state = await self.context_manager.get_conversation_state(phone_number)
-            if conversation_state:
-                active_flow = conversation_state.get("active_flow")
-                if active_flow in ("transfer", "airtime"):
-                    flow_summary = {
-                        "amount": conversation_state.get("amount"),
-                        "recipient_name": conversation_state.get("recipient_name"),
-                        "recipient_phone": conversation_state.get("recipient_phone"),
-                    }
-                    await self.flow_context_service.pause_flow(phone_number, active_flow, "data", flow_summary)
-
-            if result.response:
-                await self.whatsapp_client.send_text(phone_number, result.response, message_id=message_id)
-
-            if self.data_graph:
-                response = await self.data_graph.run(phone_number, text, user_ctx)
-            else:
-                response = "Data purchase is not available at the moment. Please try again later."
-
-            resume_prompt = await self.flow_context_service.generate_resume_prompt(phone_number)
-            if resume_prompt:
-                response = f"{response}\n\n{resume_prompt}"
-
-        elif intent == "query":
-            # Check for active session first - skip ack for continuations
-            is_continuation = self.query_graph and await self.query_graph.has_active_session(phone_number)
-
-            if not is_continuation:
-                conversation_state = await self.context_manager.get_conversation_state(phone_number)
-                if conversation_state:
-                    active_flow = conversation_state.get("active_flow")
-                    if active_flow in ("transfer", "airtime"):
-                        flow_summary = {
-                            "amount": conversation_state.get("amount"),
-                            "recipient_name": conversation_state.get("recipient_name"),
-                            "recipient_phone": conversation_state.get("recipient_phone"),
-                        }
-                        await self.flow_context_service.pause_flow(
-                            phone_number, active_flow, "balance_query", flow_summary
-                        )
-
-                # Only send ack for new queries, not continuations
-                if result.response:
-                    await self.whatsapp_client.send_text(phone_number, result.response, message_id=message_id)
-
-            query_result = await self.query_graph.run(phone_number, text, user_ctx)
-
-            # Check if query graph wants to route to support (for issue reports)
-            if isinstance(query_result, dict) and query_result.get("route_to_support"):
-                if self.support_graph:
-                    user_id = query_result.get("user_id", user_ctx.get("user_id", ""))
-                    response = await self.support_graph.run(
-                        phone_number=phone_number,
-                        message=query_result.get("message", text),
-                        user_id=user_id,
-                        transaction=query_result.get("transaction"),
-                    )
-                    if response is None:
-                        response = "I'm having trouble processing your issue. Please try again."
-                else:
-                    response = "Support is temporarily unavailable. Please try again later."
-            else:
-                response = query_result if isinstance(query_result, str) else "Query completed."
-
-            resume_prompt = await self.flow_context_service.generate_resume_prompt(phone_number)
-            if resume_prompt:
-                response = f"{response}\n\n{resume_prompt}"
-
-        elif intent == "support":
-            if self.support_graph:
-                if result.response:
-                    await self.whatsapp_client.send_text(phone_number, result.response, message_id=message_id)
-
-                user_id = user_ctx.get("user_id", "")
-                response = await self.support_graph.run(
-                    phone_number=phone_number,
-                    message=text,
-                    user_id=user_id,
-                    message_id=message_id or "",
-                )
-
-                if response is None:
-                    response = await self.conversation_responder.generate_reply(phone_number, text, result, user_ctx)
-            else:
-                response = "Support is temporarily unavailable. Please try again later."
-
-        elif intent == "faq":
-            if self.faq_graph:
-                if result.response:
-                    await self.whatsapp_client.send_text(phone_number, result.response, message_id=message_id)
-
-                faq_result = await self.faq_graph.run(
-                    phone_number=phone_number,
-                    message=text,
-                    message_id=message_id or "",
-                )
-
-                response = faq_result.get("response", "")
-
-                if faq_result.get("should_route_to_support") and self.support_graph:
-                    user_id = user_ctx.get("user_id", "")
-                    response = await self.support_graph.run(
-                        phone_number=phone_number,
-                        message=text,
-                        user_id=user_id,
-                        message_id=message_id or "",
-                    )
-                    if response is None:
-                        response = faq_result.get("response", "")
-            else:
-                response = await self.conversation_responder.generate_reply(phone_number, text, result, user_ctx)
-
-        elif intent == "manage_accounts":
-            # Check for active query session first - user might be filtering by bank
-            if self.query_graph and await self.query_graph.has_active_session(phone_number):
-                query_result = await self.query_graph.run(phone_number, text, user_ctx)
-                response = query_result if isinstance(query_result, str) else "Query completed."
-            else:
-                conversation_state = await self.context_manager.get_conversation_state(phone_number)
-                if conversation_state:
-                    active_flow = conversation_state.get("active_flow")
-                    if active_flow in ("transfer", "airtime"):
-                        flow_summary = {
-                            "amount": conversation_state.get("amount"),
-                            "recipient_name": conversation_state.get("recipient_name"),
-                            "recipient_phone": conversation_state.get("recipient_phone"),
-                        }
-                        await self.flow_context_service.pause_flow(
-                            phone_number, active_flow, "account_management", flow_summary
-                        )
-
-                response = await self.account_management_service.handle_account_management(phone_number, text, user_ctx)
-
-            resume_prompt = await self.flow_context_service.generate_resume_prompt(phone_number)
-            if resume_prompt:
-                response = f"{response}\n\n{resume_prompt}"
-
-        elif intent == "conversational":
-            if self.query_graph and await self.query_graph.has_active_session(phone_number):
-                query_result = await self.query_graph.run(phone_number, text, user_ctx)
-                response = query_result if isinstance(query_result, str) else "Query completed."
-            else:
-                conv = await self.conversation_responder.generate_reply(phone_number, text, result, user_ctx)
-                logger.info("conversation")
-                response = conv
-        else:
-            if self.query_graph and await self.query_graph.has_active_session(phone_number):
-                query_result = await self.query_graph.run(phone_number, text, user_ctx)
-                response = query_result if isinstance(query_result, str) else "Query completed."
-            else:
-                conv = await self.conversation_responder.generate_reply(phone_number, text, result, user_ctx)
-                response = conv
+        if handler.supports_resume_prompt:
+            response = await self._append_resume_prompt(response, phone_number)
 
         return response
