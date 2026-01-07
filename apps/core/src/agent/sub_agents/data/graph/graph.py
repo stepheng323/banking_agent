@@ -5,6 +5,8 @@ from functools import partial
 from typing import Any
 
 import redis.asyncio as redis
+from langchain_core.runnables import RunnableConfig
+from langgraph.checkpoint.redis.aio import AsyncRedisSaver
 from langgraph.graph import END, StateGraph
 
 from apps.core.src.agent.sub_agents.data.graph.nodes.execute import execute_node
@@ -15,6 +17,7 @@ from apps.core.src.agent.sub_agents.data.graph.state import DataPurchaseState
 from apps.core.src.agent.sub_agents.data.models import DataPlan
 from apps.core.src.agent.sub_agents.data.service import DataPlanService
 from shared.clients.abstractions.bill import BillPaymentProvider
+from shared.config.settings import settings
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -64,7 +67,7 @@ def route_plan_selection(state: DataPurchaseState) -> str:
 
 
 class DataPurchaseGraph:
-    """LangGraph-based data purchase flow."""
+    """LangGraph-based data purchase flow with checkpointing support."""
 
     def __init__(
         self,
@@ -74,7 +77,38 @@ class DataPurchaseGraph:
         self.bill_provider = bill_provider
         self.redis = redis_client
         self.plan_service = DataPlanService(bill_provider, redis_client)
-        self.graph = self._build_graph()
+
+        self._graph = None
+        self._checkpointer = None
+        self._checkpointer_setup = False
+
+    def _get_config(self, phone_number: str) -> RunnableConfig:
+        """Get LangGraph config for a user."""
+        return {"configurable": {"thread_id": f"data:{phone_number}"}}
+
+    async def clear_checkpoint(self, phone_number: str) -> None:
+        """Clear data purchase flow checkpoint for a user."""
+        try:
+            await self._ensure_checkpointer()
+            config = self._get_config(phone_number)
+            if self._checkpointer:
+                thread_id = config["configurable"]["thread_id"]
+                await self._checkpointer.adelete_thread(thread_id)
+                logger.info(f"Cleared data checkpoint for {phone_number}")
+            else:
+                logger.warning(f"Checkpointer not initialized, cannot clear checkpoint for {phone_number}")
+        except Exception as e:
+            logger.error(f"Error clearing data checkpoint: {e}")
+
+    async def _ensure_checkpointer(self) -> None:
+        """Ensure checkpointer is initialized and graph is compiled."""
+        if not self._checkpointer_setup:
+            self._checkpointer = AsyncRedisSaver(redis_url=settings.redis_url)
+            await self._checkpointer.asetup()
+            self._checkpointer_setup = True
+
+        if self._graph is None:
+            self._graph = self._build_graph().compile(checkpointer=self._checkpointer)
 
     def _build_graph(self) -> StateGraph:
         """Build the data purchase flow graph."""
@@ -98,7 +132,7 @@ class DataPurchaseGraph:
         graph.add_edge("list", END)
         graph.add_edge("execute", END)
 
-        return graph.compile()
+        return graph
 
     def _extract_budget(self, message: str) -> int | None:
         """Extract budget from message like 'data 2k' or 'buy data with 2000'."""
@@ -151,7 +185,13 @@ class DataPurchaseGraph:
         Returns:
             Response string to send to user
         """
-        # Extract budget if present
+        await self._ensure_checkpointer()
+
+        if self._graph is None:
+            raise RuntimeError("Graph not compiled")
+
+        config = self._get_config(phone_number)
+
         budget = self._extract_budget(message)
 
         initial_state: DataPurchaseState = {
@@ -166,18 +206,53 @@ class DataPurchaseGraph:
         }
 
         try:
-            result = await self.graph.ainvoke(initial_state)
+            result = await self._graph.ainvoke(initial_state, config)
             return result.get("response", "Something went wrong. Please try again.")
 
         except Exception as e:
             logger.error("data_graph_error", error=str(e), exc_info=True)
             return "Sorry, I couldn't process your data request. Please try again."
 
+    async def has_active_session(self, phone_number: str) -> bool:
+        """Check if there's an active data purchase session for this user."""
+        try:
+            await self._ensure_checkpointer()
+            config = self._get_config(phone_number)
+            if self._graph:
+                state = await self._graph.aget_state(config)
+                if state and state.values:
+                    flow_state = state.values.get("flow_state", "")
+                    return flow_state not in ("", "complete", "error", "executed")
+            return False
+        except Exception as e:
+            logger.error(f"Error checking active session: {e}")
+            return False
+
+    async def get_flow_summary(self, phone_number: str) -> dict[str, Any] | None:
+        """Get summary of current flow state for pause/resume."""
+        try:
+            await self._ensure_checkpointer()
+            config = self._get_config(phone_number)
+            if self._graph:
+                state = await self._graph.aget_state(config)
+                if state and state.values:
+                    return {
+                        "network": state.values.get("network", ""),
+                        "target_phone": state.values.get("target_phone", ""),
+                        "budget": state.values.get("budget"),
+                        "suggested_plan": state.values.get("suggested_plan"),
+                        "flow_state": state.values.get("flow_state", ""),
+                    }
+            return None
+        except Exception as e:
+            logger.error(f"Error getting flow summary: {e}")
+            return None
+
     async def continue_flow(
         self,
         phone_number: str,
         message: str,
-        previous_state: DataPurchaseState,
+        previous_state: DataPurchaseState | None = None,
     ) -> str:
         """
         Continue the flow after user response.
@@ -185,27 +260,44 @@ class DataPurchaseGraph:
         Args:
             phone_number: User's phone number
             message: User's response
-            previous_state: State from previous graph run
+            previous_state: Optional previous state (loads from checkpoint if not provided)
 
         Returns:
             Response string
         """
+        await self._ensure_checkpointer()
+
+        if self._graph is None:
+            raise RuntimeError("Graph not compiled")
+
+        config = self._get_config(phone_number)
+
+        if previous_state is None:
+            state = await self._graph.aget_state(config)
+            if state and state.values:
+                previous_state = state.values
+            else:
+                return "No active data purchase session found."
+
         message_lower = message.lower().strip()
 
         if message_lower in {"yes", "ok", "sure", "confirm", "proceed", "y"}:
             previous_state["selected_plan"] = previous_state.get("suggested_plan")
             result = await execute_node(previous_state, self.bill_provider)
+            await self.clear_checkpoint(phone_number)
             return result.get("response", "")
 
         if "show" in message_lower or "list" in message_lower or "plans" in message_lower:
             result = await list_node(previous_state)
             return result.get("response", "")
+
         all_plans = previous_state.get("all_plans", [])
         if all_plans:
             selected = self._select_plan_from_message(message, all_plans)
             if selected:
                 previous_state["selected_plan"] = selected
                 result = await execute_node(previous_state, self.bill_provider)
+                await self.clear_checkpoint(phone_number)
                 return result.get("response", "")
 
         attempts = previous_state.get("suggestion_attempts", 0)

@@ -3,7 +3,8 @@
 from typing import Any
 
 import redis.asyncio as redis
-from langchain_core.runnables import Runnable
+from langchain_core.runnables import Runnable, RunnableConfig
+from langgraph.checkpoint.redis.aio import AsyncRedisSaver
 from langgraph.graph import END, StateGraph
 
 from apps.core.src.agent.sub_agents.support.classifier import SupportClassifier
@@ -21,6 +22,7 @@ from apps.core.src.agent.sub_agents.support.handlers import (
 )
 from apps.core.src.agent.sub_agents.support.models import SupportIntent, SupportResponse
 from apps.core.src.agent.sub_agents.support.resolver import TransactionResolver
+from shared.config.settings import settings
 from shared.repositories.actionable_message_repository import ActionableMessageRepository
 from shared.repositories.transaction_repository import TransactionRepository
 from shared.utils.logging import get_logger
@@ -45,7 +47,7 @@ def route_after_resolve(state: SupportGraphState) -> str:
 
 
 class SupportFlowGraph:
-    """LangGraph-based support flow for transaction-bound issues."""
+    """LangGraph-based support flow for transaction-bound issues with checkpointing."""
 
     def __init__(
         self,
@@ -58,13 +60,41 @@ class SupportFlowGraph:
         self.redis = redis_client
         self.classifier = SupportClassifier(llm)
         self.resolver = TransactionResolver(transaction_repo, actionable_message_repo)
-        self.graph = self._build_graph()
+
+        self._graph = None
+        self._checkpointer = None
+        self._checkpointer_setup = False
+
+    def _get_config(self, phone_number: str) -> RunnableConfig:
+        """Get LangGraph config for a user."""
+        return {"configurable": {"thread_id": f"support:{phone_number}"}}
+
+    async def clear_checkpoint(self, phone_number: str) -> None:
+        """Clear support flow checkpoint for a user."""
+        try:
+            await self._ensure_checkpointer()
+            config = self._get_config(phone_number)
+            if self._checkpointer:
+                thread_id = config["configurable"]["thread_id"]
+                await self._checkpointer.adelete_thread(thread_id)
+                logger.info(f"Cleared support checkpoint for {phone_number}")
+        except Exception as e:
+            logger.error(f"Error clearing support checkpoint: {e}")
+
+    async def _ensure_checkpointer(self) -> None:
+        """Ensure checkpointer is initialized and graph is compiled."""
+        if not self._checkpointer_setup:
+            self._checkpointer = AsyncRedisSaver(redis_url=settings.redis_url)
+            await self._checkpointer.asetup()
+            self._checkpointer_setup = True
+
+        if self._graph is None:
+            self._graph = self._build_graph().compile(checkpointer=self._checkpointer)
 
     def _build_graph(self) -> StateGraph:
         """Build the support flow graph."""
         graph = StateGraph(SupportGraphState)
 
-        # Add nodes
         graph.add_node("classify", self._classify_node)
         graph.add_node("resolve", self._resolve_node)
         graph.add_node("respond", self._respond_node)
@@ -72,10 +102,8 @@ class SupportFlowGraph:
         graph.add_node("no_transaction", self._no_transaction_node)
         graph.add_node("exit_not_support", self._exit_not_support_node)
 
-        # Set entry point
         graph.set_entry_point("classify")
 
-        # Add conditional edges
         graph.add_conditional_edges(
             "classify",
             route_after_classify,
@@ -95,13 +123,12 @@ class SupportFlowGraph:
             },
         )
 
-        # Terminal edges
         graph.add_edge("respond", END)
         graph.add_edge("clarify", END)
         graph.add_edge("no_transaction", END)
         graph.add_edge("exit_not_support", END)
 
-        return graph.compile()
+        return graph
 
     async def _classify_node(self, state: SupportGraphState) -> dict[str, Any]:
         """Classify the user message into a support intent."""
@@ -115,7 +142,6 @@ class SupportFlowGraph:
 
     async def _resolve_node(self, state: SupportGraphState) -> dict[str, Any]:
         """Resolve which transaction the user is referring to."""
-        # Skip resolution if transaction was pre-provided
         if state.get("transaction"):
             return {
                 "transaction": state["transaction"],
@@ -138,12 +164,11 @@ class SupportFlowGraph:
                 "needs_clarification": False,
             }
 
-        # Check if we should ask for clarification
         if method == "not_found":
             return {
                 "transaction": None,
                 "resolution_method": method,
-                "needs_clarification": False,  # No transaction found at all
+                "needs_clarification": False,
             }
 
         return {
@@ -234,6 +259,13 @@ class SupportFlowGraph:
         Returns:
             Response message, or None if not a support query.
         """
+        await self._ensure_checkpointer()
+
+        if self._graph is None:
+            raise RuntimeError("Graph not compiled")
+
+        config = self._get_config(phone_number)
+
         initial_state: SupportGraphState = {
             "phone_number": phone_number,
             "message": message,
@@ -244,7 +276,7 @@ class SupportFlowGraph:
         }
 
         try:
-            final_state = await self.graph.ainvoke(initial_state)
+            final_state = await self._graph.ainvoke(initial_state, config)
             return final_state.get("final_message")
 
         except Exception as e:
