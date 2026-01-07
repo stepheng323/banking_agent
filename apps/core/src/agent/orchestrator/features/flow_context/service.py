@@ -55,9 +55,7 @@ class FlowContextService:
             }
 
             await redis_client.set(key, json.dumps(data), ex=self.PAUSE_TTL)
-            logger.info(
-                "flow_paused", phone=phone_number, flow_type=flow_type, reason=interrupt_reason
-            )
+            logger.info("flow_paused", phone=phone_number, flow_type=flow_type, reason=interrupt_reason)
 
         except Exception as e:
             logger.error("pause_flow_error", phone=phone_number, error=str(e))
@@ -124,5 +122,23 @@ class FlowContextService:
                 return f"Ready to continue your ₦{amount:,.0f} airtime purchase?"
             else:
                 return "Ready to continue buying airtime?"
+
+        elif flow_type == "data":
+            network = summary.get("network", "")
+            target = summary.get("target_phone", "")
+            budget = summary.get("budget")
+
+            if network and target:
+                return f"Ready to continue your {network} data purchase for {target}?"
+            elif budget:
+                return f"Ready to continue your ₦{budget:,.0f} data purchase?"
+            else:
+                return "Ready to continue your data purchase?"
+
+        elif flow_type == "support":
+            issue_type = summary.get("issue_type", "")
+            if issue_type:
+                return f"Ready to continue with your {issue_type} inquiry?"
+            return "Ready to continue with your support request?"
 
         return "Ready to continue where you left off?"
