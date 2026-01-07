@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime
 from enum import Enum
 
-from sqlalchemy import JSON, Boolean, Column, DateTime, Float, ForeignKey, Integer, String
+from sqlalchemy import ARRAY, JSON, Boolean, Column, DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
@@ -275,3 +275,29 @@ class ActionableMessage(Base):
 
     def __repr__(self):
         return f"<ActionableMessage(id={self.id}, wa_msg_id={self.wa_message_id}, type={self.message_type})>"
+
+
+class FAQEntry(Base):
+    """FAQ entry for knowledge base retrieval.
+
+    Used by the FAQ/RAG graph to answer informational queries.
+    Supports pgvector for semantic search via embeddings.
+    """
+
+    __tablename__ = "faq_entries"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    category = Column(String, nullable=False, index=True)
+    question = Column(Text, nullable=False)
+    answer = Column(Text, nullable=False)
+    tags = Column(ARRAY(String), default=[], nullable=False)
+    keywords = Column(ARRAY(String), default=[], nullable=False)
+    priority = Column(Integer, default=0, nullable=False)
+    is_active = Column(Boolean, default=True, nullable=False, index=True)
+    # Embedding stored as JSON array for now (pgvector can be added later)
+    embedding = Column(JSON, nullable=True)  # OpenAI embedding vector
+    created_at = Column(DateTime, server_default=text("now()"), nullable=False)
+    updated_at = Column(DateTime, server_default=text("now()"), onupdate=datetime.utcnow, nullable=False)
+
+    def __repr__(self):
+        return f"<FAQEntry(id={self.id}, category={self.category}, question={self.question[:50]}...)>"

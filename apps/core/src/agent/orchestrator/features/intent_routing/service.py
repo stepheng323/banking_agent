@@ -12,6 +12,7 @@ from apps.core.src.agent.orchestrator.services.conversation_responder import Con
 from apps.core.src.agent.sub_agents.account_management.service import AccountManagementService
 from apps.core.src.agent.sub_agents.airtime import AirtimeService
 from apps.core.src.agent.sub_agents.data import DataPurchaseGraph
+from apps.core.src.agent.sub_agents.faq import FAQFlowGraph
 from apps.core.src.agent.sub_agents.query.graph import QueryFlowGraph
 from apps.core.src.agent.sub_agents.support.graph import SupportFlowGraph
 from apps.core.src.agent.sub_agents.transfer import TransferService
@@ -40,6 +41,7 @@ class OrchestratorIntentRouter:
         whatsapp_client: WhatsAppClient = None,
         flow_context_service: FlowContextService | None = None,
         support_graph: SupportFlowGraph | None = None,
+        faq_graph: FAQFlowGraph | None = None,
     ) -> None:
         self.task_queue_service = task_queue_service
         self.task_planner = task_planner
@@ -52,6 +54,7 @@ class OrchestratorIntentRouter:
         self.account_management_service = account_management_service
         self.data_graph = data_graph
         self.support_graph = support_graph
+        self.faq_graph = faq_graph
         self.flow_context_service = flow_context_service or FlowContextService()
 
     def _generate_task_acknowledgment(self, planner_output: PlannerOutput) -> str:
@@ -83,9 +86,11 @@ class OrchestratorIntentRouter:
 
         if task_count > 1:
             if recipient_name:
-                return f"I'll help you {normalized.lower()}.\nI'll process these one at a time.\n\nLet's start with the transfer to {recipient_name}."
+                return f"""I'll help you {normalized.lower()}.\nI'll process these one at a time.\n\n
+                Let's start with the transfer to {recipient_name}."""
             else:
-                return f"I'll help you {normalized.lower()}.\nI'll process these one at a time.\n\nLet's start with the first {first_task_type}."
+                return f"""I'll help you {normalized.lower()}.\nI'll process these one at a time.\n\n
+                Let's start with the first {first_task_type}."""
         else:
             return f"I'll help you {normalized.lower()}.\nLet's get started."
 
@@ -277,6 +282,32 @@ class OrchestratorIntentRouter:
                     response = await self.conversation_responder.generate_reply(phone_number, text, result, user_ctx)
             else:
                 response = "Support is temporarily unavailable. Please try again later."
+
+        elif intent == "faq":
+            if self.faq_graph:
+                if result.response:
+                    await self.whatsapp_client.send_text(phone_number, result.response, message_id=message_id)
+
+                faq_result = await self.faq_graph.run(
+                    phone_number=phone_number,
+                    message=text,
+                    message_id=message_id or "",
+                )
+
+                response = faq_result.get("response", "")
+
+                if faq_result.get("should_route_to_support") and self.support_graph:
+                    user_id = user_ctx.get("user_id", "")
+                    response = await self.support_graph.run(
+                        phone_number=phone_number,
+                        message=text,
+                        user_id=user_id,
+                        message_id=message_id or "",
+                    )
+                    if response is None:
+                        response = faq_result.get("response", "")
+            else:
+                response = await self.conversation_responder.generate_reply(phone_number, text, result, user_ctx)
 
         elif intent == "manage_accounts":
             # Check for active query session first - user might be filtering by bank

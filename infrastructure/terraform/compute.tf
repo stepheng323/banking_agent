@@ -1,15 +1,15 @@
-# Get the latest Ubuntu 22.04 image (Canonical Ubuntu)
+# Get the latest Ubuntu 22.04 image (Canonical Ubuntu) for ARM architecture
 data "oci_core_images" "ubuntu_images" {
   compartment_id           = var.compartment_ocid
   operating_system         = "Canonical Ubuntu"
-  operating_system_version = "22.04"
+  operating_system_version = "22.04 Minimal aarch64"
   shape                    = var.instance_shape
   sort_by                  = "TIMECREATED"
   sort_order               = "DESC"
 }
 
 resource "oci_core_instance" "banking_server" {
-  availability_domain = data.oci_identity_availability_domains.ads.availability_domains[2].name
+  availability_domain = data.oci_identity_availability_domains.ads.availability_domains[0].name
   compartment_id      = var.compartment_ocid
   display_name        = "banking-agent-server"
   shape               = var.instance_shape
