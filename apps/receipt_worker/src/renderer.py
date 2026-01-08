@@ -84,7 +84,7 @@ class ReceiptRenderer:
         browser = await self._get_browser()
         page = await browser.new_page(
             viewport={"width": RECEIPT_WIDTH, "height": 1},
-            device_scale_factor=3,  # 3x for 1080p+ crisp text
+            device_scale_factor=4,  # 4x for extra crisp receipts even after Meta compression
         )
 
         try:
