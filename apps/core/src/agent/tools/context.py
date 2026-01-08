@@ -39,6 +39,13 @@ async def load_user_context_shared(
     state_dict = cast(dict[str, Any], state)
     phone = state_dict["phone_number"]
 
+    # DEBUG: Log incoming state amount
+    logger.info(
+        "load_user_context_entry",
+        incoming_amount=state_dict.get("amount"),
+        phone=phone[:6] if phone else None,
+    )
+
     # Load from UserDataCache
     cached = await user_cache.get_all_user_data(phone)
     profile = cached.get("profile") or {}

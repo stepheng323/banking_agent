@@ -217,6 +217,11 @@ class OrchestratorIntentRouter:
             logger.warning("no_handler_found", intent=ctx.intent)
             handler = self._handlers[-1]  # Fallback to conversational
 
+        # Clear flow state for cancel/reset intents
+        if result.is_cancellation or result.intent == "cancel":
+            await self.context_manager.clear_conversation_state(phone_number)
+            logger.info("cleared_conversation_state_on_cancel", phone=phone_number[:6])
+
         await self._pause_if_needed(ctx, handler.pausable_flows)
 
         if handler.send_ack_before_handling and ctx.result.response:

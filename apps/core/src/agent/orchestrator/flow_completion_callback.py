@@ -93,15 +93,16 @@ class OrchestratorFlowCompletionCallback:
             executor = task.executor
 
             if executor == "transfer":
-                amount = float(task.parameters.get("amount", 0)) if task.parameters else 0
+                # Get amount from result_data first (for transfer_all), fall back to task.parameters
+                result_amount = result_data.get("amount") if isinstance(result_data, dict) else None
+                param_amount = task.parameters.get("amount", 0) if task.parameters else 0
+                amount = float(result_amount if result_amount is not None else param_amount)
                 if amount:
                     total_amount += amount
                     total_fee += _calculate_transfer_fee(amount)
 
                 # Get resolved account info
-                account_resolved = (
-                    result_data.get("account_resolved") if isinstance(result_data, dict) else None
-                )
+                account_resolved = result_data.get("account_resolved") if isinstance(result_data, dict) else None
                 recipient_name = (
                     account_resolved.get("account_name")
                     if account_resolved
@@ -109,27 +110,13 @@ class OrchestratorFlowCompletionCallback:
                     if task.parameters
                     else "Recipient"
                 )
-                recipient_account = (
-                    result_data.get("recipient_account", "")
-                    if isinstance(result_data, dict)
-                    else ""
-                )
-                recipient_bank = (
-                    result_data.get("recipient_bank_name", "")
-                    if isinstance(result_data, dict)
-                    else ""
-                )
+                recipient_account = result_data.get("recipient_account", "") if isinstance(result_data, dict) else ""
+                recipient_bank = result_data.get("recipient_bank_name", "") if isinstance(result_data, dict) else ""
 
                 # Get source account info
-                selected_source = (
-                    result_data.get("selected_source_account")
-                    if isinstance(result_data, dict)
-                    else None
-                )
+                selected_source = result_data.get("selected_source_account") if isinstance(result_data, dict) else None
                 source_bank = selected_source.get("bank_name", "") if selected_source else ""
-                source_account = (
-                    selected_source.get("account_number", "") if selected_source else ""
-                )
+                source_account = selected_source.get("account_number", "") if selected_source else ""
 
                 # Track unique source accounts
                 if source_account:
@@ -181,14 +168,10 @@ class OrchestratorFlowCompletionCallback:
 
         for t in transfers:
             if t.get("type") == "airtime":
-                lines.append(
-                    f"{t['index']}. {_format_currency_naira(t['amount'])} → {t['recipient']} (airtime)"
-                )
+                lines.append(f"{t['index']}. {_format_currency_naira(t['amount'])} → {t['recipient']} (airtime)")
             else:
                 # Compact: amount, recipient name, bank on one line
-                lines.append(
-                    f"{t['index']}. {_format_currency_naira(t['amount'])} → *{t['recipient_name']}*"
-                )
+                lines.append(f"{t['index']}. {_format_currency_naira(t['amount'])} → *{t['recipient_name']}*")
                 lines.append(f"   {t['recipient_bank']} • {t['recipient_account']}")
 
                 # Only show per-transaction source if they differ
@@ -342,13 +325,9 @@ class OrchestratorFlowCompletionCallback:
             # Check if all tasks are collection_complete (ready for batch authorization)
             # Re-check after getting all_done_task_ids to ensure we have the latest status
             # IMPORTANT: Only check transfer/airtime tasks - query/utility don't have collection phase
-            auth_required_tasks = [
-                t for t in planner_output.tasks if t.executor in ("transfer", "airtime")
-            ]
+            auth_required_tasks = [t for t in planner_output.tasks if t.executor in ("transfer", "airtime")]
             all_tasks_ready = (
-                all(task.id in all_done_task_ids for task in auth_required_tasks)
-                if auth_required_tasks
-                else False
+                all(task.id in all_done_task_ids for task in auth_required_tasks) if auth_required_tasks else False
             )
 
             if is_collection_complete and all_tasks_ready:
@@ -388,16 +367,10 @@ class OrchestratorFlowCompletionCallback:
 
                 if next_collection_complete_task:
                     # Send authorization flow for next task
-                    await self.task_queue_service.set_current_task(
-                        phone_number, next_collection_complete_task.id
-                    )
+                    await self.task_queue_service.set_current_task(phone_number, next_collection_complete_task.id)
                     # Trigger authorization by sending message to transfer flow
-                    if next_collection_complete_task.executor == "transfer" and hasattr(
-                        self.orchestrator, "transfer"
-                    ):
-                        await self.orchestrator.transfer.run_simple(
-                            phone_number, "authorize", {"intent": "transfer"}
-                        )
+                    if next_collection_complete_task.executor == "transfer" and hasattr(self.orchestrator, "transfer"):
+                        await self.orchestrator.transfer.run_simple(phone_number, "authorize", {"intent": "transfer"})
                         return  # Don't proceed with normal next task logic
 
             # Get next pending task (for collection phase)
@@ -405,9 +378,7 @@ class OrchestratorFlowCompletionCallback:
             # This prevents re-executing tasks that are already collection_complete
             if not completed_task_id:
                 # No task was marked - this shouldn't happen, but prevent loop
-                logger.warning(
-                    "[CALLBACK] No completed_task_id found, cannot identify completed task"
-                )
+                logger.warning("[CALLBACK] No completed_task_id found, cannot identify completed task")
                 return
 
             # Verify the completed_task_id is in all_done_task_ids (should be after marking)
@@ -431,16 +402,12 @@ class OrchestratorFlowCompletionCallback:
                     # Check if there are more tasks or if we should clear the queue
                     planner_output = await self.task_queue_service.get_task_queue(phone_number)
                     if planner_output:
-                        all_completed = all(
-                            task.id in all_done_task_ids for task in planner_output.tasks
-                        )
+                        all_completed = all(task.id in all_done_task_ids for task in planner_output.tasks)
                         if all_completed:
                             # All tasks completed, send summary and clear
                             summary = await self._generate_completion_summary(phone_number)
                             if hasattr(self.orchestrator, "whatsapp_client"):
-                                await self.orchestrator.whatsapp_client.send_text(
-                                    phone_number, summary
-                                )
+                                await self.orchestrator.whatsapp_client.send_text(phone_number, summary)
                             await self.task_queue_service.clear_task_queue(phone_number)
                             await self._clear_conversation_state(phone_number)
                     return
@@ -455,9 +422,7 @@ class OrchestratorFlowCompletionCallback:
                 # Check if task is already in progress (shouldn't happen after clearing, but safety check)
                 current_task_id = await self.task_queue_service.get_current_task(phone_number)
                 if current_task_id == next_task.id:
-                    logger.warning(
-                        f"Task {next_task.id} is already in progress, skipping to prevent loop"
-                    )
+                    logger.warning(f"Task {next_task.id} is already in progress, skipping to prevent loop")
                     return
 
                 # Set the next task as current before executing to prevent race conditions
@@ -488,9 +453,7 @@ class OrchestratorFlowCompletionCallback:
 
                     # Also verify this is NOT the same as next_task
                     if completed_task and completed_task.id == next_task.id:
-                        logger.warning(
-                            f"Completed task {completed_task.id} is same as next task, skipping transition"
-                        )
+                        logger.warning(f"Completed task {completed_task.id} is same as next task, skipping transition")
                         completed_task = None
 
                     # Build transition message only if tasks are different
@@ -504,34 +467,28 @@ class OrchestratorFlowCompletionCallback:
                         if completed_status == TaskStatus.COLLECTION_COMPLETE.value:
                             transition_msg = f"📝 Details for {completed_desc} received. Now let's process {next_desc}."
                         else:
-                            transition_msg = f"✓ {completed_desc.capitalize()} completed. Now let's process {next_desc}."
+                            transition_msg = (
+                                f"✓ {completed_desc.capitalize()} completed. Now let's process {next_desc}."
+                            )
 
                         # Send transition message via orchestrator's WhatsApp client
                         if hasattr(self.orchestrator, "whatsapp_client"):
-                            await self.orchestrator.whatsapp_client.send_text(
-                                phone_number, transition_msg
-                            )
+                            await self.orchestrator.whatsapp_client.send_text(phone_number, transition_msg)
 
                     # Automatically execute next task (regardless of transition message)
                     if hasattr(self.orchestrator, "task_planner"):
-                        next_task_response = await self.orchestrator.task_planner.handle_next_task(
-                            phone_number, ""
-                        )
+                        next_task_response = await self.orchestrator.task_planner.handle_next_task(phone_number, "")
                         if next_task_response:
                             # Send next task response
                             if hasattr(self.orchestrator, "whatsapp_client"):
-                                await self.orchestrator.whatsapp_client.send_text(
-                                    phone_number, next_task_response
-                                )
+                                await self.orchestrator.whatsapp_client.send_text(phone_number, next_task_response)
                             # Save last response
                             if hasattr(self.orchestrator, "context_manager"):
                                 await self.orchestrator.context_manager.save_last_response(
                                     phone_number, next_task_response
                                 )
 
-                    logger.info(
-                        f"Flow {flow_type} completed. Next task ready: {next_task.id} ({next_task.executor})"
-                    )
+                    logger.info(f"Flow {flow_type} completed. Next task ready: {next_task.id} ({next_task.executor})")
             else:
                 # All tasks completed - generate and send summary
                 summary = await self._generate_completion_summary(phone_number)

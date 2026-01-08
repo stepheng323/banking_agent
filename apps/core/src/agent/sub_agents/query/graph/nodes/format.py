@@ -100,6 +100,10 @@ def _format_query_result(
     """Format QueryResult to response string."""
     # For analytics/summary results, return summary directly (unless expanding to show transactions)
     if not show_expanded and result.summary_text and "|" not in result.summary_text:
+        # Balance queries should show summary only
+        if "Balance:" in result.summary_text or "Total balance" in result.summary_text:
+            return result.summary_text
+
         # Analytics summaries start with emoji or specific patterns
         if (
             result.summary_text.startswith("💸")
@@ -110,6 +114,26 @@ def _format_query_result(
             or "Top Recipients" in result.summary_text
         ):
             return result.summary_text
+
+    # Check if this is a multi-account balance query
+    if result.summary_text and result.summary_text.startswith("accounts:"):
+        # Parse metadata from summary: "accounts:2|total:₦X"
+        parts = dict(p.split(":") for p in result.summary_text.split("|") if ":" in p)
+        account_count = int(parts.get("accounts", 0))
+        total = parts.get("total", "₦0")
+
+        lines = ["💰 *Your Accounts*", ""]
+
+        if result.items:
+            for item in result.items:
+                bank_name = item.description
+                amount = _format_amount(item.amount)
+                lines.append(f"{amount} — {bank_name}")
+
+        lines.append("")
+        lines.append(f"*Total: {total}*")
+
+        return "\n".join(lines)
 
     # DEBUG: Log pagination details
     from shared.utils.logging import get_logger
@@ -154,9 +178,9 @@ def _format_query_result(
 
     if result.items:
         # Local pagination for extended items list (analytics drill-down)
-        PAGE_SIZE = 5
-        start_idx = current_page * PAGE_SIZE
-        end_idx = start_idx + PAGE_SIZE
+        page_size = 5
+        start_idx = current_page * page_size
+        end_idx = start_idx + page_size
 
         display_items = result.items[start_idx:end_idx]
         remaining_count = len(result.items) - end_idx if end_idx < len(result.items) else 0
