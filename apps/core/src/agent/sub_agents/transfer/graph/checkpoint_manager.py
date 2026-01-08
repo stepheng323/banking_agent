@@ -112,9 +112,7 @@ async def check_session_status(
 
     if is_terminal_status or is_session_expired:
         await clear_all_transfer_state(ctx.phone_number, redis_client, graph, ctx.config)
-        fresh_state = create_initial_state(
-            ctx.phone_number, ctx.message, ctx.message_id, ctx.classification_result
-        )
+        fresh_state = create_initial_state(ctx.phone_number, ctx.message, ctx.message_id, ctx.classification_result)
         return True, fresh_state
 
     return False, None
@@ -191,9 +189,7 @@ def clear_recipient_if_needed(ctx: TransferRunContext, input_state: dict) -> dic
     current_flow_state = input_state.get("flow_state")
     stale_transfer_status = input_state.get("transfer_status")
 
-    account_numbers_in_message = re.findall(
-        r"\b\d{10}\b", ctx.message.replace(",", " ").replace(".", " ")
-    )
+    account_numbers_in_message = re.findall(r"\b\d{10}\b", ctx.message.replace(",", " ").replace(".", " "))
     has_account_in_message = len(account_numbers_in_message) > 0
 
     logger.debug(
@@ -225,10 +221,10 @@ def clear_recipient_if_needed(ctx: TransferRunContext, input_state: dict) -> dic
 
 
 def clear_completed_transfer_state(input_state: dict) -> dict:
-    """Clear state after a completed/failed/cancelled transfer."""
+    """Clear state after a completed/authorized/failed/cancelled transfer."""
     stale_transfer_status = input_state.get("transfer_status")
 
-    if stale_transfer_status in ("completed", "failed", "cancelled"):
+    if stale_transfer_status in ("authorized", "completed", "failed", "cancelled"):
         input_state["recipient_account"] = None
         input_state["recipient_bank_code"] = None
         input_state["recipient_bank_name"] = None
@@ -241,6 +237,10 @@ def clear_completed_transfer_state(input_state: dict) -> dict:
         input_state["flow_state"] = "extracting"
         input_state["amount"] = None
         input_state["narration"] = None
+        # Clear response/llm_reply to prevent LLM from seeing completed transfer
+        # context and misinterpreting new "send X" as a correction
+        input_state["response"] = ""
+        input_state["llm_reply"] = None
 
     return input_state
 

@@ -123,9 +123,7 @@ class FundingPlanner:
 
         # Case 1: User specified a source account
         if preferred_account_id:
-            return await self._plan_with_preferred_account(
-                eligible, transfer_amount, preferred_account_id
-            )
+            return await self._plan_with_preferred_account(eligible, transfer_amount, preferred_account_id)
 
         # Case 2: Normal flow - try default first, then add if needed
         return await self._plan_with_lazy_fetching(eligible, transfer_amount)
@@ -183,7 +181,6 @@ class FundingPlanner:
         default_accounts = [a for a in eligible if a.is_default]
         other_accounts = [a for a in eligible if not a.is_default]
 
-        # Process default account first
         for account in default_accounts[:1]:
             if remaining <= 0:
                 break
@@ -197,7 +194,6 @@ class FundingPlanner:
                 remaining -= contribution
                 sequence += 1
 
-        # If still need more, check other accounts
         if remaining > 0 and len(steps) < MAX_SOURCE_ACCOUNTS:
             for account in other_accounts[: MAX_SOURCE_ACCOUNTS - len(steps)]:
                 if remaining <= 0:
@@ -225,7 +221,6 @@ class FundingPlanner:
         )
 
         if not is_sufficient:
-            # Build error message using unified formatter
             if steps:
                 primary = steps[0]
                 total_available = sum(s.amount for s in steps)
