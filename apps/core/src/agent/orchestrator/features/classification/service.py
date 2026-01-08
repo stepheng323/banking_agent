@@ -88,17 +88,28 @@ class OrchestratorClassificationService:
         if context and context.get("conversationState"):
             active_flow = context["conversationState"].get("active_flow")
 
-        cancel_patterns = {"cancel", "stop", "abort", "nevermind", "forget it", "no thanks"}
-        if text_clean in cancel_patterns:
-            if active_flow:
-                return None
+        # "Start over" escape hatch - ALWAYS clears flow and starts fresh
+        reset_patterns = {"start over", "reset", "new transfer", "start again", "begin again", "fresh start"}
+        if text_clean in reset_patterns:
             return ClassificationResult(
                 intent="cancel",
                 is_cancellation=True,
                 is_complex=False,
                 confidence=0.99,
-                response="There's nothing to cancel. How can I help?",
-                complexity_reason="Simple single intent",
+                response="Starting fresh! How can I help?",
+                complexity_reason="User requested reset",
+            )
+
+        cancel_patterns = {"cancel", "stop", "abort", "nevermind", "forget it", "no thanks"}
+        if text_clean in cancel_patterns:
+            # Always treat cancel as cancel, even if no active flow
+            return ClassificationResult(
+                intent="cancel",
+                is_cancellation=True,
+                is_complex=False,
+                confidence=0.99,
+                response="Cancelled. How can I help?" if active_flow else "Nothing to cancel. How can I help?",
+                complexity_reason="Cancel request",
             )
 
         if not active_flow:
@@ -120,18 +131,35 @@ class OrchestratorClassificationService:
                 )
 
         if active_flow in {"transfer", "airtime", "data"}:
+            # CRITICAL: If user says simple affirmations, treat as flow continuation
+            # Prevents "ok" from being misclassified when resuming
+            affirmative_words = {"yes", "ok", "okay", "sure", "yep", "yeah", "yup", "proceed", "continue"}
+            if text_clean in affirmative_words:
+                return ClassificationResult(
+                    intent=active_flow,
+                    is_complex=False,
+                    confidence=0.95,
+                    response="",
+                    complexity_reason="Affirmative response - flow continuation",
+                )
+
             manage_account_keywords = {"account", "accounts", "link", "linked", "unlink", "default"}
             manage_account_phrases = {"show my", "list my", "my accounts", "linked account"}
             query_patterns = {"balance", "history", "statement", "spent", "spending", "transaction"}
+            transfer_action_keywords = {"send", "transfer", "pay"}
 
             words = set(text_clean.split())
+
+            # Check for transfer intent first - "send 40k from my accounts" is a transfer, not manage_accounts
+            has_transfer_action = bool(words & transfer_action_keywords)
 
             is_manage_accounts = bool(words & manage_account_keywords) or any(
                 phrase in text_clean for phrase in manage_account_phrases
             )
             is_query = bool(words & query_patterns)
 
-            if is_manage_accounts:
+            # Only classify as manage_accounts if there's NO transfer action
+            if is_manage_accounts and not has_transfer_action:
                 return ClassificationResult(
                     intent="manage_accounts",
                     is_complex=False,
@@ -410,6 +438,25 @@ class OrchestratorClassificationService:
 
         structured_llm = self.classifier_llm.with_structured_output(ClassificationResult)
         result = await structured_llm.ainvoke(messages)
+
+        # CRITICAL SAFEGUARD:
+        # If user said "Yes"/"Ok" but LLM classified as "Cancel" (hallucination), override it.
+        # This prevents "Nothing to cancel" errors when resuming flows.
+        affirmative_words = {"yes", "ok", "okay", "sure", "yep", "yeah", "yup", "proceed", "continue"}
+        if text.strip().lower() in affirmative_words and (result.intent == "cancel" or result.is_cancellation):
+            logger.warning(
+                "classification_override",
+                original_intent=result.intent,
+                text=text[:30],
+                reason="Affirmative word misclassified as cancel",
+            )
+            return ClassificationResult(
+                intent="yes",
+                is_complex=False,
+                confidence=0.99,
+                response="Confirmed.",
+                complexity_reason="Safety override: Affirmative word cannot be cancel",
+            )
 
         text_lower = text.lower().strip()
         if any(text_lower.startswith(prefix) for prefix in ["send ", "pay ", "transfer ", "buy "]):

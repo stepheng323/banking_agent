@@ -195,20 +195,9 @@ class TransferFlowGraph:
                 # Clear the paused flow now that we've read it
                 await self.redis_client.delete(paused_flow_key)
 
-                if saved_response:
-                    # Add contextual prefix
-                    amount = flow_summary.get("amount")
-                    recipient = flow_summary.get("recipient_name") or flow_summary.get("recipient_account", "")
-
-                    if amount and recipient:
-                        context_prefix = f"Continuing your ₦{amount:,.0f} transfer to {recipient}! "
-                    elif amount:
-                        context_prefix = f"Continuing your ₦{amount:,.0f} transfer! "
-                    else:
-                        context_prefix = "Continuing where you left off! "
-
-                    logger.info("Flow resume detected, replaying saved response with context")
-                    return f"{context_prefix}{saved_response}"
+                # Saved response exists but may be stale (e.g., "Nothing to cancel")
+                # Don't use it - fall through to checkpoint logic which will re-send WhatsApp flow
+                logger.info("Flow resume detected, will check checkpoint for flow re-send")
             else:
                 # Clear just in case (no paused data but is_flow_resume flag was set)
                 await self.redis_client.delete(paused_flow_key)
@@ -397,14 +386,17 @@ class TransferFlowGraph:
         elif transfer_status not in ("pending", None):
             await clear_transfer_session(phone_number)
 
-            if transfer_status in ("completed", "failed", "cancelled", "collection_complete"):
+            if transfer_status in ("authorized", "completed", "failed", "cancelled", "collection_complete"):
                 try:
                     await self.clear_checkpoint(phone_number)
+                    # Also clear any paused flow context to prevent stale data
+                    paused_flow_key = f"user:{phone_number}:paused_flow"
+                    await self.redis_client.delete(paused_flow_key)
                 except Exception as e:
                     logger.warning(f"Failed to clear checkpoint after transfer: {e}")
 
             if self.completion_callback:
-                if transfer_status in ("completed", "failed", "cancelled", "collection_complete"):
+                if transfer_status in ("authorized", "completed", "failed", "cancelled", "collection_complete"):
                     result = {
                         "status": transfer_status,
                         "amount": final_state.get("amount"),

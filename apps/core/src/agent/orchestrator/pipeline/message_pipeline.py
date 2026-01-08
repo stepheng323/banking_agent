@@ -38,16 +38,17 @@ class MessagePipeline:
 
         for handler in self.handlers:
             if await handler.can_handle(current_context):
-                logger.info("processing_message")
+                logger.info(f"🔄 [PIPELINE] processing_message with handler: {handler.__class__.__name__}")
 
                 current_context = await handler.handle(current_context)
 
                 if current_context.handled:
-                    logger.info("message_handled")
+                    logger.info(f"✅ [PIPELINE] message_handled by {handler.__class__.__name__}")
                     break
 
+            else:
+                logger.debug(f"⏭️ [PIPELINE] Skipping handler {handler.__class__.__name__} (cannot handle)")
+
         return (
-            current_context.response
-            if current_context.response is not None
-            else "I'm not sure how to help with that."
+            current_context.response if current_context.response is not None else "I'm not sure how to help with that."
         )
