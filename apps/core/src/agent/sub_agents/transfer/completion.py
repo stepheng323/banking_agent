@@ -107,21 +107,24 @@ class TransferCompletionService:
                 transaction_id=transfer_result.get("transaction_id"),
             )
 
-            # Push receipt job to queue for async processing
             import json
+            import uuid
+
+            signal_key = f"receipt:signal:{transaction_id}" if transaction_id else f"receipt:signal:{uuid.uuid4()}"
 
             receipt_job = {
                 "phone_number": phone_number,
                 "transfer_data": transfer_data,
                 "transfer_result": transfer_result,
                 "transaction_id": transaction_id,
+                "signal_key": signal_key,
             }
             await self.redis_client.rpush(
                 "banking:receipt_jobs",
                 json.dumps(receipt_job, default=str),
             )
 
-            logger.info("receipt_job_queued", phone=phone_number)
+            logger.info("receipt_job_queued", phone=phone_number, signal_key=signal_key)
 
             if transaction_id:
                 with UnitOfWork() as uow:
@@ -130,6 +133,20 @@ class TransferCompletionService:
                         if txn:
                             uow.transactions.update(txn, receipt_sent=False)
                             uow.commit()
+
+            try:
+                await self.redis_client.blpop(signal_key, timeout=20)
+            except Exception as e:
+                logger.warning("receipt_signal_wait_error", error=str(e))
+
+            if self.beneficiary_suggestion_service:
+                recipient = transfer_data.get("recipient", {})
+                await self.beneficiary_suggestion_service.check_and_suggest_beneficiary(
+                    phone_number=phone_number,
+                    beneficiary_type="transfer",
+                    recipient_data=recipient,
+                    transaction_id=transaction_id,
+                )
 
         except Exception as e:
             logger.error(
