@@ -3,7 +3,7 @@
 from typing import cast
 
 from apps.core.src.agent.sub_agents.transfer.state import TransferState
-from apps.core.src.agent.tools.cancellation import handle_transaction_cancellation
+from shared.utils.cancellation import handle_transaction_cancellation
 from shared.cache.redis_client import Redis
 
 from .utils import debug_log

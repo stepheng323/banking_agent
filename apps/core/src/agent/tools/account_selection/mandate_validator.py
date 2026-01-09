@@ -11,7 +11,7 @@ from shared.config.settings import settings
 
 logger = structlog.get_logger(__name__)
 
-MANDATE_EXPIRY_HOURS = 1  # ₦50 transfer must be done within 1 hour
+MANDATE_EXPIRY_HOURS = 1
 
 
 def _parse_extra_data(raw_data: Any) -> dict:
@@ -23,13 +23,11 @@ def _parse_extra_data(raw_data: Any) -> dict:
     if not isinstance(raw_data, str):
         return {}
 
-    # Try JSON first (double quotes)
     try:
         return json.loads(raw_data)
     except (json.JSONDecodeError, TypeError):
         pass
 
-    # Fallback: Try Python literal eval (handles single quotes)
     try:
         parsed = ast.literal_eval(raw_data)
         if isinstance(parsed, dict):
@@ -55,7 +53,6 @@ def _get_pending_mandate_info(account: dict) -> tuple[str, dict[str, Any]]:
     transfer_destinations = extra_data.get("transfer_destinations", [])
 
     if not created_at_str:
-        # No creation time stored - assume old mandate, needs reinitiation
         return (
             "Your account authorization has expired. Please reinitiate to continue.",
             {"needs_reinitiation": True},
@@ -63,7 +60,6 @@ def _get_pending_mandate_info(account: dict) -> tuple[str, dict[str, Any]]:
 
     try:
         created_at = datetime.fromisoformat(created_at_str.replace("Z", "+00:00"))
-        # Make naive for comparison if needed
         if created_at.tzinfo:
             created_at = created_at.replace(tzinfo=None)
     except (ValueError, AttributeError):
@@ -76,7 +72,6 @@ def _get_pending_mandate_info(account: dict) -> tuple[str, dict[str, Any]]:
     time_elapsed = now - created_at
 
     if time_elapsed <= timedelta(hours=MANDATE_EXPIRY_HOURS):
-        # Still within 1-hour window - show transfer destinations
         minutes_left = int(
             (timedelta(hours=MANDATE_EXPIRY_HOURS) - time_elapsed).total_seconds() / 60
         )
@@ -98,7 +93,6 @@ def _get_pending_mandate_info(account: dict) -> tuple[str, dict[str, Any]]:
 
         return (message, {"transfer_destinations": transfer_destinations})
     else:
-        # Expired - needs reinitiation
         return (
             "Your account authorization has expired. Please reinitiate to continue.",
             {"needs_reinitiation": True},
@@ -127,22 +121,41 @@ def validate_mandate_status(account: dict) -> tuple[bool, str | None, dict[str, 
     if mandate_status == "ready":
         return (True, None, None)
 
-    # Handle pending/initiated with time-aware logic
+    # Handle pending/initiated - user hasn't sent ₦50 transfer yet
     if mandate_status in ("pending", "initiated"):
         message, metadata = _get_pending_mandate_info(account)
         return (False, message, metadata)
 
-    # Handle other statuses
+    # Handle approved - transfer received, waiting for NIBSS confirmation (up to 24 hours)
+    if mandate_status == "approved":
+        bank_name = account.get("bank_name", "your bank")
+        account_number = account.get("account_number", "")
+        account_suffix = f"({account_number[-4:]})" if account_number else ""
+        message = (
+            f"✓ Your ₦50 authorization transfer was received!\n\n"
+            f"Your {bank_name} account {account_suffix} is being verified by NIBSS. "
+            f"This usually takes a few minutes but can take up to 24 hours.\n\n"
+            f"We'll notify you as soon as it's ready! 🔔"
+        )
+        return (False, message, {"awaiting_nibss": True})
+
     status_messages = {
-        "approved": "Your account is almost ready. It will be fully active within 24 hours after your authorization transfer.",
-        "paused": "Your account has been temporarily paused. Please contact support to reinstate it.",
-        "rejected": "Your account authorization was rejected. Please contact support to resolve this.",
-        "cancelled": "Your account authorization was cancelled. Please reinitiate to continue.",
+        "paused": (
+            "⏸️ Your account has been temporarily paused.\n"
+            "Please contact support to reinstate it."
+        ),
+        "rejected": (
+            "❌ Your account authorization was rejected.\n"
+            "Please contact support to resolve this."
+        ),
+        "cancelled": (
+            "Your account authorization was cancelled.\n"
+            "Would you like to reinitiate? Say *'reinitiate'* to start again."
+        ),
     }
 
     message = status_messages.get(mandate_status, "Your account is not ready for payments yet.")
 
-    # Cancelled also needs reinitiation
     metadata = {"needs_reinitiation": True} if mandate_status == "cancelled" else None
 
     return (False, message, metadata)

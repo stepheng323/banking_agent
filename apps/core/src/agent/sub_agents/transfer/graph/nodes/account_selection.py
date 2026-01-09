@@ -31,6 +31,7 @@ async def _validate_transfer_account(state: TransferState, selected: dict) -> Tr
         return {
             **state,
             "selected_source_account": selected,
+            "flow_state": "error",
             "response": response,
             "llm_reply": None,
         }

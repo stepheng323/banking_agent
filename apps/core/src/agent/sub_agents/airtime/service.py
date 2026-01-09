@@ -3,7 +3,7 @@
 from typing import TYPE_CHECKING, Optional
 
 if TYPE_CHECKING:
-    from apps.core.src.agent.tools.flow_completion import FlowCompletionCallback
+    from apps.core.src.agent.orchestrator.services.task_coordinator import TaskCoordinator
 
 from langchain_openai import ChatOpenAI
 
@@ -32,7 +32,7 @@ class AirtimeService:
         whatsapp_client: WhatsAppClient,
         queue: RedisQueue,
         actionable_message_repo: ActionableMessageRepository | None = None,
-        completion_callback: Optional["FlowCompletionCallback"] = None,
+        completion_callback: Optional["TaskCoordinator"] = None,
     ) -> None:
         self.extractor = AirtimeEntityExtractor(llm)
         self.graph = AirtimeFlowGraph(

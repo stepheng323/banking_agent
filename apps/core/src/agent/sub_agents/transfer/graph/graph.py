@@ -44,7 +44,7 @@ from .state import (
 )
 
 if TYPE_CHECKING:
-    from apps.core.src.agent.orchestrator.flow_completion_callback import FlowCompletionCallback
+    from apps.core.src.agent.orchestrator.services.task_coordinator import TaskCoordinator
 
 logger = get_logger(__name__)
 
@@ -61,7 +61,7 @@ class TransferFlowGraph:
         extractor: TransferEntityExtractor,
         queue: RedisQueue,
         actionable_message_repo: ActionableMessageRepository | None = None,
-        completion_callback: Optional["FlowCompletionCallback"] = None,
+        completion_callback: Optional["TaskCoordinator"] = None,
         user_repo: UserRepository | None = None,
     ):
         self.user_cache = user_cache
