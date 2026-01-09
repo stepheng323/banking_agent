@@ -240,7 +240,7 @@ services:
   receipt-worker:
     build:
       context: .
-      dockerfile: apps/receipt_worker/Dockerfile
+      dockerfile: apps/receipt/Dockerfile
     env_file: .env
     depends_on:
       redis:
