@@ -69,7 +69,88 @@ async def check_funding(
 
         logger.info("balance_checked", account_id=account_id, balance=balance, required=amount)
 
-        if balance >= amount:
+        # Handle transfer_all: set amount to available balance
+        transfer_all = state.get("transfer_all")
+        if transfer_all and not amount:
+            amount = balance
+            logger.info("transfer_all_amount_set", balance=balance, amount=amount)
+
+            # Regenerate confirmation summary with the actual amount
+            from shared.formatters.transfer import format_transfer_summary
+
+            account_resolved = state.get("account_resolved", {})
+            rec_name = (
+                account_resolved.get("account_name")
+                if account_resolved and isinstance(account_resolved, dict)
+                else state.get("recipient_name") or "Recipient"
+            )
+            bank_name = state.get("recipient_bank_name") or state.get("recipient_bank_code") or ""
+            acct_number = state.get("recipient_account")
+            source = state.get("selected_source_account", {})
+            source_account_number = source.get("account_number") or ""
+            source_bank_name = source.get("bank_name") or source.get("name") or "Account"
+            narration = state.get("narration")
+
+            new_summary = format_transfer_summary(
+                {
+                    "amount": amount,
+                    "recipientName": rec_name,
+                    "recipientBank": bank_name,
+                    "recipientAccount": acct_number,
+                    "sourceBank": source_bank_name,
+                    "sourceAccount": source_account_number,
+                    "narration": narration,
+                }
+            )
+
+            # Update state with the calculated amount and new summary
+            state = {**state, "amount": amount, "confirmation_summary": new_summary}
+
+        # Handle transfer_percentage: calculate amount from percentage
+        transfer_percentage = state.get("transfer_percentage")
+        if transfer_percentage:
+            # Always calculate from percentage, even if amount was somehow set
+            amount = balance * (transfer_percentage / 100)
+            logger.info(
+                "transfer_percentage_calculated",
+                percentage=transfer_percentage,
+                balance=balance,
+                calculated_amount=amount,
+            )
+
+            # Regenerate confirmation summary with calculated amount
+            from shared.formatters.transfer import format_transfer_summary
+
+            account_resolved = state.get("account_resolved", {})
+            rec_name = (
+                account_resolved.get("account_name")
+                if account_resolved and isinstance(account_resolved, dict)
+                else state.get("recipient_name") or "Recipient"
+            )
+            bank_name = state.get("recipient_bank_name") or state.get("recipient_bank_code") or ""
+            acct_number = state.get("recipient_account")
+            source = state.get("selected_source_account", {})
+            source_account_number = source.get("account_number") or ""
+            source_bank_name = source.get("bank_name") or source.get("name") or "Account"
+            narration = state.get("narration")
+
+            new_summary = format_transfer_summary(
+                {
+                    "amount": amount,
+                    "recipientName": rec_name,
+                    "recipientBank": bank_name,
+                    "recipientAccount": acct_number,
+                    "sourceBank": source_bank_name,
+                    "sourceAccount": source_account_number,
+                    "narration": narration,
+                    "percentage": transfer_percentage,  # Include percentage for display
+                }
+            )
+
+            # Update state with the calculated amount and new summary
+            state = {**state, "amount": amount, "confirmation_summary": new_summary}
+
+        if balance >= (amount or 0):
             token = state.get("confirmation_token", "")
             summary = state.get("confirmation_summary", "")
 
@@ -126,9 +207,7 @@ async def check_funding(
 
                     try:
                         await asyncio.to_thread(save_confirmation)
-                        logger.info(
-                            "actionable_message_saved", message_type="transfer_confirmation"
-                        )
+                        logger.info("actionable_message_saved", message_type="transfer_confirmation")
                     except Exception as e:
                         logger.error("actionable_message_save_failed", error=str(e))
 
@@ -165,6 +244,7 @@ async def plan_funding(
     Create a funding plan using FundingPlanner.
 
     Uses lazy balance fetching to minimize API calls.
+    Supports manual dual-account pooling when user specifies source_accounts.
     """
     amount = state.get("amount", 0)
     accounts = state.get("accounts", [])
@@ -189,8 +269,29 @@ async def plan_funding(
             self.mandate_status = data.get("mandate_status", "pending")
             self.is_default = data.get("is_default", False)
 
+    source_accounts = state.get("source_accounts")
+    use_dual_accounts = state.get("use_dual_accounts")
+    explicit_split = state.get("explicit_split")
+
+    if source_accounts:
+        filtered = [a for a in accounts if a.get("bank_name") in source_accounts]
+        if len(filtered) < len(source_accounts):
+            missing = [b for b in source_accounts if b not in [a.get("bank_name") for a in filtered]]
+            return {
+                **state,
+                "flow_state": "error",
+                "funding_error": f"Account not found for: {', '.join(missing)}",
+                "response": f"You don't have a linked account for {', '.join(missing)}.",
+            }
+        accounts = filtered[:2]
+        logger.info("manual_pooling_filtered", source_accounts=source_accounts, filtered_count=len(accounts))
+    elif use_dual_accounts:
+        accounts = accounts[:2]
+        logger.info("dual_accounts_mode", account_count=len(accounts))
+
     adapted_accounts = [AccountAdapter(a) for a in accounts]
 
+    # If explicit split is provided, we use it after planning
     plan = await planner.plan_funding(
         accounts=adapted_accounts,
         transfer_amount=amount,
@@ -198,22 +299,17 @@ async def plan_funding(
     )
 
     if not plan.is_sufficient:
-        # Get recipient details for error message
         recipient_name = state.get("recipient_name", "")
         recipient_bank = state.get("recipient_bank_name", "")
         recipient_account = state.get("recipient_account", "")
 
-        # Use resolved name if available
         account_resolved = state.get("account_resolved")
         if account_resolved and isinstance(account_resolved, dict):
             recipient_name = account_resolved.get("account_name", recipient_name)
 
-        # Get selected account info for the error message
         selected_account = state.get("selected_source_account", {})
         primary_bank = selected_account.get("bank_name", "your account")
         primary_balance = plan.steps[0].amount if plan.steps else state.get("balance_available", 0)
-
-        # Build error message with recipient details
         from shared.formatters.funding import format_insufficient_funds
 
         error_msg = format_insufficient_funds(
@@ -226,15 +322,14 @@ async def plan_funding(
             recipient_account=recipient_account,
         )
 
-        # Stay in flow so user can adjust amount - don't end the transfer
         return {
             **state,
-            "flow_state": "awaiting_amount_adjustment",  # Allow user to send new amount
-            "awaiting_confirmation": True,  # Keep session active so orchestrator routes here
+            "flow_state": "awaiting_amount_adjustment",
+            "awaiting_confirmation": True,
             "funding_error": error_msg,
             "response": error_msg,
             "funding_status": "insufficient",
-            "max_available": plan.total_funded,  # Store for reference
+            "max_available": plan.total_funded,
         }
 
     plan_dict = {
@@ -266,14 +361,12 @@ async def plan_funding(
             "funding_status": "funded",
         }
     else:
-        # Multi-source: needs user confirmation - confirm_funding will send the message
         return {
             **state,
             "funding_plan": plan_dict,
             "funding_steps": plan_dict["steps"],
             "flow_state": "confirming_funding",
             "funding_status": "user_confirming",
-            # Note: Don't set 'response' - confirm_funding sends the detailed message
         }
 
 
@@ -302,12 +395,10 @@ async def confirm_funding(
     selected_account = state.get("selected_source_account", {})
     primary_bank = selected_account.get("bank_name", "your account")
 
-    # Get recipient details from state
     recipient_name = state.get("recipient_name", "")
     recipient_bank = state.get("recipient_bank_name", "")
     recipient_account = state.get("recipient_account", "")
 
-    # If we have account_resolved, use the resolved name
     account_resolved = state.get("account_resolved")
     if account_resolved and isinstance(account_resolved, dict):
         recipient_name = account_resolved.get("account_name", recipient_name)
@@ -322,14 +413,11 @@ async def confirm_funding(
         recipient_account=recipient_account,
     )
 
-    token = uuid.uuid4().hex
-    flow_token = f"transfer-pin-{token}"
+    idem_key = uuid.uuid4().hex
+    flow_token = f"transfer-pin-{idem_key}-{phone_number}"
 
-    # Store mapping for webhook to find phone number
-    # Key format must match handle_transaction_pin lookup: transfer:token:{token}:phone
-    await redis_client.set(f"transfer:token:{token}:phone", phone_number, ex=3600)
+    await redis_client.set(f"transfer:token:{idem_key}:phone", phone_number, ex=3600)
 
-    # Send Flow
     await whatsapp_client.send_flow(
         to=phone_number,
         header="Confirm Funding",
@@ -343,7 +431,7 @@ async def confirm_funding(
     return {
         **state,
         "awaiting_confirmation": True,
-        "confirmation_token": token,  # Store internal token
+        "confirmation_token": idem_key,
         "confirmation_context": {
             "flow_type": "transfer",
             "action": "funding_approval",
@@ -359,7 +447,7 @@ async def confirm_funding(
         "flow_state": "confirming_funding",
         "funding_required": True,
         "_amount_at_confirmation": amount,
-        "response": "",  # Clear stale response - WhatsApp flow was sent directly
+        "response": "",
         "llm_reply": None,
     }
 
@@ -380,24 +468,17 @@ async def verify_funding_approval(
         pin_verified_in_state=state.get("pin_verified"),
         funding_approved=state.get("funding_approved"),
         flow_state=state.get("flow_state"),
-        confirmation_token=state.get("confirmation_token", "")[:20]
-        if state.get("confirmation_token")
-        else None,
+        confirmation_token=state.get("confirmation_token", "")[:20] if state.get("confirmation_token") else None,
     )
 
-    # Check verification result using token from this funding flow
-    # AuthorizationService stores result keyed by the inner token (token from transfer-pin-{token})
     token = state.get("confirmation_token")
     idempotency_key = token if token else state.get("idempotency_key", "")
 
-    # Check if PIN was verified (via Flow event or Redis)
     is_pin_verified_in_state = state.get("pin_verified")
     pin_result = await authorization_service.get_pin_verification_result(idempotency_key)
 
     if is_pin_verified_in_state or (pin_result and pin_result.verified):
-        logger.info(
-            "funding_pin_verified_via_flow", phone=phone_number, from_state=is_pin_verified_in_state
-        )
+        logger.info("funding_pin_verified_via_flow", phone=phone_number, from_state=is_pin_verified_in_state)
         return {
             **state,
             "funding_approved": True,
@@ -413,18 +494,15 @@ async def verify_funding_approval(
         verified=pin_result.verified if pin_result else None,
     )
 
-    # Check if text approval (from AffirmationHandler logic)
     if state.get("funding_approved"):
         logger.info("funding_approved_via_text_but_pin_missing", phone=phone_number)
         return {
             **state,
-            "awaiting_confirmation": True,  # Still waiting
+            "awaiting_confirmation": True,
             "funding_approved": False,  # Reset to prevent loop
             "response": "Please tap 'Authorize Funding' in the message above to confirm securely with your PIN.",
         }
 
-    # If explicit rejection, it's handled by cancellation logic usually,
-    # but if valid unverified response comes through:
     return state
 
 

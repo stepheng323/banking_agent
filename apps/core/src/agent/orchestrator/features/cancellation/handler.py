@@ -4,8 +4,11 @@ from apps.core.src.agent.orchestrator.pipeline.message_context import MessageCon
 from apps.core.src.agent.orchestrator.pipeline.message_handler import MessageHandler
 from apps.core.src.agent.tools.batch.utils import ExecutionState
 from shared.cache.redis_client import RedisClient
+from shared.utils.logging import get_logger
 
 from .service import OrchestratorCancellationHandler
+
+logger = get_logger(__name__)
 
 
 class CancellationHandler(MessageHandler):
@@ -25,12 +28,15 @@ class CancellationHandler(MessageHandler):
 
     async def handle(self, context: MessageContext) -> MessageContext:
         """Handle cancellation."""
-        # Check if batch is currently executing
-        execution_state = await self.redis_client.get(
-            f"queue:{context.phone_number}:execution_state"
+        logger.info(
+            f"🚫 [CANCELLATION] Handler triggered. Intent: {context.intent}, IsCancellation: {context.is_cancellation}"
         )
 
+        # Check if batch is currently executing
+        execution_state = await self.redis_client.get(f"queue:{context.phone_number}:execution_state")
+
         if execution_state == ExecutionState.EXECUTING_BATCH:
+            # ... (batch logic) ...
             await self.redis_client.set(
                 f"queue:{context.phone_number}:cancel_batch",
                 "1",
@@ -50,6 +56,9 @@ class CancellationHandler(MessageHandler):
         if context.classification_result:
             classifier_response = context.classification_result.response
 
+        # Log before calling service
+        logger.info(f"🚫 [CANCELLATION] Calling service. Classifier response: {classifier_response}")
+
         response = await self.cancellation_handler.handle_cancellation(
             context.phone_number,
             context.text,
@@ -59,6 +68,7 @@ class CancellationHandler(MessageHandler):
         )
 
         if response:
+            logger.info(f"🚫 [CANCELLATION] Service returned response: {response}")
             return context.with_response(response, handled=True)
 
         return context

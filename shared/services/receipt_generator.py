@@ -175,9 +175,7 @@ class ReceiptGenerator:
             await self._playwright.stop()
             self._playwright = None
 
-    def generate_receipt_html(
-        self, transaction: Transaction, account_name: str | None = None
-    ) -> str:
+    def generate_receipt_html(self, transaction: Transaction, account_name: str | None = None) -> str:
         """
         Generate receipt HTML from template with transaction data.
 
@@ -188,16 +186,12 @@ class ReceiptGenerator:
         Returns:
             Rendered HTML string
         """
-        # Format amount
         amount = transaction.amount
         currency = transaction.currency or "NGN"
         amount_str = f"₦{amount:,.2f}" if currency == "NGN" else f"{currency} {amount:,.2f}"
 
-        # Format transaction type
         transaction_type = transaction.transaction_type or "Transfer"
         transaction_type = transaction_type.capitalize()
-
-        # Format transaction date
         created_at = transaction.created_at
         if isinstance(created_at, str):
             try:
@@ -205,30 +199,16 @@ class ReceiptGenerator:
             except Exception:
                 created_at = datetime.utcnow()
         transaction_date = created_at.strftime("%d %b %Y") if created_at else "N/A"
-
-        # Source account name
         source_account_name = account_name or transaction.source_account_number or "N/A"
-
-        # Beneficiary details
         beneficiary_name = transaction.recipient_name or "N/A"
         beneficiary_account = transaction.recipient_account_number or "N/A"
-        beneficiary_bank = (
-            transaction.recipient_bank_name or transaction.recipient_bank_code or "N/A"
-        )
+        beneficiary_bank = transaction.recipient_bank_name or transaction.recipient_bank_code or "N/A"
 
-        # Narration
         narration = transaction.narration or "No narration"
-
-        # Reference
         reference = transaction.transaction_id or "Pending"
-
-        # Status
         status = transaction.status.capitalize() if transaction.status else "Pending"
-
-        # Generation date
         generation_date = datetime.utcnow().strftime("%d %b %Y at %I:%M %p")
 
-        # Replace template variables
         html = RECEIPT_HTML_TEMPLATE.replace("{{amount}}", amount_str)
         html = html.replace("{{transactionType}}", transaction_type)
         html = html.replace("{{transactionDate}}", transaction_date)
@@ -254,16 +234,15 @@ class ReceiptGenerator:
             PNG image bytes
         """
         browser = await self._ensure_browser()
-        page = await browser.new_page()
+        page = await browser.new_page(
+            viewport={"width": 800, "height": 1200},
+            device_scale_factor=4,
+        )
 
         try:
-            # Set viewport size for receipt
             await page.set_viewport_size({"width": 800, "height": 1200})
-
-            # Load HTML content
             await page.set_content(html_content, wait_until="networkidle")
 
-            # Take screenshot
             screenshot_bytes = await page.screenshot(
                 type="png",
                 full_page=True,
@@ -274,9 +253,7 @@ class ReceiptGenerator:
         finally:
             await page.close()
 
-    async def generate_receipt_image(
-        self, transaction: Transaction, account_name: str | None = None
-    ) -> bytes:
+    async def generate_receipt_image(self, transaction: Transaction, account_name: str | None = None) -> bytes:
         """
         Generate receipt image from transaction data.
 

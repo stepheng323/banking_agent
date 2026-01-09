@@ -89,6 +89,12 @@ Common Nigerian bank names: GTB, Access, Zenith, UBA, First Bank, Kuda, Opay, Mo
 "What's my total balance across all accounts?"
 → intent: balance_query, accounts_scope: "all"
 
+"Show my accounts"
+→ intent: balance_query, accounts_scope: "all"
+
+"What's my balance?"
+→ intent: balance_query
+
 "Show my GTB transactions"
 → intent: transaction_list, accounts_scope: "single", account_name: "GTB"
 
@@ -144,6 +150,9 @@ Classify this message into one of these types:
    - Respond with a witty, matching thanks in the same language/style
 
 9. **new_query** - User is asking something completely different
+   - IMPORTANT: Use this for queries about accounts/balances even if there's an active session
+   - Examples: "show my accounts", "what's my balance", "how much do I have", "list my accounts"
+   - Any query that starts fresh should be new_query, NOT drill_down
 
 IMPORTANT: Support all languages including Nigerian Pidgin, Yoruba, Igbo, Hausa, Japanese, etc.
 """

@@ -194,7 +194,7 @@ class QueryFlowGraph:
 
         elif cont_type in ("time_delta", "filter_delta"):
             if state.get("show_expanded") and cont_type == "filter_delta":
-                state.update(await handle_local_filter(state))
+                state.update(handle_local_filter(state))
             else:
                 state.update(await execute_node(state, self.executor))
             state.update(await format_node(state, self.llm))
@@ -204,11 +204,11 @@ class QueryFlowGraph:
             state.update(await format_node(state, self.llm))
 
         elif cont_type == "drill_down":
-            state.update(await handle_drill_down(state))
+            state.update(handle_drill_down(state))
             state.update(await format_node(state, self.llm))
 
         elif cont_type == "recipient_drill_down":
-            state.update(await handle_recipient_drill_down(state))
+            state.update(handle_recipient_drill_down(state))
             if not state.get("response"):
                 state.update(await format_node(state, self.llm))
 

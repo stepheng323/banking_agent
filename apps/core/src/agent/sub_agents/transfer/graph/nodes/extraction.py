@@ -4,7 +4,7 @@ import time
 from typing import Any, cast
 
 from apps.core.src.agent.sub_agents.transfer.extractor import TransferEntityExtractor
-from apps.core.src.agent.sub_agents.transfer.models import SimpleTransferEntities
+from apps.core.src.agent.sub_agents.transfer.models import TransferEntities
 from apps.core.src.agent.sub_agents.transfer.models_extraction import TransferExtractionResult
 from apps.core.src.agent.sub_agents.transfer.state import TransferState
 from shared.utils.logging import get_logger
@@ -68,6 +68,19 @@ async def extract_entities(
                 "response": "",
             }
 
+    # CRITICAL: If resuming from an interrupt, skip extraction
+    # User said "yes/ok" to resume, don't let LLM misclassify it as cancel
+    if classification_result:
+        complexity_reason = classification_result.get("complexity_reason", "")
+        debug_log(f"🔎 [EXTRACTION] Checking skip logic. Reason: {complexity_reason}")
+        if "Flow resume after interrupt" in complexity_reason:
+            debug_log("⏭️ Skipping extraction - flow resume detected")
+            return state
+        else:
+            debug_log("❌ [EXTRACTION] Not skipping - reason does not match 'Flow resume after interrupt'")
+    else:
+        debug_log("❌ [EXTRACTION] No classification result found in state")
+
     last_response = state.get("response") or state.get("llm_reply")
     smart_context = {}
     if last_response:
@@ -102,7 +115,7 @@ async def extract_entities(
         image_data=image_data,
     )
 
-    entities = result.entities or SimpleTransferEntities()
+    entities = result.entities or TransferEntities()
     existing_amount = state.get("amount")
 
     logger.info(
@@ -110,6 +123,7 @@ async def extract_entities(
         existing_amount=existing_amount,
         intent_new=(state.get("classification_result") or {}).get("intent"),
         extracted_amount=entities.amount,
+        extracted_transfer_all=getattr(entities, "transfer_all", None),
     )
 
     debug_log(f"🔍 [EXTRACTION] State amount before extraction: {existing_amount}")
@@ -212,6 +226,29 @@ async def extract_entities(
         "flow_state": "extracting",
     }
 
+    # Suppress LLM reply during account selection to avoid confusing messages
+    # like "Sending ₦2" when user selects option 2
+    if state.get("flow_state") == "selecting_account":
+        updates["llm_reply"] = None
+        debug_log("🔇 [EXTRACTION] Suppressing LLM reply during account selection")
+
+    # Debug: Log what was extracted
+    logger.info(
+        "extraction_result",
+        amount=entities.amount,
+        transfer_all=getattr(entities, "transfer_all", None),
+        transfer_percentage=getattr(entities, "transfer_percentage", None),
+        recipient_name=entities.recipient_name,
+        bank_name=entities.bank_name,
+    )
+
+    # CRITICAL: During account selection, ignore any amount extraction
+    # User is just selecting "1" or "2" for account, not changing the amount
+    flow_state = state.get("flow_state")
+    if flow_state == "selecting_account" and entities.amount is not None:
+        debug_log(f"🔍 [EXTRACTION] Ignoring amount extraction during account selection: {entities.amount}")
+        entities.amount = None  # Prevent it from being treated as a new amount
+
     if entities.amount is not None:
         updates["amount"] = entities.amount
         updates["_amount_set_at"] = time.time()
@@ -222,7 +259,6 @@ async def extract_entities(
         updates["idempotency_key"] = None  # CRITICAL: Force new key generation and Redis update
         updates["response"] = ""  # CRITICAL: Clear stale error messages from previous attempts
         updates["funding_error"] = None  # Clear old funding error
-        logger.info("DEBUG_TRACE_AMOUNT_UPDATED_FROM_ENTITIES", new_amount=entities.amount)
     elif existing_amount is not None:
         # Preserve existing amount when user is providing other details (e.g., account details)
         # This is important for complex transfers where amount comes from task parameters
@@ -285,24 +321,55 @@ async def extract_entities(
         updates["is_internal_transfer"] = True
         debug_log(f"🔄 [EXTRACTION] Internal transfer detected: {entities.source_bank_name} -> {entities.bank_name}")
 
-    # Handle transfer_all (move entire balance)
     if getattr(entities, "transfer_all", None) is True:
         updates["transfer_all"] = True
-        updates["amount"] = None  # Will be resolved in check_funding node
-        debug_log("💰 [EXTRACTION] Transfer all detected - amount will be set from balance in check_funding")
+        # Only set amount=None if user didn't provide explicit amount (e.g., "send all", not "send 40k from all accounts")
+        if entities.amount is None:
+            updates["amount"] = None  # Will be resolved in check_funding node
+            debug_log("💰 [EXTRACTION] Transfer all detected - amount will be set from balance in check_funding")
+        else:
+            debug_log(f"💰 [EXTRACTION] Transfer all with explicit amount: ₦{entities.amount:,.0f}")
+    elif state.get("transfer_all"):
+        # Preserve existing transfer_all flag if not in new extraction
+        updates["transfer_all"] = state["transfer_all"]
+        debug_log("🔍 [EXTRACTION] Preserving existing transfer_all flag")
 
-    # Debug: Log what updates will be applied
+    if getattr(entities, "transfer_percentage", None):
+        updates["transfer_percentage"] = entities.transfer_percentage
+        # Set amount=None if user didn't provide explicit amount
+        if entities.amount is None:
+            updates["amount"] = None  # Will be calculated from percentage in check_funding
+            debug_log(
+                f"💰 [EXTRACTION] Transfer percentage detected: {entities.transfer_percentage}% - amount will be calculated in check_funding"
+            )
+        else:
+            debug_log(
+                f"💰 [EXTRACTION] Transfer percentage with explicit amount: {entities.transfer_percentage}%, ₦{entities.amount:,.0f}"
+            )
+    elif state.get("transfer_percentage"):
+        # Preserve existing transfer_percentage if not in new extraction
+        updates["transfer_percentage"] = state["transfer_percentage"]
+        debug_log(f"🔍 [EXTRACTION] Preserving existing transfer_percentage: {state['transfer_percentage']}%")
+
+    if getattr(entities, "source_accounts", None):
+        updates["source_accounts"] = entities.source_accounts[:2]
+        debug_log(f"💳 [EXTRACTION] Dual-account pooling: {updates['source_accounts']}")
+    if getattr(entities, "use_dual_accounts", None) is True:
+        updates["use_dual_accounts"] = True
+        debug_log("💳 [EXTRACTION] User wants to use both accounts")
+    if getattr(entities, "explicit_split", None):
+        updates["explicit_split"] = entities.explicit_split
+        debug_log(f"💳 [EXTRACTION] Explicit split: {updates['explicit_split']}")
+
     debug_log(f"🔍 [EXTRACTION] Updates to apply: {updates}")
 
     new_state.update(updates)
 
-    # Debug: Log state after updates
     debug_log(
         f"🔍 [EXTRACTION] State after updates - recipient_account={new_state.get('recipient_account')}, recipient_bank={new_state.get('recipient_bank_name') or new_state.get('recipient_bank_code')}"
     )
 
     # Retained safety: Clear stale amount if after updates the recipient differs from what amount was set against
-    # (covers edge cases where earlier pre-update check did not trigger)
     # BUT: Don't clear if user is providing account details for an existing task (same recipient_name)
     post_incoming_account = incoming_account_norm
     post_incoming_bank = incoming_bank_any
@@ -311,16 +378,11 @@ async def extract_entities(
     post_existing_recipient_name = new_state.get("recipient_name")
     incoming_recipient_name = entities.recipient_name
 
-    # Check if this is providing account details for the same recipient (not a new recipient)
     is_same_recipient = (
         post_existing_recipient_name
         and incoming_recipient_name
         and str(post_existing_recipient_name).lower() == str(incoming_recipient_name).lower()
-    ) or (
-        post_existing_recipient_name
-        and not incoming_recipient_name
-        and post_existing_recipient_name  # User providing account details without repeating name
-    )
+    ) or (post_existing_recipient_name and not incoming_recipient_name and post_existing_recipient_name)
 
     is_new_account_post = bool(post_incoming_account and post_incoming_account != post_existing_account)
     is_new_bank_post = bool(post_incoming_bank and post_incoming_bank != post_existing_bank_any)

@@ -61,10 +61,10 @@ def get_mock_bank_accounts() -> list[BankAccount]:
 
 def get_mock_balance(account_id: str) -> BalanceData:
     return BalanceData(
-        balance_kobo=50000000,
-        balance_naira=500000.00,
-        ledger_balance_kobo=50000000,
-        ledger_balance_naira=500000.00,
+        balance_kobo=3000000,  # 30,000 naira in kobo
+        balance_naira=30000.00,
+        ledger_balance_kobo=3000000,
+        ledger_balance_naira=30000.00,
         currency="NGN",
         account_id=account_id,
         account_name="Samuel Olamide",

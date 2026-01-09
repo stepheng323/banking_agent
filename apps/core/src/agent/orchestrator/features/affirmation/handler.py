@@ -82,9 +82,7 @@ class AffirmationHandler(MessageHandler):
                             # Force clear stale state so the new flow starts fresh
                             await self.transfer_service.graph.clear_checkpoint(context.phone_number)
                             if hasattr(self.airtime_service, "graph"):
-                                await self.airtime_service.graph.clear_checkpoint(
-                                    context.phone_number
-                                )
+                                await self.airtime_service.graph.clear_checkpoint(context.phone_number)
 
                             # Clear conversation flags
                             if context.conversation_state:
@@ -194,15 +192,11 @@ class AffirmationHandler(MessageHandler):
             elif result.is_rejection:
                 classification_dict["funding_rejected"] = True
 
-            response = await self.transfer_service.run_simple(
-                context.phone_number, context.text, classification_dict
-            )
+            response = await self.transfer_service.run_simple(context.phone_number, context.text, classification_dict)
             return context.with_response(response, handled=True)
 
         elif flow_type == "airtime":
-            response = await self.airtime_service.run_simple(
-                context.phone_number, context.text, classification_dict
-            )
+            response = await self.airtime_service.run_simple(context.phone_number, context.text, classification_dict)
             return context.with_response(response, handled=True)
 
         elif flow_type == "beneficiary":
@@ -210,9 +204,7 @@ class AffirmationHandler(MessageHandler):
                 redis = RedisClient.get_client()
                 await redis.delete(f"user:{context.phone_number}:beneficiary_suggestion")
                 await redis.delete(f"user:{context.phone_number}:conversation_state")
-                return context.with_response(
-                    "No worries! Anything else I can help with?", handled=True
-                )
+                return context.with_response("No worries! Anything else I can help with?", handled=True)
             return context
 
         elif flow_type == "mandate":
@@ -257,9 +249,12 @@ class AffirmationHandler(MessageHandler):
             complexity_reason="Flow resume after interrupt",
         )
 
+        logger.info(f"✅ [AFFIRMATION] Resuming flow with classification: {new_classification}")
+
         return context.update(
             classification_result=new_classification,
             is_flow_resume=True,
+            # Don't set handled=True - we need ActiveQueueHandler to run the graph
         )
 
     async def _handle_mandate_reinitiation(
@@ -283,9 +278,7 @@ class AffirmationHandler(MessageHandler):
             return context.with_response("Okay, mandate reinitiation cancelled.", handled=True)
 
         svc_result = ServiceResult(
-            **await mandate_service.reinitiate_mandate(
-                phone_number=context.phone_number, account_id=account_id
-            )
+            **await mandate_service.reinitiate_mandate(phone_number=context.phone_number, account_id=account_id)
         )
 
         await redis.delete(pending_key)

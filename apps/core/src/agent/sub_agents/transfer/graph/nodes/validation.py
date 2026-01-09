@@ -2,11 +2,6 @@
 
 from typing import Any
 
-from apps.core.src.agent.tools.response import (
-    ResponseIntent,
-    build_response_context,
-    get_synthesizer,
-)
 from apps.core.src.agent.sub_agents.transfer.state import TransferState
 from apps.core.src.agent.sub_agents.transfer.validators import (
     AccountValidator,
@@ -15,14 +10,45 @@ from apps.core.src.agent.sub_agents.transfer.validators import (
     SelfTransferValidator,
     ValidationCoordinator,
 )
+from apps.core.src.agent.tools.response import (
+    ResponseIntent,
+    build_response_context,
+    get_synthesizer,
+)
 from apps.core.src.agent.tools.validation.service import AsyncValidationService
 from shared.cache.bank_cache import BankCacheService
 from shared.clients.whatsapp.client import WhatsAppClient
+from shared.utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 
 async def validate_amount(state: TransferState) -> TransferState:
     """Validate that amount is present."""
-    if not state.get("amount"):
+    amount = state.get("amount")
+    transfer_all = state.get("transfer_all")
+    transfer_percentage = state.get("transfer_percentage")
+
+    logger.info(
+        "validate_amount_entry",
+        amount=amount,
+        has_amount=bool(amount),
+        transfer_all=transfer_all,
+        transfer_percentage=transfer_percentage,
+        flow_state=state.get("flow_state"),
+    )
+
+    # Skip amount validation if transfer_all or transfer_percentage is set
+    # Amount will be calculated from balance in funding node
+    if transfer_all:
+        logger.info("validate_amount_skip_transfer_all")
+        return state
+
+    if transfer_percentage:
+        logger.info("validate_amount_skip_percentage", percentage=transfer_percentage)
+        return state
+
+    if not amount:
         context = build_response_context(ResponseIntent.ASK_AMOUNT, state)
         synthesizer = get_synthesizer()
         response = await synthesizer.synthesize(context)

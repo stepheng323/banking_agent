@@ -112,7 +112,8 @@ async def update_conversation_state(phone_number: str, state: TransferState) -> 
 
         should_save = False
 
-        if flow_state == "cancelled":
+        # Clear conversation_state for terminal statuses
+        if flow_state == "cancelled" or transfer_status in ("authorized", "completed", "failed"):
             key = f"user:{phone_number}:conversation_state"
             await redis_client.delete(key)
             return

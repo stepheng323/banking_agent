@@ -99,7 +99,12 @@ class TransferState(TypedDict):
     funding_rejected: NotRequired[bool]
     funding_approved: NotRequired[bool]
 
-    # Confirmation fields
+    source_accounts: NotRequired[list[str] | None]
+    use_dual_accounts: NotRequired[bool | None]
+    explicit_split: NotRequired[dict[str, float] | None]
+    transfer_all: NotRequired[bool | None]  # True when user wants to send entire balance
+    transfer_percentage: NotRequired[float | None]  # Percentage of balance to transfer (e.g., 10 for 10%)
+
     awaiting_confirmation: NotRequired[bool]
     confirmation_context: NotRequired[dict | None]
     confirmation_token: NotRequired[str | None]

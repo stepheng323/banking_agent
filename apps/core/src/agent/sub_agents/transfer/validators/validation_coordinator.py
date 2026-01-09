@@ -4,13 +4,13 @@ import hashlib
 import json
 from typing import Any
 
+from apps.core.src.agent.sub_agents.transfer.state import TransferState
+from apps.core.src.agent.tools.account_selection.service import AccountSelectionService
 from apps.core.src.agent.tools.response import (
     ResponseIntent,
     build_response_context,
     get_synthesizer,
 )
-from apps.core.src.agent.sub_agents.transfer.state import TransferState
-from apps.core.src.agent.tools.account_selection.service import AccountSelectionService
 from shared.cache.bank_cache import BankCacheService
 from shared.utils.logging import get_logger
 
@@ -186,11 +186,10 @@ class ValidationCoordinator:
             try:
                 available = float(balance.get("available", 0))
 
-                # Handle transfer_all: use entire balance (minus minimum for fees)
+                # Handle transfer_all: use entire balance
                 transfer_all = state.get("transfer_all", False)
                 if transfer_all:
-                    min_balance_for_fees = 100  # Keep ₦100 for potential fees
-                    if available <= min_balance_for_fees:
+                    if available <= 0:
                         context = build_response_context(ResponseIntent.INSUFFICIENT_BALANCE, state, balance=available)
                         response = await self.synthesizer.synthesize(context)
                         return {
@@ -199,7 +198,7 @@ class ValidationCoordinator:
                             "response": response,
                             "validation_errors": ["insufficient_balance_for_transfer_all"],
                         }
-                    transfer_amount = available - min_balance_for_fees
+                    transfer_amount = available
                     state = {**state, "amount": transfer_amount}
                     logger.info("transfer_all_amount_resolved", balance=available, amount=transfer_amount)
 

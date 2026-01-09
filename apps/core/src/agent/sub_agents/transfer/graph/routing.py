@@ -56,9 +56,7 @@ def route_by_state(
     # CRITICAL: If transfer_status is pending, confirmation was already sent
     # Don't route to confirm again - wait for PIN verification
     if transfer_status == "pending":
-        debug_log(
-            "DEBUG route_by_state: transfer_status=pending -> end (confirmation already sent, waiting for PIN)"
-        )
+        debug_log("DEBUG route_by_state: transfer_status=pending -> end (confirmation already sent, waiting for PIN)")
         return "end"
 
     if flow_state == "cancelled" and not response:
@@ -104,9 +102,7 @@ def route_by_state(
         seq_ok = True
         if amt_ts is not None and rcp_ts is not None:
             seq_ok = bool(amt_ts >= rcp_ts)
-            debug_log(
-                f"DEBUG route_by_state: sequencing check amt_ts={amt_ts}, rcp_ts={rcp_ts}, seq_ok={seq_ok}"
-            )
+            debug_log(f"DEBUG route_by_state: sequencing check amt_ts={amt_ts}, rcp_ts={rcp_ts}, seq_ok={seq_ok}")
         if seq_ok:
             from shared.utils.logging import get_logger
 
@@ -132,7 +128,9 @@ def route_by_state(
     ):
         return "end"
 
-    if not amount:
+    transfer_all = state.get("transfer_all")
+    transfer_percentage = state.get("transfer_percentage")
+    if not amount and not transfer_all and not transfer_percentage:
         debug_log("DEBUG route_by_state: Missing amount -> collect_amount")
         return "collect_amount"
 
@@ -156,17 +154,17 @@ def route_by_state(
         return "end"
 
     if flow_state == "extracting":
+        transfer_percentage = state.get("transfer_percentage")
+        has_amount = amount or transfer_all or transfer_percentage
         if (
-            amount
+            has_amount
             and selected_account
             and recipient_account
             and recipient_bank
             and account_resolved
             and has_response
         ):
-            debug_log(
-                "DEBUG route_by_state: All required fields present with response during extracting -> end"
-            )
+            debug_log("DEBUG route_by_state: All required fields present with response during extracting -> end")
             return "end"
         debug_log("DEBUG route_by_state: extracting -> validate")
         return "validate"
