@@ -2,7 +2,8 @@
 
 from typing import TYPE_CHECKING, Any, Optional
 
-from apps.core.src.agent.tools.flow_completion import FlowCompletionCallback
+from apps.core.src.agent.orchestrator.services.task_coordinator import TaskCoordinator
+from apps.core.src.agent.orchestrator.registry import ExecutorRegistry
 from shared.services.task_queue import TaskQueueService
 from shared.types.agent_types import TaskStatus
 from shared.types.planner import PlannedTask
@@ -11,9 +12,7 @@ from shared.utils.logging import get_logger
 logger = get_logger(__name__)
 
 if TYPE_CHECKING:
-    from apps.core.src.agent.sub_agents.airtime import AirtimeService
     from apps.core.src.agent.sub_agents.query.graph import QueryFlowGraph
-    from apps.core.src.agent.sub_agents.transfer import TransferService
 
 
 class TaskExecutor:
@@ -21,14 +20,12 @@ class TaskExecutor:
 
     def __init__(
         self,
-        transfer_service: "TransferService",
-        airtime_service: "AirtimeService",
+        registry: ExecutorRegistry,
         task_queue_service: TaskQueueService,
         query_graph: Optional["QueryFlowGraph"] = None,
-        completion_callback: FlowCompletionCallback | None = None,
+        completion_callback: "TaskCoordinator | None" = None,
     ):
-        self.transfer_service = transfer_service
-        self.airtime_service = airtime_service
+        self.registry = registry
         self.task_queue_service = task_queue_service
         self.query_graph = query_graph
         self.completion_callback = completion_callback
@@ -209,10 +206,4 @@ class TaskExecutor:
         Returns:
             Service instance or None if not found
         """
-        if task.executor == "transfer":
-            return self.transfer_service
-        elif task.executor == "airtime":
-            return self.airtime_service
-        elif task.executor == "data" or task.executor == "query" or task.executor == "utility":
-            return None
-        return None
+        return self.registry.get_executor(task.executor)

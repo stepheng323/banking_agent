@@ -4,37 +4,37 @@ from typing import Any
 
 from langchain_openai import ChatOpenAI
 
-from apps.core.src.agent.orchestrator.features.active_queue.handler import ActiveQueueHandler
-from apps.core.src.agent.orchestrator.features.affirmation import AffirmationHandler
-from apps.core.src.agent.orchestrator.features.batch_authorization.handler import (
+from apps.core.src.agent.orchestrator.config import OrchestratorDependencies
+
+from apps.core.src.agent.orchestrator.handlers.affirmation import AffirmationHandler
+from apps.core.src.agent.orchestrator.handlers.batch_auth import (
     BatchAuthorizationHandler,
 )
-from apps.core.src.agent.orchestrator.features.beneficiary.handler import BeneficiaryHandler
-from apps.core.src.agent.orchestrator.features.beneficiary.service import (
+from apps.core.src.agent.orchestrator.handlers.beneficiary import BeneficiaryHandler
+from apps.core.src.agent.orchestrator.services.beneficiary_service import (
     OrchestratorBeneficiaryHandler,
 )
-from apps.core.src.agent.orchestrator.features.cancellation.handler import CancellationHandler
-from apps.core.src.agent.orchestrator.features.cancellation.service import (
+from apps.core.src.agent.orchestrator.services.cancellation_service import (
     OrchestratorCancellationHandler,
 )
-from apps.core.src.agent.orchestrator.features.classification.handler import ClassificationHandler
-from apps.core.src.agent.orchestrator.features.classification.service import (
+from apps.core.src.agent.orchestrator.handlers.flow_control import FlowControlHandler
+from apps.core.src.agent.orchestrator.handlers.classification import ClassificationHandler
+from apps.core.src.agent.orchestrator.services.classifier import (
     OrchestratorClassificationService,
 )
-from apps.core.src.agent.orchestrator.features.context.handler import ContextLoaderHandler
-from apps.core.src.agent.orchestrator.features.context.service import OrchestratorContextManager
-from apps.core.src.agent.orchestrator.features.flow_context import FlowContextService
-from apps.core.src.agent.orchestrator.features.fresh_start.handler import FreshStartHandler
-from apps.core.src.agent.orchestrator.features.intent_routing.handler import IntentRoutingHandler
-from apps.core.src.agent.orchestrator.features.intent_routing.service import (
+from apps.core.src.agent.orchestrator.handlers.context_loader import ContextLoaderHandler
+from apps.core.src.agent.orchestrator.services.context_manager import OrchestratorContextManager
+from apps.core.src.agent.orchestrator.services.flow_manager import FlowContextService
+from apps.core.src.agent.orchestrator.handlers.task_queue import TaskQueueHandler
+from apps.core.src.agent.orchestrator.handlers.intent_routing import IntentRoutingHandler
+from apps.core.src.agent.orchestrator.services.intent_router import (
     OrchestratorIntentRouter,
 )
-from apps.core.src.agent.orchestrator.features.message_quote import QuoteHandler, QuoteService
-from apps.core.src.agent.orchestrator.features.task_planning.handler import NextTaskHandler
-from apps.core.src.agent.orchestrator.features.task_planning.service import OrchestratorTaskPlanner
-from apps.core.src.agent.orchestrator.flow_completion_callback import (
-    OrchestratorFlowCompletionCallback,
-)
+from apps.core.src.agent.orchestrator.handlers.quote import QuoteHandler
+from apps.core.src.agent.orchestrator.services.quote_service import QuoteService
+
+from apps.core.src.agent.orchestrator.services.planner import OrchestratorTaskPlanner
+from apps.core.src.agent.orchestrator.services.task_coordinator import TaskCoordinator
 from apps.core.src.agent.orchestrator.pipeline import MessageContext, MessagePipeline
 from apps.core.src.agent.orchestrator.services import (
     ConversationResponder,
@@ -57,79 +57,69 @@ from shared.utils.async_helpers import create_background_task
 class OrchestratorAgent:
     """Orchestrator agent for the banking assistant."""
 
-    def __init__(
-        self,
-        llm: ChatOpenAI,
-        user_repo: UserRepository,
-        beneficiary_repo: BeneficiaryRepository,
-        actionable_message_repo: ActionableMessageRepository,
-        whatsapp_client: WhatsAppClient,
-        task_queue_service: TaskQueueService,
-        conversation_responder: ConversationResponder,
-        transfer_service: TransferService,
-        airtime_service: AirtimeService,
-        task_executor: TaskExecutor,
-        query_graph: QueryFlowGraph,
-        account_management_service: AccountManagementService,
-        media_service: Any = None,
-        data_graph: DataPurchaseGraph | None = None,
-        support_graph: SupportFlowGraph | None = None,
-        faq_graph: FAQFlowGraph | None = None,
-    ) -> None:
-        self.llm = llm
-        self.user_repo = user_repo
-        self.whatsapp_client = whatsapp_client
-        self.task_queue_service = task_queue_service
-        self.conversation_responder = conversation_responder
-        self.transfer_service = transfer_service
-        self.airtime_service = airtime_service
-        self.task_executor = task_executor
-        self.query_graph = query_graph
-        self.account_management_service = account_management_service
-        self.media_service = media_service
-        self.data_graph = data_graph
-        self.support_graph = support_graph
-        self.faq_graph = faq_graph
+    def __init__(self, deps: OrchestratorDependencies) -> None:
+        self.deps = deps
+        self.llm = deps.llm
+        self.user_repo = deps.user_repo
+        self.whatsapp_client = deps.whatsapp_client
+        self.task_queue_service = deps.task_queue_service
+        self.conversation_responder = deps.conversation_responder
+        self.transfer_service = deps.transfer_service
+        self.airtime_service = deps.airtime_service
+        self.task_executor = deps.task_executor
+        self.query_graph = deps.query_graph
+        self.account_management_service = deps.account_management_service
+        self.media_service = deps.media_service
+        self.data_graph = deps.data_graph
+        self.support_graph = deps.support_graph
+        self.faq_graph = deps.faq_graph
 
-        self.context_manager = OrchestratorContextManager(user_repo, beneficiary_repo)
-        self.classification_service = OrchestratorClassificationService(llm)
-        self.task_planner = OrchestratorTaskPlanner(llm, task_queue_service, task_executor)
+        self.context_manager = OrchestratorContextManager(deps.user_repo, deps.beneficiary_repo)
+        self.classification_service = OrchestratorClassificationService(deps.llm)
+        self.task_planner = OrchestratorTaskPlanner(deps.llm, deps.task_queue_service, deps.task_executor)
         self.beneficiary_handler = OrchestratorBeneficiaryHandler(self.context_manager)
-        self.completion_callback = OrchestratorFlowCompletionCallback(task_queue_service, self)
+        self.completion_callback = TaskCoordinator(
+            deps.task_queue_service,
+            deps.whatsapp_client,
+            self.context_manager,
+            self.task_planner,
+            deps.transfer_service,
+        )
         self.cancellation_handler = OrchestratorCancellationHandler(
-            transfer_service, airtime_service, self.context_manager, task_queue_service
+            deps.transfer_service, deps.airtime_service, self.context_manager, deps.task_queue_service
         )
         self.flow_context_service = FlowContextService()
-        self.intent_router = OrchestratorIntentRouter(
-            task_queue_service,
-            self.task_planner,
-            transfer_service,
-            airtime_service,
-            conversation_responder,
-            self.context_manager,
-            query_graph,
-            data_graph,
-            account_management_service,
-            self.whatsapp_client,
-            self.flow_context_service,
-            support_graph,
-            faq_graph,
+
+        
+        from apps.core.src.agent.orchestrator.services.intent_router_deps import IntentRouterDependencies
+        router_deps = IntentRouterDependencies(
+            task_queue_service=deps.task_queue_service,
+            task_planner=self.task_planner,
+            transfer_service=deps.transfer_service,
+            airtime_service=deps.airtime_service,
+            conversation_responder=deps.conversation_responder,
+            context_manager=self.context_manager,
+            query_graph=deps.query_graph,
+            whatsapp_client=self.whatsapp_client,
+            flow_context_service=self.flow_context_service,
+            data_graph=deps.data_graph,
+            account_management_service=deps.account_management_service,
+            support_graph=deps.support_graph,
+            faq_graph=deps.faq_graph,
         )
-        # Handler order matters
+        self.intent_router = OrchestratorIntentRouter(router_deps)
         self._handlers = [
-            ContextLoaderHandler(self.context_manager, task_queue_service),
-            ClassificationHandler(self.classification_service, self.context_manager, actionable_message_repo),
-            FreshStartHandler(self.context_manager, transfer_service, airtime_service),
-            AffirmationHandler(transfer_service, airtime_service, self.flow_context_service, llm),
+            ContextLoaderHandler(self.context_manager, deps.task_queue_service),
+            ClassificationHandler(self.classification_service, self.context_manager, deps.actionable_message_repo),
+            FlowControlHandler(self.context_manager, self.cancellation_handler, deps.transfer_service, deps.airtime_service),
+            AffirmationHandler(deps.transfer_service, deps.airtime_service, self.flow_context_service, deps.llm),
             QuoteHandler(
-                QuoteService({"transfer": transfer_service, "airtime": airtime_service}),
+                QuoteService(deps.executor_registry),
                 self.whatsapp_client,
             ),
             BeneficiaryHandler(self.beneficiary_handler),
-            CancellationHandler(self.cancellation_handler),
-            BatchAuthorizationHandler(task_queue_service, transfer_service, whatsapp_client),
-            ActiveQueueHandler(task_queue_service, transfer_service, airtime_service),
-            NextTaskHandler(self.task_planner),
+            BatchAuthorizationHandler(deps.task_queue_service, deps.transfer_service, deps.whatsapp_client),
+            TaskQueueHandler(deps.task_queue_service, self.task_planner, deps.transfer_service, deps.airtime_service, deps.executor_registry),
             IntentRoutingHandler(self.intent_router),
         ]
 
