@@ -1,6 +1,7 @@
 from langchain_openai import ChatOpenAI
 
 from apps.core.src.agent.orchestrator import OrchestratorAgent
+from apps.core.src.agent.orchestrator.config import OrchestratorDependencies
 from apps.core.src.agent.orchestrator.services import (
     ConversationResponder,
     MediaService,
@@ -134,17 +135,23 @@ def setup_dependencies():
         completion_callback=None,
     )
 
+    from apps.core.src.agent.orchestrator.registry import ExecutorRegistry
+    executor_registry = ExecutorRegistry()
+    executor_registry.register("transfer", agent_transfer_service)
+    executor_registry.register("airtime", agent_airtime_service)
+
     task_executor = TaskExecutor(
-        transfer_service=agent_transfer_service,
-        airtime_service=agent_airtime_service,
+        registry=executor_registry,
         task_queue_service=task_queue_service,
         query_graph=query_graph,
         completion_callback=None,
     )
 
     media_service = MediaService(whatsapp_client)
+    
 
-    orchestrator = OrchestratorAgent(
+
+    orchestrator_deps = OrchestratorDependencies(
         llm=llm,
         user_repo=user_repository,
         beneficiary_repo=beneficiary_repository,
@@ -161,7 +168,10 @@ def setup_dependencies():
         data_graph=data_graph,
         support_graph=support_graph,
         faq_graph=faq_graph,
+        executor_registry=executor_registry,
     )
+
+    orchestrator = OrchestratorAgent(orchestrator_deps)
 
     completion_callback = orchestrator.completion_callback
     agent_transfer_service.graph.completion_callback = completion_callback

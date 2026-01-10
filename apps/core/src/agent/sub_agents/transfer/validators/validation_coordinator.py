@@ -142,7 +142,8 @@ class ValidationCoordinator:
             }
 
         if not selected_source_account or not selected_source_account.get("id"):
-            return state
+            # CRITICAL: Set flow_state to prevent infinite loop
+            return {**state, "flow_state": "selecting_account"}
 
         matched_beneficiary = state.get("matched_beneficiary")
         use_beneficiary, resolved_account = self.beneficiary_matcher.match(

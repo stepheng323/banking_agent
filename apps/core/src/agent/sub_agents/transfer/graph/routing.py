@@ -135,6 +135,10 @@ def route_by_state(
         return "collect_amount"
 
     if not selected_account:
+        if flow_state == "selecting_account":
+            return "end"
+        if not state.get("accounts"):
+            return "end"
         debug_log("DEBUG route_by_state: No selected account, routing to select_account")
         return "select_account"
 
@@ -166,6 +170,11 @@ def route_by_state(
         ):
             debug_log("DEBUG route_by_state: All required fields present with response during extracting -> end")
             return "end"
+        # If we need to validate but don't have all fields, route appropriately
+        if not selected_account:
+            return "select_account"
+        if not recipient_account or not recipient_bank:
+            return "collect_recipient"
         debug_log("DEBUG route_by_state: extracting -> validate")
         return "validate"
 

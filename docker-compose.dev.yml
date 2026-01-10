@@ -78,7 +78,7 @@ services:
   receipt-worker:
     build:
       context: .
-      dockerfile: apps/receipt_worker/Dockerfile
+      dockerfile: apps/receipt/Dockerfile
     environment:
       - REDIS_URL=redis://redis:6379
       - META_ACCESS_TOKEN=${META_ACCESS_TOKEN}

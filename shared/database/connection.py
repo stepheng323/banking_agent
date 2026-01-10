@@ -2,7 +2,7 @@
 # pylint: disable=unused-import
 """Database connection and session management."""
 
-import os
+
 from collections.abc import Generator
 
 from sqlalchemy import create_engine
@@ -10,7 +10,9 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from shared.database.models import Base
 
-DATABASE_URL = os.getenv("DATABASE_URL", "")
+from shared.config import settings
+
+DATABASE_URL = settings.database_url
 
 _engine = None
 _SessionLocal = None

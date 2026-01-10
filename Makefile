@@ -111,14 +111,14 @@ run-core: ## Run core agent service (FastAPI with uvicorn + message consumer)
 run-all: ## Run all services (gateway + core)
 	@echo "$(GREEN)🚀 Starting all services...$(RESET)"
 	@echo "$(YELLOW)Note: Run in separate terminals or use docker-up instead$(RESET)"
-	@make run-gateway & make run-core & make run-receipt-worker
+	@make run-gateway & make run-core & make run-receipt
 
-run-receipt-worker: ## Run receipt worker service (FastAPI with uvicorn)
-	@echo "$(GREEN)🧾 Starting Receipt Worker service on port 8002...$(RESET)"
+run-receipt: ## Run receipt worker service (FastAPI with uvicorn)
+	@echo "$(GREEN)🧾 Starting Receipt service on port 8002...$(RESET)"
 	@if [ -d ".venv" ] && [ -f ".venv/bin/python" ]; then \
-		PYTHONPATH="$$(pwd)" .venv/bin/python -m uvicorn apps.receipt_worker.main:app --host 0.0.0.0 --port 8002 --reload --reload-dir apps --reload-dir shared; \
+		PYTHONPATH="$$(pwd)" .venv/bin/python -m uvicorn apps.receipt.main:app --host 0.0.0.0 --port 8002 --reload --reload-dir apps --reload-dir shared; \
 	elif command -v python3 &> /dev/null; then \
-		PYTHONPATH="$$(pwd)" python3 -m uvicorn apps.receipt_worker.main:app --host 0.0.0.0 --port 8002 --reload --reload-dir apps --reload-dir shared; \
+		PYTHONPATH="$$(pwd)" python3 -m uvicorn apps.receipt.main:app --host 0.0.0.0 --port 8002 --reload --reload-dir apps --reload-dir shared; \
 	else \
 		echo "$(RED)❌ Error: Python not found.$(RESET)"; \
 		exit 1; \
@@ -169,12 +169,13 @@ db-rollback: ## Rollback last database migration
 	@echo "$(RED)📊 Rolling back database migration...$(RESET)"
 	@python scripts/run_alembic.py downgrade -1
 
-db-reset: ## Drop and recreate database
+db-reset: ## Drop and recreate database schema
 	@echo "$(RED)⚠️  WARNING: This will delete all data!$(RESET)"
 	@read -p "Are you sure? (yes/no): " confirm && [ "$$confirm" = "yes" ] || exit 1
-	@python scripts/drop_db.py
-	@python scripts/init_db.py
-	@bash scripts/migrate.sh
+	@echo "$(YELLOW)🗑️  Dropping schema...$(RESET)"
+	@docker exec $$(docker ps -qf "name=postgres") psql -U postgres -d banking_agent -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;" || python scripts/drop_db.py
+	@echo "$(GREEN)📊 Running migrations...$(RESET)"
+	@.venv/bin/alembic upgrade head
 	@echo "$(GREEN)✅ Database reset complete!$(RESET)"
 
 db-shell: ## Open database shell
@@ -185,17 +186,14 @@ db-shell: ## Open database shell
 # DEPENDENCIES & SETUP
 # ============================================================================
 
-install: ## Install dependencies from requirements.txt
+install: ## Install dependencies using uv
 	@echo "$(BLUE)📦 Installing dependencies...$(RESET)"
-	@pip install --upgrade pip
-	@pip install -r requirements.txt
+	@uv sync
 	@echo "$(GREEN)✅ Dependencies installed!$(RESET)"
 
 install-dev: ## Install development dependencies (includes dev tools)
 	@echo "$(BLUE)📦 Installing development dependencies...$(RESET)"
-	@pip install --upgrade pip
-	@pip install -r requirements.txt
-	@pip install ruff mypy pytest pytest-cov pytest-watch black
+	@uv sync --group dev
 	@echo "$(GREEN)✅ Development dependencies installed!$(RESET)"
 
 setup: ## Initial project setup (creates venv, installs deps, sets PYTHONPATH)
@@ -212,14 +210,13 @@ setup: ## Initial project setup (creates venv, installs deps, sets PYTHONPATH)
 
 deps-check: ## Check for outdated dependencies
 	@echo "$(BLUE)🔍 Checking for outdated dependencies...$(RESET)"
-	@pip list --outdated || echo "$(YELLOW)No updates available$(RESET)"
+	@uv pip list --outdated || echo "$(YELLOW)No updates available$(RESET)"
 
 rebuild-venv: ## Rebuild virtual environment from scratch
 	@echo "$(YELLOW)🔄 Rebuilding virtual environment...$(RESET)"
 	@rm -rf .venv
-	@python3.13 -m venv .venv
-	@.venv/bin/pip install --upgrade pip
-	@.venv/bin/pip install -r requirements.txt
+	@uv venv
+	@uv sync --group dev
 	@echo "$(GREEN)✅ Virtual environment rebuilt successfully!$(RESET)"
 	@echo "$(YELLOW)Run 'source .venv/bin/activate' to activate it$(RESET)"
 

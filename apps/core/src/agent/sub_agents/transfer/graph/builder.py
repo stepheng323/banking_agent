@@ -36,6 +36,9 @@ from shared.repositories.actionable_message_repository import ActionableMessageR
 from shared.repositories.beneficiary_repository import BeneficiaryRepository
 from shared.repositories.user_repository import UserRepository
 from shared.services.auth import AuthorizationService
+from shared.utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 from .routing import (
     route_after_extract,
@@ -73,6 +76,8 @@ def build_graph(
     async def load_context_node(state: TransferState) -> TransferState:
         return await load_user_context(state, user_cache, account_repo, beneficiary_repo, user_repo=user_repo)
 
+
+
     async def find_beneficiary_node(state: TransferState) -> TransferState:
         return await find_beneficiary(state, matcher)
 
@@ -86,6 +91,7 @@ def build_graph(
             return {"success": False, "banks": [], "error": str(e)}
 
     async def validate_parallel_node(state: TransferState) -> TransferState:
+        # Check if validation service is available (it depends on payment provider)
         if validation_service:
             return await validate_parallel(
                 state,
@@ -94,7 +100,14 @@ def build_graph(
                 fetch_banks_func,
                 whatsapp_client,
             )
-        return state
+        # CRITICAL FIX: If validation service is missing, we must error out,
+        # otherwise we return state unchanged -> infinite loop in routing
+        logger.error("Validation service missing in validate_parallel_node")
+        return {
+            **state,
+            "flow_state": "error",
+            "response": "Service configuration error: validation unavailable.",
+        }
 
     async def check_changes_node(state: TransferState) -> TransferState:
         return await check_and_acknowledge_changes(state, bank_cache)
@@ -204,6 +217,8 @@ def build_graph(
             "check_changes": "check_changes",
             "confirm": "confirm",
             "cancel": "cancel",
+            "select_account": "select_account",
+            "collect_recipient": "find_beneficiary",
         },
     )
 

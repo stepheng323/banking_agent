@@ -5,7 +5,7 @@ import json
 from typing import TYPE_CHECKING, Any, Optional, cast
 
 if TYPE_CHECKING:
-    from apps.core.src.agent.services import FlowCompletionCallback
+    from apps.core.src.agent.orchestrator.services.task_coordinator import TaskCoordinator
 
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.redis.aio import AsyncRedisSaver
@@ -62,7 +62,7 @@ class AirtimeFlowGraph:
         extractor: AirtimeEntityExtractor,
         queue: RedisQueue,
         actionable_message_repo: ActionableMessageRepository | None = None,
-        completion_callback: Optional["FlowCompletionCallback"] = None,
+        completion_callback: Optional["TaskCoordinator"] = None,
     ):
         self.user_cache = user_cache
         self.account_repo = account_repo
