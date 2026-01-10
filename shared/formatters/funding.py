@@ -35,32 +35,29 @@ def format_insufficient_funds(
     Returns:
         WhatsApp-formatted error message
     """
-    # If max_available not specified, use available_balance
-    if max_available <= 0:
-        max_available = available_balance
-
+    
     lines = []
-
-    # Header with recipient details if provided
-    if recipient_name and recipient_bank:
-        recipient_display = recipient_name.title()
-        lines.append(
-            f"*{_format_currency_naira(transfer_amount)} → {recipient_display} ({recipient_bank})*"
-        )
-        if recipient_account:
-            lines.append(f"Account: {recipient_account}")
-        lines.append("")
-
-    # Insufficient funds notice
-    lines.append("*Insufficient funds*")
+    
+    # We'll drop the transaction summary header (lines 45-53) and integrate it into the text as per Option B design.
+    # Logic:
+    
+    lines.append("*Insufficient Funds*")
     lines.append("")
+    
+    recipient_display = recipient_name.title() if recipient_name else "Recipient"
+    transfer_amount_str = _format_currency_naira(transfer_amount)
     balance_str = _format_currency_naira(available_balance)
-    lines.append(f"Your {bank_name} balance is *{balance_str}* — not enough for this transfer.")
+    
+    lines.append(
+        f"You're trying to send *{transfer_amount_str}* to {recipient_display}, "
+        f"but your *{bank_name}* balance is only *{balance_str}*."
+    )
     lines.append("")
-    lines.append("You can:")
-    lines.append(f"• Send a smaller amount (up to {_format_currency_naira(max_available)})")
-    lines.append("• Add funds to your account")
-    lines.append("• Cancel this transfer")
+    
+    lines.append("*Options:*")
+    lines.append(f"• Send *{_format_currency_naira(max_available)}* instead")
+    lines.append("• Add funds & retry")
+    lines.append("• Cancel transaction")
 
     return "\n".join(lines)
 

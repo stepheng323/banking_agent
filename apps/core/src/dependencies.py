@@ -5,23 +5,23 @@ from apps.core.src.agent.orchestrator.config import OrchestratorDependencies
 from apps.core.src.agent.orchestrator.services import (
     ConversationResponder,
     MediaService,
-    TaskExecutor,
     TaskQueueService,
 )
-from apps.core.src.agent.sub_agents.account_management.service import AccountManagementService
-from apps.core.src.agent.sub_agents.airtime import AirtimeService
-from apps.core.src.agent.sub_agents.airtime.completion import AirtimeCompletionService
-from apps.core.src.agent.sub_agents.airtime.executor import AirtimeExecutor
-from apps.core.src.agent.sub_agents.data import DataPurchaseGraph
-from apps.core.src.agent.sub_agents.faq import FAQFlowGraph
-from apps.core.src.agent.sub_agents.onboarding.executor import OnboardingExecutor
-from apps.core.src.agent.sub_agents.onboarding.service import OnboardingService
-from apps.core.src.agent.sub_agents.query.graph import QueryFlowGraph
-from apps.core.src.agent.sub_agents.support.graph import SupportFlowGraph
-from apps.core.src.agent.sub_agents.transfer import TransferService as AgentTransferService
-from apps.core.src.agent.sub_agents.transfer.completion import TransferCompletionService
-from apps.core.src.agent.sub_agents.transfer.executor import TransferExecutor
-from apps.core.src.agent.tools.beneficiary.suggestion_service import BeneficiarySuggestionService
+from apps.core.src.agent.orchestrator.pipeline_stages.task_queue.executor import TaskExecutor
+from apps.core.src.agent.graphs.account_management.service import AccountManagementService
+from apps.core.src.agent.graphs.airtime import AirtimeService
+from apps.core.src.agent.graphs.airtime.completion import AirtimeCompletionService
+from apps.core.src.agent.graphs.airtime.executor import AirtimeExecutor
+from apps.core.src.agent.graphs.data import DataPurchaseGraph
+from apps.core.src.agent.graphs.faq import FAQFlowGraph
+from apps.core.src.agent.graphs.onboarding.executor import OnboardingExecutor
+from apps.core.src.agent.graphs.onboarding.service import OnboardingService
+from apps.core.src.agent.graphs.query.graph import QueryFlowGraph
+from apps.core.src.agent.graphs.support.graph import SupportFlowGraph
+from apps.core.src.agent.graphs.transfer import TransferService as AgentTransferService
+from apps.core.src.agent.graphs.transfer.completion import TransferCompletionService
+from apps.core.src.agent.graphs.transfer.executor import TransferExecutor
+from apps.core.src.agent.graphs.__shared__.beneficiary.suggestion_service import BeneficiarySuggestionService
 from apps.core.src.queue_consumers import MessageConsumer, TransactionConsumer
 from apps.core.src.queue_consumers.flow_event_consumer import FlowEventConsumer
 from shared.cache.redis_client import RedisClient
@@ -136,9 +136,11 @@ def setup_dependencies():
     )
 
     from apps.core.src.agent.orchestrator.registry import ExecutorRegistry
+    from apps.core.src.agent.orchestrator.pipeline_stages.quote.service import QuoteService
     executor_registry = ExecutorRegistry()
     executor_registry.register("transfer", agent_transfer_service)
     executor_registry.register("airtime", agent_airtime_service)
+    quote_service = QuoteService(executor_registry)
 
     task_executor = TaskExecutor(
         registry=executor_registry,
@@ -169,6 +171,7 @@ def setup_dependencies():
         support_graph=support_graph,
         faq_graph=faq_graph,
         executor_registry=executor_registry,
+        quote_service=quote_service,
     )
 
     orchestrator = OrchestratorAgent(orchestrator_deps)

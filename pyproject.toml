@@ -3,31 +3,51 @@
 name = "banking-agent"
 version = "0.1.0"
 requires-python = ">=3.11"
+
+# BASE dependencies - shared by all apps
 dependencies = [
     "fastapi>=0.121.1",
     "uvicorn[standard]>=0.38.0",
     "pydantic>=2.9.0",
     "pydantic-settings>=2.5.0",
-    "langchain>=1.2.0",
-    "langchain-community>=0.4.1",
-    "langgraph>=1.0.5",
-    "langchain-openai>=1.1.7",
-    "langgraph-checkpoint-redis>=0.3.2",
-    "aioboto3>=15.5.0",
     "psycopg[binary]>=3.1.0",
-    "alembic>=1.17.2",
     "sqlalchemy>=2.0.44",
+    "alembic>=1.17.2",
     "redis>=5.2.1",
-    "passlib[bcrypt]>=1.7.4",
-    "bcrypt==4.0.1",
     "httpx>=0.28.1",
     "python-multipart>=0.0.9",
     "python-dotenv>=1.0.1",
     "structlog>=25.5.0",
     "pycryptodome>=3.23.0",
+    "passlib[bcrypt]>=1.7.4",
+    "bcrypt==4.0.1",
+    "aioboto3>=15.5.0",
+]
+
+# App-specific optional dependencies
+[project.optional-dependencies]
+# Core app - AI/Agent dependencies
+core = [
+    "langchain>=1.2.0",
+    "langchain-community>=0.4.1",
+    "langgraph>=1.0.5",
+    "langchain-openai>=1.1.7",
+    "langgraph-checkpoint-redis>=0.3.2",
+]
+
+# Receipt app - Image processing
+receipt = [
     "playwright>=1.57.0",
     "pillow>=12.1.0",
     "jinja2>=3.0.0",
+]
+
+# Gateway app - minimal, uses base only
+gateway = []
+
+# All apps combined (for local dev)
+all = [
+    "banking-agent[core,receipt,gateway]",
 ]
 
 # Development dependencies

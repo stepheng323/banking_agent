@@ -1,4 +1,3 @@
-
 FROM python:3.13-slim
 
 WORKDIR /app
@@ -21,15 +20,17 @@ RUN apt-get update && apt-get install -y \
     fonts-liberation \
     && rm -rf /var/lib/apt/lists/*
 
-COPY apps/receipt/requirements.txt /app/requirements.txt
-RUN pip install --no-cache-dir -r requirements.txt
-
-RUN playwright install chromium
-RUN playwright install-deps chromium
-
+# Copy project files for pip install
+COPY pyproject.toml ./
 COPY apps/receipt /app/apps/receipt
 COPY shared /app/shared
 
-ENV PYTHONPATH=/app
+# Install base + receipt dependencies only
+RUN pip install --no-cache-dir ".[receipt]"
 
+# Install playwright browser
+RUN playwright install chromium
+RUN playwright install-deps chromium
+
+ENV PYTHONPATH=/app
 CMD ["uvicorn", "apps.receipt.main:app", "--host", "0.0.0.0", "--port", "8002"]

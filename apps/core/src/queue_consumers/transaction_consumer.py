@@ -2,9 +2,9 @@
 
 import asyncio
 
-from apps.core.src.agent.sub_agents.airtime.executor import AirtimeExecutor
-from apps.core.src.agent.sub_agents.data import DataPurchaseGraph
-from apps.core.src.agent.sub_agents.transfer.executor import TransferExecutor
+from apps.core.src.agent.graphs.airtime.executor import AirtimeExecutor
+from apps.core.src.agent.graphs.data import DataPurchaseGraph
+from apps.core.src.agent.graphs.transfer.executor import TransferExecutor
 from shared.queue.redis_queue import RedisQueue
 from shared.utils.logging import get_logger
 

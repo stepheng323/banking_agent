@@ -46,7 +46,7 @@ def format_transfer_summary(data: dict) -> str:
     ]
 
     if narration:
-        lines.append(f"Note: {narration}")
+        lines.append(f"Narration: _{narration.strip().capitalize()}_")
 
     lines.append("")
     lines.append(f"From: {source_bank} (···{last4})")
@@ -83,7 +83,7 @@ def format_multi_source_transfer_summary(data: dict) -> str:
     ]
 
     if narration:
-        lines.append(f"*Note:* {narration}")
+        lines.append(f"Narration: _{narration.strip().capitalize()}_")
 
     lines.append("")
     lines.append("*Funding from:*")
