@@ -227,10 +227,8 @@ class OrchestratorBeneficiaryHandler:
         """Clear session state after saving."""
         try:
             redis_client = RedisClient.get_client()
-            # Clear conversation state
             await redis_client.delete(f"user:{phone_number}:conversation_state")
             
-            # Clear session timestamps
             session_key = (
                 f"user:{phone_number}:airtime_session_start"
                 if beneficiary_type in ("airtime", "data")
@@ -238,7 +236,6 @@ class OrchestratorBeneficiaryHandler:
             )
             await redis_client.delete(session_key)
             
-            # Clear any pending transfer data
             await redis_client.delete(f"user:{phone_number}:pending_transfer")
             await redis_client.delete(f"user:{phone_number}:pending_transfer_flow_token")
             
