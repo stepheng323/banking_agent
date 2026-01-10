@@ -4,7 +4,7 @@ import asyncio
 from typing import Any
 
 from apps.core.src.agent.orchestrator import OrchestratorAgent
-from apps.core.src.agent.sub_agents.onboarding.executor import OnboardingExecutor
+from apps.core.src.agent.graphs.onboarding.executor import OnboardingExecutor
 from shared.clients.whatsapp.client import WhatsAppClient
 from shared.database.models import UserOnboardingStatusEnum
 from shared.models.messages import WhatsAppMessage
