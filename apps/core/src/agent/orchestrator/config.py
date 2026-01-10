@@ -7,21 +7,22 @@ from langchain_openai import ChatOpenAI
 
 from apps.core.src.agent.orchestrator.services import (
     ConversationResponder,
-    TaskExecutor,
     TaskQueueService,
 )
-from apps.core.src.agent.sub_agents.account_management.service import AccountManagementService
-from apps.core.src.agent.sub_agents.airtime import AirtimeService
-from apps.core.src.agent.sub_agents.data import DataPurchaseGraph
-from apps.core.src.agent.sub_agents.faq import FAQFlowGraph
-from apps.core.src.agent.sub_agents.query.graph import QueryFlowGraph
-from apps.core.src.agent.sub_agents.support.graph import SupportFlowGraph
-from apps.core.src.agent.sub_agents.transfer import TransferService
+from apps.core.src.agent.orchestrator.pipeline_stages.task_queue.executor import TaskExecutor
+from apps.core.src.agent.graphs.account_management.service import AccountManagementService
+from apps.core.src.agent.graphs.airtime import AirtimeService
+from apps.core.src.agent.graphs.data import DataPurchaseGraph
+from apps.core.src.agent.graphs.faq import FAQFlowGraph
+from apps.core.src.agent.graphs.query.graph import QueryFlowGraph
+from apps.core.src.agent.graphs.support.graph import SupportFlowGraph
+from apps.core.src.agent.graphs.transfer import TransferService
 from shared.clients.whatsapp.client import WhatsAppClient
 from shared.repositories import BeneficiaryRepository, UserRepository
 from shared.repositories.actionable_message_repository import ActionableMessageRepository
 
 from apps.core.src.agent.orchestrator.registry import ExecutorRegistry
+from apps.core.src.agent.orchestrator.pipeline_stages.quote.service import QuoteService
 
 
 @dataclass
@@ -40,7 +41,8 @@ class OrchestratorDependencies:
     task_executor: TaskExecutor
     query_graph: QueryFlowGraph
     account_management_service: AccountManagementService
-    executor_registry: "ExecutorRegistry | None" = None
+    executor_registry: ExecutorRegistry | None = None
+    quote_service: QuoteService | None = None
     media_service: Any | None = None
     data_graph: DataPurchaseGraph | None = None
     support_graph: SupportFlowGraph | None = None
