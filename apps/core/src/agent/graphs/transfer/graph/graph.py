@@ -9,7 +9,9 @@ from langgraph.checkpoint.redis.aio import AsyncRedisSaver
 from apps.core.src.agent.graphs.transfer.extractor import TransferEntityExtractor
 from apps.core.src.agent.graphs.transfer.state import TransferState
 from apps.core.src.agent.graphs.__shared__.beneficiary.matcher import BeneficiaryMatcher
-from apps.core.src.agent.graphs.__shared__.validation.service import AsyncValidationService
+from apps.core.src.agent.graphs.__shared__.validation.service import (
+    AsyncValidationService,
+)
 from shared.cache.bank_cache import BankCacheService
 from shared.cache.redis_client import RedisClient
 from shared.cache.user_data import UserDataCache
@@ -18,7 +20,9 @@ from shared.clients.whatsapp.client import WhatsAppClient
 from shared.config.settings import settings
 from shared.queue.redis_queue import RedisQueue
 from shared.repositories.account_repository import AccountRepository
-from shared.repositories.actionable_message_repository import ActionableMessageRepository
+from shared.repositories.actionable_message_repository import (
+    ActionableMessageRepository,
+)
 from shared.repositories.beneficiary_repository import BeneficiaryRepository
 from shared.repositories.user_repository import UserRepository
 from shared.utils.logging import get_logger
@@ -44,7 +48,9 @@ from .state import (
 )
 
 if TYPE_CHECKING:
-    from apps.core.src.agent.orchestrator.services.task_coordinator import TaskCoordinator
+    from apps.core.src.agent.orchestrator.services.task_coordinator import (
+        TaskCoordinator,
+    )
 
 logger = get_logger(__name__)
 
@@ -75,7 +81,9 @@ class TransferFlowGraph:
         self.user_repo = user_repo
 
         try:
-            provider = PaymentProviderFactory.get_provider_for_service("resolve_account")
+            provider = PaymentProviderFactory.get_provider_for_service(
+                "resolve_account"
+            )
         except Exception:
             provider = None
         self.validation_service = AsyncValidationService(provider) if provider else None
@@ -93,13 +101,17 @@ class TransferFlowGraph:
         """Clear transfer flow checkpoint for a user."""
         try:
             await self._ensure_checkpointer()
-            config: RunnableConfig = {"configurable": {"thread_id": f"transfer:{phone_number}"}}
+            config: RunnableConfig = {
+                "configurable": {"thread_id": f"transfer:{phone_number}"}
+            }
             if self._checkpointer:
                 thread_id = config["configurable"]["thread_id"]
                 await self._checkpointer.adelete_thread(thread_id)
                 logger.info(f"Cleared transfer checkpoint for {phone_number}")
             else:
-                logger.warning(f"Checkpointer not initialized, cannot clear checkpoint for {phone_number}")
+                logger.warning(
+                    f"Checkpointer not initialized, cannot clear checkpoint for {phone_number}"
+                )
         except Exception as e:
             logger.error(f"Error clearing transfer checkpoint: {e}")
 
@@ -150,7 +162,9 @@ class TransferFlowGraph:
             raise RuntimeError("Graph not compiled")
 
         # Create run context
-        config: RunnableConfig = {"configurable": {"thread_id": f"transfer:{phone_number}"}}
+        config: RunnableConfig = {
+            "configurable": {"thread_id": f"transfer:{phone_number}"}
+        }
         ctx = TransferRunContext(
             phone_number=phone_number,
             message=message,
@@ -172,32 +186,31 @@ class TransferFlowGraph:
         last_response = await self.redis_client.get(last_response_key)
 
         if is_cancellation_confirmation(ctx, last_response or ""):
-            return await handle_cancellation_confirmation(ctx, self.graph, self.redis_client)
+            return await handle_cancellation_confirmation(
+                ctx, self.graph, self.redis_client
+            )
 
         if is_cancellation_decline(ctx, last_response or ""):
             return await handle_cancellation_decline_with_checkpoint(ctx, self.graph)
 
         # Check if this is a flow resume - just replay the last question
         is_flow_resume = (
-            classification_result and classification_result.get("complexity_reason") == "Flow resume after interrupt"
+            classification_result
+            and classification_result.get("complexity_reason")
+            == "Flow resume after interrupt"
         )
         if is_flow_resume:
             # User said "yes continue" - get the saved response from when flow was paused
             paused_flow_key = f"user:{phone_number}:paused_flow"
             paused_flow_data = await self.redis_client.get(paused_flow_key)
             if paused_flow_data:
-                import json
-
-                paused = json.loads(paused_flow_data)
-                saved_response = paused.get("last_response")
-                flow_summary = paused.get("flow_summary", {})
-
                 # Clear the paused flow now that we've read it
                 await self.redis_client.delete(paused_flow_key)
 
-                # Saved response exists but may be stale (e.g., "Nothing to cancel")
-                # Don't use it - fall through to checkpoint logic which will re-send WhatsApp flow
-                logger.info("Flow resume detected, will check checkpoint for flow re-send")
+                logger.info(
+                    "Flow resume detected, will check checkpoint for flow re-send",
+                    has_paused_data=bool(paused_flow_data),
+                )
             else:
                 # Clear just in case (no paused data but is_flow_resume flag was set)
                 await self.redis_client.delete(paused_flow_key)
@@ -207,12 +220,20 @@ class TransferFlowGraph:
             if checkpoint_state:
                 flow_state = checkpoint_state.get("flow_state")
                 if flow_state in ("authorizing", "confirming", "confirming_funding"):
-                    logger.info(f"Flow resume detected, re-sending WhatsApp flow for state: {flow_state}")
+                    logger.info(
+                        f"Flow resume detected, re-sending WhatsApp flow for state: {flow_state}"
+                    )
 
-                    confirmation_summary = checkpoint_state.get("confirmation_summary", "")
+                    confirmation_summary = checkpoint_state.get(
+                        "confirmation_summary", ""
+                    )
                     amount = checkpoint_state.get("amount")
                     recipient = checkpoint_state.get("account_resolved", {})
-                    recipient_name = recipient.get("account_name", "") if isinstance(recipient, dict) else ""
+                    recipient_name = (
+                        recipient.get("account_name", "")
+                        if isinstance(recipient, dict)
+                        else ""
+                    )
                     if amount and recipient_name:
                         resume_msg = f"Continuing your ₦{amount:,.0f} transfer to {recipient_name}!"
                     elif amount:
@@ -224,6 +245,10 @@ class TransferFlowGraph:
                     if token and self.whatsapp_client:
                         from shared.config import settings
 
+                        current_message_id = await self.redis_client.get(
+                            f"user:{phone_number}:current_message_id"
+                        )
+
                         await self.whatsapp_client.send_flow(
                             to=phone_number,
                             header="Confirm Your Transfer",
@@ -232,25 +257,34 @@ class TransferFlowGraph:
                             screen_name="Pin",
                             flow_token=token,
                             text_body=confirmation_summary or resume_msg,
+                            message_id=current_message_id,
                         )
-                        return resume_msg
-
-                    return f"{resume_msg}\n\n{confirmation_summary}" if confirmation_summary else resume_msg
+                        return ""
+                    return (
+                        f"{resume_msg}\n\n{confirmation_summary}"
+                        if confirmation_summary
+                        else resume_msg
+                    )
 
         input_state = await load_checkpoint_state(ctx, self.graph)
 
         if input_state:
-            input_state = await prepare_checkpoint_state(ctx, input_state, self.graph, self.redis_client)
+            input_state = await prepare_checkpoint_state(
+                ctx, input_state, self.graph, self.redis_client
+            )
             if input_state is None:
                 return ""
 
             flow_state = input_state.get("flow_state")
             if (
                 flow_state in ("confirming", "authorizing")
-                and flow_state not in ("awaiting_amount_adjustment", "confirming_funding")
+                and flow_state
+                not in ("awaiting_amount_adjustment", "confirming_funding")
                 and not is_flow_resume
             ):
-                input_state, should_continue = await self._handle_mid_correction(ctx, input_state)
+                input_state, should_continue = await self._handle_mid_correction(
+                    ctx, input_state
+                )
                 if not should_continue:
                     return ""
         else:
@@ -283,14 +317,24 @@ class TransferFlowGraph:
                 "confirmation_summary",
             }
 
-            filtered_input = {k: v for k, v in input_state.items() if k not in state_keys_to_preserve or v is not None}
+            filtered_input = {
+                k: v
+                for k, v in input_state.items()
+                if k not in state_keys_to_preserve or v is not None
+            }
+            accounts = filtered_input.get("accounts", [])
+            beneficiaries = filtered_input.get("beneficiaries", [])
+            accounts_list = accounts if isinstance(accounts, list) else []
+            beneficiaries_list = (
+                beneficiaries if isinstance(beneficiaries, list) else []
+            )
             logger.info(
                 "run_filtered_input_state",
                 filtered_keys=list(filtered_input.keys()),
                 amount=filtered_input.get("amount"),
                 rec_acct=filtered_input.get("recipient_account"),
-                accounts_len=len(filtered_input.get("accounts", [])),
-                beneficiaries_len=len(filtered_input.get("beneficiaries", [])),
+                accounts_len=len(accounts_list),
+                beneficiaries_len=len(beneficiaries_list),
             )
             input_state = filtered_input
 
@@ -320,12 +364,14 @@ class TransferFlowGraph:
             "narration": input_state.get("narration"),
         }
 
-        logger.info("mid_correction_attempt", old_values=old_values, message=ctx.message[:30])
+        logger.info(
+            "mid_correction_attempt", old_values=old_values, message=ctx.message[:30]
+        )
 
         try:
             extracted = await self.extractor.extract(
                 ctx.message,
-                ctx.phone_number,
+                smart_context=None,
                 image_data=ctx.image_data,
             )
         except Exception as e:
@@ -367,8 +413,14 @@ class TransferFlowGraph:
                     input_state["narration"] = new_val
 
         if changes:
-            ack_msg = extracted.reply if extracted.reply else f"Got it, changing {' and '.join(changes)}."
-            await self.whatsapp_client.send_text(ctx.phone_number, ack_msg, message_id=ctx.message_id)
+            ack_msg = (
+                extracted.reply
+                if extracted.reply
+                else f"Got it, changing {' and '.join(changes)}."
+            )
+            await self.whatsapp_client.send_text(
+                ctx.phone_number, ack_msg, message_id=ctx.message_id
+            )
             input_state["flow_state"] = "extracting"
             input_state["transfer_status"] = None
             logger.info("mid_correction_applied", changes=changes)
@@ -391,7 +443,13 @@ class TransferFlowGraph:
         elif transfer_status not in ("pending", None):
             await clear_transfer_session(phone_number)
 
-            if transfer_status in ("authorized", "completed", "failed", "cancelled", "collection_complete"):
+            if transfer_status in (
+                "authorized",
+                "completed",
+                "failed",
+                "cancelled",
+                "collection_complete",
+            ):
                 try:
                     await self.clear_checkpoint(phone_number)
                     # Also clear any paused flow context to prevent stale data
@@ -401,7 +459,13 @@ class TransferFlowGraph:
                     logger.warning(f"Failed to clear checkpoint after transfer: {e}")
 
             if self.completion_callback:
-                if transfer_status in ("authorized", "completed", "failed", "cancelled", "collection_complete"):
+                if transfer_status in (
+                    "authorized",
+                    "completed",
+                    "failed",
+                    "cancelled",
+                    "collection_complete",
+                ):
                     result = {
                         "status": transfer_status,
                         "amount": final_state.get("amount"),
@@ -409,10 +473,16 @@ class TransferFlowGraph:
                         "recipient_bank_name": final_state.get("recipient_bank_name"),
                         "recipient_bank_code": final_state.get("recipient_bank_code"),
                         "account_resolved": final_state.get("account_resolved"),
-                        "selected_source_account": final_state.get("selected_source_account"),
+                        "selected_source_account": final_state.get(
+                            "selected_source_account"
+                        ),
                         "response": final_state.get("response", ""),
                     }
-                    asyncio.create_task(self.completion_callback.on_flow_complete(phone_number, "transfer", result))
+                    asyncio.create_task(
+                        self.completion_callback.on_flow_complete(
+                            phone_number, "transfer", result
+                        )
+                    )
 
     async def resume_after_pin_verification(
         self, phone_number: str, pin_verified: bool, pin_error: str | None = None
@@ -428,7 +498,9 @@ class TransferFlowGraph:
         """
         await self._ensure_checkpointer()
 
-        config: RunnableConfig = {"configurable": {"thread_id": f"transfer:{phone_number}"}}
+        config: RunnableConfig = {
+            "configurable": {"thread_id": f"transfer:{phone_number}"}
+        }
 
         if self.graph is None:
             raise RuntimeError("Graph not compiled")
@@ -437,7 +509,9 @@ class TransferFlowGraph:
         if not current_state or not current_state.values:
             return "No active transfer session found."
 
-        current_message_id = await self.redis_client.get(f"user:{phone_number}:current_message_id")
+        current_message_id = await self.redis_client.get(
+            f"user:{phone_number}:current_message_id"
+        )
         state_message_id = current_state.values.get("message_id")
 
         await self.graph.aupdate_state(
@@ -445,7 +519,8 @@ class TransferFlowGraph:
             {
                 "pin_verified": pin_verified,
                 "pin_verification_error": pin_error,
-                "message_id": current_message_id or state_message_id,  # Use fresh ID if available
+                "message_id": current_message_id
+                or state_message_id,  # Use fresh ID if available
             },
         )
 
@@ -459,8 +534,12 @@ class TransferFlowGraph:
         transfer_status = final_state.get("transfer_status")
         pin_verified_state = final_state.get("pin_verified", False)
 
-        should_continue = (flow_state == "initiating_payout" and transfer_status != "completed") or (
-            flow_state == "authorizing" and pin_verified_state and transfer_status != "completed"
+        should_continue = (
+            flow_state == "initiating_payout" and transfer_status != "completed"
+        ) or (
+            flow_state == "authorizing"
+            and pin_verified_state
+            and transfer_status != "completed"
         )
 
         if should_continue:
@@ -486,7 +565,9 @@ class TransferFlowGraph:
                     "response": response,
                 }
                 asyncio.create_task(
-                    self.completion_callback.on_flow_complete(phone_number, "transfer", completion_result)
+                    self.completion_callback.on_flow_complete(
+                        phone_number, "transfer", completion_result
+                    )
                 )
 
         return response
