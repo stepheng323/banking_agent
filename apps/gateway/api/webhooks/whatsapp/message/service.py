@@ -103,14 +103,6 @@ class WhatsAppWebhookService:
                 message=message.model_dump(mode="json"),
             )
             logger.info("message_enqueued", msg_type=msg_type, from_id=from_id)
-
-            # Send typing indicator for non-interactive messages
-            if msg_type != "interactive":
-                try:
-                    await self.whatsapp_client.send_typing_indicator(message_id=message.message_id)
-                except Exception:
-                    pass  # Typing indicator is not critical
-
             return True
 
         except Exception as e:
