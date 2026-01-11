@@ -1,6 +1,5 @@
 """Confirmation node for airtime purchase flow."""
 
-import asyncio
 import hashlib
 import json
 from datetime import datetime, timedelta
@@ -10,7 +9,9 @@ from apps.core.src.agent.graphs.airtime.state import AirtimeState
 from shared.cache.redis_client import Redis
 from shared.clients.whatsapp.client import WhatsAppClient
 from shared.config import settings
-from shared.repositories.actionable_message_repository import ActionableMessageRepository
+from shared.repositories.actionable_message_repository import (
+    ActionableMessageRepository,
+)
 
 from ..utils import debug_log
 
@@ -146,11 +147,6 @@ async def prepare_confirmation(
     )
     await pipe.execute()
 
-    # Add typing indicator before showing flow
-    if state.get("message_id"):
-        await whatsapp_client.send_typing_indicator(state["message_id"])
-        await asyncio.sleep(0.3)  # Allow WhatsApp to render typing indicator
-
     flow_result = await whatsapp_client.send_flow(
         to=state["phone_number"],
         header="Confirm Your Airtime Purchase",
@@ -159,11 +155,13 @@ async def prepare_confirmation(
         screen_name="Pin",
         flow_token=token,
         text_body=summary,
+        message_id=state.get("message_id"),
     )
 
     if actionable_message_repo:
         wa_message_id = flow_result.get("messages", [{}])[0].get("id", "")
-        user_id = state.get("user_profile", {}).get("id")
+        user_profile = state.get("user_profile", {}) or {}
+        user_id = user_profile.get("id") if isinstance(user_profile, dict) else None
         if wa_message_id and user_id:
             actionable_message_repo.create(
                 user_id=user_id,

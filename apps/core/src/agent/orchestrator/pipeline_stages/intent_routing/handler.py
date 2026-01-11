@@ -36,6 +36,7 @@ class IntentRoutingHandler(MessageHandler):
             context.user_context,
             image_data=context.image_data,
             message_id=context.message_id,
+            is_flow_resume=context.is_flow_resume,
         )
 
         return context.with_response(response, handled=True)

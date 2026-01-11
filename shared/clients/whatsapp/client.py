@@ -8,7 +8,7 @@ import httpx
 
 from shared.config.settings import settings
 
-GRAPH_API_BASE = "https://graph.facebook.com/v21.0"
+GRAPH_API_BASE = "https://graph.facebook.com/v24.0"
 
 
 class WhatsAppClient:
@@ -19,7 +19,9 @@ class WhatsAppClient:
         self.phone_number_id = settings.meta_phone_number_id
         self._validate_config()
 
-    async def _send(self, url: str, payload: dict[str, Any], max_retries: int = 3) -> dict[str, Any]:
+    async def _send(
+        self, url: str, payload: dict[str, Any], max_retries: int = 3
+    ) -> dict[str, Any]:
         headers = self._get_headers()
         last_error: Exception | None = None
 
@@ -40,10 +42,14 @@ class WhatsAppClient:
                     raise
                 elif attempt < max_retries:
                     status = e.response.status_code
-                    print(f"⚠️  HTTP {status} error (attempt {attempt}/{max_retries}), retrying...")
+                    print(
+                        f"⚠️  HTTP {status} error (attempt {attempt}/{max_retries}), retrying..."
+                    )
                     await asyncio.sleep(1 * attempt)
                 else:
-                    print(f"❌ Max retries reached. Final error: {e.response.status_code}")
+                    print(
+                        f"❌ Max retries reached. Final error: {e.response.status_code}"
+                    )
                     try:
                         error_body = e.response.json()
                         print(f"   Error response: {error_body}")
@@ -81,15 +87,21 @@ class WhatsAppClient:
         if not self.access_token:
             errors.append("META_ACCESS_TOKEN is not set")
         elif self.access_token == "development_access_token":
-            print("⚠️  Using development META_ACCESS_TOKEN - messages will fail in production")
+            print(
+                "⚠️  Using development META_ACCESS_TOKEN - messages will fail in production"
+            )
 
         if not self.phone_number_id:
             errors.append("META_PHONE_NUMBER_ID is not set")
         elif self.phone_number_id == "development_phone_id":
-            print("⚠️  Using development META_PHONE_NUMBER_ID - messages will fail in production")
+            print(
+                "⚠️  Using development META_PHONE_NUMBER_ID - messages will fail in production"
+            )
 
         if errors:
-            error_msg = "WhatsApp client configuration errors:\n" + "\n".join(f"  - {error}" for error in errors)
+            error_msg = "WhatsApp client configuration errors:\n" + "\n".join(
+                f"  - {error}" for error in errors
+            )
             raise ValueError(error_msg)
 
     def _get_headers(self) -> dict[str, str]:
@@ -101,8 +113,39 @@ class WhatsAppClient:
     def _get_url(self) -> str:
         return f"{GRAPH_API_BASE}/{self.phone_number_id}/messages"
 
+    async def _ensure_message_id(self, to: str, message_id: str | None) -> str | None:
+        """Helper to get message_id from parameter or Redis for typing indicator support.
+
+        Args:
+            to: Recipient phone number
+            message_id: Optional message_id provided by caller
+
+        Returns:
+            message_id if available (from parameter or Redis), None otherwise
+        """
+        if message_id:
+            print(f"📨 Using provided message_id: {message_id[:20]}...")
+            return message_id
+        try:
+            from shared.cache.redis_client import RedisClient
+
+            redis_client = RedisClient.get_client()
+            fetched_id = await redis_client.get(f"user:{to}:current_message_id")
+            if fetched_id:
+                print(f"📨 Fetched message_id from Redis: {fetched_id[:20]}...")
+            else:
+                print(f"⚠️ No message_id in Redis for {to}")
+            return fetched_id
+        except Exception as e:
+            print(f"❌ Redis fetch failed for message_id: {e}")
+            return None
+
     async def send_text(
-        self, to: str, text: str, preview_url: bool = False, message_id: str | None = None
+        self,
+        to: str,
+        text: str,
+        preview_url: bool = False,
+        message_id: str | None = None,
     ) -> dict[str, Any]:
         """Send a text message to a WhatsApp number.
 
@@ -114,18 +157,11 @@ class WhatsAppClient:
         """
         url = self._get_url()
 
-        if message_id is None:
-            try:
-                from shared.cache.redis_client import RedisClient
-
-                redis_client = RedisClient.get_client()
-                message_id = await redis_client.get(f"user:{to}:current_message_id")
-            except Exception:
-                pass
+        # Always try to get message_id for typing indicator
+        message_id = await self._ensure_message_id(to, message_id)
 
         if message_id:
             await self.send_typing_indicator(message_id)
-            await asyncio.sleep(0.3)
         payload = {
             "messaging_product": "whatsapp",
             "to": to,
@@ -141,7 +177,10 @@ class WhatsAppClient:
             raise
 
     async def send_typing_indicator(self, message_id: str) -> dict[str, Any]:
-        """Send a typing indicator to a WhatsApp number."""
+        """Send a typing indicator to a WhatsApp number.
+        
+        Can be called multiple times for the same message_id - each call resets the ~5s timer.
+        """
         url = self._get_url()
 
         payload = {
@@ -153,9 +192,10 @@ class WhatsAppClient:
 
         try:
             result = await self._send(url, payload, max_retries=1)
+            print(f"✓ Typing indicator sent for {message_id[:20]}... Response: {result}")
             return result
         except Exception as e:
-            print(f"Failed to send typing indicator (non-critical): {e}")
+            print(f"⚠️ Typing indicator failed for {message_id[:20]}...: {e}")
             return {}
 
     async def send_button(
@@ -165,6 +205,7 @@ class WhatsAppClient:
         buttons: list[dict[str, str]],
         header: str = "",
         footer: str = "",
+        message_id: str | None = None,
     ) -> dict[str, Any]:
         """
         Send an interactive button message.
@@ -175,14 +216,23 @@ class WhatsAppClient:
             buttons: List of button dicts with 'id' and 'title' keys (max 3)
             header: Optional header text
             footer: Optional footer text
+            message_id: If provided, send typing indicator. If None, auto-fetch from Redis.
 
         Returns:
             API response from WhatsApp
         """
         url = self._get_url()
 
+        # Send typing indicator before button message
+        message_id = await self._ensure_message_id(to, message_id)
+        if message_id:
+            await self.send_typing_indicator(message_id)
+
         # Build button rows (max 3 buttons)
-        button_rows = [{"type": "reply", "reply": {"id": btn["id"], "title": btn["title"][:20]}} for btn in buttons[:3]]
+        button_rows = [
+            {"type": "reply", "reply": {"id": btn["id"], "title": btn["title"][:20]}}
+            for btn in buttons[:3]
+        ]
 
         interactive_payload: dict[str, Any] = {
             "type": "button",
@@ -222,9 +272,27 @@ class WhatsAppClient:
         footer: str = "",
         flow_token: str = "",
         flow_action_payload: dict[str, Any] | None = None,
+        message_id: str | None = None,
     ) -> dict[str, Any]:
-        """Send a flow to a WhatsApp number."""
+        """Send a flow to a WhatsApp number.
+
+        Args:
+            to: Recipient phone number
+            flow_id: WhatsApp Flow ID
+            flow_cta: Call-to-action button text
+            screen_name: Initial screen name to show
+            header: Flow header text
+            text_body: Flow body text
+            footer: Optional footer text
+            flow_token: Optional flow token for state management
+            flow_action_payload: Optional custom flow action payload
+            message_id: If provided, send typing indicator. If None, auto-fetch from Redis.
+        """
         url = self._get_url()
+
+        message_id = await self._ensure_message_id(to, message_id)
+        if message_id:
+            await self.send_typing_indicator(message_id)
 
         interactive_payload = {
             "type": "flow",
@@ -238,7 +306,11 @@ class WhatsAppClient:
                     "flow_id": flow_id,
                     "flow_cta": flow_cta,
                     "flow_action": "navigate",
-                    "flow_action_payload": flow_action_payload if flow_action_payload else {"screen": screen_name},
+                    "flow_action_payload": (
+                        flow_action_payload
+                        if flow_action_payload
+                        else {"screen": screen_name}
+                    ),
                 },
             },
         }
@@ -296,7 +368,9 @@ class WhatsAppClient:
             print(f"❌ Failed to upload media to WhatsApp: {e}")
             raise
 
-    async def send_image(self, to: str, image_url: str, caption: str = "") -> dict[str, Any]:
+    async def send_image(
+        self, to: str, image_url: str, caption: str = ""
+    ) -> dict[str, Any]:
         """
         Send an image to a WhatsApp number.
 
@@ -447,7 +521,9 @@ class WhatsAppClient:
 
         try:
             async with httpx.AsyncClient(timeout=60) as client:
-                files: dict[str, tuple[str | None, bytes | str, str] | tuple[str | None, str]] = {
+                files: dict[
+                    str, tuple[str | None, bytes | str, str] | tuple[str | None, str]
+                ] = {
                     "file": (filename, data, mime_type),
                     "messaging_product": (None, "whatsapp"),
                     "type": (None, mime_type),
@@ -473,6 +549,7 @@ class WhatsAppClient:
         filename: str,
         caption: str = "",
         mime_type: str = "application/pdf",
+        message_id: str | None = None,
     ) -> dict[str, Any]:
         """
         Send a document (PDF, etc.) to a WhatsApp number.
@@ -483,10 +560,15 @@ class WhatsAppClient:
             filename: Display filename for the document
             caption: Optional caption text
             mime_type: MIME type (default: application/pdf)
+            message_id: If provided, send typing indicator. If None, auto-fetch from Redis.
 
         Returns:
             API response from WhatsApp
         """
+        message_id = await self._ensure_message_id(to, message_id)
+        if message_id:
+            await self.send_typing_indicator(message_id)
+            
         try:
             media_id = await self._upload_buffer(data, filename, mime_type)
 

@@ -196,7 +196,6 @@ class OrchestratorIntentRouter:
         if not pausable_flows or not ctx.active_flow:
             return
 
-        # Don't pause if updating the same flow (e.g. transfer -> transfer)
         if ctx.active_flow == ctx.intent:
             return
 
@@ -232,6 +231,7 @@ class OrchestratorIntentRouter:
         user_ctx: dict[str, Any],
         image_data: str | None = None,
         message_id: str | None = None,
+        is_flow_resume: bool = False,
     ) -> str:
         """
         Route intent to appropriate service.
@@ -243,6 +243,7 @@ class OrchestratorIntentRouter:
             user_ctx: User context
             image_data: Optional base64 image data
             message_id: Optional message ID for typing indicator
+            is_flow_resume: True if this is resuming a paused flow
 
         Returns:
             Response string
@@ -301,7 +302,7 @@ class OrchestratorIntentRouter:
 
         await self._pause_if_needed(ctx, handler.pausable_flows)
 
-        if handler.send_ack_before_handling and ctx.result.response:
+        if handler.send_ack_before_handling and ctx.result.response and not is_flow_resume:
             await self._send_ack(ctx)
 
         response = await handler.handle(ctx)
@@ -310,7 +311,7 @@ class OrchestratorIntentRouter:
             if "Transfer ₦50" not in response and "awaiting_nibss" not in response:
                 response = f"{response}\n\n{mandate_message}"
 
-        if handler.supports_resume_prompt:
+        if handler.supports_resume_prompt and not is_flow_resume:
             response = await self._append_resume_prompt(response, phone_number)
 
         return response

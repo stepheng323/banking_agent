@@ -5,12 +5,16 @@ from typing import Any
 
 import redis.asyncio as redis
 
-from apps.core.src.agent.graphs.__shared__.beneficiary.suggestion_service import BeneficiarySuggestionService
+from apps.core.src.agent.graphs.__shared__.beneficiary.suggestion_service import (
+    BeneficiarySuggestionService,
+)
 from shared.clients.whatsapp.client import WhatsAppClient
 from shared.formatters.transfer import format_transfer_pending_message
 from shared.receipts import DebitSource, TransferReceiptData
 from shared.repositories import BeneficiaryRepository
-from shared.repositories.actionable_message_repository import ActionableMessageRepository
+from shared.repositories.actionable_message_repository import (
+    ActionableMessageRepository,
+)
 from shared.repositories.unit_of_work import UnitOfWork
 from shared.utils.async_helpers import create_background_task
 from shared.utils.logging import get_logger
@@ -39,7 +43,9 @@ class TransferCompletionService:
         """Clean up Redis keys related to the transfer."""
         try:
             await self.redis_client.delete(f"user:{phone_number}:pending_transfer")
-            await self.redis_client.delete(f"user:{phone_number}:pending_transfer_flow_token")
+            await self.redis_client.delete(
+                f"user:{phone_number}:pending_transfer_flow_token"
+            )
             await self.redis_client.delete(f"transfer:token:{idem_key}:phone")
             await self.redis_client.delete(f"transfer:retry:{idem_key}")
             await self.redis_client.delete(f"transfer:prev:{phone_number}:{idem_key}")
@@ -110,7 +116,11 @@ class TransferCompletionService:
             import json
             import uuid
 
-            signal_key = f"receipt:signal:{transaction_id}" if transaction_id else f"receipt:signal:{uuid.uuid4()}"
+            signal_key = (
+                f"receipt:signal:{transaction_id}"
+                if transaction_id
+                else f"receipt:signal:{uuid.uuid4()}"
+            )
 
             receipt_job = {
                 "phone_number": phone_number,
@@ -174,15 +184,24 @@ class TransferCompletionService:
                 recipient_name=recipient_name,
             )
 
+            # message_id will be auto-fetched from Redis by send_text() if not provided
             await self.whatsapp_client.send_text(to=phone_number, text=message)
         except Exception as e:
-            logger.error("transfer_pending_notification_error", phone=phone_number, error=str(e))
+            logger.error(
+                "transfer_pending_notification_error", phone=phone_number, error=str(e)
+            )
 
-    async def send_failure_notification(self, phone_number: str, error_message: str) -> None:
+    async def send_failure_notification(
+        self, phone_number: str, error_message: str
+    ) -> None:
         """Send failure notification to user."""
         try:
             message = f"Transfer failed: {error_message}. Please try again."
-            create_background_task(self.whatsapp_client.send_text(to=phone_number, text=message))
+            # Fetch message_id before background task to ensure it's available
+            # message_id will be auto-fetched from Redis by send_text() if None
+            create_background_task(
+                self.whatsapp_client.send_text(to=phone_number, text=message)
+            )
         except Exception as e:
             logger.error(
                 "transfer_failure_notification_error",
