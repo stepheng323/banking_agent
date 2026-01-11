@@ -1,5 +1,6 @@
 """Intent classification service for the orchestrator."""
 
+import random
 from typing import Any
 
 from langchain_core.runnables import Runnable
@@ -251,22 +252,32 @@ class OrchestratorClassificationService:
             amount_raw = transfer_pattern1.group(2)
             recipient = transfer_pattern1.group(3)
             amount = int(amount_raw[:-1]) * 1000 if amount_raw.endswith("k") else int(amount_raw.replace(",", ""))
+            ack = random.choice([
+                f"On it! Sending ₦{amount:,} to {recipient.title()}...",
+                f"₦{amount:,} to {recipient.title()} — processing now!",
+                f"Sending ₦{amount:,} to {recipient.title()}...",
+            ])
             return ClassificationResult(
                 intent="transfer",
                 is_complex=False,
                 confidence=0.92,
-                response=f"Got it! Sending ₦{amount:,} to {recipient.title()}...",
+                response=ack,
                 complexity_reason="Simple transfer pattern",
             )
         if transfer_pattern2:
             recipient = transfer_pattern2.group(1)
             amount_raw = transfer_pattern2.group(2)
             amount = int(amount_raw[:-1]) * 1000 if amount_raw.endswith("k") else int(amount_raw.replace(",", ""))
+            ack = random.choice([
+                f"On it! Sending ₦{amount:,} to {recipient.title()}...",
+                f"₦{amount:,} to {recipient.title()} — processing now!",
+                f"Sending ₦{amount:,} to {recipient.title()}...",
+            ])
             return ClassificationResult(
                 intent="transfer",
                 is_complex=False,
                 confidence=0.92,
-                response=f"Got it! Sending ₦{amount:,} to {recipient.title()}...",
+                response=ack,
                 complexity_reason="Simple transfer pattern",
             )
 
