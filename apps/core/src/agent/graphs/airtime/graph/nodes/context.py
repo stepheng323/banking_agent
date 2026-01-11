@@ -3,7 +3,9 @@
 from typing import Any, cast
 
 from apps.core.src.agent.graphs.airtime.state import AirtimeState
-from apps.core.src.agent.graphs.__shared__.account_selection.mandate_validator import validate_mandate_status
+from apps.core.src.agent.graphs.__shared__.account_selection.mandate_validator import (
+    validate_mandate_status,
+)
 from apps.core.src.agent.graphs.__shared__.context import load_user_context_shared
 from apps.core.src.agent.graphs.__shared__.response import (
     ResponseIntent,
@@ -38,7 +40,9 @@ async def load_user_context(
     if accounts:
         has_ready_account = any(validate_mandate_status(acc)[0] for acc in accounts)
         if not has_ready_account:
-            default_account = next((acc for acc in accounts if acc.get("is_default")), accounts[0])
+            default_account = next(
+                (acc for acc in accounts if acc.get("is_default")), accounts[0]
+            )
             _, error_message, metadata = validate_mandate_status(default_account)
 
             phone_number = state.get("phone_number")
@@ -53,7 +57,9 @@ async def load_user_context(
 
                     whatsapp = WhatsAppClient()
                     context = build_response_context(
-                        ResponseIntent.MANDATE_REQUIRED, result, error_message=error_message
+                        ResponseIntent.MANDATE_REQUIRED,
+                        cast(dict[str, Any], result),
+                        error_message=error_message,
                     )
                     response = await synthesizer.synthesize(context)
 
@@ -61,6 +67,7 @@ async def load_user_context(
                         to=phone_number,
                         body_text=response,
                         buttons=[{"id": "reinitiate_mandate", "title": "Reinitiate"}],
+                        message_id=state.get("message_id"),
                     )
 
                     return cast(
@@ -72,7 +79,11 @@ async def load_user_context(
                         },
                     )
 
-            context = build_response_context(ResponseIntent.MANDATE_REQUIRED, result, error_message=error_message)
+            context = build_response_context(
+                ResponseIntent.MANDATE_REQUIRED,
+                cast(dict[str, Any], result),
+                error_message=error_message,
+            )
             response = await synthesizer.synthesize(context)
             return cast(
                 AirtimeState,

@@ -163,10 +163,6 @@ async def check_funding(
             )
 
             if token and summary:
-                if state.get("message_id"):
-                    await whatsapp_client.send_typing_indicator(state["message_id"])
-                    await asyncio.sleep(0.3)  # Allow WhatsApp to render typing indicator
-
                 flow_result = await whatsapp_client.send_flow(
                     to=state["phone_number"],
                     header="Confirm Your Transfer",
@@ -175,6 +171,7 @@ async def check_funding(
                     screen_name="Pin",
                     flow_token=token,
                     text_body=summary,
+                    message_id=state.get("message_id"),
                 )
 
                 wa_message_id = flow_result.get("messages", [{}])[0].get("id", "")
@@ -426,6 +423,7 @@ async def confirm_funding(
         screen_name="Pin",
         flow_token=flow_token,
         text_body=summary,
+        message_id=state.get("message_id"),
     )
 
     return {

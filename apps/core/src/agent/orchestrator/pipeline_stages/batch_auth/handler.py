@@ -78,6 +78,7 @@ class BatchAuthorizationHandler(MessageHandler):
             screen_name="Pin",
             flow_token=flow_token,
             text_body=f"You have {total_tasks} transaction{'s' if total_tasks > 1 else ''} ready for authorization. Tap below to enter your PIN and process them all at once.",
+            message_id=context.message_id,
         )
 
         await redis.setex(auth_sent_key, 300, "1")

@@ -1,6 +1,8 @@
 """Account validation component."""
 
-from apps.core.src.agent.graphs.__shared__.validation.service import AsyncValidationService
+from apps.core.src.agent.graphs.__shared__.validation.service import (
+    AsyncValidationService,
+)
 from shared.clients.whatsapp.client import WhatsAppClient
 from shared.utils.async_helpers import create_background_task
 from shared.utils.logging import get_logger
@@ -49,8 +51,11 @@ class AccountValidator:
         """
         if self.whatsapp_client and phone_number:
             try:
+                # message_id will be auto-fetched from Redis by send_text() if not provided
                 create_background_task(
-                    self.whatsapp_client.send_text(phone_number, "🔍 Validating account details...")
+                    self.whatsapp_client.send_text(
+                        phone_number, "🔍 Validating account details..."
+                    )
                 )
             except Exception as e:
                 logger.warning("validation_ack_failed", error=str(e))
@@ -67,7 +72,9 @@ class AccountValidator:
             source_account_id=str(source_account_id),
         )
 
-        is_success = resolved and isinstance(resolved, dict) and resolved.get("success", False)
+        is_success = (
+            resolved and isinstance(resolved, dict) and resolved.get("success", False)
+        )
         if is_success:
             logger.info(
                 "account_validation_success",
