@@ -35,10 +35,8 @@ core = [
     "langgraph-checkpoint-redis>=0.3.2",
 ]
 
-# Receipt app - Image processing
 receipt = [
     "playwright>=1.57.0",
-    "pillow>=12.1.0",
     "jinja2>=3.0.0",
 ]
 
