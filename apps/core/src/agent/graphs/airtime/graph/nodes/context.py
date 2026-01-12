@@ -2,7 +2,6 @@
 
 from typing import Any, cast
 
-from apps.core.src.agent.graphs.airtime.state import AirtimeState
 from apps.core.src.agent.graphs.__shared__.account_selection.mandate_validator import (
     validate_mandate_status,
 )
@@ -12,6 +11,7 @@ from apps.core.src.agent.graphs.__shared__.response import (
     build_response_context,
     get_synthesizer,
 )
+from apps.core.src.agent.graphs.airtime.state import AirtimeState
 from shared.cache.redis_client import RedisClient
 from shared.clients.whatsapp.client import WhatsAppClient
 

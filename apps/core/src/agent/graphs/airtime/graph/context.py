@@ -2,8 +2,8 @@
 
 from typing import Optional
 
-from apps.core.src.agent.graphs.airtime.extractor import AirtimeEntityExtractor
 from apps.core.src.agent.graphs.__shared__.beneficiary.matcher import BeneficiaryMatcher
+from apps.core.src.agent.graphs.airtime.extractor import AirtimeEntityExtractor
 from shared.cache.redis_client import Redis
 from shared.cache.user_data import UserDataCache
 from shared.clients.whatsapp.client import WhatsAppClient
