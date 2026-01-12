@@ -10,6 +10,7 @@ class DataPurchaseState(TypedDict, total=False):
 
     phone_number: str
     user_id: str
+    user_profile: dict[str, Any]
 
     message: str
     message_id: str
@@ -22,11 +23,20 @@ class DataPurchaseState(TypedDict, total=False):
     selected_plan: DataPlan | None
     all_plans: list[DataPlan]
 
+    # Authorization fields
+    idempotency_key: str | None
+    pin_verified: bool
+    pin_verification_error: str | None
+    pin_retry_count: int
+    data_status: Literal["pending", "authorized", "completed", "failed"] | None
+
     flow_state: Literal[
         "resolving",
         "suggesting",
         "awaiting_confirmation",
         "listing",
+        "confirming",
+        "authorizing",
         "executing",
         "completed",
         "error",

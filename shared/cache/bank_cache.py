@@ -8,7 +8,7 @@ from typing import Any
 import redis.asyncio as redis
 
 from shared.cache.redis_client import RedisClient
-from shared.utils.bank_aliases import get_bank_search_terms, normalize_bank_name
+from shared.utils.bank_aliases import get_bank_search_terms
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -28,23 +28,23 @@ class BankCacheService:
     def _build_search_index(self, banks: list[dict[str, str]]) -> None:
         """Build in-memory search index for faster lookups."""
         self._search_index.clear()
-        
+
         suffixes = [" bank", " plc", " limited", " microfinance bank"]
-        
+
         for bank in banks:
             code = bank.get("code")
             name = bank.get("name", "")
             if not code or not name:
                 continue
-                
+
             # 1. Exact match (lowercase)
             self._search_index[name.lower().strip()] = code
-            
+
             # 2. Aliases/Search terms
             terms = get_bank_search_terms(name)
             for term in terms:
                 self._search_index[term] = code
-                
+
             # 3. Suffix stripped
             name_lower = name.lower().strip()
             for suffix in suffixes:
@@ -186,10 +186,10 @@ class BankCacheService:
 
         # Create list of bank names for matching
         bank_names = [b.get("name", "") for b in banks]
-        
+
         # Use centralized matching logic
         matched_name = find_matching_bank_name(bank_name, bank_names)
-        
+
         if matched_name:
             # Find the bank object for the matched name
             for bank in banks:

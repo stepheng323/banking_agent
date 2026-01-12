@@ -1,45 +1,27 @@
 """Minimal orchestrator: LLM-based multilingual intent+complexity and user context cache."""
 
-from typing import Any
 
-from langchain_openai import ChatOpenAI
 
+from apps.core.src.agent.graphs.transfer import TransferService
 from apps.core.src.agent.orchestrator.config import OrchestratorDependencies
-
+from apps.core.src.agent.orchestrator.pipeline import MessageContext, MessagePipeline
 from apps.core.src.agent.orchestrator.pipeline_stages.affirmation.handler import AffirmationHandler
+from apps.core.src.agent.orchestrator.pipeline_stages.affirmation.service import FlowContextService
 from apps.core.src.agent.orchestrator.pipeline_stages.batch_auth.handler import BatchAuthorizationHandler
 from apps.core.src.agent.orchestrator.pipeline_stages.beneficiary.handler import BeneficiaryHandler
 from apps.core.src.agent.orchestrator.pipeline_stages.beneficiary.service import OrchestratorBeneficiaryHandler
-from apps.core.src.agent.orchestrator.pipeline_stages.flow_control.service import OrchestratorCancellationHandler
-from apps.core.src.agent.orchestrator.pipeline_stages.flow_control.handler import FlowControlHandler
 from apps.core.src.agent.orchestrator.pipeline_stages.classification.handler import ClassificationHandler
 from apps.core.src.agent.orchestrator.pipeline_stages.classification.service import OrchestratorClassificationService
 from apps.core.src.agent.orchestrator.pipeline_stages.context_loader.handler import ContextLoaderHandler
 from apps.core.src.agent.orchestrator.pipeline_stages.context_loader.service import OrchestratorContextManager
-from apps.core.src.agent.orchestrator.pipeline_stages.affirmation.service import FlowContextService
-from apps.core.src.agent.orchestrator.pipeline_stages.task_queue.handler import TaskQueueHandler
+from apps.core.src.agent.orchestrator.pipeline_stages.flow_control.handler import FlowControlHandler
+from apps.core.src.agent.orchestrator.pipeline_stages.flow_control.service import OrchestratorCancellationHandler
 from apps.core.src.agent.orchestrator.pipeline_stages.intent_routing.handler import IntentRoutingHandler
 from apps.core.src.agent.orchestrator.pipeline_stages.intent_routing.router import OrchestratorIntentRouter
 from apps.core.src.agent.orchestrator.pipeline_stages.quote.handler import QuoteHandler
-
-from apps.core.src.agent.orchestrator.pipeline_stages.task_queue.planner import OrchestratorTaskPlanner
 from apps.core.src.agent.orchestrator.pipeline_stages.task_queue.coordination.coordinator import TaskCoordinator
-from apps.core.src.agent.orchestrator.pipeline import MessageContext, MessagePipeline
-from apps.core.src.agent.orchestrator.services import (
-    ConversationResponder,
-    TaskQueueService,
-)
-from apps.core.src.agent.orchestrator.pipeline_stages.task_queue.executor import TaskExecutor
-from apps.core.src.agent.graphs.account_management.service import AccountManagementService
-from apps.core.src.agent.graphs.airtime import AirtimeService
-from apps.core.src.agent.graphs.data import DataPurchaseGraph
-from apps.core.src.agent.graphs.faq import FAQFlowGraph
-from apps.core.src.agent.graphs.query.graph import QueryFlowGraph
-from apps.core.src.agent.graphs.support.graph import SupportFlowGraph
-from apps.core.src.agent.graphs.transfer import TransferService
-from shared.clients.whatsapp.client import WhatsAppClient
-from shared.repositories import BeneficiaryRepository, UserRepository
-from shared.repositories.actionable_message_repository import ActionableMessageRepository
+from apps.core.src.agent.orchestrator.pipeline_stages.task_queue.handler import TaskQueueHandler
+from apps.core.src.agent.orchestrator.pipeline_stages.task_queue.planner import OrchestratorTaskPlanner
 from shared.utils.async_helpers import create_background_task
 
 
@@ -79,7 +61,7 @@ class OrchestratorAgent:
         )
         self.flow_context_service = FlowContextService()
 
-        
+
         from apps.core.src.agent.orchestrator.pipeline_stages.intent_routing.deps import IntentRouterDependencies
         router_deps = IntentRouterDependencies(
             task_queue_service=deps.task_queue_service,

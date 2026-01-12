@@ -2,8 +2,6 @@
 
 from typing import Protocol, runtime_checkable
 
-from apps.core.src.agent.orchestrator.pipeline.message_context import MessageContext
-
 
 @runtime_checkable
 class TaskExecutorProtocol(Protocol):

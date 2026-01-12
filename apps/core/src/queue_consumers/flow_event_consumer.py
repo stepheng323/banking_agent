@@ -3,6 +3,11 @@
 import asyncio
 from typing import Any
 
+from apps.core.src.agent.graphs.airtime.service import AirtimeService
+from apps.core.src.agent.graphs.data.graph.graph import DataPurchaseGraph
+from apps.core.src.agent.graphs.transfer.service import TransferService
+from apps.core.src.agent.shared.batch.service import BatchService
+from shared.clients.whatsapp.client import WhatsAppClient
 from shared.queue.messages import FLOW_EVENTS_QUEUE, FlowEventType
 from shared.queue.redis_queue import RedisQueue
 from shared.utils.logging import get_logger
@@ -16,14 +21,16 @@ class FlowEventConsumer:
     def __init__(
         self,
         redis_queue: RedisQueue,
-        transfer_service: Any | None = None,
-        airtime_service: Any | None = None,
-        batch_service: Any | None = None,
-        whatsapp_client: Any | None = None,
+        transfer_service: TransferService | None = None,
+        airtime_service: AirtimeService | None = None,
+        data_service: DataPurchaseGraph | None = None,
+        batch_service: BatchService | None = None,
+        whatsapp_client: WhatsAppClient | None = None,
     ):
         self.queue = redis_queue
         self.transfer_service = transfer_service
         self.airtime_service = airtime_service
+        self.data_service = data_service
         self.batch_service = batch_service
         self.whatsapp_client = whatsapp_client
         self.running = False
@@ -88,29 +95,28 @@ class FlowEventConsumer:
 
             if flow_type == "transfer":
                 if self.transfer_service and hasattr(self.transfer_service, "graph"):
-                    response = await self.transfer_service.graph.resume_after_pin_verification(
-                        phone_number, True, None
-                    )
+                    response = await self.transfer_service.graph.resume_after_pin_verification(phone_number, True, None)
                     logger.info("transfer_resumed_after_pin", phone=phone_number)
                 else:
                     logger.error("transfer_service_not_available")
 
             elif flow_type == "airtime":
                 if self.airtime_service and hasattr(self.airtime_service, "graph"):
-                    response = await self.airtime_service.graph.resume_after_pin_verification(
-                        phone_number, True, None
-                    )
+                    response = await self.airtime_service.graph.resume_after_pin_verification(phone_number, True, None)
                     logger.info("airtime_resumed_after_pin", phone=phone_number)
                 else:
                     logger.error("airtime_service_not_available")
 
+            elif flow_type == "data":
+                if self.data_service and hasattr(self.data_service, "resume_after_pin_verification"):
+                    response = await self.data_service.resume_after_pin_verification(phone_number, True, None)
+                    logger.info("data_resumed_after_pin", phone=phone_number)
+                else:
+                    logger.error("data_service_not_available")
+
             elif flow_type == "batch":
-                if self.batch_service and hasattr(
-                    self.batch_service, "resume_after_pin_verification"
-                ):
-                    response = await self.batch_service.resume_after_pin_verification(
-                        phone_number, True, None
-                    )
+                if self.batch_service and hasattr(self.batch_service, "resume_after_pin_verification"):
+                    response = await self.batch_service.resume_after_pin_verification(phone_number, True, None)
                     logger.info("batch_resumed_after_pin", phone=phone_number)
                 else:
                     logger.error("batch_service_not_available")

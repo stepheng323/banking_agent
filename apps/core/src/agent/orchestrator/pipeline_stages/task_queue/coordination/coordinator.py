@@ -1,19 +1,19 @@
 """Task coordinator service - manages flow completion and task transitions."""
 
 import time
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
+from apps.core.src.agent.orchestrator.pipeline_stages.task_queue.coordination.summary import TaskSummaryGenerator
 from shared.cache.redis_client import RedisClient
 from shared.config import settings
 from shared.services.task_queue import TaskQueueService
 from shared.types.agent_types import TaskStatus
 from shared.utils.logging import get_logger
-from apps.core.src.agent.orchestrator.pipeline_stages.task_queue.coordination.summary import TaskSummaryGenerator
 
 if TYPE_CHECKING:
+    from apps.core.src.agent.graphs.transfer import TransferService
     from apps.core.src.agent.orchestrator.pipeline_stages.context_loader.service import OrchestratorContextManager
     from apps.core.src.agent.orchestrator.pipeline_stages.task_queue.planner import OrchestratorTaskPlanner
-    from apps.core.src.agent.graphs.transfer import TransferService
     from shared.clients.whatsapp.client import WhatsAppClient
 
 
@@ -126,7 +126,7 @@ class TaskCoordinator:
         auth_required_tasks = [
             t for t in planner_output.tasks if t.executor in ("transfer", "airtime")
         ]
-        
+
         return (
             all(task.id in all_done_task_ids for task in auth_required_tasks)
             if auth_required_tasks
@@ -137,7 +137,7 @@ class TaskCoordinator:
         """Trigger the batch authorization flow."""
         logger.debug("All tasks ready for batch authorization")
         summary = await self.summary_generator.generate_batch_summary(phone_number)
-        
+
         flow_token = f"batch-auth-{phone_number}-{int(time.time())}"
         await self.whatsapp_client.send_flow(
             to=phone_number,
@@ -148,7 +148,7 @@ class TaskCoordinator:
             flow_token=flow_token,
             text_body=summary,
         )
-        
+
         await self.context_manager.save_last_response(phone_number, summary)
 
     async def _trigger_next_auth_if_ready(self, phone_number: str) -> bool:
@@ -156,9 +156,9 @@ class TaskCoordinator:
         planner_output = await self.task_queue_service.get_task_queue(phone_number)
         if not planner_output:
             return False
-            
+
         task_results = await self.task_queue_service.get_task_results(phone_number)
-        
+
         next_collection_complete_task = None
         for task in planner_output.tasks:
             task_status = task_results.get(task.id, {}).get("status")
@@ -175,7 +175,7 @@ class TaskCoordinator:
                     phone_number, "authorize", {"intent": "transfer"}
                 )
                 return True
-        
+
         return False
 
     async def _process_next_task(self, phone_number: str, completed_task_id: str) -> None:
@@ -189,7 +189,7 @@ class TaskCoordinator:
         all_done_task_ids = set(completed_ids) | set(collection_complete_ids)
 
         next_task = await self.task_queue_service.get_next_task(phone_number)
-        
+
         if next_task:
             if next_task.id in all_done_task_ids:
                 planner_output = await self.task_queue_service.get_task_queue(phone_number)
@@ -226,18 +226,18 @@ class TaskCoordinator:
             return
 
         completed_task = next((t for t in planner_output.tasks if t.id == completed_task_id), None)
-        
+
         if not completed_task:
             all_done = await self.task_queue_service.get_completed_task_ids(phone_number)
             for task in reversed(planner_output.tasks):
                 if task.id in all_done:
                     completed_task = task
                     break
-        
+
         if completed_task and completed_task.id != next_task.id:
             completed_desc = self.summary_generator.format_task_description(completed_task)
             next_desc = self.summary_generator.format_task_description(next_task)
-            
+
             task_results = await self.task_queue_service.get_task_results(phone_number)
             completed_status = task_results.get(completed_task.id, {}).get("status")
 

@@ -2,6 +2,8 @@
 
 from langgraph.graph import END, StateGraph
 
+from apps.core.src.agent.graphs.__shared__.beneficiary.matcher import BeneficiaryMatcher
+from apps.core.src.agent.graphs.__shared__.validation.service import AsyncValidationService
 from apps.core.src.agent.graphs.transfer.extractor import TransferEntityExtractor
 from apps.core.src.agent.graphs.transfer.graph.nodes import (
     authorize_transaction,
@@ -21,9 +23,13 @@ from apps.core.src.agent.graphs.transfer.graph.nodes import (
     verify_funding_approval,
     wait_for_debits,
 )
+from apps.core.src.agent.graphs.transfer.graph.routing import (
+    route_after_extract,
+    route_after_funding_check,
+    route_after_verification,
+    route_by_state,
+)
 from apps.core.src.agent.graphs.transfer.state import TransferState
-from apps.core.src.agent.graphs.__shared__.beneficiary.matcher import BeneficiaryMatcher
-from apps.core.src.agent.graphs.__shared__.validation.service import AsyncValidationService
 from shared.cache.bank_cache import BankCacheService
 from shared.cache.redis_client import Redis
 from shared.cache.user_data import UserDataCache
@@ -39,13 +45,6 @@ from shared.services.auth import AuthorizationService
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
-
-from .routing import (
-    route_after_extract,
-    route_after_funding_check,
-    route_after_verification,
-    route_by_state,
-)
 
 
 def build_graph(
@@ -75,8 +74,6 @@ def build_graph(
 
     async def load_context_node(state: TransferState) -> TransferState:
         return await load_user_context(state, user_cache, account_repo, beneficiary_repo, user_repo=user_repo)
-
-
 
     async def find_beneficiary_node(state: TransferState) -> TransferState:
         return await find_beneficiary(state, matcher)

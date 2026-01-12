@@ -2,11 +2,10 @@
 
 from apps.core.src.agent.orchestrator.pipeline.message_context import MessageContext
 from apps.core.src.agent.orchestrator.pipeline.message_handler import MessageHandler
-from shared.utils.logging import get_logger
-
 from apps.core.src.agent.orchestrator.pipeline_stages.intent_routing.router import (
     OrchestratorIntentRouter,
 )
+from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
 

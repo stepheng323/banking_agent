@@ -5,11 +5,6 @@ from typing import Any
 
 from langchain_openai import ChatOpenAI
 
-from apps.core.src.agent.orchestrator.services import (
-    ConversationResponder,
-    TaskQueueService,
-)
-from apps.core.src.agent.orchestrator.pipeline_stages.task_queue.executor import TaskExecutor
 from apps.core.src.agent.graphs.account_management.service import AccountManagementService
 from apps.core.src.agent.graphs.airtime import AirtimeService
 from apps.core.src.agent.graphs.data import DataPurchaseGraph
@@ -17,12 +12,16 @@ from apps.core.src.agent.graphs.faq import FAQFlowGraph
 from apps.core.src.agent.graphs.query.graph import QueryFlowGraph
 from apps.core.src.agent.graphs.support.graph import SupportFlowGraph
 from apps.core.src.agent.graphs.transfer import TransferService
+from apps.core.src.agent.orchestrator.pipeline_stages.quote.service import QuoteService
+from apps.core.src.agent.orchestrator.pipeline_stages.task_queue.executor import TaskExecutor
+from apps.core.src.agent.orchestrator.registry import ExecutorRegistry
+from apps.core.src.agent.orchestrator.services import (
+    ConversationResponder,
+    TaskQueueService,
+)
 from shared.clients.whatsapp.client import WhatsAppClient
 from shared.repositories import BeneficiaryRepository, UserRepository
 from shared.repositories.actionable_message_repository import ActionableMessageRepository
-
-from apps.core.src.agent.orchestrator.registry import ExecutorRegistry
-from apps.core.src.agent.orchestrator.pipeline_stages.quote.service import QuoteService
 
 
 @dataclass

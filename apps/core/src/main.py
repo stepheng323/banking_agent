@@ -11,7 +11,6 @@ from shared.cache import BankCacheService
 from shared.cache.redis_client import RedisClient
 from shared.clients.factories.payment import PaymentProviderFactory
 from shared.config import settings
-
 from shared.utils.logging import configure_logger, get_logger
 
 configure_logger()

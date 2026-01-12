@@ -8,8 +8,6 @@ from collections.abc import Generator
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from shared.database.models import Base
-
 from shared.config import settings
 
 DATABASE_URL = settings.database_url

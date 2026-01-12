@@ -17,7 +17,7 @@ def find_account_by_bank_name(accounts: list[dict], bank_name: str) -> dict | No
     # Map bank_name -> account object for easy lookup later
     bank_map = {}
     available_names = []
-    
+
     for acc in accounts:
         b_name = acc.get("bank_name")
         if b_name:
@@ -27,7 +27,7 @@ def find_account_by_bank_name(accounts: list[dict], bank_name: str) -> dict | No
 
     # Use centralized fuzzy matching
     matched_name = find_matching_bank_name(bank_name, available_names)
-    
+
     if matched_name:
         return bank_map.get(matched_name.lower().strip())
 

@@ -2,9 +2,9 @@
 
 from typing import Any
 
+from shared.formatters.transfer import _calculate_transfer_fee, _format_currency_naira
 from shared.services.task_queue import TaskQueueService
 from shared.types.agent_types import TaskStatus
-from shared.formatters.transfer import _calculate_transfer_fee, _format_currency_naira
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -48,7 +48,7 @@ class TaskSummaryGenerator:
             return "Ready to authorize transactions."
 
         results = await self.task_queue_service.get_task_results(phone_number)
-        
+
         transfers = []
         source_accounts = set()
         total_amount = 0
@@ -71,10 +71,10 @@ class TaskSummaryGenerator:
                     else task.parameters.get("recipient", "Recipient") if task.parameters
                     else "Recipient"
                 )
-                
+
                 recipient_account = result_data.get("recipient_account", "") if isinstance(result_data, dict) else ""
                 recipient_bank = result_data.get("recipient_bank_name", "") if isinstance(result_data, dict) else ""
-                
+
                 selected_source = result_data.get("selected_source_account") if isinstance(result_data, dict) else None
                 source_bank = selected_source.get("bank_name", "") if selected_source else ""
                 source_account = selected_source.get("account_number", "") if selected_source else ""
@@ -136,7 +136,7 @@ class TaskSummaryGenerator:
             else:
                 lines.append(f"{t['index']}. {_format_currency_naira(t['amount'])} → *{t['recipient_name']}*")
                 lines.append(f"   {t['recipient_bank']} • {t['recipient_account']}")
-                
+
                 if not same_source and t["source_account"]:
                     last4 = t["source_account"][-4:] if t["source_account"] else "????"
                     lines.append(f"   From: {t['source_bank']} (...{last4})")
@@ -156,7 +156,7 @@ class TaskSummaryGenerator:
 
         results = await self.task_queue_service.get_task_results(phone_number)
         completed_tasks = []
-        
+
         for i, task in enumerate(planner_output.tasks, 1):
             task_desc = self.format_task_description(task)
             task_result = results.get(task.id, {})

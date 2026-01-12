@@ -1,18 +1,13 @@
 from langchain_openai import ChatOpenAI
 
-from apps.core.src.agent.orchestrator import OrchestratorAgent
-from apps.core.src.agent.orchestrator.config import OrchestratorDependencies
-from apps.core.src.agent.orchestrator.services import (
-    ConversationResponder,
-    MediaService,
-    TaskQueueService,
-)
-from apps.core.src.agent.orchestrator.pipeline_stages.task_queue.executor import TaskExecutor
+from apps.core.src.agent.graphs.__shared__.beneficiary.suggestion_service import BeneficiarySuggestionService
 from apps.core.src.agent.graphs.account_management.service import AccountManagementService
 from apps.core.src.agent.graphs.airtime import AirtimeService
 from apps.core.src.agent.graphs.airtime.completion import AirtimeCompletionService
 from apps.core.src.agent.graphs.airtime.executor import AirtimeExecutor
 from apps.core.src.agent.graphs.data import DataPurchaseGraph
+from apps.core.src.agent.graphs.data.completion import DataCompletionService
+from apps.core.src.agent.graphs.data.executor import DataExecutor
 from apps.core.src.agent.graphs.faq import FAQFlowGraph
 from apps.core.src.agent.graphs.onboarding.executor import OnboardingExecutor
 from apps.core.src.agent.graphs.onboarding.service import OnboardingService
@@ -21,7 +16,15 @@ from apps.core.src.agent.graphs.support.graph import SupportFlowGraph
 from apps.core.src.agent.graphs.transfer import TransferService as AgentTransferService
 from apps.core.src.agent.graphs.transfer.completion import TransferCompletionService
 from apps.core.src.agent.graphs.transfer.executor import TransferExecutor
-from apps.core.src.agent.graphs.__shared__.beneficiary.suggestion_service import BeneficiarySuggestionService
+from apps.core.src.agent.orchestrator import OrchestratorAgent
+from apps.core.src.agent.orchestrator.config import OrchestratorDependencies
+from apps.core.src.agent.orchestrator.pipeline_stages.task_queue.executor import TaskExecutor
+from apps.core.src.agent.orchestrator.services import (
+    ConversationResponder,
+    MediaService,
+    TaskQueueService,
+)
+from apps.core.src.agent.shared.batch.service import BatchService
 from apps.core.src.queue_consumers import MessageConsumer, TransactionConsumer
 from apps.core.src.queue_consumers.flow_event_consumer import FlowEventConsumer
 from shared.cache.redis_client import RedisClient
@@ -135,8 +138,9 @@ def setup_dependencies():
         completion_callback=None,
     )
 
-    from apps.core.src.agent.orchestrator.registry import ExecutorRegistry
     from apps.core.src.agent.orchestrator.pipeline_stages.quote.service import QuoteService
+    from apps.core.src.agent.orchestrator.registry import ExecutorRegistry
+
     executor_registry = ExecutorRegistry()
     executor_registry.register("transfer", agent_transfer_service)
     executor_registry.register("airtime", agent_airtime_service)
@@ -150,8 +154,6 @@ def setup_dependencies():
     )
 
     media_service = MediaService(whatsapp_client)
-    
-
 
     orchestrator_deps = OrchestratorDependencies(
         llm=llm,
@@ -181,6 +183,19 @@ def setup_dependencies():
     agent_airtime_service.graph.completion_callback = completion_callback
     task_executor.completion_callback = completion_callback
 
+
+    batch_service = BatchService(
+        whatsapp_client=whatsapp_client,
+        task_queue_service=task_queue_service,
+        transfer_service=agent_transfer_service,
+        airtime_service=agent_airtime_service,
+        data_service=data_graph,
+        query_graph=query_graph,
+        user_cache=user_data_cache,
+        account_management_service=account_management_service,
+        queue=redis_queue,
+    )
+
     message_consumer = MessageConsumer(
         redis_queue=redis_queue,
         user_repository=user_repository,
@@ -195,21 +210,33 @@ def setup_dependencies():
         actionable_message_repo=actionable_message_repository,
         beneficiary_suggestion_service=beneficiary_suggestion_service,
     )
+    data_completion_service = DataCompletionService(
+        whatsapp_client=whatsapp_client,
+        redis_client=shared_redis,
+        actionable_message_repo=actionable_message_repository,
+        beneficiary_suggestion_service=beneficiary_suggestion_service,
+    )
+
     airtime_executor = AirtimeExecutor(airtime_service=airtime_completion_service)
     transfer_executor = TransferExecutor(transfer_service=transfer_completion_service)
+    data_executor = DataExecutor(data_service=data_completion_service)
+
+
+
 
     transaction_consumer = TransactionConsumer(
         redis_queue=redis_queue,
         transfer_executor=transfer_executor,
         airtime_executor=airtime_executor,
-        data_handler=data_graph,
+        data_executor=data_executor,
     )
 
     flow_event_consumer = FlowEventConsumer(
         redis_queue=redis_queue,
         transfer_service=agent_transfer_service,
         airtime_service=agent_airtime_service,
-        batch_service=None,  # Batch service created on-demand via BatchService
+        data_service=data_graph,
+        batch_service=batch_service,
         whatsapp_client=whatsapp_client,
     )
 

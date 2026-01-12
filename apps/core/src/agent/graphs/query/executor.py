@@ -1,8 +1,8 @@
 """Query executor - thin dispatch layer for normalized queries."""
 
+from apps.core.src.agent.graphs.__shared__.account_selection.service import find_account_by_bank_name
 from apps.core.src.agent.graphs.query.handlers import HANDLER_REGISTRY
 from apps.core.src.agent.graphs.query.models import NormalizedQuery, QueryResult
-from apps.core.src.agent.graphs.__shared__.account_selection.service import find_account_by_bank_name
 from shared.clients.abstractions.banking import BankingDataProvider
 from shared.utils.logging import get_logger
 

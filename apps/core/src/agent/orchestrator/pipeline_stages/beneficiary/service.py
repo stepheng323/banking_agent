@@ -4,8 +4,8 @@ import asyncio
 import traceback
 from typing import Any
 
-from apps.core.src.agent.orchestrator.pipeline_stages.context_loader.service import OrchestratorContextManager
 from apps.core.src.agent.orchestrator.models.classification import ClassificationResult
+from apps.core.src.agent.orchestrator.pipeline_stages.context_loader.service import OrchestratorContextManager
 from shared.cache.redis_client import RedisClient
 from shared.repositories.unit_of_work import UnitOfWork
 from shared.utils.logging import get_logger
@@ -47,7 +47,7 @@ class OrchestratorBeneficiaryHandler:
             )
         elif intent in ("no", "skip", "cancel"):
             return await self._handle_decline(phone_number)
-        
+
         # If it's not a recognized intent and the classifier didn't extract an alias,
         # check if the text itself looks like a simple alias
         text_clean = text.strip()
@@ -73,7 +73,7 @@ class OrchestratorBeneficiaryHandler:
     ) -> str | None:
         """Handle 'yes/confirm' response to save beneficiary."""
         alias = result.extracted_alias
-        
+
         # If no alias extracted but suggestion had one, use that
         if not alias:
             alias = suggestion_context.get("alias_suggested") or suggestion_context.get("original_alias")
@@ -228,17 +228,17 @@ class OrchestratorBeneficiaryHandler:
         try:
             redis_client = RedisClient.get_client()
             await redis_client.delete(f"user:{phone_number}:conversation_state")
-            
+
             session_key = (
                 f"user:{phone_number}:airtime_session_start"
                 if beneficiary_type in ("airtime", "data")
                 else f"user:{phone_number}:transfer_session_start"
             )
             await redis_client.delete(session_key)
-            
+
             await redis_client.delete(f"user:{phone_number}:pending_transfer")
             await redis_client.delete(f"user:{phone_number}:pending_transfer_flow_token")
-            
+
         except Exception:
             pass
 

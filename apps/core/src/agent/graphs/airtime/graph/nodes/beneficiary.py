@@ -2,6 +2,7 @@
 
 from typing import cast
 
+from apps.core.src.agent.graphs.__shared__.beneficiary.matcher import BeneficiaryMatcher
 from apps.core.src.agent.graphs.__shared__.response import (
     ResponseIntent,
     build_clarification_context,
@@ -9,7 +10,6 @@ from apps.core.src.agent.graphs.__shared__.response import (
     get_synthesizer,
 )
 from apps.core.src.agent.graphs.airtime.state import AirtimeState
-from apps.core.src.agent.graphs.__shared__.beneficiary.matcher import BeneficiaryMatcher
 from shared.database.models import Beneficiary
 from shared.utils.serialization import sqlalchemy_to_dict
 

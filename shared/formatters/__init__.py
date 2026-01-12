@@ -3,10 +3,8 @@
 from shared.formatters.accounts import format_accounts_list
 from shared.formatters.beneficiary import format_beneficiary_suggestion
 from shared.formatters.data import (
-    format_data_failure_message,
     format_data_plan_list,
     format_data_plan_suggestion,
-    format_data_success_message,
 )
 from shared.formatters.funding import (
     format_funding_plan_message,
@@ -23,10 +21,8 @@ from shared.formatters.transfer import (
 __all__ = [
     "format_beneficiary_suggestion",
     "format_accounts_list",
-    "format_data_failure_message",
     "format_data_plan_list",
     "format_data_plan_suggestion",
-    "format_data_success_message",
     "format_transfer_summary",
     "format_funding_plan_summary",
     "format_transfer_success_message",

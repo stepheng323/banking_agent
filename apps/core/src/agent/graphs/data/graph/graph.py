@@ -9,6 +9,8 @@ from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.redis.aio import AsyncRedisSaver
 from langgraph.graph import END, StateGraph
 
+from apps.core.src.agent.graphs.data.graph.nodes.authorization import authorize_transaction
+from apps.core.src.agent.graphs.data.graph.nodes.confirm import confirm_node
 from apps.core.src.agent.graphs.data.graph.nodes.execute import execute_node
 from apps.core.src.agent.graphs.data.graph.nodes.list import list_node
 from apps.core.src.agent.graphs.data.graph.nodes.resolve import resolve_node
@@ -17,7 +19,9 @@ from apps.core.src.agent.graphs.data.graph.state import DataPurchaseState
 from apps.core.src.agent.graphs.data.models import DataPlan
 from apps.core.src.agent.graphs.data.service import DataPlanService
 from shared.clients.abstractions.bill import BillPaymentProvider
+from shared.clients.whatsapp.client import WhatsAppClient
 from shared.config.settings import settings
+from shared.queue.redis_queue import RedisQueue
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -42,7 +46,7 @@ def route_user_response(state: DataPurchaseState) -> str:
     attempts = state.get("suggestion_attempts", 0)
 
     if message in {"yes", "ok", "sure", "confirm", "proceed", "y"}:
-        return "execute"
+        return "confirm"  # Changed from execute to confirm
 
     if "show" in message or "list" in message or "plans" in message:
         return "list"
@@ -62,8 +66,26 @@ def route_plan_selection(state: DataPurchaseState) -> str:
     """Route when user selects a plan from list."""
     selected = state.get("selected_plan")
     if selected:
-        return "execute"
+        return "confirm"  # Changed from execute to confirm
     return "list"
+
+
+def route_after_confirm(state: DataPurchaseState) -> str:
+    """Route after confirmation - wait for PIN."""
+    flow_state = state.get("flow_state", "")
+    if flow_state == "error":
+        return "end"
+    return "end"  # Wait for PIN callback
+
+
+def route_after_authorize(state: DataPurchaseState) -> str:
+    """Route after authorization."""
+    flow_state = state.get("flow_state", "")
+    if flow_state == "error":
+        return "end"
+    if state.get("data_status") == "authorized":
+        return "execute"
+    return "end"
 
 
 class DataPurchaseGraph:
@@ -73,9 +95,13 @@ class DataPurchaseGraph:
         self,
         bill_provider: BillPaymentProvider,
         redis_client: redis.Redis,
+        whatsapp_client: WhatsAppClient | None = None,
+        queue: RedisQueue | None = None,
     ):
         self.bill_provider = bill_provider
         self.redis = redis_client
+        self.whatsapp_client = whatsapp_client
+        self.queue = queue
         self.plan_service = DataPlanService(bill_provider, redis_client)
 
         self._graph = None
@@ -96,7 +122,7 @@ class DataPurchaseGraph:
                 await self._checkpointer.adelete_thread(thread_id)
                 logger.info(f"Cleared data checkpoint for {phone_number}")
             else:
-                logger.warning(f"Checkpointer not initialized, cannot clear checkpoint for {phone_number}")
+                logger.warning(f"Checkpointer not initialized for {phone_number}")
         except Exception as e:
             logger.error(f"Error clearing data checkpoint: {e}")
 
@@ -121,6 +147,22 @@ class DataPurchaseGraph:
         )
         graph.add_node("list", list_node)
         graph.add_node(
+            "confirm",
+            partial(
+                confirm_node,
+                redis_client=self.redis,
+                whatsapp_client=self.whatsapp_client,
+            ),
+        )
+        graph.add_node(
+            "authorize",
+            partial(
+                authorize_transaction,
+                redis_client=self.redis,
+                queue=self.queue,
+            ),
+        )
+        graph.add_node(
             "execute",
             partial(execute_node, bill_provider=self.bill_provider),
         )
@@ -130,6 +172,8 @@ class DataPurchaseGraph:
         graph.add_conditional_edges("resolve", route_after_resolve)
         graph.add_edge("suggest", END)
         graph.add_edge("list", END)
+        graph.add_conditional_edges("confirm", route_after_confirm)
+        graph.add_conditional_edges("authorize", route_after_authorize)
         graph.add_edge("execute", END)
 
         return graph
@@ -173,25 +217,13 @@ class DataPurchaseGraph:
         user_context: dict[str, Any],
         message_id: str | None = None,
     ) -> str:
-        """
-        Run the data purchase flow.
-
-        Args:
-            phone_number: User's phone number
-            message: User's message
-            user_context: User context with profile, accounts, etc.
-            message_id: Optional message ID
-
-        Returns:
-            Response string to send to user
-        """
+        """Run the data purchase flow."""
         await self._ensure_checkpointer()
 
         if self._graph is None:
             raise RuntimeError("Graph not compiled")
 
         config = self._get_config(phone_number)
-
         budget = self._extract_budget(message)
 
         initial_state: DataPurchaseState = {
@@ -199,6 +231,7 @@ class DataPurchaseGraph:
             "message": message,
             "message_id": message_id or "",
             "user_context": user_context,
+            "user_profile": user_context.get("profile", {}),
             "budget": budget,
             "flow_state": "resolving",
             "suggestion_attempts": 0,
@@ -222,7 +255,7 @@ class DataPurchaseGraph:
                 state = await self._graph.aget_state(config)
                 if state and state.values:
                     flow_state = state.values.get("flow_state", "")
-                    return flow_state not in ("", "complete", "error", "executed")
+                    return flow_state not in ("", "completed", "error")
             return False
         except Exception as e:
             logger.error(f"Error checking active session: {e}")
@@ -248,23 +281,48 @@ class DataPurchaseGraph:
             logger.error(f"Error getting flow summary: {e}")
             return None
 
+    async def resume_after_pin_verification(
+        self,
+        phone_number: str,
+        pin_verified: bool,
+        user_id: str | None,
+    ) -> str:
+        """Resume flow after PIN verification callback."""
+        await self._ensure_checkpointer()
+
+        if self._graph is None:
+            raise RuntimeError("Graph not compiled")
+
+        config = self._get_config(phone_number)
+        state = await self._graph.aget_state(config)
+
+        if not state or not state.values:
+            return "No active data purchase session found."
+
+        updated_state = {
+            **state.values,
+            "pin_verified": pin_verified,
+            "user_id": user_id,
+        }
+
+        if not pin_verified:
+            await self.clear_checkpoint(phone_number)
+            return "PIN verification failed. Please try again."
+
+        try:
+            result = await self._graph.ainvoke(updated_state, config)
+            return result.get("response", "")
+        except Exception as e:
+            logger.error("data_resume_error", error=str(e), exc_info=True)
+            return "Failed to complete data purchase. Please try again."
+
     async def continue_flow(
         self,
         phone_number: str,
         message: str,
         previous_state: DataPurchaseState | None = None,
     ) -> str:
-        """
-        Continue the flow after user response.
-
-        Args:
-            phone_number: User's phone number
-            message: User's response
-            previous_state: Optional previous state (loads from checkpoint if not provided)
-
-        Returns:
-            Response string
-        """
+        """Continue the flow after user response."""
         await self._ensure_checkpointer()
 
         if self._graph is None:
@@ -281,10 +339,10 @@ class DataPurchaseGraph:
 
         message_lower = message.lower().strip()
 
+        # Confirmation triggers PIN flow
         if message_lower in {"yes", "ok", "sure", "confirm", "proceed", "y"}:
             previous_state["selected_plan"] = previous_state.get("suggested_plan")
-            result = await execute_node(previous_state, self.bill_provider)
-            await self.clear_checkpoint(phone_number)
+            result = await confirm_node(previous_state, self.redis, self.whatsapp_client)
             return result.get("response", "")
 
         if "show" in message_lower or "list" in message_lower or "plans" in message_lower:
@@ -296,8 +354,7 @@ class DataPurchaseGraph:
             selected = self._select_plan_from_message(message, all_plans)
             if selected:
                 previous_state["selected_plan"] = selected
-                result = await execute_node(previous_state, self.bill_provider)
-                await self.clear_checkpoint(phone_number)
+                result = await confirm_node(previous_state, self.redis, self.whatsapp_client)
                 return result.get("response", "")
 
         attempts = previous_state.get("suggestion_attempts", 0)

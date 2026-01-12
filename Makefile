@@ -1,11 +1,11 @@
 .PHONY: help lint type-check format test clean check-all fix \
       lint-fix format-check test-file test-coverage test-watch \
-      run-gateway run-core run-all \
+      run-gateway run-core run-all run-receipt \
       docker-build docker-up docker-down docker-logs docker-restart docker-clean \
       db-migrate db-upgrade db-rollback db-reset db-shell \
-      install install-dev deps-check setup \
+      install install-dev install-all deps-check setup rebuild-venv \
       install-hooks lint-file check-file format-file check-orchestrator check-agent \
-      info status ci
+      info status ci test-venv init-checkpoints
 
 # Colors for output
 BLUE := \033[36m
@@ -14,7 +14,7 @@ YELLOW := \033[33m
 RED := \033[31m
 RESET := \033[0m
 
-help: ## Show this help message
+help:
 	@echo '$(BLUE)Banking Agent - Makefile Commands$(RESET)'
 	@echo ''
 	@echo '$(YELLOW)Usage:$(RESET) make [target]'
@@ -30,115 +30,83 @@ help: ## Show this help message
 	@echo '  make docker-up              # Start all services with Docker'
 	@echo ''
 
-# ============================================================================
-# CODE QUALITY
-# ============================================================================
 
-lint: ## Run ruff linter (check only, no fixes)
+# Code quality
+lint: ## Run ruff linter (check only)
 	@echo "$(BLUE)🔍 Running Ruff linter...$(RESET)"
-	@.venv/bin/ruff check .
+	@uv run ruff check .
 
 lint-fix: ## Run ruff linter with auto-fix
 	@echo "$(GREEN)🔧 Running Ruff linter with auto-fix...$(RESET)"
-	@.venv/bin/ruff check --fix . || true
+	@uv run ruff check --fix . || true
 
 type-check: ## Run mypy type checker
 	@echo "$(BLUE)🔍 Running MyPy type checker...$(RESET)"
-	@.venv/bin/mypy apps/ shared/ || true
+	@uv run mypy apps/ shared/ || true
 
 format: ## Format code with ruff
 	@echo "$(GREEN)✨ Formatting code with ruff...$(RESET)"
-	@.venv/bin/ruff format .
+	@uv run ruff format .
 
 format-check: ## Check code formatting (no changes)
 	@echo "$(BLUE)🔍 Checking code formatting...$(RESET)"
-	@.venv/bin/ruff format --check .
+	@uv run ruff format --check .
 
 check-all: lint type-check format-check ## Run all checks (lint + type-check + format-check)
 	@echo "$(GREEN)✅ All checks passed!$(RESET)"
 
-fix: format lint-fix ## Auto-fix: format first (whitespace), then lint fixes
+fix: format lint-fix ## Auto-fix: format first, then lint fixes
 	@echo "$(GREEN)✅ Auto-fixes applied!$(RESET)"
 
-# ============================================================================
-# TESTING
-# ============================================================================
 
+# Testing
 test: ## Run all tests
 	@echo "$(BLUE)🧪 Running tests...$(RESET)"
-	@pytest
+	@uv run pytest
 
 test-file: ## Run specific test file (usage: make test-file FILE=path/to/test.py)
 	@echo "$(BLUE)🧪 Running test: $(FILE)...$(RESET)"
-	@pytest $(FILE)
+	@uv run pytest $(FILE)
 
 test-coverage: ## Run tests with coverage report
 	@echo "$(BLUE)🧪 Running tests with coverage...$(RESET)"
-	@pytest --cov=apps --cov=shared --cov-report=term-missing --cov-report=html
+	@uv run pytest --cov=apps --cov=shared --cov-report=term-missing --cov-report=html
 
-test-watch: ## Run tests in watch mode (re-run on file changes)
+test-watch: ## Run tests in watch mode
 	@echo "$(YELLOW)👀 Watching for changes...$(RESET)"
-	@pytest-watch || pytest --watch
+	@uv run pytest-watch || uv run pytest --watch
 
-# ============================================================================
-# DEVELOPMENT SERVERS
-# ============================================================================
 
-run-gateway: ## Run gateway service (FastAPI with uvicorn)
+# Development servers
+run-gateway: ## Run gateway service (port 8000)
 	@echo "$(GREEN)🚀 Starting Gateway service on port 8000...$(RESET)"
-	@if [ -d ".venv" ] && [ -f ".venv/bin/python" ]; then \
-		PYTHONPATH="$$(pwd)" .venv/bin/python -m uvicorn apps.gateway.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir apps --reload-dir shared; \
-	elif command -v python3 &> /dev/null; then \
-		PYTHONPATH="$$(pwd)" python3 -m uvicorn apps.gateway.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir apps --reload-dir shared; \
-	else \
-		echo "$(RED)❌ Error: Python not found. Please install dependencies first:$(RESET)"; \
-		echo "   make install-dev"; \
-		exit 1; \
-	fi
+	@PYTHONPATH="$$(pwd)" uv run uvicorn apps.gateway.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir apps --reload-dir shared --reload-exclude "*__pycache__*" --reload-exclude "*.git*"
 
-run-core: ## Run core agent service (FastAPI with uvicorn + message consumer)
+run-core: ## Run core agent service (port 8001)
 	@echo "$(GREEN)🚀 Starting Core agent service on port 8001...$(RESET)"
-	@if [ -d ".venv" ] && [ -f ".venv/bin/python" ]; then \
-		PYTHONPATH="$$(pwd)" .venv/bin/python -m uvicorn apps.core.src.main:app --host 0.0.0.0 --port 8001 --reload --reload-dir apps --reload-dir shared; \
-	elif command -v python3 &> /dev/null; then \
-		PYTHONPATH="$$(pwd)" python3 -m uvicorn apps.core.src.main:app --host 0.0.0.0 --port 8001 --reload --reload-dir apps --reload-dir shared; \
-	else \
-		echo "$(RED)❌ Error: Python not found. Please install dependencies first:$(RESET)"; \
-		echo "   make install-dev"; \
-		exit 1; \
-	fi
+	@PYTHONPATH="$$(pwd)" uv run uvicorn apps.core.src.main:app --host 0.0.0.0 --port 8001 --reload --reload-dir apps --reload-dir shared --reload-exclude "*__pycache__*" --reload-exclude "*.git*"
 
-run-all: ## Run all services (gateway + core)
+run-receipt: ## Run receipt worker service (port 8002)
+	@echo "$(GREEN)🧾 Starting Receipt service on port 8002...$(RESET)"
+	@PYTHONPATH="$$(pwd)" uv run uvicorn apps.receipt.main:app --host 0.0.0.0 --port 8002 --reload --reload-dir apps --reload-dir shared --reload-exclude "*__pycache__*" --reload-exclude "*.git*"
+
+run-all: ## Run all services (gateway + core + receipt)
 	@echo "$(GREEN)🚀 Starting all services...$(RESET)"
 	@echo "$(YELLOW)Note: Run in separate terminals or use docker-up instead$(RESET)"
 	@make run-gateway & make run-core & make run-receipt
 
-run-receipt: ## Run receipt worker service (FastAPI with uvicorn)
-	@echo "$(GREEN)🧾 Starting Receipt service on port 8002...$(RESET)"
-	@if [ -d ".venv" ] && [ -f ".venv/bin/python" ]; then \
-		PYTHONPATH="$$(pwd)" .venv/bin/python -m uvicorn apps.receipt.main:app --host 0.0.0.0 --port 8002 --reload --reload-dir apps --reload-dir shared; \
-	elif command -v python3 &> /dev/null; then \
-		PYTHONPATH="$$(pwd)" python3 -m uvicorn apps.receipt.main:app --host 0.0.0.0 --port 8002 --reload --reload-dir apps --reload-dir shared; \
-	else \
-		echo "$(RED)❌ Error: Python not found.$(RESET)"; \
-		exit 1; \
-	fi
-
-# ============================================================================
-# DOCKER
-# ============================================================================
-
-docker-build: ## Build Docker images for all services
+# Docker
+docker-build: ## Build Docker images
 	@echo "$(BLUE)🐳 Building Docker images...$(RESET)"
 	@docker-compose build
 
-docker-up: ## Start all services with Docker Compose
+docker-up: ## Start services with Docker Compose
 	@echo "$(GREEN)🐳 Starting services with Docker Compose...$(RESET)"
 	@docker-compose up -d
 	@echo "$(GREEN)✅ Services started!$(RESET)"
 	@echo "$(YELLOW)View logs: docker-compose logs -f$(RESET)"
 
-docker-down: ## Stop all Docker services
+docker-down: ## Stop Docker services
 	@echo "$(RED)🐳 Stopping Docker services...$(RESET)"
 	@docker-compose down
 
@@ -146,67 +114,64 @@ docker-logs: ## View Docker logs
 	@echo "$(BLUE)📋 Viewing Docker logs...$(RESET)"
 	@docker-compose logs -f
 
-docker-restart: docker-down docker-up ## Restart all Docker services
+docker-restart: docker-down docker-up ## Restart Docker services
 
 docker-clean: ## Remove all Docker containers, images, and volumes
 	@echo "$(RED)🧹 Cleaning Docker resources...$(RESET)"
 	@docker-compose down -v --rmi all --remove-orphans
 	@echo "$(GREEN)✅ Docker cleanup complete!$(RESET)"
 
-# ============================================================================
-# DATABASE
-# ============================================================================
-
+# Database
 db-migrate: ## Create a new database migration
 	@echo "$(BLUE)📊 Creating database migration...$(RESET)"
 	@bash scripts/create_migration.sh
 
 db-upgrade: ## Apply pending database migrations
 	@echo "$(GREEN)📊 Applying database migrations...$(RESET)"
-	@bash scripts/migrate.sh
+	@uv run alembic upgrade head
 
 db-rollback: ## Rollback last database migration
 	@echo "$(RED)📊 Rolling back database migration...$(RESET)"
-	@python scripts/run_alembic.py downgrade -1
+	@uv run python scripts/run_alembic.py downgrade -1
 
-db-reset: ## Drop and recreate database schema
+db-reset: ## Drop and recreate database schema (DANGEROUS)
 	@echo "$(RED)⚠️  WARNING: This will delete all data!$(RESET)"
 	@read -p "Are you sure? (yes/no): " confirm && [ "$$confirm" = "yes" ] || exit 1
 	@echo "$(YELLOW)🗑️  Dropping schema...$(RESET)"
-	@docker exec $$(docker ps -qf "name=postgres") psql -U postgres -d banking_agent -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;" || python scripts/drop_db.py
+	@docker exec $$(docker ps -qf "name=postgres") psql -U postgres -d banking_agent -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;" || uv run python scripts/drop_db.py
 	@echo "$(GREEN)📊 Running migrations...$(RESET)"
-	@.venv/bin/alembic upgrade head
+	@uv run alembic upgrade head
 	@echo "$(GREEN)✅ Database reset complete!$(RESET)"
 
 db-shell: ## Open database shell
 	@echo "$(BLUE)💻 Opening database shell...$(RESET)"
 	@psql $${DATABASE_URL}
 
-# ============================================================================
-# DEPENDENCIES & SETUP
-# ============================================================================
+# Dependencies & setup
 
-install: ## Install dependencies using uv
+install: ## Install base dependencies
 	@echo "$(BLUE)📦 Installing dependencies...$(RESET)"
 	@uv sync
 	@echo "$(GREEN)✅ Dependencies installed!$(RESET)"
 
-install-dev: ## Install development dependencies (includes dev tools)
+install-dev: ## Install development dependencies
 	@echo "$(BLUE)📦 Installing development dependencies...$(RESET)"
 	@uv sync --group dev
 	@echo "$(GREEN)✅ Development dependencies installed!$(RESET)"
 
-setup: ## Initial project setup (creates venv, installs deps, sets PYTHONPATH)
+install-all: ## Install all dependencies (all extras + dev)
+	@echo "$(BLUE)📦 Installing all dependencies...$(RESET)"
+	@uv sync --all-extras --group dev
+	@echo "$(GREEN)✅ All dependencies installed!$(RESET)"
+
+setup: ## Initial project setup
 	@echo "$(BLUE)🔧 Setting up development environment...$(RESET)"
-	@if [ ! -d ".venv" ]; then \
-		echo "$(YELLOW)Creating virtual environment...$(RESET)"; \
-		python3 -m venv .venv; \
-	fi
-	@echo "$(YELLOW)Activate virtual environment with: source .venv/bin/activate$(RESET)"
-	@echo "$(YELLOW)Then run: make install-dev$(RESET)"
+	@uv sync --all-extras --group dev
+	@echo "$(GREEN)✅ Environment ready!$(RESET)"
 	@echo ""
-	@echo "$(GREEN)💡 Tip: Set PYTHONPATH for monorepo imports:$(RESET)"
-	@echo "   export PYTHONPATH=$$(pwd):$$PYTHONPATH"
+	@echo "$(YELLOW)Quick start:$(RESET)"
+	@echo "  make run-core     # Start core service"
+	@echo "  make run-gateway  # Start gateway service"
 
 deps-check: ## Check for outdated dependencies
 	@echo "$(BLUE)🔍 Checking for outdated dependencies...$(RESET)"
@@ -216,27 +181,22 @@ rebuild-venv: ## Rebuild virtual environment from scratch
 	@echo "$(YELLOW)🔄 Rebuilding virtual environment...$(RESET)"
 	@rm -rf .venv
 	@uv venv
-	@uv sync --group dev
-	@echo "$(GREEN)✅ Virtual environment rebuilt successfully!$(RESET)"
-	@echo "$(YELLOW)Run 'source .venv/bin/activate' to activate it$(RESET)"
+	@uv sync --all-extras --group dev
+	@echo "$(GREEN)✅ Virtual environment rebuilt!$(RESET)"
 
 test-venv: ## Test virtual environment setup
 	@echo "$(BLUE)🧪 Testing virtual environment...$(RESET)"
-	@.venv/bin/python -c "import sys; print('Python:', sys.executable)"
-	@.venv/bin/python -c "import sys; sp=[p for p in sys.path if 'site-packages' in p and '.venv' in p]; print('Site packages:', sp[0] if sp else 'NOT FOUND')"
-	@.venv/bin/python -c "from Crypto.Cipher import AES; print('✅ Crypto module OK')"
-	@.venv/bin/python -c "from langgraph.checkpoint.postgres import PostgresSaver; print('✅ PostgresSaver OK')"
+	@uv run python -c "import sys; print('Python:', sys.executable)"
+	@uv run python -c "from Crypto.Cipher import AES; print('✅ Crypto module OK')"
+	@uv run python -c "from langgraph.checkpoint.postgres import PostgresSaver; print('✅ PostgresSaver OK')"
 	@echo "$(GREEN)✅ Virtual environment is working correctly!$(RESET)"
 
-init-checkpoints: ## Initialize LangGraph checkpoint tables in PostgreSQL
+init-checkpoints: ## Initialize LangGraph checkpoint tables
 	@echo "$(BLUE)🔄 Initializing checkpoint tables...$(RESET)"
-	@.venv/bin/python -m shared.database.init_checkpoints
+	@uv run python -m shared.database.init_checkpoints
 	@echo "$(GREEN)✅ Checkpoint tables initialized!$(RESET)"
 
-# ============================================================================
-# UTILITIES & CLEANUP
-# ============================================================================
-
+# Utilities & cleanup
 clean: ## Clean Python artifacts and caches
 	@echo "$(YELLOW)🧹 Cleaning up...$(RESET)"
 	@find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
@@ -256,61 +216,50 @@ install-hooks: ## Install pre-commit Git hooks
 	@echo 'make check-all' >> .git/hooks/pre-commit
 	@chmod +x .git/hooks/pre-commit
 	@echo "$(GREEN)✅ Pre-commit hooks installed!$(RESET)"
-	@echo "$(YELLOW)Hooks will run 'make check-all' before each commit$(RESET)"
 
-# ============================================================================
-# FILE-SPECIFIC CHECKS
-# ============================================================================
-
-lint-file: ## Lint specific file (usage: make lint-file FILE=path/to/file.py)
+# File-specific checks
+lint-file: ## Lint specific file (usage: make lint-file FILE=path)
 	@echo "$(BLUE)🔍 Linting: $(FILE)...$(RESET)"
-	@.venv/bin/ruff check $(FILE)
+	@uv run ruff check $(FILE)
 
-check-file: ## Type-check specific file (usage: make check-file FILE=path/to/file.py)
+check-file: ## Type-check specific file (usage: make check-file FILE=path)
 	@echo "$(BLUE)🔍 Type-checking: $(FILE)...$(RESET)"
-	@.venv/bin/mypy $(FILE) || true
+	@uv run mypy $(FILE) || true
 
-format-file: ## Format specific file (usage: make format-file FILE=path/to/file.py)
+format-file: ## Format specific file (usage: make format-file FILE=path)
 	@echo "$(GREEN)✨ Formatting: $(FILE)...$(RESET)"
-	@.venv/bin/ruff format $(FILE)
+	@uv run ruff format $(FILE)
 
-check-orchestrator: ## Check orchestrator.py specifically
+check-orchestrator: ## Check orchestrator files
 	@echo "$(BLUE)🔍 Checking orchestrator...$(RESET)"
-	@.venv/bin/ruff check apps/core/src/agent/orchestrator/
-	@.venv/bin/mypy apps/core/src/agent/orchestrator/ || true
+	@uv run ruff check apps/core/src/agent/orchestrator/
+	@uv run mypy apps/core/src/agent/orchestrator/ || true
 	@echo "$(GREEN)✅ Orchestrator check complete!$(RESET)"
 
 check-agent: ## Check all agent files
 	@echo "$(BLUE)🔍 Checking all agent files...$(RESET)"
-	@.venv/bin/ruff check apps/core/src/agent/
-	@.venv/bin/mypy apps/core/src/agent/ || true
+	@uv run ruff check apps/core/src/agent/
+	@uv run mypy apps/core/src/agent/ || true
 	@echo "$(GREEN)✅ Agent check complete!$(RESET)"
 
-# ============================================================================
-# INFO & DEBUGGING
-# ============================================================================
-
-info: ## Show project information
+# Info & debugging
+info:
 	@echo "$(BLUE)📋 Project Information$(RESET)"
 	@echo ""
-	@echo "$(GREEN)Python Version:$(RESET) $$(python3 --version 2>/dev/null || echo 'Not found')"
-	@echo "$(GREEN)Pip Version:$(RESET) $$(pip --version 2>/dev/null || echo 'Not found')"
+	@echo "$(GREEN)Python:$(RESET) $$(uv run python --version 2>/dev/null || echo 'Not found')"
+	@echo "$(GREEN)UV:$(RESET) $$(uv --version 2>/dev/null || echo 'Not installed')"
 	@echo "$(GREEN)Docker:$(RESET) $$(docker --version 2>/dev/null || echo 'Not installed')"
-	@echo "$(GREEN)Docker Compose:$(RESET) $$(docker-compose --version 2>/dev/null || echo 'Not installed')"
 	@echo ""
 	@echo "$(BLUE)Services:$(RESET)"
-	@echo "  - Gateway: http://localhost:8000"
-	@echo "  - Core: http://localhost:8001"
+	@echo "  Gateway: http://localhost:8000"
+	@echo "  Core:    http://localhost:8001"
+	@echo "  Receipt: http://localhost:8002"
 	@echo ""
-	@echo "$(BLUE)Development Commands:$(RESET)"
-	@echo "  make run-gateway  - Start gateway service"
+	@echo "$(BLUE)Quick Commands:$(RESET)"
 	@echo "  make run-core     - Start core service"
-	@echo "  make lint         - Lint code"
-	@echo "  make fmt          - Format code"
+	@echo "  make run-gateway  - Start gateway service"
+	@echo "  make check-all    - Run all quality checks"
 	@echo "  make test         - Run tests"
-	@docker-compose ps 2>/dev/null || echo ""
-	@echo "$(BLUE)Docker Services:$(RESET)"
-	@docker-compose ps 2>/dev/null || echo "  $(YELLOW)Not running$(RESET)"
 
 status: info ## Alias for info
 

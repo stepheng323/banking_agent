@@ -2,6 +2,7 @@
 
 from langgraph.graph import END, StateGraph
 
+from apps.core.src.agent.graphs.__shared__.beneficiary.matcher import BeneficiaryMatcher
 from apps.core.src.agent.graphs.airtime.extractor import AirtimeEntityExtractor
 from apps.core.src.agent.graphs.airtime.graph.nodes import (
     authorize_transaction,
@@ -14,7 +15,6 @@ from apps.core.src.agent.graphs.airtime.graph.nodes import (
     validate_amount,
 )
 from apps.core.src.agent.graphs.airtime.state import AirtimeState
-from apps.core.src.agent.graphs.__shared__.beneficiary.matcher import BeneficiaryMatcher
 from shared.cache.redis_client import Redis
 from shared.cache.user_data import UserDataCache
 from shared.clients.whatsapp.client import WhatsAppClient

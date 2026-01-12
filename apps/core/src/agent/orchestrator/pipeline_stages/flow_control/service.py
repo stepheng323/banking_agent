@@ -3,10 +3,10 @@
 import asyncio
 from typing import TYPE_CHECKING, Optional
 
-from apps.core.src.agent.orchestrator.pipeline_stages.context_loader.service import OrchestratorContextManager
-from apps.core.src.agent.orchestrator.models.classification import ClassificationResult
 from apps.core.src.agent.graphs.airtime import AirtimeService
 from apps.core.src.agent.graphs.transfer import TransferService
+from apps.core.src.agent.orchestrator.models.classification import ClassificationResult
+from apps.core.src.agent.orchestrator.pipeline_stages.context_loader.service import OrchestratorContextManager
 from shared.utils.cancellation import cleanup_transaction_redis_keys
 from shared.utils.logging import get_logger
 
@@ -46,7 +46,7 @@ class OrchestratorCancellationHandler:
                 return queue_response
 
         active_flow = self._detect_active_flow(conversation_state)
-        
+
         if not active_flow:
             active_flow = await self._check_pending_transactions(phone_number)
 
