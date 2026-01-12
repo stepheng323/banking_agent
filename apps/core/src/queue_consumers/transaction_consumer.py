@@ -3,7 +3,7 @@
 import asyncio
 
 from apps.core.src.agent.graphs.airtime.executor import AirtimeExecutor
-from apps.core.src.agent.graphs.data import DataPurchaseGraph
+from apps.core.src.agent.graphs.data.executor import DataExecutor
 from apps.core.src.agent.graphs.transfer.executor import TransferExecutor
 from shared.queue.redis_queue import RedisQueue
 from shared.utils.logging import get_logger
@@ -19,7 +19,7 @@ class TransactionConsumer:
         redis_queue: RedisQueue,
         transfer_executor: TransferExecutor,
         airtime_executor: AirtimeExecutor,
-        data_handler: DataPurchaseGraph,
+        data_executor: DataExecutor | None,
     ):
         """
         Initialize transaction consumer.
@@ -28,12 +28,12 @@ class TransactionConsumer:
             redis_queue: Redis queue instance
             transfer_executor: Optional TransferExecutor instance
             airtime_executor: Optional AirtimeExecutor instance
-            data_handler: Optional DataHandler instance (for future use)
+            data_executor: Optional DataExecutor instance
         """
         self.queue = redis_queue
         self.transfer_executor = transfer_executor
         self.airtime_executor = airtime_executor
-        self.data_handler = data_handler
+        self.data_executor = data_executor
         self.running = False
 
     async def process_transaction(self, transaction_data: dict) -> None:
@@ -75,13 +75,13 @@ class TransactionConsumer:
                     logger.error("airtime_executor_missing_method", method="handle_airtime")
 
             elif transaction_type == "execute_data":
-                if not self.data_handler:
-                    logger.error("data_handler_not_available")
+                if not self.data_executor:
+                    logger.error("data_executor_not_available")
                     return
-                if hasattr(self.data_handler, "handle_data"):
-                    await self.data_handler.handle_data(transaction_data)
+                if hasattr(self.data_executor, "handle_data"):
+                    await self.data_executor.handle_data(transaction_data)
                 else:
-                    logger.error("data_handler_missing_method", method="handle_data")
+                    logger.error("data_executor_missing_method", method="handle_data")
 
             else:
                 logger.warning("unknown_transaction_type", transaction_type=transaction_type)

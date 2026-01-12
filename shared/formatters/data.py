@@ -1,52 +1,6 @@
 """Data purchase formatting utilities."""
 
 
-def format_data_success_message(
-    plan_name: str,
-    amount: int,
-    target_phone: str,
-    source: str,
-) -> str:
-    """
-    Format data purchase success message.
-
-    Args:
-        plan_name: Name of the data plan purchased
-        amount: Amount in Naira
-        target_phone: Phone number that received data
-        source: 'self' or 'other'
-
-    Returns:
-        Formatted success message
-    """
-    masked_phone = target_phone[:4] + "•••" + target_phone[-4:]
-
-    if source == "other":
-        return f"✅ *Data Purchase Successful!*\n\n*{plan_name}* for ₦{amount:,}\nSent to: {masked_phone}"
-    else:
-        return f"✅ *Data Purchase Successful!*\n\nYour *{plan_name}* is now active.\nAmount: ₦{amount:,}"
-
-
-def format_data_failure_message(error: str) -> str:
-    """
-    Format data purchase failure message.
-
-    Args:
-        error: Error message from provider
-
-    Returns:
-        User-friendly failure message
-    """
-    error_lower = error.lower()
-
-    if "insufficient" in error_lower or "balance" in error_lower:
-        return "Purchase failed: Insufficient balance.\n\nWould you like to try a smaller plan?"
-    elif "network" in error_lower:
-        return "Purchase failed: Network provider error.\n\nPlease try again in a moment."
-    else:
-        return f"Purchase failed: {error}\n\nPlease try again or contact support."
-
-
 def format_data_plan_suggestion(
     plan_name: str,
     network: str,
