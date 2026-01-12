@@ -23,6 +23,35 @@ class BankCacheService:
     def __init__(self, redis_client: redis.Redis | None = None):
         """Initialize bank cache service."""
         self.redis = redis_client or RedisClient.get_client()
+        self._search_index: dict[str, str] = {}
+
+    def _build_search_index(self, banks: list[dict[str, str]]) -> None:
+        """Build in-memory search index for faster lookups."""
+        self._search_index.clear()
+        
+        suffixes = [" bank", " plc", " limited", " microfinance bank"]
+        
+        for bank in banks:
+            code = bank.get("code")
+            name = bank.get("name", "")
+            if not code or not name:
+                continue
+                
+            # 1. Exact match (lowercase)
+            self._search_index[name.lower().strip()] = code
+            
+            # 2. Aliases/Search terms
+            terms = get_bank_search_terms(name)
+            for term in terms:
+                self._search_index[term] = code
+                
+            # 3. Suffix stripped
+            name_lower = name.lower().strip()
+            for suffix in suffixes:
+                name_lower = name_lower.replace(suffix, "")
+            name_clean = name_lower.strip()
+            if name_clean:
+                self._search_index[name_clean] = code
 
     async def get_banks(self) -> list[dict[str, str]] | None:
         """Get banks from Redis cache."""
@@ -30,6 +59,9 @@ class BankCacheService:
             cached_data = await self.redis.get(self.CACHE_KEY)
             if cached_data:
                 banks = json.loads(cached_data)
+                # Rebuild index if empty (e.g. after service restart)
+                if not self._search_index and banks:
+                    self._build_search_index(banks)
                 logger.info("banks_cache_hit", count=len(banks))
                 return banks
 
@@ -56,6 +88,9 @@ class BankCacheService:
 
             timestamp = datetime.utcnow().isoformat()
             await self.redis.setex(self.TIMESTAMP_KEY, ttl, timestamp)
+
+            # Update in-memory index
+            self._build_search_index(banks)
 
             logger.info("banks_cached", count=len(banks), ttl_seconds=ttl)
             return True
@@ -140,111 +175,40 @@ class BankCacheService:
             logger.warning("bank_code_lookup_no_cache", bank_name=bank_name)
             return None
 
-        normalized_name = bank_name.lower().strip()
-        logger.debug(
-            "bank_code_lookup_started",
-            bank_name=bank_name,
-            normalized=normalized_name,
-            total_banks=len(banks),
-        )
+        # 0. Check in-memory index first (O(1))
+        normalized = bank_name.lower().strip()
+        if normalized in self._search_index:
+            code = self._search_index[normalized]
+            logger.info("bank_code_index_hit", bank_name=bank_name, code=code)
+            return code
 
-        # Use centralized bank aliases for search terms
-        search_terms = get_bank_search_terms(bank_name)
-        normalized = normalize_bank_name(bank_name)
+        from shared.utils.bank_aliases import find_matching_bank_name
 
-        # Check using search terms from centralized aliases
-        for bank in banks:
-            bank_name_lower = bank.get("name", "").lower()
-            for term in search_terms:
-                if term in bank_name_lower or bank_name_lower in term:
-                    code = bank.get("code")
-                    logger.info(
-                        "bank_code_found",
-                        match_type="alias",
-                        bank_name=bank.get("name"),
-                        code=code,
-                        search_term=bank_name,
-                    )
-                    return code
-
-        # Try exact match
-        for bank in banks:
-            bank_name_field = bank.get("name", "").lower().strip()
-            if bank_name_field in (normalized_name, normalized):
-                code = bank.get("code")
-                logger.info(
-                    "bank_code_found",
-                    match_type="exact",
-                    bank_name=bank.get("name"),
-                    code=code,
-                    search_term=bank_name,
-                )
-                return code
-
-        # Try matching without common suffixes
-        normalized_no_suffix = (
-            normalized_name.replace(" bank", "").replace(" plc", "").replace(" limited", "").strip()
-        )
-        for bank in banks:
-            bank_name_field = bank.get("name", "").lower().strip()
-            bank_name_no_suffix = (
-                bank_name_field.replace(" bank", "")
-                .replace(" plc", "")
-                .replace(" limited", "")
-                .strip()
-            )
-            if normalized_no_suffix == bank_name_no_suffix:
-                code = bank.get("code")
-                logger.info(
-                    "bank_code_found",
-                    match_type="suffix_stripped",
-                    bank_name=bank.get("name"),
-                    code=code,
-                    search_term=bank_name,
-                )
-                return code
-
-        # For short abbreviations (3 chars or less), check if they appear as standalone words
-        if len(normalized_name) <= 3:
+        # Create list of bank names for matching
+        bank_names = [b.get("name", "") for b in banks]
+        
+        # Use centralized matching logic
+        matched_name = find_matching_bank_name(bank_name, bank_names)
+        
+        if matched_name:
+            # Find the bank object for the matched name
             for bank in banks:
-                bank_name_field = bank.get("name", "").lower().strip()
-                bank_words = bank_name_field.split()
-                if normalized_name in bank_words:
+                if bank.get("name") == matched_name:
                     code = bank.get("code")
                     logger.info(
                         "bank_code_found",
-                        match_type="word",
-                        bank_name=bank.get("name"),
+                        bank_name=matched_name,
                         code=code,
                         search_term=bank_name,
                     )
                     return code
-
-        # For longer names, check word matches
-        normalized_words = normalized_name.split()
-        for bank in banks:
-            bank_name_field = bank.get("name", "").lower().strip()
-            bank_words = bank_name_field.split()
-            if (
-                any(word in bank_words for word in normalized_words if len(word) >= 3)
-                or normalized_name in bank_words
-            ):
-                code = bank.get("code")
-                logger.info(
-                    "bank_code_found",
-                    match_type="word",
-                    bank_name=bank.get("name"),
-                    code=code,
-                    search_term=bank_name,
-                )
-                return code
 
         logger.warning("bank_code_not_found", bank_name=bank_name)
         return None
 
     async def ensure_banks_cached(
         self, fetch_banks_func: Callable[[], Awaitable[dict[str, Any]]]
-    ) -> bool:
+    ) -> list[dict[str, str]] | None:
         """
         Ensure banks are cached. Fetch from provider if cache is empty.
 
@@ -253,12 +217,12 @@ class BankCacheService:
                        Should return dict with 'success' bool and 'banks' list.
 
         Returns:
-            True if banks are available (cached or fetched), False otherwise
+            List of banks if available (cached or fetched), None otherwise
         """
         # Check if banks exist in cache
         banks = await self.get_banks()
         if banks:
-            return True
+            return banks
 
         # Cache miss - fetch from provider
         try:
@@ -269,11 +233,11 @@ class BankCacheService:
                 banks_list = result["banks"]
                 await self.set_banks(banks_list, ttl=86400)
                 logger.info("banks_fetched_and_cached", count=len(banks_list))
-                return True
+                return banks_list
             else:
                 error = result.get("error", "Unknown error")
                 logger.error("banks_fetch_failed", error=error)
-                return False
+                return None
         except Exception as e:
             logger.error("banks_ensure_error", error=str(e), exc_info=True)
-            return False
+            return None

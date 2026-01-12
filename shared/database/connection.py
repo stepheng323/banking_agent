@@ -57,14 +57,7 @@ def get_db_session() -> Session:
     return get_session_local()()
 
 
-def init_db():
-    """Initialize application database tables."""
-    try:
-        Base.metadata.create_all(bind=get_engine())
-        print("✓ Database tables initialized")
-    except Exception as e:
-        print(f"⚠️  Database initialization error: {e}")
-        raise
+
 
 
 def drop_db():

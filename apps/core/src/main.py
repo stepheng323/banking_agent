@@ -11,7 +11,7 @@ from shared.cache import BankCacheService
 from shared.cache.redis_client import RedisClient
 from shared.clients.factories.payment import PaymentProviderFactory
 from shared.config import settings
-from shared.database.connection import init_db
+
 from shared.utils.logging import configure_logger, get_logger
 
 configure_logger()
@@ -22,14 +22,6 @@ logger = get_logger(__name__)
 async def lifespan(_app: FastAPI):
     """Lifespan context manager for startup/shutdown events."""
     logger.info("Starting Core Banking Service...")
-
-    try:
-        init_db()
-        logger.info("Database initialized")
-    except Exception as e:
-        logger.warning("Database initialization warning", error=str(e))
-
-    payment_provider = None
     try:
         logger.info("Initializing payment provider...")
         payment_provider = PaymentProviderFactory.get_provider_for_service("resolve_account")
@@ -59,10 +51,9 @@ async def lifespan(_app: FastAPI):
                 async def fetch_banks():
                     return await payment_provider.fetch_banks(country="NG")
 
-                cache_ready = await bank_cache.ensure_banks_cached(fetch_banks)
-                if cache_ready:
-                    banks = await bank_cache.get_banks()
-                    logger.info("Bank cache ready", count=len(banks) if banks else 0)
+                banks = await bank_cache.ensure_banks_cached(fetch_banks)
+                if banks:
+                    logger.info("Bank cache ready", count=len(banks))
                 else:
                     logger.warning("Bank cache warmup failed")
             else:
