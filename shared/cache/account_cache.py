@@ -35,7 +35,7 @@ class AccountCacheService:
         try:
             key = self._get_key(account_number, bank_code)
             cached_data = await self.redis.get(key)
-            
+
             if cached_data:
                 account = json.loads(cached_data)
                 logger.info(
@@ -66,7 +66,7 @@ class AccountCacheService:
             key = self._get_key(account_number, bank_code)
             serialized = json.dumps(data)
             await self.redis.setex(key, self.TTL_SECONDS, serialized)
-            
+
             logger.info("account_cached", account_number=account_number, bank_code=bank_code)
             return True
         except Exception as e:
@@ -95,7 +95,7 @@ class AccountCacheService:
             # 3. Cache if successful
             if result.get("success"):
                 await self.set_account(account_number, bank_code, result)
-            
+
             return result
         except Exception as e:
             logger.error("account_fetch_error", error=str(e), exc_info=True)

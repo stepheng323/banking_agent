@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING
 from langchain_core.language_models import BaseChatModel
 
 from apps.core.src.agent.orchestrator.models.classification import ClassificationResult
+from apps.core.src.agent.orchestrator.models.confirmation import ConfirmationContext
 from apps.core.src.agent.orchestrator.pipeline.message_context import MessageContext
 from apps.core.src.agent.orchestrator.pipeline.message_handler import MessageHandler
 from shared.cache.redis_client import RedisClient
@@ -17,14 +18,12 @@ from shared.services.affirmation import AffirmationResult, AffirmationService
 from shared.services.onboarding import ServiceResult, mandate_service
 from shared.utils.logging import get_logger
 
-from apps.core.src.agent.orchestrator.models.confirmation import ConfirmationContext
-
 logger = get_logger(__name__)
 
 if TYPE_CHECKING:
-    from apps.core.src.agent.orchestrator.pipeline_stages.affirmation.service import FlowContextService
     from apps.core.src.agent.graphs.airtime import AirtimeService
     from apps.core.src.agent.graphs.transfer import TransferService
+    from apps.core.src.agent.orchestrator.pipeline_stages.affirmation.service import FlowContextService
 
 
 class AffirmationHandler(MessageHandler):

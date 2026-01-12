@@ -568,7 +568,7 @@ class WhatsAppClient:
         message_id = await self._ensure_message_id(to, message_id)
         if message_id:
             await self.send_typing_indicator(message_id)
-            
+
         try:
             media_id = await self._upload_buffer(data, filename, mime_type)
 

@@ -1,6 +1,6 @@
 """Message context for pipeline processing."""
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any
 
 from apps.core.src.agent.orchestrator.models.classification import ClassificationResult
@@ -57,48 +57,8 @@ class MessageContext:
 
     def with_response(self, response: str, handled: bool = True) -> "MessageContext":
         """Create new context with response set."""
-        return MessageContext(
-            phone_number=self.phone_number,
-            text=self.text,
-            message_id=self.message_id,
-            image_data=self.image_data,
-            quoted_message_id=self.quoted_message_id,
-            quoted_message_data=self.quoted_message_data,
-            user_context=self.user_context,
-            conversation_state=self.conversation_state,
-            last_response=self.last_response,
-            suggestion_data=self.suggestion_data,
-            suggestion_context=self.suggestion_context,
-            classification_result=self.classification_result,
-            has_active_queue=self.has_active_queue,
-            current_task_id=self.current_task_id,
-            planner_output=self.planner_output,
-            response=response,
-            handled=handled,
-            is_flow_resume=self.is_flow_resume,
-        )
+        return replace(self, response=response, handled=handled)
 
     def update(self, **kwargs) -> "MessageContext":
         """Create new context with updated fields."""
-        current_dict = {
-            "phone_number": self.phone_number,
-            "text": self.text,
-            "message_id": self.message_id,
-            "image_data": self.image_data,
-            "quoted_message_id": self.quoted_message_id,
-            "quoted_message_data": self.quoted_message_data,
-            "user_context": self.user_context,
-            "conversation_state": self.conversation_state,
-            "last_response": self.last_response,
-            "suggestion_data": self.suggestion_data,
-            "suggestion_context": self.suggestion_context,
-            "classification_result": self.classification_result,
-            "has_active_queue": self.has_active_queue,
-            "current_task_id": self.current_task_id,
-            "planner_output": self.planner_output,
-            "response": self.response,
-            "handled": self.handled,
-            "is_flow_resume": self.is_flow_resume,
-        }
-        current_dict.update(kwargs)
-        return MessageContext(**current_dict)
+        return replace(self, **kwargs)

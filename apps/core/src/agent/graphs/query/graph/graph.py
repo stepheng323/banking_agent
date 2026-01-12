@@ -8,6 +8,7 @@ import redis.asyncio as redis
 from langchain_core.runnables import Runnable
 from langgraph.graph import END, StateGraph
 
+from apps.core.src.agent.graphs.__shared__.account_selection.mandate_validator import validate_mandate_status
 from apps.core.src.agent.graphs.query.continuity import ContinuationClassifier
 from apps.core.src.agent.graphs.query.executor import QueryExecutor
 from apps.core.src.agent.graphs.query.graph.handlers import (
@@ -28,7 +29,6 @@ from apps.core.src.agent.graphs.query.graph.routes import route_after_execute, r
 from apps.core.src.agent.graphs.query.graph.session import QuerySessionManager
 from apps.core.src.agent.graphs.query.graph.state import QueryState
 from apps.core.src.agent.graphs.query.parser import QueryParser
-from apps.core.src.agent.graphs.__shared__.account_selection.mandate_validator import validate_mandate_status
 from shared.clients.abstractions.banking import BankingDataProvider
 from shared.utils.logging import get_logger
 

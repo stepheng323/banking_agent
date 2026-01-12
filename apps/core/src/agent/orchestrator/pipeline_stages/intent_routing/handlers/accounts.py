@@ -5,9 +5,9 @@ from typing import TYPE_CHECKING
 from apps.core.src.agent.orchestrator.pipeline_stages.intent_routing.handlers.base import IntentHandler
 
 if TYPE_CHECKING:
-    from apps.core.src.agent.orchestrator.pipeline.routing_context import RoutingContext
     from apps.core.src.agent.graphs.account_management.service import AccountManagementService
     from apps.core.src.agent.graphs.query.graph import QueryFlowGraph
+    from apps.core.src.agent.orchestrator.pipeline.routing_context import RoutingContext
 
 
 class AccountsHandler(IntentHandler):

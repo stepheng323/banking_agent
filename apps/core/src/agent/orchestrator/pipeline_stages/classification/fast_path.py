@@ -5,7 +5,6 @@ without needing to call the LLM.
 """
 
 import re
-from typing import Any
 
 from apps.core.src.agent.orchestrator.models.classification import ClassificationResult
 

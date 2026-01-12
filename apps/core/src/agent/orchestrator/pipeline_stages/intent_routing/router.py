@@ -4,31 +4,18 @@ import asyncio
 import traceback
 from typing import Any
 
-from apps.core.src.agent.orchestrator.pipeline_stages.context_loader.service import OrchestratorContextManager
+from apps.core.src.agent.orchestrator.models.classification import ClassificationResult
+from apps.core.src.agent.orchestrator.pipeline.routing_context import RoutingContext
 from apps.core.src.agent.orchestrator.pipeline_stages.intent_routing.deps import IntentRouterDependencies
-from apps.core.src.agent.shared.account_validation.mandate_validator import validate_mandate_status
-from apps.core.src.agent.orchestrator.pipeline_stages.affirmation.service import FlowContextService
-from apps.core.src.agent.orchestrator.pipeline_stages.intent_routing.handlers.base import IntentHandler
 from apps.core.src.agent.orchestrator.pipeline_stages.intent_routing.handlers import (
     AccountsHandler,
     ConversationalHandler,
     QueryHandler,
 )
-from apps.core.src.agent.orchestrator.pipeline_stages.intent_routing.handlers.transaction import TransactionHandler
+from apps.core.src.agent.orchestrator.pipeline_stages.intent_routing.handlers.base import IntentHandler
 from apps.core.src.agent.orchestrator.pipeline_stages.intent_routing.handlers.help import HelpHandler
-from apps.core.src.agent.orchestrator.pipeline.routing_context import RoutingContext
-from apps.core.src.agent.orchestrator.pipeline_stages.task_queue.planner import OrchestratorTaskPlanner
-from apps.core.src.agent.orchestrator.models.classification import ClassificationResult
-from apps.core.src.agent.orchestrator.pipeline_stages.intent_routing.conversation_responder import ConversationResponder
-from apps.core.src.agent.graphs.account_management.service import AccountManagementService
-from apps.core.src.agent.graphs.airtime import AirtimeService
-from apps.core.src.agent.graphs.data import DataPurchaseGraph
-from apps.core.src.agent.graphs.faq import FAQFlowGraph
-from apps.core.src.agent.graphs.query.graph import QueryFlowGraph
-from apps.core.src.agent.graphs.support.graph import SupportFlowGraph
-from apps.core.src.agent.graphs.transfer import TransferService
-from shared.clients.whatsapp.client import WhatsAppClient
-from shared.services.task_queue import TaskQueueService
+from apps.core.src.agent.orchestrator.pipeline_stages.intent_routing.handlers.transaction import TransactionHandler
+from apps.core.src.agent.shared.account_validation.mandate_validator import validate_mandate_status
 from shared.types.planner import PlannerOutput
 from shared.utils.logging import get_logger
 
@@ -84,12 +71,12 @@ class OrchestratorIntentRouter:
                     "⚠️ Your account authorization is pending.\\n\\n"
                     "Please complete the onboarding process to link your bank account."
                 ), None
-            
+
             for account in accounts:
                 is_valid, _, _ = validate_mandate_status(account)
                 if is_valid:
                     return True, None, None
-            
+
             default_account = next(
                 (acc for acc in accounts if acc.get("is_default")),
                 accounts[0]
@@ -102,7 +89,7 @@ class OrchestratorIntentRouter:
 
                     account_id = str(default_account.get("account_id") or default_account.get("id"))
                     logger.info("auto_reinitiating_mandate", phone=phone_number, account_id=account_id)
-                    
+
                     heads_up_msg = (
                         "Your account authorization had expired.\n\n"
                         "I have automatically started a new authorization for you. "
@@ -111,7 +98,7 @@ class OrchestratorIntentRouter:
                     await self.whatsapp_client.send_text(phone_number, heads_up_msg)
 
                     result = await mandate_service.reinitiate_mandate(phone_number, account_id)
-                    
+
                     if not result.get("success"):
                         logger.error("auto_reinitiation_failed", error=result.get("error"))
                         return False, error_message, metadata
@@ -260,14 +247,14 @@ class OrchestratorIntentRouter:
         )
 
         has_ready, mandate_message, metadata = await self._check_account_readiness(phone_number)
-        
+
         if mandate_message == "AUTO_REINITIATED_SUCCESS":
             return ""
 
         if ctx.intent not in UNRESTRICTED_INTENTS:
             if not has_ready:
                 warning_count = await self.context_manager.get_mandate_warning_count(phone_number)
-                
+
                 if warning_count > 0:
                     import random
                     await self.context_manager.increment_mandate_warning_count(phone_number)
@@ -287,7 +274,7 @@ class OrchestratorIntentRouter:
                             "Please help me help you! Complete the ₦50 transfer so we can activate your account. 🚀",
                         ]
                         return random.choice(action_reminders)
-                
+
                 await self.context_manager.increment_mandate_warning_count(phone_number)
                 return mandate_message or "Please link an account to continue."
 

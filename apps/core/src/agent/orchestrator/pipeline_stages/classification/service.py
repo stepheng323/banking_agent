@@ -5,10 +5,10 @@ from typing import Any
 
 from langchain_core.runnables import Runnable
 
+from apps.core.src.agent.orchestrator.models.classification import ClassificationResult
 from apps.core.src.agent.orchestrator.prompts.classification import (
     CLASSIFICATION_SYSTEM_PROMPT,
 )
-from apps.core.src.agent.orchestrator.models.classification import ClassificationResult
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -42,18 +42,18 @@ class OrchestratorClassificationService:
         if context and context.get("quotedMessage"):
             # Keywords that trigger a repeat/modify flow
             quote_keywords = {"resend", "again", "repeat", "same", "yes", "do it", "confirm", "proceed"}
-            
+
             # Check if likely a repeat request
             is_repeat_trigger = any(text_clean.startswith(kw) or text_clean == kw for kw in quote_keywords)
-            
+
             if is_repeat_trigger:
                 # Check for modification indicators
                 modification_indicators = {"but", "change", "with", "except", "make", "for", "to", "instead"}
                 has_modification = any(f" {ind} " in f" {text_clean} " for ind in modification_indicators)
-                
+
                 # Also check for numbers (amount change)
                 has_numbers = bool(re.search(r'\d', text_clean))
-                
+
                 if has_modification or has_numbers:
                     return ClassificationResult(
                         intent="modify_transaction",

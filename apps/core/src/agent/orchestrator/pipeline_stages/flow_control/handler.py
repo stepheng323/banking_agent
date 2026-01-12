@@ -2,19 +2,19 @@
 
 from typing import TYPE_CHECKING
 
-from apps.core.src.agent.orchestrator.pipeline_stages.context_loader.service import OrchestratorContextManager
 from apps.core.src.agent.orchestrator.pipeline.message_context import MessageContext
 from apps.core.src.agent.orchestrator.pipeline.message_handler import MessageHandler
+from apps.core.src.agent.orchestrator.pipeline_stages.context_loader.service import OrchestratorContextManager
 from apps.core.src.agent.shared.batch.utils import ExecutionState
 from shared.cache.redis_client import RedisClient
 from shared.utils.logging import get_logger
 
 if TYPE_CHECKING:
+    from apps.core.src.agent.graphs.airtime import AirtimeService
+    from apps.core.src.agent.graphs.transfer import TransferService
     from apps.core.src.agent.orchestrator.pipeline_stages.flow_control.service import (
         OrchestratorCancellationHandler,
     )
-    from apps.core.src.agent.graphs.airtime import AirtimeService
-    from apps.core.src.agent.graphs.transfer import TransferService
 
 logger = get_logger(__name__)
 

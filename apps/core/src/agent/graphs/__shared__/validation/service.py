@@ -3,13 +3,12 @@
 import asyncio
 from typing import Any
 
+from shared.cache import AccountCacheService
 from shared.clients.abstractions.payment import PaymentProvider
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
 
-
-from shared.cache import AccountCacheService
 
 class AsyncValidationService:
     """Async validation service to run provider validations in parallel."""
@@ -34,9 +33,7 @@ class AsyncValidationService:
 
         async def _resolve():
             return await self.account_cache.get_or_fetch(
-                account_number,
-                bank_code,
-                lambda: self.provider.resolve_account(account_number, bank_code)
+                account_number, bank_code, lambda: self.provider.resolve_account(account_number, bank_code)
             )
 
         async def _balance():
@@ -77,9 +74,7 @@ class AsyncValidationService:
         if isinstance(balance, Exception):
             exception_type = type(balance).__name__
             exception_msg = str(balance) if str(balance) else f"{exception_type} (no message)"
-            logger.warning(
-                "balance_check_exception", exception_type=exception_type, error=exception_msg
-            )
+            logger.warning("balance_check_exception", exception_type=exception_type, error=exception_msg)
             balance = None
 
         return resolved, balance

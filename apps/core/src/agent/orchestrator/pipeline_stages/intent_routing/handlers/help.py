@@ -5,10 +5,12 @@ from typing import TYPE_CHECKING
 from apps.core.src.agent.orchestrator.pipeline_stages.intent_routing.handlers.base import IntentHandler
 
 if TYPE_CHECKING:
-    from apps.core.src.agent.orchestrator.pipeline.routing_context import RoutingContext
-    from apps.core.src.agent.orchestrator.pipeline_stages.intent_routing.conversation_responder import ConversationResponder
     from apps.core.src.agent.graphs.faq import FAQFlowGraph
     from apps.core.src.agent.graphs.support.graph import SupportFlowGraph
+    from apps.core.src.agent.orchestrator.pipeline.routing_context import RoutingContext
+    from apps.core.src.agent.orchestrator.pipeline_stages.intent_routing.conversation_responder import (
+        ConversationResponder,
+    )
 
 
 class HelpHandler(IntentHandler):

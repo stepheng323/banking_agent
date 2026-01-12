@@ -3,14 +3,13 @@
 import asyncio
 from typing import Literal, TypedDict
 
-from apps.core.src.agent.orchestrator.pipeline_stages.context_loader.service import OrchestratorContextManager
 from apps.core.src.agent.orchestrator.pipeline.message_context import MessageContext
 from apps.core.src.agent.orchestrator.pipeline.message_handler import MessageHandler
-from shared.repositories.actionable_message_repository import ActionableMessageRepository
-
 from apps.core.src.agent.orchestrator.pipeline_stages.classification.service import (
     OrchestratorClassificationService,
 )
+from apps.core.src.agent.orchestrator.pipeline_stages.context_loader.service import OrchestratorContextManager
+from shared.repositories.actionable_message_repository import ActionableMessageRepository
 
 
 class TransferMessageData(TypedDict, total=False):

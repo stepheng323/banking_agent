@@ -5,10 +5,10 @@ from typing import TYPE_CHECKING
 from apps.core.src.agent.orchestrator.pipeline_stages.intent_routing.handlers.base import IntentHandler
 
 if TYPE_CHECKING:
-    from apps.core.src.agent.orchestrator.pipeline.routing_context import RoutingContext
     from apps.core.src.agent.graphs.airtime import AirtimeService
     from apps.core.src.agent.graphs.data import DataPurchaseGraph
     from apps.core.src.agent.graphs.transfer import TransferService
+    from apps.core.src.agent.orchestrator.pipeline.routing_context import RoutingContext
 
 
 class TransactionHandler(IntentHandler):
@@ -39,7 +39,7 @@ class TransactionHandler(IntentHandler):
 
     async def handle(self, ctx: "RoutingContext") -> str:
         intent = ctx.result.intent.lower()
-        
+
         classification_dict = (
             ctx.result.model_dump()
             if hasattr(ctx.result, "model_dump")
