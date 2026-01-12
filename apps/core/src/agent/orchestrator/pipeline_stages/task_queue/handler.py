@@ -2,21 +2,19 @@
 
 from typing import TYPE_CHECKING
 
-from apps.core.src.agent.orchestrator.pipeline_stages.intent_routing.handlers.base import IntentHandler
-from apps.core.src.agent.orchestrator.pipeline.message_context import MessageContext
-from apps.core.src.agent.orchestrator.pipeline.message_handler import MessageHandler
 from apps.core.src.agent.graphs.airtime import AirtimeService
 from apps.core.src.agent.graphs.transfer import TransferService
+from apps.core.src.agent.orchestrator.pipeline.message_context import MessageContext
+from apps.core.src.agent.orchestrator.pipeline.message_handler import MessageHandler
 from shared.services.task_queue import TaskQueueService
 from shared.utils.logging import get_logger
 
 if TYPE_CHECKING:
-    from apps.core.src.agent.orchestrator.registry import ExecutorRegistry
+    from apps.core.src.agent.graphs.transfer import TransferService
     from apps.core.src.agent.orchestrator.pipeline_stages.task_queue.planner import (
         OrchestratorTaskPlanner,
     )
-    from apps.core.src.agent.orchestrator.pipeline import RoutingContextService
-    from apps.core.src.agent.graphs.transfer import TransferService
+    from apps.core.src.agent.orchestrator.registry import ExecutorRegistry
 
 logger = get_logger(__name__)
 
@@ -50,7 +48,7 @@ class TaskQueueHandler(MessageHandler):
         return await self._trigger_next_task(context)
     async def handle(self, ctx: "RoutingContext") -> str:
         current_task = await self.task_queue_service.get_current_task(ctx.phone_number)
-        
+
         # If no active task, try to get next one
         if not current_task:
             task_result = await self.task_planner.handle_next_task(ctx.phone_number, ctx.text)
@@ -75,7 +73,7 @@ class TaskQueueHandler(MessageHandler):
                     {"intent": executor_name, "confidence": 1.0, "is_cancellation": False},
                     image_data=ctx.image_data,
                 )
-        
+
         # Legacy fallback (temporary)
         if executor_name == "transfer":
             return await self.transfer_service.run_simple(
@@ -91,7 +89,7 @@ class TaskQueueHandler(MessageHandler):
                 {"intent": "airtime", "confidence": 1.0, "is_cancellation": False},
                 image_data=ctx.image_data,
             )
-            
+
         return "I'm not sure how to handle that task."
 
     async def _route_to_current_task(self, context: MessageContext) -> MessageContext:

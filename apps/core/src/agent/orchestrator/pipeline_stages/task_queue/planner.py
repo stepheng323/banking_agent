@@ -4,11 +4,11 @@ import traceback
 
 from langchain_openai import ChatOpenAI
 
+from apps.core.src.agent.orchestrator.pipeline_stages.task_queue.executor import TaskExecutor
 from apps.core.src.agent.orchestrator.prompts.planning import (
     PLANNER_SYSTEM_PROMPT,
     PLANNER_USER_PROMPT_TEMPLATE,
 )
-from apps.core.src.agent.orchestrator.pipeline_stages.task_queue.executor import TaskExecutor
 from shared.services.task_queue import TaskQueueService
 from shared.types.planner import PlannerOutput
 from shared.utils.logging import get_logger
