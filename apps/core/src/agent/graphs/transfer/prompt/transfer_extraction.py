@@ -5,7 +5,7 @@ TRANSFER_EXTRACTION_PROMPT = (
     "FIELDS:\\n"
     "- amount: Convert shortcuts (2k→2000, 5h→500). Leave null if transfer_percentage is set\\n"
     "- recipient_account: 10-digit numbers\\n"
-    "- bank_name: Destination bank (uba→UBA, gtb→GTBank, access→Access Bank, opay→Opay)\\n"
+    "- bank_name: Destination bank (STANDARDIZE names: 'gtb'→'GTBank', 'zenith'→'Zenith Bank', 'access'→'Access Bank', 'opay'→'Opay')\\n"
     "- bank_code: Bank code if provided\\n"
     "- source_bank_name: FROM bank ('from my access', 'use my GTB', 'my first bank balance', before → or ->)\\n"
     "- recipient_name: Name/alias ('to mum', 'john's access' → recipient_name='john', bank_name='Access Bank')\\n"

@@ -161,8 +161,7 @@ async def extract_entities(state: AirtimeState, extractor: AirtimeEntityExtracto
     if entities.recipient_name is not None:
         updates["recipient_name"] = entities.recipient_name
 
-    if entities.source_account_id is not None:
-        updates["source_account_id"] = entities.source_account_id
+
 
     if entities.narration is not None:
         updates["narration"] = entities.narration

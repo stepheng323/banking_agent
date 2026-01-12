@@ -4,7 +4,7 @@ import asyncio
 from collections.abc import Callable, Coroutine
 from typing import TYPE_CHECKING, Any, TypeVar, cast
 
-from apps.core.src.agent.graphs.__shared__.account_selection.service import AccountSelectionService
+from apps.core.src.agent.graphs.__shared__.account_selection.service import select_source_account
 
 if TYPE_CHECKING:
     pass
@@ -32,14 +32,12 @@ async def select_source_account_shared(
     """
     accounts = state.get("accounts", [])
     profile = state.get("user_profile", {})
-    source_account_id = state.get("source_account_id")
     source_bank_name = state.get("source_bank_name")
     llm_reply = state.get("llm_reply")
 
-    selected, response = AccountSelectionService.select_account(
+    selected, response = select_source_account(
         accounts=accounts,
         profile=profile or {},
-        source_account_id=source_account_id,
         source_bank_name=source_bank_name,
         llm_reply=llm_reply,
     )
