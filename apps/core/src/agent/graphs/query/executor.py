@@ -2,7 +2,7 @@
 
 from apps.core.src.agent.graphs.query.handlers import HANDLER_REGISTRY
 from apps.core.src.agent.graphs.query.models import NormalizedQuery, QueryResult
-from apps.core.src.agent.graphs.__shared__.account_selection.service import AccountSelectionService
+from apps.core.src.agent.graphs.__shared__.account_selection.service import find_account_by_bank_name
 from shared.clients.abstractions.banking import BankingDataProvider
 from shared.utils.logging import get_logger
 
@@ -83,7 +83,7 @@ class QueryExecutor:
 
     def _resolve_account_by_name(self, name: str, accounts: list[dict]) -> str | None:
         """Resolve account name to account ID using existing AccountSelectionService."""
-        matched = AccountSelectionService.find_account_by_bank_name(accounts, name)
+        matched = find_account_by_bank_name(accounts, name)
         if matched:
             return matched.get("account_id") or matched.get("mono_account_id")
         return None

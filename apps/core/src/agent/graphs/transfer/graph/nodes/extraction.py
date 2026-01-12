@@ -298,8 +298,7 @@ async def extract_entities(
                 )
         updates["_recipient_established_at"] = time.time()
 
-    if entities.source_account_id is not None:
-        updates["source_account_id"] = entities.source_account_id
+
     if entities.source_bank_name is not None:
         updates["source_bank_name"] = entities.source_bank_name
         debug_log(f"🔍 [EXTRACTION] Adding source_bank_name to updates: '{entities.source_bank_name}'")

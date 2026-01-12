@@ -5,7 +5,7 @@ import json
 from typing import Any
 
 from apps.core.src.agent.graphs.transfer.state import TransferState
-from apps.core.src.agent.graphs.__shared__.account_selection.service import AccountSelectionService
+from apps.core.src.agent.graphs.__shared__.account_selection.service import find_account_by_bank_name
 from apps.core.src.agent.graphs.__shared__.response import (
     ResponseIntent,
     build_response_context,
@@ -286,7 +286,7 @@ class ValidationCoordinator:
                 "validation_errors": ["missing_destination_bank"],
             }
 
-        destination_account = AccountSelectionService.find_account_by_bank_name(accounts, recipient_bank_name)
+        destination_account = find_account_by_bank_name(accounts, recipient_bank_name)
 
         if not destination_account:
             context = build_response_context(ResponseIntent.ACCOUNT_NOT_FOUND, state, bank_name=recipient_bank_name)
