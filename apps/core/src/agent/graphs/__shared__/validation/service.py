@@ -9,11 +9,14 @@ from shared.utils.logging import get_logger
 logger = get_logger(__name__)
 
 
+from shared.cache import AccountCacheService
+
 class AsyncValidationService:
     """Async validation service to run provider validations in parallel."""
 
     def __init__(self, provider: PaymentProvider) -> None:
         self.provider = provider
+        self.account_cache = AccountCacheService()
 
     async def validate_account_and_balance(
         self,
@@ -30,7 +33,11 @@ class AsyncValidationService:
         """
 
         async def _resolve():
-            return await self.provider.resolve_account(account_number, bank_code)
+            return await self.account_cache.get_or_fetch(
+                account_number,
+                bank_code,
+                lambda: self.provider.resolve_account(account_number, bank_code)
+            )
 
         async def _balance():
             try:
