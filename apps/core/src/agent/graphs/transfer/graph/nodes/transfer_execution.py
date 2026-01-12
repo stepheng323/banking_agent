@@ -103,7 +103,7 @@ async def execute_multi_account_payout(
     recipient_bank_code = state.get("recipient_bank_code")
     recipient_name = state.get("recipient_name", "")
     idempotency_key = state.get("idempotency_key", "")
-    
+
     base_narration = f"Transfer to {recipient_name}"
     narration = f"{base_narration} - {state['narration']}" if state.get("narration") else base_narration
 
