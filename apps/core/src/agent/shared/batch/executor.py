@@ -223,21 +223,19 @@ async def _execute_transfer_direct(
 ) -> dict[str, Any]:
     """Execute transfer using TransferAuthorization directly."""
     try:
-        # Security: Validate amount before execution
         amount = task.parameters.get("amount") if task.parameters else None
         is_valid, error_msg, validated_amount = validate_amount_limits(amount, TRANSFER_LIMITS)
         if not is_valid:
             logger.warning(f"[BATCH] Invalid transfer amount: {error_msg}")
             return {"success": False, "error": error_msg or "Invalid amount"}
 
-        # Build state from task result
         account_resolved = result_data.get("account_resolved", {})
         idem_key = result_data.get("idempotency_key") or f"batch-transfer-{task.id}"
 
         state = {
             "phone_number": phone_number,
             "idempotency_key": idem_key,
-            "pin_verified": True,  # Already verified at batch level
+            "pin_verified": True,
             "user_profile": {"id": user_id},
             "amount": validated_amount,
             "recipient_account": account_resolved.get("account_number"),
@@ -279,7 +277,6 @@ async def _execute_airtime_direct(
 ) -> dict[str, Any]:
     """Execute airtime using AirtimeAuthorization directly."""
     try:
-        # Security: Validate amount before execution
         amount = task.parameters.get("amount") if task.parameters else None
         is_valid, error_msg, validated_amount = validate_amount_limits(amount, AIRTIME_LIMITS)
         if not is_valid:
@@ -335,7 +332,6 @@ async def _execute_data_direct(
         if not selected_plan:
             return {"success": False, "error": "No data plan selected"}
 
-        # Security: Validate plan amount before execution
         plan_amount = selected_plan.get("amount") if isinstance(selected_plan, dict) else None
         if plan_amount is not None:
             is_valid, error_msg, _ = validate_amount_limits(plan_amount, DATA_LIMITS)

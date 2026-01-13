@@ -38,10 +38,8 @@ class SimpleAirtimeEntities(BaseModel):
             return v
         try:
             amount = float(v)
-            # Only reject clearly invalid values at extraction time
-            # Full limit validation happens in the validation node
             if amount < 0:
-                return None  # Treat negative amounts as not provided
+                return None
             return amount
         except (ValueError, TypeError):
             return None

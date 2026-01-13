@@ -46,7 +46,6 @@ async def validate_amount(state: TransferState) -> TransferState:
         flow_state=state.get("flow_state"),
     )
 
-    # Validate percentage if provided
     if transfer_percentage:
         is_valid, error_msg, validated_pct = validate_percentage(transfer_percentage)
         if not is_valid:
@@ -69,13 +68,10 @@ async def validate_amount(state: TransferState) -> TransferState:
         logger.info("validate_amount_skip_percentage", percentage=validated_pct)
         return cast(TransferState, {**state, "transfer_percentage": validated_pct})
 
-    # Skip amount validation if transfer_all is set
-    # Amount will be calculated from balance in funding node
     if transfer_all:
         logger.info("validate_amount_skip_transfer_all")
         return state
 
-    # Check if amount is missing
     if not amount:
         context = build_response_context(ResponseIntent.ASK_AMOUNT, state)
         response = await synthesizer.synthesize(context)
@@ -89,7 +85,6 @@ async def validate_amount(state: TransferState) -> TransferState:
             },
         )
 
-    # Validate amount against limits
     is_valid, error_msg, validated_amount = validate_amount_limits(amount, TRANSFER_LIMITS)
     if not is_valid:
         logger.warning("validate_amount_invalid", amount=amount, error=error_msg)
