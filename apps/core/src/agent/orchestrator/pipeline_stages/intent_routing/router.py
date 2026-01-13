@@ -31,7 +31,6 @@ UNRESTRICTED_INTENTS = {
     "support",
 }
 
-# Intent locking and confidence gating thresholds
 MONEY_FLOWS = {"transfer", "airtime", "data"}
 INTENT_LOCK_CONFIDENCE_THRESHOLD = 0.85
 CONFIDENCE_REPHRASE_THRESHOLD = 0.50
@@ -324,8 +323,6 @@ class OrchestratorIntentRouter:
                 f"Reply 'yes' to switch, or continue with your {active_flow_display}."
             )
             return lock_response
-
-        # CONFIDENCE GATING: Ask for confirmation on low-confidence classifications
 
         if ctx.intent in MONEY_FLOWS:
             if ctx.result.confidence < CONFIDENCE_REPHRASE_THRESHOLD:

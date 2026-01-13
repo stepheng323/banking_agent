@@ -66,16 +66,23 @@ TRANSFER_EXTRACTION_PROMPT = (
     'User: "send 100k to mum, 60k from access and 40k from gtb"\\n'
     'Output: {"entities":{"amount":100000,"recipient_name":"mum","source_accounts":["Access Bank","GTBank"],"explicit_split":{"Access Bank":60000,"GTBank":40000}},"missingFields":["recipientAccount"],"reply":"Sending ₦100,000 to mum (₦60k from Access, ₦40k from GTBank). Account number?"}\\n\\n'
     "CORRECTIONS (mid-flow changes):\\n"
-    "- When user corrects amount/recipient/bank, acknowledge the change naturally\\n"
-    "- Extract the NEW value, don't repeat old value\\n\\n"
+    "- When user corrects amount/recipient/bank, output a correction object:\\n"
+    "- correction: {field: 'amount', new_value: 50000}\\n"
+    "- Acknowledge the change naturally in reply\\n\\n"
     'User: "I meant 50k"\\n'
-    'Output: {"entities":{"amount":50000},"missingFields":[],"reply":"Alright, updating to ₦50,000."}\\n\\n'
+    'Output: {"entities":{"amount":50000},"correction":{"field":"amount","new_value":50000},"missingFields":[],"reply":"Alright, updating to ₦50,000."}\\n\\n'
     'User: "No, send to mum instead"\\n'
-    'Output: {"entities":{"recipient_name":"mum"},"missingFields":["recipientAccount","recipientBank"],"reply":"Got it, sending to mum. Which bank?"}\\n\\n'
-    'User: "resend, but for groceries"\\n'
-    'Output: {"entities":{"narration":"groceries"},"missingFields":[],"reply":"Resending for groceries."}\\n\\n'
+    'Output: {"entities":{"recipient_name":"mum"},"correction":{"field":"recipient_name","new_value":"mum"},"missingFields":["recipientAccount","recipientBank"],"reply":"Got it, sending to mum. Which bank?"}\\n\\n'
     'User: "change note to school fees"\\n'
-    'Output: {"entities":{"narration":"school fees"},"missingFields":[],"reply":"Updated note to school fees."}\\n\\n'
+    'Output: {"entities":{"narration":"school fees"},"correction":{"field":"narration","new_value":"school fees"},"missingFields":[],"reply":"Updated note to school fees."}\\n\\n'
+    "AMBIGUITIES (when clarification needed):\\n"
+    "- MULTIPLE_BENEFICIARIES: User said 'John' but may have multiple Johns\\n"
+    "- UNCLEAR_BANK: Bank name is ambiguous ('first bank' could be multiple)\\n"
+    "- AMOUNT_UNCLEAR: '5' could be ₦5 or ₦5,000\\n"
+    "- UNCLEAR_RECIPIENT: Can't determine who recipient is\\n"
+    "- Output ambiguities array when detected\\n\\n"
+    'User: "send 5 to john"\\n'
+    'Output: {"entities":{"amount":5,"recipient_name":"john"},"ambiguities":["AMOUNT_UNCLEAR"],"missingFields":["recipientAccount","recipientBank"],"reply":"Sending ₦5 to john? (Did you mean ₦5,000?) Which bank?"}\\n\\n'
 )
 
 
