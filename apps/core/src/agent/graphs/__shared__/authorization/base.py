@@ -86,6 +86,18 @@ class AuthorizationBase(ABC, Generic[StateT]):
                 return self._add_status_fields(result, "failed")
 
             transaction_params = self.build_transaction_params(state, user_id)
+
+            # I dey fear user input, i just sey make i check again
+            amount = transaction_params.get("amount")
+            if amount is None or (isinstance(amount, (int, float)) and amount <= 0):
+                logger.error(
+                    "authorization_invalid_amount",
+                    flow_type=self.get_flow_type(),
+                    amount=amount,
+                    phone=phone_number,
+                )
+                return await self._handle_error(state, ValueError("Invalid transaction amount"))
+
             transaction_id = self.persist_transaction(transaction_params, user_id, idem_key)
 
             await self.enqueue_for_execution(state, transaction_id, transaction_params, user_id)
