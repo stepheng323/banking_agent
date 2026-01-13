@@ -8,6 +8,7 @@ from apps.core.src.agent.graphs.transfer.models_extraction import TransferExtrac
 from apps.core.src.agent.graphs.transfer.prompt.transfer_extraction import (
     TRANSFER_EXTRACTION_PROMPT,
 )
+from apps.core.src.agent.orchestrator.models.smart_context import SmartContext
 
 
 class TransferEntityExtractor:
@@ -17,6 +18,39 @@ class TransferEntityExtractor:
         self.llm = llm or ChatOpenAI(model="gpt-4o-mini", temperature=0, model_kwargs={"seed": 42})
         self.structured = self.llm.with_structured_output(TransferExtractionResult)
 
+    def _build_context_string(self, smart_context: dict[str, Any] | None) -> str:
+        """Build context string from SmartContext or legacy dict format."""
+        if not smart_context:
+            return ""
+
+        if isinstance(smart_context, SmartContext):
+            return smart_context.to_compact_string()
+
+        parts = []
+
+        if smart_context.get("previousResponse"):
+            parts.append(f"LastMsg: {smart_context['previousResponse'][:150]}")
+        beneficiaries = smart_context.get("beneficiaries", [])
+        if beneficiaries:
+            aliases = []
+            for b in beneficiaries:
+                if isinstance(b, dict):
+                    alias = b.get("alias") or b.get("account_name")
+                    if alias:
+                        aliases.append(alias)
+                elif hasattr(b, "alias") and b.alias:
+                    aliases.append(b.alias)
+                elif hasattr(b, "account_name") and b.account_name:
+                    aliases.append(b.account_name)
+            if aliases:
+                parts.append(f"Beneficiaries: {', '.join(aliases)}")
+
+        if smart_context.get("language"):
+            lang = smart_context["language"]
+            parts.append(f"CRITICAL: Reply in {lang.upper()}.")
+
+        return "\n".join(parts)
+
     async def extract(
         self, text: str, smart_context: dict[str, Any] | None = None, image_data: str | None = None
     ) -> TransferExtractionResult:
@@ -24,44 +58,22 @@ class TransferEntityExtractor:
         user = text.strip()
         user_content = user
 
-        # Build smart context with beneficiaries info if available
-        context_parts = []
-        if smart_context:
-            if "previousResponse" in smart_context:
-                context_parts.append(f"Previous response: {smart_context['previousResponse']}")
+        context_str = self._build_context_string(smart_context)
+        if context_str:
+            user_content = f"{user}\n\nContext:\n{context_str}"
 
-            # Include beneficiaries list to help distinguish aliases from bank names
-            if "beneficiaries" in smart_context and smart_context["beneficiaries"]:
-                beneficiaries = smart_context["beneficiaries"]
-                aliases = []
-                for b in beneficiaries:
-                    if isinstance(b, dict):
-                        alias = b.get("alias") or b.get("account_name")
-                        if alias:
-                            aliases.append(alias)
-                    elif hasattr(b, "alias") and b.alias:
-                        aliases.append(b.alias)
-                    elif hasattr(b, "account_name") and b.account_name:
-                        aliases.append(b.account_name)
-
-                if aliases:
-                    context_parts.append(f"Saved beneficiary aliases/names: {', '.join(aliases)}")
-
-            if "language" in smart_context:
-                context_parts.append(
-                    f"CRITICAL: User's preferred language is {smart_context['language']}. GENERATE THE REPLY IN {smart_context['language'].upper()}. Adapt the tone to match user's style."
-                )
-
-        if context_parts:
-            user_content = f"{user}\n\nsmartContext:\n" + "\n".join(context_parts)
-
-        # Build user message - with or without image
         if image_data:
-            # Add instruction for image analysis
             if user_content:
-                user_content = f"{user_content}\n\n[An image is attached. Please extract any visible bank account number, bank name, or other transfer details from the image.]"
+                user_content = (
+                    f"{user_content}\n\n"
+                    "[An image is attached. Extract any visible bank account number, "
+                    "bank name, or other transfer details from the image.]"
+                )
             else:
-                user_content = "[An image is attached. Please extract any visible bank account number, bank name, or other transfer details from the image.]"
+                user_content = (
+                    "[An image is attached. Extract any visible bank account number, "
+                    "bank name, or other transfer details from the image.]"
+                )
 
             user_message = {
                 "role": "user",

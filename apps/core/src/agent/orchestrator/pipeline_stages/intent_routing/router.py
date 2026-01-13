@@ -31,6 +31,11 @@ UNRESTRICTED_INTENTS = {
     "support",
 }
 
+MONEY_FLOWS = {"transfer", "airtime", "data"}
+INTENT_LOCK_CONFIDENCE_THRESHOLD = 0.85
+CONFIDENCE_REPHRASE_THRESHOLD = 0.50
+CONFIDENCE_CONFIRM_THRESHOLD = 0.70
+
 
 class OrchestratorIntentRouter:
     """Routes intents to appropriate services using handler pattern."""
@@ -59,7 +64,7 @@ class OrchestratorIntentRouter:
 
     async def _check_account_readiness(self, phone_number: str) -> tuple[bool, str | None]:
         """Check if user has at least one ready account.
-        
+
         Returns:
             Tuple of (has_ready_account, mandate_message)
         """
@@ -67,20 +72,21 @@ class OrchestratorIntentRouter:
             accounts = await self.context_manager.get_user_accounts(phone_number)
             if not accounts:
                 # Edge case: onboarded user with no accounts (shouldn't normally happen)
-                return False, (
-                    "⚠️ Your account authorization is pending.\\n\\n"
-                    "Please complete the onboarding process to link your bank account."
-                ), None
+                return (
+                    False,
+                    (
+                        "⚠️ Your account authorization is pending.\\n\\n"
+                        "Please complete the onboarding process to link your bank account."
+                    ),
+                    None,
+                )
 
             for account in accounts:
                 is_valid, _, _ = validate_mandate_status(account)
                 if is_valid:
                     return True, None, None
 
-            default_account = next(
-                (acc for acc in accounts if acc.get("is_default")),
-                accounts[0]
-            )
+            default_account = next((acc for acc in accounts if acc.get("is_default")), accounts[0])
             _, error_message, metadata = validate_mandate_status(default_account)
 
             if metadata and metadata.get("needs_reinitiation"):
@@ -257,6 +263,7 @@ class OrchestratorIntentRouter:
 
                 if warning_count > 0:
                     import random
+
                     await self.context_manager.increment_mandate_warning_count(phone_number)
 
                     if metadata and metadata.get("awaiting_nibss"):
@@ -286,6 +293,56 @@ class OrchestratorIntentRouter:
         if not handler:
             logger.warning("no_handler_found", intent=ctx.intent)
             handler = self._handlers[-1]  # Fallback to conversational
+
+        # INTENT LOCKING: Prevent accidental flow switching for money transactions
+        # If user is mid-flow and LLM detects a different money intent with low confidence,
+        # ask for confirmation before switching
+
+        if (
+            ctx.active_flow in MONEY_FLOWS
+            and ctx.intent in MONEY_FLOWS
+            and ctx.active_flow != ctx.intent
+            and ctx.result.confidence < INTENT_LOCK_CONFIDENCE_THRESHOLD
+        ):
+            summary = ctx.get_flow_summary_text()
+            active_flow_display = ctx.active_flow.replace("_", " ")
+            new_intent_display = ctx.intent.replace("_", " ")
+
+            logger.info(
+                "intent_lock_triggered",
+                phone=phone_number,
+                active_flow=ctx.active_flow,
+                new_intent=ctx.intent,
+                confidence=ctx.result.confidence,
+            )
+
+            lock_response = (
+                f"We were in the middle of a {active_flow_display}"
+                f"{f' ({summary})' if summary else ''}.\n\n"
+                f"Did you want to cancel that and start {new_intent_display} instead?\n"
+                f"Reply 'yes' to switch, or continue with your {active_flow_display}."
+            )
+            return lock_response
+
+        if ctx.intent in MONEY_FLOWS:
+            if ctx.result.confidence < CONFIDENCE_REPHRASE_THRESHOLD:
+                logger.info(
+                    "confidence_gate_rephrase",
+                    phone=phone_number,
+                    intent=ctx.intent,
+                    confidence=ctx.result.confidence,
+                )
+                return "I'm not quite sure I understood. Could you rephrase what you'd like to do?"
+
+            if ctx.result.confidence < CONFIDENCE_CONFIRM_THRESHOLD and not ctx.active_flow:
+                logger.info(
+                    "confidence_gate_confirm",
+                    phone=phone_number,
+                    intent=ctx.intent,
+                    confidence=ctx.result.confidence,
+                )
+                intent_display = ctx.intent.replace("_", " ")
+                return f"Just to confirm: you want to {intent_display}?"
 
         await self._pause_if_needed(ctx, handler.pausable_flows)
 
