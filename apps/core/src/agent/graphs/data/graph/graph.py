@@ -9,9 +9,11 @@ from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.redis.aio import AsyncRedisSaver
 from langgraph.graph import END, StateGraph
 
+from apps.core.src.agent.graphs.data.extractor import DataEntityExtractor
 from apps.core.src.agent.graphs.data.graph.nodes.authorization import authorize_transaction
 from apps.core.src.agent.graphs.data.graph.nodes.confirm import confirm_node
 from apps.core.src.agent.graphs.data.graph.nodes.execute import execute_node
+from apps.core.src.agent.graphs.data.graph.nodes.extraction import extract_entities
 from apps.core.src.agent.graphs.data.graph.nodes.list import list_node
 from apps.core.src.agent.graphs.data.graph.nodes.resolve import resolve_node
 from apps.core.src.agent.graphs.data.graph.nodes.suggest import suggest_node
@@ -25,6 +27,16 @@ from shared.queue.redis_queue import RedisQueue
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
+
+
+def route_after_extract(state: DataPurchaseState) -> str:
+    """Route after extraction - go to resolve if we have enough info, else end."""
+    target_phone = state.get("target_phone")
+    network = state.get("network")
+
+    if target_phone and network:
+        return "suggest"
+    return "resolve"
 
 
 def route_after_resolve(state: DataPurchaseState) -> str:
@@ -103,6 +115,7 @@ class DataPurchaseGraph:
         self.whatsapp_client = whatsapp_client
         self.queue = queue
         self.plan_service = DataPlanService(bill_provider, redis_client)
+        self.extractor = DataEntityExtractor()
 
         self._graph = None
         self._checkpointer = None
@@ -140,6 +153,10 @@ class DataPurchaseGraph:
         """Build the data purchase flow graph."""
         graph = StateGraph(DataPurchaseState)
 
+        graph.add_node(
+            "extract",
+            partial(extract_entities, extractor=self.extractor),
+        )
         graph.add_node("resolve", resolve_node)
         graph.add_node(
             "suggest",
@@ -167,8 +184,9 @@ class DataPurchaseGraph:
             partial(execute_node, bill_provider=self.bill_provider),
         )
 
-        graph.set_entry_point("resolve")
+        graph.set_entry_point("extract")
 
+        graph.add_conditional_edges("extract", route_after_extract)
         graph.add_conditional_edges("resolve", route_after_resolve)
         graph.add_edge("suggest", END)
         graph.add_edge("list", END)
