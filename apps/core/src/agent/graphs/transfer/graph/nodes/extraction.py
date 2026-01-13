@@ -111,7 +111,6 @@ async def extract_entities(
         image_data=image_data,
     )
 
-    # Handle explicit corrections from resolver
     if result.correction:
         correction = result.correction
         logger.info(
