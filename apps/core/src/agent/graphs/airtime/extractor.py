@@ -8,6 +8,7 @@ from apps.core.src.agent.graphs.airtime.models import AirtimeExtractionResult
 from apps.core.src.agent.graphs.airtime.prompt.airtime_extraction import (
     AIRTIME_EXTRACTION_PROMPT,
 )
+from apps.core.src.agent.orchestrator.models.smart_context import SmartContext
 
 
 class AirtimeEntityExtractor:
@@ -17,41 +18,48 @@ class AirtimeEntityExtractor:
         self.llm = llm or ChatOpenAI(model="gpt-4o-mini", temperature=0, model_kwargs={"seed": 42})
         self.structured = self.llm.with_structured_output(AirtimeExtractionResult)
 
-    async def extract(
-        self, text: str, smart_context: dict[str, Any] | None = None
-    ) -> AirtimeExtractionResult:
+    def _build_context_string(self, smart_context: dict[str, Any] | None) -> str:
+        """Build context string from SmartContext or legacy dict format."""
+        if not smart_context:
+            return ""
+
+        if isinstance(smart_context, SmartContext):
+            return smart_context.to_compact_string()
+
+        parts = []
+
+        if smart_context.get("previousResponse"):
+            parts.append(f"LastMsg: {smart_context['previousResponse'][:150]}")
+
+        beneficiaries = smart_context.get("beneficiaries", [])
+        if beneficiaries:
+            aliases = []
+            for b in beneficiaries:
+                if isinstance(b, dict):
+                    alias = b.get("alias") or b.get("account_name")
+                    if alias:
+                        aliases.append(alias)
+                elif hasattr(b, "alias") and b.alias:
+                    aliases.append(b.alias)
+                elif hasattr(b, "account_name") and b.account_name:
+                    aliases.append(b.account_name)
+            if aliases:
+                parts.append(f"Beneficiaries: {', '.join(aliases)}")
+
+        if smart_context.get("language"):
+            lang = smart_context["language"]
+            parts.append(f"CRITICAL: Reply in {lang.upper()}.")
+
+        return "\n".join(parts)
+
+    async def extract(self, text: str, smart_context: dict[str, Any] | None = None) -> AirtimeExtractionResult:
         """Extract entities from text."""
         user_input = text.strip()
         user_content = user_input
 
-        context_parts = []
-        if smart_context:
-            if "previousResponse" in smart_context:
-                context_parts.append(f"Previous response: {smart_context['previousResponse']}")
-
-            if "beneficiaries" in smart_context and smart_context["beneficiaries"]:
-                beneficiaries = smart_context["beneficiaries"]
-                aliases = []
-                for b in beneficiaries:
-                    if isinstance(b, dict):
-                        alias = b.get("alias") or b.get("account_name")
-                        if alias:
-                            aliases.append(alias)
-                    elif hasattr(b, "alias") and b.alias:
-                        aliases.append(b.alias)
-                    elif hasattr(b, "account_name") and b.account_name:
-                        aliases.append(b.account_name)
-
-                if aliases:
-                    context_parts.append(f"Saved beneficiary aliases/names: {', '.join(aliases)}")
-
-            if "language" in smart_context:
-                context_parts.append(
-                    f"CRITICAL: User's preferred language is {smart_context['language']}. GENERATE THE REPLY IN {smart_context['language'].upper()}. Adapt the tone to match user's style."
-                )
-
-        if context_parts:
-            user_content = f"{user_input}\n\nsmartContext:\n" + "\n".join(context_parts)
+        context_str = self._build_context_string(smart_context)
+        if context_str:
+            user_content = f"{user_input}\n\nContext:\n{context_str}"
 
         result = await self.structured.ainvoke(
             [
