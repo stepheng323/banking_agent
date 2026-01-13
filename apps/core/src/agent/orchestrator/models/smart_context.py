@@ -9,17 +9,11 @@ from pydantic import BaseModel, Field
 class SmartContext(BaseModel):
     """Structured context for LLM extraction (target: < 1000 tokens)."""
 
-    # Flow state
     active_flow: str | None = Field(default=None, description="Current flow: transfer, airtime, data, or None")
     flow_step: str | None = Field(default=None, description="Current step: amount, recipient, confirm, etc.")
 
-    # Accumulated entities for current flow
     known_entities: dict = Field(default_factory=dict, description="Already extracted values for current flow")
-
-    # Pending transaction being built
     pending_transaction: dict = Field(default_factory=dict, description="Transaction details being constructed")
-
-    # Historical context (limited for token efficiency)
     recent_transactions: list[dict] = Field(
         default_factory=list,
         description="Last 3 successful transactions for 'same as before' references",
@@ -29,11 +23,9 @@ class SmartContext(BaseModel):
         description="Top 5 most relevant saved beneficiaries",
     )
 
-    # User preferences
     user_language: str = Field(default="en", description="User's preferred language")
     previous_system_message: str = Field(default="", description="Last assistant response (truncated)")
 
-    # Token budget constants
     MAX_RECENT_TRANSACTIONS = 3
     MAX_BENEFICIARIES = 5
     MAX_PREVIOUS_MESSAGE_CHARS = 150
