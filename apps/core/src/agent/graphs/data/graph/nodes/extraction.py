@@ -57,7 +57,6 @@ async def extract_entities(
         "flow_state": "extracting",
     }
 
-    # Handle self-purchase: use user's phone number
     if entities.is_self and not entities.recipient_phone and phone_number:
         extracted_phone = normalize_phone(phone_number) or phone_number
     else:
@@ -69,7 +68,6 @@ async def extract_entities(
             updates["target_phone"] = normalized_phone
             updates["source"] = "self" if entities.is_self else "other"
 
-            # Auto-detect network if not provided
             if not entities.network:
                 detected_network = detect_network_from_phone(normalized_phone)
                 if detected_network:

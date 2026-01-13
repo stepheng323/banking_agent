@@ -3,6 +3,8 @@
 Provides a token-efficient, explicit context schema for injection into LLM prompts.
 """
 
+from typing import ClassVar
+
 from pydantic import BaseModel, Field
 
 
@@ -26,11 +28,11 @@ class SmartContext(BaseModel):
     user_language: str = Field(default="en", description="User's preferred language")
     previous_system_message: str = Field(default="", description="Last assistant response (truncated)")
 
-    MAX_RECENT_TRANSACTIONS = 3
-    MAX_BENEFICIARIES = 5
-    MAX_PREVIOUS_MESSAGE_CHARS = 150
-    DEFAULT_TOKEN_BUDGET = 500
-    CHARS_PER_TOKEN = 4  # Rough approximation
+    MAX_RECENT_TRANSACTIONS: ClassVar[int] = 3
+    MAX_BENEFICIARIES: ClassVar[int] = 5
+    MAX_PREVIOUS_MESSAGE_CHARS: ClassVar[int] = 150
+    DEFAULT_TOKEN_BUDGET: ClassVar[int] = 500
+    CHARS_PER_TOKEN: ClassVar[int] = 4
 
     def estimate_tokens(self, text: str) -> int:
         """Estimate token count from text (rough approximation)."""

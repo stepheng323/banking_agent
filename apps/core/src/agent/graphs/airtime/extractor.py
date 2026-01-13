@@ -4,11 +4,11 @@ from typing import Any
 
 from langchain_openai import ChatOpenAI
 
+from apps.core.src.agent.graphs.__shared__.models.smart_context import SmartContext
 from apps.core.src.agent.graphs.airtime.models import AirtimeExtractionResult
 from apps.core.src.agent.graphs.airtime.prompt.airtime_extraction import (
     AIRTIME_EXTRACTION_PROMPT,
 )
-from apps.core.src.agent.orchestrator.models.smart_context import SmartContext
 
 
 class AirtimeEntityExtractor:
