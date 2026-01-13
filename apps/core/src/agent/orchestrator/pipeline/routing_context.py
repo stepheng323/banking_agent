@@ -49,3 +49,26 @@ class RoutingContext:
             "recipient_account": self.conversation_state.get("recipient_account"),
             "network": self.conversation_state.get("network"),
         }
+
+    def get_flow_summary_text(self) -> str:
+        """Get human-readable summary of active flow for intent locking."""
+        if not self.conversation_state:
+            return ""
+
+        parts = []
+        amount = self.conversation_state.get("amount")
+        recipient = (
+            self.conversation_state.get("recipient_name")
+            or self.conversation_state.get("recipient_phone")
+            or self.conversation_state.get("recipient_account")
+        )
+        network = self.conversation_state.get("network")
+
+        if amount:
+            parts.append(f"₦{amount:,.0f}" if isinstance(amount, (int, float)) else f"₦{amount}")
+        if recipient:
+            parts.append(f"to {recipient}")
+        if network:
+            parts.append(f"({network})")
+
+        return " ".join(parts) if parts else ""
