@@ -6,6 +6,14 @@ Optimized to use authorization classes directly instead of re-traversing graphs.
 import asyncio
 from typing import TYPE_CHECKING, Any
 
+from apps.core.src.agent.graphs.__shared__.validation.amount_validator import (
+    AIRTIME_LIMITS,
+    DATA_LIMITS,
+    TRANSFER_LIMITS,
+)
+from apps.core.src.agent.graphs.__shared__.validation.amount_validator import (
+    validate_amount as validate_amount_limits,
+)
 from apps.core.src.agent.graphs.airtime.graph.nodes.authorization import AirtimeAuthorization
 from apps.core.src.agent.graphs.data.graph.nodes.authorization import DataAuthorization
 from apps.core.src.agent.graphs.transfer.graph.nodes.authorization import TransferAuthorization
@@ -215,6 +223,13 @@ async def _execute_transfer_direct(
 ) -> dict[str, Any]:
     """Execute transfer using TransferAuthorization directly."""
     try:
+        # Security: Validate amount before execution
+        amount = task.parameters.get("amount") if task.parameters else None
+        is_valid, error_msg, validated_amount = validate_amount_limits(amount, TRANSFER_LIMITS)
+        if not is_valid:
+            logger.warning(f"[BATCH] Invalid transfer amount: {error_msg}")
+            return {"success": False, "error": error_msg or "Invalid amount"}
+
         # Build state from task result
         account_resolved = result_data.get("account_resolved", {})
         idem_key = result_data.get("idempotency_key") or f"batch-transfer-{task.id}"
@@ -224,7 +239,7 @@ async def _execute_transfer_direct(
             "idempotency_key": idem_key,
             "pin_verified": True,  # Already verified at batch level
             "user_profile": {"id": user_id},
-            "amount": task.parameters.get("amount") if task.parameters else None,
+            "amount": validated_amount,
             "recipient_account": account_resolved.get("account_number"),
             "recipient_bank_code": account_resolved.get("bank_code"),
             "recipient_bank_name": account_resolved.get("bank_name"),
@@ -264,6 +279,13 @@ async def _execute_airtime_direct(
 ) -> dict[str, Any]:
     """Execute airtime using AirtimeAuthorization directly."""
     try:
+        # Security: Validate amount before execution
+        amount = task.parameters.get("amount") if task.parameters else None
+        is_valid, error_msg, validated_amount = validate_amount_limits(amount, AIRTIME_LIMITS)
+        if not is_valid:
+            logger.warning(f"[BATCH] Invalid airtime amount: {error_msg}")
+            return {"success": False, "error": error_msg or "Invalid amount"}
+
         idem_key = result_data.get("idempotency_key") or f"batch-airtime-{task.id}"
 
         state = {
@@ -271,7 +293,7 @@ async def _execute_airtime_direct(
             "idempotency_key": idem_key,
             "pin_verified": True,
             "user_profile": {"id": user_id},
-            "amount": task.parameters.get("amount") if task.parameters else None,
+            "amount": validated_amount,
             "recipient_phone": task.parameters.get("recipient") if task.parameters else phone_number,
             "network": result_data.get("network", ""),
             "selected_source_account": result_data.get("source_account", {}),
@@ -312,6 +334,14 @@ async def _execute_data_direct(
 
         if not selected_plan:
             return {"success": False, "error": "No data plan selected"}
+
+        # Security: Validate plan amount before execution
+        plan_amount = selected_plan.get("amount") if isinstance(selected_plan, dict) else None
+        if plan_amount is not None:
+            is_valid, error_msg, _ = validate_amount_limits(plan_amount, DATA_LIMITS)
+            if not is_valid:
+                logger.warning(f"[BATCH] Invalid data plan amount: {error_msg}")
+                return {"success": False, "error": error_msg or "Invalid plan amount"}
 
         state = {
             "phone_number": phone_number,
