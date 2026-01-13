@@ -1,11 +1,18 @@
 """Validation nodes for transfer flow."""
 
-from typing import Any
+from typing import Any, cast
 
 from apps.core.src.agent.graphs.__shared__.response import (
     ResponseIntent,
     build_response_context,
     get_synthesizer,
+)
+from apps.core.src.agent.graphs.__shared__.validation.amount_validator import (
+    TRANSFER_LIMITS,
+    validate_percentage,
+)
+from apps.core.src.agent.graphs.__shared__.validation.amount_validator import (
+    validate_amount as validate_amount_limits,
 )
 from apps.core.src.agent.graphs.__shared__.validation.service import AsyncValidationService
 from apps.core.src.agent.graphs.transfer.state import TransferState
@@ -24,10 +31,11 @@ logger = get_logger(__name__)
 
 
 async def validate_amount(state: TransferState) -> TransferState:
-    """Validate that amount is present."""
+    """Validate that amount is present and within acceptable limits."""
     amount = state.get("amount")
     transfer_all = state.get("transfer_all")
     transfer_percentage = state.get("transfer_percentage")
+    synthesizer = get_synthesizer()
 
     logger.info(
         "validate_amount_entry",
@@ -38,27 +46,66 @@ async def validate_amount(state: TransferState) -> TransferState:
         flow_state=state.get("flow_state"),
     )
 
-    # Skip amount validation if transfer_all or transfer_percentage is set
-    # Amount will be calculated from balance in funding node
+    if transfer_percentage:
+        is_valid, error_msg, validated_pct = validate_percentage(transfer_percentage)
+        if not is_valid:
+            logger.warning("validate_amount_invalid_percentage", percentage=transfer_percentage, error=error_msg)
+            context = build_response_context(
+                ResponseIntent.INVALID_AMOUNT,
+                state,
+                error_message=error_msg,
+            )
+            response = await synthesizer.synthesize(context)
+            return cast(
+                TransferState,
+                {
+                    **state,
+                    "flow_state": "error",
+                    "response": response,
+                    "validation_errors": ["invalid_percentage"],
+                },
+            )
+        logger.info("validate_amount_skip_percentage", percentage=validated_pct)
+        return cast(TransferState, {**state, "transfer_percentage": validated_pct})
+
     if transfer_all:
         logger.info("validate_amount_skip_transfer_all")
         return state
 
-    if transfer_percentage:
-        logger.info("validate_amount_skip_percentage", percentage=transfer_percentage)
-        return state
-
     if not amount:
         context = build_response_context(ResponseIntent.ASK_AMOUNT, state)
-        synthesizer = get_synthesizer()
         response = await synthesizer.synthesize(context)
 
-        return {
-            **state,
-            "flow_state": "collecting_amount",
-            "response": response,
-        }
-    return state
+        return cast(
+            TransferState,
+            {
+                **state,
+                "flow_state": "collecting_amount",
+                "response": response,
+            },
+        )
+
+    is_valid, error_msg, validated_amount = validate_amount_limits(amount, TRANSFER_LIMITS)
+    if not is_valid:
+        logger.warning("validate_amount_invalid", amount=amount, error=error_msg)
+        context = build_response_context(
+            ResponseIntent.INVALID_AMOUNT,
+            state,
+            error_message=error_msg,
+        )
+        response = await synthesizer.synthesize(context)
+        return cast(
+            TransferState,
+            {
+                **state,
+                "flow_state": "error",
+                "response": response,
+                "validation_errors": ["invalid_amount"],
+            },
+        )
+
+    logger.info("validate_amount_valid", amount=validated_amount)
+    return cast(TransferState, {**state, "amount": validated_amount})
 
 
 async def validate_parallel(

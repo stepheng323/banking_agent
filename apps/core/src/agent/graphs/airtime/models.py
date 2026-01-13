@@ -1,6 +1,6 @@
 """Pydantic model for airtime entity extraction results."""
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class SimpleAirtimeEntities(BaseModel):
@@ -13,24 +13,36 @@ class SimpleAirtimeEntities(BaseModel):
         default=None,
         description="Recipient phone number in normalized 10-digit format (e.g., '08012345678')",
     )
-    network: str | None = Field(
-        default=None, description="Mobile network name: 'MTN', 'Airtel', 'Glo', or '9mobile'"
-    )
+    network: str | None = Field(default=None, description="Mobile network name: 'MTN', 'Airtel', 'Glo', or '9mobile'")
     recipient_name: str | None = Field(
         default=None,
         description="Recipient name/alias when mentioned (e.g., 'mum', 'John', 'my line')",
     )
-    narration: str | None = Field(
-        default=None, description="Purchase description/memo if provided (optional)"
-    )
+    narration: str | None = Field(default=None, description="Purchase description/memo if provided (optional)")
     source_account_id: str | None = Field(
         default=None,
         description="Explicit source account id/reference if user specifies which account to use",
     )
     is_self: bool | None = Field(
         default=None,
-        description="True if user wants to recharge their own line ('to me', 'my line', 'myself', 'my number', 'for me')",
+        description=(
+            "True if user wants to recharge their own line ('to me', 'my line', 'myself', 'my number', 'for me')"
+        ),
     )
+
+    @field_validator("amount", mode="before")
+    @classmethod
+    def validate_amount(cls, v):
+        """Validate that amount is not negative when provided."""
+        if v is None:
+            return v
+        try:
+            amount = float(v)
+            if amount < 0:
+                return None
+            return amount
+        except (ValueError, TypeError):
+            return None
 
 
 class AirtimeExtractionResult(BaseModel):
@@ -43,6 +55,4 @@ class AirtimeExtractionResult(BaseModel):
         default_factory=list,
         description="List of missing required fields: 'amount', 'recipientPhone', 'network'",
     )
-    reply: str = Field(
-        description="Natural language reply acknowledging extraction and asking for missing fields"
-    )
+    reply: str = Field(description="Natural language reply acknowledging extraction and asking for missing fields")
