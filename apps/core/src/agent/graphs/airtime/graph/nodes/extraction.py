@@ -11,6 +11,11 @@ from apps.core.src.agent.graphs.airtime.models import (
 from apps.core.src.agent.graphs.airtime.state import AirtimeState
 from shared.utils.logging import get_logger
 from shared.utils.phone_utils import detect_network_from_phone, normalize_phone
+from apps.core.src.agent.graphs.airtime.capabilities import (
+    check_capabilities,
+    derive_requirements,
+    generate_limitation_message,
+)
 
 logger = get_logger(__name__)
 
@@ -87,6 +92,22 @@ async def extract_entities(state: AirtimeState, extractor: AirtimeEntityExtracto
     result: AirtimeExtractionResult = await extractor.extract(
         state["message"], smart_context=smart_context if smart_context else None
     )
+
+    requires = derive_requirements(result, state.get("message", ""))
+    missing = check_capabilities(requires)
+
+    if missing:
+        limitation_msg = generate_limitation_message(missing)
+        logger.info(
+            "airtime_capability_limitation",
+            missing=[cap.value for cap in missing],
+        )
+        return {
+            **state,
+            "response": limitation_msg,
+            "llm_reply": limitation_msg,
+            "flow_state": "capability_limitation",
+        }
 
     if result.correction:
         correction = result.correction

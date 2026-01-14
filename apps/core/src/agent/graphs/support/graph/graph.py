@@ -135,6 +135,28 @@ class SupportFlowGraph:
         message = state.get("message", "")
         result = await self.classifier.classify(message)
 
+        # Check for unsupported capabilities
+        from apps.core.src.agent.graphs.support.capabilities import (
+            check_capabilities,
+            derive_requirements,
+            generate_limitation_message,
+        )
+
+        requires = derive_requirements(message)
+        missing = check_capabilities(requires)
+
+        if missing:
+            limitation_msg = generate_limitation_message(missing)
+            logger.info(
+                "support_capability_limitation",
+                missing=[cap.value for cap in missing],
+            )
+            return {
+                "intent": None,
+                "classification": result,
+                "final_message": limitation_msg,
+            }
+
         return {
             "intent": result.intent,
             "classification": result,

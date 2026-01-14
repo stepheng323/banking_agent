@@ -16,6 +16,7 @@ from shared.clients.abstractions.direct_debit import (
     DebitStatus,
     DirectDebitProvider,
 )
+from shared.clients.abstractions.messaging import MessageResult, MessagingClient
 from shared.clients.abstractions.payment import PaymentProvider
 
 __all__ = [
@@ -32,4 +33,7 @@ __all__ = [
     "AccountInfo",
     "PaymentProvider",
     "BillPaymentProvider",
+    "MessagingClient",
+    "MessageResult",
 ]
+
