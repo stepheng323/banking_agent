@@ -1,7 +1,7 @@
 """Suggest node - provides smart plan suggestions."""
 
 from apps.core.src.agent.graphs.data.graph.state import DataPurchaseState
-from apps.core.src.agent.graphs.data.service import DataPlanService
+from apps.core.src.agent.graphs.data.plan_service import DataPlanService
 from shared.formatters.data import format_data_plan_suggestion
 from shared.utils.logging import get_logger
 

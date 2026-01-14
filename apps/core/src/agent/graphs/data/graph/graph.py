@@ -19,7 +19,7 @@ from apps.core.src.agent.graphs.data.graph.nodes.resolve import resolve_node
 from apps.core.src.agent.graphs.data.graph.nodes.suggest import suggest_node
 from apps.core.src.agent.graphs.data.graph.state import DataPurchaseState
 from apps.core.src.agent.graphs.data.models import DataPlan
-from apps.core.src.agent.graphs.data.service import DataPlanService
+from apps.core.src.agent.graphs.data.plan_service import DataPlanService
 from shared.clients.abstractions.bill import BillPaymentProvider
 from shared.clients.whatsapp.client import WhatsAppClient
 from shared.config.settings import settings
@@ -234,6 +234,7 @@ class DataPurchaseGraph:
         message: str,
         user_context: dict[str, Any],
         message_id: str | None = None,
+        quoted_data: dict | None = None,
     ) -> str:
         """Run the data purchase flow."""
         await self._ensure_checkpointer()
@@ -255,6 +256,20 @@ class DataPurchaseGraph:
             "suggestion_attempts": 0,
             "all_plans": [],
         }
+
+        if quoted_data:
+            data = quoted_data.get("data", {})
+            if data.get("phone_number"):
+                initial_state["target_phone"] = data["phone_number"]
+            if data.get("network"):
+                initial_state["network"] = data["network"]
+            if data.get("amount"):
+                initial_state["budget"] = data["amount"]
+            logger.info(
+                "hydrating_from_quote",
+                phone=data.get("phone_number"),
+                network=data.get("network"),
+            )
 
         try:
             result = await self._graph.ainvoke(initial_state, config)
@@ -357,7 +372,6 @@ class DataPurchaseGraph:
 
         message_lower = message.lower().strip()
 
-        # Confirmation triggers PIN flow
         if message_lower in {"yes", "ok", "sure", "confirm", "proceed", "y"}:
             previous_state["selected_plan"] = previous_state.get("suggested_plan")
             result = await confirm_node(previous_state, self.redis, self.whatsapp_client)
