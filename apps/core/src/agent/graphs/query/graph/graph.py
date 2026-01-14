@@ -193,6 +193,13 @@ class QueryFlowGraph:
             state.update(await format_node(state, self.llm))
 
         elif cont_type in ("time_delta", "filter_delta"):
+            # Check capabilities before execution
+            limitation = await self._check_continuation_capabilities(state)
+            if limitation:
+                state["response"] = limitation
+                state["session_active"] = True
+                return state
+
             if state.get("show_expanded") and cont_type == "filter_delta":
                 state.update(handle_local_filter(state))
             else:
@@ -270,3 +277,26 @@ class QueryFlowGraph:
         """Run a completely new query."""
         new_state = self._create_initial_state(phone_number, message, message_id, account_id, accounts, user_ctx)
         return await self.graph.ainvoke(new_state)
+
+    async def _check_continuation_capabilities(self, state: QueryState) -> str | None:
+        """Check if updated query exceeds capabilities. Returns limitation message or None."""
+        from apps.core.src.agent.graphs.query.capabilities import (
+            check_capabilities,
+            derive_requirements,
+            generate_limitation_message,
+        )
+
+        query = state.get("query")
+        if not query:
+            return None
+
+        requires = derive_requirements(query)
+        missing = check_capabilities(requires)
+
+        if missing:
+            logger.info(
+                "query_midflow_capability_limitation",
+                missing=[cap.value for cap in missing],
+            )
+            return generate_limitation_message(missing)
+        return None

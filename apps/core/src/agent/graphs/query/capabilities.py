@@ -142,3 +142,35 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from apps.core.src.agent.graphs.query.models import NormalizedQuery
 
+
+def generate_limitation_message(missing: list[QueryCapability]) -> str:
+    """Generate conversational limitation message for negotiation."""
+    if not missing:
+        return ""
+
+    if QueryCapability.TIME_ALL in missing:
+        return (
+            f"I can show transactions up to *{QUERY_LIMITS['max_lookback_days'] // 30} months* back.\n\n"
+            "Want me to show that instead?"
+        )
+
+    if QueryCapability.EXPORT_PDF in missing:
+        return (
+            "PDF export isn't available yet.\n\n"
+            "I can show the results here. Want me to continue?"
+        )
+
+    if QueryCapability.EXPORT_CSV in missing:
+        return (
+            "CSV export isn't available yet.\n\n"
+            "I can show the results here. Want me to continue?"
+        )
+
+    missing_labels = [CAPABILITY_LABELS.get(cap, cap.value) for cap in missing]
+    alternatives = get_alternatives(missing)
+    alt_labels = [CAPABILITY_LABELS.get(cap, cap.value) for cap in alternatives]
+
+    msg = f"*{missing_labels[0].title()}* isn't available yet."
+    if alt_labels:
+        msg += f" I can do *{alt_labels[0]}* instead.\n\nWant me to proceed?"
+    return msg
