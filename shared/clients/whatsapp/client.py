@@ -6,13 +6,19 @@ from typing import Any
 
 import httpx
 
+from shared.clients.abstractions.messaging import MessageResult, MessagingClient
 from shared.config.settings import settings
 
 GRAPH_API_BASE = "https://graph.facebook.com/v24.0"
 
 
-class WhatsAppClient:
+
+class WhatsAppClient(MessagingClient):
     """WhatsApp client for sending messages and flows."""
+
+    @property
+    def channel_name(self) -> str:
+        return "whatsapp"
 
     def __init__(self):
         self.access_token = settings.meta_access_token
@@ -595,3 +601,30 @@ class WhatsAppClient:
         except Exception as e:
             print(f"❌ Failed to send document: {e}")
             raise
+
+    # ========== MessagingClient Interface Methods ==========
+    # These implement the abstract interface for channel independence
+
+    async def send_interactive(
+        self,
+        to: str,
+        body_text: str,
+        options: list[dict[str, str]],
+        header: str = "",
+        footer: str = "",
+        message_id: str | None = None,
+    ) -> MessageResult:
+        """Implement MessagingClient.send_interactive using WhatsApp buttons."""
+        try:
+            result = await self.send_button(
+                to=to,
+                body_text=body_text,
+                buttons=options,
+                header=header,
+                footer=footer,
+                message_id=message_id,
+            )
+            msg_id = result.get("messages", [{}])[0].get("id")
+            return MessageResult(success=True, message_id=msg_id, raw_response=result)
+        except Exception as e:
+            return MessageResult(success=False, error=str(e))
