@@ -102,6 +102,24 @@ class QueryParser:
             - If successful: (query, None)
             - If clarification needed: (None, clarification_message)
         """
+        # Check for unsupported scope requests BEFORE parsing
+        from shared.capabilities import (
+            QUERY_CAPABILITIES,
+            check_capabilities,
+            extract_requested_scope,
+        )
+
+        requested_scope = extract_requested_scope(question)
+        is_supported, limitation_msg = check_capabilities(requested_scope, QUERY_CAPABILITIES)
+
+        if not is_supported and limitation_msg:
+            logger.info(
+                "query_capability_limitation",
+                requested=requested_scope.time_range.value if requested_scope.time_range else "unknown",
+                limitation="scope_not_supported",
+            )
+            return None, limitation_msg
+
         query = await self.parse(question, message_id)
 
         if query.intent == QueryIntent.AFFORDABILITY:
