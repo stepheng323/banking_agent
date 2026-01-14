@@ -14,6 +14,13 @@ from apps.core.src.agent.graphs.query.models import (
 from apps.core.src.agent.graphs.query.prompts import QUERY_PARSER_PROMPT
 from shared.utils.logging import get_logger
 
+from apps.core.src.agent.graphs.query.capabilities import (
+    CAPABILITY_LABELS,
+    check_capabilities,
+    derive_requirements,
+    get_alternatives,
+)
+
 logger = get_logger(__name__)
 
 
@@ -102,10 +109,8 @@ class QueryParser:
             - If successful: (query, None)
             - If clarification needed: (None, clarification_message)
         """
-        # Parse the query first
         query = await self.parse(question, message_id)
 
-        # Intent-specific validation
         if query.intent == QueryIntent.AFFORDABILITY:
             if not query.amount_check and not query.item_name:
                 return None, "How much would you like to check? Please specify an amount."
@@ -113,19 +118,11 @@ class QueryParser:
             if not query.time_range:
                 return None, "What time period would you like to compare?"
 
-        # Check capabilities using the new system
-        from apps.core.src.agent.graphs.query.capabilities import (
-            CAPABILITY_LABELS,
-            check_capabilities,
-            derive_requirements,
-            get_alternatives,
-        )
 
         requires = derive_requirements(query)
         missing = check_capabilities(requires)
 
         if missing:
-            # Generate limitation response
             alternatives = get_alternatives(missing)
             missing_labels = [CAPABILITY_LABELS.get(cap, cap.value) for cap in missing]
             alt_labels = [CAPABILITY_LABELS.get(cap, cap.value) for cap in alternatives]
@@ -136,7 +133,6 @@ class QueryParser:
                 alternatives=[cap.value for cap in alternatives],
             )
 
-            # Build response message
             msg = f"Got it — you want *{missing_labels[0]}*.\n\n"
             msg += f"This isn't available yet."
             if alt_labels:

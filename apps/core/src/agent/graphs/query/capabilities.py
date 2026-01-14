@@ -11,7 +11,6 @@ from enum import Enum
 class QueryCapability(str, Enum):
     """Capabilities that can be required by a query plan."""
 
-    # Filtering
     FILTER_RECIPIENT = "filter_recipient"
     FILTER_AMOUNT = "filter_amount"
     FILTER_CATEGORY = "filter_category"
@@ -19,16 +18,13 @@ class QueryCapability(str, Enum):
     FILTER_BANK = "filter_bank"
     SEARCH_NARRATION = "search_narration"
 
-    # Time
     TIME_RELATIVE = "time_relative"
     TIME_ALL = "time_all"
 
-    # Aggregation
     AGGREGATE_SUM = "aggregate_sum"
     AGGREGATE_GROUP = "aggregate_group"
     TIME_COMPARISON = "time_comparison"
 
-    # Export
     EXPORT_PDF = "export_pdf"
     EXPORT_CSV = "export_csv"
 
@@ -107,7 +103,6 @@ def derive_requirements(query: "NormalizedQuery") -> list[QueryCapability]:
 
     requires: list[QueryCapability] = []
 
-    # Check filters
     if query.filters:
         if query.filters.merchant:
             requires.append(QueryCapability.SEARCH_NARRATION)
@@ -120,7 +115,6 @@ def derive_requirements(query: "NormalizedQuery") -> list[QueryCapability]:
         if query.filters.account_filter:
             requires.append(QueryCapability.FILTER_BANK)
 
-    # Check time range - if very old or all_time requested
     if query.time_range:
         from datetime import date
 
@@ -131,21 +125,18 @@ def derive_requirements(query: "NormalizedQuery") -> list[QueryCapability]:
         else:
             requires.append(QueryCapability.TIME_RELATIVE)
 
-    # Check aggregation
     if query.aggregation:
         if query.aggregation.type in ("sum", "average", "count", "largest"):
             requires.append(QueryCapability.AGGREGATE_SUM)
         if query.aggregation.group_by:
             requires.append(QueryCapability.AGGREGATE_GROUP)
 
-    # Check intent
     if query.intent == QueryIntent.TIME_COMPARISON:
         requires.append(QueryCapability.TIME_COMPARISON)
 
     return list(set(requires))  # Dedupe
 
 
-# Type hint import
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
