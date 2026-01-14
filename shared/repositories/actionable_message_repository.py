@@ -36,12 +36,24 @@ class ActionableMessageRepository(BaseRepository[ActionableMessage]):
             .first()
         )
 
+    def get_by_wa_message_id_for_user(self, wa_message_id: str, user_id: str) -> ActionableMessage | None:
+        """Get actionable message only if owned by user.
+
+        Security: Prevents cross-user quote hydration where User A
+        could potentially hydrate from User B's receipts.
+        """
+        return (
+            self.db.query(ActionableMessage)
+            .filter(
+                ActionableMessage.wa_message_id == wa_message_id,
+                ActionableMessage.user_id == user_id,
+                ActionableMessage.expires_at > datetime.utcnow(),
+            )
+            .first()
+        )
+
     def cleanup_expired(self) -> int:
         """Delete expired messages. Returns count deleted."""
-        result = (
-            self.db.query(ActionableMessage)
-            .filter(ActionableMessage.expires_at <= datetime.utcnow())
-            .delete()
-        )
+        result = self.db.query(ActionableMessage).filter(ActionableMessage.expires_at <= datetime.utcnow()).delete()
         self.db.commit()
         return result

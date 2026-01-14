@@ -7,6 +7,7 @@ from apps.core.src.agent.graphs.airtime.completion import AirtimeCompletionServi
 from apps.core.src.agent.graphs.airtime.executor import AirtimeExecutor
 from apps.core.src.agent.graphs.data import DataPurchaseGraph
 from apps.core.src.agent.graphs.data.completion import DataCompletionService
+from apps.core.src.agent.graphs.data.data_service import DataService
 from apps.core.src.agent.graphs.data.executor import DataExecutor
 from apps.core.src.agent.graphs.faq import FAQFlowGraph
 from apps.core.src.agent.graphs.onboarding.executor import OnboardingExecutor
@@ -92,11 +93,13 @@ def setup_dependencies():
 
     bill_provider = PaymentProviderFactory.get_bill_payment_provider()
     data_graph = None
+    data_service = None
     if bill_provider:
         data_graph = DataPurchaseGraph(
             bill_provider=bill_provider,
             redis_client=shared_redis,
         )
+        data_service = DataService(graph=data_graph)
 
     transaction_repository = TransactionRepository(db=get_db_session())
     support_graph = SupportFlowGraph(
@@ -144,6 +147,8 @@ def setup_dependencies():
     executor_registry = ExecutorRegistry()
     executor_registry.register("transfer", agent_transfer_service)
     executor_registry.register("airtime", agent_airtime_service)
+    if data_service:
+        executor_registry.register("data", data_service)
     quote_service = QuoteService(executor_registry)
 
     task_executor = TaskExecutor(
@@ -183,7 +188,6 @@ def setup_dependencies():
     agent_airtime_service.graph.completion_callback = completion_callback
     task_executor.completion_callback = completion_callback
 
-
     batch_service = BatchService(
         whatsapp_client=whatsapp_client,
         task_queue_service=task_queue_service,
@@ -220,9 +224,6 @@ def setup_dependencies():
     airtime_executor = AirtimeExecutor(airtime_service=airtime_completion_service)
     transfer_executor = TransferExecutor(transfer_service=transfer_completion_service)
     data_executor = DataExecutor(data_service=data_completion_service)
-
-
-
 
     transaction_consumer = TransactionConsumer(
         redis_queue=redis_queue,

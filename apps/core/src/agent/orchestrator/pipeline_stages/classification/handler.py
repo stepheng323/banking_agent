@@ -10,6 +10,9 @@ from apps.core.src.agent.orchestrator.pipeline_stages.classification.service imp
 )
 from apps.core.src.agent.orchestrator.pipeline_stages.context_loader.service import OrchestratorContextManager
 from shared.repositories.actionable_message_repository import ActionableMessageRepository
+from shared.utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 
 class TransferMessageData(TypedDict, total=False):
@@ -33,13 +36,29 @@ class AirtimeMessageData(TypedDict, total=False):
     transaction_id: str
 
 
+class DataMessageData(TypedDict, total=False):
+    """Data stored for data purchase success messages."""
+
+    amount: float
+    phone_number: str
+    network: str
+    plan_name: str
+    plan_size: str
+    transaction_id: str
+
+
 class QuotedMessageContext(TypedDict):
     """Typed dict for quoted message context passed to classification."""
 
     type: Literal[
-        "transfer_success", "airtime_success", "transfer_confirmation", "airtime_confirmation"
+        "transfer_success",
+        "transfer_confirmation",
+        "airtime_success",
+        "airtime_confirmation",
+        "data_success",
+        "data_confirmation",
     ]
-    data: TransferMessageData | AirtimeMessageData
+    data: TransferMessageData | AirtimeMessageData | DataMessageData
 
 
 class ClassificationHandler(MessageHandler):
@@ -77,7 +96,8 @@ class ClassificationHandler(MessageHandler):
 
         quoted_message_data = None
         if context.quoted_message_id:
-            quoted_context = self._get_quoted_message_context(context.quoted_message_id)
+            user_id = context.user_context.get("user_id") if context.user_context else None
+            quoted_context = self._get_quoted_message_context(context.quoted_message_id, user_id)
             if quoted_context:
                 classification_context["quotedMessage"] = quoted_context
                 quoted_message_data = quoted_context
@@ -88,28 +108,32 @@ class ClassificationHandler(MessageHandler):
             context.text, classification_context, context.last_response, context.image_data
         )
 
-        asyncio.create_task(
-            self.context_manager.save_classification_result(context.phone_number, result)
-        )
+        asyncio.create_task(self.context_manager.save_classification_result(context.phone_number, result))
 
         if result.detected_language:
-            asyncio.create_task(
-                self.context_manager.set_user_language(
-                    context.phone_number, result.detected_language
-                )
-            )
+            asyncio.create_task(self.context_manager.set_user_language(context.phone_number, result.detected_language))
 
         return context.update(classification_result=result, quoted_message_data=quoted_message_data)
 
-    def _get_quoted_message_context(self, wa_message_id: str) -> QuotedMessageContext | None:
-        """Look up quoted message in database and return typed context."""
+    def _get_quoted_message_context(self, wa_message_id: str, user_id: str | None) -> QuotedMessageContext | None:
+        """Look up quoted message in database and return typed context.
+
+        Security: Only returns message if owned by the requesting user.
+        """
         try:
-            message = self.actionable_message_repo.get_by_wa_message_id(wa_message_id)
+            if user_id:
+                message = self.actionable_message_repo.get_by_wa_message_id_for_user(wa_message_id, user_id)
+            else:
+                # Fallback for cases where user_id not available (shouldn't happen)
+                logger.warning("quote_lookup_without_user_id", wa_message_id=wa_message_id)
+                message = self.actionable_message_repo.get_by_wa_message_id(wa_message_id)
+
             if message:
                 return QuotedMessageContext(
                     type=message.message_type,
                     data=message.message_data,
                 )
             return None
-        except Exception:
+        except Exception as e:
+            logger.error("quote_lookup_failed", error=str(e))
             return None

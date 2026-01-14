@@ -12,6 +12,8 @@ class QuoteService:
         "transfer_confirmation": "transfer",
         "airtime_success": "airtime",
         "airtime_confirmation": "airtime",
+        "data_success": "data",
+        "data_confirmation": "data",
     }
 
     def __init__(self, registry: ExecutorRegistry):
