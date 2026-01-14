@@ -88,6 +88,29 @@ async def extract_entities(state: AirtimeState, extractor: AirtimeEntityExtracto
         state["message"], smart_context=smart_context if smart_context else None
     )
 
+    # Check capabilities before proceeding
+    from apps.core.src.agent.graphs.airtime.capabilities import (
+        check_capabilities,
+        derive_requirements,
+        generate_limitation_message,
+    )
+
+    requires = derive_requirements(result, state.get("message", ""))
+    missing = check_capabilities(requires)
+
+    if missing:
+        limitation_msg = generate_limitation_message(missing)
+        logger.info(
+            "airtime_capability_limitation",
+            missing=[cap.value for cap in missing],
+        )
+        return {
+            **state,
+            "response": limitation_msg,
+            "llm_reply": limitation_msg,
+            "flow_state": "capability_limitation",
+        }
+
     if result.correction:
         correction = result.correction
         logger.info(
