@@ -102,31 +102,47 @@ class QueryParser:
             - If successful: (query, None)
             - If clarification needed: (None, clarification_message)
         """
-        # Check for unsupported scope requests BEFORE parsing
-        from shared.capabilities import (
-            QUERY_CAPABILITIES,
-            check_capabilities,
-            extract_requested_scope,
-        )
-
-        requested_scope = extract_requested_scope(question)
-        is_supported, limitation_msg = check_capabilities(requested_scope, QUERY_CAPABILITIES)
-
-        if not is_supported and limitation_msg:
-            logger.info(
-                "query_capability_limitation",
-                requested=requested_scope.time_range.value if requested_scope.time_range else "unknown",
-                limitation="scope_not_supported",
-            )
-            return None, limitation_msg
-
+        # Parse the query first
         query = await self.parse(question, message_id)
 
+        # Intent-specific validation
         if query.intent == QueryIntent.AFFORDABILITY:
             if not query.amount_check and not query.item_name:
                 return None, "How much would you like to check? Please specify an amount."
         if query.intent == QueryIntent.TIME_COMPARISON:
             if not query.time_range:
                 return None, "What time period would you like to compare?"
+
+        # Check capabilities using the new system
+        from apps.core.src.agent.graphs.query.capabilities import (
+            CAPABILITY_LABELS,
+            check_capabilities,
+            derive_requirements,
+            get_alternatives,
+        )
+
+        requires = derive_requirements(query)
+        missing = check_capabilities(requires)
+
+        if missing:
+            # Generate limitation response
+            alternatives = get_alternatives(missing)
+            missing_labels = [CAPABILITY_LABELS.get(cap, cap.value) for cap in missing]
+            alt_labels = [CAPABILITY_LABELS.get(cap, cap.value) for cap in alternatives]
+
+            logger.info(
+                "query_capability_limitation",
+                missing=[cap.value for cap in missing],
+                alternatives=[cap.value for cap in alternatives],
+            )
+
+            # Build response message
+            msg = f"Got it — you want *{missing_labels[0]}*.\n\n"
+            msg += f"This isn't available yet."
+            if alt_labels:
+                msg += f" I can do *{alt_labels[0]}* instead."
+            msg += "\n\nWant me to show that?"
+
+            return None, msg
 
         return query, None
