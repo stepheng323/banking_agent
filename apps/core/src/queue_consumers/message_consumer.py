@@ -5,12 +5,14 @@ from typing import Any
 
 from apps.core.src.agent.graphs.onboarding.executor import OnboardingExecutor
 from apps.core.src.agent.orchestrator import OrchestratorAgent
+from shared.cache.rate_limiter import message_rate_limiter
 from shared.clients.whatsapp.client import WhatsAppClient
 from shared.database.models import UserOnboardingStatusEnum
 from shared.models.messages import WhatsAppMessage
 from shared.queue.redis_queue import RedisQueue
 from shared.repositories.user_repository import UserRepository
 from shared.utils.logging import get_logger
+from shared.utils.sanitize import is_suspicious_input, sanitize_message
 
 logger = get_logger(__name__)
 
@@ -47,6 +49,32 @@ class MessageConsumer:
         """Handle a WhatsApp message."""
         phone_number = message.from_number
 
+        # Rate limiting - prevent spam attacks
+        rate_result = await message_rate_limiter.check(phone_number)
+        if not rate_result.allowed:
+            logger.warning(
+                "rate_limit_blocked",
+                phone_number=phone_number,
+                reset_in=rate_result.reset_in_seconds,
+            )
+            await self.whatsapp_client.send_text(
+                phone_number,
+                f"⏳ Too many messages. Please wait {rate_result.reset_in_seconds} seconds.",
+            )
+            return {"status": "rate_limited", "reset_in": rate_result.reset_in_seconds}
+
+        # Sanitize input - protect against malformed/malicious input
+        raw_text = message.text or ""
+        sanitized_text = sanitize_message(raw_text)
+
+        # Log suspicious input for monitoring (but still process)
+        if is_suspicious_input(sanitized_text):
+            logger.warning(
+                "suspicious_input_detected",
+                phone_number=phone_number,
+                text_preview=sanitized_text[:100],
+            )
+
         if message.message_type.value == "flow":
             return {"status": "skipped", "reason": "Flow messages handled by flow webhook"}
 
@@ -64,7 +92,7 @@ class MessageConsumer:
 
         response = await self.orchestrator.invoke(
             phone_number,
-            message.text or "",
+            sanitized_text,  # Use sanitized text instead of raw
             message.message_id,
             message_type=message.message_type.value,
             media_id=message.media_id,

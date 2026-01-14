@@ -9,6 +9,7 @@ import structlog
 
 from shared.clients.abstractions.payment import PaymentProvider
 from shared.config.settings import settings
+from shared.resilience.circuit_breaker import CircuitOpenError, flutterwave_circuit
 
 logger = structlog.get_logger(__name__)
 
@@ -140,6 +141,15 @@ class FlutterwaveClient(PaymentProvider):
         headers = self._get_headers()
         last_error = None
 
+        # Check circuit breaker before making request
+        if flutterwave_circuit.is_open:
+            return {
+                "success": False,
+                "error": "Service temporarily unavailable. Please try again in a minute.",
+                "status_code": 503,
+                "circuit_open": True,
+            }
+
         for attempt in range(1, max_retries + 1):
             try:
                 async with httpx.AsyncClient(timeout=timeout) as client:
@@ -151,6 +161,7 @@ class FlutterwaveClient(PaymentProvider):
                     result = response.json()
 
                     if response.status_code == 200 and result.get("status") == "success":
+                        await flutterwave_circuit._on_success()
                         return {
                             "success": True,
                             "data": result.get("data", result),
@@ -207,6 +218,7 @@ class FlutterwaveClient(PaymentProvider):
             except Exception as e:
                 last_error = str(e)
                 logger.error("api_unexpected_error", endpoint=endpoint, error=str(e))
+                await flutterwave_circuit._on_failure(e)
                 if attempt < max_retries:
                     await asyncio.sleep(1 * attempt)
                     continue
