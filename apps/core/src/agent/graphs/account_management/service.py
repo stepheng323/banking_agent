@@ -64,6 +64,24 @@ class AccountManagementService:
         Returns:
             Response message
         """
+        # Check for unsupported capabilities first
+        from apps.core.src.agent.graphs.account_management.capabilities import (
+            check_capabilities,
+            derive_requirements,
+            generate_limitation_message,
+        )
+
+        requires = derive_requirements(text)
+        missing = check_capabilities(requires)
+
+        if missing:
+            limitation_msg = generate_limitation_message(missing)
+            logger.info(
+                "account_capability_limitation",
+                missing=[cap.value for cap in missing],
+            )
+            return limitation_msg
+
         profile = user_ctx.get("profile")
         if not profile:
             return "User not found."
