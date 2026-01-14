@@ -18,10 +18,12 @@ from shared.repositories.beneficiary_repository import BeneficiaryRepository
 from shared.repositories.user_repository import UserRepository
 from shared.utils.logging import get_logger
 
+from ..interfaces import ITransactionService
+
 logger = get_logger(__name__)
 
 
-class TransferService:
+class TransferService(ITransactionService):
     """Transfer service facade using LangGraph."""
 
     def __init__(

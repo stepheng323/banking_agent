@@ -43,21 +43,18 @@ class TransactionResolver:
             (transaction, resolution_method) where method is one of:
             "quoted", "explicit", "recent", "ambiguous", "not_found"
         """
-        # Priority 1: Quoted message
         if quoted_message_id:
-            tx = await self._resolve_from_quoted(quoted_message_id)
+            tx = await self._resolve_from_quoted(quoted_message_id, user_id)
             if tx:
                 logger.info("transaction_resolved", method="quoted", tx_id=str(tx.id))
                 return tx, "quoted"
 
-        # Priority 2: Explicit reference (amount + date/recipient)
         if tx_ref and self._has_explicit_ref(tx_ref):
             tx = await self._resolve_from_explicit(user_id, tx_ref)
             if tx:
                 logger.info("transaction_resolved", method="explicit", tx_id=str(tx.id))
                 return tx, "explicit"
 
-        # Priority 3: Most recent unresolved
         tx = await self._resolve_from_recent(user_id)
         if tx:
             logger.info("transaction_resolved", method="recent", tx_id=str(tx.id))
@@ -66,14 +63,16 @@ class TransactionResolver:
         logger.info("transaction_not_resolved", user_id=user_id)
         return None, "not_found"
 
-    async def _resolve_from_quoted(self, quoted_message_id: str) -> Transaction | None:
-        """Resolve transaction from quoted ActionableMessage."""
+    async def _resolve_from_quoted(self, quoted_message_id: str, user_id: str) -> Transaction | None:
+        """Resolve transaction from quoted ActionableMessage.
+
+        Security: Only resolves if message is owned by user.
+        """
         try:
-            am = self.am_repo.get_by_wa_message_id(quoted_message_id)
+            am = self.am_repo.get_by_wa_message_id_for_user(quoted_message_id, user_id)
             if not am:
                 return None
 
-            # Extract transaction_id from message_data
             tx_id = am.message_data.get("transaction_id")
             if not tx_id:
                 return None
@@ -86,7 +85,6 @@ class TransactionResolver:
     async def _resolve_from_explicit(self, user_id: str, tx_ref: TransactionReference) -> Transaction | None:
         """Resolve transaction from explicit reference."""
         try:
-            # Get user's recent transactions
             transactions = self.tx_repo.get_by_user(user_id, limit=50)
 
             candidates = []
@@ -115,17 +113,13 @@ class TransactionResolver:
     async def _resolve_from_recent(self, user_id: str) -> Transaction | None:
         """Get most recent unresolved (pending/failed) transaction."""
         try:
-            # Try pending first
             pending = self.tx_repo.get_by_status(user_id, "pending")
             if pending:
                 return pending[0]
-
-            # Then failed
             failed = self.tx_repo.get_by_status(user_id, "failed")
             if failed:
                 return failed[0]
 
-            # Finally, any recent transaction
             recent = self.tx_repo.get_by_user(user_id, limit=1)
             return recent[0] if recent else None
 
@@ -141,19 +135,15 @@ class TransactionResolver:
         """Calculate match score between transaction and reference."""
         score = 0.0
 
-        # Amount match (exact or close)
         if tx_ref.amount:
             if abs(tx.amount - tx_ref.amount) < 1:  # Exact match
                 score += 3.0
             elif abs(tx.amount - tx_ref.amount) / tx_ref.amount < 0.05:  # Within 5%
                 score += 1.0
 
-        # Recipient match
         if tx_ref.recipient_name and tx.recipient_name:
             if tx_ref.recipient_name.lower() in tx.recipient_name.lower():
                 score += 2.0
-
-        # Date match
         if tx_ref.date_hint:
             tx_date = tx.created_at.date() if tx.created_at else None
             target_date = self._parse_date_hint(tx_ref.date_hint)
@@ -178,7 +168,6 @@ class TransactionResolver:
         elif hint_lower == "last week":
             return today - timedelta(days=7)
 
-        # Try to parse as date string
         for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y"):
             try:
                 return datetime.strptime(hint, fmt).date()

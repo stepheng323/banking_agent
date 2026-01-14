@@ -7,8 +7,8 @@ from apps.core.src.agent.graphs.airtime.completion import AirtimeCompletionServi
 from apps.core.src.agent.graphs.airtime.executor import AirtimeExecutor
 from apps.core.src.agent.graphs.data import DataPurchaseGraph
 from apps.core.src.agent.graphs.data.completion import DataCompletionService
-from apps.core.src.agent.graphs.data.data_service import DataService
 from apps.core.src.agent.graphs.data.executor import DataExecutor
+from apps.core.src.agent.graphs.data.service import DataService
 from apps.core.src.agent.graphs.faq import FAQFlowGraph
 from apps.core.src.agent.graphs.onboarding.executor import OnboardingExecutor
 from apps.core.src.agent.graphs.onboarding.service import OnboardingService
@@ -109,7 +109,6 @@ def setup_dependencies():
         redis_client=shared_redis,
     )
 
-    # FAQ graph for informational queries
     faq_graph = FAQFlowGraph(
         llm=llm,
         get_db=get_db_session,

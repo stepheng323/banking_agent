@@ -17,10 +17,12 @@ from shared.repositories.actionable_message_repository import ActionableMessageR
 from shared.repositories.beneficiary_repository import BeneficiaryRepository
 from shared.utils.logging import get_logger
 
+from ..interfaces import ITransactionService
+
 logger = get_logger(__name__)
 
 
-class AirtimeService:
+class AirtimeService(ITransactionService):
     """Airtime purchase service facade using LangGraph."""
 
     def __init__(

@@ -120,14 +120,12 @@ class ClassificationHandler(MessageHandler):
 
         Security: Only returns message if owned by the requesting user.
         """
-        try:
-            if user_id:
-                message = self.actionable_message_repo.get_by_wa_message_id_for_user(wa_message_id, user_id)
-            else:
-                # Fallback for cases where user_id not available (shouldn't happen)
-                logger.warning("quote_lookup_without_user_id", wa_message_id=wa_message_id)
-                message = self.actionable_message_repo.get_by_wa_message_id(wa_message_id)
+        if not user_id:
+            logger.warning("quote_lookup_without_user_id", wa_message_id=wa_message_id)
+            return None
 
+        try:
+            message = self.actionable_message_repo.get_by_wa_message_id_for_user(wa_message_id, user_id)
             if message:
                 return QuotedMessageContext(
                     type=message.message_type,

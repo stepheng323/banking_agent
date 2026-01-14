@@ -25,17 +25,6 @@ class ActionableMessageRepository(BaseRepository[ActionableMessage]):
             .all()
         )
 
-    def get_by_wa_message_id(self, wa_message_id: str) -> ActionableMessage | None:
-        """Get actionable message by WhatsApp message ID (if not expired)."""
-        return (
-            self.db.query(ActionableMessage)
-            .filter(
-                ActionableMessage.wa_message_id == wa_message_id,
-                ActionableMessage.expires_at > datetime.utcnow(),
-            )
-            .first()
-        )
-
     def get_by_wa_message_id_for_user(self, wa_message_id: str, user_id: str) -> ActionableMessage | None:
         """Get actionable message only if owned by user.
 
