@@ -69,9 +69,7 @@ async def extract_entities(state: AirtimeState, extractor: AirtimeEntityExtracto
     recent_transactions = state.get("recent_transactions", [])
     if recent_transactions:
         recent_airtime = [
-            t
-            for t in recent_transactions
-            if t.get("type") == "airtime" and t.get("status") == "success"
+            t for t in recent_transactions if t.get("type") == "airtime" and t.get("status") == "success"
         ][:3]
         if recent_airtime:
             smart_context["recentPurchases"] = recent_airtime
@@ -89,6 +87,18 @@ async def extract_entities(state: AirtimeState, extractor: AirtimeEntityExtracto
     result: AirtimeExtractionResult = await extractor.extract(
         state["message"], smart_context=smart_context if smart_context else None
     )
+
+    if result.correction:
+        correction = result.correction
+        logger.info(
+            "correction_detected",
+            field=correction.field,
+            old_value=correction.old_value,
+            new_value=correction.new_value,
+        )
+
+    if result.ambiguities:
+        logger.info("ambiguities_detected", ambiguities=result.ambiguities)
 
     entities = result.entities or SimpleAirtimeEntities()
     existing_amount = state.get("amount")
@@ -161,8 +171,6 @@ async def extract_entities(state: AirtimeState, extractor: AirtimeEntityExtracto
     if entities.recipient_name is not None:
         updates["recipient_name"] = entities.recipient_name
 
-
-
     if entities.narration is not None:
         updates["narration"] = entities.narration
 
@@ -175,9 +183,7 @@ async def extract_entities(state: AirtimeState, extractor: AirtimeEntityExtracto
     post_existing_network = new_state.get("network")
 
     is_new_phone_post = bool(post_incoming_phone and post_incoming_phone != post_existing_phone)
-    is_new_network_post = bool(
-        post_incoming_network and post_incoming_network != post_existing_network
-    )
+    is_new_network_post = bool(post_incoming_network and post_incoming_network != post_existing_network)
 
     if (is_new_phone_post or is_new_network_post) and new_state.get("amount") is not None:
         new_state["amount"] = None

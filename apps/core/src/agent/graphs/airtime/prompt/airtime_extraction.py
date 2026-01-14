@@ -9,30 +9,28 @@ AIRTIME_EXTRACTION_PROMPT = (
     "- recipient_name: Name/alias if mentioned ('for mum')\n"
     "- is_self: true if 'my line', 'for me', 'myself' (don't mark phone missing)\n"
     "- narration, source_account_id: optional\n\n"
-    "**CORRECTIONS (when pendingTransaction exists):**\n"
-    "User is correcting - output the FULL corrected value:\n"
-    "- 'last number is 4 not 3' + pendingPhone='08162511023' → '08162511024'\n"
-    "- 'last digit is 4' + pendingPhone='08162511023' → '08162511024'\n"
-    "- 'ends in 24' + pendingPhone='08162511023' → '08162511024'\n"
-    "- 'I meant 5k' + pendingAmount=600 → 5000.0\n"
-    "- 'make it Airtel' + pendingNetwork='MTN' → 'Airtel'\n\n"
+    "**CORRECTIONS:**\n"
+    "When user corrects a value, output correction object:\n"
+    "- correction: {field: 'amount', new_value: 5000}\n"
+    "Examples:\n"
+    "- 'I meant 5k' → correction: {field: 'amount', new_value: 5000}\n"
+    "- 'make it Airtel' → correction: {field: 'network', new_value: 'Airtel'}\n\n"
+    "**AMBIGUITIES:**\n"
+    "Output ambiguities array when clarification needed:\n"
+    "- AMOUNT_UNCLEAR: '5' could be ₦5 or ₦5,000\n"
+    "- NETWORK_UNCLEAR: Can't determine network from phone\n"
+    "- RECIPIENT_UNCLEAR: Can't determine who to send to\n\n"
     "**MISSING FIELDS:**\n"
     "List only: 'amount', 'recipientPhone', 'network'\n"
     "If is_self=true, don't mark phone/network missing.\n\n"
-    "**SMART CONTEXT:**\n"
-    "- beneficiaries: match names to saved contacts\n"
-    "- recentPurchases: 'same as before' uses recentPurchases[0]\n"
-    "- previousResponse: maintain tone consistency\n\n"
     "**EXAMPLES:**\n"
     '{"entities":{"amount":2000.0},"missingFields":["recipientPhone","network"],"reply":"₦2,000 airtime. Phone number and network?"}\n'
     '{"entities":{"amount":5000.0,"network":"MTN"},"missingFields":["recipientPhone"],"reply":"₦5,000 MTN. Which number?"}\n'
-    '{"entities":{"recipient_phone":"08012345678","network":"MTN"},"missingFields":["amount"],"reply":"08012345678 (MTN). How much?"}\n'
-    '{"entities":{"amount":2000.0,"recipient_phone":"08051234567","network":"Glo"},"missingFields":[],"reply":"₦2,000 Glo for 08051234567."}\n'
-    '{"entities":{"amount":2000.0,"is_self":true},"missingFields":[],"reply":"₦2,000 to your line."}\n'
-    '{"entities":{"amount":2000.0,"recipient_name":"mum"},"missingFields":["recipientPhone","network"],"reply":"₦2,000 for mum. Phone and network?"}\n\n'
-    "**CORRECTION EXAMPLES (acknowledge change naturally):**\n"
+    '{"entities":{"amount":2000.0,"is_self":true},"missingFields":[],"reply":"₦2,000 to your line."}\n\n'
+    "**CORRECTION EXAMPLES:**\n"
     'User: "I meant 5k"\n'
-    '{"entities":{"amount":5000.0},"missingFields":[],"reply":"Alright, updating to ₦5,000."}\n\n'
-    'User: "Send to mum instead"\n'
-    '{"entities":{"recipient_name":"mum"},"missingFields":["recipientPhone","network"],"reply":"Got it, sending to mum. Phone and network?"}\n'
+    '{"entities":{"amount":5000.0},"correction":{"field":"amount","new_value":5000},"missingFields":[],"reply":"Alright, updating to ₦5,000."}\n\n'
+    "**AMBIGUITY EXAMPLES:**\n"
+    'User: "buy 5 airtime"\n'
+    '{"entities":{"amount":5},"ambiguities":["AMOUNT_UNCLEAR"],"missingFields":["recipientPhone","network"],"reply":"₦5 airtime? (Did you mean ₦5,000?) Phone and network?"}\n'
 )

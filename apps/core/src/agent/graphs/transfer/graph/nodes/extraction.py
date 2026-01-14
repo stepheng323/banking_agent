@@ -111,6 +111,23 @@ async def extract_entities(
         image_data=image_data,
     )
 
+    if result.correction:
+        correction = result.correction
+        logger.info(
+            "correction_detected",
+            field=correction.field,
+            old_value=correction.old_value,
+            new_value=correction.new_value,
+        )
+        debug_log(f"✏️ [CORRECTION] Applying correction: {correction.field} = {correction.new_value}")
+
+    # Handle ambiguities - log for now, can trigger clarification later
+    if result.ambiguities:
+        logger.info("ambiguities_detected", ambiguities=result.ambiguities)
+        debug_log(f"⚠️ [AMBIGUITY] Detected ambiguities: {result.ambiguities}")
+        # TODO: Trigger clarification questions based on ambiguity type
+        # For now, the LLM reply should already ask for clarification
+
     entities = result.entities or TransferEntities()
     existing_amount = state.get("amount")
 
@@ -297,7 +314,6 @@ async def extract_entities(
                     f"ℹ️ extract_entities: Preserving existing account number '{existing_account}' when user provided bank name"
                 )
         updates["_recipient_established_at"] = time.time()
-
 
     if entities.source_bank_name is not None:
         updates["source_bank_name"] = entities.source_bank_name

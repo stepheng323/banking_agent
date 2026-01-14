@@ -4,11 +4,11 @@ from typing import Any
 
 from langchain_openai import ChatOpenAI
 
+from apps.core.src.agent.graphs.__shared__.models.smart_context import SmartContext
 from apps.core.src.agent.graphs.transfer.models_extraction import TransferExtractionResult
 from apps.core.src.agent.graphs.transfer.prompt.transfer_extraction import (
     TRANSFER_EXTRACTION_PROMPT,
 )
-from apps.core.src.agent.orchestrator.models.smart_context import SmartContext
 
 
 class TransferEntityExtractor:

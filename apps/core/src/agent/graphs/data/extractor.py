@@ -1,22 +1,20 @@
-"""LLM-based airtime entity extractor."""
+"""LLM-based data purchase entity extractor."""
 
 from typing import Any
 
 from langchain_openai import ChatOpenAI
 
 from apps.core.src.agent.graphs.__shared__.models.smart_context import SmartContext
-from apps.core.src.agent.graphs.airtime.models import AirtimeExtractionResult
-from apps.core.src.agent.graphs.airtime.prompt.airtime_extraction import (
-    AIRTIME_EXTRACTION_PROMPT,
-)
+from apps.core.src.agent.graphs.data.models_extraction import DataExtractionResult
+from apps.core.src.agent.graphs.data.prompt import DATA_EXTRACTION_PROMPT
 
 
-class AirtimeEntityExtractor:
-    """Airtime entity extractor."""
+class DataEntityExtractor:
+    """Data purchase entity extractor."""
 
     def __init__(self, llm: ChatOpenAI | None = None) -> None:
         self.llm = llm or ChatOpenAI(model="gpt-4o-mini", temperature=0, model_kwargs={"seed": 42})
-        self.structured = self.llm.with_structured_output(AirtimeExtractionResult)
+        self.structured = self.llm.with_structured_output(DataExtractionResult)
 
     def _build_context_string(self, smart_context: dict[str, Any] | None) -> str:
         """Build context string from SmartContext or legacy dict format."""
@@ -41,8 +39,6 @@ class AirtimeEntityExtractor:
                         aliases.append(alias)
                 elif hasattr(b, "alias") and b.alias:
                     aliases.append(b.alias)
-                elif hasattr(b, "account_name") and b.account_name:
-                    aliases.append(b.account_name)
             if aliases:
                 parts.append(f"Beneficiaries: {', '.join(aliases)}")
 
@@ -52,7 +48,7 @@ class AirtimeEntityExtractor:
 
         return "\n".join(parts)
 
-    async def extract(self, text: str, smart_context: dict[str, Any] | None = None) -> AirtimeExtractionResult:
+    async def extract(self, text: str, smart_context: dict[str, Any] | None = None) -> DataExtractionResult:
         """Extract entities from text."""
         user_input = text.strip()
         user_content = user_input
@@ -63,10 +59,10 @@ class AirtimeEntityExtractor:
 
         result = await self.structured.ainvoke(
             [
-                {"role": "system", "content": AIRTIME_EXTRACTION_PROMPT},
+                {"role": "system", "content": DATA_EXTRACTION_PROMPT},
                 {"role": "user", "content": user_content},
             ]
         )
-        if isinstance(result, AirtimeExtractionResult):
+        if isinstance(result, DataExtractionResult):
             return result
-        return AirtimeExtractionResult.model_validate(result)
+        return DataExtractionResult.model_validate(result)

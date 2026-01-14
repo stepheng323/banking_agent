@@ -3,6 +3,8 @@
 Provides a token-efficient, explicit context schema for injection into LLM prompts.
 """
 
+from typing import ClassVar
+
 from pydantic import BaseModel, Field
 
 
@@ -26,12 +28,25 @@ class SmartContext(BaseModel):
     user_language: str = Field(default="en", description="User's preferred language")
     previous_system_message: str = Field(default="", description="Last assistant response (truncated)")
 
-    MAX_RECENT_TRANSACTIONS = 3
-    MAX_BENEFICIARIES = 5
-    MAX_PREVIOUS_MESSAGE_CHARS = 150
+    MAX_RECENT_TRANSACTIONS: ClassVar[int] = 3
+    MAX_BENEFICIARIES: ClassVar[int] = 5
+    MAX_PREVIOUS_MESSAGE_CHARS: ClassVar[int] = 150
+    DEFAULT_TOKEN_BUDGET: ClassVar[int] = 500
+    CHARS_PER_TOKEN: ClassVar[int] = 4
 
-    def to_compact_string(self) -> str:
-        """Format context for LLM injection (token-efficient)."""
+    def estimate_tokens(self, text: str) -> int:
+        """Estimate token count from text (rough approximation)."""
+        return len(text) // self.CHARS_PER_TOKEN + 1
+
+    def to_compact_string(self, max_tokens: int | None = None) -> str:
+        """Format context for LLM injection (token-efficient).
+
+        Args:
+            max_tokens: Maximum token budget. If exceeded, truncates lower-priority fields.
+        """
+        if max_tokens is None:
+            max_tokens = self.DEFAULT_TOKEN_BUDGET
+
         parts = []
 
         if self.active_flow:
@@ -47,7 +62,10 @@ class SmartContext(BaseModel):
             if pending_str:
                 parts.append(f"Pending: {pending_str}")
 
-        if self.recent_transactions:
+        current = "\n".join(parts)
+        remaining_tokens = max_tokens - self.estimate_tokens(current)
+
+        if self.recent_transactions and remaining_tokens > 50:
             txs = []
             for tx in self.recent_transactions[: self.MAX_RECENT_TRANSACTIONS]:
                 tx_type = tx.get("type", "transfer")
@@ -55,20 +73,27 @@ class SmartContext(BaseModel):
                 recipient = tx.get("recipient_name") or tx.get("recipient_phone", "")
                 txs.append(f"{tx_type}:₦{amount:,.0f}→{recipient}")
             if txs:
-                parts.append(f"Recent: {'; '.join(txs)}")
+                tx_str = f"Recent: {'; '.join(txs)}"
+                if self.estimate_tokens(tx_str) <= remaining_tokens:
+                    parts.append(tx_str)
+                    remaining_tokens -= self.estimate_tokens(tx_str)
 
-        if self.saved_beneficiaries:
+        if self.saved_beneficiaries and remaining_tokens > 30:
             names = [b.get("name") or b.get("alias", "") for b in self.saved_beneficiaries[: self.MAX_BENEFICIARIES]]
             names = [n for n in names if n]
             if names:
-                parts.append(f"Beneficiaries: {', '.join(names)}")
+                ben_str = f"Beneficiaries: {', '.join(names)}"
+                if self.estimate_tokens(ben_str) <= remaining_tokens:
+                    parts.append(ben_str)
+                    remaining_tokens -= self.estimate_tokens(ben_str)
 
         if self.user_language and self.user_language != "en":
             parts.append(f"Language: {self.user_language}")
 
-        if self.previous_system_message:
-            truncated = self.previous_system_message[: self.MAX_PREVIOUS_MESSAGE_CHARS]
-            if len(self.previous_system_message) > self.MAX_PREVIOUS_MESSAGE_CHARS:
+        if self.previous_system_message and remaining_tokens > 20:
+            max_chars = min(self.MAX_PREVIOUS_MESSAGE_CHARS, remaining_tokens * self.CHARS_PER_TOKEN)
+            truncated = self.previous_system_message[:max_chars]
+            if len(self.previous_system_message) > max_chars:
                 truncated += "..."
             parts.append(f"LastMsg: {truncated}")
 

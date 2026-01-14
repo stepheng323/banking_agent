@@ -1,5 +1,7 @@
 """Pydantic model for airtime entity extraction results."""
 
+from typing import Literal
+
 from pydantic import BaseModel, Field, field_validator
 
 
@@ -45,6 +47,17 @@ class SimpleAirtimeEntities(BaseModel):
             return None
 
 
+AirtimeCorrectionField = Literal["amount", "recipient_phone", "network", "recipient_name"]
+
+
+class AirtimeCorrection(BaseModel):
+    """Explicit correction detected from user input."""
+
+    field: AirtimeCorrectionField = Field(description="Field being corrected")
+    old_value: str | float | None = Field(default=None, description="Previous value (if known)")
+    new_value: str | float = Field(description="New corrected value")
+
+
 class AirtimeExtractionResult(BaseModel):
     """Result of airtime entity extraction."""
 
@@ -56,3 +69,12 @@ class AirtimeExtractionResult(BaseModel):
         description="List of missing required fields: 'amount', 'recipientPhone', 'network'",
     )
     reply: str = Field(description="Natural language reply acknowledging extraction and asking for missing fields")
+
+    correction: AirtimeCorrection | None = Field(
+        default=None,
+        description="Correction detected when user updates a previously provided value",
+    )
+    ambiguities: list[str] = Field(
+        default_factory=list,
+        description="Detected ambiguities: AMOUNT_UNCLEAR, NETWORK_UNCLEAR, RECIPIENT_UNCLEAR",
+    )
