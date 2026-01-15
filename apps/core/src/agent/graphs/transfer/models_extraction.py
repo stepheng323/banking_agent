@@ -14,8 +14,8 @@ from pydantic import BaseModel, Field
 from apps.core.src.agent.graphs.transfer.models import TransferEntities
 
 
-# Schema version for backward compatibility
-SCHEMA_VERSION = "transfer_extract_v2"
+# Schema version for future-proofing
+SCHEMA_VERSION = 1
 
 
 class CorrectionField(str, Enum):
@@ -71,7 +71,7 @@ class References(BaseModel):
 class TransferExtractionResult(BaseModel):
     """v2: Pure extraction result with versioned envelope."""
 
-    schema_version: str = Field(default=SCHEMA_VERSION, description="Schema version for compatibility")
+    schema_version: int = Field(default=SCHEMA_VERSION, description="Schema version for future-proofing")
     intent: Literal["transfer"] = Field(default="transfer")
     intent_confidence: float = Field(default=1.0, ge=0.0, le=1.0, description="Confidence in intent")
     
@@ -93,7 +93,3 @@ class TransferExtractionResult(BaseModel):
         default_factory=list,
         description="Features beyond simple transfer: SCHEDULED, RECURRING, INTERNATIONAL",
     )
-
-    # DEPRECATED: kept for backward compatibility during migration
-    missing_fields: list[str] = Field(default_factory=list, alias="missingFields")
-    reply: str = Field(default="")

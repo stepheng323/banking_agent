@@ -186,6 +186,12 @@ async def extract_entities(
         
         for ambiguity in result.ambiguities:
             if ambiguity.code == AmbiguityCode.AMOUNT_UNCLEAR and ambiguity.candidates:
+                # Skip ambiguity if amount was successfully extracted
+                # e.g., "25k" extracts as 25000, or even "-500k" extracts as -500000
+                # Let validation node handle limit/negative checks with proper error messages
+                if result.entities and result.entities.amount is not None:
+                    debug_log(f"⏭️ [EXTRACTION] Skipping AMOUNT_UNCLEAR - amount already extracted: {result.entities.amount}")
+                    continue
                 candidates = ambiguity.candidates
                 if len(candidates) >= 2:
                     clarify_msg = f"Did you mean ₦{candidates[0]:,.0f} or ₦{candidates[1]:,.0f}?"

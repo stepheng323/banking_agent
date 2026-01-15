@@ -52,15 +52,15 @@ class TransferEntities(BaseModel):
     @field_validator("amount", mode="before")
     @classmethod
     def validate_amount(cls, v):
-        """Validate that amount is not negative or zero when provided."""
+        """Convert amount to float, let validation node handle limit checks."""
         if v is None:
             return v
         try:
             amount = float(v)
-            # Only reject clearly invalid values at extraction time
-            # Full limit validation happens in the validation node
-            if amount < 0:
-                return None
+            # Pass through all numeric values (including negative)
+            # Limit validation (min/max/negative) happens in validation node
+            # which provides proper error messaging
+            return amount
         except (ValueError, TypeError):
             return None
 
