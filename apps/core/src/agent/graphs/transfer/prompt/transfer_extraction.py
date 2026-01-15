@@ -1,17 +1,9 @@
-"""Transfer extraction prompt v2 - Pure extraction, no business logic.
-
-CHANGES from v1:
-- Removed: missingFields (resolver computes)
-- Removed: reply (formatter generates)
-- Added: structured ambiguities with candidates
-- Added: references for recent transfer detection
-- Added: requested_features for unsupported features
-- Added: intent_confidence
-"""
+"""Transfer extraction prompt. Pure extraction, no business logic."""
 
 TRANSFER_EXTRACTION_PROMPT = (
     "Extract transfer entities from user messages. Output ONLY pure JSON.\\n"
-    "DO NOT generate reply or decide missing fields - resolver handles that.\\n\\n"
+    "DO NOT generate reply or decide missing fields - resolver handles that.\\n"
+    "Always output all fields. Use null or empty arrays if not present.\\n\\n"
     
     "SCHEMA VERSION: transfer_extract_v2\\n\\n"
     
@@ -43,9 +35,9 @@ TRANSFER_EXTRACTION_PROMPT = (
     "- RECURRING: every week, monthly, automatic, dey go always\\n"
     "- INTERNATIONAL: abroad, USA, UK, Ghana, overseas\\n\\n"
     
-    "CORRECTIONS:\\n"
+    "CORRECTIONS (use lowercase field names):\\n"
     "When user corrects a value mid-flow:\\n"
-    '- correction: {"field": "AMOUNT", "new_value": 50000}\\n\\n'
+    '- correction: {"field": "amount", "new_value": 50000}\\n\\n'
     
     "CONFIDENCE:\\n"
     "- intent_confidence: 0.0-1.0 (how confident this is a transfer intent)\\n\\n"
@@ -54,39 +46,60 @@ TRANSFER_EXTRACTION_PROMPT = (
     
     'User: "send 5k to mum"\\n'
     'Output: {"schema_version":"transfer_extract_v2","intent":"transfer","intent_confidence":0.95,'
-    '"entities":{"amount":5000,"recipient_name":"mum"},"correction":null,"ambiguities":[],'
-    '"references":{"use_recent_transfer":false},"requested_features":[]}\\n\\n'
+    '"entities":{"amount":5000,"recipient_name":"mum","recipient_account":null,"bank_name":null,'
+    '"source_bank_name":null,"narration":null,"transfer_all":null,"transfer_percentage":null,"source_accounts":[]},'
+    '"correction":null,"ambiguities":[],"references":{"use_recent_transfer":false,"recent_transfer_index":null},'
+    '"requested_features":[]}\\n\\n'
     
     'User: "GTB → Access 5k"\\n'
     'Output: {"schema_version":"transfer_extract_v2","intent":"transfer","intent_confidence":0.98,'
-    '"entities":{"amount":5000,"source_bank_name":"GTBank","bank_name":"Access Bank"},'
-    '"correction":null,"ambiguities":[],"references":{"use_recent_transfer":false},"requested_features":[]}\\n\\n'
+    '"entities":{"amount":5000,"source_bank_name":"GTBank","bank_name":"Access Bank","recipient_name":null,'
+    '"recipient_account":null,"narration":null,"transfer_all":null,"transfer_percentage":null,"source_accounts":[]},'
+    '"correction":null,"ambiguities":[],"references":{"use_recent_transfer":false,"recent_transfer_index":null},'
+    '"requested_features":[]}\\n\\n'
     
     'User: "send 5 to john"\\n'
     'Output: {"schema_version":"transfer_extract_v2","intent":"transfer","intent_confidence":0.9,'
-    '"entities":{"amount":null,"recipient_name":"john"},"correction":null,'
-    '"ambiguities":[{"code":"AMOUNT_UNCLEAR","candidates":[5,5000]}],'
-    '"references":{"use_recent_transfer":false},"requested_features":[]}\\n\\n'
+    '"entities":{"amount":null,"recipient_name":"john","recipient_account":null,"bank_name":null,'
+    '"source_bank_name":null,"narration":null,"transfer_all":null,"transfer_percentage":null,"source_accounts":[]},'
+    '"correction":null,"ambiguities":[{"code":"AMOUNT_UNCLEAR","candidates":[5,5000]}],'
+    '"references":{"use_recent_transfer":false,"recent_transfer_index":null},"requested_features":[]}\\n\\n'
     
     'User: "send 50k to mum tomorrow"\\n'
     'Output: {"schema_version":"transfer_extract_v2","intent":"transfer","intent_confidence":0.95,'
-    '"entities":{"amount":50000,"recipient_name":"mum"},"correction":null,"ambiguities":[],'
-    '"references":{"use_recent_transfer":false},"requested_features":["SCHEDULED"]}\\n\\n'
+    '"entities":{"amount":50000,"recipient_name":"mum","recipient_account":null,"bank_name":null,'
+    '"source_bank_name":null,"narration":null,"transfer_all":null,"transfer_percentage":null,"source_accounts":[]},'
+    '"correction":null,"ambiguities":[],"references":{"use_recent_transfer":false,"recent_transfer_index":null},'
+    '"requested_features":["SCHEDULED"]}\\n\\n'
+    
+    'User: "send 100k to mum using access and gtb"\\n'
+    'Output: {"schema_version":"transfer_extract_v2","intent":"transfer","intent_confidence":0.95,'
+    '"entities":{"amount":100000,"recipient_name":"mum","recipient_account":null,"bank_name":null,'
+    '"source_bank_name":null,"narration":null,"transfer_all":null,"transfer_percentage":null,'
+    '"source_accounts":["Access Bank","GTBank"]},'
+    '"correction":null,"ambiguities":[],"references":{"use_recent_transfer":false,"recent_transfer_index":null},'
+    '"requested_features":[]}\\n\\n'
     
     'User: "same as last time"\\n'
     'Output: {"schema_version":"transfer_extract_v2","intent":"transfer","intent_confidence":0.7,'
-    '"entities":{},"correction":null,"ambiguities":[],'
-    '"references":{"use_recent_transfer":true,"recent_transfer_index":0},"requested_features":[]}\\n\\n'
+    '"entities":{"amount":null,"recipient_name":null,"recipient_account":null,"bank_name":null,'
+    '"source_bank_name":null,"narration":null,"transfer_all":null,"transfer_percentage":null,"source_accounts":[]},'
+    '"correction":null,"ambiguities":[],"references":{"use_recent_transfer":true,"recent_transfer_index":0},'
+    '"requested_features":[]}\\n\\n'
     
     'User: "I meant 50k"\\n'
     'Output: {"schema_version":"transfer_extract_v2","intent":"transfer","intent_confidence":0.95,'
-    '"entities":{"amount":50000},"correction":{"field":"AMOUNT","new_value":50000},"ambiguities":[],'
-    '"references":{"use_recent_transfer":false},"requested_features":[]}\\n\\n'
+    '"entities":{"amount":50000,"recipient_name":null,"recipient_account":null,"bank_name":null,'
+    '"source_bank_name":null,"narration":null,"transfer_all":null,"transfer_percentage":null,"source_accounts":[]},'
+    '"correction":{"field":"amount","new_value":50000},"ambiguities":[],'
+    '"references":{"use_recent_transfer":false,"recent_transfer_index":null},"requested_features":[]}\\n\\n'
     
     'User: "abeg make am dey go every month"\\n'
     'Output: {"schema_version":"transfer_extract_v2","intent":"transfer","intent_confidence":0.85,'
-    '"entities":{},"correction":null,"ambiguities":[],'
-    '"references":{"use_recent_transfer":false},"requested_features":["RECURRING"]}\\n'
+    '"entities":{"amount":null,"recipient_name":null,"recipient_account":null,"bank_name":null,'
+    '"source_bank_name":null,"narration":null,"transfer_all":null,"transfer_percentage":null,"source_accounts":[]},'
+    '"correction":null,"ambiguities":[],"references":{"use_recent_transfer":false,"recent_transfer_index":null},'
+    '"requested_features":["RECURRING"]}\\n'
 )
 
 
