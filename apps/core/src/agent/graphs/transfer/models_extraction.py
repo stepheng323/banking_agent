@@ -1,45 +1,99 @@
-"""Extraction result models for transfer parsing."""
+"""Extraction result models for transfer parsing.
 
+v2: Clean extraction architecture with versioned envelope.
+- LLM outputs pure extraction, no business logic
+- Resolver computes missing fields and decision
+- Formatter generates response
+"""
+
+from enum import Enum
 from typing import Literal
 
 from pydantic import BaseModel, Field
 
 from apps.core.src.agent.graphs.transfer.models import TransferEntities
 
-CorrectionField = Literal[
-    "amount",
-    "recipient_account",
-    "recipient_name",
-    "bank_name",
-    "narration",
-    "transfer_percentage",
-    "source_bank_name",
-]
-CorrectionValue = str | float | int | None
+
+# Schema version for backward compatibility
+SCHEMA_VERSION = "transfer_extract_v2"
+
+
+class CorrectionField(str, Enum):
+    """Fields that can be corrected."""
+    
+    AMOUNT = "amount"
+    RECIPIENT_ACCOUNT = "recipient_account"
+    RECIPIENT_NAME = "recipient_name"
+    BANK_NAME = "bank_name"
+    NARRATION = "narration"
+    TRANSFER_PERCENTAGE = "transfer_percentage"
+    SOURCE_BANK_NAME = "source_bank_name"
+
+
+class AmbiguityCode(str, Enum):
+    """Structured ambiguity codes."""
+    
+    AMOUNT_UNCLEAR = "AMOUNT_UNCLEAR"
+    MULTIPLE_BENEFICIARIES = "MULTIPLE_BENEFICIARIES"
+    UNCLEAR_BANK = "UNCLEAR_BANK"
+    UNCLEAR_RECIPIENT = "UNCLEAR_RECIPIENT"
+
+
+class RequestedFeature(str, Enum):
+    """Features beyond simple transfer."""
+    
+    SCHEDULED = "SCHEDULED"
+    RECURRING = "RECURRING"
+    INTERNATIONAL = "INTERNATIONAL"
 
 
 class Correction(BaseModel):
     """Explicit correction detected from user input."""
 
-    field: CorrectionField = Field(description="Field being corrected")
-    old_value: CorrectionValue = Field(default=None, description="Previous value (if known)")
-    new_value: str | float | int = Field(description="New corrected value")
+    field: CorrectionField | None = Field(default=None, description="Field being corrected")
+    new_value: str | float | int | None = Field(default=None, description="New corrected value")
+
+
+class Ambiguity(BaseModel):
+    """Structured ambiguity with candidates."""
+    
+    code: AmbiguityCode = Field(description="Ambiguity type")
+    candidates: list[str | float] = Field(default_factory=list, description="Possible values")
+
+
+class References(BaseModel):
+    """References to context (e.g., recent transfers)."""
+    
+    use_recent_transfer: bool = Field(default=False, description="User wants to use recent transfer")
+    recent_transfer_index: int | None = Field(default=None, description="Index if explicit")
 
 
 class TransferExtractionResult(BaseModel):
-    """Result for the transfer extraction task."""
+    """v2: Pure extraction result with versioned envelope."""
 
+    schema_version: str = Field(default=SCHEMA_VERSION, description="Schema version for compatibility")
     intent: Literal["transfer"] = Field(default="transfer")
+    intent_confidence: float = Field(default=1.0, ge=0.0, le=1.0, description="Confidence in intent")
+    
     entities: TransferEntities | None = Field(default=None)
+    
+    correction: Correction | None = Field(default=None, description="Correction if user updated a value")
+    
+    ambiguities: list[Ambiguity] = Field(
+        default_factory=list,
+        description="Structured ambiguities with candidates",
+    )
+    
+    references: References = Field(
+        default_factory=References,
+        description="References to context",
+    )
+    
+    requested_features: list[RequestedFeature] = Field(
+        default_factory=list,
+        description="Features beyond simple transfer: SCHEDULED, RECURRING, INTERNATIONAL",
+    )
+
+    # DEPRECATED: kept for backward compatibility during migration
     missing_fields: list[str] = Field(default_factory=list, alias="missingFields")
     reply: str = Field(default="")
-
-    correction: Correction | None = Field(
-        default=None,
-        description="Correction detected when user updates a previously provided value",
-    )
-
-    ambiguities: list[str] = Field(
-        default_factory=list,
-        description=("Detected ambiguities: MULTIPLE_BENEFICIARIES, UNCLEAR_BANK, AMOUNT_UNCLEAR, UNCLEAR_RECIPIENT"),
-    )
