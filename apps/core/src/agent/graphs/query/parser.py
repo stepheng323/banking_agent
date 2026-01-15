@@ -16,9 +16,11 @@ from shared.utils.logging import get_logger
 
 from apps.core.src.agent.graphs.query.capabilities import (
     CAPABILITY_LABELS,
-    check_capabilities,
-    derive_requirements,
-    get_alternatives,
+    QueryCapability,
+    QUERY_SUPPORTS,
+    QUERY_LIMITS,
+    get_alternative,
+    generate_limitation_message,
 )
 
 logger = get_logger(__name__)
@@ -119,26 +121,22 @@ class QueryParser:
                 return None, "What time period would you like to compare?"
 
 
-        requires = derive_requirements(query)
-        missing = check_capabilities(requires)
+        # Capability check using simplified approach
+        # (Full resolver integration can come later)
+        missing: list[QueryCapability] = []
+        
+        # Check time range
+        if query.time_range:
+            days_back = (date.today() - query.time_range.start).days
+            if days_back > QUERY_LIMITS["max_lookback_days"]:
+                missing.append(QueryCapability.TIME_ALL)
 
         if missing:
-            alternatives = get_alternatives(missing)
-            missing_labels = [CAPABILITY_LABELS.get(cap, cap.value) for cap in missing]
-            alt_labels = [CAPABILITY_LABELS.get(cap, cap.value) for cap in alternatives]
-
+            msg = generate_limitation_message(missing)
             logger.info(
                 "query_capability_limitation",
                 missing=[cap.value for cap in missing],
-                alternatives=[cap.value for cap in alternatives],
             )
-
-            msg = f"Got it — you want *{missing_labels[0]}*.\n\n"
-            msg += f"This isn't available yet."
-            if alt_labels:
-                msg += f" I can do *{alt_labels[0]}* instead."
-            msg += "\n\nWant me to show that?"
-
             return None, msg
 
         return query, None

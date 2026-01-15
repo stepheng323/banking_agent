@@ -11,11 +11,7 @@ from apps.core.src.agent.graphs.airtime.models import (
 from apps.core.src.agent.graphs.airtime.state import AirtimeState
 from shared.utils.logging import get_logger
 from shared.utils.phone_utils import detect_network_from_phone, normalize_phone
-from apps.core.src.agent.graphs.airtime.capabilities import (
-    check_capabilities,
-    derive_requirements,
-    generate_limitation_message,
-)
+# Capabilities imported inline in function
 
 logger = get_logger(__name__)
 
@@ -163,7 +159,7 @@ async def extract_entities(state: AirtimeState, extractor: AirtimeEntityExtracto
         new_state["amount"] = None
 
     updates: dict[str, Any] = {
-        "missing_fields": result.missing_fields or [],
+        "missing_fields": computed_missing,  # Use resolver-computed
         "llm_reply": result.reply,
         "flow_state": "extracting",
     }

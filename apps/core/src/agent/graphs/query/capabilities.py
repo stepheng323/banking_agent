@@ -1,8 +1,7 @@
 """Query graph capability definitions.
 
-Defines what the query graph supports and doesn't support.
-LLM outputs requires[] from QueryCapability enum.
-Resolver checks against QUERY_SUPPORTS before execution.
+Capabilities and limits for resolver-driven negotiation.
+LLM outputs requested_capabilities, resolver checks and negotiates.
 """
 
 from enum import Enum
@@ -11,31 +10,39 @@ from enum import Enum
 class QueryCapability(str, Enum):
     """Capabilities that can be required by a query plan."""
 
+    # Filters
     FILTER_RECIPIENT = "filter_recipient"
     FILTER_AMOUNT = "filter_amount"
     FILTER_CATEGORY = "filter_category"
     FILTER_TX_TYPE = "filter_tx_type"
     FILTER_BANK = "filter_bank"
-    SEARCH_NARRATION = "search_narration"
-
-    TIME_RELATIVE = "time_relative"
-    TIME_ALL = "time_all"
-
+    
+    # Search - split for clarity
+    SEARCH_NARRATION_KEYWORD = "search_narration_keyword"  # Exact/contains match
+    SEARCH_NARRATION_FUZZY = "search_narration_fuzzy"      # Semantic/embeddings
+    
+    # Time ranges
+    TIME_RELATIVE = "time_relative"  # Within limits
+    TIME_ALL = "time_all"            # Beyond max_lookback_days
+    
+    # Aggregations
     AGGREGATE_SUM = "aggregate_sum"
     AGGREGATE_GROUP = "aggregate_group"
     TIME_COMPARISON = "time_comparison"
-
+    
+    # Exports
     EXPORT_PDF = "export_pdf"
     EXPORT_CSV = "export_csv"
 
 
+# What's supported
 QUERY_SUPPORTS: list[QueryCapability] = [
     QueryCapability.FILTER_RECIPIENT,
     QueryCapability.FILTER_AMOUNT,
     QueryCapability.FILTER_CATEGORY,
     QueryCapability.FILTER_TX_TYPE,
     QueryCapability.FILTER_BANK,
-    QueryCapability.SEARCH_NARRATION,
+    QueryCapability.SEARCH_NARRATION_KEYWORD,  # Exact match only
     QueryCapability.TIME_RELATIVE,
     QueryCapability.AGGREGATE_SUM,
     QueryCapability.AGGREGATE_GROUP,
@@ -43,9 +50,13 @@ QUERY_SUPPORTS: list[QueryCapability] = [
 ]
 
 
+# Limits for resolver negotiation (clamp instead of fail)
 QUERY_LIMITS = {
     "max_lookback_days": 180,
     "max_results": 50,
+    "max_group_buckets": 20,
+    "max_narration_query_len": 40,
+    "default_lookback_days": 30,
 }
 
 
@@ -55,7 +66,8 @@ CAPABILITY_LABELS: dict[QueryCapability, str] = {
     QueryCapability.FILTER_CATEGORY: "filter by category",
     QueryCapability.FILTER_TX_TYPE: "filter by type",
     QueryCapability.FILTER_BANK: "filter by bank",
-    QueryCapability.SEARCH_NARRATION: "search by description",
+    QueryCapability.SEARCH_NARRATION_KEYWORD: "keyword search",
+    QueryCapability.SEARCH_NARRATION_FUZZY: "fuzzy search",
     QueryCapability.TIME_RELATIVE: "time range",
     QueryCapability.TIME_ALL: "all-time queries",
     QueryCapability.AGGREGATE_SUM: "totals",
@@ -66,111 +78,57 @@ CAPABILITY_LABELS: dict[QueryCapability, str] = {
 }
 
 
-CAPABILITY_ALTERNATIVES: dict[QueryCapability, list[QueryCapability]] = {
-    QueryCapability.TIME_ALL: [QueryCapability.TIME_RELATIVE],
-    QueryCapability.EXPORT_PDF: [],
-    QueryCapability.EXPORT_CSV: [],
+# Fallbacks for negotiation
+CAPABILITY_ALTERNATIVES: dict[QueryCapability, QueryCapability | None] = {
+    QueryCapability.TIME_ALL: QueryCapability.TIME_RELATIVE,
+    QueryCapability.SEARCH_NARRATION_FUZZY: QueryCapability.SEARCH_NARRATION_KEYWORD,
+    QueryCapability.EXPORT_PDF: None,
+    QueryCapability.EXPORT_CSV: None,
 }
 
 
 def check_capabilities(requires: list[QueryCapability]) -> list[QueryCapability]:
-    """
-    Check which required capabilities are missing.
-
-    Returns:
-        List of missing capabilities (empty if all supported)
-    """
+    """Check which required capabilities are missing."""
     return [cap for cap in requires if cap not in QUERY_SUPPORTS]
 
 
-def get_alternatives(missing: list[QueryCapability]) -> list[QueryCapability]:
-    """Get alternative capabilities for missing ones."""
-    alternatives = []
-    for cap in missing:
-        alts = CAPABILITY_ALTERNATIVES.get(cap, [])
-        alternatives.extend(alts)
-    return alternatives
-
-
-def derive_requirements(query: "NormalizedQuery") -> list[QueryCapability]:
-    """
-    Derive required capabilities from a NormalizedQuery.
-
-    Examines the query structure to determine what capabilities
-    are needed to execute it.
-    """
-    from apps.core.src.agent.graphs.query.models import QueryIntent
-
-    requires: list[QueryCapability] = []
-
-    if query.filters:
-        if query.filters.merchant:
-            requires.append(QueryCapability.SEARCH_NARRATION)
-        if query.filters.min_amount or query.filters.max_amount:
-            requires.append(QueryCapability.FILTER_AMOUNT)
-        if query.filters.category:
-            requires.append(QueryCapability.FILTER_CATEGORY)
-        if query.filters.transaction_type:
-            requires.append(QueryCapability.FILTER_TX_TYPE)
-        if query.filters.account_filter:
-            requires.append(QueryCapability.FILTER_BANK)
-
-    if query.time_range:
-        from datetime import date
-
-        today = date.today()
-        days_back = (today - query.time_range.start).days
-        if days_back > QUERY_LIMITS["max_lookback_days"]:
-            requires.append(QueryCapability.TIME_ALL)
-        else:
-            requires.append(QueryCapability.TIME_RELATIVE)
-
-    if query.aggregation:
-        if query.aggregation.type in ("sum", "average", "count", "largest"):
-            requires.append(QueryCapability.AGGREGATE_SUM)
-        if query.aggregation.group_by:
-            requires.append(QueryCapability.AGGREGATE_GROUP)
-
-    if query.intent == QueryIntent.TIME_COMPARISON:
-        requires.append(QueryCapability.TIME_COMPARISON)
-
-    return list(set(requires))  # Dedupe
-
-
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from apps.core.src.agent.graphs.query.models import NormalizedQuery
+def get_alternative(cap: QueryCapability) -> QueryCapability | None:
+    """Get alternative capability for a missing one."""
+    return CAPABILITY_ALTERNATIVES.get(cap)
 
 
 def generate_limitation_message(missing: list[QueryCapability]) -> str:
-    """Generate conversational limitation message for negotiation."""
+    """Generate conversational negotiation message."""
     if not missing:
         return ""
 
-    if QueryCapability.TIME_ALL in missing:
+    cap = missing[0]
+    alt = get_alternative(cap)
+    
+    if cap == QueryCapability.TIME_ALL:
+        months = QUERY_LIMITS["max_lookback_days"] // 30
         return (
-            f"I can show transactions up to *{QUERY_LIMITS['max_lookback_days'] // 30} months* back.\n\n"
+            f"I can show transactions up to *{months} months* back.\n\n"
             "Want me to show that instead?"
         )
 
-    if QueryCapability.EXPORT_PDF in missing:
+    if cap == QueryCapability.SEARCH_NARRATION_FUZZY:
         return (
-            "PDF export isn't available yet.\n\n"
-            "I can show the results here. Want me to continue?"
+            "I can search for *exact keywords* but not similar descriptions yet.\n\n"
+            "Want me to search for the exact word?"
         )
 
-    if QueryCapability.EXPORT_CSV in missing:
-        return (
-            "CSV export isn't available yet.\n\n"
-            "I can show the results here. Want me to continue?"
-        )
+    if cap == QueryCapability.EXPORT_PDF:
+        return "PDF export isn't available yet.\n\nI can show the results here. Continue?"
 
-    missing_labels = [CAPABILITY_LABELS.get(cap, cap.value) for cap in missing]
-    alternatives = get_alternatives(missing)
-    alt_labels = [CAPABILITY_LABELS.get(cap, cap.value) for cap in alternatives]
+    if cap == QueryCapability.EXPORT_CSV:
+        return "CSV export isn't available yet.\n\nI can show the results here. Continue?"
 
-    msg = f"*{missing_labels[0].title()}* isn't available yet."
-    if alt_labels:
-        msg += f" I can do *{alt_labels[0]}* instead.\n\nWant me to proceed?"
+    label = CAPABILITY_LABELS.get(cap, cap.value)
+    msg = f"*{label.title()}* isn't available yet."
+    
+    if alt:
+        alt_label = CAPABILITY_LABELS.get(alt, alt.value)
+        msg += f" I can do *{alt_label}* instead.\n\nWant me to proceed?"
+    
     return msg

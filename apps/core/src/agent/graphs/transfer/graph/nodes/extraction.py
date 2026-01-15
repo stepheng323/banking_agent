@@ -9,6 +9,13 @@ from apps.core.src.agent.graphs.transfer.models_extraction import TransferExtrac
 from apps.core.src.agent.graphs.transfer.state import TransferState
 from shared.utils.logging import get_logger
 
+from apps.core.src.agent.graphs.transfer.capabilities import (
+    TransferCapability,
+    TRANSFER_LIMITS,
+    check_capabilities,
+    generate_limitation_message,
+)
+
 from .utils import debug_log
 
 
@@ -98,6 +105,20 @@ async def extract_entities(
         if recent_transfers:
             smart_context["recentTransfers"] = recent_transfers
 
+    # Add pending transaction (current draft) for correction detection
+    pending_amount = state.get("amount")
+    pending_recipient = state.get("recipient_account")
+    pending_bank = state.get("recipient_bank_name") or state.get("recipient_bank_code")
+    pending_recipient_name = state.get("recipient_name")
+    
+    if pending_amount or pending_recipient or pending_bank:
+        smart_context["pendingTransaction"] = {
+            "amount": pending_amount,
+            "recipient_account": pending_recipient,
+            "bank": pending_bank,
+            "recipient_name": pending_recipient_name,
+        }
+
     message_to_extract = state.get("message", "")
     image_data = state.get("image_data")
     debug_log(f"🔍 [EXTRACTION] Extracting from message: '{message_to_extract}'")
@@ -111,14 +132,26 @@ async def extract_entities(
         image_data=image_data,
     )
 
-    # Check capabilities before proceeding
-    from apps.core.src.agent.graphs.transfer.capabilities import (
-        check_capabilities,
-        derive_requirements,
-        generate_limitation_message,
-    )
 
-    requires = derive_requirements(result, message_to_extract)
+
+    requires: list[TransferCapability] = [TransferCapability.SINGLE_TRANSFER]
+
+    feature_map = {
+        "SCHEDULED": TransferCapability.SCHEDULED,
+        "RECURRING": TransferCapability.RECURRING,
+        "INTERNATIONAL": TransferCapability.INTERNATIONAL,
+    }
+    for feature in result.requested_features:
+        cap = feature_map.get(feature.value if hasattr(feature, 'value') else feature)
+        if cap:
+            requires.append(cap)
+
+    if result.entities and result.entities.amount:
+        if result.entities.amount > TRANSFER_LIMITS["max_amount"]:
+            requires.append(TransferCapability.AMOUNT_OVER_10M)
+        else:
+            requires.append(TransferCapability.AMOUNT_UP_TO_10M)
+
     missing = check_capabilities(requires)
 
     if missing:
@@ -126,6 +159,7 @@ async def extract_entities(
         logger.info(
             "transfer_capability_limitation",
             missing=[cap.value for cap in missing],
+            llm_features=[f.value if hasattr(f, 'value') else f for f in result.requested_features],
         )
         return {
             **state,
@@ -136,23 +170,85 @@ async def extract_entities(
 
     if result.correction:
         correction = result.correction
+        field_name = correction.field.value if correction.field else None
         logger.info(
             "correction_detected",
-            field=correction.field,
-            old_value=correction.old_value,
+            field=field_name,
             new_value=correction.new_value,
         )
-        debug_log(f"✏️ [CORRECTION] Applying correction: {correction.field} = {correction.new_value}")
+        debug_log(f"✏️ [CORRECTION] Applying correction: {field_name} = {correction.new_value}")
 
-    # Handle ambiguities - log for now, can trigger clarification later
     if result.ambiguities:
-        logger.info("ambiguities_detected", ambiguities=result.ambiguities)
-        debug_log(f"⚠️ [AMBIGUITY] Detected ambiguities: {result.ambiguities}")
-        # TODO: Trigger clarification questions based on ambiguity type
-        # For now, the LLM reply should already ask for clarification
+        from apps.core.src.agent.graphs.transfer.models_extraction import AmbiguityCode
+        
+        ambiguity_dicts = [a.model_dump() for a in result.ambiguities]
+        logger.info("ambiguities_detected", ambiguities=ambiguity_dicts)
+        
+        for ambiguity in result.ambiguities:
+            if ambiguity.code == AmbiguityCode.AMOUNT_UNCLEAR and ambiguity.candidates:
+                # Skip ambiguity if amount was successfully extracted
+                # e.g., "25k" extracts as 25000, or even "-500k" extracts as -500000
+                # Let validation node handle limit/negative checks with proper error messages
+                if result.entities and result.entities.amount is not None:
+                    debug_log(f"⏭️ [EXTRACTION] Skipping AMOUNT_UNCLEAR - amount already extracted: {result.entities.amount}")
+                    continue
+                candidates = ambiguity.candidates
+                if len(candidates) >= 2:
+                    clarify_msg = f"Did you mean ₦{candidates[0]:,.0f} or ₦{candidates[1]:,.0f}?"
+                else:
+                    clarify_msg = "How much would you like to send?"
+                return {
+                    **state,
+                    "response": clarify_msg,
+                    "llm_reply": clarify_msg,
+                    "flow_state": "clarifying_amount",
+                }
+            elif ambiguity.code == AmbiguityCode.MULTIPLE_BENEFICIARIES and ambiguity.candidates:
+                names = ", ".join(str(c) for c in ambiguity.candidates)
+                clarify_msg = f"Which one? {names}"
+                return {
+                    **state,
+                    "response": clarify_msg,
+                    "llm_reply": clarify_msg,
+                    "flow_state": "clarifying_recipient",
+                }
+            elif ambiguity.code == AmbiguityCode.UNCLEAR_BANK and ambiguity.candidates:
+                banks = ", ".join(str(c) for c in ambiguity.candidates)
+                clarify_msg = f"Which bank? {banks}"
+                return {
+                    **state,
+                    "response": clarify_msg,
+                    "llm_reply": clarify_msg,
+                    "flow_state": "clarifying_bank",
+                }
 
     entities = result.entities or TransferEntities()
     existing_amount = state.get("amount")
+    
+    # Handle references (e.g., "same as before", "like last time")
+    from apps.core.src.agent.graphs.transfer.resolver import compute_missing_fields, resolve_references
+    
+    if result.references.use_recent_transfer:
+        recent_transfers = (smart_context or {}).get("recentTransfers", [])
+        entities, was_hydrated = resolve_references(entities, result.references, recent_transfers)
+        if was_hydrated:
+            logger.info(
+                "references_hydrated",
+                recent_transfer_index=result.references.recent_transfer_index,
+                recipient_account=entities.recipient_account if entities else None,
+                bank_name=entities.bank_name if entities else None,
+            )
+            debug_log(f"✓ [REFERENCE] Hydrated from recent transfer: {entities.recipient_name if entities else 'unknown'}")
+    
+    # Determine if internal transfer (own accounts)
+    is_internal = bool(entities.source_bank_name and entities.bank_name and not entities.recipient_name)
+    computed_missing = compute_missing_fields(entities, is_internal)
+    
+    logger.info(
+        "resolver_missing_fields",
+        computed=computed_missing,
+        llm_provided=result.missing_fields,  # For comparison during migration
+    )
 
     logger.info(
         "DEBUG_TRACE_AMOUNT_EXTRACTION_ENTRY",
@@ -167,8 +263,7 @@ async def extract_entities(
     debug_log(
         f"🔍 [EXTRACTION] Raw extraction - account='{entities.recipient_account}', bank_name='{entities.bank_name}', bank_code='{entities.bank_code}', amount='{entities.amount}'"
     )
-    debug_log(f"🔍 [EXTRACTION] Missing fields: {result.missing_fields}")
-    debug_log(f"🔍 [EXTRACTION] LLM reply: {result.reply}")
+    debug_log(f"🔍 [EXTRACTION] Missing fields (resolver): {computed_missing}")
 
     existing_recipient_in_state = state.get("recipient_account")
     existing_bank_in_state = state.get("recipient_bank_code") or state.get("recipient_bank_name")
@@ -257,8 +352,8 @@ async def extract_entities(
         )
 
     updates: dict[str, Any] = {
-        "missing_fields": result.missing_fields or [],
-        "llm_reply": result.reply,
+        "missing_fields": computed_missing,  # Use resolver-computed, not LLM
+        "llm_reply": result.reply if result.reply else None,  # May be empty in v2
         "flow_state": "extracting",
     }
 

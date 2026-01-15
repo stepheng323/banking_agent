@@ -1,36 +1,78 @@
-"""Airtime extraction prompt for LLM-based entity extraction."""
+"""Airtime extraction prompt. Pure extraction, no business logic."""
 
 AIRTIME_EXTRACTION_PROMPT = (
-    "Extract airtime purchase entities from user messages.\n\n"
-    "**FIELDS:**\n"
-    "- amount: Convert shortcuts (2k→2000.0, 5h→500.0, 1.5k→1500.0)\n"
-    "- recipient_phone: Normalize to 11-digit format (08012345678)\n"
-    "- network: MTN, Airtel, Glo, 9mobile (standardize case)\n"
-    "- recipient_name: Name/alias if mentioned ('for mum')\n"
-    "- is_self: true if 'my line', 'for me', 'myself' (don't mark phone missing)\n"
-    "- narration, source_account_id: optional\n\n"
-    "**CORRECTIONS:**\n"
-    "When user corrects a value, output correction object:\n"
-    "- correction: {field: 'amount', new_value: 5000}\n"
-    "Examples:\n"
-    "- 'I meant 5k' → correction: {field: 'amount', new_value: 5000}\n"
-    "- 'make it Airtel' → correction: {field: 'network', new_value: 'Airtel'}\n\n"
-    "**AMBIGUITIES:**\n"
-    "Output ambiguities array when clarification needed:\n"
-    "- AMOUNT_UNCLEAR: '5' could be ₦5 or ₦5,000\n"
-    "- NETWORK_UNCLEAR: Can't determine network from phone\n"
-    "- RECIPIENT_UNCLEAR: Can't determine who to send to\n\n"
-    "**MISSING FIELDS:**\n"
-    "List only: 'amount', 'recipientPhone', 'network'\n"
-    "If is_self=true, don't mark phone/network missing.\n\n"
-    "**EXAMPLES:**\n"
-    '{"entities":{"amount":2000.0},"missingFields":["recipientPhone","network"],"reply":"₦2,000 airtime. Phone number and network?"}\n'
-    '{"entities":{"amount":5000.0,"network":"MTN"},"missingFields":["recipientPhone"],"reply":"₦5,000 MTN. Which number?"}\n'
-    '{"entities":{"amount":2000.0,"is_self":true},"missingFields":[],"reply":"₦2,000 to your line."}\n\n'
-    "**CORRECTION EXAMPLES:**\n"
-    'User: "I meant 5k"\n'
-    '{"entities":{"amount":5000.0},"correction":{"field":"amount","new_value":5000},"missingFields":[],"reply":"Alright, updating to ₦5,000."}\n\n'
-    "**AMBIGUITY EXAMPLES:**\n"
-    'User: "buy 5 airtime"\n'
-    '{"entities":{"amount":5},"ambiguities":["AMOUNT_UNCLEAR"],"missingFields":["recipientPhone","network"],"reply":"₦5 airtime? (Did you mean ₦5,000?) Phone and network?"}\n'
+    "Extract airtime purchase entities from user messages. Output ONLY pure JSON.\\n"
+    "DO NOT generate reply or decide missing fields - resolver handles that.\\n"
+    "Always output all fields. Use null or empty arrays if not present.\\n\\n"
+    
+    "SCHEMA VERSION: airtime_extract_v2\\n\\n"
+    
+    "ENTITIES:\\n"
+    "- amount: Convert shortcuts (2k→2000.0, 5h→500.0). Leave null if unclear\\n"
+    "- recipient_phone: Normalize to 11-digit format (08012345678)\\n"
+    "- network: MTN, Airtel, Glo, 9mobile (standardize case)\\n"
+    "- recipient_name: Name/alias if mentioned ('for mum')\\n"
+    "- is_self: true if 'my line', 'for me', 'myself'\\n"
+    "- narration, source_account_id: optional\\n\\n"
+    
+    "AMBIGUITIES (structured with candidates):\\n"
+    "When value is unclear, set field to null and add to ambiguities:\\n"
+    '- {"code": "AMOUNT_UNCLEAR", "candidates": [5, 5000]}\\n'
+    '- {"code": "NETWORK_UNCLEAR", "candidates": ["MTN", "Airtel"]}\\n\\n'
+    
+    "REQUESTED FEATURES (unsupported):\\n"
+    "Detect if user wants features beyond simple purchase:\\n"
+    "- SCHEDULED: tomorrow, next week, later, Friday\\n"
+    "- RECURRING: every week, monthly, automatic, dey go always\\n\\n"
+    
+    "CORRECTIONS (use lowercase field names):\\n"
+    "When user corrects a value mid-flow:\\n"
+    '- correction: {"field": "amount", "new_value": 5000}\\n\\n'
+    
+    "CONFIDENCE:\\n"
+    "- intent_confidence: 0.0-1.0 (how confident this is an airtime intent)\\n\\n"
+    
+    "EXAMPLES:\\n\\n"
+    
+    'User: "buy 2k airtime"\\n'
+    'Output: {"schema_version":1,"intent":"airtime","intent_confidence":0.95,'
+    '"entities":{"amount":2000.0,"recipient_phone":null,"network":null,"recipient_name":null,'
+    '"is_self":null,"narration":null,"source_account_id":null},'
+    '"correction":null,"ambiguities":[],"references":{"use_recent_purchase":false},'
+    '"requested_features":[]}\\n\\n'
+    
+    'User: "5k MTN to 08012345678"\\n'
+    'Output: {"schema_version":1,"intent":"airtime","intent_confidence":0.98,'
+    '"entities":{"amount":5000.0,"recipient_phone":"08012345678","network":"MTN","recipient_name":null,'
+    '"is_self":null,"narration":null,"source_account_id":null},'
+    '"correction":null,"ambiguities":[],"references":{"use_recent_purchase":false},'
+    '"requested_features":[]}\\n\\n'
+    
+    'User: "buy airtime for my line"\\n'
+    'Output: {"schema_version":1,"intent":"airtime","intent_confidence":0.9,'
+    '"entities":{"amount":null,"recipient_phone":null,"network":null,"recipient_name":null,'
+    '"is_self":true,"narration":null,"source_account_id":null},'
+    '"correction":null,"ambiguities":[],"references":{"use_recent_purchase":false},'
+    '"requested_features":[]}\\n\\n'
+    
+    'User: "buy 5 airtime"\\n'
+    'Output: {"schema_version":1,"intent":"airtime","intent_confidence":0.85,'
+    '"entities":{"amount":null,"recipient_phone":null,"network":null,"recipient_name":null,'
+    '"is_self":null,"narration":null,"source_account_id":null},'
+    '"correction":null,"ambiguities":[{"code":"AMOUNT_UNCLEAR","candidates":[5,5000]}],'
+    '"references":{"use_recent_purchase":false},"requested_features":[]}\\n\\n'
+    
+    'User: "buy 2k airtime tomorrow"\\n'
+    'Output: {"schema_version":1,"intent":"airtime","intent_confidence":0.9,'
+    '"entities":{"amount":2000.0,"recipient_phone":null,"network":null,"recipient_name":null,'
+    '"is_self":null,"narration":null,"source_account_id":null},'
+    '"correction":null,"ambiguities":[],"references":{"use_recent_purchase":false},'
+    '"requested_features":["SCHEDULED"]}\\n\\n'
+    
+    'User: "I meant 5k"\\n'
+    'Output: {"schema_version":1,"intent":"airtime","intent_confidence":0.95,'
+    '"entities":{"amount":5000.0,"recipient_phone":null,"network":null,"recipient_name":null,'
+    '"is_self":null,"narration":null,"source_account_id":null},'
+    '"correction":{"field":"amount","new_value":5000},"ambiguities":[],'
+    '"references":{"use_recent_purchase":false},"requested_features":[]}\\n'
 )

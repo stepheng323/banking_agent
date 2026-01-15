@@ -1,8 +1,13 @@
-"""Pydantic model for airtime entity extraction results."""
+"""Airtime extraction models v2. Pure extraction, no business logic."""
 
+from enum import Enum
 from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
+
+
+# Schema version for future-proofing
+SCHEMA_VERSION = 1
 
 
 class SimpleAirtimeEntities(BaseModel):
@@ -13,7 +18,7 @@ class SimpleAirtimeEntities(BaseModel):
     )
     recipient_phone: str | None = Field(
         default=None,
-        description="Recipient phone number in normalized 10-digit format (e.g., '08012345678')",
+        description="Recipient phone number in normalized 11-digit format (e.g., '08012345678')",
     )
     network: str | None = Field(default=None, description="Mobile network name: 'MTN', 'Airtel', 'Glo', or '9mobile'")
     recipient_name: str | None = Field(
@@ -47,34 +52,77 @@ class SimpleAirtimeEntities(BaseModel):
             return None
 
 
-AirtimeCorrectionField = Literal["amount", "recipient_phone", "network", "recipient_name"]
+class CorrectionField(str, Enum):
+    """Fields that can be corrected."""
+    
+    AMOUNT = "amount"
+    RECIPIENT_PHONE = "recipient_phone"
+    NETWORK = "network"
+    RECIPIENT_NAME = "recipient_name"
+
+
+class AmbiguityCode(str, Enum):
+    """Structured ambiguity codes."""
+    
+    AMOUNT_UNCLEAR = "AMOUNT_UNCLEAR"
+    NETWORK_UNCLEAR = "NETWORK_UNCLEAR"
+    RECIPIENT_UNCLEAR = "RECIPIENT_UNCLEAR"
+
+
+class RequestedFeature(str, Enum):
+    """Features beyond simple airtime purchase."""
+    
+    SCHEDULED = "SCHEDULED"
+    RECURRING = "RECURRING"
 
 
 class AirtimeCorrection(BaseModel):
     """Explicit correction detected from user input."""
 
-    field: AirtimeCorrectionField = Field(description="Field being corrected")
-    old_value: str | float | None = Field(default=None, description="Previous value (if known)")
-    new_value: str | float = Field(description="New corrected value")
+    field: CorrectionField | None = Field(default=None, description="Field being corrected")
+    new_value: str | float | None = Field(default=None, description="New corrected value")
+
+
+class Ambiguity(BaseModel):
+    """Structured ambiguity with candidates."""
+    
+    code: AmbiguityCode = Field(description="Ambiguity type")
+    candidates: list[str | float] = Field(default_factory=list, description="Possible values")
+
+
+class References(BaseModel):
+    """References to context (e.g., recent purchases)."""
+    
+    use_recent_purchase: bool = Field(default=False, description="User wants to repeat recent purchase")
+    recent_purchase_index: int | None = Field(default=None, description="Index if explicit")
 
 
 class AirtimeExtractionResult(BaseModel):
-    """Result of airtime entity extraction."""
+    """v2: Pure extraction result with versioned envelope."""
 
+    schema_version: int = Field(default=SCHEMA_VERSION, description="Schema version for future-proofing")
+    intent: Literal["airtime"] = Field(default="airtime")
+    intent_confidence: float = Field(default=1.0, ge=0.0, le=1.0, description="Confidence in intent")
+    
     entities: SimpleAirtimeEntities = Field(
         default_factory=SimpleAirtimeEntities, description="Extracted airtime purchase entities"
     )
-    missing_fields: list[str] = Field(
-        default_factory=list,
-        description="List of missing required fields: 'amount', 'recipientPhone', 'network'",
-    )
-    reply: str = Field(description="Natural language reply acknowledging extraction and asking for missing fields")
-
+    
     correction: AirtimeCorrection | None = Field(
-        default=None,
-        description="Correction detected when user updates a previously provided value",
+        default=None, description="Correction if user updated a value"
     )
-    ambiguities: list[str] = Field(
+    
+    ambiguities: list[Ambiguity] = Field(
         default_factory=list,
-        description="Detected ambiguities: AMOUNT_UNCLEAR, NETWORK_UNCLEAR, RECIPIENT_UNCLEAR",
+        description="Structured ambiguities with candidates",
+    )
+    
+    references: References = Field(
+        default_factory=References,
+        description="References to context",
+    )
+    
+    requested_features: list[RequestedFeature] = Field(
+        default_factory=list,
+        description="Features beyond simple purchase: SCHEDULED, RECURRING",
     )
