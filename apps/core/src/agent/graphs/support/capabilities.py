@@ -1,115 +1,119 @@
 """Support graph capability definitions.
 
-Defines what the support graph can handle automatically vs needs escalation.
+Action-based capabilities for micro-resolver.
+Defines what actions Support can take, not just what it can show.
 """
 
 from enum import Enum
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from apps.core.src.agent.graphs.support.models import ClassificationResult
 
 
-class SupportCapability(str, Enum):
-    """Capabilities for support handling."""
-
-    TRANSFER_STATUS = "transfer_status"
-    FAILURE_REASON = "failure_reason"
-    PENDING_STATUS = "pending_status"
-    REVERSAL_STATUS = "reversal_status"
-    RETRY_TRANSFER = "retry_transfer"
-    RECEIPT_REQUEST = "receipt_request"
+class SupportIntent(str, Enum):
+    """Classified support intent types."""
+    
+    FAILED_TRANSFER = "failed_transfer"
+    PENDING_TRANSFER = "pending_transfer"
+    REVERSAL_REFUND = "reversal_refund"
+    WRONG_RECIPIENT = "wrong_recipient"
     FRAUD_REPORT = "fraud_report"
-    LIVE_CHAT = "live_chat"
-    CALL_SUPPORT = "call_support"
-    REFUND_REQUEST = "refund_request"
+    ACCOUNT_LINKING = "account_linking"
+    LIMITS_FEES = "limits_fees"
+    RECEIPT_REQUEST = "receipt_request"
+    HUMAN_HANDOFF = "human_handoff"
+    GENERAL_TX_ISSUE = "general_tx_issue"  # "issue with my transaction"
 
 
-SUPPORT_SUPPORTS: list[SupportCapability] = [
-    SupportCapability.TRANSFER_STATUS,
-    SupportCapability.FAILURE_REASON,
-    SupportCapability.PENDING_STATUS,
-    SupportCapability.REVERSAL_STATUS,
-    SupportCapability.RETRY_TRANSFER,
-    SupportCapability.RECEIPT_REQUEST,
-    SupportCapability.FRAUD_REPORT,
+class SupportAction(str, Enum):
+    """Actions Support can take (capabilities)."""
+    
+    LOOKUP_TRANSACTION = "lookup_transaction"
+    EXPLAIN_STATUS = "explain_status"
+    RETRY_PAYOUT = "retry_payout"
+    INITIATE_REFUND = "initiate_refund"
+    QUEUE_REFUND_REQUEST = "queue_refund_request"
+    COLLECT_DETAILS = "collect_details"
+    CREATE_TICKET = "create_ticket"
+    ESCALATE = "escalate"
+
+
+# What actions are actually available
+SUPPORTED_ACTIONS: list[SupportAction] = [
+    SupportAction.LOOKUP_TRANSACTION,
+    SupportAction.EXPLAIN_STATUS,
+    SupportAction.COLLECT_DETAILS,
+    SupportAction.CREATE_TICKET,
+    SupportAction.ESCALATE,
 ]
 
 
-CAPABILITY_LABELS: dict[SupportCapability, str] = {
-    SupportCapability.TRANSFER_STATUS: "transfer status check",
-    SupportCapability.FAILURE_REASON: "failure investigation",
-    SupportCapability.PENDING_STATUS: "pending transfer check",
-    SupportCapability.REVERSAL_STATUS: "reversal/refund status",
-    SupportCapability.RETRY_TRANSFER: "retry transfer",
-    SupportCapability.RECEIPT_REQUEST: "receipt request",
-    SupportCapability.FRAUD_REPORT: "fraud report",
-    SupportCapability.LIVE_CHAT: "live chat with agent",
-    SupportCapability.CALL_SUPPORT: "phone support",
-    SupportCapability.REFUND_REQUEST: "refund request",
+# Actions that require manual approval or aren't automated yet
+UNAVAILABLE_ACTIONS: list[SupportAction] = [
+    SupportAction.RETRY_PAYOUT,
+    SupportAction.INITIATE_REFUND,
+    SupportAction.QUEUE_REFUND_REQUEST,  # Can upgrade to available when ready
+]
+
+
+# Limits for resolver
+SUPPORT_LIMITS = {
+    "max_escalation_attempts": 3,
+    "max_tx_lookback_days": 90,
+    "sla_pending_hours": 24,  # After which to auto-escalate
 }
 
 
-CAPABILITY_ALTERNATIVES: dict[SupportCapability, list[SupportCapability]] = {
-    SupportCapability.LIVE_CHAT: [SupportCapability.FRAUD_REPORT],
-    SupportCapability.CALL_SUPPORT: [SupportCapability.FRAUD_REPORT],
-    SupportCapability.REFUND_REQUEST: [SupportCapability.REVERSAL_STATUS],
+ACTION_LABELS: dict[SupportAction, str] = {
+    SupportAction.LOOKUP_TRANSACTION: "look up transaction",
+    SupportAction.EXPLAIN_STATUS: "explain what happened",
+    SupportAction.RETRY_PAYOUT: "retry the transfer",
+    SupportAction.INITIATE_REFUND: "process refund immediately",
+    SupportAction.QUEUE_REFUND_REQUEST: "submit refund request",
+    SupportAction.COLLECT_DETAILS: "collect more details",
+    SupportAction.CREATE_TICKET: "create support ticket",
+    SupportAction.ESCALATE: "escalate to human support",
 }
 
 
-def check_capabilities(requires: list[SupportCapability]) -> list[SupportCapability]:
-    """Check which required capabilities are missing."""
-    return [cap for cap in requires if cap not in SUPPORT_SUPPORTS]
+# What to offer when action isn't available
+ACTION_ALTERNATIVES: dict[SupportAction, SupportAction] = {
+    SupportAction.RETRY_PAYOUT: SupportAction.CREATE_TICKET,
+    SupportAction.INITIATE_REFUND: SupportAction.QUEUE_REFUND_REQUEST,
+    SupportAction.QUEUE_REFUND_REQUEST: SupportAction.CREATE_TICKET,
+}
 
 
-def derive_requirements(
-    user_message: str,
-) -> list[SupportCapability]:
-    """Derive required capabilities from user message."""
-    requires: list[SupportCapability] = []
-    msg_lower = user_message.lower()
-
-    live_chat_keywords = ["live chat", "talk to someone", "speak to agent", "human agent", "real person"]
-    if any(kw in msg_lower for kw in live_chat_keywords):
-        requires.append(SupportCapability.LIVE_CHAT)
-
-    call_keywords = ["call me", "phone call", "call support", "speak on phone"]
-    if any(kw in msg_lower for kw in call_keywords):
-        requires.append(SupportCapability.CALL_SUPPORT)
-
-    refund_keywords = ["refund", "money back", "return my money", "give me back"]
-    if any(kw in msg_lower for kw in refund_keywords):
-        requires.append(SupportCapability.REFUND_REQUEST)
-
-    return list(set(requires))
+def check_actions(requested: list[SupportAction]) -> list[SupportAction]:
+    """Check which requested actions are not supported."""
+    return [action for action in requested if action not in SUPPORTED_ACTIONS]
 
 
-def generate_limitation_message(missing: list[SupportCapability]) -> str:
-    """Generate user-friendly limitation message."""
+def get_alternative(action: SupportAction) -> SupportAction | None:
+    """Get alternative action if requested one isn't available."""
+    return ACTION_ALTERNATIVES.get(action)
+
+
+def generate_limitation_message(missing: list[SupportAction]) -> str:
+    """Generate negotiation message for unavailable actions."""
     if not missing:
         return ""
 
-    if SupportCapability.LIVE_CHAT in missing:
+    action = missing[0]
+    alt = get_alternative(action)
+    label = ACTION_LABELS.get(action, action.value)
+    
+    if action == SupportAction.RETRY_PAYOUT:
         return (
-            "Live chat with a human agent isn't available in this channel yet.\n\n"
-            "I can help you with:\n"
-            "• Check transfer status\n"
-            "• Investigate failed transfers\n"
-            "• Report fraud/suspicious activity\n\n"
-            "What would you like help with?"
+            f"I can't *{label}* automatically right now.\n\n"
+            "I can create a support ticket for the team to retry it. Want me to do that?"
         )
 
-    if SupportCapability.CALL_SUPPORT in missing:
+    if action == SupportAction.INITIATE_REFUND:
         return (
-            "Phone support isn't available through this channel.\n\n"
-            "I can help you resolve most issues here. What's the problem?"
+            f"I can't *{label}* instantly, but I can submit a refund request.\n\n"
+            "The team will process it within 24-48 hours. Want me to submit it?"
         )
 
-    if SupportCapability.REFUND_REQUEST in missing:
-        return (
-            "Refund requests need to go through your bank.\n\n"
-            "I can check the reversal status if you give me the transfer details."
-        )
-
-    missing_labels = [CAPABILITY_LABELS.get(cap, cap.value) for cap in missing]
-    return f"*{missing_labels[0].title()}* isn't available yet."
+    if alt:
+        alt_label = ACTION_LABELS.get(alt, alt.value)
+        return f"I can't *{label}* yet, but I can *{alt_label}*. Want me to proceed?"
+    
+    return f"*{label.title()}* isn't available yet. I'll escalate this to support."
