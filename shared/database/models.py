@@ -2,7 +2,6 @@
 
 import uuid
 from datetime import datetime
-from enum import Enum
 
 from sqlalchemy import ARRAY, JSON, Boolean, Column, DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.postgresql import UUID
@@ -10,16 +9,20 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import text
 
-from shared.database.enums import FundedTransferStatusEnum, FundingStepStatusEnum
+from shared.database.enums import (
+    UserOnboardingStatusEnum,
+    MandateStatusEnum,
+    TransactionTypeEnum,
+    TransactionStatusEnum,
+    FundedTransferStatusEnum,
+    FundingStepStatusEnum,
+    BeneficiaryTypeEnum,
+    ActionableMessageTypeEnum,
+    SupportTicketStatusEnum,
+    SupportTicketPriorityEnum,
+)
 
 Base = declarative_base()
-
-
-class UserOnboardingStatusEnum(str, Enum):
-    """User onboarding status enum."""
-
-    ONBOARDING_STARTED = "onboarding_started"
-    ONBOARDING_COMPLETED = "onboarding_completed"
 
 
 class User(Base):
@@ -34,7 +37,11 @@ class User(Base):
     address = Column(String, nullable=True)
     mono_customer_id = Column(String, nullable=True, index=True)
 
-    onboarding_status = Column(String, nullable=True)
+    onboarding_status = Column(
+        String,
+        default=UserOnboardingStatusEnum.ONBOARDING_STARTED.value,
+        nullable=True,
+    )
     last_active = Column(DateTime, default=datetime.utcnow)
     extra_data = Column(JSON, default={})
     transaction_pin = Column(String, nullable=True)
@@ -69,7 +76,7 @@ class Account(Base):
     is_default = Column(Boolean, default=False)
 
     mandate_id = Column(String, nullable=True, index=True)
-    mandate_status = Column(String, default="pending", nullable=False)
+    mandate_status = Column(String, default=MandateStatusEnum.PENDING.value, nullable=False)
     extra_data = Column(JSON, default={})
     created_at = Column(DateTime, server_default=text("now()"), nullable=False)
     updated_at = Column(DateTime, server_default=text("now()"), onupdate=datetime.utcnow, nullable=False)
@@ -92,7 +99,12 @@ class Beneficiary(Base):
         nullable=False,
         index=True,
     )
-    beneficiary_type = Column(String, default="transfer", nullable=False, index=True)
+    beneficiary_type = Column(
+        String,
+        default=BeneficiaryTypeEnum.TRANSFER.value,
+        nullable=False,
+        index=True,
+    )
     account_name = Column(String, nullable=False)
     alias = Column(String, nullable=True)
     account_number = Column(String, nullable=True)
@@ -122,8 +134,12 @@ class Transaction(Base):
         nullable=False,
         index=True,
     )
-    transaction_type = Column(String, default="transfer", nullable=False)
-    status = Column(String, nullable=False, index=True)
+    transaction_type = Column(
+        String,
+        default=TransactionTypeEnum.TRANSFER.value,
+        nullable=False,
+    )
+    status = Column(String, nullable=False, index=True)  # Uses TransactionStatusEnum
     amount = Column(Float, nullable=False)
     currency = Column(String, default="NGN", nullable=False)
     source_account_id = Column(
@@ -142,8 +158,8 @@ class Transaction(Base):
     idempotency_key = Column(String, unique=True, nullable=False, index=True)
     error_message = Column(String, nullable=True)
     provider_response = Column(JSON, nullable=True)
-    provider_status = Column(String, nullable=True)  # Provider's transaction status
-    provider_error_code = Column(String, nullable=True)  # Provider-specific error code
+    provider_status = Column(String, nullable=True)
+    provider_error_code = Column(String, nullable=True)
     receipt_sent = Column(Boolean, default=False, nullable=False)
     beneficiary_suggested = Column(Boolean, default=False, nullable=False)
     created_at = Column(DateTime, server_default=text("now()"), nullable=False, index=True)
@@ -266,7 +282,7 @@ class ActionableMessage(Base):
         index=True,
     )
     wa_message_id = Column(String, unique=True, nullable=False, index=True)
-    message_type = Column(String, nullable=False, index=True)
+    message_type = Column(String, nullable=False, index=True)  # Uses ActionableMessageTypeEnum
     message_data = Column(JSON, nullable=False)
     created_at = Column(DateTime, server_default=text("now()"), nullable=False)
     expires_at = Column(DateTime, nullable=False, index=True)
@@ -294,10 +310,49 @@ class FAQEntry(Base):
     keywords = Column(ARRAY(String), default=[], nullable=False)
     priority = Column(Integer, default=0, nullable=False)
     is_active = Column(Boolean, default=True, nullable=False, index=True)
-    # Embedding stored as JSON array for now (pgvector can be added later)
-    embedding = Column(JSON, nullable=True)  # OpenAI embedding vector
+    embedding = Column(JSON, nullable=True)
     created_at = Column(DateTime, server_default=text("now()"), nullable=False)
     updated_at = Column(DateTime, server_default=text("now()"), onupdate=datetime.utcnow, nullable=False)
 
     def __repr__(self):
         return f"<FAQEntry(id={self.id}, category={self.category}, question={self.question[:50]}...)>"
+
+
+class SupportTicket(Base):
+    """Support ticket for tracking user issues.
+    
+    Created by the support graph when:
+    - User reports fraud
+    - Issue requires manual follow-up
+    - Max clarification attempts reached
+    - Retry/refund fails
+    """
+
+    __tablename__ = "support_tickets"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    ticket_code = Column(String(20), unique=True, nullable=False, index=True)
+    user_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", name="fk_support_tickets_user_id"),
+        nullable=False,
+        index=True,
+    )
+    channel = Column(String(20), default="whatsapp", nullable=False)
+    intent = Column(String(50), nullable=False, index=True)
+    status = Column(String(20), default=SupportTicketStatusEnum.OPEN.value, nullable=False, index=True)
+    priority = Column(String(10), default=SupportTicketPriorityEnum.MEDIUM.value, nullable=False, index=True)
+    
+    transaction_ref = Column(String(100), nullable=True, index=True)
+    
+    summary = Column(Text, nullable=False)
+    details = Column(JSON, default={}, nullable=False)
+    
+    created_at = Column(DateTime, server_default=text("now()"), nullable=False, index=True)
+    updated_at = Column(DateTime, server_default=text("now()"), onupdate=datetime.utcnow, nullable=False)
+    resolved_at = Column(DateTime, nullable=True)
+    
+    user = relationship("User")
+
+    def __repr__(self):
+        return f"<SupportTicket(id={self.id}, code={self.ticket_code}, status={self.status})>"

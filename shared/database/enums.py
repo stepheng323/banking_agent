@@ -1,5 +1,58 @@
+"""Database enums for all models."""
+
 from enum import Enum
 
+
+# ============================================================================
+# User & Onboarding Enums
+# ============================================================================
+
+class UserOnboardingStatusEnum(str, Enum):
+    """User onboarding status enum."""
+
+    ONBOARDING_STARTED = "onboarding_started"
+    ONBOARDING_COMPLETED = "onboarding_completed"
+
+
+# ============================================================================
+# Account Enums
+# ============================================================================
+
+class MandateStatusEnum(str, Enum):
+    """Account mandate status enum."""
+
+    PENDING = "pending"
+    ACTIVE = "active"
+    SUSPENDED = "suspended"
+    REVOKED = "revoked"
+
+
+# ============================================================================
+# Transaction Enums
+# ============================================================================
+
+class TransactionTypeEnum(str, Enum):
+    """Transaction type enum."""
+
+    TRANSFER = "transfer"
+    AIRTIME = "airtime"
+    DATA = "data"
+    BILL = "bill"
+
+
+class TransactionStatusEnum(str, Enum):
+    """Transaction status enum."""
+
+    PENDING = "pending"
+    PROCESSING = "processing"
+    SUCCESSFUL = "successful"
+    FAILED = "failed"
+    REVERSED = "reversed"
+
+
+# ============================================================================
+# Funded Transfer Enums
+# ============================================================================
 
 class FundedTransferStatusEnum(str, Enum):
     """Status enum for multi-account funded transfers."""
@@ -23,3 +76,58 @@ class FundingStepStatusEnum(str, Enum):
     FAILED = "failed"
     REFUND_PENDING = "refund_pending"
     REFUNDED = "refunded"
+
+
+# ============================================================================
+# Beneficiary Enums
+# ============================================================================
+
+class BeneficiaryTypeEnum(str, Enum):
+    """Beneficiary type enum."""
+
+    TRANSFER = "transfer"
+    AIRTIME = "airtime"
+    DATA = "data"
+
+
+# ============================================================================
+# Actionable Message Enums
+# ============================================================================
+
+class ActionableMessageTypeEnum(str, Enum):
+    """Type of actionable message stored for quote-based interactions."""
+
+    TRANSFER_RECEIPT = "transfer_receipt"
+    AIRTIME_RECEIPT = "airtime_receipt"
+    DATA_RECEIPT = "data_receipt"
+    CONFIRMATION_REQUEST = "confirmation_request"
+
+
+# ============================================================================
+# Support Ticket Enums
+# ============================================================================
+
+class SupportTicketStatusEnum(str, Enum):
+    """Support ticket status enum."""
+
+    OPEN = "open"
+    IN_PROGRESS = "in_progress"
+    RESOLVED = "resolved"
+    CLOSED = "closed"
+
+
+class SupportTicketPriorityEnum(str, Enum):
+    """Support ticket priority enum."""
+
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+    URGENT = "urgent"
+
+
+class SupportChannelEnum(str, Enum):
+    """Channel through which support was requested."""
+
+    WHATSAPP = "whatsapp"
+    WEB = "web"
+    APP = "app"
