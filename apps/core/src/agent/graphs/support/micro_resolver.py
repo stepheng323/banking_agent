@@ -33,10 +33,10 @@ from apps.core.src.agent.graphs.support.models import (
 class Decision(str, Enum):
     """Micro-resolver decision."""
     
-    PROCEED = "PROCEED"           # Can handle with available actions
-    NEGOTIATE = "NEGOTIATE"       # Requested action unavailable, offer alternative
-    COLLECT = "COLLECT"           # Need more info (tx ref, details)
-    ESCALATE = "ESCALATE"         # Create ticket + optionally notify human
+    PROCEED = "PROCEED"          
+    NEGOTIATE = "NEGOTIATE"       
+    COLLECT = "COLLECT"           
+    ESCALATE = "ESCALATE"         
 
 
 class NextStep(str, Enum):
@@ -46,7 +46,7 @@ class NextStep(str, Enum):
     LOOKUP_TRANSACTION = "lookup_transaction"
     EXPLAIN_STATUS = "explain_status"
     ASK_CLARIFICATION = "ask_clarification"
-    CREATE_TICKET = "create_ticket"  # Always the terminal step for escalation
+    CREATE_TICKET = "create_ticket"  
 
 
 class Prompt(BaseModel):
@@ -73,12 +73,10 @@ class ResolverDecision(BaseModel):
     extraction: SupportExtractionResult
     context: SupportContext
     
-    # For NEGOTIATE
     negotiation: NegotiationResult | None = None
     
-    # For ESCALATE - always creates ticket, optionally notifies human
     escalation: EscalationResult | None = None
-    notify_human: bool = False  # Whether to alert support team
+    notify_human: bool = False  
     
     prompts: list[Prompt] = Field(default_factory=list)
 
@@ -243,8 +241,7 @@ def resolve(
     
     # Route based on intent
     if extraction.intent in (SupportIntent.FAILED_TRANSFER, SupportIntent.PENDING_TRANSFER, 
-                             SupportIntent.GENERAL_TX_ISSUE, SupportIntent.TRANSFER_STATUS,
-                             SupportIntent.TRANSFER_FAILURE_REASON):
+                             SupportIntent.GENERAL_TX_ISSUE, SupportIntent.TRANSFER_STATUS):
         context.last_support_step = "looking_up"
         return ResolverDecision(
             decision=Decision.PROCEED,
@@ -262,8 +259,7 @@ def resolve(
             context=context,
         )
     
-    if extraction.intent in (SupportIntent.REVERSAL_REFUND, SupportIntent.WRONG_RECIPIENT,
-                             SupportIntent.REVERSAL_REFUND_STATUS):
+    if extraction.intent in (SupportIntent.REVERSAL_REFUND, SupportIntent.WRONG_RECIPIENT):
         context.last_support_step = "creating_ticket"
         return ResolverDecision(
             decision=Decision.PROCEED,

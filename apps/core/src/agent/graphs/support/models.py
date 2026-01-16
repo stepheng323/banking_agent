@@ -12,27 +12,29 @@ SCHEMA_VERSION = 1
 class SupportIntent(str, Enum):
     """Classified support intent types."""
     
-    # New v2 intents
+    # Transaction issues
     FAILED_TRANSFER = "failed_transfer"
     PENDING_TRANSFER = "pending_transfer"
+    TRANSFER_STATUS = "transfer_status"
+    
+    # Refund/reversal
     REVERSAL_REFUND = "reversal_refund"
     WRONG_RECIPIENT = "wrong_recipient"
+    WRONG_DEBIT = "wrong_debit"
+    
+    # Fraud & escalation
     FRAUD_REPORT = "fraud_report"
+    HUMAN_HANDOFF = "human_handoff"
+    
+    # Account & info
     ACCOUNT_LINKING = "account_linking"
     LIMITS_FEES = "limits_fees"
     RECEIPT_REQUEST = "receipt_request"
-    HUMAN_HANDOFF = "human_handoff"
-    GENERAL_TX_ISSUE = "general_tx_issue"
-    TICKET_STATUS = "ticket_status"  # "any update?", "what's happening with my case?"
     
-    # Legacy intents for backward compatibility
-    TRANSFER_STATUS = "transfer_status"
-    TRANSFER_FAILURE_REASON = "transfer_failure_reason"
-    REVERSAL_REFUND_STATUS = "reversal_refund_status"
+    # Other
+    GENERAL_TX_ISSUE = "general_tx_issue"
+    TICKET_STATUS = "ticket_status"
     RETRY_TRANSFER = "retry_transfer"
-    WRONG_DEBIT = "wrong_debit"
-    FRAUD_SUSPECTED = "fraud_suspected"
-    SUPPORT_ESCALATION = "support_escalation"
 
 
 class RequestedAction(str, Enum):
@@ -91,7 +93,7 @@ class EscalationResult(BaseModel):
     """Result indicating human handoff is needed."""
 
     action: Literal["handoff_to_human"] = "handoff_to_human"
-    reason: str = ""  # "pending_over_sla", "fraud_suspected", "max_attempts"
+    reason: str = ""
     transaction_id: str | None = None
     context: dict = Field(default_factory=dict)
 
@@ -107,14 +109,10 @@ class SupportResponse(BaseModel):
     transaction_data: dict | None = None
 
 
-# Legacy ClassificationResult for existing classifier compatibility
-from dataclasses import dataclass, field as dataclass_field
-
-@dataclass
-class ClassificationResult:
-    """Result of support intent classification (legacy, used by classifier.py)."""
+class ClassificationResult(BaseModel):
+    """Result of support intent classification."""
     
-    intent: SupportIntent | None
-    confidence: float
+    intent: SupportIntent | None = None
+    confidence: float = 0.5
     transaction_ref: TransactionReference | None = None
     raw_message: str = ""

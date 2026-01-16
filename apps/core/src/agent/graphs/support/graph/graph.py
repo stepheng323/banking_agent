@@ -345,19 +345,17 @@ class SupportFlowGraph:
             return await handle_transfer_status(transaction)
         elif intent == SupportIntent.PENDING_TRANSFER:
             return await handle_pending(transaction)
-        elif intent == SupportIntent.TRANSFER_FAILURE_REASON:
-            return await handle_failure_reason(transaction)
         elif intent == SupportIntent.FAILED_TRANSFER:
             return await handle_failure_reason(transaction)
         elif intent == SupportIntent.WRONG_DEBIT:
             return await handle_wrong_debit(transaction)
-        elif intent == SupportIntent.REVERSAL_REFUND_STATUS:
-            return await handle_reversal_status(transaction)
         elif intent == SupportIntent.REVERSAL_REFUND:
+            return await handle_reversal_status(transaction)
+        elif intent == SupportIntent.WRONG_RECIPIENT:
             return await handle_reversal_status(transaction)
         elif intent == SupportIntent.RETRY_TRANSFER:
             return await handle_retry(transaction)
-        elif intent in (SupportIntent.FRAUD_SUSPECTED, SupportIntent.FRAUD_REPORT):
+        elif intent == SupportIntent.FRAUD_REPORT:
             return await handle_fraud(transaction)
         elif intent == SupportIntent.RECEIPT_REQUEST:
             return await handle_receipt_request(transaction)
@@ -419,7 +417,6 @@ class SupportFlowGraph:
                 "final_message": "I don't have access to ticket information right now. Please try again later.",
             }
         
-        # Get context for last_ticket_id
         context = await self.context_manager.get(user_id)
         
         response = await handle_ticket_status(
