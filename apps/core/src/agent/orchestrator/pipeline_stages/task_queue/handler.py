@@ -98,7 +98,7 @@ class TaskQueueHandler(MessageHandler):
 
         current_task = None
         for task in context.planner_output.tasks:
-            if task.id == context.current_task_id:
+            if task.task_id == context.current_task_id:
                 current_task = task
                 break
 

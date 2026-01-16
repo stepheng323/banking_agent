@@ -128,7 +128,7 @@ class TaskCoordinator:
         ]
 
         return (
-            all(task.id in all_done_task_ids for task in auth_required_tasks)
+            all(task.task_id in all_done_task_ids for task in auth_required_tasks)
             if auth_required_tasks
             else False
         )
@@ -161,14 +161,14 @@ class TaskCoordinator:
 
         next_collection_complete_task = None
         for task in planner_output.tasks:
-            task_status = task_results.get(task.id, {}).get("status")
+            task_status = task_results.get(task.task_id, {}).get("status")
             if task_status == TaskStatus.COLLECTION_COMPLETE.value:
                 next_collection_complete_task = task
                 break
 
         if next_collection_complete_task:
             await self.task_queue_service.set_current_task(
-                phone_number, next_collection_complete_task.id
+                phone_number, next_collection_complete_task.task_id
             )
             if next_collection_complete_task.executor == "transfer":
                 await self.transfer_service.run_simple(
@@ -191,17 +191,17 @@ class TaskCoordinator:
         next_task = await self.task_queue_service.get_next_task(phone_number)
 
         if next_task:
-            if next_task.id in all_done_task_ids:
+            if next_task.task_id in all_done_task_ids:
                 planner_output = await self.task_queue_service.get_task_queue(phone_number)
                 if planner_output and all(t.id in all_done_task_ids for t in planner_output.tasks):
                     await self._finish_all_tasks(phone_number)
                 return
 
             current_task_id = await self.task_queue_service.get_current_task(phone_number)
-            if current_task_id == next_task.id:
+            if current_task_id == next_task.task_id:
                 return
 
-            await self.task_queue_service.set_current_task(phone_number, next_task.id)
+            await self.task_queue_service.set_current_task(phone_number, next_task.task_id)
             await self._send_transition_message(phone_number, completed_task_id, next_task)
 
             next_task_response = await self.task_planner.handle_next_task(phone_number, "")
@@ -230,16 +230,16 @@ class TaskCoordinator:
         if not completed_task:
             all_done = await self.task_queue_service.get_completed_task_ids(phone_number)
             for task in reversed(planner_output.tasks):
-                if task.id in all_done:
+                if task.task_id in all_done:
                     completed_task = task
                     break
 
-        if completed_task and completed_task.id != next_task.id:
+        if completed_task and completed_task.task_id != next_task.task_id:
             completed_desc = self.summary_generator.format_task_description(completed_task)
             next_desc = self.summary_generator.format_task_description(next_task)
 
             task_results = await self.task_queue_service.get_task_results(phone_number)
-            completed_status = task_results.get(completed_task.id, {}).get("status")
+            completed_status = task_results.get(completed_task.task_id, {}).get("status")
 
             if completed_status == TaskStatus.COLLECTION_COMPLETE.value:
                 msg = f"📝 Details for {completed_desc} received. Now let's process {next_desc}."

@@ -45,9 +45,9 @@ class TaskExecutor:
             Task execution result
         """
         await self.task_queue_service.update_task_status(
-            phone_number, task.id, TaskStatus.IN_PROGRESS
+            phone_number, task.task_id, TaskStatus.IN_PROGRESS
         )
-        await self.task_queue_service.set_current_task(phone_number, task.id)
+        await self.task_queue_service.set_current_task(phone_number, task.task_id)
 
         try:
             executor_service = self.get_executor_for_task(task)
@@ -119,19 +119,19 @@ class TaskExecutor:
                     result = "Query service not available"
                 # For non-async executors, mark as completed immediately
                 await self.task_queue_service.update_task_status(
-                    phone_number, task.id, TaskStatus.COMPLETED, {"result": result}
+                    phone_number, task.task_id, TaskStatus.COMPLETED, {"result": result}
                 )
                 await self.task_queue_service.set_current_task(phone_number, None)
             elif task.executor == "utility":
                 result = "Utility executor not yet implemented"
                 await self.task_queue_service.update_task_status(
-                    phone_number, task.id, TaskStatus.COMPLETED, {"result": result}
+                    phone_number, task.task_id, TaskStatus.COMPLETED, {"result": result}
                 )
                 await self.task_queue_service.set_current_task(phone_number, None)
             else:
                 result = f"Executor {task.executor} not supported"
                 await self.task_queue_service.update_task_status(
-                    phone_number, task.id, TaskStatus.COMPLETED, {"result": result}
+                    phone_number, task.task_id, TaskStatus.COMPLETED, {"result": result}
                 )
                 await self.task_queue_service.set_current_task(phone_number, None)
 
@@ -144,7 +144,7 @@ class TaskExecutor:
 
         except Exception as e:
             await self.task_queue_service.update_task_status(
-                phone_number, task.id, TaskStatus.FAILED, {"error": str(e)}
+                phone_number, task.task_id, TaskStatus.FAILED, {"error": str(e)}
             )
             # Clear current task on error
             await self.task_queue_service.set_current_task(phone_number, None)

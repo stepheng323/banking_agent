@@ -69,7 +69,7 @@ class OrchestratorCancellationHandler:
 
         if planner_output and current_task_id:
             for task in planner_output.tasks:
-                if task.id == current_task_id:
+                if task.task_id == current_task_id:
                     current_executor = task.executor
                     break
 
