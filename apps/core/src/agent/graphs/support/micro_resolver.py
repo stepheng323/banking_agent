@@ -1,10 +1,10 @@
 """Support micro-resolver.
 
-Lightweight resolver for support flows:
+Bank-grade resolver for support flows:
 - Checks requested actions against capabilities
 - Determines next support step
-- Tracks session context
-- Decides when to escalate
+- Tracks session context with proper lifecycle
+- Decides when to escalate (always with ticket)
 """
 
 from enum import Enum
@@ -36,7 +36,7 @@ class Decision(str, Enum):
     PROCEED = "PROCEED"           # Can handle with available actions
     NEGOTIATE = "NEGOTIATE"       # Requested action unavailable, offer alternative
     COLLECT = "COLLECT"           # Need more info (tx ref, details)
-    ESCALATE = "ESCALATE"         # Hand off to human
+    ESCALATE = "ESCALATE"         # Create ticket + optionally notify human
 
 
 class NextStep(str, Enum):
@@ -46,8 +46,7 @@ class NextStep(str, Enum):
     LOOKUP_TRANSACTION = "lookup_transaction"
     EXPLAIN_STATUS = "explain_status"
     ASK_CLARIFICATION = "ask_clarification"
-    CREATE_TICKET = "create_ticket"
-    ESCALATE = "escalate"
+    CREATE_TICKET = "create_ticket"  # Always the terminal step for escalation
 
 
 class Prompt(BaseModel):
@@ -55,6 +54,15 @@ class Prompt(BaseModel):
     
     key: str
     vars: dict[str, Any] = Field(default_factory=dict)
+
+
+class NegotiationResult(BaseModel):
+    """Structured capability negotiation result."""
+    
+    missing_actions: list[SupportAction]
+    suggested_action: SupportAction | None = None
+    alternatives: list[SupportAction] = Field(default_factory=list)
+    message: str
 
 
 class ResolverDecision(BaseModel):
@@ -66,16 +74,15 @@ class ResolverDecision(BaseModel):
     context: SupportContext
     
     # For NEGOTIATE
-    missing_actions: list[SupportAction] = Field(default_factory=list)
-    negotiation_message: str | None = None
+    negotiation: NegotiationResult | None = None
     
-    # For ESCALATE
+    # For ESCALATE - always creates ticket, optionally notifies human
     escalation: EscalationResult | None = None
+    notify_human: bool = False  # Whether to alert support team
     
     prompts: list[Prompt] = Field(default_factory=list)
 
 
-# Map LLM RequestedAction to resolver SupportAction
 ACTION_MAP = {
     RequestedAction.LOOKUP_TRANSACTION: SupportAction.LOOKUP_TRANSACTION,
     RequestedAction.EXPLAIN_STATUS: SupportAction.EXPLAIN_STATUS,
@@ -87,39 +94,71 @@ ACTION_MAP = {
 
 
 def _has_transaction_ref(ref: TransactionReference) -> bool:
-    """Check if we have enough to find the transaction."""
-    return bool(
-        ref.transaction_id or
-        ref.use_quoted or
-        ref.use_recent or
-        (ref.amount and (ref.recipient_name or ref.date_hint))
-    )
-
-
-def _should_escalate(context: SupportContext, intent: SupportIntent) -> EscalationResult | None:
-    """Determine if we should escalate to human support."""
+    """
+    Check if we have enough to find the transaction.
     
-    # Max attempts reached
+    Requires:
+    - explicit transaction_id, OR
+    - quoted message reference, OR
+    - recent transaction flag, OR
+    - at least 2 of: amount, recipient_name, date_hint
+    """
+    if ref.transaction_id or ref.use_quoted or ref.use_recent:
+        return True
+    
+    # Require at least 2 signals for fuzzy matching
+    signals = sum(bool(x) for x in [ref.amount, ref.recipient_name, ref.date_hint])
+    return signals >= 2
+
+
+def _should_escalate(context: SupportContext, intent: SupportIntent) -> tuple[EscalationResult | None, bool]:
+    """
+    Determine if we should escalate.
+    
+    Returns (escalation_result, notify_human)
+    Note: ESCALATE always creates a ticket. notify_human is for alerting support team.
+    """
+    
+    # Max attempts reached - ticket + notify
     if context.attempts >= SUPPORT_LIMITS["max_escalation_attempts"]:
         return EscalationResult(
             reason="max_attempts",
             context={"attempts": context.attempts},
-        )
+        ), True
     
-    # Fraud always escalates
+    # Fraud - ticket + definitely notify
     if intent == SupportIntent.FRAUD_REPORT:
         return EscalationResult(
             reason="fraud_suspected",
             transaction_id=context.last_transaction_ref,
-        )
+        ), True
     
-    # User explicitly wants human
+    # User explicitly asks for human
     if intent == SupportIntent.HUMAN_HANDOFF:
         return EscalationResult(
             reason="user_requested",
-        )
+        ), True
     
-    return None
+    return None, False
+
+
+def _build_negotiation(missing: list[SupportAction]) -> NegotiationResult:
+    """Build structured negotiation result with alternatives."""
+    alternatives = []
+    for action in missing:
+        alt = get_alternative(action)
+        if alt and alt not in alternatives:
+            alternatives.append(alt)
+    
+    # Suggested action is the first available alternative
+    suggested = alternatives[0] if alternatives else SupportAction.ESCALATE
+    
+    return NegotiationResult(
+        missing_actions=missing,
+        suggested_action=suggested,
+        alternatives=alternatives,
+        message=generate_limitation_message(missing),
+    )
 
 
 def resolve(
@@ -131,41 +170,44 @@ def resolve(
     Main micro-resolver entry point.
     
     Flow:
-    1. Check if should escalate immediately
+    1. Check if should escalate immediately (fraud, max attempts, user request)
     2. Check if transaction ref is available
     3. Check requested actions against capabilities
     4. Determine next step
+    
+    Note: attempts are NOT incremented here. The graph should increment
+    after seeing handler result (NEEDS_INFO, lookup failure, negotiation rejected).
     """
-    # Initialize context if not provided
     if context is None:
         context = SupportContext()
     
-    # Update context with this turn
+    # Update context with this turn's intent
     context.last_issue_intent = extraction.intent
-    context.attempts += 1
     
-    # Use quoted message if available
+    # Handle quoted message
     if has_quoted_message and extraction.transaction_ref:
         extraction.transaction_ref.use_quoted = True
     
     # Check for immediate escalation
-    escalation = _should_escalate(context, extraction.intent)
+    escalation, notify_human = _should_escalate(context, extraction.intent)
     if escalation:
+        context.last_support_step = "creating_ticket"
         return ResolverDecision(
             decision=Decision.ESCALATE,
-            next_step=NextStep.ESCALATE,
+            next_step=NextStep.CREATE_TICKET,  # Always create ticket, not "escalate"
             extraction=extraction,
             context=context,
             escalation=escalation,
-            prompts=[Prompt(key="support.escalating", vars={"reason": escalation.reason})],
+            notify_human=notify_human,
+            prompts=[Prompt(key="support.creating_ticket", vars={"reason": escalation.reason})],
         )
     
-    # Check if we have transaction reference
+    # Check if we have transaction reference (for intents that need it)
     has_ref = _has_transaction_ref(extraction.transaction_ref)
     
     if not has_ref and extraction.intent not in (SupportIntent.LIMITS_FEES, SupportIntent.ACCOUNT_LINKING):
-        # Need to collect transaction reference
         context.last_support_step = "asked_for_reference"
+        # Don't increment attempts here - wait for next turn's result
         return ResolverDecision(
             decision=Decision.COLLECT,
             next_step=NextStep.ASK_REFERENCE,
@@ -177,25 +219,32 @@ def resolve(
             )],
         )
     
-    # Check requested actions
+    # Check requested actions against capabilities
     requested = [ACTION_MAP[a] for a in extraction.requested_actions if a in ACTION_MAP]
     missing = check_actions(requested)
     
     if missing:
-        alt = get_alternative(missing[0])
-        msg = generate_limitation_message(missing)
+        negotiation = _build_negotiation(missing)
+        
+        # Determine next step based on suggested action
+        if negotiation.suggested_action == SupportAction.ESCALATE:
+            next_step = NextStep.CREATE_TICKET
+        else:
+            next_step = NextStep.ASK_CLARIFICATION
+        
         return ResolverDecision(
             decision=Decision.NEGOTIATE,
-            next_step=NextStep.CREATE_TICKET if alt == SupportAction.CREATE_TICKET else NextStep.ASK_CLARIFICATION,
+            next_step=next_step,
             extraction=extraction,
             context=context,
-            missing_actions=missing,
-            negotiation_message=msg,
-            prompts=[Prompt(key="support.negotiate", vars={"message": msg})],
+            negotiation=negotiation,
+            prompts=[Prompt(key="support.negotiate", vars={"message": negotiation.message})],
         )
     
-    # Determine next step based on intent
-    if extraction.intent in (SupportIntent.FAILED_TRANSFER, SupportIntent.PENDING_TRANSFER, SupportIntent.GENERAL_TX_ISSUE):
+    # Route based on intent
+    if extraction.intent in (SupportIntent.FAILED_TRANSFER, SupportIntent.PENDING_TRANSFER, 
+                             SupportIntent.GENERAL_TX_ISSUE, SupportIntent.TRANSFER_STATUS,
+                             SupportIntent.TRANSFER_FAILURE_REASON):
         context.last_support_step = "looking_up"
         return ResolverDecision(
             decision=Decision.PROCEED,
@@ -213,7 +262,8 @@ def resolve(
             context=context,
         )
     
-    if extraction.intent in (SupportIntent.REVERSAL_REFUND, SupportIntent.WRONG_RECIPIENT):
+    if extraction.intent in (SupportIntent.REVERSAL_REFUND, SupportIntent.WRONG_RECIPIENT,
+                             SupportIntent.REVERSAL_REFUND_STATUS):
         context.last_support_step = "creating_ticket"
         return ResolverDecision(
             decision=Decision.PROCEED,
@@ -231,3 +281,32 @@ def resolve(
         extraction=extraction,
         context=context,
     )
+
+
+def increment_attempts(context: SupportContext) -> SupportContext:
+    """
+    Increment attempts counter.
+    
+    Call this from the graph ONLY when:
+    - Handler returns NEEDS_INFO
+    - Transaction lookup fails
+    - Capability negotiation rejected
+    """
+    context.attempts += 1
+    return context
+
+
+def reset_context_on_resolution(context: SupportContext, ticket_id: str | None = None) -> SupportContext:
+    """
+    Reset context after successful resolution or ticket creation.
+    
+    Preserves last_ticket_id and last_transaction_ref for "any update?" queries.
+    """
+    if ticket_id:
+        context.last_ticket_id = ticket_id
+    
+    # Reset attempts but preserve refs
+    context.attempts = 0
+    context.last_support_step = "resolved" if not ticket_id else "ticket_created"
+    
+    return context

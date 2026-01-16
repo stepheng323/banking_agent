@@ -35,21 +35,21 @@ class SupportAction(str, Enum):
     ESCALATE = "escalate"
 
 
-# What actions are actually available
+# What actions are actually available (implemented)
 SUPPORTED_ACTIONS: list[SupportAction] = [
     SupportAction.LOOKUP_TRANSACTION,
     SupportAction.EXPLAIN_STATUS,
     SupportAction.COLLECT_DETAILS,
-    SupportAction.CREATE_TICKET,
-    SupportAction.ESCALATE,
+    SupportAction.ESCALATE,  # Can still escalate to human
 ]
 
 
-# Actions that require manual approval or aren't automated yet
+# Actions that require implementation or aren't automated yet
 UNAVAILABLE_ACTIONS: list[SupportAction] = [
     SupportAction.RETRY_PAYOUT,
     SupportAction.INITIATE_REFUND,
-    SupportAction.QUEUE_REFUND_REQUEST,  # Can upgrade to available when ready
+    SupportAction.QUEUE_REFUND_REQUEST,
+    SupportAction.CREATE_TICKET,  # TODO: integrate with ticketing system
 ]
 
 
@@ -75,9 +75,10 @@ ACTION_LABELS: dict[SupportAction, str] = {
 
 # What to offer when action isn't available
 ACTION_ALTERNATIVES: dict[SupportAction, SupportAction] = {
-    SupportAction.RETRY_PAYOUT: SupportAction.CREATE_TICKET,
-    SupportAction.INITIATE_REFUND: SupportAction.QUEUE_REFUND_REQUEST,
-    SupportAction.QUEUE_REFUND_REQUEST: SupportAction.CREATE_TICKET,
+    SupportAction.RETRY_PAYOUT: SupportAction.ESCALATE,
+    SupportAction.INITIATE_REFUND: SupportAction.ESCALATE,
+    SupportAction.QUEUE_REFUND_REQUEST: SupportAction.ESCALATE,
+    SupportAction.CREATE_TICKET: SupportAction.ESCALATE,
 }
 
 

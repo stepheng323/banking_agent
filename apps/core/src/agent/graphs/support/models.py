@@ -6,7 +6,6 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 
-# Schema version
 SCHEMA_VERSION = 1
 
 
@@ -24,6 +23,7 @@ class SupportIntent(str, Enum):
     RECEIPT_REQUEST = "receipt_request"
     HUMAN_HANDOFF = "human_handoff"
     GENERAL_TX_ISSUE = "general_tx_issue"
+    TICKET_STATUS = "ticket_status"  # "any update?", "what's happening with my case?"
     
     # Legacy intents for backward compatibility
     TRANSFER_STATUS = "transfer_status"
@@ -61,6 +61,7 @@ class SupportContext(BaseModel):
     """Session context for support continuity."""
     
     last_transaction_ref: str | None = Field(default=None, description="Last resolved tx ID")
+    last_ticket_id: str | None = Field(default=None, description="Last created ticket code")
     last_issue_intent: SupportIntent | None = Field(default=None)
     last_support_step: str | None = Field(default=None, description="collect_ref, explained_status, etc")
     attempts: int = Field(default=0, description="Resolution attempts in this session")
