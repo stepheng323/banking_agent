@@ -6,7 +6,7 @@ from apps.core.src.agent.orchestrator.pipeline_stages.intent_routing.handlers.ba
 
 if TYPE_CHECKING:
     from apps.core.src.agent.graphs.airtime import AirtimeService
-    from apps.core.src.agent.graphs.data import DataPurchaseGraph
+    from apps.core.src.agent.graphs.data import DataService
     from apps.core.src.agent.graphs.transfer import TransferService
     from apps.core.src.agent.orchestrator.pipeline.routing_context import RoutingContext
 
@@ -20,11 +20,11 @@ class TransactionHandler(IntentHandler):
         self,
         transfer_service: "TransferService",
         airtime_service: "AirtimeService",
-        data_graph: "DataPurchaseGraph | None",
+        data_service: "DataService | None",
     ):
         self.transfer_service = transfer_service
         self.airtime_service = airtime_service
-        self.data_graph = data_graph
+        self.data_service = data_service
 
     def can_handle(self, intent: str) -> bool:
         return intent in self.INTENTS
@@ -61,8 +61,10 @@ class TransactionHandler(IntentHandler):
             )
 
         if intent == "data":
-            if self.data_graph:
-                return await self.data_graph.run(ctx.phone_number, ctx.text, ctx.user_ctx)
+            if self.data_service:
+                return await self.data_service.run_simple(
+                    ctx.phone_number, ctx.text, classification_dict
+                )
             return "Data purchase is not available at the moment."
 
         return "Unable to process transaction."

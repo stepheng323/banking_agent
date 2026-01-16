@@ -5,21 +5,15 @@ from typing import TYPE_CHECKING
 from apps.core.src.agent.orchestrator.pipeline_stages.intent_routing.handlers.base import IntentHandler
 
 if TYPE_CHECKING:
-    from apps.core.src.agent.graphs.query.graph import QueryFlowGraph
-    from apps.core.src.agent.graphs.support.graph import SupportFlowGraph
+    from apps.core.src.agent.graphs.query import QueryService
     from apps.core.src.agent.orchestrator.pipeline.routing_context import RoutingContext
 
 
 class QueryHandler(IntentHandler):
     """Handles query/balance check intent routing."""
 
-    def __init__(
-        self,
-        query_graph: "QueryFlowGraph",
-        support_graph: "SupportFlowGraph | None" = None,
-    ):
-        self.query_graph = query_graph
-        self.support_graph = support_graph
+    def __init__(self, query_service: "QueryService"):
+        self.query_service = query_service
 
     def can_handle(self, intent: str) -> bool:
         return intent == "query"
@@ -38,29 +32,17 @@ class QueryHandler(IntentHandler):
         return False  # We handle this internally
 
     async def handle(self, ctx: "RoutingContext") -> str:
-        query_result = await self.query_graph.run(
+        query_result = await self.query_service.run_simple(
             ctx.phone_number,
             ctx.text,
-            ctx.user_ctx,
+            classification_result={
+                "intent": ctx.result.intent,
+                "user_id": ctx.user_id,
+            },
+            user_context=ctx.user_ctx,
         )
-
-        # Check if query graph wants to route to support (for issue reports)
-        if isinstance(query_result, dict) and query_result.get("route_to_support"):
-            if self.support_graph:
-                user_id = query_result.get("user_id", ctx.user_id)
-                response = await self.support_graph.run(
-                    phone_number=ctx.phone_number,
-                    message=query_result.get("message", ctx.text),
-                    user_id=user_id,
-                    transaction=query_result.get("transaction"),
-                )
-                if response is None:
-                    return "I'm having trouble processing your issue. Please try again."
-                return response
-            return "Support is temporarily unavailable. Please try again later."
-
-        return query_result if isinstance(query_result, str) else "Query completed."
+        return query_result
 
     async def is_continuation(self, phone_number: str) -> bool:
         """Check if this is a continuation of an existing query session."""
-        return await self.query_graph.has_active_session(phone_number)
+        return await self.query_service.has_active_session(phone_number)

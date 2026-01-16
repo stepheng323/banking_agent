@@ -79,11 +79,9 @@ class AffirmationHandler(MessageHandler):
                         flow_state_val = context.conversation_state.get("flow_state")
                         if flow_state_val not in ("awaiting_amount_adjustment", "authorizing", "confirming_funding"):
                             # Force clear stale state so the new flow starts fresh
-                            await self.transfer_service.graph.clear_checkpoint(context.phone_number)
-                            if hasattr(self.airtime_service, "graph"):
-                                await self.airtime_service.graph.clear_checkpoint(
-                                    context.phone_number
-                                )
+                            await self.transfer_service.clear_checkpoint(context.phone_number)
+                            if self.airtime_service:
+                                await self.airtime_service.clear_checkpoint(context.phone_number)
 
                             # Clear conversation flags
                             if context.conversation_state:

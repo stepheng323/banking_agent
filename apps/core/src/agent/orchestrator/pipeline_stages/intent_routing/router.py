@@ -48,11 +48,11 @@ class OrchestratorIntentRouter:
         self.flow_context_service = deps.flow_context_service
 
         self._handlers: list[IntentHandler] = [
-            TransactionHandler(deps.transfer_service, deps.airtime_service, deps.data_graph),
-            QueryHandler(deps.query_graph, deps.support_graph),
-            HelpHandler(deps.support_graph, deps.faq_graph, deps.conversation_responder),
-            AccountsHandler(deps.account_management_service, deps.query_graph),
-            ConversationalHandler(deps.conversation_responder, deps.query_graph),
+            TransactionHandler(deps.transfer_service, deps.airtime_service, deps.data_service),
+            QueryHandler(deps.query_service),
+            HelpHandler(deps.support_service, deps.faq_service, deps.conversation_responder),
+            AccountsHandler(deps.account_management_service, deps.query_service),
+            ConversationalHandler(deps.conversation_responder, deps.query_service),
         ]
 
     def _get_handler(self, intent: str) -> IntentHandler | None:
