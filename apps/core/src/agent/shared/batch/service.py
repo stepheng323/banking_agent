@@ -3,7 +3,7 @@
 import asyncio
 from typing import TYPE_CHECKING, Any, Optional
 
-from apps.core.src.agent.shared.batch.executor import execute_batch
+from apps.core.src.agent.shared.batch.executor import execute_batch_dag, retry_failed_tasks
 from shared.cache.redis_client import RedisClient
 from shared.clients.whatsapp.client import WhatsAppClient
 from shared.queue.redis_queue import RedisQueue
@@ -56,12 +56,27 @@ class BatchService:
         """
         Resume batch execution after PIN verification.
 
+        Uses the DAG-based workflow executor for dependency-aware parallel execution.
+
         Args:
             phone_number: User's phone number
             pin_verified: Whether PIN was verified successfully
             extra_data: Optional extra data
         """
         await self.whatsapp_client.send_text(phone_number, "✓ PIN verified. Processing your transactions...")
+
+        if pin_verified:
+            from apps.core.src.agent.shared.batch.state_machine import BatchStateMachine
+            from apps.core.src.agent.shared.batch.utils import ExecutionState
+
+            sm = BatchStateMachine(self.redis_client, phone_number)
+            if not await sm.transition_to(ExecutionState.AUTHORIZED):
+                logger.warning(f"Invalid state transition for {phone_number} to AUTHORIZED")
+                await self.whatsapp_client.send_text(
+                    phone_number, "❌ Batch session invalid or expired. Please start over."
+                )
+                await self.task_queue_service.clear_task_queue(phone_number)
+                return "Session invalid."
 
         user_id = ""
         if self.user_cache:
@@ -73,7 +88,7 @@ class BatchService:
             logger.warning(f"Could not resolve user_id for {phone_number} in batch execution")
 
         asyncio.create_task(
-            execute_batch(
+            execute_batch_dag(
                 phone_number=phone_number,
                 pin_verified=pin_verified,
                 user_id=user_id,
@@ -81,9 +96,6 @@ class BatchService:
                 task_queue_service=self.task_queue_service,
                 redis_client=self.redis_client,
                 queue=self.queue,
-                transfer_service=self.transfer_service,
-                airtime_service=self.airtime_service,
-                data_service=self.data_service,
                 query_service=self.query_service,
                 user_cache=self.user_cache,
                 account_management_service=self.account_management_service,
@@ -91,3 +103,31 @@ class BatchService:
         )
 
         return "Processing transactions..."
+
+    async def retry_failed(self, phone_number: str) -> str:
+        """
+        Retry previously failed tasks.
+
+        Only retries TRANSIENT failures (network, timeout, etc).
+        """
+        user_id = ""
+        if self.user_cache:
+            profile = await self.user_cache.get_user_profile(phone_number)
+            if profile:
+                user_id = profile.get("id", "")
+
+        asyncio.create_task(
+            retry_failed_tasks(
+                phone_number=phone_number,
+                user_id=user_id,
+                whatsapp_client=self.whatsapp_client,
+                task_queue_service=self.task_queue_service,
+                redis_client=self.redis_client,
+                queue=self.queue,
+                query_service=self.query_service,
+                user_cache=self.user_cache,
+                account_management_service=self.account_management_service,
+            )
+        )
+
+        return "Retrying failed tasks..."

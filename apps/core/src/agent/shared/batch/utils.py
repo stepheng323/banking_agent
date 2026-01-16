@@ -11,11 +11,15 @@ class ExecutionState:
     """Execution state constants."""
 
     IDLE = "IDLE"
-    COLLECTING = "COLLECTING"
-    READY_FOR_AUTH = "READY_FOR_AUTH"
-    AUTHORIZING = "AUTHORIZING"
-    EXECUTING_BATCH = "EXECUTING_BATCH"
-    COMPLETE = "COMPLETE"
+    PLANNED = "PLANNED"  # Plan checked, waiting for slots
+    COLLECTING = "COLLECTING"  # Filling slots
+    READY_FOR_AUTH = "READY_FOR_AUTH"  # All valid, waiting for PIN
+    AUTHORIZED = "AUTHORIZED"  # PIN verified & Hash checked
+    EXECUTING_BATCH = "EXECUTING_BATCH"  # DAG running
+    COMPLETED = "COMPLETED"  # All tasks done (success or ignored failures)
+    STOPPED = "STOPPED"  # Stopped due to critical error
+    CANCELLED = "CANCELLED"  # User cancelled
+    EXPIRED = "EXPIRED"  # TTL exceeded
 
 
 def requires_authorization(task: PlannedTask) -> bool:

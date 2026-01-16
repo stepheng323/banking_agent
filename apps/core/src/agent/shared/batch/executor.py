@@ -1,23 +1,26 @@
-"""Batch executor service for parallel task execution.
+"""Batch executor service for DAG-based parallel task execution.
 
-Optimized to use authorization classes directly instead of re-traversing graphs.
+Uses WorkflowDAGExecutor for dependency-aware parallel execution of batch tasks.
 """
 
-import asyncio
+import uuid
 from typing import TYPE_CHECKING, Any
 
-from apps.core.src.agent.graphs.__shared__.validation.amount_validator import (
-    AIRTIME_LIMITS,
-    DATA_LIMITS,
-    TRANSFER_LIMITS,
-)
-from apps.core.src.agent.graphs.__shared__.validation.amount_validator import (
-    validate_amount as validate_amount_limits,
-)
-from apps.core.src.agent.graphs.airtime.graph.nodes.authorization import AirtimeAuthorization
-from apps.core.src.agent.graphs.data.graph.nodes.authorization import DataAuthorization
-from apps.core.src.agent.graphs.transfer.graph.nodes.authorization import TransferAuthorization
 from apps.core.src.agent.shared.batch.utils import ExecutionState, format_amount
+from apps.core.src.agent.shared.batch.workflow import (
+    WorkflowContext,
+    WorkflowDAGExecutor,
+    WorkflowHandlerRegistry,
+    WorkflowResult,
+    compute_approval_hash,
+)
+from apps.core.src.agent.shared.batch.workflow.handlers import (
+    AccountManagementHandler,
+    AirtimeHandler,
+    DataHandler,
+    QueryHandler,
+    TransferHandler,
+)
 from shared.cache.redis_client import Redis
 from shared.clients.whatsapp.client import WhatsAppClient
 from shared.queue.redis_queue import RedisQueue
@@ -30,390 +33,19 @@ logger = get_logger(__name__)
 
 if TYPE_CHECKING:
     from apps.core.src.agent.graphs.account_management.service import AccountManagementService
-    from apps.core.src.agent.graphs.airtime.service import AirtimeService
-    from apps.core.src.agent.graphs.data.service import DataService
     from apps.core.src.agent.graphs.query import QueryService
-    from apps.core.src.agent.graphs.transfer.service import TransferService
     from shared.cache.user_data import UserDataCache
 
 
-async def execute_batch(
-    phone_number: str,
-    pin_verified: bool,
-    user_id: str,
-    whatsapp_client: WhatsAppClient,
-    task_queue_service: TaskQueueService,
-    redis_client: Redis,
-    queue: RedisQueue,
-    transfer_service: "TransferService | None" = None,
-    airtime_service: "AirtimeService | None" = None,
-    data_service: "DataService | None" = None,
-    query_service: "QueryService | None" = None,
-    user_cache: "UserDataCache | None" = None,
-    account_management_service: "AccountManagementService | None" = None,
-) -> dict[str, Any]:
-    """
-    Execute all tasks in parallel using authorization classes directly.
-
-    PIN is verified once at the start, then all tasks execute without
-    re-checking PIN.
-    """
-    try:
-        await redis_client.set(f"queue:{phone_number}:execution_state", ExecutionState.EXECUTING_BATCH, ex=600)
-
-        planner_output = await task_queue_service.get_task_queue(phone_number)
-        if not planner_output:
-            return {"completed": 0, "failed": 0, "total": 0}
-
-        task_results = await task_queue_service.get_task_results(phone_number)
-
-        tasks_to_execute = []
-        for task in planner_output.tasks:
-            status = task_results.get(task.id, {}).get("status")
-            if status == TaskStatus.COLLECTION_COMPLETE.value:
-                tasks_to_execute.append(task)
-
-        total = len(tasks_to_execute)
-        if total == 0:
-            return {"completed": 0, "failed": 0, "total": 0}
-
-        if not pin_verified:
-            await whatsapp_client.send_text(phone_number, "❌ PIN verification required. Please try again.")
-            return {"completed": 0, "failed": 0, "total": total, "error": "PIN not verified"}
-
-        await whatsapp_client.send_text(
-            phone_number, f"⏳ Processing {total} task{'s' if total > 1 else ''} in parallel..."
-        )
-
-        async_tasks = []
-        for task in tasks_to_execute:
-            task_result = task_results.get(task.id, {})
-            async_task = _execute_task_direct(
-                phone_number=phone_number,
-                user_id=user_id,
-                task=task,
-                task_result=task_result,
-                redis_client=redis_client,
-                queue=queue,
-                whatsapp_client=whatsapp_client,
-                task_queue_service=task_queue_service,
-            )
-            async_tasks.append(async_task)
-
-        results = await asyncio.gather(*async_tasks, return_exceptions=True)
-
-        completed = []
-        failed = []
-
-        for i, result in enumerate(results):
-            if isinstance(result, Exception):
-                logger.error(f"[BATCH] Task {tasks_to_execute[i].id} raised exception: {result}")
-                failed.append(
-                    {
-                        "task_id": tasks_to_execute[i].id,
-                        "error": str(result),
-                    }
-                )
-            elif result.get("success"):
-                completed.append(result)
-            else:
-                failed.append(result)
-
-        summary = _generate_final_summary(tasks_to_execute, completed, failed)
-        await whatsapp_client.send_text(phone_number, summary)
-
-        # Execute non-auth tasks
-        await _execute_remaining_tasks(
-            phone_number=phone_number,
-            planner_output=planner_output,
-            task_results=task_results,
-            user_cache=user_cache,
-            query_service=query_service,
-            account_management_service=account_management_service,
-            whatsapp_client=whatsapp_client,
-            task_queue_service=task_queue_service,
-        )
-
-        await task_queue_service.clear_task_queue(phone_number)
-        await redis_client.delete(f"queue:{phone_number}:execution_state")
-
-        logger.info(f"[BATCH] Completed {len(completed)}/{total} tasks for {phone_number}")
-
-        return {
-            "completed": len(completed),
-            "failed": len(failed),
-            "total": total,
-            "results": results,
-        }
-
-    except Exception as e:
-        logger.error(f"[BATCH] Error executing batch: {e}", exc_info=True)
-
-        try:
-            await whatsapp_client.send_text(phone_number, "❌ An error occurred processing tasks. Please try again.")
-        except Exception:
-            pass
-
-        await redis_client.delete(f"queue:{phone_number}:execution_state")
-        return {"completed": 0, "failed": 0, "total": 0, "error": str(e)}
-
-
-async def _execute_task_direct(
-    phone_number: str,
-    user_id: str,
-    task: PlannedTask,
-    task_result: dict[str, Any],
-    redis_client: Redis,
-    queue: RedisQueue,
-    whatsapp_client: WhatsAppClient,
-    task_queue_service: TaskQueueService,
-) -> dict[str, Any]:
-    """Execute a single task using authorization class directly."""
-    task_desc = _format_task_description(task)
-
-    try:
-        cancelled = await redis_client.get(f"queue:{phone_number}:cancel_batch")
-        if cancelled:
-            logger.warning(f"[BATCH] Task {task.id} cancelled")
-            return {"success": False, "cancelled": True, "task_id": task.id}
-
-        await task_queue_service.update_task_status(phone_number, task.id, TaskStatus.IN_PROGRESS)
-
-        result_data = task_result.get("result", {})
-
-        if task.executor == "transfer":
-            result = await _execute_transfer_direct(phone_number, user_id, task, result_data, redis_client, queue)
-        elif task.executor == "airtime":
-            result = await _execute_airtime_direct(phone_number, user_id, task, result_data, redis_client, queue)
-        elif task.executor == "data":
-            result = await _execute_data_direct(phone_number, user_id, task, result_data, redis_client, queue)
-        else:
-            result = {"success": False, "error": f"Unknown executor: {task.executor}"}
-
-        result["task_id"] = task.id
-        result["task_desc"] = task_desc
-
-        if result.get("success"):
-            await task_queue_service.update_task_status(phone_number, task.id, TaskStatus.COMPLETED, result)
-            success_msg = _format_success_message(task, result)
-            await whatsapp_client.send_text(phone_number, success_msg)
-            logger.info(f"[BATCH] Task {task.id} completed: {task_desc}")
-        else:
-            await task_queue_service.update_task_status(phone_number, task.id, TaskStatus.FAILED, result)
-            error_msg = result.get("error", "Unknown error")
-            await whatsapp_client.send_text(phone_number, f"⚠️ {task_desc} failed: {error_msg}")
-            logger.error(f"[BATCH] Task {task.id} failed: {error_msg}")
-
-        return result
-
-    except Exception as e:
-        logger.error(f"[BATCH] Task {task.id} exception: {e}", exc_info=True)
-        await task_queue_service.update_task_status(phone_number, task.id, TaskStatus.FAILED, {"error": str(e)})
-        await whatsapp_client.send_text(phone_number, f"❌ {task_desc} error: {str(e)}")
-        return {"success": False, "error": str(e), "task_id": task.id}
-
-
-async def _execute_transfer_direct(
-    phone_number: str,
-    user_id: str,
-    task: PlannedTask,
-    result_data: dict[str, Any],
-    redis_client: Redis,
-    queue: RedisQueue,
-) -> dict[str, Any]:
-    """Execute transfer using TransferAuthorization directly."""
-    try:
-        amount = task.parameters.get("amount") if task.parameters else None
-        is_valid, error_msg, validated_amount = validate_amount_limits(amount, TRANSFER_LIMITS)
-        if not is_valid:
-            logger.warning(f"[BATCH] Invalid transfer amount: {error_msg}")
-            return {"success": False, "error": error_msg or "Invalid amount"}
-
-        account_resolved = result_data.get("account_resolved", {})
-        idem_key = result_data.get("idempotency_key") or f"batch-transfer-{task.id}"
-
-        state = {
-            "phone_number": phone_number,
-            "idempotency_key": idem_key,
-            "pin_verified": True,
-            "user_profile": {"id": user_id},
-            "amount": validated_amount,
-            "recipient_account": account_resolved.get("account_number"),
-            "recipient_bank_code": account_resolved.get("bank_code"),
-            "recipient_bank_name": account_resolved.get("bank_name"),
-            "recipient_name": account_resolved.get("account_name"),
-            "selected_source_account": result_data.get("source_account", {}),
-            "narration": task.parameters.get("narration") if task.parameters else None,
-        }
-
-        auth = TransferAuthorization(redis_client, queue)
-        result_state = await auth.authorize(state)
-
-        if result_state.get("transfer_status") == "authorized":
-            return {
-                "success": True,
-                "amount": state["amount"],
-                "recipient": state["recipient_name"],
-                "transaction_id": result_state.get("transaction_id"),
-            }
-        else:
-            return {
-                "success": False,
-                "error": result_state.get("response", "Transfer failed"),
-            }
-
-    except Exception as e:
-        logger.error(f"[BATCH] Transfer error: {e}", exc_info=True)
-        return {"success": False, "error": str(e)}
-
-
-async def _execute_airtime_direct(
-    phone_number: str,
-    user_id: str,
-    task: PlannedTask,
-    result_data: dict[str, Any],
-    redis_client: Redis,
-    queue: RedisQueue,
-) -> dict[str, Any]:
-    """Execute airtime using AirtimeAuthorization directly."""
-    try:
-        amount = task.parameters.get("amount") if task.parameters else None
-        is_valid, error_msg, validated_amount = validate_amount_limits(amount, AIRTIME_LIMITS)
-        if not is_valid:
-            logger.warning(f"[BATCH] Invalid airtime amount: {error_msg}")
-            return {"success": False, "error": error_msg or "Invalid amount"}
-
-        idem_key = result_data.get("idempotency_key") or f"batch-airtime-{task.id}"
-
-        state = {
-            "phone_number": phone_number,
-            "idempotency_key": idem_key,
-            "pin_verified": True,
-            "user_profile": {"id": user_id},
-            "amount": validated_amount,
-            "recipient_phone": task.parameters.get("recipient") if task.parameters else phone_number,
-            "network": result_data.get("network", ""),
-            "selected_source_account": result_data.get("source_account", {}),
-        }
-
-        auth = AirtimeAuthorization(redis_client, queue)
-        result_state = await auth.authorize(state)
-
-        if result_state.get("airtime_status") == "authorized":
-            return {
-                "success": True,
-                "amount": state["amount"],
-                "recipient": state["recipient_phone"],
-            }
-        else:
-            return {
-                "success": False,
-                "error": result_state.get("response", "Airtime failed"),
-            }
-
-    except Exception as e:
-        logger.error(f"[BATCH] Airtime error: {e}", exc_info=True)
-        return {"success": False, "error": str(e)}
-
-
-async def _execute_data_direct(
-    phone_number: str,
-    user_id: str,
-    task: PlannedTask,
-    result_data: dict[str, Any],
-    redis_client: Redis,
-    queue: RedisQueue,
-) -> dict[str, Any]:
-    """Execute data purchase using DataAuthorization directly."""
-    try:
-        idem_key = result_data.get("idempotency_key") or f"batch-data-{task.id}"
-        selected_plan = result_data.get("selected_plan")
-
-        if not selected_plan:
-            return {"success": False, "error": "No data plan selected"}
-
-        plan_amount = selected_plan.get("amount") if isinstance(selected_plan, dict) else None
-        if plan_amount is not None:
-            is_valid, error_msg, _ = validate_amount_limits(plan_amount, DATA_LIMITS)
-            if not is_valid:
-                logger.warning(f"[BATCH] Invalid data plan amount: {error_msg}")
-                return {"success": False, "error": error_msg or "Invalid plan amount"}
-
-        state = {
-            "phone_number": phone_number,
-            "idempotency_key": idem_key,
-            "pin_verified": True,
-            "user_profile": {"id": user_id},
-            "selected_plan": selected_plan,
-            "target_phone": result_data.get("target_phone", phone_number),
-            "network": result_data.get("network", ""),
-            "source": result_data.get("source", "self"),
-        }
-
-        auth = DataAuthorization(redis_client, queue)
-        result_state = await auth.authorize(state)
-
-        if result_state.get("data_status") == "authorized":
-            return {
-                "success": True,
-                "amount": selected_plan.get("amount") if isinstance(selected_plan, dict) else None,
-                "plan": selected_plan.get("name") if isinstance(selected_plan, dict) else str(selected_plan),
-            }
-        else:
-            return {
-                "success": False,
-                "error": result_state.get("response", "Data purchase failed"),
-            }
-
-    except Exception as e:
-        logger.error(f"[BATCH] Data error: {e}", exc_info=True)
-        return {"success": False, "error": str(e)}
-
-
-async def _execute_remaining_tasks(
-    phone_number: str,
-    planner_output,
-    task_results: dict[str, Any],
-    user_cache,
-    query_service,
-    account_management_service,
-    whatsapp_client: WhatsAppClient,
-    task_queue_service: TaskQueueService,
-) -> None:
-    """Execute non-auth tasks (query, utility, manage_accounts)."""
-    remaining_tasks = [
-        task
-        for task in planner_output.tasks
-        if task.executor in ("query", "utility", "manage_accounts")
-        and task_results.get(task.id, {}).get("status") != TaskStatus.COMPLETED.value
-    ]
-
-    if not remaining_tasks or not user_cache:
-        return
-
-    user_data = await user_cache.get_all(phone_number)
-    accounts = user_data.get("accounts", []) if user_data else []
-    user_ctx = {"accounts": accounts}
-
-    for task in remaining_tasks:
-        try:
-            result = None
-            if task.executor == "query" and query_service:
-                query_message = task.instruction or "show balance"
-                result = await query_service.run_simple(
-                    phone_number, query_message, user_context=user_ctx
-                )
-            elif task.executor == "manage_accounts" and account_management_service:
-                task_message = task.instruction or "show accounts"
-                result = await account_management_service.run_simple(
-                    phone_number, task_message, user_context=user_ctx
-                )
-
-            if result:
-                await whatsapp_client.send_text(phone_number, result)
-            await task_queue_service.update_task_status(phone_number, task.id, TaskStatus.COMPLETED, {"result": result})
-        except Exception as e:
-            logger.error(f"[BATCH] Error executing {task.executor} task {task.id}: {e}")
+def _build_handler_registry() -> WorkflowHandlerRegistry:
+    """Build and return a configured handler registry."""
+    registry = WorkflowHandlerRegistry()
+    registry.register("transfer", TransferHandler())
+    registry.register("airtime", AirtimeHandler())
+    registry.register("data", DataHandler())
+    registry.register("query", QueryHandler())
+    registry.register("manage_accounts", AccountManagementHandler())
+    return registry
 
 
 def _format_task_description(task: PlannedTask) -> str:
@@ -443,37 +75,6 @@ def _format_task_description(task: PlannedTask) -> str:
         return "Data purchase"
 
     return task.action or task.executor
-
-
-def _format_success_message(task: PlannedTask, result: dict[str, Any]) -> str:
-    """Format a success message for a completed task."""
-    if task.executor == "transfer":
-        amount = result.get("amount") or (task.parameters.get("amount") if task.parameters else None)
-        recipient = result.get("recipient") or (task.parameters.get("recipient") if task.parameters else None)
-        txn_id = result.get("transaction_id", "")
-        txn_suffix = f" (ID: {txn_id[:8]})" if txn_id else ""
-
-        if amount and recipient:
-            return f"✓ Transfer ₦{float(amount):,.0f} to {recipient}{txn_suffix}"
-        elif amount:
-            return f"✓ Transfer ₦{float(amount):,.0f}{txn_suffix}"
-        return f"✓ Transfer completed{txn_suffix}"
-
-    elif task.executor == "airtime":
-        amount = result.get("amount") or (task.parameters.get("amount") if task.parameters else None)
-        recipient = result.get("recipient") or (task.parameters.get("recipient") if task.parameters else None)
-
-        if amount and recipient:
-            return f"✓ Airtime {format_amount(amount)} to {recipient}"
-        return "✓ Airtime completed"
-
-    elif task.executor == "data":
-        plan = result.get("plan", "")
-        if plan:
-            return f"✓ Data {plan} queued"
-        return "✓ Data purchase queued"
-
-    return f"✓ {_format_task_description(task)} completed"
 
 
 def _generate_final_summary(
@@ -511,15 +112,317 @@ def _generate_final_summary(
         total_amount = 0
         for i, task in enumerate(tasks, 1):
             task_desc = _format_task_description(task)
-            if task.id in completed_map:
+            if task.task_id in completed_map:
                 summary += f"{i}. {task_desc} ✓\n"
                 if task.parameters and task.parameters.get("amount"):
                     total_amount += task.parameters["amount"]
             else:
-                error = failed_map.get(task.id, {}).get("error", "Unknown error")
+                error = failed_map.get(task.task_id, {}).get("error", "Unknown error")
                 summary += f"{i}. {task_desc} ✗ ({error})\n"
 
         if total_amount > 0:
             summary += f"\nTotal sent: {format_amount(total_amount)}"
 
     return summary
+
+
+async def execute_batch_dag(
+    phone_number: str,
+    pin_verified: bool,
+    user_id: str,
+    whatsapp_client: WhatsAppClient,
+    task_queue_service: TaskQueueService,
+    redis_client: Redis,
+    queue: RedisQueue,
+    query_service: "QueryService | None" = None,
+    user_cache: "UserDataCache | None" = None,
+    account_management_service: "AccountManagementService | None" = None,
+) -> dict[str, Any]:
+    """
+    Execute all tasks using the DAG-based workflow executor.
+
+    This version respects task dependencies (depends_on), executes tasks
+    in parallel waves, and handles errors with retry logic.
+
+    Args:
+        phone_number: User's phone number
+        pin_verified: Whether PIN was verified
+        user_id: User's ID
+        whatsapp_client: WhatsApp client for sending messages
+        task_queue_service: Service for task queue management
+        redis_client: Redis client
+        queue: Redis queue for background jobs
+        query_service: Optional query service for balance checks
+        user_cache: Optional user data cache
+        account_management_service: Optional account management service
+
+    Returns:
+        Dict with completed, failed, blocked, skipped counts and workflow result
+    """
+    try:
+        workflow_id = str(uuid.uuid4())
+
+        from apps.core.src.agent.shared.batch.state_machine import BatchStateMachine
+
+        sm = BatchStateMachine(redis_client, phone_number)
+        if not await sm.transition_to(ExecutionState.EXECUTING_BATCH):
+            logger.warning(f"Invalid state transition to EXECUTING for {phone_number}")
+            return {"completed": 0, "failed": 0, "total": 0, "error": "Invalid state"}
+
+        planner_output = await task_queue_service.get_task_queue(phone_number)
+        if not planner_output:
+            return {"completed": 0, "failed": 0, "total": 0}
+
+        # Check TTL (15 minutes)
+        import time
+
+        batch_data_ttl = 900  # 15 minutes
+        if time.time() - planner_output.created_at > batch_data_ttl:
+            await whatsapp_client.send_text(
+                phone_number, "❌ Batch expired (data too old). Please describe your request again."
+            )
+            await task_queue_service.clear_task_queue(phone_number)
+            return {"completed": 0, "failed": 0, "total": 0, "error": "Batch data expired"}
+
+        task_results = await task_queue_service.get_task_results(phone_number)
+
+        # Filter to tasks ready for execution
+        tasks_to_execute = [
+            task
+            for task in planner_output.tasks
+            if task_results.get(task.task_id, {}).get("status") == TaskStatus.COLLECTION_COMPLETE.value
+        ]
+
+        total = len(tasks_to_execute)
+        if total == 0:
+            return {"completed": 0, "failed": 0, "total": 0}
+
+        if not pin_verified:
+            await whatsapp_client.send_text(phone_number, "❌ PIN verification required. Please try again.")
+            return {"completed": 0, "failed": 0, "total": total, "error": "PIN not verified"}
+
+        # Verify Approval Hash
+        stored_hash = await redis_client.get(f"batch:approval:{phone_number}")
+        if stored_hash:
+            current_hash = compute_approval_hash(tasks_to_execute)
+            if stored_hash != current_hash:
+                logger.error(
+                    f"[BATCH-DAG] Approval hash mismatch for {phone_number}. Stored: {stored_hash}, Computed: {current_hash}"
+                )
+                await whatsapp_client.send_text(
+                    phone_number, "❌ Security Alert: Batch contents have changed since approval. Please try again."
+                )
+                await redis_client.delete(f"queue:{phone_number}:execution_state")
+                return {"completed": 0, "failed": 0, "total": 0, "error": "Approval hash mismatch"}
+        else:
+            logger.warning(f"[BATCH-DAG] No approval hash found for {phone_number}. Allowing execution (legacy).")
+
+        await whatsapp_client.send_text(
+            phone_number, f"⏳ Processing {total} task{'s' if total > 1 else ''} in parallel..."
+        )
+
+        # Set idempotency keys on tasks
+        for task in tasks_to_execute:
+            if not task.idempotency_key:
+                task.idempotency_key = f"{user_id}:{workflow_id}:{task.task_id}"
+
+        # Build workflow context
+        context = WorkflowContext(
+            phone_number=phone_number,
+            user_id=user_id,
+            workflow_id=workflow_id,
+            pin_verified=True,
+            redis_client=redis_client,
+            queue=queue,
+            whatsapp_client=whatsapp_client,
+            task_queue_service=task_queue_service,
+        )
+
+        # Register services
+        if query_service:
+            context.register_service("query_service", query_service)
+        if user_cache:
+            context.register_service("user_cache", user_cache)
+        if account_management_service:
+            context.register_service("account_management_service", account_management_service)
+
+        # Execute with DAG executor
+        registry = _build_handler_registry()
+        executor = WorkflowDAGExecutor(registry, max_retries=2, retry_delay_seconds=1.0)
+        result: WorkflowResult = await executor.execute(tasks_to_execute, context)
+
+        # Convert to legacy format for summary
+        completed = [{"task_id": r.task_id, "success": True, **r.data} for r in result.completed]
+        failed = [{"task_id": r.task_id, "error": r.error_message or "Unknown error"} for r in result.failed]
+
+        # Add blocked/skipped to failed for summary
+        for r in result.blocked:
+            failed.append({"task_id": r.task_id, "error": "Blocked by failed dependency"})
+        for r in result.skipped:
+            failed.append({"task_id": r.task_id, "error": f"Skipped: {r.error_message}"})
+
+        summary = _generate_final_summary(tasks_to_execute, completed, failed)
+
+        # Store retryable failures in Redis (24h TTL) for user-triggered retry
+        if result.failed:
+            await _store_retryable_tasks(redis_client, phone_number, workflow_id, tasks_to_execute, result)
+            summary += "\n\n💡 Some failures may be retryable. Say 'retry failed' to try again."
+
+        await whatsapp_client.send_text(phone_number, summary)
+
+        await task_queue_service.clear_task_queue(phone_number)
+        if result.stopped_early:
+            await sm.transition_to(ExecutionState.STOPPED)
+        else:
+            await sm.transition_to(ExecutionState.COMPLETED)
+        await sm.clear()
+
+        logger.info(
+            f"[BATCH-DAG] Completed {len(result.completed)}/{total} tasks for {phone_number}. "
+            f"Failed: {len(result.failed)}, Blocked: {len(result.blocked)}, Skipped: {len(result.skipped)}"
+        )
+
+        return {
+            "completed": len(result.completed),
+            "failed": len(result.failed),
+            "blocked": len(result.blocked),
+            "skipped": len(result.skipped),
+            "total": total,
+            "workflow_result": result,
+        }
+
+    except Exception as e:
+        logger.error(f"[BATCH-DAG] Error executing batch: {e}", exc_info=True)
+
+        try:
+            await whatsapp_client.send_text(phone_number, "❌ An error occurred processing tasks. Please try again.")
+        except Exception:
+            pass
+
+        if "sm" in locals():
+            await sm.clear()
+        else:
+            await redis_client.delete(f"queue:{phone_number}:execution_state")
+        return {"completed": 0, "failed": 0, "total": 0, "error": str(e)}
+
+
+async def _store_retryable_tasks(
+    redis_client: Redis,
+    phone_number: str,
+    workflow_id: str,
+    tasks: list[PlannedTask],
+    result: WorkflowResult,
+) -> None:
+    """Store retryable failed tasks in Redis for user-triggered retry."""
+    import json
+
+    # Get task IDs of retryable failures
+    from apps.core.src.agent.shared.batch.workflow.models import ErrorKind
+
+    retryable_ids = {r.task_id for r in result.failed if r.error_kind == ErrorKind.TRANSIENT}
+    if not retryable_ids:
+        return
+
+    # Store tasks that can be retried
+    retryable_tasks = [t.model_dump() for t in tasks if t.task_id in retryable_ids]
+
+    key = f"retry:{phone_number}:failed_tasks"
+    await redis_client.set(
+        key,
+        json.dumps({"workflow_id": workflow_id, "tasks": retryable_tasks}),
+        ex=86400,  # 24 hour TTL
+    )
+    logger.info(f"[BATCH-DAG] Stored {len(retryable_tasks)} retryable tasks for {phone_number}")
+
+
+async def retry_failed_tasks(
+    phone_number: str,
+    user_id: str,
+    whatsapp_client: WhatsAppClient,
+    task_queue_service: TaskQueueService,
+    redis_client: Redis,
+    queue: RedisQueue,
+    query_service: "QueryService | None" = None,
+    user_cache: "UserDataCache | None" = None,
+    account_management_service: "AccountManagementService | None" = None,
+) -> dict[str, Any]:
+    """
+    Retry previously failed tasks.
+
+    Only retries TRANSIENT failures (network, timeout, etc).
+    """
+    import json
+
+    key = f"retry:{phone_number}:failed_tasks"
+    data = await redis_client.get(key)
+
+    if not data:
+        await whatsapp_client.send_text(phone_number, "No failed tasks to retry.")
+        return {"completed": 0, "failed": 0, "total": 0, "error": "No retryable tasks"}
+
+    try:
+        parsed = json.loads(data)
+        workflow_id = parsed.get("workflow_id", str(uuid.uuid4()))
+        tasks_data = parsed.get("tasks", [])
+
+        if not tasks_data:
+            await whatsapp_client.send_text(phone_number, "No failed tasks to retry.")
+            return {"completed": 0, "failed": 0, "total": 0}
+
+        # Reconstruct PlannedTask objects
+        tasks = [PlannedTask(**t) for t in tasks_data]
+        total = len(tasks)
+
+        await whatsapp_client.send_text(phone_number, f"⏳ Retrying {total} failed task{'s' if total > 1 else ''}...")
+
+        # Build context
+        context = WorkflowContext(
+            phone_number=phone_number,
+            user_id=user_id,
+            workflow_id=workflow_id,
+            pin_verified=True,
+            redis_client=redis_client,
+            queue=queue,
+            whatsapp_client=whatsapp_client,
+            task_queue_service=task_queue_service,
+        )
+
+        if query_service:
+            context.register_service("query_service", query_service)
+        if user_cache:
+            context.register_service("user_cache", user_cache)
+        if account_management_service:
+            context.register_service("account_management_service", account_management_service)
+
+        # Execute retry
+        registry = _build_handler_registry()
+        executor = WorkflowDAGExecutor(registry, max_retries=2, retry_delay_seconds=1.0)
+        result = await executor.execute(tasks, context, validate_limits=False)
+
+        # Generate summary
+        completed = [{"task_id": r.task_id, "success": True, **r.data} for r in result.completed]
+        failed = [{"task_id": r.task_id, "error": r.error_message or "Unknown error"} for r in result.failed]
+
+        summary = _generate_final_summary(tasks, completed, failed)
+        await whatsapp_client.send_text(phone_number, summary)
+
+        # Clear retry data if all succeeded
+        if not result.has_failures:
+            await redis_client.delete(key)
+        elif result.has_retryable_failures:
+            # Update stored tasks with remaining failures
+            await _store_retryable_tasks(redis_client, phone_number, workflow_id, tasks, result)
+
+        logger.info(f"[BATCH-RETRY] Retried {total} tasks for {phone_number}: {len(result.completed)} succeeded")
+
+        return {
+            "completed": len(result.completed),
+            "failed": len(result.failed),
+            "total": total,
+            "workflow_result": result,
+        }
+
+    except Exception as e:
+        logger.error(f"[BATCH-RETRY] Error retrying tasks: {e}", exc_info=True)
+        await whatsapp_client.send_text(phone_number, "❌ Error retrying tasks. Please try again.")
+        return {"completed": 0, "failed": 0, "total": 0, "error": str(e)}

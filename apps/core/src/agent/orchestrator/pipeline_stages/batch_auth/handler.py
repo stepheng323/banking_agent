@@ -47,7 +47,7 @@ class BatchAuthorizationHandler(MessageHandler):
 
         task_results = await self.task_queue_service.get_task_results(context.phone_number)
         all_tasks_ready = all(
-            task_results.get(task.id, {}).get("status") == TaskStatus.COLLECTION_COMPLETE.value
+            task_results.get(task.task_id, {}).get("status") == TaskStatus.COLLECTION_COMPLETE.value
             for task in context.planner_output.tasks
         )
 
@@ -64,6 +64,19 @@ class BatchAuthorizationHandler(MessageHandler):
 
         if not context.planner_output:
             return context
+
+        # Calculate and store approval hash
+        from apps.core.src.agent.shared.batch.workflow.models import compute_approval_hash
+
+        approval_hash = compute_approval_hash(context.planner_output.tasks)
+        await redis.setex(f"batch:approval:{context.phone_number}", 300, approval_hash)
+
+        # Transition to READY_FOR_AUTH state
+        from apps.core.src.agent.shared.batch.state_machine import BatchStateMachine
+        from apps.core.src.agent.shared.batch.utils import ExecutionState
+
+        state_machine = BatchStateMachine(redis, context.phone_number)
+        await state_machine.transition_to(ExecutionState.READY_FOR_AUTH)
 
         total_tasks = len(context.planner_output.tasks)
 
