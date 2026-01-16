@@ -32,6 +32,8 @@ class TaskStatus(str, Enum):
     COLLECTION_COMPLETE = "collection_complete"  # All info collected, ready for authorization
     COMPLETED = "completed"
     FAILED = "failed"
+    SKIPPED = "skipped"  # condition evaluated to false
+    BLOCKED = "blocked"  # dependency failed
 
 
 class Task(BaseModel):
