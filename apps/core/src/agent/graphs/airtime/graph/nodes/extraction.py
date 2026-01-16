@@ -11,7 +11,6 @@ from apps.core.src.agent.graphs.airtime.models import (
 from apps.core.src.agent.graphs.airtime.state import AirtimeState
 from shared.utils.logging import get_logger
 from shared.utils.phone_utils import detect_network_from_phone, normalize_phone
-# Capabilities imported inline in function
 
 logger = get_logger(__name__)
 

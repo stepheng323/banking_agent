@@ -1,9 +1,6 @@
 """Airtime purchase service facade using LangGraph."""
 
-from typing import TYPE_CHECKING, Optional
-
-if TYPE_CHECKING:
-    from apps.core.src.agent.orchestrator.services.task_coordinator import TaskCoordinator
+from typing import Any, Optional
 
 from langchain_openai import ChatOpenAI
 
@@ -17,12 +14,12 @@ from shared.repositories.actionable_message_repository import ActionableMessageR
 from shared.repositories.beneficiary_repository import BeneficiaryRepository
 from shared.utils.logging import get_logger
 
-from ..interfaces import ITransactionService
+from ..interfaces import FlowCompletionCallback, IAgentService
 
 logger = get_logger(__name__)
 
 
-class AirtimeService(ITransactionService):
+class AirtimeService(IAgentService):
     """Airtime purchase service facade using LangGraph."""
 
     def __init__(
@@ -34,7 +31,7 @@ class AirtimeService(ITransactionService):
         whatsapp_client: WhatsAppClient,
         queue: RedisQueue,
         actionable_message_repo: ActionableMessageRepository | None = None,
-        completion_callback: Optional["TaskCoordinator"] = None,
+        completion_callback: Optional[FlowCompletionCallback] = None,
     ) -> None:
         self.extractor = AirtimeEntityExtractor(llm)
         self.graph = AirtimeFlowGraph(
@@ -69,3 +66,13 @@ class AirtimeService(ITransactionService):
             logger.error(
                 "airtime_checkpoint_clear_error", phone=phone_number, error=str(e), exc_info=True
             )
+
+    async def resume_after_pin_verification(
+        self, phone_number: str, pin_verified: bool, extra_param: Any = None
+    ) -> str:
+        """Resume airtime purchase flow after PIN verification."""
+        return await self.graph.resume_after_pin_verification(phone_number, pin_verified, extra_param)
+
+    def set_completion_callback(self, callback: FlowCompletionCallback | None) -> None:
+        """Set the completion callback for the airtime flow."""
+        self.graph.completion_callback = callback
