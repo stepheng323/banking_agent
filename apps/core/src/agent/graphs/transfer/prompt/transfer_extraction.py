@@ -1,114 +1,60 @@
 """Transfer extraction prompt. Pure extraction, no business logic."""
 
-TRANSFER_EXTRACTION_PROMPT = (
-    "Extract transfer entities from user messages. Output ONLY pure JSON.\\n"
-    "DO NOT generate reply or decide missing fields - resolver handles that.\\n"
-    "Always output all fields. Use null or empty arrays if not present.\\n\\n"
-    
-    "SCHEMA VERSION: transfer_extract_v2\\n\\n"
-    
-    "ENTITIES:\\n"
-    "- amount: ALWAYS convert k=×1000 (25k→25000, 5k→5000), h=×100 (5h→500). Extract amount even with account/bank.\\n"
-    "- recipient_account: 10-digit numbers\\n"  
-    "- bank_name: Destination bank (STANDARDIZE: 'gtb'→'GTBank', 'zenith'→'Zenith Bank', 'access'→'Access Bank')\\n"
-    "- source_bank_name: FROM bank ('from my access', before → or ->)\\n"
-    "- recipient_name: Name/alias ('to mum', 'john's gtb')\\n"
-    "- narration: Optional memo\\n"
-    "- transfer_all: true ONLY for 'move all', 'everything', 'entire balance'\\n"
-    "- transfer_percentage: 50 for 'half', 10 for 'tithe', 25 for 'quarter'\\n"
-    "- source_accounts: List for dual-account pooling\\n\\n"
-    
-    "AMBIGUITIES (structured with candidates):\\n"
-    "When value is unclear, set field to null and add to ambiguities:\\n"
-    '- {"code": "AMOUNT_UNCLEAR", "candidates": [5, 5000]}\\n'
-    '- {"code": "MULTIPLE_BENEFICIARIES", "candidates": ["John A", "John B"]}\\n'
-    '- {"code": "UNCLEAR_BANK", "candidates": ["First Bank", "First City"]}\\n\\n'
-    
-    "REFERENCES (for recent transfers):\\n"
-    "If user says 'same as before', 'like last time', 'send again':\\n"
-    '- references: {"use_recent_transfer": true, "recent_transfer_index": 0}\\n'
-    "DO NOT pre-fill entities from recent transfers - resolver handles that.\\n\\n"
-    
-    "REQUESTED FEATURES (unsupported):\\n"
-    "Detect if user wants features beyond simple transfer:\\n"
-    "- SCHEDULED: tomorrow, next week, later, Friday, schedule\\n"
-    "- RECURRING: every week, monthly, automatic, dey go always\\n"
-    "- INTERNATIONAL: abroad, USA, UK, Ghana, overseas\\n\\n"
-    
-    "CORRECTIONS (use lowercase field names):\\n"
-    "When user corrects a value mid-flow:\\n"
-    '- correction: {"field": "amount", "new_value": 50000}\\n\\n'
-    
-    "CONFIDENCE:\\n"
-    "- intent_confidence: 0.0-1.0 (how confident this is a transfer intent)\\n\\n"
-    
-    "EXAMPLES:\\n\\n"
-    
-    'User: "send 5k to mum"\\n'
-    'Output: {"schema_version":1,"intent":"transfer","intent_confidence":0.95,'
-    '"entities":{"amount":5000,"recipient_name":"mum","recipient_account":null,"bank_name":null,'
-    '"source_bank_name":null,"narration":null,"transfer_all":null,"transfer_percentage":null,"source_accounts":[]},'
-    '"correction":null,"ambiguities":[],"references":{"use_recent_transfer":false,"recent_transfer_index":null},'
-    '"requested_features":[]}\\n\\n'
-    
-    'User: "GTB → Access 5k"\\n'
-    'Output: {"schema_version":1,"intent":"transfer","intent_confidence":0.98,'
-    '"entities":{"amount":5000,"source_bank_name":"GTBank","bank_name":"Access Bank","recipient_name":null,'
-    '"recipient_account":null,"narration":null,"transfer_all":null,"transfer_percentage":null,"source_accounts":[]},'
-    '"correction":null,"ambiguities":[],"references":{"use_recent_transfer":false,"recent_transfer_index":null},'
-    '"requested_features":[]}\\n\\n'
-    
-    'User: "Send 25k to 0760505261 Access Bank"\\n'
-    'Output: {"schema_version":1,"intent":"transfer","intent_confidence":0.98,'
-    '"entities":{"amount":25000,"recipient_name":null,"recipient_account":"0760505261","bank_name":"Access Bank",'
-    '"source_bank_name":null,"narration":null,"transfer_all":null,"transfer_percentage":null,"source_accounts":[]},'
-    '"correction":null,"ambiguities":[],"references":{"use_recent_transfer":false,"recent_transfer_index":null},'
-    '"requested_features":[]}\\n\\n'
-    
-    'User: "send 5 to john"\\n'
-    'Output: {"schema_version":1,"intent":"transfer","intent_confidence":0.9,'
-    '"entities":{"amount":null,"recipient_name":"john","recipient_account":null,"bank_name":null,'
-    '"source_bank_name":null,"narration":null,"transfer_all":null,"transfer_percentage":null,"source_accounts":[]},'
-    '"correction":null,"ambiguities":[{"code":"AMOUNT_UNCLEAR","candidates":[5,5000]}],'
-    '"references":{"use_recent_transfer":false,"recent_transfer_index":null},"requested_features":[]}\\n\\n'
-    
-    'User: "send 50k to mum tomorrow"\\n'
-    'Output: {"schema_version":1,"intent":"transfer","intent_confidence":0.95,'
-    '"entities":{"amount":50000,"recipient_name":"mum","recipient_account":null,"bank_name":null,'
-    '"source_bank_name":null,"narration":null,"transfer_all":null,"transfer_percentage":null,"source_accounts":[]},'
-    '"correction":null,"ambiguities":[],"references":{"use_recent_transfer":false,"recent_transfer_index":null},'
-    '"requested_features":["SCHEDULED"]}\\n\\n'
-    
-    'User: "send 100k to mum using access and gtb"\\n'
-    'Output: {"schema_version":1,"intent":"transfer","intent_confidence":0.95,'
-    '"entities":{"amount":100000,"recipient_name":"mum","recipient_account":null,"bank_name":null,'
-    '"source_bank_name":null,"narration":null,"transfer_all":null,"transfer_percentage":null,'
-    '"source_accounts":["Access Bank","GTBank"]},'
-    '"correction":null,"ambiguities":[],"references":{"use_recent_transfer":false,"recent_transfer_index":null},'
-    '"requested_features":[]}\\n\\n'
-    
-    'User: "same as last time"\\n'
-    'Output: {"schema_version":1,"intent":"transfer","intent_confidence":0.7,'
-    '"entities":{"amount":null,"recipient_name":null,"recipient_account":null,"bank_name":null,'
-    '"source_bank_name":null,"narration":null,"transfer_all":null,"transfer_percentage":null,"source_accounts":[]},'
-    '"correction":null,"ambiguities":[],"references":{"use_recent_transfer":true,"recent_transfer_index":0},'
-    '"requested_features":[]}\\n\\n'
-    
-    'User: "I meant 50k"\\n'
-    'Output: {"schema_version":1,"intent":"transfer","intent_confidence":0.95,'
-    '"entities":{"amount":50000,"recipient_name":null,"recipient_account":null,"bank_name":null,'
-    '"source_bank_name":null,"narration":null,"transfer_all":null,"transfer_percentage":null,"source_accounts":[]},'
-    '"correction":{"field":"amount","new_value":50000},"ambiguities":[],'
-    '"references":{"use_recent_transfer":false,"recent_transfer_index":null},"requested_features":[]}\\n\\n'
-    
-    'User: "abeg make am dey go every month"\\n'
-    'Output: {"schema_version":1,"intent":"transfer","intent_confidence":0.85,'
-    '"entities":{"amount":null,"recipient_name":null,"recipient_account":null,"bank_name":null,'
-    '"source_bank_name":null,"narration":null,"transfer_all":null,"transfer_percentage":null,"source_accounts":[]},'
-    '"correction":null,"ambiguities":[],"references":{"use_recent_transfer":false,"recent_transfer_index":null},'
-    '"requested_features":["RECURRING"]}\\n'
-)
+TRANSFER_EXTRACTION_PROMPT = """
+## ROLE
+Extract transfer entities from user messages. Output ONLY JSON matching the schema.
+DO NOT generate reply or decide missing fields — resolver handles that.
 
+## ENTITIES
+| Field | Description | Conversion |
+|-------|-------------|------------|
+| amount | Transfer amount | k=×1000, h=×100 (25k→25000, 5h→500) |
+| recipient_account | 10-digit account number | — |
+| bank_name | Destination bank | Standardize: gtb→GTBank, zenith→Zenith Bank |
+| source_bank_name | Source bank | "from my access", before → or -> |
+| recipient_name | Name/alias | "to mum", "john's gtb" |
+| narration | Optional memo | — |
+| transfer_all | Move entire balance | true for "move all", "everything" |
+| transfer_percentage | Percentage of balance | 50 for "half", 10 for "tithe" |
+| source_accounts | Dual-account pooling | List of bank names |
+
+## AMBIGUITIES
+When value is unclear, set field to null and add to ambiguities array:
+- AMOUNT_UNCLEAR: candidates=[5, 5000]
+- MULTIPLE_BENEFICIARIES: candidates=["John A", "John B"]
+- UNCLEAR_BANK: candidates=["First Bank", "First City"]
+
+## REFERENCES
+For "same as before", "like last time", "send again":
+- Set references.use_recent_transfer=true
+- DO NOT pre-fill entities — resolver handles that
+
+## REQUESTED FEATURES (unsupported)
+Detect but don't process:
+- SCHEDULED: tomorrow, next week, later, Friday
+- RECURRING: every week, monthly, automatic
+- INTERNATIONAL: abroad, USA, UK, Ghana
+
+## CORRECTIONS
+When user corrects mid-flow ("I meant 50k"):
+- Set correction.field="amount", correction.new_value=50000
+
+## EXAMPLES
+| Input | Key Extractions |
+|-------|-----------------|
+| "send 5k to mum" | amount=5000, recipient_name="mum" |
+| "GTB → Access 5k" | amount=5000, source_bank_name="GTBank", bank_name="Access Bank" |
+| "Send 25k to 0760505261 Access Bank" | amount=25000, recipient_account="0760505261", bank_name="Access Bank" |
+| "send 5 to john" | recipient_name="john", ambiguities=[AMOUNT_UNCLEAR: [5,5000]] |
+| "send 50k to mum tomorrow" | amount=50000, recipient_name="mum", requested_features=["SCHEDULED"] |
+| "send 100k using access and gtb" | amount=100000, source_accounts=["Access Bank","GTBank"] |
+| "same as last time" | references.use_recent_transfer=true |
+| "I meant 50k" | amount=50000, correction.field="amount", correction.new_value=50000 |
+| "abeg make am dey go every month" | requested_features=["RECURRING"] |
+| "fi 5k si mama" (Yoruba) | amount=5000, recipient_name="mama" |
+
+Output ONLY JSON matching the schema.
+"""
 
 FORMATTER_SYSTEM_PROMPT = """Format banking assistant responses for WhatsApp.
 - Keep under 6 short lines
@@ -117,3 +63,4 @@ FORMATTER_SYSTEM_PROMPT = """Format banking assistant responses for WhatsApp.
 - Be natural, conversational
 - For Nigerian users: light Pidgin is okay
 """
+

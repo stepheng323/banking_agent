@@ -83,14 +83,49 @@ class UserDataCache:
     async def set_beneficiaries(
         self, phone_number: str, beneficiaries: list[dict[str, Any]]
     ) -> None:
-        """Cache beneficiaries."""
+        """Cache beneficiaries and build alias lookup map."""
         key = f"cache:user:beneficiaries:{phone_number}"
         await self.redis.set(key, json.dumps(beneficiaries), ex=self.BENEFICIARIES_TTL)
 
+        # Build alias-to-beneficiary lookup for O(1) name resolution
+        alias_map: dict[str, dict[str, Any]] = {}
+        for b in beneficiaries:
+            name = (b.get("name") or "").lower().strip()
+            alias = (b.get("alias") or "").lower().strip()
+            if name:
+                alias_map[name] = b
+            if alias:
+                alias_map[alias] = b
+        if alias_map:
+            alias_key = f"cache:user:beneficiary_aliases:{phone_number}"
+            await self.redis.set(alias_key, json.dumps(alias_map), ex=self.BENEFICIARIES_TTL)
+
+    async def get_beneficiary_by_alias(
+        self, phone_number: str, alias: str
+    ) -> dict[str, Any] | None:
+        """
+        O(1) beneficiary lookup by name or alias.
+
+        Args:
+            phone_number: User's phone number
+            alias: Name or alias to search for (case-insensitive)
+
+        Returns:
+            Beneficiary dict if found, None otherwise
+        """
+        alias_key = f"cache:user:beneficiary_aliases:{phone_number}"
+        data = await self.redis.get(alias_key)
+        if data:
+            alias_map = json.loads(data)
+            return alias_map.get(alias.lower().strip())
+        return None
+
     async def invalidate_beneficiaries(self, phone_number: str) -> None:
-        """Invalidate beneficiaries cache."""
-        key = f"cache:user:beneficiaries:{phone_number}"
-        await self.redis.delete(key)
+        """Invalidate beneficiaries cache and alias map."""
+        await self.redis.delete(
+            f"cache:user:beneficiaries:{phone_number}",
+            f"cache:user:beneficiary_aliases:{phone_number}",
+        )
 
     # ============ Bulk Operations ============
 
@@ -100,6 +135,7 @@ class UserDataCache:
             f"cache:user:profile:{phone_number}",
             f"cache:user:accounts:{phone_number}",
             f"cache:user:beneficiaries:{phone_number}",
+            f"cache:user:beneficiary_aliases:{phone_number}",
         )
 
     async def get_all_user_data(self, phone_number: str) -> dict[str, Any | None]:
