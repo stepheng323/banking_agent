@@ -1,12 +1,13 @@
 """LangGraph graph for transfer flow."""
 
 import asyncio
-from typing import TYPE_CHECKING, Optional, cast
+from typing import Optional, cast
 
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.redis.aio import AsyncRedisSaver
 
 from apps.core.src.agent.graphs.__shared__.beneficiary.matcher import BeneficiaryMatcher
+from apps.core.src.agent.graphs.interfaces import FlowCompletionCallback
 from apps.core.src.agent.graphs.__shared__.validation.service import (
     AsyncValidationService,
 )
@@ -47,11 +48,6 @@ from .state import (
     update_conversation_state,
 )
 
-if TYPE_CHECKING:
-    from apps.core.src.agent.orchestrator.services.task_coordinator import (
-        TaskCoordinator,
-    )
-
 logger = get_logger(__name__)
 
 
@@ -67,7 +63,7 @@ class TransferFlowGraph:
         extractor: TransferEntityExtractor,
         queue: RedisQueue,
         actionable_message_repo: ActionableMessageRepository | None = None,
-        completion_callback: Optional["TaskCoordinator"] = None,
+        completion_callback: Optional[FlowCompletionCallback] = None,
         user_repo: UserRepository | None = None,
     ):
         self.user_cache = user_cache
