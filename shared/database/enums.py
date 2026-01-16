@@ -2,21 +2,11 @@
 
 from enum import Enum
 
-
-# ============================================================================
-# User & Onboarding Enums
-# ============================================================================
-
 class UserOnboardingStatusEnum(str, Enum):
     """User onboarding status enum."""
 
     ONBOARDING_STARTED = "onboarding_started"
     ONBOARDING_COMPLETED = "onboarding_completed"
-
-
-# ============================================================================
-# Account Enums
-# ============================================================================
 
 class MandateStatusEnum(str, Enum):
     """Account mandate status enum."""
@@ -25,11 +15,6 @@ class MandateStatusEnum(str, Enum):
     ACTIVE = "active"
     SUSPENDED = "suspended"
     REVOKED = "revoked"
-
-
-# ============================================================================
-# Transaction Enums
-# ============================================================================
 
 class TransactionTypeEnum(str, Enum):
     """Transaction type enum."""
@@ -49,10 +34,6 @@ class TransactionStatusEnum(str, Enum):
     FAILED = "failed"
     REVERSED = "reversed"
 
-
-# ============================================================================
-# Funded Transfer Enums
-# ============================================================================
 
 class FundedTransferStatusEnum(str, Enum):
     """Status enum for multi-account funded transfers."""
@@ -78,21 +59,12 @@ class FundingStepStatusEnum(str, Enum):
     REFUNDED = "refunded"
 
 
-# ============================================================================
-# Beneficiary Enums
-# ============================================================================
-
 class BeneficiaryTypeEnum(str, Enum):
     """Beneficiary type enum."""
 
     TRANSFER = "transfer"
     AIRTIME = "airtime"
     DATA = "data"
-
-
-# ============================================================================
-# Actionable Message Enums
-# ============================================================================
 
 class ActionableMessageTypeEnum(str, Enum):
     """Type of actionable message stored for quote-based interactions."""
@@ -101,11 +73,6 @@ class ActionableMessageTypeEnum(str, Enum):
     AIRTIME_RECEIPT = "airtime_receipt"
     DATA_RECEIPT = "data_receipt"
     CONFIRMATION_REQUEST = "confirmation_request"
-
-
-# ============================================================================
-# Support Ticket Enums
-# ============================================================================
 
 class SupportTicketStatusEnum(str, Enum):
     """Support ticket status enum."""
