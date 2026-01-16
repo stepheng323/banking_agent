@@ -55,7 +55,7 @@ class TaskSummaryGenerator:
         total_fee = 0
 
         for i, task in enumerate(planner_output.tasks, 1):
-            task_result = results.get(task.id, {})
+            task_result = results.get(task.task_id, {})
             result_data = task_result.get("result", {})
             executor = task.executor
 
@@ -159,7 +159,7 @@ class TaskSummaryGenerator:
 
         for i, task in enumerate(planner_output.tasks, 1):
             task_desc = self.format_task_description(task)
-            task_result = results.get(task.id, {})
+            task_result = results.get(task.task_id, {})
             status = task_result.get("status")
 
             if status == TaskStatus.COMPLETED.value:

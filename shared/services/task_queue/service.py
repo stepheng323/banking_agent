@@ -78,7 +78,7 @@ class TaskQueueService:
 
         for task in planner_output.tasks:
             # Skip if task is already completed or collection_complete
-            if task.id in completed_tasks or task.id in collection_complete_tasks:
+            if task.task_id in completed_tasks or task.task_id in collection_complete_tasks:
                 continue
             # Only return pending tasks with satisfied dependencies
             if task.status == TaskStatus.PENDING:
