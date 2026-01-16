@@ -6,7 +6,7 @@ import redis.asyncio as redis
 from langchain_core.runnables import Runnable
 from sqlalchemy.orm import Session
 
-from apps.core.src.agent.graphs.interfaces import ITransactionService
+from apps.core.src.agent.graphs.interfaces import IAgentService
 from apps.core.src.agent.graphs.support.graph.graph import SupportFlowGraph
 from shared.repositories.actionable_message_repository import ActionableMessageRepository
 from shared.repositories.support_ticket_repository import SupportTicketRepository
@@ -17,7 +17,7 @@ from shared.utils.logging import get_logger
 logger = get_logger(__name__)
 
 
-class SupportService(ITransactionService):
+class SupportService(IAgentService):
     """Support service facade using LangGraph."""
 
     def __init__(

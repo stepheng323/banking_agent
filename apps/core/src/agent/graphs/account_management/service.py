@@ -21,11 +21,13 @@ from shared.repositories.unit_of_work import UnitOfWork
 from shared.repositories.user_repository import UserRepository
 from shared.services.onboarding import bvn_service
 from shared.utils.logging import get_logger
+from apps.core.src.agent.graphs.interfaces import IAgentService
 
 logger = get_logger(__name__)
 
 
-class AccountManagementService:
+
+class AccountManagementService(IAgentService):
     """Service for managing user bank accounts (link, unlink, list, set default)."""
 
     def __init__(
@@ -52,19 +54,28 @@ class AccountManagementService:
         self.direct_debit_provider = direct_debit_provider
         self.parser = AccountManagementParser(llm)
 
-    async def handle_account_management(self, phone_number: str, text: str, user_ctx: dict[str, Any]) -> str:
+    async def run_simple(
+        self,
+        phone: str,
+        text: str,
+        classification_result: dict | None = None,
+        image_data: str | None = None,
+        quoted_data: dict | None = None,
+        user_context: dict | None = None,
+    ) -> str:
         """
         Handle account management intent.
 
         Args:
-            phone_number: User's phone number
+            phone: User's phone number
             text: User's command text
-            user_ctx: User context
+            classification_result: Optional classification
+            user_context: User context (accounts, etc.)
 
         Returns:
             Response message
         """
-        # Check for unsupported capabilities first
+        user_ctx = user_context or {}
         from apps.core.src.agent.graphs.account_management.capabilities import (
             check_capabilities,
             derive_requirements,
@@ -107,7 +118,7 @@ class AccountManagementService:
                 response = "Which account should be your default? Say 'set [bank name] as default'."
 
         elif action == "link":
-            response = await self.link_account(phone_number)
+            response = await self.link_account(phone)
 
         elif action == "list":
             accounts = user_ctx.get("accounts")
@@ -128,6 +139,17 @@ class AccountManagementService:
             return await self._translate_response(response, language)
 
         return response
+
+    async def clear_checkpoint(self, phone_number: str) -> None:
+        """Clear account management flow checkpoint for a user.
+        
+        Account management doesn't use checkpoints, so this is a no-op.
+        
+        Args:
+            phone_number: User's phone number
+        """
+        # Account management doesn't use checkpoints
+        pass
 
     async def _translate_response(self, text: str, language: str) -> str:
         """Translate response to user's preferred language using LLM."""

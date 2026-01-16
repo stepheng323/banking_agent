@@ -12,26 +12,21 @@ SCHEMA_VERSION = 1
 class SupportIntent(str, Enum):
     """Classified support intent types."""
     
-    # Transaction issues
     FAILED_TRANSFER = "failed_transfer"
     PENDING_TRANSFER = "pending_transfer"
     TRANSFER_STATUS = "transfer_status"
     
-    # Refund/reversal
     REVERSAL_REFUND = "reversal_refund"
     WRONG_RECIPIENT = "wrong_recipient"
     WRONG_DEBIT = "wrong_debit"
     
-    # Fraud & escalation
     FRAUD_REPORT = "fraud_report"
     HUMAN_HANDOFF = "human_handoff"
     
-    # Account & info
     ACCOUNT_LINKING = "account_linking"
     LIMITS_FEES = "limits_fees"
     RECEIPT_REQUEST = "receipt_request"
     
-    # Other
     GENERAL_TX_ISSUE = "general_tx_issue"
     TICKET_STATUS = "ticket_status"
     RETRY_TRANSFER = "retry_transfer"

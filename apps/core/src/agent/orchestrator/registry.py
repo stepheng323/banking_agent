@@ -9,10 +9,11 @@ class TaskExecutorProtocol(Protocol):
 
     async def run_simple(
         self,
-        phone_number: str,
+        phone: str,
         text: str,
-        classification: dict,
+        classification_result: dict | None = None,
         image_data: str | None = None,
+        quoted_data: dict | None = None,
     ) -> str:
         """Run simple execution flow."""
         ...
