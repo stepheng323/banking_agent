@@ -1,7 +1,6 @@
 """Support context manager for Redis persistence."""
 
 import json
-from typing import Any
 
 import redis.asyncio as redis
 
@@ -10,10 +9,8 @@ from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
 
-
-# Redis key prefix
 SUPPORT_CONTEXT_PREFIX = "support_context:"
-CONTEXT_TTL_SECONDS = 86400 * 7  # 7 days
+CONTEXT_TTL_SECONDS = 86400 * 7
 
 
 class SupportContextManager:
@@ -23,21 +20,16 @@ class SupportContextManager:
         self.redis = redis_client
 
     def _key(self, user_id: str) -> str:
-        """Generate Redis key for user's support context."""
         return f"{SUPPORT_CONTEXT_PREFIX}{user_id}"
 
     async def get(self, user_id: str) -> SupportContext:
-        """
-        Get support context for a user.
-        Returns empty context if not found.
-        """
+        """Get support context for a user. Returns empty context if not found."""
         try:
             key = self._key(user_id)
             data = await self.redis.get(key)
             
             if data:
                 parsed = json.loads(data)
-                # Handle enum serialization
                 if parsed.get("last_issue_intent"):
                     try:
                         parsed["last_issue_intent"] = SupportIntent(parsed["last_issue_intent"])
@@ -56,30 +48,18 @@ class SupportContextManager:
         """Save support context for a user."""
         try:
             key = self._key(user_id)
-            
-            # Serialize with enum handling
             data = context.model_dump()
             if data.get("last_issue_intent"):
                 data["last_issue_intent"] = data["last_issue_intent"].value if hasattr(data["last_issue_intent"], "value") else str(data["last_issue_intent"])
             
             await self.redis.setex(key, CONTEXT_TTL_SECONDS, json.dumps(data))
-            
-            logger.debug(
-                "support_context_saved",
-                user_id=user_id,
-                attempts=context.attempts,
-                last_step=context.last_support_step,
-            )
-        
         except Exception as e:
             logger.error("support_context_save_error", user_id=user_id, error=str(e))
 
     async def clear(self, user_id: str) -> None:
         """Clear support context for a user."""
         try:
-            key = self._key(user_id)
-            await self.redis.delete(key)
-            logger.debug("support_context_cleared", user_id=user_id)
+            await self.redis.delete(self._key(user_id))
         except Exception as e:
             logger.warning("support_context_clear_error", user_id=user_id, error=str(e))
 
@@ -96,10 +76,7 @@ class SupportContextManager:
         ticket_id: str | None = None,
         transaction_ref: str | None = None,
     ) -> SupportContext:
-        """
-        Reset context after resolution or ticket creation.
-        Preserves last refs for "any update?" queries.
-        """
+        """Reset context after resolution or ticket creation."""
         context = await self.get(user_id)
         
         if ticket_id:
