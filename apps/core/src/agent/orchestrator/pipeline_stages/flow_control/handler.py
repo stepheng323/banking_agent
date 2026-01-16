@@ -64,8 +64,8 @@ class FlowControlHandler(MessageHandler):
     async def _handle_fresh_start(self, context: MessageContext) -> MessageContext:
         """Clear stale conversation state and flow checkpoints."""
         await self.context_manager.clear_conversation_state(context.phone_number)
-        await self.transfer_service.graph.clear_checkpoint(context.phone_number)
-        await self.airtime_service.graph.clear_checkpoint(context.phone_number)
+        await self.transfer_service.clear_checkpoint(context.phone_number)
+        await self.airtime_service.clear_checkpoint(context.phone_number)
         logger.info("cleared_stale_state")
         return context.update(conversation_state=None)
 

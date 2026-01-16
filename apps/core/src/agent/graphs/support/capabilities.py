@@ -1,29 +1,13 @@
 """Support graph capability definitions.
 
-Action-based capabilities for micro-resolver.
-Defines what actions Support can take, not just what it can show.
+Defines what actions Support can take and their alternatives.
 """
 
 from enum import Enum
 
 
-class SupportIntent(str, Enum):
-    """Classified support intent types."""
-    
-    FAILED_TRANSFER = "failed_transfer"
-    PENDING_TRANSFER = "pending_transfer"
-    REVERSAL_REFUND = "reversal_refund"
-    WRONG_RECIPIENT = "wrong_recipient"
-    FRAUD_REPORT = "fraud_report"
-    ACCOUNT_LINKING = "account_linking"
-    LIMITS_FEES = "limits_fees"
-    RECEIPT_REQUEST = "receipt_request"
-    HUMAN_HANDOFF = "human_handoff"
-    GENERAL_TX_ISSUE = "general_tx_issue"  # "issue with my transaction"
-
-
 class SupportAction(str, Enum):
-    """Actions Support can take (capabilities)."""
+    """Actions Support can take."""
     
     LOOKUP_TRANSACTION = "lookup_transaction"
     EXPLAIN_STATUS = "explain_status"
@@ -35,7 +19,6 @@ class SupportAction(str, Enum):
     ESCALATE = "escalate"
 
 
-# What actions are actually available
 SUPPORTED_ACTIONS: list[SupportAction] = [
     SupportAction.LOOKUP_TRANSACTION,
     SupportAction.EXPLAIN_STATUS,
@@ -44,22 +27,17 @@ SUPPORTED_ACTIONS: list[SupportAction] = [
     SupportAction.ESCALATE,
 ]
 
-
-# Actions that require manual approval or aren't automated yet
 UNAVAILABLE_ACTIONS: list[SupportAction] = [
     SupportAction.RETRY_PAYOUT,
     SupportAction.INITIATE_REFUND,
-    SupportAction.QUEUE_REFUND_REQUEST,  # Can upgrade to available when ready
+    SupportAction.QUEUE_REFUND_REQUEST,
 ]
 
-
-# Limits for resolver
 SUPPORT_LIMITS = {
     "max_escalation_attempts": 3,
     "max_tx_lookback_days": 90,
-    "sla_pending_hours": 24,  # After which to auto-escalate
+    "sla_pending_hours": 24,
 }
-
 
 ACTION_LABELS: dict[SupportAction, str] = {
     SupportAction.LOOKUP_TRANSACTION: "look up transaction",
@@ -72,11 +50,9 @@ ACTION_LABELS: dict[SupportAction, str] = {
     SupportAction.ESCALATE: "escalate to human support",
 }
 
-
-# What to offer when action isn't available
 ACTION_ALTERNATIVES: dict[SupportAction, SupportAction] = {
     SupportAction.RETRY_PAYOUT: SupportAction.CREATE_TICKET,
-    SupportAction.INITIATE_REFUND: SupportAction.QUEUE_REFUND_REQUEST,
+    SupportAction.INITIATE_REFUND: SupportAction.CREATE_TICKET,
     SupportAction.QUEUE_REFUND_REQUEST: SupportAction.CREATE_TICKET,
 }
 

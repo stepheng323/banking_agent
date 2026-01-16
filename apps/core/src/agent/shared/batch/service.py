@@ -13,8 +13,8 @@ from shared.utils.logging import get_logger
 if TYPE_CHECKING:
     from apps.core.src.agent.graphs.account_management.service import AccountManagementService
     from apps.core.src.agent.graphs.airtime.service import AirtimeService
-    from apps.core.src.agent.graphs.data.graph.graph import DataPurchaseGraph
-    from apps.core.src.agent.graphs.query.graph import QueryFlowGraph
+    from apps.core.src.agent.graphs.data.service import DataService
+    from apps.core.src.agent.graphs.query import QueryService
     from apps.core.src.agent.graphs.transfer.service import TransferService
     from shared.cache.user_data import UserDataCache
 
@@ -31,8 +31,8 @@ class BatchService:
         transfer_service: "TransferService",
         queue: RedisQueue,
         airtime_service: Optional["AirtimeService"] = None,
-        data_service: Optional["DataPurchaseGraph"] = None,
-        query_graph: Optional["QueryFlowGraph"] = None,
+        data_service: Optional["DataService"] = None,
+        query_service: Optional["QueryService"] = None,
         user_cache: Optional["UserDataCache"] = None,
         account_management_service: Optional["AccountManagementService"] = None,
     ):
@@ -42,7 +42,7 @@ class BatchService:
         self.queue = queue
         self.airtime_service = airtime_service
         self.data_service = data_service
-        self.query_graph = query_graph
+        self.query_service = query_service
         self.user_cache = user_cache
         self.account_management_service = account_management_service
         self.redis_client = RedisClient.get_client()
@@ -84,7 +84,7 @@ class BatchService:
                 transfer_service=self.transfer_service,
                 airtime_service=self.airtime_service,
                 data_service=self.data_service,
-                query_graph=self.query_graph,
+                query_service=self.query_service,
                 user_cache=self.user_cache,
                 account_management_service=self.account_management_service,
             )

@@ -12,7 +12,7 @@ from shared.utils.logging import get_logger
 logger = get_logger(__name__)
 
 if TYPE_CHECKING:
-    from apps.core.src.agent.graphs.query.graph import QueryFlowGraph
+    from apps.core.src.agent.graphs.query import QueryService
 
 
 class TaskExecutor:
@@ -22,12 +22,12 @@ class TaskExecutor:
         self,
         registry: ExecutorRegistry,
         task_queue_service: TaskQueueService,
-        query_graph: Optional["QueryFlowGraph"] = None,
+        query_service: Optional["QueryService"] = None,
         completion_callback: "TaskCoordinator | None" = None,
     ):
         self.registry = registry
         self.task_queue_service = task_queue_service
-        self.query_graph = query_graph
+        self.query_service = query_service
         self.completion_callback = completion_callback
 
     async def execute_task(
@@ -110,9 +110,11 @@ class TaskExecutor:
                     phone_number, message_to_use, classification_result
                 )
             elif task.executor == "query":
-                if self.query_graph:
-                    # Pass empty context - query graph will load from cache if needed
-                    result = await self.query_graph.run(phone_number, message_to_use, {})
+                if self.query_service:
+                    # Pass empty context
+                    result = await self.query_service.run_simple(
+                        phone_number, message_to_use
+                    )
                 else:
                     result = "Query service not available"
                 # For non-async executors, mark as completed immediately
@@ -206,4 +208,4 @@ class TaskExecutor:
         Returns:
             Service instance or None if not found
         """
-        return self.registry.get_executor(task.executor)
+        return self.registry.get(task.executor)

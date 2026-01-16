@@ -31,8 +31,8 @@ logger = get_logger(__name__)
 if TYPE_CHECKING:
     from apps.core.src.agent.graphs.account_management.service import AccountManagementService
     from apps.core.src.agent.graphs.airtime.service import AirtimeService
-    from apps.core.src.agent.graphs.data.graph.graph import DataPurchaseGraph
-    from apps.core.src.agent.graphs.query.graph import QueryFlowGraph
+    from apps.core.src.agent.graphs.data.service import DataService
+    from apps.core.src.agent.graphs.query import QueryService
     from apps.core.src.agent.graphs.transfer.service import TransferService
     from shared.cache.user_data import UserDataCache
 
@@ -47,8 +47,8 @@ async def execute_batch(
     queue: RedisQueue,
     transfer_service: "TransferService | None" = None,
     airtime_service: "AirtimeService | None" = None,
-    data_service: "DataPurchaseGraph | None" = None,
-    query_graph: "QueryFlowGraph | None" = None,
+    data_service: "DataService | None" = None,
+    query_service: "QueryService | None" = None,
     user_cache: "UserDataCache | None" = None,
     account_management_service: "AccountManagementService | None" = None,
 ) -> dict[str, Any]:
@@ -128,7 +128,7 @@ async def execute_batch(
             planner_output=planner_output,
             task_results=task_results,
             user_cache=user_cache,
-            query_graph=query_graph,
+            query_service=query_service,
             account_management_service=account_management_service,
             whatsapp_client=whatsapp_client,
             task_queue_service=task_queue_service,
@@ -375,7 +375,7 @@ async def _execute_remaining_tasks(
     planner_output,
     task_results: dict[str, Any],
     user_cache,
-    query_graph,
+    query_service,
     account_management_service,
     whatsapp_client: WhatsAppClient,
     task_queue_service: TaskQueueService,
@@ -398,13 +398,15 @@ async def _execute_remaining_tasks(
     for task in remaining_tasks:
         try:
             result = None
-            if task.executor == "query" and query_graph:
+            if task.executor == "query" and query_service:
                 query_message = task.instruction or "show balance"
-                result = await query_graph.run(phone_number, query_message, user_ctx)
+                result = await query_service.run_simple(
+                    phone_number, query_message, user_context=user_ctx
+                )
             elif task.executor == "manage_accounts" and account_management_service:
                 task_message = task.instruction or "show accounts"
-                result = await account_management_service.handle_account_management(
-                    phone_number, task_message, user_ctx
+                result = await account_management_service.run_simple(
+                    phone_number, task_message, user_context=user_ctx
                 )
 
             if result:

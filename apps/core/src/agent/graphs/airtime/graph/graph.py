@@ -2,16 +2,14 @@
 
 import asyncio
 import json
-from typing import TYPE_CHECKING, Any, Optional, cast
-
-if TYPE_CHECKING:
-    from apps.core.src.agent.orchestrator.services.task_coordinator import TaskCoordinator
+from typing import Any, Optional, cast
 
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.redis.aio import AsyncRedisSaver
 
 from apps.core.src.agent.graphs.__shared__.beneficiary.matcher import BeneficiaryMatcher
 from apps.core.src.agent.graphs.airtime.extractor import AirtimeEntityExtractor
+from apps.core.src.agent.graphs.interfaces import FlowCompletionCallback
 from apps.core.src.agent.graphs.airtime.state import AirtimeState
 from shared.cache.redis_client import RedisClient
 from shared.cache.user_data import UserDataCache
@@ -62,7 +60,7 @@ class AirtimeFlowGraph:
         extractor: AirtimeEntityExtractor,
         queue: RedisQueue,
         actionable_message_repo: ActionableMessageRepository | None = None,
-        completion_callback: Optional["TaskCoordinator"] = None,
+        completion_callback: Optional[FlowCompletionCallback] = None,
     ):
         self.user_cache = user_cache
         self.account_repo = account_repo

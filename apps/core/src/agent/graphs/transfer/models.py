@@ -57,9 +57,6 @@ class TransferEntities(BaseModel):
             return v
         try:
             amount = float(v)
-            # Pass through all numeric values (including negative)
-            # Limit validation (min/max/negative) happens in validation node
-            # which provides proper error messaging
             return amount
         except (ValueError, TypeError):
             return None

@@ -1,6 +1,6 @@
 """Extraction result models for transfer parsing.
 
-v2: Clean extraction architecture with versioned envelope.
+Clean extraction architecture with versioned envelope.
 - LLM outputs pure extraction, no business logic
 - Resolver computes missing fields and decision
 - Formatter generates response
@@ -14,9 +14,7 @@ from pydantic import BaseModel, Field
 from apps.core.src.agent.graphs.transfer.models import TransferEntities
 
 
-# Schema version for future-proofing
 SCHEMA_VERSION = 1
-
 
 class CorrectionField(str, Enum):
     """Fields that can be corrected."""

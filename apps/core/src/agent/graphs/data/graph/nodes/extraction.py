@@ -2,12 +2,16 @@
 
 from typing import Any
 
+from apps.core.src.agent.graphs.data.capabilities import (
+    check_capabilities,
+    derive_requirements,
+    generate_limitation_message,
+)
 from apps.core.src.agent.graphs.data.extractor import DataEntityExtractor
 from apps.core.src.agent.graphs.data.graph.state import DataPurchaseState
 from apps.core.src.agent.graphs.data.models_extraction import DataPurchaseEntities
 from shared.utils.logging import get_logger
 from shared.utils.phone_utils import detect_network_from_phone, normalize_phone
-# Capabilities imported inline in function
 
 logger = get_logger(__name__)
 

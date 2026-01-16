@@ -4,7 +4,7 @@ import asyncio
 from typing import Any
 
 from apps.core.src.agent.graphs.airtime.service import AirtimeService
-from apps.core.src.agent.graphs.data.graph.graph import DataPurchaseGraph
+from apps.core.src.agent.graphs.data.service import DataService
 from apps.core.src.agent.graphs.transfer.service import TransferService
 from apps.core.src.agent.shared.batch.service import BatchService
 from shared.clients.whatsapp.client import WhatsAppClient
@@ -23,7 +23,7 @@ class FlowEventConsumer:
         redis_queue: RedisQueue,
         transfer_service: TransferService | None = None,
         airtime_service: AirtimeService | None = None,
-        data_service: DataPurchaseGraph | None = None,
+        data_service: DataService | None = None,
         batch_service: BatchService | None = None,
         whatsapp_client: WhatsAppClient | None = None,
     ):
@@ -94,21 +94,21 @@ class FlowEventConsumer:
             response = None
 
             if flow_type == "transfer":
-                if self.transfer_service and hasattr(self.transfer_service, "graph"):
-                    response = await self.transfer_service.graph.resume_after_pin_verification(phone_number, True, None)
+                if self.transfer_service:
+                    response = await self.transfer_service.resume_after_pin_verification(phone_number, True, None)
                     logger.info("transfer_resumed_after_pin", phone=phone_number)
                 else:
                     logger.error("transfer_service_not_available")
 
             elif flow_type == "airtime":
-                if self.airtime_service and hasattr(self.airtime_service, "graph"):
-                    response = await self.airtime_service.graph.resume_after_pin_verification(phone_number, True, None)
+                if self.airtime_service:
+                    response = await self.airtime_service.resume_after_pin_verification(phone_number, True, None)
                     logger.info("airtime_resumed_after_pin", phone=phone_number)
                 else:
                     logger.error("airtime_service_not_available")
 
             elif flow_type == "data":
-                if self.data_service and hasattr(self.data_service, "resume_after_pin_verification"):
+                if self.data_service:
                     response = await self.data_service.resume_after_pin_verification(phone_number, True, None)
                     logger.info("data_resumed_after_pin", phone=phone_number)
                 else:

@@ -61,7 +61,7 @@ dev = [
 
 # Pyright (type checking) configuration
 [tool.pyright]
-typeCheckingMode = "basic"  # Changed from "off" to "basic"
+typeCheckingMode = "standard"  # Changed from "basic"
 reportMissingImports = true
 reportMissingTypeStubs = false
 reportUnusedVariable = "warning"

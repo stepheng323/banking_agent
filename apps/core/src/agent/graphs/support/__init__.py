@@ -1,6 +1,6 @@
 """Support sub-agent for transaction-bound support issues."""
 
-from apps.core.src.agent.graphs.support.graph.graph import SupportFlowGraph
 from apps.core.src.agent.graphs.support.models import SupportIntent
+from apps.core.src.agent.graphs.support.service import SupportService
 
-__all__ = ["SupportFlowGraph", "SupportIntent"]
+__all__ = ["SupportService", "SupportIntent"]
