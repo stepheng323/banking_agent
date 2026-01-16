@@ -5,15 +5,13 @@ from apps.core.src.agent.graphs.account_management.service import AccountManagem
 from apps.core.src.agent.graphs.airtime import AirtimeService
 from apps.core.src.agent.graphs.airtime.completion import AirtimeCompletionService
 from apps.core.src.agent.graphs.airtime.executor import AirtimeExecutor
-from apps.core.src.agent.graphs.data import DataPurchaseGraph
 from apps.core.src.agent.graphs.data.completion import DataCompletionService
 from apps.core.src.agent.graphs.data.executor import DataExecutor
 from apps.core.src.agent.graphs.data.service import DataService
-from apps.core.src.agent.graphs.faq import FAQFlowGraph
 from apps.core.src.agent.graphs.onboarding.executor import OnboardingExecutor
 from apps.core.src.agent.graphs.onboarding.service import OnboardingService
-from apps.core.src.agent.graphs.query.graph import QueryFlowGraph
-from apps.core.src.agent.graphs.support.graph import SupportFlowGraph
+from apps.core.src.agent.graphs.query import QueryService
+from apps.core.src.agent.graphs.support import SupportService
 from apps.core.src.agent.graphs.transfer import TransferService as AgentTransferService
 from apps.core.src.agent.graphs.transfer.completion import TransferCompletionService
 from apps.core.src.agent.graphs.transfer.executor import TransferExecutor
@@ -41,6 +39,8 @@ from shared.repositories import AccountRepository, BeneficiaryRepository
 from shared.repositories.actionable_message_repository import ActionableMessageRepository
 from shared.repositories.transaction_repository import TransactionRepository
 from shared.repositories.user_repository import UserRepository
+from apps.core.src.agent.orchestrator.pipeline_stages.quote.service import QuoteService
+from apps.core.src.agent.orchestrator.registry import ExecutorRegistry
 
 
 def setup_dependencies():
@@ -78,11 +78,8 @@ def setup_dependencies():
     banking_provider = MonoBankingProvider()
     direct_debit_provider = MonoDirectDebitProvider()
 
-    query_graph = QueryFlowGraph(
-        llm=llm,
-        banking_provider=banking_provider,
-        redis_client=shared_redis,
-    )
+
+
     account_management_service = AccountManagementService(
         account_repo=account_repository,
         user_repo=user_repository,
@@ -92,27 +89,32 @@ def setup_dependencies():
     )
 
     bill_provider = PaymentProviderFactory.get_bill_payment_provider()
-    data_graph = None
     data_service = None
     if bill_provider:
-        data_graph = DataPurchaseGraph(
+        # Create DataService with dependencies (consistent with other services)
+        data_service = DataService(
             bill_provider=bill_provider,
             redis_client=shared_redis,
+            whatsapp_client=whatsapp_client,
+            queue=redis_queue,
         )
-        data_service = DataService(graph=data_graph)
 
     transaction_repository = TransactionRepository(db=get_db_session())
-    support_graph = SupportFlowGraph(
+    support_service = SupportService(
         llm=llm,
         transaction_repo=transaction_repository,
         actionable_message_repo=actionable_message_repository,
         redis_client=shared_redis,
+        db_session=get_db_session(),
     )
 
-    faq_graph = FAQFlowGraph(
+    query_service = QueryService(
         llm=llm,
-        get_db=get_db_session,
+        banking_provider=banking_provider,
+        redis_client=shared_redis,
+        support_service=support_service,
     )
+
 
     task_queue_service = TaskQueueService()
     conversation_responder = ConversationResponder(llm)
@@ -140,8 +142,6 @@ def setup_dependencies():
         completion_callback=None,
     )
 
-    from apps.core.src.agent.orchestrator.pipeline_stages.quote.service import QuoteService
-    from apps.core.src.agent.orchestrator.registry import ExecutorRegistry
 
     executor_registry = ExecutorRegistry()
     executor_registry.register("transfer", agent_transfer_service)
@@ -153,7 +153,7 @@ def setup_dependencies():
     task_executor = TaskExecutor(
         registry=executor_registry,
         task_queue_service=task_queue_service,
-        query_graph=query_graph,
+        query_service=query_service,
         completion_callback=None,
     )
 
@@ -170,12 +170,10 @@ def setup_dependencies():
         transfer_service=agent_transfer_service,
         airtime_service=agent_airtime_service,
         task_executor=task_executor,
-        query_graph=query_graph,
+        query_service=query_service,
         account_management_service=account_management_service,
         media_service=media_service,
-        data_graph=data_graph,
-        support_graph=support_graph,
-        faq_graph=faq_graph,
+        data_service=data_service,
         executor_registry=executor_registry,
         quote_service=quote_service,
     )
@@ -183,8 +181,8 @@ def setup_dependencies():
     orchestrator = OrchestratorAgent(orchestrator_deps)
 
     completion_callback = orchestrator.completion_callback
-    agent_transfer_service.graph.completion_callback = completion_callback
-    agent_airtime_service.graph.completion_callback = completion_callback
+    agent_transfer_service.set_completion_callback(completion_callback)
+    agent_airtime_service.set_completion_callback(completion_callback)
     task_executor.completion_callback = completion_callback
 
     batch_service = BatchService(
@@ -192,8 +190,8 @@ def setup_dependencies():
         task_queue_service=task_queue_service,
         transfer_service=agent_transfer_service,
         airtime_service=agent_airtime_service,
-        data_service=data_graph,
-        query_graph=query_graph,
+        data_service=data_service,
+        query_service=query_service,
         user_cache=user_data_cache,
         account_management_service=account_management_service,
         queue=redis_queue,
@@ -235,7 +233,7 @@ def setup_dependencies():
         redis_queue=redis_queue,
         transfer_service=agent_transfer_service,
         airtime_service=agent_airtime_service,
-        data_service=data_graph,
+        data_service=data_service,
         batch_service=batch_service,
         whatsapp_client=whatsapp_client,
     )
