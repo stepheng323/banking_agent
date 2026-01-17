@@ -9,12 +9,7 @@ from apps.core.src.agent.graphs.transfer.models_extraction import TransferExtrac
 from apps.core.src.agent.graphs.transfer.state import TransferState
 from shared.utils.logging import get_logger
 
-from apps.core.src.agent.graphs.transfer.capabilities import (
-    TransferCapability,
-    TRANSFER_LIMITS,
-    check_capabilities,
-    generate_limitation_message,
-)
+from apps.core.src.agent.graphs.transfer.resolver import resolve, Decision, compute_missing_fields
 
 from .utils import debug_log
 
@@ -134,39 +129,7 @@ async def extract_entities(
 
 
 
-    requires: list[TransferCapability] = [TransferCapability.SINGLE_TRANSFER]
 
-    feature_map = {
-        "SCHEDULED": TransferCapability.SCHEDULED,
-        "RECURRING": TransferCapability.RECURRING,
-        "INTERNATIONAL": TransferCapability.INTERNATIONAL,
-    }
-    for feature in result.requested_features:
-        cap = feature_map.get(feature.value if hasattr(feature, 'value') else feature)
-        if cap:
-            requires.append(cap)
-
-    if result.entities and result.entities.amount:
-        if result.entities.amount > TRANSFER_LIMITS["max_amount"]:
-            requires.append(TransferCapability.AMOUNT_OVER_10M)
-        else:
-            requires.append(TransferCapability.AMOUNT_UP_TO_10M)
-
-    missing = check_capabilities(requires)
-
-    if missing:
-        limitation_msg = generate_limitation_message(missing)
-        logger.info(
-            "transfer_capability_limitation",
-            missing=[cap.value for cap in missing],
-            llm_features=[f.value if hasattr(f, 'value') else f for f in result.requested_features],
-        )
-        return {
-            **state,
-            "response": limitation_msg,
-            "llm_reply": limitation_msg,
-            "flow_state": "capability_limitation",
-        }
 
     if result.correction:
         correction = result.correction
@@ -178,74 +141,64 @@ async def extract_entities(
         )
         debug_log(f"✏️ [CORRECTION] Applying correction: {field_name} = {correction.new_value}")
 
-    if result.ambiguities:
-        from apps.core.src.agent.graphs.transfer.models_extraction import AmbiguityCode
-        
-        ambiguity_dicts = [a.model_dump() for a in result.ambiguities]
-        logger.info("ambiguities_detected", ambiguities=ambiguity_dicts)
-        
-        for ambiguity in result.ambiguities:
-            if ambiguity.code == AmbiguityCode.AMOUNT_UNCLEAR and ambiguity.candidates:
-                if result.entities and result.entities.amount is not None:
-                    debug_log(f"⏭️ [EXTRACTION] Skipping AMOUNT_UNCLEAR - amount already extracted: {result.entities.amount}")
-                    continue
-                candidates = ambiguity.candidates
-                if len(candidates) >= 2:
-                    clarify_msg = f"Did you mean ₦{candidates[0]:,.0f} or ₦{candidates[1]:,.0f}?"
-                else:
-                    clarify_msg = "How much would you like to send?"
-                return {
-                    **state,
-                    "response": clarify_msg,
-                    "llm_reply": clarify_msg,
-                    "flow_state": "clarifying_amount",
-                }
-            elif ambiguity.code == AmbiguityCode.MULTIPLE_BENEFICIARIES and ambiguity.candidates:
-                names = ", ".join(str(c) for c in ambiguity.candidates)
-                clarify_msg = f"Which one? {names}"
-                return {
-                    **state,
-                    "response": clarify_msg,
-                    "llm_reply": clarify_msg,
-                    "flow_state": "clarifying_recipient",
-                }
-            elif ambiguity.code == AmbiguityCode.UNCLEAR_BANK and ambiguity.candidates:
-                banks = ", ".join(str(c) for c in ambiguity.candidates)
-                clarify_msg = f"Which bank? {banks}"
-                return {
-                    **state,
-                    "response": clarify_msg,
-                    "llm_reply": clarify_msg,
-                    "flow_state": "clarifying_bank",
-                }
+
 
     entities = result.entities or TransferEntities()
+    
+    # Use Resolver for all business logic (Capabilities, Ambiguities, Hydration)
+    pre_decision = resolve(
+        result,
+        draft_entities=None,  # Analyze incoming intention/extraction first
+        recent_transfers=(smart_context or {}).get("recentTransfers", []),
+        user_message=message_to_extract,
+    )
+
+    if pre_decision.decision == Decision.LIMITATION:
+         limitation_msg = pre_decision.limitation_message
+         logger.info("transfer_capability_limitation", msg=limitation_msg)
+         return {
+            **state,
+            "response": limitation_msg or "Feature not supported",
+            "llm_reply": limitation_msg,
+            "flow_state": "capability_limitation",
+         }
+
+    if pre_decision.decision == Decision.ASK_CLARIFY and pre_decision.ambiguity_to_resolve:
+        prompt = pre_decision.prompts[0]
+        msg = ""
+        state_key = "extracting"
+        
+        if prompt.key == "transfer.amount_ambiguous":
+             c = prompt.vars.get("candidates", [])
+             msg = f"Did you mean ₦{c[0]:,.0f} or ₦{c[1]:,.0f}?" if len(c) >= 2 else "How much would you like to send?"
+             state_key = "clarifying_amount"
+        elif prompt.key == "transfer.ambiguous_beneficiary":
+             names = ", ".join(str(c) for c in prompt.vars.get("candidates", []))
+             msg = f"Which one? {names}"
+             state_key = "clarifying_recipient"
+        elif prompt.key == "transfer.ambiguous_bank":
+             banks = ", ".join(str(c) for c in prompt.vars.get("candidates", []))
+             msg = f"Which bank? {banks}"
+             state_key = "clarifying_bank"
+        elif prompt.key == "transfer.ambiguous_recipient":
+             msg = "I'm not sure which recipient you mean."
+             state_key = "clarifying_recipient"
+             
+        return {
+            **state,
+            "response": msg,
+            "llm_reply": msg,
+            "flow_state": state_key,
+        }
+
+    # Use hydrated/resolved entities for updates
+    if pre_decision.applied_entities:
+        entities = pre_decision.applied_entities
+
+    computed_missing = pre_decision.missing_fields # For logging consistency
     existing_amount = state.get("amount")
     
-    # Handle references (e.g., "same as before", "like last time")
-    from apps.core.src.agent.graphs.transfer.resolver import compute_missing_fields, resolve_references
-    
-    if result.references.use_recent_transfer:
-        recent_transfers = (smart_context or {}).get("recentTransfers", [])
-        entities, was_hydrated = resolve_references(entities, result.references, recent_transfers)
-        if was_hydrated:
-            logger.info(
-                "references_hydrated",
-                recent_transfer_index=result.references.recent_transfer_index,
-                recipient_account=entities.recipient_account if entities else None,
-                bank_name=entities.bank_name if entities else None,
-            )
-            debug_log(f"✓ [REFERENCE] Hydrated from recent transfer: {entities.recipient_name if entities else 'unknown'}")
-    
-    # Determine if internal transfer (own accounts)
-    is_internal = bool(entities.source_bank_name and entities.bank_name and not entities.recipient_name)
-    computed_missing = compute_missing_fields(entities, is_internal)
-    
-    logger.info(
-        "resolver_missing_fields",
-        computed=computed_missing,
-        llm_provided=result.missing_fields,  # For comparison during migration
-    )
+
 
     logger.info(
         "DEBUG_TRACE_AMOUNT_EXTRACTION_ENTRY",
@@ -271,8 +224,6 @@ async def extract_entities(
     should_clear_stale_recipient = False
     transfer_status = state.get("transfer_status")
 
-    # Do NOT clear recipient when only amount arrives.
-    # Preserve previously extracted recipient/bank so we don't re-ask.
     if (
         entities.amount is not None
         and entities.recipient_account is None
@@ -316,13 +267,11 @@ async def extract_entities(
 
     should_clear_amount_pre_update = False
     if existing_amount is not None:
-        # Only clear when an already-set field actually changes
         if (account_changed_pre_update or bank_changed_pre_update) and had_prev_recipient:
             should_clear_amount_pre_update = True
             debug_log(
                 "ℹ️ extract_entities: Recipient changed (pre-update) with prior recipient. Will clear stale amount."
             )
-        # Do NOT clear just because a new transfer intent arrives; only actual changes trigger clearing
     debug_log(
         f"DEBUG extract_entities: Pre-update amount clearing decision - existing_amount={existing_amount}, is_new_transfer_intent={is_new_transfer_intent}, recipient_arrives_this_turn={recipient_arrives_this_turn}, should_clear_amount_pre_update={should_clear_amount_pre_update}"
     )
@@ -349,18 +298,10 @@ async def extract_entities(
         )
 
     updates: dict[str, Any] = {
-        "missing_fields": computed_missing,  # Use resolver-computed, not LLM
-        "llm_reply": result.reply if result.reply else None,  # May be empty in v2
+        "missing_fields": computed_missing,
         "flow_state": "extracting",
     }
 
-    # Suppress LLM reply during account selection to avoid confusing messages
-    # like "Sending ₦2" when user selects option 2
-    if state.get("flow_state") == "selecting_account":
-        updates["llm_reply"] = None
-        debug_log("🔇 [EXTRACTION] Suppressing LLM reply during account selection")
-
-    # Debug: Log what was extracted
     logger.info(
         "extraction_result",
         amount=entities.amount,
@@ -370,31 +311,25 @@ async def extract_entities(
         bank_name=entities.bank_name,
     )
 
-    # CRITICAL: During account selection, ignore any amount extraction
-    # User is just selecting "1" or "2" for account, not changing the amount
     flow_state = state.get("flow_state")
     if flow_state == "selecting_account" and entities.amount is not None:
         debug_log(f"🔍 [EXTRACTION] Ignoring amount extraction during account selection: {entities.amount}")
-        entities.amount = None  # Prevent it from being treated as a new amount
+        entities.amount = None
 
     if entities.amount is not None:
         updates["amount"] = entities.amount
         updates["_amount_set_at"] = time.time()
         updates["transfer_all"] = False
         updates["transfer_percentage"] = None
-        # CRITICAL: Reset transfer status to allow re-routing/re-checking funding
         updates["transfer_status"] = None
         updates["funding_required"] = False
         updates["funding_plan"] = None
-        updates["idempotency_key"] = None  # CRITICAL: Force new key generation and Redis update
-        updates["response"] = ""  # CRITICAL: Clear stale error messages from previous attempts
+        updates["idempotency_key"] = None
+        updates["response"] = ""
         updates["funding_error"] = None
-    elif existing_amount is not None:
-        # Preserve existing amount when user is providing other details (e.g., account details)
-        # This is important for complex transfers where amount comes from task parameters
-        # Use explicit None check to preserve amount even if it's 0 (though unlikely)
+    elif existing_amount is not None and not updates.get("transfer_all"):
+        # Only preserve existing amount if NOT setting transfer_all
         updates["amount"] = existing_amount
-        # Don't update _amount_set_at to preserve original timestamp
         logger.info("DEBUG_TRACE_AMOUNT_PRESERVED", existing_amount=existing_amount)
         debug_log(f"🔍 [EXTRACTION] Preserving existing amount: {existing_amount}")
     if entities.recipient_name is not None:
@@ -436,14 +371,11 @@ async def extract_entities(
     if entities.narration is not None:
         updates["narration"] = entities.narration
 
-    # Detect internal transfer (user wants to move between their own accounts)
-    # Pattern: source_bank_name + bank_name (destination) WITHOUT recipient_account AND WITHOUT recipient_name
-    # If recipient_name is present (e.g., "mum's gtb"), it's an EXTERNAL transfer, not internal
     is_internal_transfer = (
         entities.source_bank_name is not None
         and entities.bank_name is not None
         and entities.recipient_account is None
-        and entities.recipient_name is None  # No recipient = it's user's own account
+        and entities.recipient_name is None
     )
     if is_internal_transfer:
         updates["is_internal_transfer"] = True
@@ -451,22 +383,21 @@ async def extract_entities(
 
     if getattr(entities, "transfer_all", None) is True:
         updates["transfer_all"] = True
-        # Only set amount=None if user didn't provide explicit amount (e.g., "send all", not "send 40k from all accounts")
+        recipient_name = state.get("recipient_name") or new_state.get("recipient_name") or "recipient"
         if entities.amount is None:
-            updates["amount"] = None  # Will be resolved in check_funding node
+            updates["amount"] = None
+            updates["response"] = f"Sending your full balance to {recipient_name}..."
             debug_log("💰 [EXTRACTION] Transfer all detected - amount will be set from balance in check_funding")
         else:
             debug_log(f"💰 [EXTRACTION] Transfer all with explicit amount: ₦{entities.amount:,.0f}")
     elif state.get("transfer_all") and entities.amount is None:
-        # Preserve existing transfer_all flag if not in new extraction
         updates["transfer_all"] = state["transfer_all"]
         debug_log("🔍 [EXTRACTION] Preserving existing transfer_all flag")
 
     if getattr(entities, "transfer_percentage", None):
         updates["transfer_percentage"] = entities.transfer_percentage
-        # Set amount=None if user didn't provide explicit amount
         if entities.amount is None:
-            updates["amount"] = None  # Will be calculated from percentage in check_funding
+            updates["amount"] = None
             debug_log(
                 f"💰 [EXTRACTION] Transfer percentage detected: {entities.transfer_percentage}% - amount will be calculated in check_funding"
             )
@@ -475,7 +406,6 @@ async def extract_entities(
                 f"💰 [EXTRACTION] Transfer percentage with explicit amount: {entities.transfer_percentage}%, ₦{entities.amount:,.0f}"
             )
     elif state.get("transfer_percentage") and entities.amount is None:
-        # Preserve existing transfer_percentage if not in new extraction
         updates["transfer_percentage"] = state["transfer_percentage"]
         debug_log(f"🔍 [EXTRACTION] Preserving existing transfer_percentage: {state['transfer_percentage']}%")
 
@@ -493,12 +423,27 @@ async def extract_entities(
 
     new_state.update(updates)
 
+    merged_entities = TransferEntities(
+        amount=new_state.get("amount"),
+        recipient_account=new_state.get("recipient_account"),
+        recipient_name=new_state.get("recipient_name"),
+        bank_name=new_state.get("recipient_bank_name"),
+        bank_code=new_state.get("recipient_bank_code"),
+        source_bank_name=new_state.get("source_bank_name"),
+        transfer_all=new_state.get("transfer_all"),
+        transfer_percentage=new_state.get("transfer_percentage"),
+    )
+    is_internal_merged = bool(
+        merged_entities.source_bank_name 
+        and merged_entities.bank_name 
+        and not merged_entities.recipient_name
+    )
+    new_state["missing_fields"] = compute_missing_fields(merged_entities, is_internal_merged)
+
     debug_log(
-        f"🔍 [EXTRACTION] State after updates - recipient_account={new_state.get('recipient_account')}, recipient_bank={new_state.get('recipient_bank_name') or new_state.get('recipient_bank_code')}"
+        f"🔍 [EXTRACTION] State after updates - recipient_account={new_state.get('recipient_account')}, recipient_bank={new_state.get('recipient_bank_name') or new_state.get('recipient_bank_code')}, missing_fields={new_state['missing_fields']}"
     )
 
-    # Retained safety: Clear stale amount if after updates the recipient differs from what amount was set against
-    # BUT: Don't clear if user is providing account details for an existing task (same recipient_name)
     post_incoming_account = incoming_account_norm
     post_incoming_bank = incoming_bank_any
     post_existing_account = new_state.get("recipient_account")
@@ -515,9 +460,6 @@ async def extract_entities(
     is_new_account_post = bool(post_incoming_account and post_incoming_account != post_existing_account)
     is_new_bank_post = bool(post_incoming_bank and post_incoming_bank != post_existing_bank_any)
 
-    # Only clear amount if recipient actually changed (different account/bank AND different recipient name)
-    # Don't clear if user is just providing account details for the same recipient
-    # AND Don't clear if user is filling in a missing recipient for an existing amount (e.g. "Send 50k" -> "to John")
     was_empty_recipient = not (prev_account or prev_bank_any)
 
     if (is_new_account_post or is_new_bank_post) and new_state.get("amount") is not None:
@@ -543,8 +485,6 @@ async def extract_entities(
         f"✓ extract_entities FINAL STATE: recipient_account={final_recipient}, recipient_bank={final_bank}, amount={final_amount}, missing_fields={missing_fields}"
     )
 
-    # If all required fields are present and we have llm_reply, set response
-    # This handles cases where user provides optional fields (like narration) after all required fields are complete
     if (
         final_amount
         and final_recipient

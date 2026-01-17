@@ -14,7 +14,7 @@ DO NOT generate reply or decide missing fields — resolver handles that.
 | source_bank_name | Source bank | "from my access", before → or -> |
 | recipient_name | Name/alias | "to mum", "john's gtb" |
 | narration | Optional memo | — |
-| transfer_all | Move entire balance | true for "move all", "everything" |
+| transfer_all | User wants to send entire available balance | true when user indicates they want full balance, max amount, or whatever they have |
 | transfer_percentage | Percentage of balance | 50 for "half", 10 for "tithe" |
 | source_accounts | Dual-account pooling | List of bank names |
 
@@ -50,6 +50,7 @@ When user corrects mid-flow ("I meant 50k"):
 | "send 100k using access and gtb" | amount=100000, source_accounts=["Access Bank","GTBank"] |
 | "same as last time" | references.use_recent_transfer=true |
 | "I meant 50k" | amount=50000, correction.field="amount", correction.new_value=50000 |
+| "send all" or "just send what I have" | transfer_all=true (user wants full balance) |
 | "abeg make am dey go every month" | requested_features=["RECURRING"] |
 | "fi 5k si mama" (Yoruba) | amount=5000, recipient_name="mama" |
 

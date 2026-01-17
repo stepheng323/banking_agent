@@ -13,9 +13,10 @@ from apps.core.src.agent.graphs.__shared__.validation.service import (
 )
 from apps.core.src.agent.graphs.interfaces import FlowCompletionCallback
 from apps.core.src.agent.graphs.transfer.extractor import TransferEntityExtractor
+from apps.core.src.agent.graphs.transfer.models import TransferEntities
+from apps.core.src.agent.graphs.transfer.resolver import compute_missing_fields
 from apps.core.src.agent.graphs.transfer.state import TransferState
 from shared.cache.bank_cache import BankCacheService
-from shared.cache.redis_client import RedisClient
 from shared.cache.user_data import UserDataCache
 from shared.clients.factories.payment import PaymentProviderFactory
 from shared.clients.whatsapp.client import WhatsAppClient
@@ -27,14 +28,9 @@ from shared.repositories.actionable_message_repository import (
 from shared.repositories.beneficiary_repository import BeneficiaryRepository
 from shared.repositories.user_repository import UserRepository
 from shared.utils.logging import get_logger
+from shared.config import settings
 
 from .builder import build_graph
-from .cancellation import (
-    handle_cancellation_confirmation,
-    handle_cancellation_decline_with_checkpoint,
-    is_cancellation_confirmation,
-    is_cancellation_decline,
-)
 from .checkpoint_manager import (
     load_checkpoint_state,
     prepare_checkpoint_state,
@@ -85,7 +81,6 @@ class TransferFlowGraph(BaseFlowGraph):
             provider = None
         self.validation_service = AsyncValidationService(provider) if provider else None
 
-        self.redis_client = RedisClient.get_client()
         self.bank_cache = BankCacheService(redis_client=self.redis_client)
         self.payment_provider = provider
         self.queue = queue
@@ -134,7 +129,6 @@ class TransferFlowGraph(BaseFlowGraph):
         if self._graph is None:
             raise RuntimeError("Graph not compiled")
 
-        # Create run context
         config: RunnableConfig = {
             "configurable": {"thread_id": f"transfer:{phone_number}"}
         }
@@ -148,55 +142,20 @@ class TransferFlowGraph(BaseFlowGraph):
             quoted_data=quoted_data,
         )
 
-        # For repeat/modify transaction intents, clear existing checkpoint to use quoted_data
         intent = ctx.get_classification_intent()
         if intent in ("repeat_transaction", "modify_transaction") and quoted_data:
-            logger.info("clearing_checkpoint_for_quote_intent", intent=intent)
             await self.clear_checkpoint(phone_number)
 
-        # Check for cancellation confirmation/decline
-        last_response_key = f"user:{phone_number}:last_response"
-        last_response = await self.redis_client.get(last_response_key)
-
-        if is_cancellation_confirmation(ctx, last_response or ""):
-            return await handle_cancellation_confirmation(
-                ctx, self._graph, self.redis_client
-            )
-
-        if is_cancellation_decline(ctx, last_response or ""):
-            return await handle_cancellation_decline_with_checkpoint(ctx, self._graph)
-
-        # Check if this is a flow resume - just replay the last question
         is_flow_resume = (
             classification_result
             and classification_result.get("complexity_reason")
             == "Flow resume after interrupt"
         )
         if is_flow_resume:
-            # User said "yes continue" - get the saved response from when flow was paused
-            paused_flow_key = f"user:{phone_number}:paused_flow"
-            paused_flow_data = await self.redis_client.get(paused_flow_key)
-            if paused_flow_data:
-                # Clear the paused flow now that we've read it
-                await self.redis_client.delete(paused_flow_key)
-
-                logger.info(
-                    "Flow resume detected, will check checkpoint for flow re-send",
-                    has_paused_data=bool(paused_flow_data),
-                )
-            else:
-                # Clear just in case (no paused data but is_flow_resume flag was set)
-                await self.redis_client.delete(paused_flow_key)
-
-            # If no saved response, check checkpoint state to see if we need to re-send WhatsApp flow
             checkpoint_state = await load_checkpoint_state(ctx, self._graph)
             if checkpoint_state:
                 flow_state = checkpoint_state.get("flow_state")
                 if flow_state in ("authorizing", "confirming", "confirming_funding"):
-                    logger.info(
-                        f"Flow resume detected, re-sending WhatsApp flow for state: {flow_state}"
-                    )
-
                     confirmation_summary = checkpoint_state.get(
                         "confirmation_summary", ""
                     )
@@ -215,9 +174,7 @@ class TransferFlowGraph(BaseFlowGraph):
                         resume_msg = "Continuing where you left off!"
 
                     token = checkpoint_state.get("confirmation_token")
-                    if token and self.whatsapp_client:
-                        from shared.config import settings
-
+                    if token:
                         current_message_id = await self.redis_client.get(
                             f"user:{phone_number}:current_message_id"
                         )
@@ -240,7 +197,6 @@ class TransferFlowGraph(BaseFlowGraph):
                     )
 
         input_state = await load_checkpoint_state(ctx, self._graph)
-
         if input_state:
             input_state = await prepare_checkpoint_state(
                 ctx, input_state, self._graph, self.redis_client
@@ -270,10 +226,6 @@ class TransferFlowGraph(BaseFlowGraph):
                 quoted_data=ctx.quoted_data,
             )
 
-            # CRITICAL FIX: When continuing a session (e.g. valid checkpoint exists),
-            # create_initial_state sets fields like recipient_account to None.
-            # This overwrites the existing state in the checkpoint.
-            # We must filter out None values for business fields to preserve context.
             state_keys_to_preserve = {
                 "amount",
                 "recipient_name",
@@ -336,11 +288,6 @@ class TransferFlowGraph(BaseFlowGraph):
             "recipient_bank": input_state.get("recipient_bank_name"),
             "narration": input_state.get("narration"),
         }
-
-        logger.info(
-            "mid_correction_attempt", old_values=old_values, message=ctx.message[:30]
-        )
-
         try:
             extracted = await self.extractor.extract(
                 ctx.message,
@@ -386,17 +333,33 @@ class TransferFlowGraph(BaseFlowGraph):
                     input_state["narration"] = new_val
 
         if changes:
-            ack_msg = (
-                extracted.reply
-                if extracted.reply
-                else f"Got it, changing {' and '.join(changes)}."
-            )
+            ack_msg = f"Got it, changing {' and '.join(changes)}."
             await self.whatsapp_client.send_text(
                 ctx.phone_number, ack_msg, message_id=ctx.message_id
             )
-            input_state["flow_state"] = "extracting"
+            
+            # Recompute missing fields to ensure routing works correctly
+            current_entities = TransferEntities(
+                amount=input_state.get("amount"),
+                recipient_account=input_state.get("recipient_account"),
+                recipient_name=input_state.get("recipient_name"),
+                bank_name=input_state.get("recipient_bank_name"),
+                bank_code=input_state.get("recipient_bank_code"),
+                source_bank_name=input_state.get("source_bank_name"),
+                transfer_all=input_state.get("transfer_all"),
+                transfer_percentage=input_state.get("transfer_percentage"),
+            )
+            is_internal = bool(
+                current_entities.source_bank_name 
+                and current_entities.bank_name 
+                and not current_entities.recipient_name
+            )
+            input_state["missing_fields"] = compute_missing_fields(current_entities, is_internal)
+            
+            # Skip extraction and go straight to validation since we applied changes directly
+            input_state["flow_state"] = "validating"
             input_state["transfer_status"] = None
-            logger.info("mid_correction_applied", changes=changes)
+            logger.info("mid_correction_applied", changes=changes, missing=input_state["missing_fields"])
 
         input_state["message"] = ctx.message
         input_state["message_id"] = ctx.message_id
@@ -425,7 +388,6 @@ class TransferFlowGraph(BaseFlowGraph):
             ):
                 try:
                     await self.clear_checkpoint(phone_number)
-                    # Also clear any paused flow context to prevent stale data
                     paused_flow_key = f"user:{phone_number}:paused_flow"
                     await self.redis_client.delete(paused_flow_key)
                 except Exception as e:
@@ -465,12 +427,9 @@ class TransferFlowGraph(BaseFlowGraph):
 
         The graph is compiled with interrupt_before=["authorize"], so after confirm
         sends the PIN flow, the graph pauses at the authorize node. This method:
-        1. Updates the state with PIN verification result
-        2. Resumes the graph with ainvoke(None, config)
-        3. The authorize node then runs and processes the transaction
         """
         final_state = await self._inject_pin_and_resume(
-            phone_number, pin_verified, pin_error, self.redis_client
+            phone_number, pin_verified, pin_error
         )
 
         if not final_state:

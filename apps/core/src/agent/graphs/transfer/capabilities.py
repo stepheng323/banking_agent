@@ -97,6 +97,15 @@ def derive_requirements(
     intl_keywords = ["international", "abroad", "foreign", "usa", "uk", "ghana", "overseas"]
     if any(kw in msg_lower for kw in intl_keywords):
         requires.append(TransferCapability.INTERNATIONAL)
+        
+    # Also check requested_features from LLM extraction
+    for feature in extraction.requested_features:
+        if feature == "SCHEDULED":
+            requires.append(TransferCapability.SCHEDULED)
+        elif feature == "RECURRING":
+            requires.append(TransferCapability.RECURRING)
+        elif feature == "INTERNATIONAL":
+            requires.append(TransferCapability.INTERNATIONAL)
 
     return list(set(requires))
 

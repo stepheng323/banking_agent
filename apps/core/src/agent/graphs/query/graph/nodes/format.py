@@ -115,9 +115,7 @@ def _format_query_result(
         ):
             return result.summary_text
 
-    # Check if this is a multi-account balance query
-    if result.summary_text and result.summary_text.startswith("accounts:"):
-        # Parse metadata from summary: "accounts:2|total:₦X"
+    if result.summary_text and result.summary_text.startswith("accounts:") and "showing:" not in result.summary_text:
         parts = dict(p.split(":") for p in result.summary_text.split("|") if ":" in p)
         account_count = int(parts.get("accounts", 0))
         total = parts.get("total", "₦0")
@@ -150,17 +148,58 @@ def _format_query_result(
     if not result.items:
         return "No matching transactions found for your search."
 
+    # Special handling for single transaction - show detailed view
+    if len(result.items) == 1:
+        item = result.items[0]
+        lines = ["*Transaction Details*", ""]
+        
+        amount_str = f"₦{item.amount:,.2f}"
+        lines.append(f"*Amount:* {amount_str}")
+        lines.append(f"*Description:* {item.description}")
+        lines.append(f"*Date:* {item.date.strftime('%B %d, %Y') if item.date else 'Unknown'}")
+        
+        if item.metadata:
+            tx_type = item.metadata.get("type", "")
+            if tx_type:
+                direction = "Outgoing (Debit)" if tx_type == "debit" else "Incoming (Credit)"
+                lines.append(f"*Type:* {direction}")
+            
+            bank_name = item.metadata.get("bank_name", "")
+            if bank_name:
+                lines.append(f"*Bank:* {bank_name}")
+            
+            transaction_type = item.metadata.get("transaction_type", "")
+            if transaction_type:
+                lines.append(f"*Category:* {transaction_type.title()}")
+            
+            status = item.metadata.get("status", "")
+            if status:
+                status_display = "✅ Successful" if status.lower() in ("success", "completed", "successful") else f"⏳ {status.title()}"
+                lines.append(f"*Status:* {status_display}")
+        
+        if item.id:
+            lines.append(f"*Ref:* {item.id}")
+        
+        lines.append("")
+        
+        # Only show receipt/issue footer for transfers
+        transaction_type = item.metadata.get("transaction_type", "") if item.metadata else ""
+        if transaction_type == "transfer":
+            lines.append("_Reply: 'receipt' for proof | 'issue' to report a problem_")
+        
+        return "\n".join(lines)
+
     lines = []
 
     account_count = 1
     pagination = ""
-    heading = "📋 *Transactions*"
+    heading = "*Transactions*"
 
     # Check for dynamic heading from recipient drill-down or analytics
     if result.summary_text:
         # If summary contains recipient name pattern (*Name* — ₦X), use it as heading
         if "—" in result.summary_text and result.summary_text.startswith("*"):
-            heading = f"📋 {result.summary_text.split(chr(10))[0]}"  # First line only
+            heading = result.summary_text.split(chr(10))[0]  # First line only
         elif "|" in result.summary_text:
             # Standard pagination info
             parts = dict(p.split(":") for p in result.summary_text.split("|") if ":" in p)
@@ -171,7 +210,7 @@ def _format_query_result(
                 pagination = f"Showing {showing} of {total}"
 
     if account_count > 1:
-        heading = f"📋 *Transactions* _(across {account_count} accounts)_"
+        heading = f"*Transactions* _(across {account_count} accounts)_"
 
     lines.append(heading)
     lines.append("")
@@ -199,7 +238,18 @@ def _format_query_result(
                 amount = _format_amount(item.amount)
                 tx_type = item.metadata.get("type", "") if item.metadata else ""
 
-                if counterparty:
+                real_type = item.metadata.get("transaction_type") if item.metadata else None
+
+                if real_type in ("airtime", "data"):
+                    # Extract recipient from counterparty or description
+                    recipient = counterparty
+                    if not recipient:
+                        # Try to extract phone number from narration
+                        import re
+                        phone_match = re.search(r'(\d{10,11})', item.description or "")
+                        recipient = phone_match.group(1) if phone_match else "recipient"
+                    narration = f"{real_type.title()} for {recipient}"
+                elif counterparty:
                     if "transfer" in item.description.lower():
                         prefix = "Transfer from" if tx_type == "credit" else "Transfer to"
                         narration = f"{prefix} {counterparty}"

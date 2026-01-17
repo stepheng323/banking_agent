@@ -11,6 +11,7 @@ from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.redis.aio import AsyncRedisSaver
 from langgraph.graph.state import CompiledStateGraph
 
+from shared.cache.redis_client import RedisClient
 from shared.config.settings import settings
 from shared.utils.logging import get_logger
 
@@ -35,6 +36,7 @@ class BaseFlowGraph(ABC):
         self._checkpointer: AsyncRedisSaver | None = None
         self._checkpointer_setup: bool = False
         self._graph: CompiledStateGraph | None = None
+        self.redis_client = RedisClient.get_client()
 
     @property
     @abstractmethod
@@ -132,7 +134,6 @@ class BaseFlowGraph(ABC):
         phone_number: str,
         pin_verified: bool,
         pin_error: str | None,
-        redis_client: Any,  # Should be RedisClient type, but avoiding circ import
     ) -> dict[str, Any]:
         """
         Inject PIN verification result into state and resume graph execution.
@@ -152,7 +153,7 @@ class BaseFlowGraph(ABC):
         if not current_state or not current_state.values:
             return {}
 
-        current_message_id = await redis_client.get(f"user:{phone_number}:current_message_id")
+        current_message_id = await self.redis_client.get(f"user:{phone_number}:current_message_id")
         state_message_id = current_state.values.get("message_id")
 
         await self._graph.aupdate_state(
@@ -174,10 +175,10 @@ class BaseFlowGraph(ABC):
         final_state = await self._graph.ainvoke(None, config)
         return final_state
 
-    async def _get_conversation_state(self, phone_number: str, redis_client: Any) -> dict | None:
+    async def _get_conversation_state(self, phone_number: str) -> dict | None:
         """Fetch and parse conversation_state from Redis."""
         try:
-            state_json = await redis_client.get(f"user:{phone_number}:conversation_state")
+            state_json = await self.redis_client.get(f"user:{phone_number}:conversation_state")
             if not state_json:
                 return None
             import json

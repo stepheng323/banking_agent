@@ -63,6 +63,9 @@ class BeneficiarySuggestionService:
 
                 # Handle different beneficiary types
                 if beneficiary_type == "transfer":
+                    # Skip for self-transfers
+                    if recipient_data.get("is_self") or recipient_data.get("is_own_account"):
+                        return
                     account_number = recipient_data.get("account_number")
                     bank_code = recipient_data.get("bank_code")
                     recipient_name = recipient_data.get("name", "")
@@ -132,7 +135,6 @@ class BeneficiarySuggestionService:
                         logger.info("beneficiary_suggestion_sent_for")
 
                 elif beneficiary_type in ("airtime", "data"):
-                    # Airtime and data use the same logic (phone + network)
                     recipient_phone = recipient_data.get("phone", "")
                     network = recipient_data.get("network", "")
                     recipient_name = recipient_data.get("name", "")
@@ -140,9 +142,15 @@ class BeneficiarySuggestionService:
                     if not recipient_phone or not network:
                         return
 
+                    # Don't suggest for self-recharge
+                    # Simple heuristic: check if phones match (strictly or suffix)
+                    if recipient_phone == phone_number or \
+                       (len(recipient_phone) >= 10 and phone_number.endswith(recipient_phone[-10:])) or \
+                       (len(phone_number) >= 10 and recipient_phone.endswith(phone_number[-10:])):
+                        return
+
                     if has_beneficiary_repo:
                         try:
-                            # Use airtime type for both (they share the same structure)
                             exists_in_beneficiaries = (
                                 not uow.beneficiaries.should_suggest_airtime_beneficiary(
                                     user_id, recipient_phone, network

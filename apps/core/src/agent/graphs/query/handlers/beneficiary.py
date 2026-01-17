@@ -17,9 +17,12 @@ async def handle_beneficiary_summary(
     accounts_info: list[dict] | None = None,
     current_page: int = 0,
     page_size: int = 5,
+    user_id: str | None = None,
 ) -> QueryResult:
     """Handle beneficiary summary queries."""
-    transactions = await fetch_and_filter(provider, query, account_id, account_ids, accounts_info)
+    transactions = await fetch_and_filter(
+        provider, query, account_id, account_ids, accounts_info, user_id=user_id
+    )
 
     # Filter to actual transfers (exclude bank charges, fees, etc.)
     exclude_patterns = ("CHARGE", "FEE", "STAMP DUTY", "VAT", "SMS ALERT", "CARD MAINTENANCE", "COT", "NOTIFICATION")
@@ -37,7 +40,15 @@ async def handle_beneficiary_summary(
         counterparties[name]["count"] += 1
         counterparties[name]["transactions"].append(t)
 
-    sorted_cp = sorted(counterparties.items(), key=lambda x: x[1]["total"], reverse=True)
+    # Sort by count (frequency) or amount (total) based on query
+    sort_key = query.aggregation.sort_by if query.aggregation and query.aggregation.sort_by else "amount"
+    if sort_key == "count":
+        sorted_cp = sorted(counterparties.items(), key=lambda x: x[1]["count"], reverse=True)
+        heading_type = "Most Frequent"
+    else:
+        sorted_cp = sorted(counterparties.items(), key=lambda x: x[1]["total"], reverse=True)
+        heading_type = "Top"
+    
     limit = query.aggregation.limit if query.aggregation else 5
 
     # Determine timeframe text
@@ -49,7 +60,7 @@ async def handle_beneficiary_summary(
         timeframe = "last 30 days"
 
     # Build response
-    lines = [f"*Top Recipients* ({timeframe})\n"]
+    lines = [f"*{heading_type} Recipients* ({timeframe})\n"]
     items = []
 
     for i, (name, data) in enumerate(sorted_cp[:limit]):

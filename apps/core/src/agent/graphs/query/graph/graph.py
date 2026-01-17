@@ -212,7 +212,9 @@ class QueryFlowGraph:
 
         elif cont_type == "drill_down":
             state.update(handle_drill_down(state))
-            state.update(await format_node(state, self.llm))
+            # Only call format_node if drill_down didn't set a direct response
+            if not state.get("response"):
+                state.update(await format_node(state, self.llm))
 
         elif cont_type == "recipient_drill_down":
             state.update(handle_recipient_drill_down(state))

@@ -28,12 +28,14 @@ def route_by_state(
         f"DEBUG route_by_state: flow_state={flow_state}, has_response={bool(response)}, transfer_status={transfer_status}"
     )
     amount = state.get("amount")
+    transfer_all = state.get("transfer_all")
+    transfer_percentage = state.get("transfer_percentage")
     selected_account = state.get("selected_source_account")
     recipient_account = state.get("recipient_account")
     recipient_bank = state.get("recipient_bank_code") or state.get("recipient_bank_name")
     account_resolved = state.get("account_resolved")
     debug_log(
-        f"DEBUG route_by_state: fields amount={amount}, selected_account={'yes' if selected_account else 'no'}, recipient_account={recipient_account}, recipient_bank={recipient_bank}, account_resolved={account_resolved}"
+        f"DEBUG route_by_state: fields amount={amount}, transfer_all={transfer_all}, selected_account={'yes' if selected_account else 'no'}, recipient_account={recipient_account}, recipient_bank={recipient_bank}, account_resolved={account_resolved}"
     )
 
     # Terminal states - always end
@@ -96,7 +98,8 @@ def route_by_state(
 
     # Short-circuit: if all required fields are present, proceed to confirm
     # Only if the amount was set after recipient was established (when timestamps exist)
-    if amount and selected_account and recipient_account and recipient_bank and account_resolved:
+    has_amount = amount or transfer_all or transfer_percentage
+    if has_amount and selected_account and recipient_account and recipient_bank and account_resolved:
         amt_ts = state.get("_amount_set_at")
         rcp_ts = state.get("_recipient_established_at")
         seq_ok = True
@@ -110,6 +113,7 @@ def route_by_state(
             logger.info(
                 "route_by_state_ROUTING_TO_CONFIRM",
                 amount=amount,
+                transfer_all=transfer_all,
                 selected_account=bool(selected_account),
                 recipient_account=recipient_account,
                 recipient_bank=recipient_bank,
@@ -128,8 +132,6 @@ def route_by_state(
     ):
         return "end"
 
-    transfer_all = state.get("transfer_all")
-    transfer_percentage = state.get("transfer_percentage")
     if not amount and not transfer_all and not transfer_percentage:
         debug_log("DEBUG route_by_state: Missing amount -> collect_amount")
         return "collect_amount"

@@ -130,8 +130,10 @@ class ContinuationClassifier:
             elif result.continuation_type == "filter_delta" and result.filters:
                 data["filters"] = result.filters
 
-            elif result.continuation_type == "drill_down" and result.drill_down_index is not None:
-                data["drill_down_index"] = result.drill_down_index
+            elif result.continuation_type == "drill_down":
+                # Default to index 0 if not specified (common when only 1 item shown)
+                drill_idx = result.drill_down_index if result.drill_down_index is not None else 0
+                data["drill_down_index"] = drill_idx
                 data["drill_down_action"] = result.drill_down_action or "view_details"
 
             elif result.continuation_type == "end_session":

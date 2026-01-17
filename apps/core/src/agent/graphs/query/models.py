@@ -46,6 +46,7 @@ class Aggregation(BaseModel):
     type: Literal["sum", "average", "count", "largest", "breakdown"] = Field(default="sum")
     group_by: Literal["category", "merchant", "day", "account"] | None = None
     limit: int | None = Field(default=10, ge=1, le=100)
+    sort_by: Literal["amount", "count"] | None = Field(default="amount", description="Sort by total amount or transaction count")
 
 
 class NormalizedQuery(BaseModel):
@@ -66,6 +67,7 @@ class NormalizedQuery(BaseModel):
     amount_check: float | None = Field(default=None, description="Amount for affordability check")
     item_name: str | None = Field(default=None, description="Product name for price lookup")
     analysis_type: Literal["immediate", "relative", "simulated", "remainder"] = "immediate"
+    result_limit: int | None = Field(default=None, ge=1, le=100, description="Max results to return (e.g., 'last transaction' = 1)")
 
 
 class QueryResultItem(BaseModel):

@@ -23,6 +23,7 @@ from apps.core.src.agent.graphs.transfer.models_extraction import (
 from apps.core.src.agent.graphs.transfer.capabilities import (
     TransferCapability,
     check_capabilities,
+    derive_requirements,
     generate_limitation_message,
 )
 
@@ -34,6 +35,7 @@ class Decision(str, Enum):
     ASK_CLARIFY = "ASK_CLARIFY"   # Missing fields, ask user
     NEGOTIATE = "NEGOTIATE"       # Unsupported feature, offer alternative
     CANCEL = "CANCEL"             # User wants to cancel
+    LIMITATION = "LIMITATION"     # Feature unsupported (blocking)
 
 
 class Prompt(BaseModel):
@@ -57,6 +59,7 @@ class ResolverDecision(BaseModel):
     missing_fields: list[str] = Field(default_factory=list, description="Fields still needed")
     applied_entities: TransferEntities | None = Field(default=None, description="Entities after resolution")
     negotiation: Negotiation | None = Field(default=None, description="If NEGOTIATE decision")
+    limitation_message: str | None = Field(default=None, description="Message explaining limitation")
     prompts: list[Prompt] = Field(default_factory=list, description="Prompts for formatter")
     ambiguity_to_resolve: Ambiguity | None = Field(default=None, description="Ambiguity needing clarification")
 
@@ -152,6 +155,7 @@ def resolve(
     extraction: TransferExtractionResult,
     draft_entities: TransferEntities | None = None,
     recent_transfers: list[dict] | None = None,
+    user_message: str = "",
 ) -> ResolverDecision:
     """
     Main resolver entry point.
@@ -160,6 +164,7 @@ def resolve(
         extraction: LLM extraction result
         draft_entities: Existing draft from previous turns
         recent_transfers: User's recent transfer history
+        user_message: Original user message
         
     Returns:
         ResolverDecision with flow control
@@ -177,31 +182,51 @@ def resolve(
         entities = draft_entities
     
     # Check for ambiguities first
+    # Check for ambiguities first
     if extraction.ambiguities:
-        amount_ambiguity = next(
-            (a for a in extraction.ambiguities if a.code == AmbiguityCode.AMOUNT_UNCLEAR),
-            None
-        )
-        if amount_ambiguity:
-            return ResolverDecision(
-                decision=Decision.ASK_CLARIFY,
-                missing_fields=["amount"],
-                applied_entities=entities,
-                ambiguity_to_resolve=amount_ambiguity,
-                prompts=[Prompt(
-                    key="transfer.amount_ambiguous",
-                    vars={"candidates": amount_ambiguity.candidates},
-                )],
-            )
+        # Prioritize amount, then others
+        ordered_codes = [
+            AmbiguityCode.AMOUNT_UNCLEAR,
+            AmbiguityCode.MULTIPLE_BENEFICIARIES,
+            AmbiguityCode.UNCLEAR_BANK,
+            AmbiguityCode.UNCLEAR_RECIPIENT,
+        ]
+        
+        for code in ordered_codes:
+            ambiguity = next((a for a in extraction.ambiguities if a.code == code), None)
+            if ambiguity:
+                prompt_key = None
+                if code == AmbiguityCode.AMOUNT_UNCLEAR:
+                    prompt_key = "transfer.amount_ambiguous"
+                elif code == AmbiguityCode.MULTIPLE_BENEFICIARIES:
+                    prompt_key = "transfer.ambiguous_beneficiary"
+                elif code == AmbiguityCode.UNCLEAR_BANK:
+                    prompt_key = "transfer.ambiguous_bank"
+                elif code == AmbiguityCode.UNCLEAR_RECIPIENT:
+                    prompt_key = "transfer.ambiguous_recipient"
+                
+                if prompt_key:
+                    return ResolverDecision(
+                        decision=Decision.ASK_CLARIFY,
+                        missing_fields=[code.name], # Use ambiguity code as pseudo-missing field
+                        applied_entities=entities,
+                        ambiguity_to_resolve=ambiguity,
+                        prompts=[Prompt(
+                            key=prompt_key,
+                            vars={"candidates": ambiguity.candidates},
+                        )],
+                    )
     
-    # Check requested features (SCHEDULED, INTERNATIONAL, etc.)
-    negotiation = check_requested_features(extraction.requested_features)
-    if negotiation:
+    # Check capabilities and constraints
+    requires = derive_requirements(extraction, user_message)
+    missing_caps = check_capabilities(requires)
+    
+    if missing_caps:
+        limitation_msg = generate_limitation_message(missing_caps)
         return ResolverDecision(
-            decision=Decision.NEGOTIATE,
+            decision=Decision.LIMITATION,
             applied_entities=entities,
-            negotiation=negotiation,
-            prompts=[Prompt(key=negotiation.message_key, vars={})],
+            limitation_message=limitation_msg,
         )
     
     # Resolve references (recent transfers)

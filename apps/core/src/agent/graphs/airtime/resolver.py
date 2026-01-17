@@ -22,7 +22,10 @@ from apps.core.src.agent.graphs.airtime.models import (
 from apps.core.src.agent.graphs.airtime.capabilities import (
     AirtimeCapability,
     check_capabilities,
+    derive_requirements,
+    generate_limitation_message,
     AIRTIME_LIMITS,
+    CAPABILITY_LABELS,
 )
 
 
@@ -33,6 +36,7 @@ class Decision(str, Enum):
     ASK_CLARIFY = "ASK_CLARIFY"
     NEGOTIATE = "NEGOTIATE"
     CANCEL = "CANCEL"
+    LIMITATION = "LIMITATION"
 
 
 class Prompt(BaseModel):
@@ -56,11 +60,11 @@ class ResolverDecision(BaseModel):
     missing_fields: list[str] = Field(default_factory=list)
     applied_entities: SimpleAirtimeEntities | None = Field(default=None)
     negotiation: Negotiation | None = Field(default=None)
+    limitation_message: str | None = Field(default=None)
     prompts: list[Prompt] = Field(default_factory=list)
     ambiguity_to_resolve: Ambiguity | None = Field(default=None)
 
 
-# Required fields for airtime (phone not needed if is_self=True)
 REQUIRED_FIELDS = ["amount", "recipient_phone", "network"]
 
 
@@ -74,7 +78,6 @@ def compute_missing_fields(entities: SimpleAirtimeEntities | None, is_self: bool
     if entities.amount is None:
         missing.append("amount")
     
-    # Phone and network not required if is_self (user's own line)
     if not is_self and not entities.is_self:
         if entities.recipient_phone is None:
             missing.append("recipient_phone")
@@ -107,6 +110,7 @@ def check_requested_features(features: list[RequestedFeature]) -> Negotiation | 
 def resolve(
     extraction: AirtimeExtractionResult,
     draft_entities: SimpleAirtimeEntities | None = None,
+    user_message: str = "",
 ) -> ResolverDecision:
     """Main resolver entry point."""
     entities = extraction.entities
@@ -136,14 +140,16 @@ def resolve(
                 prompts=[Prompt(key="airtime.amount_ambiguous", vars={"candidates": amount_ambiguity.candidates})],
             )
     
-    # Check requested features
-    negotiation = check_requested_features(extraction.requested_features)
-    if negotiation:
+    # Check capabilities and constraints
+    requires = derive_requirements(extraction, user_message)
+    missing_caps = check_capabilities(requires)
+    
+    if missing_caps:
+        limitation_msg = generate_limitation_message(missing_caps)
         return ResolverDecision(
-            decision=Decision.NEGOTIATE,
+            decision=Decision.LIMITATION,
             applied_entities=entities,
-            negotiation=negotiation,
-            prompts=[Prompt(key=negotiation.message_key, vars={})],
+            limitation_message=limitation_msg,
         )
     
     # Compute missing fields

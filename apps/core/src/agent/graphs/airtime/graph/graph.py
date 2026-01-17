@@ -12,7 +12,6 @@ from apps.core.src.agent.graphs.__shared__.beneficiary.matcher import Beneficiar
 from apps.core.src.agent.graphs.airtime.extractor import AirtimeEntityExtractor
 from apps.core.src.agent.graphs.airtime.state import AirtimeState
 from apps.core.src.agent.graphs.interfaces import FlowCompletionCallback
-from shared.cache.redis_client import RedisClient
 from shared.cache.user_data import UserDataCache
 from shared.clients.whatsapp.client import WhatsAppClient
 from shared.queue.redis_queue import RedisQueue
@@ -71,7 +70,6 @@ class AirtimeFlowGraph(BaseFlowGraph):
         self.matcher = BeneficiaryMatcher()
         self.actionable_message_repo = actionable_message_repo
         self.completion_callback = completion_callback
-        self.redis_client = RedisClient.get_client()
         self.queue = queue
 
     @property
@@ -163,7 +161,7 @@ class AirtimeFlowGraph(BaseFlowGraph):
     ) -> dict | None:
         """Load state from Redis conversation_state as fallback."""
         try:
-            conv_state = await self._get_conversation_state(phone_number, self.redis_client)
+            conv_state = await self._get_conversation_state(phone_number)
             if not conv_state:
                 return None
 
@@ -378,7 +376,7 @@ class AirtimeFlowGraph(BaseFlowGraph):
     ) -> str:
         """Resume graph after PIN verification."""
         final_state = await self._inject_pin_and_resume(
-            phone_number, pin_verified, pin_error, self.redis_client
+            phone_number, pin_verified, pin_error
         )
 
         if not final_state:
