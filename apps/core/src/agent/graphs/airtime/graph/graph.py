@@ -2,19 +2,19 @@
 
 import asyncio
 import json
-from typing import Any, Optional, cast
+from typing import Any, cast
 
 from langchain_core.runnables import RunnableConfig
-from langgraph.checkpoint.redis.aio import AsyncRedisSaver
+from langgraph.graph.state import CompiledStateGraph
 
+from apps.core.src.agent.graphs.__shared__.base_flow_graph import BaseFlowGraph
 from apps.core.src.agent.graphs.__shared__.beneficiary.matcher import BeneficiaryMatcher
 from apps.core.src.agent.graphs.airtime.extractor import AirtimeEntityExtractor
-from apps.core.src.agent.graphs.interfaces import FlowCompletionCallback
 from apps.core.src.agent.graphs.airtime.state import AirtimeState
+from apps.core.src.agent.graphs.interfaces import FlowCompletionCallback
 from shared.cache.redis_client import RedisClient
 from shared.cache.user_data import UserDataCache
 from shared.clients.whatsapp.client import WhatsAppClient
-from shared.config.settings import settings
 from shared.queue.redis_queue import RedisQueue
 from shared.repositories.account_repository import AccountRepository
 from shared.repositories.actionable_message_repository import ActionableMessageRepository
@@ -48,7 +48,7 @@ CONTINUATION_PHRASES = {
 }
 
 
-class AirtimeFlowGraph:
+class AirtimeFlowGraph(BaseFlowGraph):
     """LangGraph-based airtime purchase flow."""
 
     def __init__(
@@ -60,8 +60,9 @@ class AirtimeFlowGraph:
         extractor: AirtimeEntityExtractor,
         queue: RedisQueue,
         actionable_message_repo: ActionableMessageRepository | None = None,
-        completion_callback: Optional[FlowCompletionCallback] = None,
+        completion_callback: FlowCompletionCallback | None = None,
     ):
+        super().__init__()
         self.user_cache = user_cache
         self.account_repo = account_repo
         self.beneficiary_repo = beneficiary_repo
@@ -72,13 +73,10 @@ class AirtimeFlowGraph:
         self.completion_callback = completion_callback
         self.redis_client = RedisClient.get_client()
         self.queue = queue
-        self.graph = None
-        self._checkpointer = None
-        self._checkpointer_setup = False
 
-    def _get_config(self, phone_number: str) -> RunnableConfig:
-        """Get LangGraph config for a user."""
-        return {"configurable": {"thread_id": f"airtime:{phone_number}"}}
+    @property
+    def checkpoint_prefix(self) -> str:
+        return "airtime"
 
     def _preserve_transaction_data(self, state: dict) -> dict[str, Any]:
         """Extract transaction data to preserve from state."""
@@ -91,39 +89,22 @@ class AirtimeFlowGraph:
             "matched_beneficiary": state.get("matched_beneficiary"),
         }
 
-    async def clear_checkpoint(self, phone_number: str) -> None:
-        """Clear airtime flow checkpoint for a user."""
-        try:
-            await self._ensure_checkpointer()
-            if self._checkpointer:
-                thread_id = f"airtime:{phone_number}"
-                await self._checkpointer.adelete_thread(thread_id)
-                logger.info("checkpoint_cleared", phone=phone_number[:6])
-        except Exception as e:
-            logger.error("checkpoint_clear_error", error=str(e))
-
-    async def _ensure_checkpointer(self):
-        """Ensure checkpointer is initialized and graph is compiled."""
-        if not self._checkpointer_setup:
-            self._checkpointer = AsyncRedisSaver(redis_url=settings.redis_url)
-            await self._checkpointer.asetup()
-            self._checkpointer_setup = True
-
-        if self.graph is None:
-            self.graph = build_graph(
-                extractor=self.extractor,
-                user_cache=self.user_cache,
-                account_repo=self.account_repo,
-                beneficiary_repo=self.beneficiary_repo,
-                matcher=self.matcher,
-                whatsapp_client=self.whatsapp_client,
-                redis_client=self.redis_client,
-                queue=self.queue,
-                actionable_message_repo=self.actionable_message_repo,
-            ).compile(
-                checkpointer=self._checkpointer,
-                interrupt_before=["authorize"],
-            )
+    def _build_graph(self) -> CompiledStateGraph:
+        """Build and compile the airtime flow graph."""
+        return build_graph(
+            extractor=self.extractor,
+            user_cache=self.user_cache,
+            account_repo=self.account_repo,
+            beneficiary_repo=self.beneficiary_repo,
+            matcher=self.matcher,
+            whatsapp_client=self.whatsapp_client,
+            redis_client=self.redis_client,
+            queue=self.queue,
+            actionable_message_repo=self.actionable_message_repo,
+        ).compile(
+            checkpointer=self._checkpointer,
+            interrupt_before=["authorize"],
+        )
 
     async def _handle_flow_resume(self, phone_number: str) -> str | None:
         """Handle flow resume after interrupt - returns replay response or None."""
@@ -155,7 +136,7 @@ class AirtimeFlowGraph:
     async def _load_state_from_checkpoint(self, config: RunnableConfig) -> tuple[dict | None, bool]:
         """Load state from LangGraph checkpoint. Returns (state, is_stale)."""
         try:
-            current_state = await self.graph.aget_state(config)
+            current_state = await self._graph.aget_state(config)
             if current_state and current_state.values:
                 loaded_state = dict(current_state.values)
                 flow_state = loaded_state.get("flow_state")
@@ -331,7 +312,7 @@ class AirtimeFlowGraph:
         await self._ensure_checkpointer()
         config = self._get_config(phone_number)
 
-        if self.graph is None:
+        if self._graph is None:
             raise RuntimeError("Graph not compiled")
 
         # Check flow resume
@@ -381,7 +362,7 @@ class AirtimeFlowGraph:
             input_state["language"] = classification_result["detected_language"]
 
         # Execute graph
-        final_state = await self.graph.ainvoke(cast(AirtimeState, input_state), config)
+        final_state = await self._graph.ainvoke(cast(AirtimeState, input_state), config)
         await update_conversation_state(phone_number, cast(AirtimeState, final_state))
 
         logger.info(
@@ -400,10 +381,10 @@ class AirtimeFlowGraph:
         await self._ensure_checkpointer()
         config = self._get_config(phone_number)
 
-        if self.graph is None:
+        if self._graph is None:
             raise RuntimeError("Graph not compiled")
 
-        current_state = await self.graph.aget_state(config)
+        current_state = await self._graph.aget_state(config)
         if not current_state or not current_state.values:
             return "No active airtime purchase session found."
 
@@ -411,7 +392,7 @@ class AirtimeFlowGraph:
         current_message_id = await self.redis_client.get(f"user:{phone_number}:current_message_id")
         state_message_id = current_state.values.get("message_id")
 
-        await self.graph.aupdate_state(
+        await self._graph.aupdate_state(
             config,
             {
                 "pin_verified": pin_verified,
@@ -422,7 +403,7 @@ class AirtimeFlowGraph:
 
         logger.info("pin_resume_starting", phone=phone_number[:6], pin_verified=pin_verified)
 
-        final_state = await self.graph.ainvoke(None, config)
+        final_state = await self._graph.ainvoke(None, config)
         await update_conversation_state(phone_number, cast(AirtimeState, final_state))
 
         logger.info(
