@@ -126,3 +126,63 @@ class BaseFlowGraph(ABC):
         """Check if there's an active checkpoint for this user."""
         state = await self.get_checkpoint_state(phone_number)
         return state is not None
+
+    async def _inject_pin_and_resume(
+        self,
+        phone_number: str,
+        pin_verified: bool,
+        pin_error: str | None,
+        redis_client: Any,  # Should be RedisClient type, but avoiding circ import
+    ) -> dict[str, Any]:
+        """
+        Inject PIN verification result into state and resume graph execution.
+
+        Common pattern for all flows after confirm sends PIN prompt.
+        1. Gets current message ID
+        2. Updates state with PIN result
+        3. Resumes graph
+        """
+        await self._ensure_checkpointer()
+        if not self._graph:
+            raise RuntimeError("Graph not compiled")
+
+        config = self._get_config(phone_number)
+        current_state = await self._graph.aget_state(config)
+
+        if not current_state or not current_state.values:
+            return {}
+
+        current_message_id = await redis_client.get(f"user:{phone_number}:current_message_id")
+        state_message_id = current_state.values.get("message_id")
+
+        await self._graph.aupdate_state(
+            config,
+            {
+                "pin_verified": pin_verified,
+                "pin_verification_error": pin_error,
+                "message_id": current_message_id or state_message_id,
+            },
+        )
+
+        logger.info(
+            "pin_resume_starting",
+            flow=self.checkpoint_prefix,
+            phone=phone_number[:6] if phone_number else None,
+            pin_verified=pin_verified,
+        )
+
+        final_state = await self._graph.ainvoke(None, config)
+        return final_state
+
+    async def _get_conversation_state(self, phone_number: str, redis_client: Any) -> dict | None:
+        """Fetch and parse conversation_state from Redis."""
+        try:
+            state_json = await redis_client.get(f"user:{phone_number}:conversation_state")
+            if not state_json:
+                return None
+            import json
+
+            return json.loads(state_json)
+        except Exception as e:
+            logger.warning("conversation_state_fetch_error", error=str(e))
+            return None

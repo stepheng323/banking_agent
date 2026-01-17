@@ -163,11 +163,10 @@ class AirtimeFlowGraph(BaseFlowGraph):
     ) -> dict | None:
         """Load state from Redis conversation_state as fallback."""
         try:
-            conv_state_json = await self.redis_client.get(f"user:{phone_number}:conversation_state")
-            if not conv_state_json:
+            conv_state = await self._get_conversation_state(phone_number, self.redis_client)
+            if not conv_state:
                 return None
 
-            conv_state = json.loads(conv_state_json)
             if conv_state.get("active_flow") != "airtime":
                 return None
             if conv_state.get("flow_state") not in ("confirming", "authorizing"):
@@ -378,32 +377,13 @@ class AirtimeFlowGraph(BaseFlowGraph):
         self, phone_number: str, pin_verified: bool, pin_error: str | None = None
     ) -> str:
         """Resume graph after PIN verification."""
-        await self._ensure_checkpointer()
-        config = self._get_config(phone_number)
-
-        if self._graph is None:
-            raise RuntimeError("Graph not compiled")
-
-        current_state = await self._graph.aget_state(config)
-        if not current_state or not current_state.values:
-            return "No active airtime purchase session found."
-
-        # Get the latest message_id from Redis for typing indicators
-        current_message_id = await self.redis_client.get(f"user:{phone_number}:current_message_id")
-        state_message_id = current_state.values.get("message_id")
-
-        await self._graph.aupdate_state(
-            config,
-            {
-                "pin_verified": pin_verified,
-                "pin_verification_error": pin_error,
-                "message_id": current_message_id or state_message_id,  # Use fresh ID if available
-            },
+        final_state = await self._inject_pin_and_resume(
+            phone_number, pin_verified, pin_error, self.redis_client
         )
 
-        logger.info("pin_resume_starting", phone=phone_number[:6], pin_verified=pin_verified)
+        if not final_state:
+            return "No active airtime purchase session found."
 
-        final_state = await self._graph.ainvoke(None, config)
         await update_conversation_state(phone_number, cast(AirtimeState, final_state))
 
         logger.info(

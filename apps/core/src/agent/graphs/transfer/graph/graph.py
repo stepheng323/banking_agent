@@ -469,40 +469,12 @@ class TransferFlowGraph(BaseFlowGraph):
         2. Resumes the graph with ainvoke(None, config)
         3. The authorize node then runs and processes the transaction
         """
-        await self._ensure_checkpointer()
+        final_state = await self._inject_pin_and_resume(
+            phone_number, pin_verified, pin_error, self.redis_client
+        )
 
-        config: RunnableConfig = {
-            "configurable": {"thread_id": f"transfer:{phone_number}"}
-        }
-
-        if self._graph is None:
-            raise RuntimeError("Graph not compiled")
-
-        current_state = await self._graph.aget_state(config)
-        if not current_state or not current_state.values:
+        if not final_state:
             return "No active transfer session found."
-
-        current_message_id = await self.redis_client.get(
-            f"user:{phone_number}:current_message_id"
-        )
-        state_message_id = current_state.values.get("message_id")
-
-        await self._graph.aupdate_state(
-            config,
-            {
-                "pin_verified": pin_verified,
-                "pin_verification_error": pin_error,
-                "message_id": current_message_id
-                or state_message_id,  # Use fresh ID if available
-            },
-        )
-
-        logger.info(
-            "resume_after_pin_verification_starting",
-            phone=phone_number,
-            pin_verified=pin_verified,
-        )
-        final_state = await self._graph.ainvoke(None, config)
         flow_state = final_state.get("flow_state")
         transfer_status = final_state.get("transfer_status")
         pin_verified_state = final_state.get("pin_verified", False)
@@ -522,6 +494,7 @@ class TransferFlowGraph(BaseFlowGraph):
                 flow_state=flow_state,
                 transfer_status=transfer_status,
             )
+            config = self._get_config(phone_number)
             final_state = await self._graph.ainvoke(None, config)
 
         await update_conversation_state(phone_number, cast(TransferState, final_state))
