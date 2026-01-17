@@ -1,16 +1,17 @@
 """LangGraph graph for transfer flow."""
 
 import asyncio
-from typing import Optional, cast
+from typing import cast
 
 from langchain_core.runnables import RunnableConfig
-from langgraph.checkpoint.redis.aio import AsyncRedisSaver
+from langgraph.graph.state import CompiledStateGraph
 
+from apps.core.src.agent.graphs.__shared__.base_flow_graph import BaseFlowGraph
 from apps.core.src.agent.graphs.__shared__.beneficiary.matcher import BeneficiaryMatcher
-from apps.core.src.agent.graphs.interfaces import FlowCompletionCallback
 from apps.core.src.agent.graphs.__shared__.validation.service import (
     AsyncValidationService,
 )
+from apps.core.src.agent.graphs.interfaces import FlowCompletionCallback
 from apps.core.src.agent.graphs.transfer.extractor import TransferEntityExtractor
 from apps.core.src.agent.graphs.transfer.state import TransferState
 from shared.cache.bank_cache import BankCacheService
@@ -18,7 +19,6 @@ from shared.cache.redis_client import RedisClient
 from shared.cache.user_data import UserDataCache
 from shared.clients.factories.payment import PaymentProviderFactory
 from shared.clients.whatsapp.client import WhatsAppClient
-from shared.config.settings import settings
 from shared.queue.redis_queue import RedisQueue
 from shared.repositories.account_repository import AccountRepository
 from shared.repositories.actionable_message_repository import (
@@ -51,7 +51,7 @@ from .state import (
 logger = get_logger(__name__)
 
 
-class TransferFlowGraph:
+class TransferFlowGraph(BaseFlowGraph):
     """LangGraph-based transfer flow."""
 
     def __init__(
@@ -63,9 +63,10 @@ class TransferFlowGraph:
         extractor: TransferEntityExtractor,
         queue: RedisQueue,
         actionable_message_repo: ActionableMessageRepository | None = None,
-        completion_callback: Optional[FlowCompletionCallback] = None,
+        completion_callback: FlowCompletionCallback | None = None,
         user_repo: UserRepository | None = None,
     ):
+        super().__init__()
         self.user_cache = user_cache
         self.beneficiary_repo = beneficiary_repo
         self.account_repo = account_repo
@@ -89,57 +90,33 @@ class TransferFlowGraph:
         self.payment_provider = provider
         self.queue = queue
 
-        self.graph = None
-        self._checkpointer = None
-        self._checkpointer_setup = False
+    @property
+    def checkpoint_prefix(self) -> str:
+        return "transfer"
 
-    async def clear_checkpoint(self, phone_number: str) -> None:
-        """Clear transfer flow checkpoint for a user."""
-        try:
-            await self._ensure_checkpointer()
-            config: RunnableConfig = {
-                "configurable": {"thread_id": f"transfer:{phone_number}"}
-            }
-            if self._checkpointer:
-                thread_id = config["configurable"]["thread_id"]
-                await self._checkpointer.adelete_thread(thread_id)
-                logger.info(f"Cleared transfer checkpoint for {phone_number}")
-            else:
-                logger.warning(
-                    f"Checkpointer not initialized, cannot clear checkpoint for {phone_number}"
-                )
-        except Exception as e:
-            logger.error(f"Error clearing transfer checkpoint: {e}")
-
-    async def _ensure_checkpointer(self):
-        """Ensure checkpointer is initialized and graph is compiled."""
-        if not self._checkpointer_setup:
-            self._checkpointer = AsyncRedisSaver(redis_url=settings.redis_url)
-            await self._checkpointer.asetup()
-            self._checkpointer_setup = True
-
-        if self.graph is None:
-            self.graph = build_graph(
-                extractor=self.extractor,
-                user_cache=self.user_cache,
-                account_repo=self.account_repo,
-                beneficiary_repo=self.beneficiary_repo,
-                matcher=self.matcher,
-                validation_service=self.validation_service,
-                bank_cache=self.bank_cache,
-                payment_provider=self.payment_provider,
-                whatsapp_client=self.whatsapp_client,
-                redis_client=self.redis_client,
-                queue=self.queue,
-                actionable_message_repo=self.actionable_message_repo,
-                user_repo=self.user_repo,
-            ).compile(
-                checkpointer=self._checkpointer,
-                interrupt_before=[
-                    "authorize",
-                    "verify_funding",
-                ],  # Pause before authorize AND verify_funding
-            )
+    def _build_graph(self) -> CompiledStateGraph:
+        """Build and compile the transfer flow graph."""
+        return build_graph(
+            extractor=self.extractor,
+            user_cache=self.user_cache,
+            account_repo=self.account_repo,
+            beneficiary_repo=self.beneficiary_repo,
+            matcher=self.matcher,
+            validation_service=self.validation_service,
+            bank_cache=self.bank_cache,
+            payment_provider=self.payment_provider,
+            whatsapp_client=self.whatsapp_client,
+            redis_client=self.redis_client,
+            queue=self.queue,
+            actionable_message_repo=self.actionable_message_repo,
+            user_repo=self.user_repo,
+        ).compile(
+            checkpointer=self._checkpointer,
+            interrupt_before=[
+                "authorize",
+                "verify_funding",
+            ],
+        )
 
     async def run(
         self,
@@ -154,7 +131,7 @@ class TransferFlowGraph:
         logger.info(f"run called with message: '{message}'")
         await self._ensure_checkpointer()
 
-        if self.graph is None:
+        if self._graph is None:
             raise RuntimeError("Graph not compiled")
 
         # Create run context
@@ -183,11 +160,11 @@ class TransferFlowGraph:
 
         if is_cancellation_confirmation(ctx, last_response or ""):
             return await handle_cancellation_confirmation(
-                ctx, self.graph, self.redis_client
+                ctx, self._graph, self.redis_client
             )
 
         if is_cancellation_decline(ctx, last_response or ""):
-            return await handle_cancellation_decline_with_checkpoint(ctx, self.graph)
+            return await handle_cancellation_decline_with_checkpoint(ctx, self._graph)
 
         # Check if this is a flow resume - just replay the last question
         is_flow_resume = (
@@ -212,7 +189,7 @@ class TransferFlowGraph:
                 await self.redis_client.delete(paused_flow_key)
 
             # If no saved response, check checkpoint state to see if we need to re-send WhatsApp flow
-            checkpoint_state = await load_checkpoint_state(ctx, self.graph)
+            checkpoint_state = await load_checkpoint_state(ctx, self._graph)
             if checkpoint_state:
                 flow_state = checkpoint_state.get("flow_state")
                 if flow_state in ("authorizing", "confirming", "confirming_funding"):
@@ -262,11 +239,11 @@ class TransferFlowGraph:
                         else resume_msg
                     )
 
-        input_state = await load_checkpoint_state(ctx, self.graph)
+        input_state = await load_checkpoint_state(ctx, self._graph)
 
         if input_state:
             input_state = await prepare_checkpoint_state(
-                ctx, input_state, self.graph, self.redis_client
+                ctx, input_state, self._graph, self.redis_client
             )
             if input_state is None:
                 return ""
@@ -334,7 +311,7 @@ class TransferFlowGraph:
             )
             input_state = filtered_input
 
-        final_state = await self.graph.ainvoke(cast(TransferState, input_state), config)
+        final_state = await self._graph.ainvoke(cast(TransferState, input_state), config)
         await update_conversation_state(phone_number, cast(TransferState, final_state))
 
         await self._handle_post_processing(phone_number, final_state)
@@ -498,10 +475,10 @@ class TransferFlowGraph:
             "configurable": {"thread_id": f"transfer:{phone_number}"}
         }
 
-        if self.graph is None:
+        if self._graph is None:
             raise RuntimeError("Graph not compiled")
 
-        current_state = await self.graph.aget_state(config)
+        current_state = await self._graph.aget_state(config)
         if not current_state or not current_state.values:
             return "No active transfer session found."
 
@@ -510,7 +487,7 @@ class TransferFlowGraph:
         )
         state_message_id = current_state.values.get("message_id")
 
-        await self.graph.aupdate_state(
+        await self._graph.aupdate_state(
             config,
             {
                 "pin_verified": pin_verified,
@@ -525,7 +502,7 @@ class TransferFlowGraph:
             phone=phone_number,
             pin_verified=pin_verified,
         )
-        final_state = await self.graph.ainvoke(None, config)
+        final_state = await self._graph.ainvoke(None, config)
         flow_state = final_state.get("flow_state")
         transfer_status = final_state.get("transfer_status")
         pin_verified_state = final_state.get("pin_verified", False)
@@ -545,7 +522,7 @@ class TransferFlowGraph:
                 flow_state=flow_state,
                 transfer_status=transfer_status,
             )
-            final_state = await self.graph.ainvoke(None, config)
+            final_state = await self._graph.ainvoke(None, config)
 
         await update_conversation_state(phone_number, cast(TransferState, final_state))
 
