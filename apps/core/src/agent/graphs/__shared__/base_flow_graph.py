@@ -134,13 +134,15 @@ class BaseFlowGraph(ABC):
         phone_number: str,
         pin_verified: bool,
         pin_error: str | None,
+        **extra_updates: Any,
     ) -> dict[str, Any]:
         """
         Inject PIN verification result into state and resume graph execution.
 
         Common pattern for all flows after confirm sends PIN prompt.
+        accepts extra_updates to merge additional fields into state (e.g. user_id).
         1. Gets current message ID
-        2. Updates state with PIN result
+        2. Updates state with PIN result and extra updates
         3. Resumes graph
         """
         await self._ensure_checkpointer()
@@ -162,6 +164,7 @@ class BaseFlowGraph(ABC):
                 "pin_verified": pin_verified,
                 "pin_verification_error": pin_error,
                 "message_id": current_message_id or state_message_id,
+                **extra_updates,
             },
         )
 

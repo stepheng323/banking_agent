@@ -424,9 +424,6 @@ class TransferFlowGraph(BaseFlowGraph):
     ) -> str:
         """
         Resume graph execution after PIN verification using LangGraph interrupt pattern.
-
-        The graph is compiled with interrupt_before=["authorize"], so after confirm
-        sends the PIN flow, the graph pauses at the authorize node. This method:
         """
         final_state = await self._inject_pin_and_resume(
             phone_number, pin_verified, pin_error
@@ -434,32 +431,13 @@ class TransferFlowGraph(BaseFlowGraph):
 
         if not final_state:
             return "No active transfer session found."
+        
         flow_state = final_state.get("flow_state")
         transfer_status = final_state.get("transfer_status")
-        pin_verified_state = final_state.get("pin_verified", False)
-
-        should_continue = (
-            flow_state == "initiating_payout" and transfer_status != "completed"
-        ) or (
-            flow_state == "authorizing"
-            and pin_verified_state
-            and transfer_status != "completed"
-        )
-
-        if should_continue:
-            logger.info(
-                "resume_after_pin_continuing_to_authorize",
-                phone=phone_number,
-                flow_state=flow_state,
-                transfer_status=transfer_status,
-            )
-            config = self._get_config(phone_number)
-            final_state = await self._graph.ainvoke(None, config)
 
         await update_conversation_state(phone_number, cast(TransferState, final_state))
 
         response = final_state.get("response", "")
-        transfer_status = final_state.get("transfer_status")
 
         if self.completion_callback:
             if transfer_status in ("completed", "failed", "cancelled"):

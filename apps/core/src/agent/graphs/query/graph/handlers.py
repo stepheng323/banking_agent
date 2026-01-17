@@ -6,9 +6,14 @@ from typing import Any
 from apps.core.src.agent.graphs.query.models import QueryResult, QueryResultItem
 
 
-def handle_drill_down(state: dict[str, Any]) -> dict[str, Any]:
+import json
+from shared.cache.redis_client import RedisClient
+
+QUEUE_NAME = "banking:receipt_jobs"
+
+
+async def handle_drill_down(state: dict[str, Any]) -> dict[str, Any]:
     """Handle drill-down using index and action from classifier."""
-    from apps.core.src.agent.graphs.query.receipt import format_text_receipt
 
     query_result = state.get("query_result")
     drill_down_index = state.get("drill_down_index", 0)
@@ -21,21 +26,59 @@ def handle_drill_down(state: dict[str, Any]) -> dict[str, Any]:
     item = query_result.items[index]
 
     if drill_down_action == "get_receipt":
-        # Check if receipt is available for this transaction type
         transaction_type = item.metadata.get("transaction_type", "") if item.metadata else ""
         if transaction_type != "transfer":
             return {
                 "response": f"Receipts are only available for bank transfers. This is a {transaction_type.title() if transaction_type else 'transaction'}.",
                 "session_active": True,
             }
-        
-        receipt = format_text_receipt(item)
-        return {
-            "response": receipt,
-            "session_active": True,
-        }
 
-    elif drill_down_action == "report_issue":
+        try:
+            redis_client = RedisClient.get_client()
+            
+            # Map QueryResultItem to receipt payload
+            transfer_data = {
+                "amount": item.amount,
+                "narration": item.description,
+                "recipient": {
+                    "name": item.metadata.get("recipient_name") or item.description,
+                    "bank_name": item.metadata.get("bank_name", "Unknown Bank"),
+                    "account_number": item.metadata.get("recipient_account", "N/A"),
+                },
+                "source": {
+                    "account_name": "User Account"  # Placeholder as we don't have source name in item
+                }
+            }
+            
+            # Use specific extracted fields if available
+            if item.metadata.get("recipient_name"):
+                 transfer_data["recipient"]["name"] = item.metadata.get("recipient_name")
+                 
+            transfer_result = {
+                "transaction_id": item.id or "N/A",
+                "reference": item.id or "N/A",
+            }
+            
+            job = {
+                "phone_number": state.get("phone_number"),
+                "transfer_data": transfer_data,
+                "transfer_result": transfer_result,
+                "signal_key": None 
+            }
+            
+            await redis_client.rpush(QUEUE_NAME, json.dumps(job))
+            
+            return {
+                "response": "I'm generating your receipt now. I'll send it to you as an image shortly.",
+                "session_active": True,
+            }
+        except Exception as e:
+            return {
+                "response": "Sorry, I couldn't generate the receipt at this moment. Please try again later.",
+                "session_active": True,
+            }
+
+    if drill_down_action == "report_issue":
         return {
             "response": (
                 f"I understand you have an issue with this transaction:\n\n"
@@ -51,16 +94,13 @@ def handle_drill_down(state: dict[str, Any]) -> dict[str, Any]:
             "session_active": True,
         }
 
-    # Default: view_details - show detailed transaction info
     lines = ["*Transaction Details*", ""]
     
-    # Amount and description
     amount_str = f"₦{item.amount:,.2f}"
     lines.append(f"*Amount:* {amount_str}")
     lines.append(f"*Description:* {item.description}")
     lines.append(f"*Date:* {item.date.strftime('%B %d, %Y') if item.date else 'Unknown'}")
     
-    # Metadata details
     if item.metadata:
         tx_type = item.metadata.get("type", "")
         if tx_type:
@@ -245,3 +285,6 @@ def handle_unclear(state: dict[str, Any]) -> dict[str, Any]:
         "clarification_attempts": attempts,
         "session_active": True,
     }
+
+
+

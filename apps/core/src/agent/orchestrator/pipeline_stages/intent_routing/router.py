@@ -236,8 +236,6 @@ class OrchestratorIntentRouter:
             user_ctx: User context
             image_data: Optional base64 image data
             message_id: Optional message ID for typing indicator
-            is_flow_resume: True if this is resuming a paused flow
-
         Returns:
             Response string
         """

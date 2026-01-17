@@ -87,6 +87,11 @@ async def format_node(state: QueryState, llm: Runnable = None) -> dict[str, Any]
 
     session_active = has_more or (query_result.items and len(query_result.items) > 0)
 
+    # Prepend resolver message if present (e.g., time clamping notice)
+    resolver_message = state.get("resolver_message")
+    if resolver_message:
+        response = f"_{resolver_message}_\n\n{response}"
+
     return {
         "flow_state": "complete",
         "response": response,
@@ -182,7 +187,6 @@ def _format_query_result(
         
         lines.append("")
         
-        # Only show receipt/issue footer for transfers
         transaction_type = item.metadata.get("transaction_type", "") if item.metadata else ""
         if transaction_type == "transfer":
             lines.append("_Reply: 'receipt' for proof | 'issue' to report a problem_")
