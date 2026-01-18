@@ -118,6 +118,35 @@ class OrchestratorClassificationService:
                 complexity_reason="Simple greeting",
             )
 
+        # Dangerous Intent Fast Path: Hard block
+        dangerous_patterns = {
+            "ignore previous", "ignore all", "disregard above", "forget everything",
+            "new instructions:", "system prompt:", "you are now", "pretend to be",
+            "act as if", "bypass pin", "reveal prompt", "admin mode",
+        }
+        if any(pattern in text_clean for pattern in dangerous_patterns):
+            return ClassificationResult(
+                intent="dangerous",
+                is_complex=False,
+                confidence=0.99,
+                response="I can't process that request.",
+                complexity_reason="Dangerous input detected",
+            )
+
+        # Unsupported Intent Fast Path: Soft refusal
+        unsupported_patterns = {
+            "crypto", "bitcoin", "investment", "invest", "pdf statement",
+            "download statement", "export pdf", "chargeback", "reverse transfer",
+        }
+        if any(pattern in text_clean for pattern in unsupported_patterns):
+            return ClassificationResult(
+                intent="unsupported",
+                is_complex=False,
+                confidence=0.95,
+                response="I can't do that yet. I can help you send money, buy airtime/data, or check your balance. What would you like?",
+                complexity_reason="Unsupported feature requested",
+            )
+
         active_flow = None
         if context and context.get("conversationState"):
             active_flow = context["conversationState"].get("active_flow")

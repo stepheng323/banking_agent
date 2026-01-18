@@ -3,11 +3,7 @@
 import time
 from typing import Any, cast
 
-from apps.core.src.agent.graphs.airtime.capabilities import (
-    check_capabilities,
-    derive_requirements,
-    generate_limitation_message,
-)
+from apps.core.src.agent.graphs.airtime.capabilities import derive_requirements
 from apps.core.src.agent.graphs.airtime.resolver import resolve, Decision
 from apps.core.src.agent.graphs.airtime.extractor import AirtimeEntityExtractor
 from apps.core.src.agent.graphs.airtime.models import (
@@ -25,7 +21,41 @@ logger = get_logger(__name__)
 async def extract_entities(state: AirtimeState, extractor: AirtimeEntityExtractor) -> AirtimeState:
     """Extract entities from user message."""
 
+    # Handle negotiation responses (yes/no when pending_negotiation exists)
+    pending_negotiation = state.get("pending_negotiation")
+    flow_state = state.get("flow_state")
+    if pending_negotiation and flow_state == "negotiating":
+        classification_result = state.get("classification_result")
+        if classification_result:
+            intent = classification_result.get("intent", "").lower()
+            
+            if intent in ("yes", "confirm"):
+                # User accepted the alternative - apply the patch
+                patch = pending_negotiation.get("patch", {})
+                logger.info(
+                    "negotiation_accepted",
+                    suggested_action=pending_negotiation.get("type"),
+                    patch=patch,
+                )
+                return {
+                    **state,
+                    **patch,  # Apply the negotiation patch
+                    "flow_state": "extracting",
+                    "pending_negotiation": None,
+                    "response": "",
+                }
+            elif intent in ("no", "cancel"):
+                # User rejected - cancel the flow
+                logger.info("negotiation_rejected", suggested_action=pending_negotiation.get("type"))
+                return {
+                    **state,
+                    "flow_state": "cancelled",
+                    "pending_negotiation": None,
+                    "response": "Alright, I've cancelled that.",
+                }
+
     classification_result = state.get("classification_result")
+
     if classification_result:
         intent = classification_result.get("intent", "").lower()
         is_cancellation = intent == "cancel" or classification_result.get("is_cancellation") is True
@@ -167,6 +197,25 @@ async def extract_entities(state: AirtimeState, extractor: AirtimeEntityExtracto
             "response": decision_result.limitation_message or "Feature not supported",
             "flow_state": "capability_limitation",
          }
+
+    if decision_result.decision == Decision.NEGOTIATE:
+        negotiation_msg = decision_result.limitation_message
+        logger.info(
+            "airtime_capability_negotiate",
+            msg=negotiation_msg,
+            suggested_action=decision_result.suggested_action,
+        )
+        return {
+            **state,
+            "response": negotiation_msg or "Would you like an alternative?",
+            "llm_reply": negotiation_msg,
+            "flow_state": "negotiating",
+            "pending_negotiation": {
+                "type": decision_result.suggested_action,
+                "patch": decision_result.patch,
+                "prompt": negotiation_msg,
+            },
+        }
 
     computed_missing = decision_result.missing_fields
 

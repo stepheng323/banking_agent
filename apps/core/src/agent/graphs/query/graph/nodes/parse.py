@@ -16,27 +16,43 @@ logger = get_logger(__name__)
 
 
 async def parse_node(state: QueryState, parser: QueryParser) -> dict[str, Any]:
-    """Parse user query into NormalizedQuery."""
+    """Parse query using extraction with resolver integration."""
     message = state["message"]
     message_id = state.get("message_id", "")
 
     try:
-        query, clarification = await parser.parse_with_validation(message, message_id)
-
-        if clarification:
-            return {
-                "flow_state": "clarification_needed",
-                "clarification_message": clarification,
-                "response": clarification,
-            }
-
-        return {
+        extraction, resolver_msg = await parser.parse(message, message_id)
+        
+        if resolver_msg:
+            if resolver_msg.startswith("clarify:"):
+                return {
+                    "flow_state": "clarification_needed",
+                    "response": resolver_msg.replace("clarify:", ""),
+                }
+            if resolver_msg.startswith("negotiate:"):
+                return {
+                    "flow_state": "clarification_needed",
+                    "response": resolver_msg.replace("negotiate:", ""),
+                    "session_active": True,
+                }
+        
+        # Convert extraction to NormalizedQuery for handlers
+        query = parser.convert_to_normalized(extraction)
+        
+        result = {
             "flow_state": "fetching",
             "query": query,
             "current_page": 0,
             "page_size": query.aggregation.limit if query.aggregation else 5,
             "session_active": True,
         }
+        
+        # Include clamping message for format node
+        if resolver_msg and not resolver_msg.startswith(("clarify:", "negotiate:")):
+            result["resolver_message"] = resolver_msg
+        
+        return result
+        
     except Exception as e:
         logger.error("parse_node_error", error=str(e))
         return {

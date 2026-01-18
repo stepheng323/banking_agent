@@ -22,6 +22,9 @@ from apps.core.src.agent.graphs.query.capabilities import (
     get_alternative,
     generate_limitation_message,
 )
+from apps.core.src.agent.graphs.query.models_extraction import QueryExtractionResult
+from apps.core.src.agent.graphs.query.prompts_extraction import QUERY_EXTRACTION_PROMPT
+from apps.core.src.agent.graphs.query.resolver import resolve, Decision
 
 logger = get_logger(__name__)
 
@@ -33,110 +36,157 @@ class QueryParser:
         self.llm = llm
         self.structured_llm = llm.with_structured_output(NormalizedQuery)
 
-    async def parse(self, question: str, message_id: str | None = None) -> NormalizedQuery:
-        """
-        Parse a financial question into a NormalizedQuery.
-
-        Args:
-            question: User's natural language query
-            message_id: Optional message ID for tracing
-
-        Returns:
-            NormalizedQuery with resolved dates and extracted parameters
-        """
-        today = date.today()
-        prompt = QUERY_PARSER_PROMPT.format(
-            today=today.isoformat(),
-            question=question,
-        )
-
-        try:
-            result: NormalizedQuery = await self.structured_llm.ainvoke(prompt)
-
-            if message_id:
-                result = result.model_copy(update={"source_message_id": message_id})
-
-            result = self._add_defaults(result, today)
-
-            logger.info("query_parsed", intent=result.intent.value)
-            return result
-
-        except Exception as e:
-            logger.error("query_parse_error", error=str(e))
-            return self._get_default_query(today)
-
-    def _add_defaults(self, query: NormalizedQuery, today: date) -> NormalizedQuery:
-        """Add default values for missing parameters."""
-        updates: dict[str, Any] = {}
-
-        if not query.time_range:
-            updates["time_range"] = TimeRange(
-                start=today - timedelta(days=30),
-                end=today,
-                granularity="day",
-            )
-
-        if query.intent == QueryIntent.ANALYTICS_SUMMARY and not query.aggregation:
-            updates["aggregation"] = Aggregation(type="sum", limit=10)
-
-        if query.intent == QueryIntent.BENEFICIARY_SUMMARY and not query.aggregation:
-            updates["aggregation"] = Aggregation(type="sum", group_by="merchant", limit=5)
-
-        if updates:
-            return query.model_copy(update=updates)
-        return query
-
-    def _get_default_query(self, today: date) -> NormalizedQuery:
-        """Get default query for fallback."""
-        return NormalizedQuery(
-            intent=QueryIntent.TRANSACTION_LIST,
-            time_range=TimeRange(
-                start=today - timedelta(days=30),
-                end=today,
-                granularity="day",
-            ),
-            accounts_scope="all",
-        )
-
-    async def parse_with_validation(
+    async def parse(
         self,
         question: str,
         message_id: str | None = None,
-    ) -> tuple[NormalizedQuery | None, str | None]:
+    ) -> tuple["QueryExtractionResult", str | None]:
         """
-        Parse query with validation, returning clarification request if needed.
-
-        Returns:
-            Tuple of (query, clarification_message)
-            - If successful: (query, None)
-            - If clarification needed: (None, clarification_message)
-        """
-        query = await self.parse(question, message_id)
-
-        if query.intent == QueryIntent.AFFORDABILITY:
-            if not query.amount_check and not query.item_name:
-                return None, "How much would you like to check? Please specify an amount."
-        if query.intent == QueryIntent.TIME_COMPARISON:
-            if not query.time_range:
-                return None, "What time period would you like to compare?"
-
-
-        # Capability check using simplified approach
-        # (Full resolver integration can come later)
-        missing: list[QueryCapability] = []
+        Parse query using extraction with resolver integration.
         
-        # Check time range
-        if query.time_range:
-            days_back = (date.today() - query.time_range.start).days
-            if days_back > QUERY_LIMITS["max_lookback_days"]:
-                missing.append(QueryCapability.TIME_ALL)
+        Returns:
+            Tuple of (extraction_result, resolver_message)
+            - resolver_message is set if negotiation/clamping occurred
+        """
+        today = date.today()
+        prompt = QUERY_EXTRACTION_PROMPT.format(
+            today=today.isoformat(),
+            question=question,
+        )
+        
+        structured_llm = self.llm.with_structured_output(QueryExtractionResult)
+        
+        try:
+            extraction: QueryExtractionResult = await structured_llm.ainvoke(prompt)
+            extraction.raw_query = question
+            
+            # Run through resolver
+            decision = resolve(extraction)
+            
+            if decision.decision == Decision.ASK_CLARIFY:
+                # Return with clarification prompt
+                clarify_msg = decision.prompts[0].vars.get("context", "Could you clarify?") if decision.prompts else "Could you clarify?"
+                return extraction, f"clarify:{clarify_msg}"
+            
+            if decision.decision == Decision.NEGOTIATE:
+                return decision.extraction, f"negotiate:{decision.negotiation.message}" if decision.negotiation else None
+            
+            resolver_msg = None
+            if decision.clamped.days_back:
+                resolver_msg = f"Showing last {decision.clamped.days_back} days (max available)."
+            
+            return decision.extraction, resolver_msg
+            
+        except Exception as e:
+            logger.error("parse_error", error=str(e))
+            return QueryExtractionResult(raw_query=question), None
 
-        if missing:
-            msg = generate_limitation_message(missing)
-            logger.info(
-                "query_capability_limitation",
-                missing=[cap.value for cap in missing],
+    async def parse(
+        self,
+        question: str,
+        message_id: str | None = None,
+    ) -> tuple["QueryExtractionResult", str | None]:
+        """
+        Parse query using extraction with resolver integration.
+        
+        Returns:
+            Tuple of (extraction_result, resolver_message)
+            - resolver_message is set if negotiation/clamping occurred
+        """
+        today = date.today()
+        prompt = QUERY_EXTRACTION_PROMPT.format(
+            today=today.isoformat(),
+            question=question,
+        )
+        
+        structured_llm = self.llm.with_structured_output(QueryExtractionResult)
+        
+        try:
+            extraction: QueryExtractionResult = await structured_llm.ainvoke(prompt)
+            extraction.raw_query = question
+            
+            decision = resolve(extraction)
+            
+            if decision.decision == Decision.ASK_CLARIFY:
+                clarify_msg = decision.prompts[0].vars.get("context", "Could you clarify?") if decision.prompts else "Could you clarify?"
+                return extraction, f"clarify:{clarify_msg}"
+            
+            if decision.decision == Decision.NEGOTIATE:
+                return decision.extraction, f"negotiate:{decision.negotiation.message}" if decision.negotiation else None
+            
+            resolver_msg = None
+            if decision.clamped.days_back:
+                resolver_msg = f"Showing last {decision.clamped.days_back} days (max available)."
+            
+            return decision.extraction, resolver_msg
+            
+        except Exception as e:
+            logger.error("parse_error", error=str(e))
+            return QueryExtractionResult(raw_query=question), None
+
+    def convert_to_normalized(
+        self,
+        extraction: "QueryExtractionResult",
+        today: date | None = None,
+    ) -> NormalizedQuery:
+        """Convert QueryExtractionResult to NormalizedQuery for handlers."""
+        from datetime import timedelta
+        from apps.core.src.agent.graphs.query.models_extraction import (
+            QueryExtractionResult,
+            QueryIntent as ExtractIntent,
+            TimeReference,
+        )
+        
+        today = today or date.today()
+        
+        intent_map = {
+            ExtractIntent.TRANSACTION_LIST: QueryIntent.TRANSACTION_LIST,
+            ExtractIntent.SPENDING_TOTAL: QueryIntent.ANALYTICS_SUMMARY,
+            ExtractIntent.CATEGORY_BREAKDOWN: QueryIntent.ANALYTICS_SUMMARY,
+            ExtractIntent.TIME_COMPARISON: QueryIntent.TIME_COMPARISON,
+            ExtractIntent.BALANCE_CHECK: QueryIntent.BALANCE_QUERY,
+            ExtractIntent.SINGLE_TRANSACTION: QueryIntent.TRANSACTION_SEARCH,
+            ExtractIntent.AFFORDABILITY: QueryIntent.AFFORDABILITY,
+        }
+        
+        time_range = None
+        if extraction.time_range:
+            days_back = extraction.time_range.days_back or 30
+            if extraction.time_range.reference_type == TimeReference.ALL_TIME:
+                days_back = QUERY_LIMITS["max_lookback_days"]
+            elif extraction.time_range.reference_type == TimeReference.UNSPECIFIED:
+                days_back = 30
+            
+            time_range = TimeRange(
+                start=today - timedelta(days=days_back),
+                end=today,
+                granularity="day",
             )
-            return None, msg
+        
+        filters = None
+        if extraction.filters:
+            from apps.core.src.agent.graphs.query.models import Filters
+            filters = Filters(
+                merchant=[extraction.filters.recipient] if extraction.filters.recipient else None,
+                category=[extraction.filters.category] if extraction.filters.category else None,
+                min_amount=extraction.filters.min_amount,
+                max_amount=extraction.filters.max_amount,
+                transaction_type=extraction.filters.transaction_type,
+                account_filter=extraction.filters.bank,
+            )
+        
+        aggregation = None
+        if extraction.aggregation:
+            aggregation = Aggregation(
+                type=extraction.aggregation.type or "sum",
+                group_by=extraction.aggregation.group_by,
+            )
+        
+        return NormalizedQuery(
+            intent=intent_map.get(extraction.intent, QueryIntent.TRANSACTION_LIST),
+            time_range=time_range or TimeRange(start=today - timedelta(days=30), end=today, granularity="day"),
+            filters=filters,
+            aggregation=aggregation,
+            accounts_scope="all",
+        )
 
-        return query, None

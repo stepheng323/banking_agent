@@ -40,9 +40,14 @@ class DataPurchaseState(TypedDict, total=False):
         "executing",
         "completed",
         "error",
+        "negotiating",
     ]
     suggestion_attempts: int
     response: str
     error: str | None
     user_context: dict[str, Any]
     last_data_purchase: dict[str, Any] | None
+    
+    # Capability negotiation
+    pending_negotiation: dict[str, Any] | None
+

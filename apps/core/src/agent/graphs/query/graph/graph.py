@@ -193,7 +193,6 @@ class QueryFlowGraph:
             state.update(await format_node(state, self.llm))
 
         elif cont_type in ("time_delta", "filter_delta"):
-            # Check capabilities before execution
             limitation = await self._check_continuation_capabilities(state)
             if limitation:
                 state["response"] = limitation
@@ -211,8 +210,7 @@ class QueryFlowGraph:
             state.update(await format_node(state, self.llm))
 
         elif cont_type == "drill_down":
-            state.update(handle_drill_down(state))
-            # Only call format_node if drill_down didn't set a direct response
+            state.update(await handle_drill_down(state))
             if not state.get("response"):
                 state.update(await format_node(state, self.llm))
 

@@ -21,21 +21,20 @@ from apps.core.src.agent.graphs.transfer.models_extraction import (
     TransferExtractionResult,
 )
 from apps.core.src.agent.graphs.transfer.capabilities import (
-    TransferCapability,
-    check_capabilities,
+    CapabilityDecision,
+    decide_capability,
     derive_requirements,
-    generate_limitation_message,
 )
 
 
 class Decision(str, Enum):
     """Resolver decision for flow control."""
     
-    PROCEED = "PROCEED"           # All good, continue with transfer
-    ASK_CLARIFY = "ASK_CLARIFY"   # Missing fields, ask user
-    NEGOTIATE = "NEGOTIATE"       # Unsupported feature, offer alternative
-    CANCEL = "CANCEL"             # User wants to cancel
-    LIMITATION = "LIMITATION"     # Feature unsupported (blocking)
+    PROCEED = "PROCEED"
+    ASK_CLARIFY = "ASK_CLARIFY"
+    NEGOTIATE = "NEGOTIATE"
+    CANCEL = "CANCEL"
+    LIMITATION = "LIMITATION"
 
 
 class Prompt(BaseModel):
@@ -62,11 +61,11 @@ class ResolverDecision(BaseModel):
     limitation_message: str | None = Field(default=None, description="Message explaining limitation")
     prompts: list[Prompt] = Field(default_factory=list, description="Prompts for formatter")
     ambiguity_to_resolve: Ambiguity | None = Field(default=None, description="Ambiguity needing clarification")
+    suggested_action: str | None = Field(default=None, description="Suggested action if user accepts")
+    patch: dict[str, Any] = Field(default_factory=dict, description="State changes if user accepts")
 
 
-# Fields required for external transfer
 REQUIRED_EXTERNAL = ["amount", "recipient_account", "bank_name"]
-# Fields required for internal transfer
 REQUIRED_INTERNAL = ["amount", "bank_name"]
 
 
@@ -81,7 +80,6 @@ def compute_missing_fields(entities: TransferEntities | None, is_internal: bool 
     for field in required:
         value = getattr(entities, field, None)
         if value is None:
-            # Special case: amount not needed if transfer_all or transfer_percentage
             if field == "amount" and (entities.transfer_all or entities.transfer_percentage):
                 continue
             missing.append(field)
@@ -107,19 +105,15 @@ def resolve_references(
     if not recent_transfers:
         return entities, False
     
-    # Safety: only hydrate if explicit trigger phrase detected
-    # This prevents silent override of user intent
     idx = references.recent_transfer_index or 0
     if idx >= len(recent_transfers):
         return entities, False
     
     recent = recent_transfers[idx]
     
-    # Create entities if None
     if entities is None:
         entities = TransferEntities()
     
-    # Hydrate missing fields from recent transfer
     if entities.recipient_account is None and "recipient_account" in recent:
         entities.recipient_account = recent["recipient_account"]
     if entities.bank_name is None and "bank_name" in recent:
@@ -169,10 +163,8 @@ def resolve(
     Returns:
         ResolverDecision with flow control
     """
-    # Start with extracted entities, merge with draft
     entities = extraction.entities
     if draft_entities and entities:
-        # Merge: new values override draft
         for field in entities.model_fields:
             new_val = getattr(entities, field, None)
             if new_val is not None:
@@ -181,10 +173,7 @@ def resolve(
     elif draft_entities and not entities:
         entities = draft_entities
     
-    # Check for ambiguities first
-    # Check for ambiguities first
     if extraction.ambiguities:
-        # Prioritize amount, then others
         ordered_codes = [
             AmbiguityCode.AMOUNT_UNCLEAR,
             AmbiguityCode.MULTIPLE_BENEFICIARIES,
@@ -217,26 +206,24 @@ def resolve(
                         )],
                     )
     
-    # Check capabilities and constraints
     requires = derive_requirements(extraction, user_message)
-    missing_caps = check_capabilities(requires)
+    cap_decision = decide_capability(requires, extraction)
     
-    if missing_caps:
-        limitation_msg = generate_limitation_message(missing_caps)
+    if not cap_decision.allowed:
         return ResolverDecision(
-            decision=Decision.LIMITATION,
+            decision=Decision.NEGOTIATE if cap_decision.suggested_action else Decision.LIMITATION,
             applied_entities=entities,
-            limitation_message=limitation_msg,
+            limitation_message=cap_decision.prompt,
+            suggested_action=cap_decision.suggested_action,
+            patch=cap_decision.patch,
         )
     
-    # Resolve references (recent transfers)
     entities, was_hydrated = resolve_references(
         entities,
         extraction.references,
         recent_transfers,
     )
     
-    # Compute missing fields
     is_internal = bool(entities and entities.source_bank_name and entities.bank_name and not entities.recipient_name)
     missing = compute_missing_fields(entities, is_internal)
     
@@ -259,7 +246,6 @@ def resolve(
             prompts=prompts,
         )
     
-    # All good!
     return ResolverDecision(
         decision=Decision.PROCEED,
         missing_fields=[],

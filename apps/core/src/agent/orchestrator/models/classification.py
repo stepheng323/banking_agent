@@ -10,7 +10,12 @@ class ClassificationResult(BaseModel):
 
     response: str = Field(description="The response to the user's message.")
     intent: str = Field(
-        description="The intent of the user's message (transfer, airtime, data, conversational, cancel, unknown)."
+        description=(
+            "The intent of the user's message. "
+            "Business intents: transfer, airtime, data, query, manage_accounts, conversational, faq, support. "
+            "Conversation intents: correct (mid-flow update), add_task (compound request), followup (query follow-up), "
+            "dangerous (bypass security/malicious), unsupported (crypto/investment/not offered), cancel, unknown."
+        )
     )
     is_complex: bool = Field(description="Whether the user's message is complex.")
     complexity_reason: str = Field(description="The reason for the complexity of the user's message.")

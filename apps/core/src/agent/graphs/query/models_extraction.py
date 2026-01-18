@@ -94,7 +94,7 @@ class QueryAggregation(BaseModel):
 
 
 class QueryExtractionResult(BaseModel):
-    """v2: Pure query extraction with requested_capabilities."""
+    """Pure query extraction with requested_capabilities."""
 
     schema_version: int = Field(default=SCHEMA_VERSION)
     intent: QueryIntent = Field(default=QueryIntent.TRANSACTION_LIST)

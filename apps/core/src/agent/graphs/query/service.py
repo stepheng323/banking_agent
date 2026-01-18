@@ -1,33 +1,33 @@
-from typing import Any, TYPE_CHECKING
+"""Query service facade using LangGraph."""
 
+import redis.asyncio as redis
 from langchain_core.runnables import Runnable
 
 from apps.core.src.agent.graphs.interfaces import IAgentService
 from apps.core.src.agent.graphs.query.graph.graph import QueryFlowGraph
+from apps.core.src.agent.graphs.support import SupportService
+from shared.clients.abstractions.banking import BankingDataProvider
 from shared.utils.logging import get_logger
-
-if TYPE_CHECKING:
-    from apps.core.src.agent.graphs.support.service import SupportService
 
 logger = get_logger(__name__)
 
 
+from shared.cache.user_data import UserDataCache
+
 class QueryService(IAgentService):
-    """Query service facade."""
+    """Query service facade using LangGraph."""
 
     def __init__(
         self,
         llm: Runnable,
-        banking_provider: Any,
-        redis_client: Any,
-        support_service: "SupportService | None" = None,
+        banking_provider: BankingDataProvider,
+        redis_client: redis.Redis,
+        user_cache: UserDataCache,
+        support_service: SupportService | None = None,
     ):
-        self.graph = QueryFlowGraph(
-            llm=llm,
-            banking_provider=banking_provider,
-            redis_client=redis_client,
-        )
-        self.support_service = support_service
+        self.graph = QueryFlowGraph(llm, banking_provider, redis_client)
+        self.user_cache = user_cache
+        # support_service is kept for API compatibility but currently handled via logic in the graph/handler
 
     async def run_simple(
         self,
@@ -36,33 +36,37 @@ class QueryService(IAgentService):
         classification_result: dict | None = None,
         image_data: str | None = None,
         quoted_data: dict | None = None,
-        user_context: dict | None = None,
     ) -> str:
         """Run the query flow."""
-        result = await self.graph.run(phone, text, user_context or {})
+        logger.debug("query_flow_started", phone=phone)
         
-        # Handle support routing if needed
-        if isinstance(result, dict) and result.get("route_to_support"):
-            if self.support_service:
-                user_id = result.get("user_id", "") or (classification_result or {}).get("user_id", "")
-                
-                # Use SupportService to handle the routed request
-                support_response = await self.support_service.run_simple(
-                    phone=phone,
-                    text=result.get("message", text),
-                    classification_result={"user_id": user_id},
-                    quoted_data={"transaction": result.get("transaction")},
-                )
-                return support_response or "I'm having trouble connecting you to support."
-                
-            return "Support is temporarily unavailable. Please try again later."
-            
-        return result if isinstance(result, str) else "Query processed."
+        # Fetch user context from cache
+        cache_data = await self.user_cache.get_all_user_data(phone)
+        user_ctx = {
+            "accounts": cache_data.get("accounts") or [],
+            "user_id": (cache_data.get("profile") or {}).get("id", ""),
+            "profile": cache_data.get("profile"),
+        }
 
-    async def has_active_session(self, phone_number: str) -> bool:
-        """Check if user has an active query session."""
-        return await self.graph.has_active_session(phone_number)
+        result = await self.graph.run(
+            phone,
+            text,
+            {
+                "classification_result": classification_result, 
+                "image_data": image_data, 
+                "quoted_data": quoted_data,
+                **user_ctx
+            },
+            "",
+        )
+        if isinstance(result, dict):
+            return result.get("response", "Query completed.")
+        return str(result)
 
     async def clear_checkpoint(self, phone_number: str) -> None:
-        """Clear query flow checkpoint."""
-        await self.graph.clear_checkpoint(phone_number)
+        """Clear flow checkpoint for a user."""
+        try:
+            # Query graph manages session manually via Redis, so we call clear on session manager
+            await self.graph.session_manager.clear(f"query:session:{phone_number}")
+        except Exception as e:
+            logger.error("query_checkpoint_clear_error", phone=phone_number, error=str(e), exc_info=True)

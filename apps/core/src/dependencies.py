@@ -112,6 +112,7 @@ def setup_dependencies():
         llm=llm,
         banking_provider=banking_provider,
         redis_client=shared_redis,
+        user_cache=user_data_cache,
         support_service=support_service,
     )
 
