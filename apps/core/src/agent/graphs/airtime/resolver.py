@@ -20,12 +20,9 @@ from apps.core.src.agent.graphs.airtime.models import (
     AirtimeExtractionResult,
 )
 from apps.core.src.agent.graphs.airtime.capabilities import (
-    AirtimeCapability,
-    check_capabilities,
+    CapabilityDecision,
+    decide_capability,
     derive_requirements,
-    generate_limitation_message,
-    AIRTIME_LIMITS,
-    CAPABILITY_LABELS,
 )
 
 
@@ -63,6 +60,8 @@ class ResolverDecision(BaseModel):
     limitation_message: str | None = Field(default=None)
     prompts: list[Prompt] = Field(default_factory=list)
     ambiguity_to_resolve: Ambiguity | None = Field(default=None)
+    suggested_action: str | None = Field(default=None)
+    patch: dict[str, Any] = Field(default_factory=dict)
 
 
 REQUIRED_FIELDS = ["amount", "recipient_phone", "network"]
@@ -142,14 +141,15 @@ def resolve(
     
     # Check capabilities and constraints
     requires = derive_requirements(extraction, user_message)
-    missing_caps = check_capabilities(requires)
+    cap_decision = decide_capability(requires, extraction)
     
-    if missing_caps:
-        limitation_msg = generate_limitation_message(missing_caps)
+    if not cap_decision.allowed:
         return ResolverDecision(
-            decision=Decision.LIMITATION,
+            decision=Decision.NEGOTIATE if cap_decision.suggested_action else Decision.LIMITATION,
             applied_entities=entities,
-            limitation_message=limitation_msg,
+            limitation_message=cap_decision.prompt,
+            suggested_action=cap_decision.suggested_action,
+            patch=cap_decision.patch,
         )
     
     # Compute missing fields
