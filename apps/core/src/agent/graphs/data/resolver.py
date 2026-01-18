@@ -19,9 +19,9 @@ from apps.core.src.agent.graphs.data.models_extraction import (
     DataExtractionResult,
 )
 from apps.core.src.agent.graphs.data.capabilities import (
-    DataCapability,
-    check_capabilities,
-    DATA_LIMITS,
+    CapabilityDecision,
+    decide_capability,
+    derive_requirements,
 )
 
 
@@ -57,6 +57,9 @@ class ResolverDecision(BaseModel):
     negotiation: Negotiation | None = Field(default=None)
     prompts: list[Prompt] = Field(default_factory=list)
     ambiguity_to_resolve: Ambiguity | None = Field(default=None)
+    limitation_message: str | None = Field(default=None)
+    suggested_action: str | None = Field(default=None)
+    patch: dict[str, Any] = Field(default_factory=dict)
 
 
 # Required fields for data purchase (phone/network not needed if is_self=True)
@@ -136,15 +139,19 @@ def resolve(
                 prompts=[Prompt(key="data.budget_ambiguous", vars={"candidates": budget_ambiguity.candidates})],
             )
     
-    # Check requested features
-    negotiation = check_requested_features(extraction.requested_features)
-    if negotiation:
+    # Check capabilities using new pattern
+    requires = derive_requirements(extraction, user_message="")
+    cap_decision = decide_capability(requires, extraction)
+    
+    if not cap_decision.allowed:
         return ResolverDecision(
-            decision=Decision.NEGOTIATE,
+            decision=Decision.NEGOTIATE if cap_decision.suggested_action else Decision.CANCEL,
             applied_entities=entities,
-            negotiation=negotiation,
-            prompts=[Prompt(key=negotiation.message_key, vars={})],
+            limitation_message=cap_decision.prompt,
+            suggested_action=cap_decision.suggested_action,
+            patch=cap_decision.patch,
         )
+
     
     # Compute missing fields
     is_self = bool(entities and entities.is_self)

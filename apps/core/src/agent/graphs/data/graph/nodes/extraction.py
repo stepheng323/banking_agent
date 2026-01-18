@@ -3,9 +3,8 @@
 from typing import Any
 
 from apps.core.src.agent.graphs.data.capabilities import (
-    check_capabilities,
+    decide_capability,
     derive_requirements,
-    generate_limitation_message,
 )
 from apps.core.src.agent.graphs.data.extractor import DataEntityExtractor
 from apps.core.src.agent.graphs.data.graph.state import DataPurchaseState
@@ -23,6 +22,36 @@ async def extract_entities(
     """Extract entities from user message using LLM."""
     message = state.get("message", "")
     phone_number = state.get("phone_number", "")
+    flow_state = state.get("flow_state")
+
+    # Handle negotiation responses (yes/no when pending_negotiation exists)
+    pending_negotiation = state.get("pending_negotiation")
+    if pending_negotiation and flow_state == "negotiating":
+        classification_result = state.get("classification_result")
+        if classification_result:
+            intent = classification_result.get("intent", "").lower()
+            
+            if intent in ("yes", "confirm"):
+                patch = pending_negotiation.get("patch", {})
+                logger.info(
+                    "negotiation_accepted",
+                    suggested_action=pending_negotiation.get("type"),
+                    patch=patch,
+                )
+                return {
+                    **patch,
+                    "flow_state": "resolving",
+                    "pending_negotiation": None,
+                    "response": "",
+                }
+            elif intent in ("no", "cancel"):
+                logger.info("negotiation_rejected", suggested_action=pending_negotiation.get("type"))
+                return {
+                    "flow_state": "error",
+                    "pending_negotiation": None,
+                    "response": "Alright, I've cancelled that.",
+                    "error": "User rejected negotiation",
+                }
 
     last_response = state.get("response") or state.get("llm_reply")
     smart_context: dict[str, Any] = {}
@@ -42,21 +71,35 @@ async def extract_entities(
         smart_context=smart_context if smart_context else None,
     )
 
-
     requires = derive_requirements(result, message)
-    missing = check_capabilities(requires)
+    cap_decision = decide_capability(requires, result)
 
-    if missing:
-        limitation_msg = generate_limitation_message(missing)
-        logger.info(
-            "data_capability_limitation",
-            missing=[cap.value for cap in missing],
-        )
-        return {
-            "response": limitation_msg,
-            "llm_reply": limitation_msg,
-            "flow_state": "capability_limitation",
-        }
+    if not cap_decision.allowed:
+        negotiation_msg = cap_decision.prompt
+        if cap_decision.suggested_action:
+            # Negotiable - offer alternative
+            logger.info(
+                "data_capability_negotiate",
+                suggested_action=cap_decision.suggested_action,
+            )
+            return {
+                "response": negotiation_msg,
+                "llm_reply": negotiation_msg,
+                "flow_state": "negotiating",
+                "pending_negotiation": {
+                    "type": cap_decision.suggested_action,
+                    "patch": cap_decision.patch,
+                    "prompt": negotiation_msg,
+                },
+            }
+        else:
+            # Hard limitation
+            logger.info("data_capability_limitation", msg=negotiation_msg)
+            return {
+                "response": negotiation_msg,
+                "llm_reply": negotiation_msg,
+                "flow_state": "error",
+            }
 
     if result.correction:
         correction = result.correction
