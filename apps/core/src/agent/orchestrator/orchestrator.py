@@ -16,6 +16,7 @@ from apps.core.src.agent.orchestrator.pipeline_stages.context_loader.handler imp
 from apps.core.src.agent.orchestrator.pipeline_stages.context_loader.service import OrchestratorContextManager
 from apps.core.src.agent.orchestrator.pipeline_stages.flow_control.handler import FlowControlHandler
 from apps.core.src.agent.orchestrator.pipeline_stages.flow_control.service import OrchestratorCancellationHandler
+from apps.core.src.agent.orchestrator.pipeline_stages.guardian.handler import GuardianHandler
 from apps.core.src.agent.orchestrator.pipeline_stages.intent_routing.handler import IntentRoutingHandler
 from apps.core.src.agent.orchestrator.pipeline_stages.intent_routing.router import OrchestratorIntentRouter
 from apps.core.src.agent.orchestrator.pipeline_stages.quote.handler import QuoteHandler
@@ -77,6 +78,7 @@ class OrchestratorAgent:
         return [
             ContextLoaderHandler(self.context_manager, self.deps.task_queue_service),
             ClassificationHandler(self.classification_service, self.context_manager, self.deps.actionable_message_repo),
+            GuardianHandler(self.deps.transfer_service, self.deps.airtime_service, self.flow_context_service),
             FlowControlHandler(self.context_manager, self.cancellation_handler, self.deps.transfer_service, self.deps.airtime_service),
             AffirmationHandler(self.deps.transfer_service, self.deps.airtime_service, self.flow_context_service, self.deps.llm),
             QuoteHandler(self.deps.quote_service, self.deps.whatsapp_client),

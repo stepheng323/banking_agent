@@ -34,17 +34,12 @@ class OrchestratorBeneficiaryHandler:
         has_alias = bool(result.extracted_alias)
         beneficiary_type = suggestion_context.get("beneficiary_type", "transfer")
 
-        # If the classifier extracted an alias, prioritize that
         if has_alias:
             return await self._handle_alias_provided(
                 phone_number, result, suggestion_context, beneficiary_type
             )
-
-        # If the user intends to start a new transaction, skip beneficiary handling
-        # This prevents "Again", "New transfer", etc. from being caught as aliases
         excluded_intents = {
             *TRANSACTION_INTENTS,
-            "general_transaction",
             "repeat_transaction",
             "modify_transaction",
             "manage_accounts",
@@ -54,7 +49,6 @@ class OrchestratorBeneficiaryHandler:
         if intent in excluded_intents:
             return None
 
-        # Handle explicit yes/no/confirm/skip
         if intent in ("yes", "confirm", "proceed"):
             return await self._handle_confirm(
                 phone_number, result, suggestion_context, beneficiary_type
@@ -62,8 +56,6 @@ class OrchestratorBeneficiaryHandler:
         elif intent in ("no", "skip", "cancel"):
             return await self._handle_decline(phone_number)
 
-        # If it's not a recognized intent and the classifier didn't extract an alias,
-        # check if the text itself looks like a simple alias
         text_clean = text.strip()
         forbidden_chars = ['http', '@', '#', '/']
         forbidden_keywords = {'again', 'repeat', 'menu', 'home', 'back', 'restart', 'help'}
@@ -74,7 +66,6 @@ class OrchestratorBeneficiaryHandler:
             and not any(char in text_clean for char in forbidden_chars)
             and text_clean.lower() not in forbidden_keywords
         ):
-            # Treat the entire text as a potential alias
             return await self._save_beneficiary(
                 phone_number, suggestion_context, beneficiary_type, text_clean[:64]
             )
@@ -91,7 +82,6 @@ class OrchestratorBeneficiaryHandler:
         """Handle 'yes/confirm' response to save beneficiary."""
         alias = result.extracted_alias
 
-        # If no alias extracted but suggestion had one, use that
         if not alias:
             alias = suggestion_context.get("alias_suggested") or suggestion_context.get("original_alias")
 
@@ -161,7 +151,7 @@ class OrchestratorBeneficiaryHandler:
 
                 if beneficiary_type in ("airtime", "data"):
                     created = await self._create_airtime_beneficiary(uow, user, suggestion_context, alias)
-                    if isinstance(created, str):  # Error message returned
+                    if isinstance(created, str):
                         return await self._error_response(phone_number, created)
                 else:
                     self._create_transfer_beneficiary(uow, user, suggestion_context, alias)
