@@ -38,6 +38,39 @@ async def extract_entities(
         logger.info("extract_skipping_terminal", status=transfer_status)
         return state
 
+    # Handle negotiation responses (yes/no when pending_negotiation exists)
+    pending_negotiation = state.get("pending_negotiation")
+    if pending_negotiation and flow_state == "negotiating":
+        classification_result = state.get("classification_result")
+        if classification_result:
+            intent = classification_result.get("intent", "").lower()
+            
+            if intent in ("yes", "confirm"):
+                # User accepted the alternative - apply the patch
+                patch = pending_negotiation.get("patch", {})
+                logger.info(
+                    "negotiation_accepted",
+                    suggested_action=pending_negotiation.get("type"),
+                    patch=patch,
+                )
+                return {
+                    **state,
+                    **patch,  # Apply the negotiation patch
+                    "flow_state": "extracting",
+                    "pending_negotiation": None,
+                    "response": "",
+                }
+            elif intent in ("no", "cancel"):
+                # User rejected - cancel the flow
+                logger.info("negotiation_rejected", suggested_action=pending_negotiation.get("type"))
+                return {
+                    **state,
+                    "flow_state": "cancelled",
+                    "pending_negotiation": None,
+                    "response": "Alright, I've cancelled that.",
+                }
+
+
     classification_result = state.get("classification_result")
     if classification_result:
         intent = classification_result.get("intent", "").lower()
@@ -128,9 +161,6 @@ async def extract_entities(
     )
 
 
-
-
-
     if result.correction:
         correction = result.correction
         field_name = correction.field.value if correction.field else None
@@ -141,11 +171,7 @@ async def extract_entities(
         )
         debug_log(f"✏️ [CORRECTION] Applying correction: {field_name} = {correction.new_value}")
 
-
-
-    entities = result.entities or TransferEntities()
-    
-    # Use Resolver for all business logic (Capabilities, Ambiguities, Hydration)
+    entities = result.entities or TransferEntities()    
     pre_decision = resolve(
         result,
         draft_entities=None,  # Analyze incoming intention/extraction first
@@ -162,6 +188,26 @@ async def extract_entities(
             "llm_reply": limitation_msg,
             "flow_state": "capability_limitation",
          }
+
+    if pre_decision.decision == Decision.NEGOTIATE:
+        negotiation_msg = pre_decision.limitation_message
+        logger.info(
+            "transfer_capability_negotiate",
+            msg=negotiation_msg,
+            suggested_action=pre_decision.suggested_action,
+        )
+        return {
+            **state,
+            "response": negotiation_msg or "Would you like an alternative?",
+            "llm_reply": negotiation_msg,
+            "flow_state": "negotiating",
+            "pending_negotiation": {
+                "type": pre_decision.suggested_action,
+                "patch": pre_decision.patch,
+                "prompt": negotiation_msg,
+            },
+        }
+
 
     if pre_decision.decision == Decision.ASK_CLARIFY and pre_decision.ambiguity_to_resolve:
         prompt = pre_decision.prompts[0]
@@ -191,15 +237,12 @@ async def extract_entities(
             "flow_state": state_key,
         }
 
-    # Use hydrated/resolved entities for updates
     if pre_decision.applied_entities:
         entities = pre_decision.applied_entities
 
     computed_missing = pre_decision.missing_fields # For logging consistency
     existing_amount = state.get("amount")
     
-
-
     logger.info(
         "DEBUG_TRACE_AMOUNT_EXTRACTION_ENTRY",
         existing_amount=existing_amount,
@@ -233,7 +276,6 @@ async def extract_entities(
         debug_log("ℹ️ extract_entities: Amount provided without new recipient; preserving existing recipient/bank.")
         should_clear_stale_recipient = False
 
-    # Determine if this turn introduces a new recipient BEFORE applying updates
     prev_account = state.get("recipient_account")
     prev_bank_any = state.get("recipient_bank_code") or state.get("recipient_bank_name")
 
@@ -244,7 +286,6 @@ async def extract_entities(
 
     incoming_bank_any = entities.bank_code or entities.bank_name
 
-    # Detect actual changes only when the previous field existed.
     account_changed_pre_update = bool(incoming_account_norm and prev_account and incoming_account_norm != prev_account)
     bank_changed_pre_update = bool(incoming_bank_any and prev_bank_any and incoming_bank_any != prev_bank_any)
     recipient_changed_pre_update = account_changed_pre_update or bank_changed_pre_update
@@ -328,7 +369,6 @@ async def extract_entities(
         updates["response"] = ""
         updates["funding_error"] = None
     elif existing_amount is not None and not updates.get("transfer_all"):
-        # Only preserve existing amount if NOT setting transfer_all
         updates["amount"] = existing_amount
         logger.info("DEBUG_TRACE_AMOUNT_PRESERVED", existing_amount=existing_amount)
         debug_log(f"🔍 [EXTRACTION] Preserving existing amount: {existing_amount}")
@@ -341,6 +381,10 @@ async def extract_entities(
         debug_log(
             f"DEBUG extract_entities: Normalized account '{entities.recipient_account}' -> '{normalized_account}'"
         )
+        existing_recipient = new_state.get("recipient_account")
+        if existing_recipient and normalized_account != existing_recipient:
+            updates["idempotency_key"] = None
+            debug_log("🔐 [AUTH] Recipient changed - invalidating idempotency key")
         if entities.bank_name is None and entities.bank_code is None:
             existing_bank_code = new_state.get("recipient_bank_code")
             existing_bank_name = new_state.get("recipient_bank_name")
@@ -353,6 +397,10 @@ async def extract_entities(
     if entities.bank_code is not None:
         updates["recipient_bank_code"] = entities.bank_code
         updates["_recipient_established_at"] = time.time()
+        existing_bank = new_state.get("recipient_bank_code")
+        if existing_bank and entities.bank_code != existing_bank:
+            updates["idempotency_key"] = None
+            debug_log("🔐 [AUTH] Bank code changed - invalidating idempotency key")
         debug_log(f"🔍 [EXTRACTION] Adding bank_code to updates: '{entities.bank_code}'")
     if entities.bank_name is not None:
         updates["recipient_bank_name"] = entities.bank_name
