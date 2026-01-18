@@ -65,6 +65,7 @@ class ResponseIntent(Enum):
     RECIPIENT_CHANGED = "recipient_changed"
     AMOUNT_CHANGED = "amount_changed"
     ACKNOWLEDGE_CHANGE = "acknowledge_change"  # Generic for multiple field changes
+    TRANSFER_ALL_ACKNOWLEDGED = "transfer_all_acknowledged"  # User wants full balance
 
     # Cancellation flow control
     CANCELLATION_CONTINUE = "cancellation_continue"  # User chose to continue pending transfer

@@ -13,9 +13,16 @@ async def handle_transaction_list(
     accounts_info: list[dict] | None = None,
     current_page: int = 0,
     page_size: int = 5,
+    user_id: str | None = None,
 ) -> QueryResult:
     """Handle transaction list queries."""
-    transactions = await fetch_and_filter(provider, query, account_id, account_ids, accounts_info)
+    transactions = await fetch_and_filter(
+        provider, query, account_id, account_ids, accounts_info, user_id=user_id
+    )
+
+    # Apply result_limit if specified (e.g., "last transaction" → 1)
+    if query.result_limit:
+        transactions = transactions[: query.result_limit]
 
     offset = current_page * page_size
     paginated = transactions[offset : offset + page_size]
@@ -26,7 +33,12 @@ async def handle_transaction_list(
             description=t.get("narration", "Transaction"),
             amount=abs(t.get("amount", 0)),  # Provider already returns Naira
             date=parse_date(t.get("date", "")),
-            metadata={"type": t.get("type"), "bank_name": t.get("bank_name", "")},
+            metadata={
+                "type": t.get("type"),
+                "bank_name": t.get("bank_name", ""),
+                "transaction_type": t.get("transaction_type"),
+                "status": t.get("status", ""),
+            },
         )
         for i, t in enumerate(paginated)
     ]
@@ -52,8 +64,16 @@ async def handle_transaction_search(
     accounts_info: list[dict] | None = None,
     current_page: int = 0,
     page_size: int = 5,
+    user_id: str | None = None,
 ) -> QueryResult:
     """Handle transaction search (same as list but with merchant filter)."""
     return await handle_transaction_list(
-        provider, query, account_id, account_ids, accounts_info, current_page, page_size
+        provider,
+        query,
+        account_id,
+        account_ids,
+        accounts_info,
+        current_page,
+        page_size,
+        user_id=user_id,
     )

@@ -21,9 +21,12 @@ async def handle_analytics(
     accounts_info: list[dict] | None = None,
     current_page: int = 0,
     page_size: int = 5,
+    user_id: str | None = None,
 ) -> QueryResult:
     """Handle analytics summary queries."""
-    transactions = await fetch_and_filter(provider, query, account_id, account_ids, accounts_info)
+    transactions = await fetch_and_filter(
+        provider, query, account_id, account_ids, accounts_info, user_id=user_id
+    )
 
     if not query.aggregation:
         return QueryResult(summary_text="No aggregation specified.")

@@ -1,5 +1,6 @@
 """Affordability query handler."""
 
+from typing import Any
 from apps.core.src.agent.graphs.query.models import NormalizedQuery, QueryResult
 from shared.clients.abstractions.banking import BankingDataProvider
 
@@ -9,6 +10,7 @@ async def handle_affordability(
     query: NormalizedQuery,
     account_id: str,
     account_ids: list[str],
+    **kwargs: Any,
 ) -> QueryResult:
     """Handle affordability queries."""
     # Get balance

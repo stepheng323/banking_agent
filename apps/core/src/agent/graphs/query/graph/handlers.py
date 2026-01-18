@@ -21,6 +21,14 @@ def handle_drill_down(state: dict[str, Any]) -> dict[str, Any]:
     item = query_result.items[index]
 
     if drill_down_action == "get_receipt":
+        # Check if receipt is available for this transaction type
+        transaction_type = item.metadata.get("transaction_type", "") if item.metadata else ""
+        if transaction_type != "transfer":
+            return {
+                "response": f"Receipts are only available for bank transfers. This is a {transaction_type.title() if transaction_type else 'transaction'}.",
+                "session_active": True,
+            }
+        
         receipt = format_text_receipt(item)
         return {
             "response": receipt,
@@ -43,15 +51,41 @@ def handle_drill_down(state: dict[str, Any]) -> dict[str, Any]:
             "session_active": True,
         }
 
-    focused_result = QueryResult(
-        summary_text=f"Details for {item.description}",
-        items=[item],
-        has_more=False,
-    )
-
+    # Default: view_details - show detailed transaction info
+    lines = ["*Transaction Details*", ""]
+    
+    # Amount and description
+    amount_str = f"₦{item.amount:,.2f}"
+    lines.append(f"*Amount:* {amount_str}")
+    lines.append(f"*Description:* {item.description}")
+    lines.append(f"*Date:* {item.date.strftime('%B %d, %Y') if item.date else 'Unknown'}")
+    
+    # Metadata details
+    if item.metadata:
+        tx_type = item.metadata.get("type", "")
+        if tx_type:
+            direction = "Outgoing (Debit)" if tx_type == "debit" else "Incoming (Credit)"
+            lines.append(f"*Type:* {direction}")
+        
+        bank_name = item.metadata.get("bank_name", "")
+        if bank_name:
+            lines.append(f"*Bank:* {bank_name}")
+        
+        transaction_type = item.metadata.get("transaction_type", "")
+        if transaction_type:
+            lines.append(f"*Category:* {transaction_type.title()}")
+    
+    # Transaction ID (if available)
+    if item.id:
+        lines.append(f"*Ref:* {item.id}")
+    
+    lines.append("")
+    lines.append("_Reply: 'receipt' for proof | 'issue' to report a problem_")
+    
     return {
-        "query_result": focused_result,
-        "has_more": False,
+        "response": "\n".join(lines),
+        "session_active": True,
+        "focused_item": item.model_dump() if hasattr(item, "model_dump") else None,
     }
 
 

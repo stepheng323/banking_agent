@@ -164,6 +164,10 @@ TEMPLATES: dict[ResponseIntent, dict[str, str]] = {
         "en": "Alright, changing {changes_text}.",
         "yo": "O dara, a n yi {changes_text} pada.",
     },
+    ResponseIntent.TRANSFER_ALL_ACKNOWLEDGED: {
+        "en": "Sending your full balance to {recipient_name}...",
+        "yo": "A n firanṣẹ gbogbo owo re si {recipient_name}...",
+    },
     # Cancellation continue - when user declines cancellation
     ResponseIntent.CANCELLATION_CONTINUE: {
         "en": "No problem, continuing with your {formatted_amount} transfer to {recipient_name}.",

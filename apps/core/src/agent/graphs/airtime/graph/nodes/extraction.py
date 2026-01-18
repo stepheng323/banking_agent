@@ -3,11 +3,18 @@
 import time
 from typing import Any, cast
 
+from apps.core.src.agent.graphs.airtime.capabilities import (
+    check_capabilities,
+    derive_requirements,
+    generate_limitation_message,
+)
+from apps.core.src.agent.graphs.airtime.resolver import resolve, Decision
 from apps.core.src.agent.graphs.airtime.extractor import AirtimeEntityExtractor
 from apps.core.src.agent.graphs.airtime.models import (
     AirtimeExtractionResult,
     SimpleAirtimeEntities,
 )
+from apps.core.src.agent.graphs.airtime.resolver import compute_missing_fields
 from apps.core.src.agent.graphs.airtime.state import AirtimeState
 from shared.utils.logging import get_logger
 from shared.utils.phone_utils import detect_network_from_phone, normalize_phone
@@ -39,7 +46,6 @@ async def extract_entities(state: AirtimeState, extractor: AirtimeEntityExtracto
                     "response": "",
                 }
 
-        # Detect other interrupts - pause for other intents (will resume after)
         if intent in ("manage_accounts", "query", "transfer", "data"):
             logger.info("airtime_interrupt", intent=intent)
             return {
@@ -49,7 +55,6 @@ async def extract_entities(state: AirtimeState, extractor: AirtimeEntityExtracto
                 "response": "",
             }
 
-    # Build smart context for extractor
     last_response = state.get("response") or state.get("llm_reply")
     smart_context = {}
     if last_response:
@@ -88,28 +93,11 @@ async def extract_entities(state: AirtimeState, extractor: AirtimeEntityExtracto
         state["message"], smart_context=smart_context if smart_context else None
     )
 
-    requires = derive_requirements(result, state.get("message", ""))
-    missing = check_capabilities(requires)
-
-    if missing:
-        limitation_msg = generate_limitation_message(missing)
-        logger.info(
-            "airtime_capability_limitation",
-            missing=[cap.value for cap in missing],
-        )
-        return {
-            **state,
-            "response": limitation_msg,
-            "llm_reply": limitation_msg,
-            "flow_state": "capability_limitation",
-        }
-
     if result.correction:
         correction = result.correction
         logger.info(
             "correction_detected",
             field=correction.field,
-            old_value=correction.old_value,
             new_value=correction.new_value,
         )
 
@@ -147,23 +135,50 @@ async def extract_entities(state: AirtimeState, extractor: AirtimeEntityExtracto
     network_changed = bool(extracted_network and prev_network and extracted_network != prev_network)
     had_prev_recipient = bool(prev_phone or prev_network)
 
-    # Clear stale amount if recipient changed
     should_clear_amount = False
     if existing_amount is not None:
         if (phone_changed or network_changed) and had_prev_recipient:
             should_clear_amount = True
+
+    avail_amount = extracted_amount if extracted_amount is not None else (None if should_clear_amount else existing_amount)
+    avail_phone = normalized_phone if normalized_phone else existing_phone
+    avail_network = extracted_network or detected_network or existing_network
+
+    effective_entities = SimpleAirtimeEntities(
+        amount=avail_amount,
+        recipient_phone=avail_phone,
+        network=avail_network,
+        is_self=is_self,
+    )
+    
+    decision_result = resolve(
+        result, 
+        draft_entities=effective_entities, 
+        user_message=state.get("message", "")
+    )
+    
+    if decision_result.decision == Decision.LIMITATION:
+         logger.info(
+            "airtime_capability_limitation",
+            limitation=decision_result.limitation_message
+         )
+         return {
+            **state,
+            "response": decision_result.limitation_message or "Feature not supported",
+            "flow_state": "capability_limitation",
+         }
+
+    computed_missing = decision_result.missing_fields
 
     new_state = dict(state)
     if should_clear_amount:
         new_state["amount"] = None
 
     updates: dict[str, Any] = {
-        "missing_fields": computed_missing,  # Use resolver-computed
-        "llm_reply": result.reply,
+        "missing_fields": computed_missing,
         "flow_state": "extracting",
     }
 
-    # Track amount changes for acknowledgment
     amount_changed = False
     if extracted_amount is not None:
         if existing_amount is not None and existing_amount != extracted_amount:
@@ -192,7 +207,6 @@ async def extract_entities(state: AirtimeState, extractor: AirtimeEntityExtracto
 
     new_state.update(updates)
 
-    # Post-update check: clear amount if recipient mismatch detected
     post_incoming_phone = normalized_phone
     post_incoming_network = extracted_network or detected_network
     post_existing_phone = new_state.get("recipient_phone")
@@ -210,7 +224,6 @@ async def extract_entities(state: AirtimeState, extractor: AirtimeEntityExtracto
     missing_fields = new_state.get("missing_fields", [])
     llm_reply = new_state.get("llm_reply")
 
-    # Set response if all fields complete
     if (
         final_amount
         and final_phone

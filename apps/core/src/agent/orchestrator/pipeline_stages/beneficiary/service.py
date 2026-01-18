@@ -40,6 +40,20 @@ class OrchestratorBeneficiaryHandler:
                 phone_number, result, suggestion_context, beneficiary_type
             )
 
+        # If the user intends to start a new transaction, skip beneficiary handling
+        # This prevents "Again", "New transfer", etc. from being caught as aliases
+        excluded_intents = {
+            *TRANSACTION_INTENTS,
+            "general_transaction",
+            "repeat_transaction",
+            "modify_transaction",
+            "manage_accounts",
+            "query_balance",
+            "explanation",
+        }
+        if intent in excluded_intents:
+            return None
+
         # Handle explicit yes/no/confirm/skip
         if intent in ("yes", "confirm", "proceed"):
             return await self._handle_confirm(
@@ -52,10 +66,13 @@ class OrchestratorBeneficiaryHandler:
         # check if the text itself looks like a simple alias
         text_clean = text.strip()
         forbidden_chars = ['http', '@', '#', '/']
+        forbidden_keywords = {'again', 'repeat', 'menu', 'home', 'back', 'restart', 'help'}
+        
         if (
             len(text_clean) > 0
             and len(text_clean) <= 50
             and not any(char in text_clean for char in forbidden_chars)
+            and text_clean.lower() not in forbidden_keywords
         ):
             # Treat the entire text as a potential alias
             return await self._save_beneficiary(

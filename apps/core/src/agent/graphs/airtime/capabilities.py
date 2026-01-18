@@ -96,6 +96,13 @@ def derive_requirements(
     recurring_keywords = ["weekly", "monthly", "every week", "every month", "recurring", "automatically"]
     if any(kw in msg_lower for kw in recurring_keywords):
         requires.append(AirtimeCapability.RECURRING)
+        
+    # Also check requested_features from LLM extraction
+    for feature in extraction.requested_features:
+        if feature == "SCHEDULED":
+            requires.append(AirtimeCapability.SCHEDULED)
+        elif feature == "RECURRING":
+            requires.append(AirtimeCapability.RECURRING)
 
     return list(set(requires))
 

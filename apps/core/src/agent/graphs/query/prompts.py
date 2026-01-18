@@ -44,6 +44,9 @@ For analytics queries:
 - **type**: sum, average, count, largest, breakdown
 - **group_by**: category, merchant, day, account
 - **limit**: number of results (default 10)
+- **sort_by**: "amount" (total money) or "count" (frequency)
+  - "Who do I send money to the most?" → sort_by: "count" (frequency)
+  - "Who have I sent the most money to?" → sort_by: "amount" (total)
 
 ## AFFORDABILITY
 
@@ -72,6 +75,15 @@ Determine which accounts the user is asking about:
 
 Common Nigerian bank names: GTB, Access, Zenith, UBA, First Bank, Kuda, Opay, Moniepoint
 
+## RESULT LIMIT
+
+Extract **result_limit** when user specifies a quantity:
+- "last transaction" / "my last transaction" → result_limit: 1
+- "last 3 transactions" → result_limit: 3
+- "show 5 transactions" → result_limit: 5
+- "recent transactions" → result_limit: 5 (default for 'recent')
+- If not specified, leave null (default pagination applies)
+
 ## EXAMPLES
 
 "How much did I spend on food this month?"
@@ -82,6 +94,12 @@ Common Nigerian bank names: GTB, Access, Zenith, UBA, First Bank, Kuda, Opay, Mo
 
 "Transactions over 50k last week"
 → intent: transaction_list, filters.min_amount: 50000, time_range: last week
+
+"Show my last transaction"
+→ intent: transaction_list, result_limit: 1
+
+"Last 3 transactions"
+→ intent: transaction_list, result_limit: 3
 
 "Can I afford 80,000?"
 → intent: affordability, amount_check: 80000
@@ -125,14 +143,17 @@ Classify this message into one of these types:
    - If this type, extract the filter changes (replaces previous filter of same type)
 
 4. **expand** - User wants to see the underlying transactions after a summary
-   - e.g., "show transactions", "show details", "show me the items", "which ones"
-   - Use this when expanding from an analytics summary (like "You spent ₦X on Y")
+   - e.g., "show transactions", "show me the items", "which ones"
+   - Use this ONLY when expanding from an analytics summary (like "You spent ₦X on Y")
+   - Do NOT use this when user is already viewing a transaction list
 
-5. **drill_down** - User wants details about a specific item OR wants to take action on it
-   - If this type AND items are provided above, set drill_down_index to the item number (0-indexed)
+5. **drill_down** - User wants details about a specific transaction OR wants to take action on it
+   - Trigger phrases: "show details", "show me details", "tell me more", "what was this?", "details", "more info"
+   - If items are provided above, set drill_down_index to the matching item number (0-indexed)
+   - If only 1 item exists or user doesn't specify which, default to drill_down_index: 0
    - Match based on: amount ("150k"), ordinal ("first", "second"), description ("Netflix"), or relative ("largest")
    - Set drill_down_action based on intent:
-     - **view_details** (default): "tell me more", "what was this?"
+     - **view_details** (default): "tell me more", "what was this?", "show details", "details"
      - **get_receipt**: "send receipt", "proof", "evidence", "I need receipt"
      - **report_issue**: "something's wrong", "I was debited", "failed", "problem", "issue"
 
