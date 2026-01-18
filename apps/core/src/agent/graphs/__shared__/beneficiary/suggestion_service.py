@@ -61,9 +61,7 @@ class BeneficiarySuggestionService:
                 has_beneficiary_repo = bool(uow.beneficiaries)
                 exists_in_beneficiaries = False
 
-                # Handle different beneficiary types
                 if beneficiary_type == "transfer":
-                    # Skip for self-transfers
                     if recipient_data.get("is_self") or recipient_data.get("is_own_account"):
                         return
                     account_number = recipient_data.get("account_number")
@@ -95,7 +93,6 @@ class BeneficiarySuggestionService:
                         recipient_display = recipient_name or masked_acct
                         bank_display = recipient_data.get("bank_name", "") or bank_code
 
-                        # Check for original alias (e.g., "Mum" that user used to initiate transfer)
                         original_alias = recipient_data.get("original_alias", "")
 
                         suggestion_context = {
@@ -114,7 +111,6 @@ class BeneficiarySuggestionService:
                             ex=3600,
                         )
 
-                        # Build message with alias suggestion if available
                         if original_alias and original_alias.lower() != recipient_name.lower():
                             message = (
                                 f"Would you like to save {recipient_display} "
@@ -142,8 +138,6 @@ class BeneficiarySuggestionService:
                     if not recipient_phone or not network:
                         return
 
-                    # Don't suggest for self-recharge
-                    # Simple heuristic: check if phones match (strictly or suffix)
                     if recipient_phone == phone_number or \
                        (len(recipient_phone) >= 10 and phone_number.endswith(recipient_phone[-10:])) or \
                        (len(phone_number) >= 10 and recipient_phone.endswith(phone_number[-10:])):

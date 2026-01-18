@@ -35,8 +35,6 @@ async def handle_drill_down(state: dict[str, Any]) -> dict[str, Any]:
 
         try:
             redis_client = RedisClient.get_client()
-            
-            # Map QueryResultItem to receipt payload
             transfer_data = {
                 "amount": item.amount,
                 "narration": item.description,
@@ -46,11 +44,10 @@ async def handle_drill_down(state: dict[str, Any]) -> dict[str, Any]:
                     "account_number": item.metadata.get("recipient_account", "N/A"),
                 },
                 "source": {
-                    "account_name": "User Account"  # Placeholder as we don't have source name in item
+                    "account_name": "User Account" 
                 }
             }
             
-            # Use specific extracted fields if available
             if item.metadata.get("recipient_name"):
                  transfer_data["recipient"]["name"] = item.metadata.get("recipient_name")
                  
@@ -115,7 +112,6 @@ async def handle_drill_down(state: dict[str, Any]) -> dict[str, Any]:
         if transaction_type:
             lines.append(f"*Category:* {transaction_type.title()}")
     
-    # Transaction ID (if available)
     if item.id:
         lines.append(f"*Ref:* {item.id}")
     

@@ -69,10 +69,8 @@ class QueryParser:
                 return extraction, f"clarify:{clarify_msg}"
             
             if decision.decision == Decision.NEGOTIATE:
-                # Return negotiation message
                 return decision.extraction, f"negotiate:{decision.negotiation.message}" if decision.negotiation else None
             
-            # PROCEED - extraction may have been clamped
             resolver_msg = None
             if decision.clamped.days_back:
                 resolver_msg = f"Showing last {decision.clamped.days_back} days (max available)."
@@ -81,7 +79,6 @@ class QueryParser:
             
         except Exception as e:
             logger.error("parse_error", error=str(e))
-            # Return default extraction
             return QueryExtractionResult(raw_query=question), None
 
     async def parse(
@@ -90,37 +87,33 @@ class QueryParser:
         message_id: str | None = None,
     ) -> tuple["QueryExtractionResult", str | None]:
         """
-        Parse query using v2 extraction with resolver integration.
+        Parse query using extraction with resolver integration.
         
         Returns:
             Tuple of (extraction_result, resolver_message)
             - resolver_message is set if negotiation/clamping occurred
         """
         today = date.today()
-        prompt = QUERY_EXTRACTION_PROMPT_V2.format(
+        prompt = QUERY_EXTRACTION_PROMPT.format(
             today=today.isoformat(),
             question=question,
         )
         
-        structured_llm_v2 = self.llm.with_structured_output(QueryExtractionResult)
+        structured_llm = self.llm.with_structured_output(QueryExtractionResult)
         
         try:
-            extraction: QueryExtractionResult = await structured_llm_v2.ainvoke(prompt)
+            extraction: QueryExtractionResult = await structured_llm.ainvoke(prompt)
             extraction.raw_query = question
             
-            # Run through resolver
             decision = resolve(extraction)
             
             if decision.decision == Decision.ASK_CLARIFY:
-                # Return with clarification prompt
                 clarify_msg = decision.prompts[0].vars.get("context", "Could you clarify?") if decision.prompts else "Could you clarify?"
                 return extraction, f"clarify:{clarify_msg}"
             
             if decision.decision == Decision.NEGOTIATE:
-                # Return negotiation message
                 return decision.extraction, f"negotiate:{decision.negotiation.message}" if decision.negotiation else None
             
-            # PROCEED - extraction may have been clamped
             resolver_msg = None
             if decision.clamped.days_back:
                 resolver_msg = f"Showing last {decision.clamped.days_back} days (max available)."
@@ -129,7 +122,6 @@ class QueryParser:
             
         except Exception as e:
             logger.error("parse_error", error=str(e))
-            # Return default extraction
             return QueryExtractionResult(raw_query=question), None
 
     def convert_to_normalized(
@@ -147,7 +139,6 @@ class QueryParser:
         
         today = today or date.today()
         
-        # Map extraction intent to normalized intent
         intent_map = {
             ExtractIntent.TRANSACTION_LIST: QueryIntent.TRANSACTION_LIST,
             ExtractIntent.SPENDING_TOTAL: QueryIntent.ANALYTICS_SUMMARY,
@@ -158,7 +149,6 @@ class QueryParser:
             ExtractIntent.AFFORDABILITY: QueryIntent.AFFORDABILITY,
         }
         
-        # Build time range
         time_range = None
         if extraction.time_range:
             days_back = extraction.time_range.days_back or 30
@@ -173,7 +163,6 @@ class QueryParser:
                 granularity="day",
             )
         
-        # Build filters
         filters = None
         if extraction.filters:
             from apps.core.src.agent.graphs.query.models import Filters
@@ -186,7 +175,6 @@ class QueryParser:
                 account_filter=extraction.filters.bank,
             )
         
-        # Build aggregation
         aggregation = None
         if extraction.aggregation:
             aggregation = Aggregation(

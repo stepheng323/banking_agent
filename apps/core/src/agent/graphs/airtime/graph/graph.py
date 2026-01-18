@@ -19,6 +19,8 @@ from shared.repositories.account_repository import AccountRepository
 from shared.repositories.actionable_message_repository import ActionableMessageRepository
 from shared.repositories.beneficiary_repository import BeneficiaryRepository
 from shared.utils.logging import get_logger
+from apps.core.src.agent.graphs.airtime.graph.nodes.extraction import extract_entities
+
 
 from .builder import build_graph
 from .state import create_initial_state, update_conversation_state
@@ -197,7 +199,6 @@ class AirtimeFlowGraph(BaseFlowGraph):
         classification_result: dict | None,
     ) -> tuple[dict | None, bool]:
         """Handle mid-confirmation corrections. Returns (new_state, should_return_early)."""
-        from apps.core.src.agent.graphs.airtime.graph.nodes.extraction import extract_entities
 
         preserved = self._preserve_transaction_data(input_state)
         old_values = {k: preserved[k] for k in ("amount", "recipient_phone", "network")}

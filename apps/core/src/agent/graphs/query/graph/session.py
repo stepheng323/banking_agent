@@ -5,6 +5,7 @@ from typing import Any
 
 import redis.asyncio as redis
 
+from apps.core.src.agent.graphs.query.models import NormalizedQuery, QueryResult
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -20,7 +21,6 @@ class QuerySessionManager:
 
     async def load(self, key: str) -> dict[str, Any] | None:
         """Load session state from Redis and restore Pydantic models."""
-        from apps.core.src.agent.graphs.query.models import NormalizedQuery, QueryResult
 
         try:
             data = await self.redis.get(key)
