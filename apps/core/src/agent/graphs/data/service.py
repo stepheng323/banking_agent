@@ -67,3 +67,7 @@ class DataService(IAgentService):
     ) -> str:
         """Resume data purchase flow after PIN verification."""
         return await self.graph.resume_after_pin_verification(phone_number, pin_verified, extra_param)
+
+    async def get_last_state(self, phone: str) -> dict[str, Any] | None:
+        """Get the last workflow state (checkpoint)."""
+        return await self.graph.get_checkpoint_state(phone)

@@ -38,38 +38,6 @@ async def extract_entities(
         logger.info("extract_skipping_terminal", status=transfer_status)
         return state
 
-    # Handle negotiation responses (yes/no when pending_negotiation exists)
-    pending_negotiation = state.get("pending_negotiation")
-    if pending_negotiation and flow_state == "negotiating":
-        classification_result = state.get("classification_result")
-        if classification_result:
-            intent = classification_result.get("intent", "").lower()
-            
-            if intent in ("yes", "confirm"):
-                # User accepted the alternative - apply the patch
-                patch = pending_negotiation.get("patch", {})
-                logger.info(
-                    "negotiation_accepted",
-                    suggested_action=pending_negotiation.get("type"),
-                    patch=patch,
-                )
-                return {
-                    **state,
-                    **patch,  # Apply the negotiation patch
-                    "flow_state": "extracting",
-                    "pending_negotiation": None,
-                    "response": "",
-                }
-            elif intent in ("no", "cancel"):
-                # User rejected - cancel the flow
-                logger.info("negotiation_rejected", suggested_action=pending_negotiation.get("type"))
-                return {
-                    **state,
-                    "flow_state": "cancelled",
-                    "pending_negotiation": None,
-                    "response": "Alright, I've cancelled that.",
-                }
-
 
     classification_result = state.get("classification_result")
     if classification_result:
@@ -99,18 +67,9 @@ async def extract_entities(
                 "response": "",
             }
 
-    # CRITICAL: If resuming from an interrupt, skip extraction
-    # User said "yes/ok" to resume, don't let LLM misclassify it as cancel
-    if classification_result:
-        complexity_reason = classification_result.get("complexity_reason", "")
-        debug_log(f"🔎 [EXTRACTION] Checking skip logic. Reason: {complexity_reason}")
-        if "Flow resume after interrupt" in complexity_reason:
-            debug_log("⏭️ Skipping extraction - flow resume detected")
-            return state
-        else:
-            debug_log("❌ [EXTRACTION] Not skipping - reason does not match 'Flow resume after interrupt'")
-    else:
-        debug_log("❌ [EXTRACTION] No classification result found in state")
+    # Was skipping here for "Flow resume", but we need to run extraction 
+    # to capture mid-flow updates (like narration: "Its for launch").
+    # The extractor logic handles cancellations internally.
 
     last_response = state.get("response") or state.get("llm_reply")
     smart_context = {}
@@ -174,40 +133,10 @@ async def extract_entities(
     entities = result.entities or TransferEntities()    
     pre_decision = resolve(
         result,
-        draft_entities=None,  # Analyze incoming intention/extraction first
+        draft_entities=None,  
         recent_transfers=(smart_context or {}).get("recentTransfers", []),
         user_message=message_to_extract,
     )
-
-    if pre_decision.decision == Decision.LIMITATION:
-         limitation_msg = pre_decision.limitation_message
-         logger.info("transfer_capability_limitation", msg=limitation_msg)
-         return {
-            **state,
-            "response": limitation_msg or "Feature not supported",
-            "llm_reply": limitation_msg,
-            "flow_state": "capability_limitation",
-         }
-
-    if pre_decision.decision == Decision.NEGOTIATE:
-        negotiation_msg = pre_decision.limitation_message
-        logger.info(
-            "transfer_capability_negotiate",
-            msg=negotiation_msg,
-            suggested_action=pre_decision.suggested_action,
-        )
-        return {
-            **state,
-            "response": negotiation_msg or "Would you like an alternative?",
-            "llm_reply": negotiation_msg,
-            "flow_state": "negotiating",
-            "pending_negotiation": {
-                "type": pre_decision.suggested_action,
-                "patch": pre_decision.patch,
-                "prompt": negotiation_msg,
-            },
-        }
-
 
     if pre_decision.decision == Decision.ASK_CLARIFY and pre_decision.ambiguity_to_resolve:
         prompt = pre_decision.prompts[0]
@@ -240,7 +169,7 @@ async def extract_entities(
     if pre_decision.applied_entities:
         entities = pre_decision.applied_entities
 
-    computed_missing = pre_decision.missing_fields # For logging consistency
+    computed_missing = pre_decision.missing_fields 
     existing_amount = state.get("amount")
     
     logger.info(

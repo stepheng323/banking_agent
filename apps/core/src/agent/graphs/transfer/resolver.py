@@ -20,11 +20,8 @@ from apps.core.src.agent.graphs.transfer.models_extraction import (
     RequestedFeature,
     TransferExtractionResult,
 )
-from apps.core.src.agent.graphs.transfer.capabilities import (
-    CapabilityDecision,
-    decide_capability,
-    derive_requirements,
-)
+from apps.core.src.agent.graphs.transfer.capabilities import CapabilityDecision
+
 
 
 class Decision(str, Enum):
@@ -205,19 +202,7 @@ def resolve(
                             vars={"candidates": ambiguity.candidates},
                         )],
                     )
-    
-    requires = derive_requirements(extraction, user_message)
-    cap_decision = decide_capability(requires, extraction)
-    
-    if not cap_decision.allowed:
-        return ResolverDecision(
-            decision=Decision.NEGOTIATE if cap_decision.suggested_action else Decision.LIMITATION,
-            applied_entities=entities,
-            limitation_message=cap_decision.prompt,
-            suggested_action=cap_decision.suggested_action,
-            patch=cap_decision.patch,
-        )
-    
+        
     entities, was_hydrated = resolve_references(
         entities,
         extraction.references,

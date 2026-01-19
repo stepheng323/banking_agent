@@ -64,17 +64,8 @@ async def confirm_funding(
     flow_token = f"transfer-pin-{idem_key}-{phone_number}"
 
     await redis_client.set(f"transfer:token:{idem_key}:phone", phone_number, ex=3600)
-
-    await whatsapp_client.send_flow(
-        to=phone_number,
-        header="Confirm Funding",
-        flow_cta="Authorize Funding",
-        flow_id=settings.pin_confirmation_flow_id,
-        screen_name="Pin",
-        flow_token=flow_token,
-        text_body=summary,
-        message_id=state.get("message_id"),
-    )
+    
+    logger.info("transfer_funding_flow_generated", token=idem_key[:8])
 
     return {
         **state,

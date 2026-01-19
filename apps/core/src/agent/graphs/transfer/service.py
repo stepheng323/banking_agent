@@ -75,6 +75,10 @@ class TransferService(IAgentService):
         """Resume transfer flow after PIN verification."""
         return await self.graph.resume_after_pin_verification(phone_number, pin_verified, extra_param)
 
+    async def get_last_state(self, phone: str) -> dict[str, Any] | None:
+        """Get the last workflow state (checkpoint)."""
+        return await self.graph.get_checkpoint_state(phone)
+
     def set_completion_callback(self, callback: FlowCompletionCallback | None) -> None:
         """Set the completion callback for the transfer flow."""
         self.graph.completion_callback = callback

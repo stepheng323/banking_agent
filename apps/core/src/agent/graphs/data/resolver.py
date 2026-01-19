@@ -18,11 +18,8 @@ from apps.core.src.agent.graphs.data.models_extraction import (
     RequestedFeature,
     DataExtractionResult,
 )
-from apps.core.src.agent.graphs.data.capabilities import (
-    CapabilityDecision,
-    decide_capability,
-    derive_requirements,
-)
+from apps.core.src.agent.graphs.data.capabilities import CapabilityDecision
+
 
 
 class Decision(str, Enum):
@@ -62,7 +59,6 @@ class ResolverDecision(BaseModel):
     patch: dict[str, Any] = Field(default_factory=dict)
 
 
-# Required fields for data purchase (phone/network not needed if is_self=True)
 REQUIRED_FIELDS = ["budget", "recipient_phone", "network"]
 
 
@@ -114,7 +110,6 @@ def resolve(
     """Main resolver entry point."""
     entities = extraction.entities
     
-    # Merge with draft
     if draft_entities and entities:
         for field in entities.model_fields:
             new_val = getattr(entities, field, None)
@@ -124,7 +119,6 @@ def resolve(
     elif draft_entities and not entities:
         entities = draft_entities
     
-    # Check ambiguities
     if extraction.ambiguities:
         budget_ambiguity = next(
             (a for a in extraction.ambiguities if a.code == AmbiguityCode.BUDGET_UNCLEAR),
@@ -139,21 +133,6 @@ def resolve(
                 prompts=[Prompt(key="data.budget_ambiguous", vars={"candidates": budget_ambiguity.candidates})],
             )
     
-    # Check capabilities using new pattern
-    requires = derive_requirements(extraction, user_message="")
-    cap_decision = decide_capability(requires, extraction)
-    
-    if not cap_decision.allowed:
-        return ResolverDecision(
-            decision=Decision.NEGOTIATE if cap_decision.suggested_action else Decision.CANCEL,
-            applied_entities=entities,
-            limitation_message=cap_decision.prompt,
-            suggested_action=cap_decision.suggested_action,
-            patch=cap_decision.patch,
-        )
-
-    
-    # Compute missing fields
     is_self = bool(entities and entities.is_self)
     missing = compute_missing_fields(entities, is_self)
     

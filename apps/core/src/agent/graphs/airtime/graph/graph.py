@@ -237,20 +237,21 @@ class AirtimeFlowGraph(BaseFlowGraph):
                 return new_state, False
 
             # Ask for clarification
-            await self.whatsapp_client.send_text(
-                phone_number,
+            # Ask for clarification via state response
+            msg = (
                 "I wasn't sure what you wanted to change. Please be specific, e.g., "
-                "'Change amount to 2000' or 'Change number to 08123456789'.",
+                "'Change amount to 2000' or 'Change number to 08123456789'."
             )
             clarification_state = create_initial_state(
                 phone_number, message, message_id, classification_result
             )
             clarification_state["flow_state"] = "confirming"
+            clarification_state["response"] = msg
             for k, v in preserved.items():
                 if v is not None:
                     clarification_state[k] = v
             await update_conversation_state(phone_number, cast(AirtimeState, clarification_state))
-            return None, True
+            return clarification_state, True
 
         # Build specific acknowledgment message
         changes = []
@@ -271,7 +272,8 @@ class AirtimeFlowGraph(BaseFlowGraph):
                 f"Got it, changing {' and '.join(changes)}." if changes else "Got it, updating..."
             )
         )
-        await self.whatsapp_client.send_text(phone_number, ack_msg, message_id=message_id)
+        # Removed send_text.
+        logger.info("mid_correction_ack", msg=ack_msg)
 
         new_state = extracted
         for k, v in preserved.items():
@@ -345,7 +347,7 @@ class AirtimeFlowGraph(BaseFlowGraph):
                     phone_number, message, message_id, input_state, classification_result
                 )
                 if should_return:
-                    return ""
+                    return corrected.get("response", "") if corrected else ""
                 input_state = corrected
             else:
                 input_state["message"] = message

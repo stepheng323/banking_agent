@@ -185,7 +185,8 @@ class TransferCompletionService:
             )
 
             # message_id will be auto-fetched from Redis by send_text() if not provided
-            await self.whatsapp_client.send_text(to=phone_number, text=message)
+            # Removed direct send_text.
+            logger.info("transfer_pending_msg_ready", msg=message)
         except Exception as e:
             logger.error(
                 "transfer_pending_notification_error", phone=phone_number, error=str(e)
@@ -199,9 +200,8 @@ class TransferCompletionService:
             message = f"Transfer failed: {error_message}. Please try again."
             # Fetch message_id before background task to ensure it's available
             # message_id will be auto-fetched from Redis by send_text() if None
-            create_background_task(
-                self.whatsapp_client.send_text(to=phone_number, text=message)
-            )
+            # Removed direct send_text.
+            logger.info("transfer_failure_msg_ready", msg=message)
         except Exception as e:
             logger.error(
                 "transfer_failure_notification_error",

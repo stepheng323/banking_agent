@@ -155,22 +155,11 @@ async def _handle_sufficient_balance(
     )
 
     if token and summary:
-        flow_result = await whatsapp_client.send_flow(
-            to=state["phone_number"],
-            header="Confirm Your Transfer",
-            flow_cta="Authorize Transfer",
-            flow_id=settings.pin_confirmation_flow_id,
-            screen_name="Pin",
-            flow_token=token,
-            text_body=summary,
-            message_id=state.get("message_id"),
+        logger.info(
+            "transfer_flow_ready_for_orchestrator",
+            token=token[-6:],
+            has_summary=True
         )
-
-        wa_message_id = flow_result.get("messages", [{}])[0].get("id", "")
-        user_id = state.get("user_profile", {}).get("id")
-
-        if wa_message_id and user_id:
-            await _save_actionable_message(state, wa_message_id, user_id)
 
     return {
         **state,

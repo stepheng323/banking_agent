@@ -19,11 +19,8 @@ from apps.core.src.agent.graphs.airtime.models import (
     RequestedFeature,
     AirtimeExtractionResult,
 )
-from apps.core.src.agent.graphs.airtime.capabilities import (
-    CapabilityDecision,
-    decide_capability,
-    derive_requirements,
-)
+from apps.core.src.agent.graphs.airtime.capabilities import CapabilityDecision
+
 
 
 class Decision(str, Enum):
@@ -139,20 +136,7 @@ def resolve(
                 prompts=[Prompt(key="airtime.amount_ambiguous", vars={"candidates": amount_ambiguity.candidates})],
             )
     
-    # Check capabilities and constraints
-    requires = derive_requirements(extraction, user_message)
-    cap_decision = decide_capability(requires, extraction)
-    
-    if not cap_decision.allowed:
-        return ResolverDecision(
-            decision=Decision.NEGOTIATE if cap_decision.suggested_action else Decision.LIMITATION,
-            applied_entities=entities,
-            limitation_message=cap_decision.prompt,
-            suggested_action=cap_decision.suggested_action,
-            patch=cap_decision.patch,
-        )
-    
-    # Compute missing fields
+
     is_self = bool(entities and entities.is_self)
     missing = compute_missing_fields(entities, is_self)
     

@@ -29,8 +29,8 @@ class TransferState(TypedDict):
         "initiating_debits",
         "awaiting_debits",
         "initiating_payout",
-        "negotiating",
     ]
+
 
     amount: float | None
     recipient_name: str | None
@@ -110,7 +110,3 @@ class TransferState(TypedDict):
     confirmation_context: NotRequired[dict | None]
     confirmation_token: NotRequired[str | None]
     confirmation_summary: NotRequired[str | None]
-
-    # Capability negotiation: stored when user needs to accept/reject alternative
-    pending_negotiation: NotRequired[dict | None]  # {type, suggested_action, patch}
-

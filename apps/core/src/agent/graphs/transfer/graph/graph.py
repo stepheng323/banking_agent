@@ -179,16 +179,8 @@ class TransferFlowGraph(BaseFlowGraph):
                             f"user:{phone_number}:current_message_id"
                         )
 
-                        await self.whatsapp_client.send_flow(
-                            to=phone_number,
-                            header="Confirm Your Transfer",
-                            flow_cta="Authorize Transfer",
-                            flow_id=settings.pin_confirmation_flow_id,
-                            screen_name="Pin",
-                            flow_token=token,
-                            text_body=confirmation_summary or resume_msg,
-                            message_id=current_message_id,
-                        )
+                        # Removed direct send_flow. Orchestrator handles this.
+                        return confirmation_summary or resume_msg
                         return ""
                     return (
                         f"{resume_msg}\n\n{confirmation_summary}"
@@ -334,9 +326,8 @@ class TransferFlowGraph(BaseFlowGraph):
 
         if changes:
             ack_msg = f"Got it, changing {' and '.join(changes)}."
-            await self.whatsapp_client.send_text(
-                ctx.phone_number, ack_msg, message_id=ctx.message_id
-            )
+            # Removed direct send_text.
+            logger.info("mid_correction_ack", msg=ack_msg)
             
             # Recompute missing fields to ensure routing works correctly
             current_entities = TransferEntities(

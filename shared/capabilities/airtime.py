@@ -1,20 +1,12 @@
-"""Airtime graph capability definitions.
+"""Airtime capability definitions.
 
-Defines what the airtime graph supports and feature negotiation.
-Capability check happens after extraction, before validation.
-
-Architecture:
-- Capabilities: What features we support (SELF_RECHARGE, SCHEDULED, etc.)
-- Policies: Limits handled by validation layer (amount_validator.py)
-- CapabilityDecision: Structured response with suggested_action + patch
+Defines what airtime features are supported and provides capability negotiation.
+Moved to shared layer to break circular imports.
 """
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from apps.core.src.agent.graphs.airtime.models import AirtimeExtractionResult
+from typing import Any
 
 
 class AirtimeCapability(str, Enum):
@@ -42,15 +34,7 @@ CAPABILITY_LABELS: dict[AirtimeCapability, str] = {
 
 @dataclass
 class CapabilityDecision:
-    """Structured decision from capability check.
-    
-    Attributes:
-        allowed: Whether the request can proceed
-        missing: Capabilities required but not supported
-        prompt: User-facing message explaining the issue
-        suggested_action: Action to take if user accepts
-        patch: State changes to apply if user accepts
-    """
+    """Structured decision from capability check."""
 
     allowed: bool
     missing: list[AirtimeCapability] = field(default_factory=list)
@@ -60,20 +44,19 @@ class CapabilityDecision:
 
 
 def derive_requirements(
-    extraction: "AirtimeExtractionResult",
     user_message: str = "",
+    requested_features: list[str] | None = None,
+    is_self: bool = False,
 ) -> list[AirtimeCapability]:
-    """Derive required capabilities from extraction result."""
+    """Derive required capabilities from user message."""
     requires: set[AirtimeCapability] = set()
 
-    if extraction.entities:
-        if extraction.entities.is_self:
-            requires.add(AirtimeCapability.SELF_RECHARGE)
-        elif extraction.entities.recipient_phone:
-            requires.add(AirtimeCapability.OTHER_RECHARGE)
+    if is_self:
+        requires.add(AirtimeCapability.SELF_RECHARGE)
+    else:
+        requires.add(AirtimeCapability.OTHER_RECHARGE)
 
-    requested = {str(f) for f in (extraction.requested_features or [])}
-
+    requested = set(requested_features or [])
     msg = user_message.lower()
 
     def has_any(keywords: list[str]) -> bool:
@@ -88,24 +71,13 @@ def derive_requirements(
     return list(requires)
 
 
-def decide_capability(
-    requires: list[AirtimeCapability],
-    extraction: "AirtimeExtractionResult | None" = None,
-) -> CapabilityDecision:
-    """
-    Check capabilities and return structured decision.
-    
-    Priority order:
-    1. Scheduled (offer immediate)
-    2. Recurring (offer one-time)
-    3. Other missing capabilities
-    """
+def decide_capability(requires: list[AirtimeCapability]) -> CapabilityDecision:
+    """Check capabilities and return structured decision."""
     missing = [cap for cap in requires if cap not in AIRTIME_SUPPORTS]
 
     if not missing:
         return CapabilityDecision(allowed=True)
 
-    # Priority 1: Scheduled (offer immediate)
     if AirtimeCapability.SCHEDULED in missing:
         return CapabilityDecision(
             allowed=False,
@@ -115,7 +87,6 @@ def decide_capability(
             prompt="Scheduled airtime purchases aren't available yet.\n\nWant me to proceed with an immediate recharge?",
         )
 
-    # Priority 2: Recurring (offer one-time)
     if AirtimeCapability.RECURRING in missing:
         return CapabilityDecision(
             allowed=False,
