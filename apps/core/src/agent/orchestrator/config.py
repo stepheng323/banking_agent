@@ -3,6 +3,7 @@
 from dataclasses import dataclass
 from typing import Any
 
+import redis.asyncio as redis
 from langchain_openai import ChatOpenAI
 
 from apps.core.src.agent.graphs.account_management.service import AccountManagementService
@@ -13,12 +14,12 @@ from apps.core.src.agent.graphs.query import QueryService
 from apps.core.src.agent.graphs.support import SupportService
 from apps.core.src.agent.graphs.transfer import TransferService
 from apps.core.src.agent.orchestrator.pipeline_stages.quote.service import QuoteService
-from apps.core.src.agent.orchestrator.pipeline_stages.task_queue.executor import TaskExecutor
 from apps.core.src.agent.orchestrator.registry import ExecutorRegistry
 from apps.core.src.agent.orchestrator.services import (
     ConversationResponder,
     TaskQueueService,
 )
+from shared.cache.user_data import UserDataCache
 from shared.clients.whatsapp.client import WhatsAppClient
 from shared.repositories import BeneficiaryRepository, UserRepository
 from shared.repositories.actionable_message_repository import ActionableMessageRepository
@@ -37,7 +38,7 @@ class OrchestratorDependencies:
     conversation_responder: ConversationResponder
     transfer_service: TransferService
     airtime_service: AirtimeService
-    task_executor: TaskExecutor
+
     query_service: QueryService
     account_management_service: AccountManagementService
     executor_registry: ExecutorRegistry | None = None
@@ -46,3 +47,7 @@ class OrchestratorDependencies:
     data_service: DataService | None = None
     support_service: SupportService | None = None
     faq_service: FAQService | None = None
+    # For workflow engine
+    user_cache: UserDataCache | None = None
+    redis_client: redis.Redis | None = None
+

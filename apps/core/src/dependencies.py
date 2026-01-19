@@ -17,8 +17,8 @@ from apps.core.src.agent.graphs.transfer.completion import TransferCompletionSer
 from apps.core.src.agent.graphs.transfer.executor import TransferExecutor
 from apps.core.src.agent.orchestrator import OrchestratorAgent
 from apps.core.src.agent.orchestrator.config import OrchestratorDependencies
-from apps.core.src.agent.orchestrator.pipeline_stages.task_queue.executor import TaskExecutor
 from apps.core.src.agent.orchestrator.services import (
+
     ConversationResponder,
     MediaService,
     TaskQueueService,
@@ -91,7 +91,6 @@ def setup_dependencies():
     bill_provider = PaymentProviderFactory.get_bill_payment_provider()
     data_service = None
     if bill_provider:
-        # Create DataService with dependencies (consistent with other services)
         data_service = DataService(
             bill_provider=bill_provider,
             redis_client=shared_redis,
@@ -151,13 +150,6 @@ def setup_dependencies():
         executor_registry.register("data", data_service)
     quote_service = QuoteService(executor_registry)
 
-    task_executor = TaskExecutor(
-        registry=executor_registry,
-        task_queue_service=task_queue_service,
-        query_service=query_service,
-        completion_callback=None,
-    )
-
     media_service = MediaService(whatsapp_client)
 
     orchestrator_deps = OrchestratorDependencies(
@@ -170,23 +162,20 @@ def setup_dependencies():
         conversation_responder=conversation_responder,
         transfer_service=agent_transfer_service,
         airtime_service=agent_airtime_service,
-        task_executor=task_executor,
         query_service=query_service,
         account_management_service=account_management_service,
         media_service=media_service,
         data_service=data_service,
         executor_registry=executor_registry,
         quote_service=quote_service,
+        user_cache=user_data_cache,
+        redis_client=shared_redis,
     )
 
     orchestrator = OrchestratorAgent(orchestrator_deps)
 
-    completion_callback = orchestrator.completion_callback
-    agent_transfer_service.set_completion_callback(completion_callback)
-    agent_airtime_service.set_completion_callback(completion_callback)
-    task_executor.completion_callback = completion_callback
-
     batch_service = BatchService(
+
         whatsapp_client=whatsapp_client,
         task_queue_service=task_queue_service,
         transfer_service=agent_transfer_service,
@@ -237,6 +226,7 @@ def setup_dependencies():
         data_service=data_service,
         batch_service=batch_service,
         whatsapp_client=whatsapp_client,
+        orchestrator=orchestrator,
     )
 
     return message_consumer, transaction_consumer, flow_event_consumer

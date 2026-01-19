@@ -7,11 +7,8 @@ from apps.core.src.agent.orchestrator.config import OrchestratorDependencies
 from apps.core.src.agent.orchestrator.pipeline import MessageContext, MessagePipeline
 from apps.core.src.agent.orchestrator.pipeline_stages.affirmation.handler import AffirmationHandler
 from apps.core.src.agent.orchestrator.pipeline_stages.affirmation.service import FlowContextService
-from apps.core.src.agent.orchestrator.pipeline_stages.batch_auth.handler import BatchAuthorizationHandler
 from apps.core.src.agent.orchestrator.pipeline_stages.beneficiary.handler import BeneficiaryHandler
 from apps.core.src.agent.orchestrator.pipeline_stages.beneficiary.service import OrchestratorBeneficiaryHandler
-from apps.core.src.agent.orchestrator.pipeline_stages.classification.handler import ClassificationHandler
-from apps.core.src.agent.orchestrator.pipeline_stages.classification.service import OrchestratorClassificationService
 from apps.core.src.agent.orchestrator.pipeline_stages.context_loader.handler import ContextLoaderHandler
 from apps.core.src.agent.orchestrator.pipeline_stages.context_loader.service import OrchestratorContextManager
 from apps.core.src.agent.orchestrator.pipeline_stages.flow_control.handler import FlowControlHandler
@@ -20,8 +17,8 @@ from apps.core.src.agent.orchestrator.pipeline_stages.guardian.handler import Gu
 from apps.core.src.agent.orchestrator.pipeline_stages.intent_routing.handler import IntentRoutingHandler
 from apps.core.src.agent.orchestrator.pipeline_stages.intent_routing.router import OrchestratorIntentRouter
 from apps.core.src.agent.orchestrator.pipeline_stages.quote.handler import QuoteHandler
-from apps.core.src.agent.orchestrator.pipeline_stages.task_queue.coordination.coordinator import TaskCoordinator
-from apps.core.src.agent.orchestrator.pipeline_stages.task_queue.handler import TaskQueueHandler
+# from apps.core.src.agent.orchestrator.pipeline_stages.workflow.handler import WorkflowHandler # Legacy
+from apps.core.src.agent.orchestrator_graph.handler import OrchestratorGraphHandler # New
 from apps.core.src.agent.orchestrator.pipeline_stages.task_queue.planner import OrchestratorTaskPlanner
 from shared.utils.async_helpers import create_background_task
 from apps.core.src.agent.orchestrator.pipeline_stages.intent_routing.deps import IntentRouterDependencies
@@ -35,18 +32,11 @@ class OrchestratorAgent:
         self.message_type = "text"
 
         self.context_manager = OrchestratorContextManager(deps.user_repo, deps.beneficiary_repo)
-        self.classification_service = OrchestratorClassificationService(deps.llm)
-        self.task_planner = OrchestratorTaskPlanner(deps.llm, deps.task_queue_service, deps.task_executor)
+
+        self.task_planner = OrchestratorTaskPlanner(deps.llm, deps.task_queue_service)
         self.beneficiary_handler = OrchestratorBeneficiaryHandler(self.context_manager)
         self.flow_context_service = FlowContextService()
         
-        self.completion_callback = TaskCoordinator(
-            deps.task_queue_service,
-            deps.whatsapp_client,
-            self.context_manager,
-            self.task_planner,
-            deps.transfer_service,
-        )
         self.cancellation_handler = OrchestratorCancellationHandler(
             deps.transfer_service, deps.airtime_service, self.context_manager, deps.task_queue_service
         )
@@ -75,23 +65,57 @@ class OrchestratorAgent:
 
     def _build_pipeline(self) -> list[Any]:
         """Build the message processing pipeline stages."""
+        # Top-Level Orchestrator Graph (Pattern A)
+        orchestrator_graph_handler = OrchestratorGraphHandler(
+            task_planner=self.task_planner,
+            transfer_service=self.deps.transfer_service,
+            airtime_service=self.deps.airtime_service,
+            query_service=self.deps.query_service,
+            data_service=self.deps.data_service,
+            account_management_service=self.deps.account_management_service,
+            support_service=self.deps.support_service,
+            faq_service=self.deps.faq_service,
+            user_cache=self.deps.user_cache,
+            redis_client=self.deps.redis_client,
+            whatsapp_client=self.deps.whatsapp_client,
+        )
+        
+        # We also keep a reference to it for resume_transaction
+        self.orchestrator_handler = orchestrator_graph_handler
+
         return [
             ContextLoaderHandler(self.context_manager, self.deps.task_queue_service),
-            ClassificationHandler(self.classification_service, self.context_manager, self.deps.actionable_message_repo),
-            GuardianHandler(self.deps.transfer_service, self.deps.airtime_service, self.flow_context_service),
-            FlowControlHandler(self.context_manager, self.cancellation_handler, self.deps.transfer_service, self.deps.airtime_service),
-            AffirmationHandler(self.deps.transfer_service, self.deps.airtime_service, self.flow_context_service, self.deps.llm),
-            QuoteHandler(self.deps.quote_service, self.deps.whatsapp_client),
-            BeneficiaryHandler(self.beneficiary_handler),
-            BatchAuthorizationHandler(self.deps.task_queue_service, self.deps.transfer_service, self.deps.whatsapp_client),
-            TaskQueueHandler(self.deps.task_queue_service, self.task_planner, self.deps.transfer_service, self.deps.airtime_service, self.deps.executor_registry),
-            IntentRoutingHandler(self.intent_router),
+            # Pattern A: Graph owns execution and routing.
+            orchestrator_graph_handler,
+            
+            # The following are mostly redundant now as Graph handles them via nodes/adapters
+            # But we leave them as fallback if Orchestrator returns handled=False?
+            # Or comment out to enforce Pattern A purity.
+            # Enforcing purity:
+            # GuardianHandler(self.deps.transfer_service, self.deps.airtime_service, self.flow_context_service),
+            # FlowControlHandler(self.context_manager, self.cancellation_handler, self.deps.transfer_service, self.deps.airtime_service),
+            # AffirmationHandler(self.deps.transfer_service, self.deps.airtime_service, self.flow_context_service, self.deps.llm),
+            # QuoteHandler(self.deps.quote_service, self.deps.whatsapp_client),
+            # BeneficiaryHandler(self.beneficiary_handler),
+            # IntentRoutingHandler(self.intent_router),
         ]
 
     @property
     def transfer(self) -> TransferService:
         """Get transfer service."""
         return self.deps.transfer_service
+
+    async def resume_transaction(self, phone_number: str, flow_type: str, pin_verified: bool) -> str | None:
+        """Resume a transaction after an external event (like PIN verification)."""
+        # Resume via Orchestrator Graph (Pattern A) - Session Gate handles callback
+        payload = {"pin_verified": pin_verified, "flow_type": flow_type}
+        
+        result = await self.orchestrator_handler.resume_flow(
+            phone_number=phone_number,
+            payload=payload
+        )
+        
+        return result
 
     async def invoke(
         self,
@@ -127,3 +151,4 @@ class OrchestratorAgent:
         create_background_task(self.context_manager.add_conversation_turn(phone_number, "assistant", response))
 
         return response
+
