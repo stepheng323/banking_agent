@@ -30,6 +30,7 @@ def build_confirmation(
             "narration": payload.narration,
         }
     )
+
     return TransferResult(
         outcome=TransferOutcome.NEEDS_CONFIRMATION,
         confirmation_snapshot=snap,

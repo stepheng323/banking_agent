@@ -25,11 +25,15 @@ async def finalize(state: OrchestratorState) -> dict:
         elif task.stage == TaskStage.FAILED:
             results.append(f"❌ Failed: {task.payload.get('error')}")
 
+        elif task.stage == TaskStage.CANCELLED:
+            results.append("🚫 Transaction cancelled.")
+
     final_text = "\n".join(results) if results else "I'm done processing."
 
     return {
         "final_response": final_text,
         "outbox": outbox,
+        "tasks": {},  # Wipe tasks so next turn is fresh
         "waves": [],  # Clear waves so next turn triggers Planner
         "current_wave_index": 0,
         "pin_verified": False,  # Security: Reset PIN verification status

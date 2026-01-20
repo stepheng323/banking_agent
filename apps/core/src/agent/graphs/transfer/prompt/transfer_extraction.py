@@ -53,6 +53,17 @@ When user corrects mid-flow ("I meant 50k"):
 | "send all" or "just send what I have" | transfer_all=true (user wants full balance) |
 | "abeg make am dey go every month" | requested_features=["RECURRING"] |
 | "fi 5k si mama" (Yoruba) | amount=5000, recipient_name="mama" |
+| "Add narration: school fees" | narration="school fees", acknowledgment="Got it, added the narration." |
+| "its for groceries" | narration="groceries", acknowledgment="Updated narration to 'groceries'." |
+
+## ACKNOWLEDGMENTS
+If the user is correcting or updating a field:
+- Generate a SHORT, natural acknowledgment in `acknowledgment`.
+- Examples: "Got it.", "Changing amount to 10k...", "Added narration."
+- Do NOT generate acknowledgment for new/initial transfers.
+
+Output ONLY JSON matching the schema.
+- Keep it brief (under 10 words).
 
 Output ONLY JSON matching the schema.
 """
@@ -64,4 +75,3 @@ FORMATTER_SYSTEM_PROMPT = """Format banking assistant responses for WhatsApp.
 - Be natural, conversational
 - For Nigerian users: light Pidgin is okay
 """
-

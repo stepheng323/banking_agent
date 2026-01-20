@@ -132,6 +132,8 @@ async def advance_wave(state: OrchestratorState, config: RunnableConfig) -> dict
                         task.payload["confirmation"] = {}
                     task.payload["confirmation"]["summary"] = result.confirmation_summary
                     task.payload["confirmation"]["snapshot"] = result.confirmation_snapshot
+                    if getattr(result, "update_message", None):
+                        task.payload["confirmation"]["update_message"] = result.update_message
 
             elif result.outcome == TransferOutcome.NEEDS_AUTH:
                 task.stage = TaskStage.AWAITING_AUTH
@@ -160,15 +162,26 @@ async def advance_wave(state: OrchestratorState, config: RunnableConfig) -> dict
         }
 
     if needs_confirm_tasks:
-        summ = state.tasks[needs_confirm_tasks[0]].payload["confirmation"].get("summary", "Confirm transaction?")
-        snap = state.tasks[needs_confirm_tasks[0]].payload["confirmation"].get("snapshot", {})
+        confirmation_payload = state.tasks[needs_confirm_tasks[0]].payload["confirmation"]
+        summ = confirmation_payload.get("summary", "Confirm transaction?")
+        snap = confirmation_payload.get("snapshot", {})
+        update_msg = confirmation_payload.get("update_message")
 
         interrupt = PendingInterrupt(
             kind="confirmation",
             task_ids=needs_confirm_tasks,
         )
 
-        updates["outbox"] = [
+        outbox = []
+        if update_msg:
+            outbox.append(
+                {
+                    "type": "say",
+                    "text": update_msg,
+                }
+            )
+
+        outbox.append(
             {
                 "type": "request_confirmation",
                 "task_ids": needs_confirm_tasks,
@@ -176,7 +189,9 @@ async def advance_wave(state: OrchestratorState, config: RunnableConfig) -> dict
                 "snapshot": snap,
                 "idempotency_key": state.tasks[needs_confirm_tasks[0]].payload.get("idempotency_key", "unknown"),
             }
-        ]
+        )
+
+        updates["outbox"] = outbox
         updates["pending_interrupt"] = interrupt
         updates["final_response"] = summ
         return updates

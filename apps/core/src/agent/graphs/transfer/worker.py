@@ -28,6 +28,7 @@ from apps.core.src.agent.orchestrator.models.domain import (
     TransferOutcome,
     TransferResult,
 )
+from shared.database.models import TransactionStatusEnum
 from shared.repositories.transaction_repository import (
     TransactionRepository,
 )
@@ -80,19 +81,15 @@ class TransferWorker:
             import uuid
 
             idempotency_key = f"transfer-{uuid.uuid4()}"
-            print(f"DEBUG: Generated New Key: {idempotency_key}", flush=True)
             data = data.model_copy(update={"idempotency_key": idempotency_key})
         else:
-            print(f"DEBUG: Using Existing Key: {idempotency_key}", flush=True)
+            pass
 
         def with_key(result: TransferResult) -> TransferResult:
             """Ensure result patch contains ID key and accumulated state."""
             if result.patch is None:
                 result.patch = {}
 
-            # Persist all data fields that have been determined so far
-            # This ensures that Extraction/Resolution results are saved to the checkpoint
-            # even when we interrupt for Confirmation or Auth.
             if hasattr(data, "model_dump"):
                 current_state = data.model_dump(exclude_unset=True)
             else:
@@ -113,10 +110,22 @@ class TransferWorker:
             accounts=context.get("accounts", []),
         )
 
+        previous_data = data.model_dump()
+        updates_detected = []
+
+        extraction_ack = None
         if user_message:
             res = await extract_transfer_update(data, self.extractor, user_message, context)
             if res.patch:
+                extraction_ack = res.patch.get("_extraction_ack")
                 data = data.model_copy(update=res.patch)
+
+        current_dump = data.model_dump()
+        for field in ["amount", "narration", "recipient_bank_name"]:
+            val_old = previous_data.get(field)
+            val_new = current_dump.get(field)
+            if val_new != val_old and val_new is not None:
+                updates_detected.append(field.replace("_", " ").capitalize())
 
         res = await resolve_beneficiary(data, ctx, self.banking_provider, self.bank_cache)
         # print(f"DEBUG: Resolution Outcome: {res.outcome}", flush=True)
@@ -153,17 +162,11 @@ class TransferWorker:
             if res.patch:
                 data = data.model_copy(update=res.patch)
 
-        res = build_confirmation(data, ctx)
-        try:
-            with open("/tmp/debug_token.txt", "a") as f:
-                f.write(
-                    f"CONFIRMATION_CHECK: Confirmed={gates.confirmation_confirmed}, PayloadConfirmed={data.confirmation.confirmed}\n"
-                )
-        except:
-            pass
+        update_msg = extraction_ack
 
-        # PERSIST TOKEN EARLY (Critical for Confirmation-via-PIN flow)
-        # The PIN handler needs this token to verify the callback, even if we are only at the "Confirmation" stage.
+        res = build_confirmation(data, ctx)
+        res.update_message = update_msg
+
         try:
             if not self.queue._redis:
                 await self.queue.connect()
@@ -181,17 +184,9 @@ class TransferWorker:
                 3600,
                 phone,
             )
-
-            # Debug probes
-            await self.queue._redis.set("debug:last_set_token", idempotency_key)
-            await self.queue._redis.set(f"debug:token:{idempotency_key}", phone)
-
-            with open("/tmp/debug_token.txt", "a") as f:
-                f.write(f"SET_TOKEN_EARLY: {idempotency_key} -> {phone}\n")
         except Exception as e:
-            print(f"ERROR: Failed to persist token: {e}", flush=True)
+            logger.error("failed_to_persist_token", error=str(e))
 
-        # print(f"DEBUG: Confirmation Outcome: {res.outcome}, Confirmed={gates.confirmation_confirmed}", flush=True)
         if not gates.confirmation_confirmed:
             return with_key(res)
 
@@ -210,27 +205,7 @@ class TransferWorker:
                         3600,
                         phone,
                     )
-
-                    # FILE LOGGING PROBE
-                    try:
-                        with open("/tmp/debug_token.txt", "a") as f:
-                            f.write(f"SET_TOKEN: {idempotency_key} -> {phone}\n")
-                    except:
-                        pass
-
-                    # Debug probes (UNCOMMENTED)
-                    await self.queue._redis.set("debug:last_set_token", idempotency_key)
-                    await self.queue._redis.set(f"debug:token:{idempotency_key}", phone)
-
-                    print(f"DEBUG: Auth Token SET for {idempotency_key} -> {phone}", flush=True)
-
                 except Exception as e:
-                    try:
-                        with open("/tmp/debug_token.txt", "a") as f:
-                            f.write(f"ERROR_SET_TOKEN: {str(e)}\n")
-                    except:
-                        pass
-                    print(f"DEBUG: Failed to set auth token: {e}", flush=True)
                     logger.error("failed_to_set_auth_token", error=str(e))
 
             # Ensure patch contains the key (via helper)

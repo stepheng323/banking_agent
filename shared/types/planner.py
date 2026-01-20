@@ -57,6 +57,7 @@ class PlannerOutput(BaseModel):
         default=False, description="True if multiple recipients, mixed intents, or complex request"
     )
     is_cancellation: bool = Field(default=False, description="True if user wants to cancel/abort")
+    is_confirmation: bool = Field(default=False, description="True if user explicitly confirms/agrees")
     detected_language: str | None = Field(
         default=None, description="Detected language: English, Yoruba, Hausa, Igbo, Pidgin, French"
     )

@@ -151,6 +151,7 @@ class TransferResult(BaseModel):
 
     confirmation_snapshot: dict[str, Any] | None = None
     confirmation_summary: str | None = None
+    update_message: str | None = None
 
     receipt: dict[str, Any] | None = None
 
