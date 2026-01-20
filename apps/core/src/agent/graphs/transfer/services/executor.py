@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import Any
 
-from apps.core.src.agent.graphs.transfer.completion import TransferCompletionService
+from apps.core.src.agent.graphs.transfer.services.completion import TransferCompletionService
 from shared.clients.factories.payment import PaymentProviderFactory
 from shared.repositories.unit_of_work import UnitOfWork
 from shared.utils.logging import get_logger
@@ -145,9 +145,7 @@ class TransferExecutor:
                 await self.transfer_service.send_failure_notification(phone_number, user_msg)
 
         except Exception as e:
-            logger.error(
-                "transfer_execution_error", phone=phone_number, error=str(e), exc_info=True
-            )
+            logger.error("transfer_execution_error", phone=phone_number, error=str(e), exc_info=True)
             if transaction_id:
                 with UnitOfWork() as uow:
                     if uow.transactions:

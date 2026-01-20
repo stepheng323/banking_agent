@@ -11,14 +11,14 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from apps.core.src.agent.graphs.transfer.models import TransferEntities
-
+from apps.core.src.agent.graphs.transfer.models.entities import TransferEntities
 
 SCHEMA_VERSION = 1
 
+
 class CorrectionField(str, Enum):
     """Fields that can be corrected."""
-    
+
     AMOUNT = "amount"
     RECIPIENT_ACCOUNT = "recipient_account"
     RECIPIENT_NAME = "recipient_name"
@@ -30,7 +30,7 @@ class CorrectionField(str, Enum):
 
 class AmbiguityCode(str, Enum):
     """Structured ambiguity codes."""
-    
+
     AMOUNT_UNCLEAR = "AMOUNT_UNCLEAR"
     MULTIPLE_BENEFICIARIES = "MULTIPLE_BENEFICIARIES"
     UNCLEAR_BANK = "UNCLEAR_BANK"
@@ -39,7 +39,7 @@ class AmbiguityCode(str, Enum):
 
 class RequestedFeature(str, Enum):
     """Features beyond simple transfer."""
-    
+
     SCHEDULED = "SCHEDULED"
     RECURRING = "RECURRING"
     INTERNATIONAL = "INTERNATIONAL"
@@ -54,14 +54,14 @@ class Correction(BaseModel):
 
 class Ambiguity(BaseModel):
     """Structured ambiguity with candidates."""
-    
+
     code: AmbiguityCode = Field(description="Ambiguity type")
     candidates: list[str | float] = Field(default_factory=list, description="Possible values")
 
 
 class References(BaseModel):
     """References to context (e.g., recent transfers)."""
-    
+
     use_recent_transfer: bool = Field(default=False, description="User wants to use recent transfer")
     recent_transfer_index: int | None = Field(default=None, description="Index if explicit")
 
@@ -72,21 +72,21 @@ class TransferExtractionResult(BaseModel):
     schema_version: int = Field(default=SCHEMA_VERSION, description="Schema version for future-proofing")
     intent: Literal["transfer"] = Field(default="transfer")
     intent_confidence: float = Field(default=1.0, ge=0.0, le=1.0, description="Confidence in intent")
-    
+
     entities: TransferEntities | None = Field(default=None)
-    
+
     correction: Correction | None = Field(default=None, description="Correction if user updated a value")
-    
+
     ambiguities: list[Ambiguity] = Field(
         default_factory=list,
         description="Structured ambiguities with candidates",
     )
-    
+
     references: References = Field(
         default_factory=References,
         description="References to context",
     )
-    
+
     requested_features: list[RequestedFeature] = Field(
         default_factory=list,
         description="Features beyond simple transfer: SCHEDULED, RECURRING, INTERNATIONAL",
