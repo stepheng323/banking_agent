@@ -34,6 +34,10 @@ async def confirm_node(
         }
 
     idem_key = state.get("idempotency_key") or str(uuid.uuid4())
+    flow_token = f"data-pin-{idem_key}-{phone_number}"
+    
+    # Store token mapping for callback handler
+    await redis_client.set(f"data:token:{idem_key}:phone", phone_number, ex=3600)
 
     # Format confirmation message
     plan_name = selected_plan.name
@@ -51,42 +55,10 @@ async def confirm_node(
         f"Please enter your PIN to confirm."
     )
 
-    try:
-        await whatsapp_client.send_whatsapp_flow(
-            phone_number=phone_number,
-            flow_id="pin_verification",
-            flow_token=idem_key,
-            flow_action="navigate",
-            flow_action_payload={
-                "screen": "PIN_SCREEN",
-                "data": {
-                    "flow_type": "data",
-                    "idempotency_key": idem_key,
-                    "amount": amount,
-                    "description": f"Data: {plan_name}",
-                },
-            },
-            header_text="Confirm Purchase",
-            body_text=confirmation_msg,
-            cta_text="Enter PIN",
-        )
-
-        logger.info(
-            "data_pin_flow_sent",
-            phone=phone_number,
-            idem_key=idem_key[:20],
-            plan=plan_name,
-        )
-
-        return {
-            "flow_state": "authorizing",
-            "idempotency_key": idem_key,
-            "response": "",  # WhatsApp Flow handles the UI
-        }
-
-    except Exception as e:
-        logger.error("data_pin_flow_error", error=str(e), exc_info=True)
-        return {
-            "flow_state": "error",
-            "response": "Failed to start verification. Please try again.",
-        }
+    return {
+        "flow_state": "authorizing",
+        "idempotency_key": idem_key,
+        "confirmation_token": flow_token,
+        "confirmation_summary": confirmation_msg,
+        "response": "",  # WhatsApp Flow handles the UI
+    }

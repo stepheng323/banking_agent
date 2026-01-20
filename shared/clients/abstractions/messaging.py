@@ -37,6 +37,11 @@ class MessagingClient(ABC):
         """Return the name of this channel (e.g., 'whatsapp', 'telegram')."""
         ...
 
+    @property
+    def supports_flows(self) -> bool:
+        """Return proper whether channel supports flows/forms."""
+        return False
+
     @abstractmethod
     async def send_text(
         self,

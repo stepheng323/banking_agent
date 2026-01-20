@@ -15,6 +15,8 @@ from shared.utils.logging import get_logger
 logger = get_logger(__name__)
 
 
+from apps.core.src.agent.orchestrator.orchestrator import OrchestratorAgent
+
 class FlowEventConsumer:
     """Consumes flow events (like PIN verified) and triggers appropriate service resumption."""
 
@@ -26,6 +28,7 @@ class FlowEventConsumer:
         data_service: DataService | None = None,
         batch_service: BatchService | None = None,
         whatsapp_client: WhatsAppClient | None = None,
+        orchestrator: OrchestratorAgent | None = None,
     ):
         self.queue = redis_queue
         self.transfer_service = transfer_service
@@ -33,6 +36,7 @@ class FlowEventConsumer:
         self.data_service = data_service
         self.batch_service = batch_service
         self.whatsapp_client = whatsapp_client
+        self.orchestrator = orchestrator
         self.running = False
 
     async def process_event(self, event_data: dict[str, Any]) -> None:
@@ -92,37 +96,48 @@ class FlowEventConsumer:
 
         try:
             response = None
+            
+            # Prefer Orchestrator if available (New Workflow Engine)
+            if self.orchestrator:
+                logger.info("resuming_via_orchestrator", phone=phone_number, flow=flow_type)
+                response = await self.orchestrator.resume_transaction(
+                    phone_number=phone_number,
+                    flow_type=flow_type,
+                    pin_verified=True
+                )
+            
+            # Legacy fallback / specific services handling if orchestrator didn't handle it
+            if not response:
+                if flow_type == "transfer":
+                    if self.transfer_service:
+                        response = await self.transfer_service.resume_after_pin_verification(phone_number, True, None)
+                        logger.info("transfer_resumed_after_pin", phone=phone_number)
+                    else:
+                        logger.error("transfer_service_not_available")
 
-            if flow_type == "transfer":
-                if self.transfer_service:
-                    response = await self.transfer_service.resume_after_pin_verification(phone_number, True, None)
-                    logger.info("transfer_resumed_after_pin", phone=phone_number)
+                elif flow_type == "airtime":
+                    if self.airtime_service:
+                        response = await self.airtime_service.resume_after_pin_verification(phone_number, True, None)
+                        logger.info("airtime_resumed_after_pin", phone=phone_number)
+                    else:
+                        logger.error("airtime_service_not_available")
+
+                elif flow_type == "data":
+                    if self.data_service:
+                        response = await self.data_service.resume_after_pin_verification(phone_number, True, None)
+                        logger.info("data_resumed_after_pin", phone=phone_number)
+                    else:
+                        logger.error("data_service_not_available")
+
+                elif flow_type == "batch":
+                    if self.batch_service and hasattr(self.batch_service, "resume_after_pin_verification"):
+                        response = await self.batch_service.resume_after_pin_verification(phone_number, True, None)
+                        logger.info("batch_resumed_after_pin", phone=phone_number)
+                    else:
+                        logger.error("batch_service_not_available")
+
                 else:
-                    logger.error("transfer_service_not_available")
-
-            elif flow_type == "airtime":
-                if self.airtime_service:
-                    response = await self.airtime_service.resume_after_pin_verification(phone_number, True, None)
-                    logger.info("airtime_resumed_after_pin", phone=phone_number)
-                else:
-                    logger.error("airtime_service_not_available")
-
-            elif flow_type == "data":
-                if self.data_service:
-                    response = await self.data_service.resume_after_pin_verification(phone_number, True, None)
-                    logger.info("data_resumed_after_pin", phone=phone_number)
-                else:
-                    logger.error("data_service_not_available")
-
-            elif flow_type == "batch":
-                if self.batch_service and hasattr(self.batch_service, "resume_after_pin_verification"):
-                    response = await self.batch_service.resume_after_pin_verification(phone_number, True, None)
-                    logger.info("batch_resumed_after_pin", phone=phone_number)
-                else:
-                    logger.error("batch_service_not_available")
-
-            else:
-                logger.warning("unknown_flow_type", flow_type=flow_type)
+                    logger.warning("unknown_flow_type", flow_type=flow_type)
 
             # Send response to user if available
             if response and self.whatsapp_client:

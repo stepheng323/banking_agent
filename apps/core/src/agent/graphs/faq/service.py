@@ -1,6 +1,7 @@
 """FAQ service facade using LangGraph."""
 
 from collections.abc import Callable
+from typing import Any
 
 from langchain_core.runnables import Runnable
 from sqlalchemy.orm import Session
@@ -29,6 +30,20 @@ class FAQService(IAgentService):
         """Run the FAQ flow."""
         result = await self.graph.run(phone_number=phone, message=text)
         return result.get("response", "")
+
+    async def preflight(
+        self,
+        phone: str,
+        text: str,
+        params: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """FAQ doesn't require preflight validation."""
+        return {
+            "ready": True,
+            "missing_fields": [],
+            "enriched_params": params or {},
+            "question": None,
+        }
 
     async def clear_checkpoint(self, phone_number: str) -> None:
         """No checkpoint for FAQ flow."""

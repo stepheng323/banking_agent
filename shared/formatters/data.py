@@ -77,3 +77,37 @@ def format_data_plan_list(
         lines.append("Reply with plan size (e.g. *5GB*) to select.")
 
     return "\n".join(lines)
+
+
+def format_data_summary(data: dict) -> str:
+    """
+    Format a WhatsApp-friendly data purchase confirmation summary.
+
+    Expected keys in data:
+      planName: str
+      amount: float
+      recipientPhone: str
+      network: str
+      sourceBank: str
+      sourceAccount: str
+      isSelf: bool
+    """
+    plan_name = data.get("planName", "Data Plan")
+    amount = float(data.get("amount", 0))
+    recipient_phone = str(data.get("recipientPhone") or "")
+    network = str(data.get("network") or "")
+    source_bank = str(data.get("sourceBank") or "Account")
+    source_account = str(data.get("sourceAccount") or "")
+    is_self = data.get("isSelf", False)
+
+    target_display = "your number" if is_self else recipient_phone
+
+    lines = [
+        f"*{plan_name} → {target_display}*",
+        f"Network: {network} • Amount: ₦{amount:,.0f}",
+    ]
+
+    lines.append("")
+    lines.append(f"From: {source_bank} (···{source_account[-4:] if source_account else '????'})")
+
+    return "\n".join(lines)

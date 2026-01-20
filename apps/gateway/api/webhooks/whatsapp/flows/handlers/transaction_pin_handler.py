@@ -95,12 +95,27 @@ async def handle_transaction_pin(
         parts = flow_token.split("-")
         phone_number = parts[2] if len(parts) >= 3 else None
     else:
+        # DEBUG PROBE
+        print(f"DEBUG: Processing flow_token: {flow_token}", flush=True)
+        print(f"DEBUG: Extracted idem_key: {idem_key}", flush=True)
+
+        last_token = await redis_client.get("debug:last_set_token")
+        print(f"DEBUG: Last Worker Token: {last_token}", flush=True)
+
+        if last_token:
+            debug_phone = await redis_client.get(f"debug:token:{last_token}")
+            print(f"DEBUG: Phone for Last Token: {debug_phone}", flush=True)
+
         phone_number = await redis_client.get(f"transaction:token:{idem_key}:phone")
+        print(f"DEBUG: Lookup transaction:token -> {phone_number}", flush=True)
 
         if not phone_number:
             phone_number = await redis_client.get(f"transfer:token:{idem_key}:phone")
+            print(f"DEBUG: Lookup transfer:token -> {phone_number}", flush=True)
+
             if not phone_number:
                 phone_number = await redis_client.get(f"airtime:token:{idem_key}:phone")
+                print(f"DEBUG: Lookup airtime:token -> {phone_number}", flush=True)
 
     if not phone_number:
         phone_number = flow_token.split("-")[-1] if flow_token else None

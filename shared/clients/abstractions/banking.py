@@ -10,6 +10,15 @@ from typing import Any
 
 
 @dataclass
+class ResolvedAccount:
+    """Standardized resolved account details."""
+
+    account_name: str
+    account_number: str
+    bank_code: str | None = None
+
+
+@dataclass
 class AccountData:
     """Bank account details."""
 
@@ -18,7 +27,7 @@ class AccountData:
     account_number: str
     account_type: str
     bank_name: str
-    bank_code: str
+    bank_code: str | None = None
 
 
 @dataclass
@@ -173,5 +182,29 @@ class BankingDataProvider(ABC):
 
         Returns:
             BvnVerificationResult with accounts and customer data
+        """
+        pass
+
+    @abstractmethod
+    async def resolve_account_number(self, account_number: str, bank_code: str) -> ResolvedAccount | None:
+        """
+        Resolve account name and details for a given number and bank.
+
+        Args:
+            account_number: Bank account number
+            bank_code: Bank code (e.g., '011', '035')
+
+        Returns:
+            ResolvedAccount if found, else None
+        """
+        pass
+
+    @abstractmethod
+    async def get_banks(self) -> dict[str, Any]:
+        """
+        Get list of supported banks.
+
+        Returns:
+            Dict containing 'success' (bool) and 'banks' (list of dicts)
         """
         pass

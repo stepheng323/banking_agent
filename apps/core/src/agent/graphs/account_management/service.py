@@ -11,9 +11,10 @@ from apps.core.src.agent.graphs.account_management.parser import (
     AccountManagementIntent,
     AccountManagementParser,
 )
+from apps.core.src.agent.graphs.interfaces import IAgentService
 from shared.cache.user_data import UserDataCache
 from shared.clients.abstractions.direct_debit import DirectDebitProvider
-from shared.clients.whatsapp.client import WhatsAppClient
+from shared.clients.abstractions.messaging import MessagingClient
 from shared.config import settings
 from shared.models.account import Account
 from shared.repositories.account_repository import AccountRepository
@@ -21,10 +22,8 @@ from shared.repositories.unit_of_work import UnitOfWork
 from shared.repositories.user_repository import UserRepository
 from shared.services.onboarding import bvn_service
 from shared.utils.logging import get_logger
-from apps.core.src.agent.graphs.interfaces import IAgentService
 
 logger = get_logger(__name__)
-
 
 
 class AccountManagementService(IAgentService):
@@ -35,7 +34,7 @@ class AccountManagementService(IAgentService):
         account_repo: AccountRepository,
         user_repo: UserRepository,
         llm: ChatOpenAI,
-        whatsapp_client: WhatsAppClient,
+        messaging_client: MessagingClient,
         direct_debit_provider: DirectDebitProvider | None = None,
     ):
         """
@@ -50,7 +49,7 @@ class AccountManagementService(IAgentService):
         self.account_repo = account_repo
         self.user_repo = user_repo
         self.llm = llm
-        self.whatsapp_client = whatsapp_client
+        self.messaging_client = messaging_client
         self.direct_debit_provider = direct_debit_provider
         self.parser = AccountManagementParser(llm)
 
@@ -140,11 +139,29 @@ class AccountManagementService(IAgentService):
 
         return response
 
+    async def preflight(
+        self,
+        phone: str,
+        text: str,
+        params: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Validate and enrich parameters before execution.
+
+        Account management doesn't require preflight validation,
+        so this returns ready=True.
+        """
+        return {
+            "ready": True,
+            "missing_fields": [],
+            "enriched_params": params or {},
+            "question": None,
+        }
+
     async def clear_checkpoint(self, phone_number: str) -> None:
         """Clear account management flow checkpoint for a user.
-        
+
         Account management doesn't use checkpoints, so this is a no-op.
-        
+
         Args:
             phone_number: User's phone number
         """
@@ -199,22 +216,33 @@ class AccountManagementService(IAgentService):
         methods = linking_data.get("methods", [])
         bvn = linking_data.get("bvn", "")
 
-        await self.whatsapp_client.send_flow(
-            to=phone_number,
-            header="Link New Account",
-            flow_cta="Continue",
-            flow_id=flow_id,
-            screen_name="METHOD_SELECTION",
-            flow_token=flow_token,
-            text_body="Tap Continue to link a new bank account.",
-            flow_action_payload={
-                "screen": "METHOD_SELECTION",
-                "data": {
-                    "methods": methods,
-                    "bvn": bvn,
+        if self.messaging_client.supports_flows:
+            await self.messaging_client.send_flow(
+                to=phone_number,
+                flow_id=flow_id,
+                flow_config={
+                    "header": "Link New Account",
+                    "flow_cta": "Continue",
+                    "screen_name": "METHOD_SELECTION",
+                    "flow_token": flow_token,
+                    "text_body": "Tap Continue to link a new bank account.",
+                    "flow_action_payload": {
+                        "screen": "METHOD_SELECTION",
+                        "data": {
+                            "methods": methods,
+                            "bvn": bvn,
+                        },
+                    },
                 },
-            },
-        )
+            )
+        else:
+            await self.messaging_client.send_text(
+                to=phone_number,
+                text=(
+                    f"To link your account, please visit: https://fusepay.io/link/{flow_token}\n\n"
+                    "(This channel doesn't support interactive forms yet)"
+                ),
+            )
 
         return ""
 

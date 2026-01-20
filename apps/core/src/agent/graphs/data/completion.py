@@ -84,19 +84,10 @@ class DataCompletionService:
                 f"Transaction ID: {provider_txn_id}"
             )
 
-            whatapp_res = await self.whatsapp_client.send_text(to=phone_number, text=message)
-            wa_message_id = whatapp_res.get("messages", [{}])[0].get("id", "")
-
-            if self.actionable_message_repo and wa_message_id:
-                user_id = data_purchase.get("user_id")
-                if user_id:
-                    self.actionable_message_repo.create(
-                        user_id=user_id,
-                        wa_message_id=wa_message_id,
-                        message_type="data_success",
-                        message_data=data_purchase,
-                        expires_at=datetime.utcnow() + timedelta(days=90),
-                    )
+            # Removed direct send_text.
+            logger.info("data_success_msg_ready", msg=message)
+            # Actionable message saving disabled in headless mode
+            # if self.actionable_message_repo and wa_message_id: ...
 
             if self.beneficiary_suggestion_service:
                 recipient = data_purchase.get("recipient", {})
@@ -156,8 +147,8 @@ class DataCompletionService:
                 "You'll receive confirmation shortly. If you don't receive it within 5 minutes, please contact support."
             )
 
-            await self.whatsapp_client.send_text(to=phone_number, text=message)
-            logger.info("data_pending_notification_sent", phone=phone_number)
+            # Removed direct send_text.
+            logger.info("data_pending_notification_sent_log", phone=phone_number)
         except Exception as e:
             logger.error("data_pending_notification_error", phone=phone_number, error=str(e))
 
@@ -165,7 +156,8 @@ class DataCompletionService:
         """Send failure notification for data purchase."""
         try:
             message = f"Data purchase failed: {error_message}. Please try again."
-            create_background_task(self.whatsapp_client.send_text(to=phone_number, text=message))
+            # Removed direct send_text.
+            logger.info("data_failure_notification_log", phone=phone_number, error=error_message)
         except Exception as e:
             logger.error(
                 "data_failure_notification_error",

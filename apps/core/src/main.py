@@ -21,12 +21,13 @@ logger = get_logger(__name__)
 async def lifespan(_app: FastAPI):
     """Lifespan context manager for startup/shutdown events."""
     logger.info("Starting Core Banking Service...")
+    payment_provider = None
     try:
         logger.info("Initializing payment provider...")
         payment_provider = PaymentProviderFactory.get_provider_for_service("resolve_account")
 
         if payment_provider:
-            logger.info(f"{payment_provider.provider_name.title()} ready")
+            logger.info(f"{payment_provider.provider_name.title()} ready", type=str(type(payment_provider)))
         else:
             logger.warning("No payment provider available")
     except Exception as e:
@@ -45,12 +46,12 @@ async def lifespan(_app: FastAPI):
             logger.info("Warming up bank cache...")
             bank_cache = BankCacheService(redis_client=redis_client)
 
-            if payment_provider and hasattr(payment_provider, "fetch_banks"):
+            if payment_provider and hasattr(payment_provider, "get_banks"):
 
-                async def fetch_banks():
-                    return await payment_provider.fetch_banks(country="NG")
+                async def fetch_banks_wrapper():
+                    return await payment_provider.get_banks()
 
-                banks = await bank_cache.ensure_banks_cached(fetch_banks)
+                banks = await bank_cache.ensure_banks_cached(fetch_banks_wrapper)
                 if banks:
                     logger.info("Bank cache ready", count=len(banks))
                 else:

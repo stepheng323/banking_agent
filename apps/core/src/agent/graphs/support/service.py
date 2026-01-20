@@ -35,7 +35,7 @@ class SupportService(IAgentService):
             redis_client=redis_client,
             db_session=db_session,
         )
-        
+
         self._ticket_service = None
         if db_session:
             ticket_repo = SupportTicketRepository(db_session)
@@ -53,7 +53,7 @@ class SupportService(IAgentService):
         user_id = classification_result.get("user_id", "") if classification_result else ""
         quoted_message_id = quoted_data.get("wa_message_id") if quoted_data else None
         transaction = quoted_data.get("transaction") if quoted_data else None
-        
+
         result = await self.graph.run(
             phone_number=phone,
             message=text,
@@ -61,8 +61,22 @@ class SupportService(IAgentService):
             quoted_message_id=quoted_message_id,
             transaction=transaction,
         )
-        
+
         return result or ""
+
+    async def preflight(
+        self,
+        phone: str,
+        text: str,
+        params: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Support doesn't require preflight validation."""
+        return {
+            "ready": True,
+            "missing_fields": [],
+            "enriched_params": params or {},
+            "question": None,
+        }
 
     async def clear_checkpoint(self, phone_number: str) -> None:
         """Clear support flow checkpoint for a user."""

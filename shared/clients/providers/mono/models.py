@@ -134,3 +134,15 @@ class MandateData(BaseModel):
     end_date: str
     mono_url: str | None = None
     transfer_destinations: list[TransferDestination] | None = None
+
+
+class AccountLookupBank(BaseModel):
+    name: str
+    code: str
+
+
+class AccountLookupData(BaseModel):
+    """Account lookup response from Mono."""
+
+    name: str
+    account_number: str

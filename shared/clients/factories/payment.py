@@ -4,21 +4,29 @@ from shared.clients.abstractions.banking import BankingDataProvider
 from shared.clients.abstractions.bill import BillPaymentProvider
 from shared.clients.abstractions.payment import PaymentProvider
 from shared.clients.providers.flutterwave.bill import FlutterwaveBillsClient
-from shared.clients.providers.flutterwave.payment import FlutterwaveClient
 
 
 class PaymentProviderFactory:
     """Factory for managing payment and bill payment providers."""
 
-    DEFAULT_PROVIDER_ORDER = ["flutterwave"]
+    DEFAULT_PROVIDER_ORDER = ["mono", "flutterwave"]
 
     @staticmethod
     def create_provider(provider_name: str) -> PaymentProvider | None:
         """Create a payment provider instance by name."""
         if provider_name == "flutterwave":
             try:
-                return FlutterwaveClient()
+                from shared.clients.providers.flutterwave.payment import FlutterwavePaymentProvider
+
+                return FlutterwavePaymentProvider()
             except ValueError:
+                return None
+        elif provider_name == "mono":
+            try:
+                from shared.clients.providers.mono.payment import MonoPaymentProvider
+
+                return MonoPaymentProvider()
+            except (ValueError, ImportError):
                 return None
         return None
 

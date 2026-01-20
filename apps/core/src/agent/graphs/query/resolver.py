@@ -30,10 +30,10 @@ from apps.core.src.agent.graphs.query.models_extraction import (
 class Decision(str, Enum):
     """Resolver decision for flow control."""
     
-    PROCEED = "PROCEED"           # All good, execute query
-    NEGOTIATE = "NEGOTIATE"       # Need user to confirm alternative
-    ASK_CLARIFY = "ASK_CLARIFY"   # Ambiguity needs resolution
-    REJECT = "REJECT"             # Can't help with this
+    PROCEED = "PROCEED"           
+    NEGOTIATE = "NEGOTIATE"       
+    ASK_CLARIFY = "ASK_CLARIFY"   
+    REJECT = "REJECT"             
 
 
 class Negotiation(BaseModel):
@@ -70,7 +70,6 @@ class ResolverDecision(BaseModel):
     prompts: list[Prompt] = Field(default_factory=list)
 
 
-# Map LLM RequestedCapability to resolver QueryCapability
 CAPABILITY_MAP = {
     RequestedCapability.FILTER_RECIPIENT: QueryCapability.FILTER_RECIPIENT,
     RequestedCapability.FILTER_AMOUNT: QueryCapability.FILTER_AMOUNT,
@@ -102,7 +101,6 @@ def check_capabilities(requested: list[RequestedCapability]) -> list[QueryCapabi
 def clamp_time_range(extraction: QueryExtractionResult) -> tuple[QueryExtractionResult, int | None]:
     """Clamp time range to max_lookback_days. Returns (updated, clamped_days)."""
     if extraction.time_range.reference_type == TimeReference.ALL_TIME:
-        # User wants all time, but we only support max_lookback_days
         extraction.time_range.days_back = QUERY_LIMITS["max_lookback_days"]
         extraction.time_range.reference_type = TimeReference.EXPLICIT
         return extraction, QUERY_LIMITS["max_lookback_days"]
@@ -112,10 +110,9 @@ def clamp_time_range(extraction: QueryExtractionResult) -> tuple[QueryExtraction
         extraction.time_range.days_back = QUERY_LIMITS["max_lookback_days"]
         return extraction, QUERY_LIMITS["max_lookback_days"]
     
-    # Default for vague time
     if extraction.time_range.reference_type == TimeReference.VAGUE:
         extraction.time_range.days_back = QUERY_LIMITS["default_lookback_days"]
-        return extraction, None  # Not clamped, just defaulted
+        return extraction, None
     
     return extraction, None
 
@@ -123,7 +120,6 @@ def clamp_time_range(extraction: QueryExtractionResult) -> tuple[QueryExtraction
 def resolve(extraction: QueryExtractionResult) -> ResolverDecision:
     """Main resolver entry point."""
     
-    # Check for ambiguities first
     if extraction.ambiguities:
         time_vague = next(
             (a for a in extraction.ambiguities if a.code == AmbiguityCode.TIME_VAGUE),

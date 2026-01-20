@@ -22,8 +22,8 @@ class AirtimeState(TypedDict):
         "completed",
         "error",
         "cancelled",
-        "negotiating",
     ]
+
 
     amount: float | None
     recipient_phone: str | None
@@ -58,7 +58,3 @@ class AirtimeState(TypedDict):
     pin_retry_count: NotRequired[int]
 
     language: NotRequired[str | None]
-
-    # Capability negotiation: stored when user needs to accept/reject alternative
-    pending_negotiation: NotRequired[dict | None]  # {type, suggested_action, patch}
-

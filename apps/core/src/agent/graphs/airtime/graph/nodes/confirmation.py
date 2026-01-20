@@ -31,6 +31,7 @@ async def prepare_confirmation(
     redis_client: Redis,
     actionable_message_repo: ActionableMessageRepository | None = None,
 ) -> AirtimeState:
+
     """Prepare airtime purchase confirmation summary."""
     debug_log(
         f"DEBUG prepare_confirmation: amount={state.get('amount')}, recipient_phone={state.get('recipient_phone')}, network={state.get('network')}"
@@ -147,41 +148,14 @@ async def prepare_confirmation(
     )
     await pipe.execute()
 
-    flow_result = await whatsapp_client.send_flow(
-        to=state["phone_number"],
-        header="Confirm Your Airtime Purchase",
-        flow_cta="Authorize Airtime",
-        flow_id=settings.pin_confirmation_flow_id,
-        screen_name="Pin",
-        flow_token=token,
-        text_body=summary,
-        message_id=state.get("message_id"),
-    )
-
-    if actionable_message_repo:
-        wa_message_id = flow_result.get("messages", [{}])[0].get("id", "")
-        user_profile = state.get("user_profile", {}) or {}
-        user_id = user_profile.get("id") if isinstance(user_profile, dict) else None
-        if wa_message_id and user_id:
-            actionable_message_repo.create(
-                user_id=user_id,
-                wa_message_id=wa_message_id,
-                message_type="airtime_confirmation",
-                message_data={
-                    "amount": amount,
-                    "phone_number": recipient_phone,
-                    "network": network,
-                    "recipient_name": recipient_name,
-                },
-                expires_at=datetime.utcnow() + timedelta(days=90),
-            )
-
     return cast(
         AirtimeState,
         {
             **state,
             "response": "",
             "idempotency_key": idem_key,
+            "confirmation_token": token,
+            "confirmation_summary": summary,
             "airtime_status": "pending",
             "flow_state": "authorizing",
         },

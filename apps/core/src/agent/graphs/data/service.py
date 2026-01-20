@@ -1,6 +1,7 @@
 """Data purchase service facade using LangGraph."""
 
 from typing import Any
+
 import redis.asyncio as redis
 
 from apps.core.src.agent.graphs.data.graph import DataPurchaseGraph
@@ -24,7 +25,7 @@ class DataService(IAgentService):
         queue: RedisQueue | None = None,
     ):
         """Initialize data purchase service.
-        
+
         Args:
             bill_provider: Bill payment provider for data purchases
             redis_client: Redis client for caching
@@ -37,6 +38,9 @@ class DataService(IAgentService):
             whatsapp_client=whatsapp_client,
             queue=queue,
         )
+        self.bill_provider = bill_provider
+        self.redis = redis_client
+        self.whatsapp_client = whatsapp_client
 
     async def run_simple(
         self,
@@ -67,3 +71,57 @@ class DataService(IAgentService):
     ) -> str:
         """Resume data purchase flow after PIN verification."""
         return await self.graph.resume_after_pin_verification(phone_number, pin_verified, extra_param)
+
+    async def get_last_state(self, phone: str) -> dict[str, Any] | None:
+        """Get the last workflow state (checkpoint)."""
+        return await self.graph.get_checkpoint_state(phone)
+
+    async def preflight(self, phone: str, text: str, params: dict[str, Any]) -> dict[str, Any]:
+        """
+        Prepare data purchase task by enriching parameters and checking readiness.
+        """
+        from apps.core.src.agent.graphs.data.graph.nodes.extraction import extract_entities
+        from apps.core.src.agent.graphs.data.graph.nodes.resolve import resolve_node
+        from apps.core.src.agent.graphs.data.graph.state import DataPurchaseState
+
+        # 1. Initialize State
+        state: DataPurchaseState = {
+            "phone_number": phone,
+            "message": text,
+            "budget": params.get("amount") or params.get("budget"),
+            "target_phone": params.get("target_phone") or params.get("recipient_phone") or params.get("phone"),
+            "network": params.get("network"),
+            "flow_state": "resolving",
+            "user_context": {},
+            "user_profile": {},
+        }
+
+        # 2. Extract Entities
+        state = await extract_entities(state, extractor=self.graph.extractor)
+
+        # 3. Resolve Target/Network
+        result = await resolve_node(state)
+
+        # Merge result into state manually as nodes return dicts
+        for k, v in result.items():
+            state[k] = v  # type: ignore
+
+        if state.get("flow_state") == "error":
+            return {
+                "ready": False,
+                "question": state.get("response"),
+                "missing_fields": ["network" if "network" in (state.get("error") or "").lower() else "target_phone"],
+            }
+
+        # 4. Success - Return Enriched Params
+        # Note: Data graph doesn't currently load source accounts in resolve_node,
+        # but we can provide the enriched target phone and network.
+
+        return {
+            "ready": True,
+            "enriched_params": {
+                "amount": state.get("budget"),
+                "recipient_phone": state.get("target_phone"),
+                "network": state.get("network"),
+            },
+        }

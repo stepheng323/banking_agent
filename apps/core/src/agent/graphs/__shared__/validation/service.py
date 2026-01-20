@@ -17,6 +17,23 @@ class AsyncValidationService:
         self.provider = provider
         self.account_cache = AccountCacheService()
 
+    async def validate_account(self, bank_code: str, account_number: str) -> dict[str, Any] | None:
+        """Resolve account name only."""
+        try:
+            return await self.account_cache.get_or_fetch(
+                account_number,
+                bank_code,
+                lambda: self.provider.resolve_account(account_number, bank_code),
+            )
+        except Exception as e:
+            logger.error(
+                "account_resolution_error",
+                error=str(e),
+                account=account_number,
+                bank=bank_code,
+            )
+            return None
+
     async def validate_account_and_balance(
         self,
         account_number: str,

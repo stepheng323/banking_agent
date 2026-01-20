@@ -13,19 +13,15 @@ from apps.core.src.agent.graphs.onboarding.service import OnboardingService
 from apps.core.src.agent.graphs.query import QueryService
 from apps.core.src.agent.graphs.support import SupportService
 from apps.core.src.agent.graphs.transfer import TransferService as AgentTransferService
-from apps.core.src.agent.graphs.transfer.completion import TransferCompletionService
-from apps.core.src.agent.graphs.transfer.executor import TransferExecutor
+from apps.core.src.agent.graphs.transfer.services.completion import TransferCompletionService
+from apps.core.src.agent.graphs.transfer.services.executor import TransferExecutor
 from apps.core.src.agent.orchestrator import OrchestratorAgent
 from apps.core.src.agent.orchestrator.config import OrchestratorDependencies
-from apps.core.src.agent.orchestrator.pipeline_stages.task_queue.executor import TaskExecutor
-from apps.core.src.agent.orchestrator.services import (
-    ConversationResponder,
-    MediaService,
-    TaskQueueService,
-)
+from apps.core.src.agent.orchestrator.services import MediaService
 from apps.core.src.agent.shared.batch.service import BatchService
 from apps.core.src.queue_consumers import MessageConsumer, TransactionConsumer
 from apps.core.src.queue_consumers.flow_event_consumer import FlowEventConsumer
+from shared.cache.bank_cache import BankCacheService
 from shared.cache.redis_client import RedisClient
 from shared.cache.user_data import UserDataCache
 from shared.clients.factories.payment import PaymentProviderFactory
@@ -39,8 +35,8 @@ from shared.repositories import AccountRepository, BeneficiaryRepository
 from shared.repositories.actionable_message_repository import ActionableMessageRepository
 from shared.repositories.transaction_repository import TransactionRepository
 from shared.repositories.user_repository import UserRepository
-from apps.core.src.agent.orchestrator.pipeline_stages.quote.service import QuoteService
-from apps.core.src.agent.orchestrator.registry import ExecutorRegistry
+from shared.services import ConversationResponder
+from shared.services.task_queue import TaskQueueService
 
 
 def setup_dependencies():
@@ -78,20 +74,17 @@ def setup_dependencies():
     banking_provider = MonoBankingProvider()
     direct_debit_provider = MonoDirectDebitProvider()
 
-
-
     account_management_service = AccountManagementService(
         account_repo=account_repository,
         user_repo=user_repository,
         llm=llm,
-        whatsapp_client=whatsapp_client,
+        messaging_client=whatsapp_client,
         direct_debit_provider=direct_debit_provider,
     )
 
     bill_provider = PaymentProviderFactory.get_bill_payment_provider()
     data_service = None
     if bill_provider:
-        # Create DataService with dependencies (consistent with other services)
         data_service = DataService(
             bill_provider=bill_provider,
             redis_client=shared_redis,
@@ -116,9 +109,10 @@ def setup_dependencies():
         support_service=support_service,
     )
 
-
     task_queue_service = TaskQueueService()
     conversation_responder = ConversationResponder(llm)
+
+    bank_cache_service = BankCacheService(redis_client=shared_redis)
 
     agent_transfer_service = AgentTransferService(
         llm=llm,
@@ -130,6 +124,9 @@ def setup_dependencies():
         actionable_message_repo=actionable_message_repository,
         completion_callback=None,
         user_repo=user_repository,
+        banking_provider=banking_provider,
+        bank_cache=bank_cache_service,
+        transaction_repo=transaction_repository,
     )
 
     agent_airtime_service = AirtimeService(
@@ -140,21 +137,6 @@ def setup_dependencies():
         whatsapp_client=whatsapp_client,
         queue=redis_queue,
         actionable_message_repo=actionable_message_repository,
-        completion_callback=None,
-    )
-
-
-    executor_registry = ExecutorRegistry()
-    executor_registry.register("transfer", agent_transfer_service)
-    executor_registry.register("airtime", agent_airtime_service)
-    if data_service:
-        executor_registry.register("data", data_service)
-    quote_service = QuoteService(executor_registry)
-
-    task_executor = TaskExecutor(
-        registry=executor_registry,
-        task_queue_service=task_queue_service,
-        query_service=query_service,
         completion_callback=None,
     )
 
@@ -170,21 +152,17 @@ def setup_dependencies():
         conversation_responder=conversation_responder,
         transfer_service=agent_transfer_service,
         airtime_service=agent_airtime_service,
-        task_executor=task_executor,
         query_service=query_service,
         account_management_service=account_management_service,
         media_service=media_service,
         data_service=data_service,
-        executor_registry=executor_registry,
-        quote_service=quote_service,
+        user_cache=user_data_cache,
+        account_repo=account_repository,
+        redis_client=shared_redis,
+        banking_provider=banking_provider,
     )
 
     orchestrator = OrchestratorAgent(orchestrator_deps)
-
-    completion_callback = orchestrator.completion_callback
-    agent_transfer_service.set_completion_callback(completion_callback)
-    agent_airtime_service.set_completion_callback(completion_callback)
-    task_executor.completion_callback = completion_callback
 
     batch_service = BatchService(
         whatsapp_client=whatsapp_client,
@@ -203,7 +181,7 @@ def setup_dependencies():
         user_repository=user_repository,
         onboarding_executor=onboarding_executor,
         orchestrator=orchestrator,
-        whatsapp_client=whatsapp_client,
+        messaging_client=whatsapp_client,
     )
 
     airtime_completion_service = AirtimeCompletionService(
@@ -237,6 +215,7 @@ def setup_dependencies():
         data_service=data_service,
         batch_service=batch_service,
         whatsapp_client=whatsapp_client,
+        orchestrator=orchestrator,
     )
 
     return message_consumer, transaction_consumer, flow_event_consumer
