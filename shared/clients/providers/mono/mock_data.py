@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 
 from .models import (
     AccountData,
+    AccountLookupData,
     BalanceData,
     BankAccount,
     BvnLookupData,
@@ -532,3 +533,68 @@ def get_mock_mandate(
             TransferDestination(account_number="9876543210", bank_code="999", bank_name="Paystack-Titan"),
         ],
     )
+
+
+def get_mock_account_lookup(account_number: str, bank_code: str | None = None) -> AccountLookupData | None:
+    """
+    Return a deterministic mock account lookup response.
+
+    Maps specific account numbers to specific names for testing.
+    Falls back to a generative name for unknown numbers.
+    """
+    known_accounts = {
+        "1234567890": "SAMUEL OLAMIDE NOMO",
+        "0123456789": "CHINEDU OKAFOR PETER",
+        "0000000000": "JOHN DOE",
+        "9999999999": "HIGH VALUE ACCOUNT",
+        "0760505261": "TOLU ADEDAYO",
+    }
+
+    if account_number == "0000000000":
+        return None
+
+    if account_number in known_accounts:
+        name = known_accounts[account_number]
+    else:
+        mock_names = [
+            "FATIMA ZAHRA MUSA",
+            "EMMANUEL TUNDE BAKARE",
+            "GRACE NGOZI ADEBAYO",
+            "YUSUF IBRAHIM",
+            "MERCY JOHNSON",
+        ]
+        idx = sum(ord(c) for c in account_number) % len(mock_names)
+        name = mock_names[idx]
+
+    return AccountLookupData(
+        name=name,
+        account_number=account_number,
+    )
+
+
+def get_mock_banks() -> list[dict]:
+    """Return a list of mock supported banks."""
+    return [
+        {"name": "Access Bank", "code": "044"},
+        {"name": "Ecobank Nigeria", "code": "050"},
+        {"name": "Fidelity Bank", "code": "070"},
+        {"name": "First Bank of Nigeria", "code": "011"},
+        {"name": "First City Monument Bank", "code": "214"},
+        {"name": "Guaranty Trust Bank", "code": "058"},
+        {"name": "Heritage Bank", "code": "030"},
+        {"name": "Keystone Bank", "code": "082"},
+        {"name": "Kuda Bank", "code": "50211"},
+        {"name": "Moniepoint Microfinance Bank", "code": "50373"},
+        {"name": "OPay", "code": "999991"},
+        {"name": "PalmPay", "code": "999992"},
+        {"name": "Polaris Bank", "code": "076"},
+        {"name": "Providus Bank", "code": "101"},
+        {"name": "Stanbic IBTC Bank", "code": "221"},
+        {"name": "Standard Chartered Bank", "code": "068"},
+        {"name": "Sterling Bank", "code": "232"},
+        {"name": "Union Bank of Nigeria", "code": "032"},
+        {"name": "United Bank for Africa", "code": "033"},
+        {"name": "Unity Bank", "code": "215"},
+        {"name": "Wema Bank", "code": "035"},
+        {"name": "Zenith Bank", "code": "057"},
+    ]

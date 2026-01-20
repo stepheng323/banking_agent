@@ -1,11 +1,14 @@
 """Mono implementation of BankingDataProvider."""
 
+from typing import Any
+
 from shared.clients.abstractions.banking import (
     AccountData,
     BalanceData,
     BankingDataProvider,
     BvnLookupResult,
     BvnVerificationResult,
+    ResolvedAccount,
     TransactionData,
 )
 from shared.clients.providers.mono.client import MonoClient
@@ -129,3 +132,50 @@ class MonoBankingProvider(BankingDataProvider):
         except MonoApiError as e:
             logger.error("otp_verify_failed", error=str(e))
             return BvnVerificationResult(success=False, error_message=str(e))
+
+    async def resolve_account_number(self, account_number: str, bank_code: str) -> ResolvedAccount | None:
+        try:
+            data = await self._client.lookup_account_number(account_number, bank_code)
+            if not data:
+                return None
+
+            return ResolvedAccount(
+                account_name=data.name,
+                account_number=data.account_number,
+            )
+        except Exception as e:
+            logger.error("resolve_account_failed", error=str(e))
+            return None
+
+    async def get_banks(self) -> dict[str, Any]:
+        """Fetch banks from Mono."""
+        try:
+            banks = await self._client.get_banks()
+            return {"success": True, "banks": banks}
+        except Exception as e:
+            logger.error("get_banks_failed", error=str(e))
+            return {"success": False, "banks": [], "error": str(e)}
+
+    async def resolve_account(self, account_number: str, bank_code: str, currency: str = "NGN") -> dict[str, Any]:
+        """Resolve account (Adapter for PaymentProvider interface compatibility)."""
+        try:
+            resolved = await self.resolve_account_number(account_number, bank_code)
+            if resolved:
+                return {
+                    "success": True,
+                    "account_name": resolved.account_name,
+                    "account_number": resolved.account_number,
+                    "bank_code": resolved.bank_code,
+                    "provider": self.provider_name,
+                }
+            return {
+                "success": False,
+                "error": "Account not found",
+                "provider": self.provider_name,
+            }
+        except Exception as e:
+            return {
+                "success": False,
+                "error": str(e),
+                "provider": self.provider_name,
+            }

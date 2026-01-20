@@ -1,12 +1,13 @@
 """Models for task planning and normalization."""
 
-from typing import Any, Literal
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
 
 class TaskParameters(BaseModel):
     """Common parameters for tasks."""
+
     amount: str | float | None = None
     recipient: str | None = None
     recipient_name: str | None = None
@@ -17,8 +18,12 @@ class TaskParameters(BaseModel):
     budget: str | None = None
     plan: str | None = None
     is_self: bool = False
-    # Note: user_text was removed - it caused LLM to auto-populate it, breaking new transfers
 
+    # Capability flags
+    schedule: str | None = None
+    scheduled: str | None = None
+    recurring: bool | None = None
+    international: bool | None = None
 
 
 class PlannedTask(BaseModel):
@@ -26,10 +31,7 @@ class PlannedTask(BaseModel):
 
     task_id: str = Field(..., description="Stable ID referenced by depends_on")
     action: str
-    executor: Literal[
-        "transfer", "query", "airtime", "data",
-        "account_management", "support", "faq"
-    ]
+    executor: Literal["transfer", "query", "airtime", "data", "account_management", "support", "faq"]
     instruction: str
     description: str | None = None
     parameters: TaskParameters = Field(default_factory=TaskParameters)
@@ -41,7 +43,7 @@ class PlannedTask(BaseModel):
 
 class PlannerOutput(BaseModel):
     """Structured output returned by the planner LLM.
-    
+
     Combines classification and planning into single model.
     """
 
@@ -49,33 +51,18 @@ class PlannerOutput(BaseModel):
     primary_intent: str = Field(
         description="Primary intent: transfer, airtime, data, query, account_management, support, faq, conversational, cancel, mixed"
     )
-    response: str = Field(
-        default="",
-        description="Short acknowledgment message for the user"
-    )
-    confidence: float = Field(
-        default=0.9,
-        description="Confidence in classification (0.0-1.0)"
-    )
+    response: str = Field(default="", description="Short acknowledgment message for the user")
+    confidence: float = Field(default=0.9, description="Confidence in classification (0.0-1.0)")
     is_complex: bool = Field(
-        default=False,
-        description="True if multiple recipients, mixed intents, or complex request"
+        default=False, description="True if multiple recipients, mixed intents, or complex request"
     )
-    is_cancellation: bool = Field(
-        default=False,
-        description="True if user wants to cancel/abort"
-    )
+    is_cancellation: bool = Field(default=False, description="True if user wants to cancel/abort")
     detected_language: str | None = Field(
-        default=None,
-        description="Detected language: English, Yoruba, Hausa, Igbo, Pidgin, French"
+        default=None, description="Detected language: English, Yoruba, Hausa, Igbo, Pidgin, French"
     )
-    
+
     # Planning fields
-    normalized_instruction: str = Field(
-        default="",
-        description="Cleaned up version of user request"
-    )
+    normalized_instruction: str = Field(default="", description="Cleaned up version of user request")
     tasks: list[PlannedTask] = Field(default_factory=list)
     notes: str | None = None
     created_at: float = Field(default_factory=lambda: __import__("time").time())
-

@@ -3,15 +3,12 @@
 import uuid
 from typing import Any
 
-import httpx
 import structlog
 
 from shared.clients.abstractions.bill import BillPaymentProvider
-from shared.config.settings import settings
+from shared.clients.providers.flutterwave.client import FlutterwaveClient
 
 logger = structlog.get_logger(__name__)
-
-FLUTTERWAVE_BASE_URL = "https://api.flutterwave.com"
 
 
 class FlutterwaveBillsClient(BillPaymentProvider):
@@ -35,19 +32,11 @@ class FlutterwaveBillsClient(BillPaymentProvider):
 
     def __init__(
         self,
-        secret_key: str | None = None,
-        use_sandbox: bool | None = None,
+        client: FlutterwaveClient | None = None,
     ):
-        """Initialize Flutterwave bills client with v3 secret key."""
-        self.secret_key = secret_key or getattr(settings, "flutterwave_secret_key", None)
-
-        if not self.secret_key:
-            raise ValueError("Flutterwave secret key not configured. Set FLUTTERWAVE_SECRET_KEY environment variable.")
-
-        self.use_sandbox = (
-            use_sandbox if use_sandbox is not None else getattr(settings, "flutterwave_use_sandbox", False)
-        )
-        self.base_url = FLUTTERWAVE_BASE_URL
+        """Initialize Flutterwave bills client with injected client."""
+        self._client = client or FlutterwaveClient()
+        self.base_url = self._client.base_url
 
     @property
     def provider_name(self) -> str:
@@ -57,7 +46,7 @@ class FlutterwaveBillsClient(BillPaymentProvider):
     @property
     def is_available(self) -> bool:
         """Check if provider is properly configured."""
-        return bool(self.secret_key)
+        return self._client.is_configured
 
     @property
     def supports_airtime(self) -> bool:
@@ -68,14 +57,6 @@ class FlutterwaveBillsClient(BillPaymentProvider):
     def supports_data(self) -> bool:
         """Flutterwave supports data purchases."""
         return True
-
-    def _get_headers(self) -> dict[str, str]:
-        """Get request headers with secret key authentication."""
-        return {
-            "Authorization": f"Bearer {self.secret_key}",
-            "Content-Type": "application/json",
-            "accept": "application/json",
-        }
 
     def _error_response(self, error: str, **kwargs) -> dict[str, Any]:
         """Build a standardized error response."""
@@ -101,48 +82,6 @@ class FlutterwaveBillsClient(BillPaymentProvider):
         elif phone.startswith("234"):
             return "0" + phone[3:]
         return phone
-
-    async def _request(
-        self,
-        method: str,
-        endpoint: str,
-        payload: dict[str, Any] | None = None,
-        timeout: float = 30.0,
-    ) -> dict[str, Any]:
-        """Unified HTTP request handler with error handling."""
-        url = f"{self.base_url}{endpoint}"
-        headers = self._get_headers()
-
-        try:
-            async with httpx.AsyncClient(timeout=timeout) as client:
-                if method.upper() == "GET":
-                    response = await client.get(url, headers=headers)
-                else:
-                    response = await client.post(url, headers=headers, json=payload)
-
-                result = response.json()
-
-                if response.status_code == 200 and result.get("status") == "success":
-                    return {
-                        "success": True,
-                        "data": result.get("data", result),
-                        "message": result.get("message"),
-                    }
-                error_data = result.get("error")
-                if isinstance(error_data, dict):
-                    error_msg = error_data.get("message", f"HTTP {response.status_code}")
-                elif isinstance(error_data, str):
-                    error_msg = error_data
-                else:
-                    error_msg = result.get("message") or f"HTTP {response.status_code}"
-
-                return {"success": False, "error": error_msg}
-
-        except httpx.ConnectError:
-            return {"success": False, "error": "Failed to connect to service"}
-        except Exception as e:
-            logger.error("bills_api_error", error=str(e))
-            return {"success": False, "error": f"Unexpected error: {str(e)}"}
 
     async def purchase_airtime(
         self,
@@ -179,7 +118,7 @@ class FlutterwaveBillsClient(BillPaymentProvider):
         }
 
         logger.info("airtime_purchase_request", network=network, amount=amount, phone=customer_phone)
-        result = await self._request("POST", endpoint, payload=payload)
+        result = await self._client.request("POST", endpoint, payload=payload)
 
         if result["success"]:
             data = result.get("data", {})
@@ -197,7 +136,7 @@ class FlutterwaveBillsClient(BillPaymentProvider):
 
     async def fetch_bill_categories(self, category: str = "AIRTIME") -> dict[str, Any]:
         """Fetch available bill categories/billers from Flutterwave."""
-        result = await self._request("GET", "/v3/bills/categories")
+        result = await self._client.request("GET", "/v3/bills/categories")
 
         if result["success"]:
             billers = result.get("data", [])
@@ -221,7 +160,7 @@ class FlutterwaveBillsClient(BillPaymentProvider):
         biller_code = biller_info["biller_code"]
         endpoint = f"/v3/billers/{biller_code}/items"
 
-        result = await self._request("GET", endpoint)
+        result = await self._client.request("GET", endpoint)
 
         if result["success"]:
             items = result.get("data", [])
@@ -278,7 +217,7 @@ class FlutterwaveBillsClient(BillPaymentProvider):
             plan_code=plan_code,
             phone=customer_phone,
         )
-        result = await self._request("POST", endpoint, payload=payload)
+        result = await self._client.request("POST", endpoint, payload=payload)
 
         if result["success"]:
             data = result.get("data", {})

@@ -32,7 +32,7 @@ class BankCacheService:
         suffixes = [" bank", " plc", " limited", " microfinance bank"]
 
         for bank in banks:
-            code = bank.get("code")
+            code = bank.get("code") or bank.get("bank_code")
             name = bank.get("name", "")
             if not code or not name:
                 continue
@@ -194,7 +194,7 @@ class BankCacheService:
             # Find the bank object for the matched name
             for bank in banks:
                 if bank.get("name") == matched_name:
-                    code = bank.get("code")
+                    code = bank.get("code") or bank.get("bank_code")
                     logger.info(
                         "bank_code_found",
                         bank_name=matched_name,

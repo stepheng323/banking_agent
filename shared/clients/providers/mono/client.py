@@ -8,6 +8,7 @@ from shared.utils.logging import get_logger
 from . import mock_data
 from .models import (
     AccountData,
+    AccountLookupData,
     BalanceData,
     BankAccount,
     BvnLookupData,
@@ -28,6 +29,42 @@ class MonoClient:
     def __init__(self):
         self.use_mock = settings.app_env == "development"
         self.api_key = settings.mono_api_key
+
+    async def lookup_account_number(self, account_number: str, bank_code: str) -> AccountLookupData | None:
+        """Resolve account details."""
+        if self.use_mock:
+            return mock_data.get_mock_account_lookup(account_number, bank_code)
+
+        try:
+            body = {"nip_code": bank_code, "account_number": account_number}
+            data = await self._request("POST", "/v3/lookup/account-number", body=body)
+            if isinstance(data, dict):
+                return AccountLookupData(**data)
+            return None
+        except (MonoApiError, ValueError):
+            return None
+
+    async def get_banks(self) -> list[dict]:
+        """Fetch list of supported banks."""
+        if self.use_mock:
+            return mock_data.get_mock_banks()
+
+        try:
+            data = await self._request("GET", "/v3/lookup/banks")
+            banks_list = data.get("banks", []) if isinstance(data, dict) else []
+
+            mapped_banks = []
+            for bank in banks_list:
+                mapped_banks.append(
+                    {
+                        "name": bank.get("name"),
+                        "code": bank.get("bank_code"),
+                    }
+                )
+
+            return mapped_banks
+        except MonoApiError:
+            return []
 
     def _headers(self, session_id: str | None = None, real_time: bool = False) -> dict:
         headers = {
@@ -67,7 +104,9 @@ class MonoClient:
                     data = {}
 
                 if 200 <= resp.status < 300:
-                    return data.get("data", data)
+                    if isinstance(data, dict):
+                        return data.get("data", data)
+                    return data
 
                 error_message = data.get("message", "Request failed")
                 error_code = data.get("code") or data.get("error_code")

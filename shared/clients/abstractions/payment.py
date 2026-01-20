@@ -17,9 +17,7 @@ class PaymentProvider(ABC):
     """
 
     @abstractmethod
-    async def resolve_account(
-        self, account_number: str, bank_code: str, currency: str = "NGN"
-    ) -> dict[str, Any]:
+    async def resolve_account(self, account_number: str, bank_code: str, currency: str = "NGN") -> dict[str, Any]:
         """
         Resolve bank account details using the provider's API.
 
@@ -124,7 +122,7 @@ class PaymentProvider(ABC):
         """Check if the provider supports fetching bank lists."""
         return False
 
-    async def fetch_banks(self, country: str = "NG") -> dict[str, Any]:
+    async def get_banks(self, country: str = "NG") -> dict[str, Any]:
         """
         Fetch list of supported banks from the provider.
 
