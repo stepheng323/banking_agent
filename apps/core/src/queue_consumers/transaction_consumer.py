@@ -4,7 +4,7 @@ import asyncio
 
 from apps.core.src.agent.graphs.airtime.executor import AirtimeExecutor
 from apps.core.src.agent.graphs.data.executor import DataExecutor
-from apps.core.src.agent.graphs.transfer.executor import TransferExecutor
+from apps.core.src.agent.graphs.transfer.services.executor import TransferExecutor
 from shared.queue.redis_queue import RedisQueue
 from shared.utils.logging import get_logger
 

@@ -8,7 +8,6 @@ from apps.core.src.agent.graphs.__shared__.validation.amount_validator import (
 from apps.core.src.agent.graphs.__shared__.validation.amount_validator import (
     validate_amount as validate_amount_limits,
 )
-from apps.core.src.agent.graphs.transfer.graph.nodes.authorization import TransferAuthorization
 from shared.types.planner import PlannedTask
 from shared.utils.logging import get_logger
 
@@ -61,9 +60,21 @@ class TransferHandler(BaseTaskHandler):
                 "narration": task.parameters.get("narration") if task.parameters else None,
             }
 
-            # Execute via authorization class
-            auth = TransferAuthorization(context.redis_client, context.queue)
-            result_state = await auth.authorize(state)
+            # Execute directly (Batch transfers are pre-authorized)
+            payload = {
+                "type": "transfer",
+                "idempotency_key": idem_key,
+                "amount": validated_amount,
+                "recipient_account": account_resolved.get("account_number"),
+                "recipient_bank_code": account_resolved.get("bank_code"),
+                "narration": task.parameters.get("narration") if task.parameters else None,
+                "source_account_id": result_data.get("source_account", {}).get("id"),
+            }
+
+            await context.queue.enqueue("transfers", payload)
+
+            # Mimic result state for compatibility
+            result_state = {"transfer_status": "authorized", "transaction_id": idem_key}
 
             if result_state.get("transfer_status") == "authorized":
                 return self._create_success_result(

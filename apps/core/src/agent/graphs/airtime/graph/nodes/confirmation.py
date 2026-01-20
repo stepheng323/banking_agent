@@ -31,6 +31,7 @@ async def prepare_confirmation(
     redis_client: Redis,
     actionable_message_repo: ActionableMessageRepository | None = None,
 ) -> AirtimeState:
+
     """Prepare airtime purchase confirmation summary."""
     debug_log(
         f"DEBUG prepare_confirmation: amount={state.get('amount')}, recipient_phone={state.get('recipient_phone')}, network={state.get('network')}"

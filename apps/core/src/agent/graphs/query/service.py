@@ -1,18 +1,19 @@
 """Query service facade using LangGraph."""
 
+from typing import Any
+
 import redis.asyncio as redis
 from langchain_core.runnables import Runnable
 
 from apps.core.src.agent.graphs.interfaces import IAgentService
 from apps.core.src.agent.graphs.query.graph.graph import QueryFlowGraph
 from apps.core.src.agent.graphs.support import SupportService
+from shared.cache.user_data import UserDataCache
 from shared.clients.abstractions.banking import BankingDataProvider
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
 
-
-from shared.cache.user_data import UserDataCache
 
 class QueryService(IAgentService):
     """Query service facade using LangGraph."""
@@ -39,7 +40,7 @@ class QueryService(IAgentService):
     ) -> str:
         """Run the query flow."""
         logger.debug("query_flow_started", phone=phone)
-        
+
         # Fetch user context from cache
         cache_data = await self.user_cache.get_all_user_data(phone)
         user_ctx = {
@@ -52,16 +53,30 @@ class QueryService(IAgentService):
             phone,
             text,
             {
-                "classification_result": classification_result, 
-                "image_data": image_data, 
+                "classification_result": classification_result,
+                "image_data": image_data,
                 "quoted_data": quoted_data,
-                **user_ctx
+                **user_ctx,
             },
             "",
         )
         if isinstance(result, dict):
             return result.get("response", "Query completed.")
         return str(result)
+
+    async def preflight(
+        self,
+        phone: str,
+        text: str,
+        params: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Query doesn't require preflight validation."""
+        return {
+            "ready": True,
+            "missing_fields": [],
+            "enriched_params": params or {},
+            "question": None,
+        }
 
     async def clear_checkpoint(self, phone_number: str) -> None:
         """Clear flow checkpoint for a user."""

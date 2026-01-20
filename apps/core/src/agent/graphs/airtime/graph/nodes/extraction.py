@@ -3,14 +3,12 @@
 import time
 from typing import Any, cast
 
-from apps.core.src.agent.graphs.airtime.capabilities import derive_requirements
-from apps.core.src.agent.graphs.airtime.resolver import resolve, Decision
 from apps.core.src.agent.graphs.airtime.extractor import AirtimeEntityExtractor
 from apps.core.src.agent.graphs.airtime.models import (
     AirtimeExtractionResult,
     SimpleAirtimeEntities,
 )
-from apps.core.src.agent.graphs.airtime.resolver import compute_missing_fields
+from apps.core.src.agent.graphs.airtime.resolver import resolve
 from apps.core.src.agent.graphs.airtime.state import AirtimeState
 from shared.utils.logging import get_logger
 from shared.utils.phone_utils import detect_network_from_phone, normalize_phone
@@ -20,7 +18,6 @@ logger = get_logger(__name__)
 
 async def extract_entities(state: AirtimeState, extractor: AirtimeEntityExtractor) -> AirtimeState:
     """Extract entities from user message."""
-
 
     classification_result = state.get("classification_result")
 
@@ -138,7 +135,9 @@ async def extract_entities(state: AirtimeState, extractor: AirtimeEntityExtracto
         if (phone_changed or network_changed) and had_prev_recipient:
             should_clear_amount = True
 
-    avail_amount = extracted_amount if extracted_amount is not None else (None if should_clear_amount else existing_amount)
+    avail_amount = (
+        extracted_amount if extracted_amount is not None else (None if should_clear_amount else existing_amount)
+    )
     avail_phone = normalized_phone if normalized_phone else existing_phone
     avail_network = extracted_network or detected_network or existing_network
 
@@ -148,13 +147,9 @@ async def extract_entities(state: AirtimeState, extractor: AirtimeEntityExtracto
         network=avail_network,
         is_self=is_self,
     )
-    
-    decision_result = resolve(
-        result, 
-        draft_entities=effective_entities, 
-        user_message=state.get("message", "")
-    )
-    
+
+    decision_result = resolve(result, draft_entities=effective_entities, user_message=state.get("message", ""))
+
     computed_missing = decision_result.missing_fields
 
     new_state = dict(state)
