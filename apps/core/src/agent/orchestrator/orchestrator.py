@@ -38,6 +38,7 @@ class OrchestratorAgent:
             beneficiary_repo=self.deps.beneficiary_repo,
             account_repo=self.deps.account_repo,
             banking_provider=self.deps.banking_provider,
+            beneficiary_suggestion_service=self.deps.beneficiary_suggestion_service,
         )
 
     @property

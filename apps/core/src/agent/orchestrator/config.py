@@ -22,6 +22,7 @@ if TYPE_CHECKING:
     from apps.core.src.agent.graphs.query import QueryService
     from apps.core.src.agent.graphs.support import SupportService
     from apps.core.src.agent.graphs.transfer import TransferService
+    from apps.core.src.agent.graphs.__shared__.beneficiary.suggestion_service import BeneficiarySuggestionService
     from shared.clients.abstractions.banking import BankingDataProvider
 
 
@@ -46,6 +47,7 @@ class OrchestratorDependencies:
     support_service: "SupportService | None" = None
     faq_service: "FAQService | None" = None
     banking_provider: "BankingDataProvider | None" = None
+    beneficiary_suggestion_service: "BeneficiarySuggestionService | None" = None
     # For workflow engine
     user_cache: UserDataCache | None = None
     redis_client: redis.Redis | None = None

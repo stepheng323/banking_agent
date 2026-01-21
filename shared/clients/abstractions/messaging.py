@@ -7,7 +7,7 @@ Telegram, SMS, web chat, etc.) without code changes.
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Any
+from typing import Any,
 
 
 @dataclass
@@ -33,7 +33,7 @@ class MessagingClient(ABC):
 
     @property
     @abstractmethod
-    def channel_name(self) -> str:
+    def channel_name(self, Literal["whatsapp"]) -> str:
         """Return the name of this channel (e.g., 'whatsapp', 'telegram')."""
         ...
 

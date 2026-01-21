@@ -10,6 +10,7 @@ from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.redis.aio import AsyncRedisSaver
 from langgraph.graph.state import CompiledStateGraph
 
+from apps.core.src.agent.graphs.__shared__.beneficiary.suggestion_service import BeneficiarySuggestionService
 from apps.core.src.agent.orchestrator.factory import AdapterFactory
 from apps.core.src.agent.orchestrator.graph import build_orchestrator_graph
 from apps.core.src.agent.orchestrator.models.message_context import MessageContext
@@ -56,11 +57,13 @@ class OrchestratorGraphHandler:
         user_cache: UserDataCache,
         redis_client: redis.Redis,
         whatsapp_client: WhatsAppClient,
+        beneficiary_suggestion_service: BeneficiarySuggestionService | None = None,
         mode: Literal["planning", "execution", "both"] = "both",
     ):
         self.task_planner = task_planner
         self.redis_client = redis_client
         self.whatsapp_client = whatsapp_client
+        self.beneficiary_suggestion_service = beneficiary_suggestion_service
         self.mode = mode
 
         self.user_repo = user_repo
@@ -123,6 +126,7 @@ class OrchestratorGraphHandler:
                 "beneficiary_repo": self.beneficiary_repo,
                 "account_repo": self.account_repo,
                 "banking_provider": self.banking_provider,
+                "beneficiary_suggestion_service": self.beneficiary_suggestion_service,
             },
             "recursion_limit": 50,
         }
@@ -159,6 +163,7 @@ class OrchestratorGraphHandler:
                 "beneficiary_repo": self.beneficiary_repo,
                 "account_repo": self.account_repo,
                 "banking_provider": self.banking_provider,
+                "beneficiary_suggestion_service": self.beneficiary_suggestion_service,
             },
             "recursion_limit": 50,
         }
