@@ -61,7 +61,7 @@ dev = [
 
 # Pyright (type checking) configuration
 [tool.pyright]
-typeCheckingMode = "standard"  # Changed from "basic"
+typeCheckingMode = "strict"
 reportMissingImports = true
 reportMissingTypeStubs = false
 reportUnusedVariable = "warning"
@@ -145,8 +145,8 @@ check_untyped_defs = true
 ignore_missing_imports = true
 
 # Disable strict checks that are too noisy
-disallow_untyped_defs = false
-disallow_incomplete_defs = false
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
 disallow_any_generics = false
 
 # Per-module overrides can be added here
