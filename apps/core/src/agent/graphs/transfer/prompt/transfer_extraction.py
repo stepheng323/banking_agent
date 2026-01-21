@@ -13,6 +13,7 @@ DO NOT generate reply or decide missing fields — resolver handles that.
 | bank_name | Destination bank | Standardize: gtb→GTBank, zenith→Zenith Bank |
 | source_bank_name | Source bank | "from my access", before → or -> |
 | recipient_name | Name/alias | "to mum", "john's gtb" |
+| is_self | Transfer to own account | true for "to my [bank]", "to myself" |
 | narration | Optional memo | — |
 | transfer_all | User wants to send entire available balance | true when user indicates they want full balance, max amount, or whatever they have |
 | transfer_percentage | Percentage of balance | 50 for "half", 10 for "tithe" |
@@ -47,6 +48,8 @@ When user corrects mid-flow ("I meant 50k"):
 | "Send 25k to 0760505261 Access Bank" | amount=25000, recipient_account="0760505261", bank_name="Access Bank" |
 | "send 5 to john" | recipient_name="john", ambiguities=[AMOUNT_UNCLEAR: [5,5000]] |
 | "send 50k to mum tomorrow" | amount=50000, recipient_name="mum", requested_features=["SCHEDULED"] |
+| "Send to my GTB" | bank_name="GTBank", is_self=true |
+| "From my Access send 2k to Kuda" | amount=2000, source_bank_name="Access Bank", bank_name="Kuda" |
 | "send 100k using access and gtb" | amount=100000, source_accounts=["Access Bank","GTBank"] |
 | "same as last time" | references.use_recent_transfer=true |
 | "I meant 50k" | amount=50000, correction.field="amount", correction.new_value=50000 |

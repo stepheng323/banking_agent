@@ -25,11 +25,9 @@ async def extract_transfer_update(
         if extraction.entities:
             extracted_data = extraction.entities.model_dump(exclude_unset=True, exclude_none=True)
 
-        # Merge correction if present
         if extraction.correction:
             field = extraction.correction.field.value
             value = extraction.correction.new_value
-            # Map specific fields if needed
             if field == "bank_name":
                 extracted_data["recipient_bank_name"] = value
             else:
@@ -43,7 +41,10 @@ async def extract_transfer_update(
 
         print(f"DEBUG: Extracted Data (Pre-map): {extracted_data}", flush=True)
 
-        # Remap entity keys to payload keys
+        # Invalidate confirmation if we have any business data update
+        if extracted_data:
+            extracted_data["confirmation"] = {"confirmed": False}
+
         if "bank_name" in extracted_data:
             extracted_data["recipient_bank_name"] = extracted_data.pop("bank_name")
         if "bank_code" in extracted_data:
@@ -51,6 +52,20 @@ async def extract_transfer_update(
 
         if extraction.acknowledgment:
             extracted_data["_extraction_ack"] = extraction.acknowledgment
+
+        if "recipient_bank_name" in extracted_data:
+            extracted_data["recipient_bank_code"] = None
+            extracted_data["recipient_resolved_name"] = None
+
+        if "recipient_account" in extracted_data:
+            extracted_data["recipient_resolved_name"] = None
+
+        if "recipient_name" in extracted_data and "recipient_account" not in extracted_data:
+            extracted_data["recipient_account"] = None
+            extracted_data["recipient_bank_code"] = None
+            extracted_data["recipient_bank_name"] = None
+            extracted_data["recipient_resolved_name"] = None
+            extracted_data["beneficiary_id"] = None
 
         return TransferResult(outcome=TransferOutcome.OK, patch=extracted_data)
 

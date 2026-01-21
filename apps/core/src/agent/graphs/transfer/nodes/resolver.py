@@ -104,6 +104,55 @@ async def resolve_beneficiary(
             prompt="Who is the recipient?",
         )
 
+
+    bank_term = (payload.recipient_bank_name or "").lower()
+
+    own_accounts = ctx.accounts or []
+    candidate_account = None
+
+    if payload.is_self:
+        if bank_term:
+            candidate_account = next(
+                (a for a in own_accounts if bank_term in (a.get("bank_name") or "").lower()),
+                None,
+            )
+        elif payload.is_self and len(own_accounts) == 2:
+            # "Send to myself" (no bank specified) - Smart Inference
+            # If we know the source, the recipient MUST be the other account
+            source_id = payload.source_account_id
+
+            # If source ID missing, try resolving from bank name
+            if not source_id and payload.source_bank_name:
+                src_bank = payload.source_bank_name.lower()
+                src_match = next(
+                    (a for a in own_accounts if src_bank in (a.get("bank_name") or "").lower()),
+                    None,
+                )
+                if src_match:
+                    source_id = str(src_match.get("id"))
+
+            if source_id:
+                candidate_account = next(
+                    (a for a in own_accounts if str(a.get("id")) != source_id),
+                    None,
+                )
+
+    if candidate_account:
+        # Confirm intent: User likely meant this account if they specified the bank
+        # and didn't provide an external account number
+        if not payload.recipient_account:
+            return TransferResult(
+                outcome=TransferOutcome.OK,
+                patch={
+                    "recipient_account": str(candidate_account.get("account_number")),
+                    "recipient_bank_code": str(candidate_account.get("bank_code")),
+                    "recipient_bank_name": candidate_account.get("bank_name"),
+                    "recipient_resolved_name": f"My {candidate_account.get('bank_name')} Account",
+                    "recipient_name": f"My {candidate_account.get('bank_name')}",
+                    "is_self": True,
+                },
+            )
+
     matcher = BeneficiaryMatcher()
     beneficiaries = [Beneficiary(**b) for b in ctx.beneficiaries]
 
