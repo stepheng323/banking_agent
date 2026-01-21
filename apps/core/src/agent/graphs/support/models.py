@@ -5,28 +5,27 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-
 SCHEMA_VERSION = 1
 
 
 class SupportIntent(str, Enum):
     """Classified support intent types."""
-    
+
     FAILED_TRANSFER = "failed_transfer"
     PENDING_TRANSFER = "pending_transfer"
     TRANSFER_STATUS = "transfer_status"
-    
+
     REVERSAL_REFUND = "reversal_refund"
     WRONG_RECIPIENT = "wrong_recipient"
     WRONG_DEBIT = "wrong_debit"
-    
+
     FRAUD_REPORT = "fraud_report"
     HUMAN_HANDOFF = "human_handoff"
-    
+
     ACCOUNT_LINKING = "account_linking"
     LIMITS_FEES = "limits_fees"
     RECEIPT_REQUEST = "receipt_request"
-    
+
     GENERAL_TX_ISSUE = "general_tx_issue"
     TICKET_STATUS = "ticket_status"
     RETRY_TRANSFER = "retry_transfer"
@@ -34,7 +33,7 @@ class SupportIntent(str, Enum):
 
 class RequestedAction(str, Enum):
     """Actions the user is requesting (LLM detects)."""
-    
+
     LOOKUP_TRANSACTION = "LOOKUP_TRANSACTION"
     EXPLAIN_STATUS = "EXPLAIN_STATUS"
     RETRY_PAYOUT = "RETRY_PAYOUT"
@@ -45,7 +44,7 @@ class RequestedAction(str, Enum):
 
 class TransactionReference(BaseModel):
     """Reference to identify a transaction."""
-    
+
     transaction_id: str | None = Field(default=None, description="Explicit transaction ID")
     amount: float | None = Field(default=None, description="Transaction amount")
     recipient_name: str | None = Field(default=None, description="Who was it sent to")
@@ -56,7 +55,7 @@ class TransactionReference(BaseModel):
 
 class SupportContext(BaseModel):
     """Session context for support continuity."""
-    
+
     last_transaction_ref: str | None = Field(default=None, description="Last resolved tx ID")
     last_ticket_id: str | None = Field(default=None, description="Last created ticket code")
     last_issue_intent: SupportIntent | None = Field(default=None)
@@ -70,17 +69,17 @@ class SupportExtractionResult(BaseModel):
     schema_version: int = Field(default=SCHEMA_VERSION)
     intent: SupportIntent = Field(default=SupportIntent.GENERAL_TX_ISSUE)
     intent_confidence: float = Field(default=1.0, ge=0.0, le=1.0)
-    
+
     transaction_ref: TransactionReference = Field(
         default_factory=TransactionReference,
         description="How user referenced the transaction",
     )
-    
+
     requested_actions: list[RequestedAction] = Field(
         default_factory=list,
         description="Actions user wants to take (LLM detects)",
     )
-    
+
     raw_issue: str | None = Field(default=None, description="User's description of issue")
 
 
@@ -106,7 +105,7 @@ class SupportResponse(BaseModel):
 
 class ClassificationResult(BaseModel):
     """Result of support intent classification."""
-    
+
     intent: SupportIntent | None = None
     confidence: float = 0.5
     transaction_ref: TransactionReference | None = None

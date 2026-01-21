@@ -2,6 +2,11 @@
 
 from typing import Any, TypedDict
 
+from apps.core.src.agent.graphs.support.micro_resolver import (
+    Decision,
+    NextStep,
+    ResolverDecision,
+)
 from apps.core.src.agent.graphs.support.models import (
     ClassificationResult,
     EscalationResult,
@@ -9,11 +14,6 @@ from apps.core.src.agent.graphs.support.models import (
     SupportExtractionResult,
     SupportIntent,
     SupportResponse,
-)
-from apps.core.src.agent.graphs.support.micro_resolver import (
-    Decision,
-    NextStep,
-    ResolverDecision,
 )
 
 

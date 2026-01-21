@@ -8,7 +8,6 @@ from datetime import datetime
 from typing import Any
 
 from apps.core.src.agent.graphs.support.models import EscalationResult, SupportResponse
-from shared.database.models import SupportTicketStatusEnum
 from shared.services.ticket_service import TicketService
 from shared.utils.logging import get_logger
 
@@ -49,12 +48,12 @@ async def handle_escalation(
             summary = "User requested human support"
         else:
             summary = f"Support escalation: {reason or intent}"
-    
+
     # Transaction reference for linking
     transaction_ref = None
     if transaction:
         transaction_ref = transaction.get("transaction_id") or str(transaction.get("id"))
-    
+
     # Build details context
     details = {
         "reason": reason,
@@ -68,7 +67,7 @@ async def handle_escalation(
             "amount": transaction.get("amount"),
             "recipient_name": transaction.get("recipient_name"),
         }
-    
+
     # Create ticket
     ticket = ticket_service.create_ticket(
         user_id=user_id,
@@ -77,7 +76,7 @@ async def handle_escalation(
         transaction_ref=transaction_ref,
         details=details,
     )
-    
+
     logger.info(
         "escalation_ticket_created",
         ticket_code=ticket.ticket_code,
@@ -86,16 +85,16 @@ async def handle_escalation(
         reason=reason,
         notify_human=notify_human,
     )
-    
+
     # TODO: If notify_human, send Slack/email notification
     if notify_human:
         logger.info("support_notification_pending", ticket_code=ticket.ticket_code)
         # await notify_support_team(ticket)  # Future implementation
-    
+
     # Build response message
-    message = f"I've logged this for review.\n\n"
+    message = "I've logged this for review.\n\n"
     message += f"**Ticket:** {ticket.ticket_code}\n\n"
-    
+
     if reason == "fraud_suspected":
         message += "Our security team will prioritize this. "
         message += "You'll hear back within 1 hour."
@@ -103,7 +102,7 @@ async def handle_escalation(
         message += "Our team will investigate and get back to you within 24 hours."
     else:
         message += "If you have the transaction reference, reply with it to speed things up."
-    
+
     return SupportResponse(
         message=message,
         escalation=EscalationResult(
@@ -131,7 +130,7 @@ async def handle_generic_escalation(
     summary = f"System escalation: {reason}"
     if context:
         summary += f" - {context.get('message', '')}"
-    
+
     return await handle_escalation(
         user_id=user_id,
         intent=intent,

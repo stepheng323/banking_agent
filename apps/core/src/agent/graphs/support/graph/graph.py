@@ -30,12 +30,12 @@ from apps.core.src.agent.graphs.support.handlers import (
 )
 from apps.core.src.agent.graphs.support.handlers.escalation import handle_escalation
 from apps.core.src.agent.graphs.support.micro_resolver import (
-    Decision,
     NextStep,
+)
+from apps.core.src.agent.graphs.support.micro_resolver import (
     resolve as micro_resolve,
 )
 from apps.core.src.agent.graphs.support.models import (
-    SupportContext,
     SupportExtractionResult,
     SupportIntent,
     SupportResponse,
@@ -56,11 +56,11 @@ def route_after_classify(state: SupportGraphState) -> str:
     """Route based on classification result."""
     if not state.get("intent"):
         return "exit_not_support"
-    
+
     # TICKET_STATUS doesn't need micro-resolver or tx lookup
     if state.get("intent") == SupportIntent.TICKET_STATUS:
         return "check_ticket_status"
-    
+
     return "micro_resolve"
 
 
@@ -69,9 +69,9 @@ def route_after_micro_resolve(state: SupportGraphState) -> str:
     decision = state.get("resolver_decision")
     if not decision:
         return "exit_not_support"
-    
+
     next_step = decision.next_step
-    
+
     if next_step == NextStep.ASK_REFERENCE:
         return "clarify"
     elif next_step == NextStep.LOOKUP_TRANSACTION:
@@ -114,7 +114,7 @@ class SupportFlowGraph:
         self.classifier = SupportClassifier(llm)
         self.resolver = TransactionResolver(transaction_repo, actionable_message_repo)
         self.context_manager = SupportContextManager(redis_client)
-        
+
         # Ticket service (created per-request if db_session provided)
         self._db_session = db_session
         self._ticket_service = None
@@ -229,7 +229,7 @@ class SupportFlowGraph:
                 recipient_name=result.transaction_ref.recipient_name,
                 date_hint=result.transaction_ref.date_hint,
             )
-        
+
         # Check for quoted message
         if state.get("quoted_message_id"):
             tx_ref.use_quoted = True
@@ -251,7 +251,7 @@ class SupportFlowGraph:
         """Run micro-resolver to determine next step."""
         extraction = state.get("extraction")
         user_id = state.get("user_id", "")
-        
+
         if not extraction:
             return {"resolver_decision": None}
 
@@ -349,9 +349,7 @@ class SupportFlowGraph:
             return await handle_failure_reason(transaction)
         elif intent == SupportIntent.WRONG_DEBIT:
             return await handle_wrong_debit(transaction)
-        elif intent == SupportIntent.REVERSAL_REFUND:
-            return await handle_reversal_status(transaction)
-        elif intent == SupportIntent.WRONG_RECIPIENT:
+        elif intent == SupportIntent.REVERSAL_REFUND or intent == SupportIntent.WRONG_RECIPIENT:
             return await handle_reversal_status(transaction)
         elif intent == SupportIntent.RETRY_TRANSFER:
             return await handle_retry(transaction)
@@ -370,11 +368,11 @@ class SupportFlowGraph:
         intent = state.get("intent")
         transaction = state.get("transaction")
         resolver_decision = state.get("resolver_decision")
-        
+
         reason = ""
         if resolver_decision and resolver_decision.escalation:
             reason = resolver_decision.escalation.reason
-        
+
         if not self._ticket_service:
             logger.warning("ticket_service_not_available")
             return {
@@ -395,7 +393,7 @@ class SupportFlowGraph:
         ticket_code = None
         if response.escalation and response.escalation.context:
             ticket_code = response.escalation.context.get("ticket_code")
-        
+
         await self.context_manager.reset_on_resolution(
             user_id=user_id,
             ticket_id=ticket_code,
@@ -411,20 +409,20 @@ class SupportFlowGraph:
     async def _check_ticket_status_node(self, state: SupportGraphState) -> dict[str, Any]:
         """Handle ticket status queries like 'any update?'"""
         user_id = state.get("user_id", "")
-        
+
         if not self._ticket_service:
             return {
                 "final_message": "I don't have access to ticket information right now. Please try again later.",
             }
-        
+
         context = await self.context_manager.get(user_id)
-        
+
         response = await handle_ticket_status(
             user_id=user_id,
             ticket_service=self._ticket_service,
             last_ticket_id=context.last_ticket_id,
         )
-        
+
         return {
             "response": response,
             "final_message": response.message,
@@ -434,10 +432,10 @@ class SupportFlowGraph:
         """Ask for clarification."""
         resolver_decision = state.get("resolver_decision")
         user_id = state.get("user_id", "")
-        
+
         # Increment attempts when asking for clarification
         await self.context_manager.increment_attempts(user_id)
-        
+
         if resolver_decision and resolver_decision.prompts:
             prompt = resolver_decision.prompts[0]
             if prompt.key == "support.ask_reference":
@@ -448,7 +446,7 @@ class SupportFlowGraph:
                 question = "Could you provide more details?"
         else:
             question = state.get("clarification_question", "Which transaction are you asking about?")
-        
+
         return {
             "final_message": question,
             "needs_clarification": True,
@@ -458,7 +456,7 @@ class SupportFlowGraph:
         """Handle case where no transaction was found."""
         user_id = state.get("user_id", "")
         context = await self.context_manager.get(user_id)
-        
+
         # Check if we should create ticket after too many attempts
         if context.attempts >= 3:
             if self._ticket_service:
@@ -473,7 +471,7 @@ class SupportFlowGraph:
                     "final_message": response.message,
                     "ticket_code": response.escalation.context.get("ticket_code") if response.escalation else None,
                 }
-        
+
         return {
             "final_message": (
                 "I couldn't find a recent transaction matching your query.\n\n"

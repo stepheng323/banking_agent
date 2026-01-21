@@ -4,8 +4,8 @@ from datetime import datetime
 from typing import Any
 
 from shared.database.enums import (
-    SupportTicketStatusEnum,
     SupportTicketPriorityEnum,
+    SupportTicketStatusEnum,
 )
 from shared.database.models import SupportTicket
 from shared.repositories.support_ticket_repository import SupportTicketRepository
@@ -61,10 +61,10 @@ class TicketService:
         """
         # Generate unique ticket code
         ticket_code = self.repo.generate_ticket_code()
-        
+
         # Determine priority based on intent
         priority = INTENT_PRIORITY.get(intent, SupportTicketPriorityEnum.MEDIUM)
-        
+
         ticket = self.repo.create(
             ticket_code=ticket_code,
             user_id=user_id,
@@ -76,7 +76,7 @@ class TicketService:
             summary=summary,
             details=details or {},
         )
-        
+
         logger.info(
             "support_ticket_created",
             ticket_code=ticket_code,
@@ -85,7 +85,7 @@ class TicketService:
             priority=priority.value,
             has_transaction=bool(transaction_ref),
         )
-        
+
         return ticket
 
     def get_ticket(self, ticket_code: str) -> SupportTicket | None:
@@ -109,18 +109,18 @@ class TicketService:
         ticket = self.repo.get_by_ticket_code(ticket_code)
         if not ticket:
             return None
-        
+
         ticket = self.repo.update(ticket, status=status.value)
-        
+
         if status == SupportTicketStatusEnum.RESOLVED:
             ticket = self.repo.update(ticket, resolved_at=datetime.utcnow())
-        
+
         logger.info(
             "support_ticket_status_updated",
             ticket_code=ticket_code,
             new_status=status.value,
         )
-        
+
         return ticket
 
     def resolve_ticket(self, ticket_code: str) -> SupportTicket | None:
