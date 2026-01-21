@@ -1,11 +1,16 @@
-import json
-import uuid
+from typing import TYPE_CHECKING
 
-import redis.asyncio as redis
 from langchain_core.runnables import RunnableConfig
+
+if TYPE_CHECKING:
+    from apps.core.src.agent.graphs.__shared__.beneficiary.suggestion_service import BeneficiarySuggestionService
 
 from apps.core.src.agent.orchestrator.models.domain import TaskStage
 from apps.core.src.agent.orchestrator.state import OrchestratorState
+from shared.clients.whatsapp.client import WhatsAppClient
+from shared.utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 
 async def finalize(state: OrchestratorState, config: RunnableConfig) -> dict:
@@ -13,49 +18,26 @@ async def finalize(state: OrchestratorState, config: RunnableConfig) -> dict:
     results = []
     outbox = []
 
-    bs_service = config["configurable"].get("beneficiary_suggestion_service")
-    redis_client: redis.Redis = config["configurable"].get("redis_client")
+    beneficiary_service: BeneficiarySuggestionService | None = config["configurable"].get(
+        "beneficiary_suggestion_service"
+    )
+    whatsapp_client: WhatsAppClient | None = config["configurable"].get("whatsapp_client")
 
-    for tid, task in state.tasks.items():
+    for _, task in state.tasks.items():
         if task.stage == TaskStage.COMPLETED:
-            amount = task.payload.get("amount", "unknown")
-            results.append(f"✓ Transfer of {amount} to {task.payload.get('recipient_name')} is processing...")
-
             if task.type == "transfer":
-                # Offload Receipt Generation to Worker
-                if redis_client:
-                    signal_key = f"receipt:signal:{uuid.uuid4()}"
-                    job_payload = {
-                        "phone_number": state.phone_number,
-                        "transfer_data": {
-                            "amount": task.payload.get("amount"),
-                            "source": {
-                                "name": task.payload.get("source_bank_name"), # Using source bank as proxy or need account name?
-                                "account_name": "User", # Placeholder if source name not in payload
-                            },
-                            "recipient": {
-                                "name": task.payload.get("recipient_name"),
-                                "account_number": task.payload.get("recipient_account"),
-                                "bank_name": task.payload.get("recipient_bank_name"),
-                            },
-                            "narration": task.payload.get("narration"),
-                        },
-                        "transfer_result": {
-                            "transaction_id": task.payload.get("transaction_id"),
-                            "reference": task.payload.get("idempotency_key"),
-                        },
-                        "signal_key": signal_key,
-                    }
-                    
-                    await redis_client.rpush("banking:receipt_jobs", json.dumps(job_payload))
-                    
-                    # Wait for Receipt Worker to send the image
-                    # This ensures Receipt -> Suggestion ordering
-                    await redis_client.blpop(signal_key, timeout=20)
-            
-            # Trigger Beneficiary Suggestion
-            if task.type == "transfer" and bs_service:
-                suggestion_msg = await bs_service.check_and_suggest_beneficiary(
+                amount = task.payload.get("amount", "unknown")
+                text_response = f"✓ Transfer of {amount} to {task.payload.get('recipient_name')} is processing..."
+                if whatsapp_client:
+                    await whatsapp_client.send_text(state.phone_number, text_response)
+                else:
+                    results.append(text_response)
+
+            logger.info("finalize_task_completed", type=task.type, phone=state.phone_number)
+
+            logger.info("finalize_suggestion_check", has_beneficiary_service=bool(beneficiary_service))
+            if task.type == "transfer" and beneficiary_service:
+                suggestion_msg = await beneficiary_service.check_and_suggest_beneficiary(
                     phone_number=state.phone_number,
                     beneficiary_type="transfer",
                     recipient_data={
@@ -73,12 +55,13 @@ async def finalize(state: OrchestratorState, config: RunnableConfig) -> dict:
                     outbox.append({"type": "say", "text": suggestion_msg})
 
         elif task.stage == TaskStage.FAILED:
-            results.append(f"❌ Failed: {task.payload.get('error')}")
+            results.append(f"Failed: {task.payload.get('error')}")
 
         elif task.stage == TaskStage.CANCELLED:
-            results.append("🚫 Transaction cancelled.")
+            results.append("Transaction cancelled, how else can I help you today?")
 
-    final_text = "\n".join(results) if results else "I'm done processing."
+    # If we had manual sends, results might be empty, which is fine.
+    final_text = "\n".join(results) if results else None
 
     return {
         "final_response": final_text,
