@@ -3,11 +3,34 @@
 from typing import Any
 from uuid import UUID
 
-from apps.core.src.agent.graphs.transfer.models.types import TransferContext, TransferPayload
+from apps.core.src.agent.graphs.transfer.models.types import (
+    TransferContext,
+    TransferGates,
+    TransferPayload,
+)
+from apps.core.src.agent.graphs.transfer.pipeline.base import TransferStep
 from apps.core.src.agent.orchestrator.models.domain import TransferOutcome, TransferResult
-from shared.clients.abstractions import DirectDebitProvider
+from shared.clients.abstractions.direct_debit import DirectDebitProvider
 from shared.services.funding.planner import FundingPlanner
 from shared.utils.logging import get_logger
+
+
+class FundingStep(TransferStep):
+    """Plans transaction funding (Direct Debit)."""
+
+    async def execute(
+        self,
+        data: TransferPayload,
+        context: TransferContext,
+        gates: TransferGates,
+        worker_context: Any,
+    ) -> TransferResult:
+        dd_provider = getattr(worker_context, "dd_provider", None)
+        if dd_provider:
+            return await plan_transaction_funding(data, context, dd_provider)
+        return TransferResult(outcome=TransferOutcome.OK, patch={})
+
+
 
 logger = get_logger(__name__)
 

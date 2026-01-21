@@ -3,9 +3,35 @@
 from typing import Any
 
 from apps.core.src.agent.graphs.__shared__.beneficiary.matcher import BeneficiaryMatcher
-from apps.core.src.agent.graphs.transfer.models.types import TransferContext, TransferPayload
+from apps.core.src.agent.graphs.transfer.models.types import (
+    TransferContext,
+    TransferGates,
+    TransferPayload,
+)
+from apps.core.src.agent.graphs.transfer.pipeline.base import TransferStep
 from apps.core.src.agent.orchestrator.models.domain import TransferOutcome, TransferResult
 from shared.database.models import Beneficiary
+from shared.utils.logging import get_logger
+
+logger = get_logger(__name__)
+
+
+class ResolutionStep(TransferStep):
+    """Resolves beneficiary details."""
+
+    async def execute(
+        self,
+        data: TransferPayload,
+        context: TransferContext,
+        gates: TransferGates,
+        worker_context: Any,
+    ) -> TransferResult:
+        return await resolve_beneficiary(
+            data,
+            context,
+            worker_context.banking_provider,
+            worker_context.bank_cache,
+        )
 
 
 async def resolve_beneficiary(
@@ -103,7 +129,6 @@ async def resolve_beneficiary(
             required_fields=["recipient_name"],
             prompt="Who is the recipient?",
         )
-
 
     bank_term = (payload.recipient_bank_name or "").lower()
 

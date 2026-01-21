@@ -2,14 +2,45 @@
 
 from typing import Any
 
-from apps.core.src.agent.graphs.transfer.models.types import TransferPayload
+from apps.core.src.agent.graphs.transfer.models.types import (
+    TransferContext,
+    TransferGates,
+    TransferPayload,
+)
+from apps.core.src.agent.graphs.transfer.pipeline.base import TransferStep
 from apps.core.src.agent.orchestrator.models.domain import TransferOutcome, TransferResult
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
 
 
-async def extract_transfer_update(
+class ExtractionStep(TransferStep):
+    """Refines transfer data from user message."""
+
+    def __init__(self, user_message: str | None):
+        self.user_message = user_message
+
+    async def execute(
+        self,
+        data: TransferPayload,
+        context: TransferContext,
+        gates: TransferGates,
+        worker_context: Any,
+    ) -> TransferResult:
+        if not self.user_message:
+            return TransferResult(outcome=TransferOutcome.OK, patch={})
+
+        res = await _extract_transfer_update(
+            data,
+            worker_context.extractor,
+            self.user_message,
+            {"phone_number": context.phone_number},  # Context dict approximation
+        )
+
+        return res
+
+
+async def _extract_transfer_update(
     current_payload: TransferPayload,
     extractor: Any,
     user_message: str,
@@ -41,7 +72,6 @@ async def extract_transfer_update(
 
         print(f"DEBUG: Extracted Data (Pre-map): {extracted_data}", flush=True)
 
-        # Invalidate confirmation if we have any business data update
         if extracted_data:
             extracted_data["confirmation"] = {"confirmed": False}
 
