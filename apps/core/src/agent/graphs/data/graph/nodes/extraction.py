@@ -2,7 +2,6 @@
 
 from typing import Any
 
-
 from apps.core.src.agent.graphs.data.extractor import DataEntityExtractor
 from apps.core.src.agent.graphs.data.graph.state import DataPurchaseState
 from apps.core.src.agent.graphs.data.models_extraction import DataPurchaseEntities

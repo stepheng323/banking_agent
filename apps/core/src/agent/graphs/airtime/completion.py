@@ -1,7 +1,6 @@
 """Airtime purchase service for handling airtime purchase operations."""
 
 import asyncio
-from datetime import datetime, timedelta
 from typing import Any
 
 from apps.core.src.agent.graphs.__shared__.beneficiary.suggestion_service import BeneficiarySuggestionService
@@ -9,7 +8,6 @@ from shared.cache.redis_client import RedisClient
 from shared.clients.whatsapp.client import WhatsAppClient
 from shared.repositories.actionable_message_repository import ActionableMessageRepository
 from shared.repositories.beneficiary_repository import BeneficiaryRepository
-from shared.utils.async_helpers import create_background_task
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)

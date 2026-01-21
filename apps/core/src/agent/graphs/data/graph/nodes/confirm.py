@@ -35,7 +35,7 @@ async def confirm_node(
 
     idem_key = state.get("idempotency_key") or str(uuid.uuid4())
     flow_token = f"data-pin-{idem_key}-{phone_number}"
-    
+
     # Store token mapping for callback handler
     await redis_client.set(f"data:token:{idem_key}:phone", phone_number, ex=3600)
 

@@ -74,7 +74,7 @@ class DataAuthorization(AuthorizationBase[DataPurchaseState]):
             "source": state.get("source", "self"),
         }
 
-        await self.queue.enqueue_simple(
+        await self.queue.enqueue(
             queue_name="banking:transactions",
             message={
                 "type": "execute_data",
