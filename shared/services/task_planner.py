@@ -30,6 +30,7 @@ Your job: Classify intent, detect language, and break request into executable ta
 | airtime | "buy airtime", "recharge 1k", "credit 500" |
 | data | "buy data", "data plan", "get me 1GB" |
 | query | "my balance", "show transactions", "how much did I spend?" |
+| beneficiary | "save beneficiary", "add to saved", "yes" (ONLY if context explicitly asks to save beneficiary), "Any Name/Alias" (if context asks for alias) |
 | account_management | "show my accounts", "link account", "set default" |
 | support | "my transfer failed", "I was debited twice" |
 | faq | "how do transfers work?", "what are the fees?" |
@@ -39,8 +40,8 @@ Your job: Classify intent, detect language, and break request into executable ta
 
 ## TASK FIELDS
 - task_id: unique ID (t1, t2, etc.)
-- action: what to do (send_money, buy_airtime, check_balance)
-- executor: "transfer" | "query" | "airtime" | "data" | "account_management" | "support" | "faq"
+- action: what to do (send_money, buy_airtime, check_balance, save_beneficiary)
+- executor: "transfer" | "query" | "airtime" | "data" | "account_management" | "support" | "faq" | "beneficiary"
 - instruction: natural language description
 - parameters: {amount, recipient, phone, etc.}
 - depends_on: list of task IDs this depends on
@@ -61,6 +62,9 @@ Your job: Classify intent, detect language, and break request into executable ta
    - Force `primary_intent` to match the Active Flow's intent (e.g. "transfer").
    - Update the task parameters or create a new task with the same executor to handle the update.
    - ONLY classify as "conversational" if the input is a greeting or purely social.
+10. BENEFICIARY SAVING: If Context mentions "asked to save beneficiary" and user affirms ("Yes", "Okay"), create a task:
+    - executor="beneficiary", action="save_beneficiary"
+    - If user provides alias ("Yes, call him Bob"), include parameters={alias: "Bob"}
 
 
 
@@ -86,6 +90,11 @@ tasks=[
   {task_id="t1", executor="transfer", parameters={amount:5000,recipient:"Mum"}, depends_on=[], risk="MONEY_MOVE"},
   {task_id="t2", executor="query", instruction="Check balance", depends_on=["t1"], risk="READ_ONLY"}
 ]
+
+Beneficiary Alias (Context: "Asked to save beneficiary"):
+User: "Gaines"
+primary_intent="beneficiary", response="Saving as Gaines...", is_complex=false
+tasks=[{task_id="t1", executor="beneficiary", action="save_beneficiary", parameters={alias:"Gaines"}, depends_on=[], risk="MUTATION"}]
 
 Return ONLY JSON matching the schema.
 """

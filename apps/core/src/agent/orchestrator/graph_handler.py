@@ -3,7 +3,10 @@
 Integrates the Top-Level LangGraph into the Message Processing Pipeline.
 """
 
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
+
+if TYPE_CHECKING:
+    from shared.queue.redis_queue import RedisQueue
 
 import redis.asyncio as redis
 from langchain_core.runnables import RunnableConfig
@@ -57,12 +60,14 @@ class OrchestratorGraphHandler:
         user_cache: UserDataCache,
         redis_client: redis.Redis,
         whatsapp_client: WhatsAppClient,
+        queue: "RedisQueue | None" = None,
         beneficiary_suggestion_service: BeneficiarySuggestionService | None = None,
         mode: Literal["planning", "execution", "both"] = "both",
     ):
         self.task_planner = task_planner
         self.redis_client = redis_client
         self.whatsapp_client = whatsapp_client
+        self.queue = queue
         self.beneficiary_suggestion_service = beneficiary_suggestion_service
         self.mode = mode
 
@@ -71,7 +76,6 @@ class OrchestratorGraphHandler:
         self.account_repo = account_repo
         self.banking_provider = banking_provider
 
-        # optimize services dict
         self.services = {
             "transfer": transfer_service,
             "airtime": airtime_service,
@@ -95,6 +99,26 @@ class OrchestratorGraphHandler:
             await self.checkpointer.asetup()
             self._checkpointer_setup = True
 
+    def _get_config(self, phone_number: str) -> RunnableConfig:
+        """Create LangGraph configuration."""
+        return {
+            "configurable": {
+                "thread_id": phone_number,
+                "task_planner": self.task_planner,
+                "adapter_factory": self.adapter_factory,
+                "services": self.services,
+                "user_repo": self.user_repo,
+                "beneficiary_repo": self.beneficiary_repo,
+                "account_repo": self.account_repo,
+                "banking_provider": self.banking_provider,
+                "beneficiary_suggestion_service": self.beneficiary_suggestion_service,
+                "redis_client": self.redis_client,
+                "whatsapp_client": self.whatsapp_client,
+                "queue": self.queue,
+            },
+            "recursion_limit": 50,
+        }
+
     async def invoke(self, context: MessageContext) -> str | None:
         """
         Run the graph.
@@ -114,35 +138,17 @@ class OrchestratorGraphHandler:
             "last_message_id": context.message_id,
         }
 
-        # Config
-        config: RunnableConfig = {
-            "configurable": {
-                "thread_id": phone_number,
-                "task_planner": self.task_planner,
-                "adapter_factory": self.adapter_factory,
-                "whatsapp_client": self.whatsapp_client,
-                "services": self.services,
-                "user_repo": self.user_repo,
-                "beneficiary_repo": self.beneficiary_repo,
-                "account_repo": self.account_repo,
-                "banking_provider": self.banking_provider,
-                "beneficiary_suggestion_service": self.beneficiary_suggestion_service,
-            },
-            "recursion_limit": 50,
-        }
+        config = self._get_config(phone_number)
 
         logger.info("orchestrator_graph_invoke", user=phone_number)
 
-        # Invoke Graph
         final_state = await self.graph.ainvoke(inputs, config=config)
-
-        # Process Output
         return {
             "final_response": final_state.get("final_response"),
             "outbox": final_state.get("outbox", []),
         }
 
-    async def resume_flow(self, phone_number: str, payload: dict[str, Any]) -> str | None:
+    async def resume_flow(self, phone_number: str, payload: dict[str, Any]) -> dict[str, Any]:
         """Resume flow externally (e.g. from auth callback)."""
 
         await self._ensure_checkpointer()
@@ -152,27 +158,16 @@ class OrchestratorGraphHandler:
             "last_callback": payload,
         }
 
-        config: RunnableConfig = {
-            "configurable": {
-                "thread_id": phone_number,
-                "task_planner": self.task_planner,
-                "adapter_factory": self.adapter_factory,
-                "whatsapp_client": self.whatsapp_client,
-                "services": self.services,
-                "user_repo": self.user_repo,
-                "beneficiary_repo": self.beneficiary_repo,
-                "account_repo": self.account_repo,
-                "banking_provider": self.banking_provider,
-                "beneficiary_suggestion_service": self.beneficiary_suggestion_service,
-            },
-            "recursion_limit": 50,
-        }
+        config = self._get_config(phone_number)
 
         logger.info("orchestrator_graph_resume", user=phone_number, payload=payload)
 
         try:
             final_state = await self.graph.ainvoke(inputs, config=config)
-            return final_state.get("final_response")
+            return {
+                "final_response": final_state.get("final_response"),
+                "outbox": final_state.get("outbox", []),
+            }
         except Exception as e:
             logger.exception("graph_resume_error", error=str(e))
-            return None
+            return {"final_response": None, "outbox": []}

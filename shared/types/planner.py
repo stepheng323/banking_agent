@@ -24,6 +24,7 @@ class TaskParameters(BaseModel):
     scheduled: str | None = None
     recurring: bool | None = None
     international: bool | None = None
+    alias: str | None = None
 
 
 class PlannedTask(BaseModel):
@@ -31,7 +32,7 @@ class PlannedTask(BaseModel):
 
     task_id: str = Field(..., description="Stable ID referenced by depends_on")
     action: str
-    executor: Literal["transfer", "query", "airtime", "data", "account_management", "support", "faq"]
+    executor: Literal["transfer", "query", "airtime", "data", "account_management", "support", "faq", "beneficiary"]
     instruction: str
     description: str | None = None
     parameters: TaskParameters = Field(default_factory=TaskParameters)

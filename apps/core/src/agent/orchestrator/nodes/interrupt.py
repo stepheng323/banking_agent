@@ -44,9 +44,8 @@ async def handle_pending_interrupt(state: OrchestratorState, config: RunnableCon
                     logger.info("confirmation_intent_detected", is_conf=is_confirmation, is_canc=is_cancellation)
                 except Exception as e:
                     logger.error("confirmation_planner_failed", error=str(e))
-                    # Fallback to simple keyword check if LLM fails
-                    is_confirmation = any(w in text for w in ["confirm", "yes", "ok", "proceed"])
-                    is_cancellation = any(w in text for w in ["cancel", "stop"])
+                    is_confirmation = False
+                    is_cancellation = False
 
         if is_confirmation:
             logger.info("confirmation_confirmed", tasks=interrupt.task_ids, via_pin=state.pin_verified)

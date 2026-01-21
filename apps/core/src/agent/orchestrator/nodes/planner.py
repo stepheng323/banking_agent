@@ -24,8 +24,41 @@ async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[s
     task_planner = config["configurable"].get("task_planner")
     text = state.last_message_text or ""
 
+    redis_client = config["configurable"].get("redis_client")
+    planner_context = "None"
+
+    if redis_client:
+        try:
+            # Check for pending beneficiary suggestion
+            suggestion_key = f"user:{state.phone_number}:beneficiary_suggestion"
+            suggestion_data = await redis_client.get(suggestion_key)
+            if suggestion_data:
+                import json
+
+                data = json.loads(suggestion_data)
+                name = data.get("recipient_name") or data.get("alias_suggested") or "Unknown"
+                planner_context = (
+                    f"Active Context: User was asked to save beneficiary '{name}'.\n"
+                    f"- Reply 'yes' -> Save with name '{name}'\n"
+                    f"- Reply 'Bob' (or any name) -> Save with alias 'Bob'"
+                )
+                logger.info("planner_context_injected", context=planner_context)
+        except Exception as e:
+            logger.warning("planner_context_check_failed", error=str(e))
+
     try:
-        planner_output = await task_planner.plan_tasks(state.phone_number, text)
+        planner_output = await task_planner.plan_tasks(state.phone_number, text, context=planner_context)
+        logger.info("planner_tasks_generated", output=planner_output)
+
+        if redis_client and planner_context != "None" and planner_output and planner_output.tasks:
+            is_saving = any(
+                t.executor == "beneficiary" and t.action == "save_beneficiary" for t in planner_output.tasks
+            )
+            if not is_saving:
+                suggestion_key = f"user:{state.phone_number}:beneficiary_suggestion"
+                await redis_client.delete(suggestion_key)
+                logger.info("cleared_stale_beneficiary_context", phone=state.phone_number)
+
     except Exception as e:
         logger.error("planner_failed", error=str(e))
         return {"final_response": "I'm having trouble understanding. Could you rephrase?"}

@@ -76,11 +76,8 @@ class TaskSpec(BaseModel):
     """
 
     id: str
-    type: Literal["transfer", "query", "airtime", "data"]
+    type: Literal["transfer", "query", "airtime", "data", "account_management", "support", "faq", "beneficiary"]
     stage: TaskStage = TaskStage.DRAFT
-
-    # durable task truth used by subgraphs
-    # We keep this generic logic-wise, but for Transfers it will follow TransferPayload schema
     payload: dict[str, Any] = Field(default_factory=dict)
 
 

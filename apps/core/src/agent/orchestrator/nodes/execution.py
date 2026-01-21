@@ -139,9 +139,31 @@ async def advance_wave(state: OrchestratorState, config: RunnableConfig) -> dict
                 task.stage = TaskStage.AWAITING_AUTH
                 needs_auth_tasks.append(tid)
 
-            elif result.outcome == TransferOutcome.FAILED:
+            elif result.outcome == TransferOutcome.FAILED or result.outcome == TransferOutcome.FAILED:
                 task.stage = TaskStage.FAILED
                 task.payload["error"] = result.error
+
+        elif task.type == "beneficiary":
+            suggestion_service = config["configurable"].get("beneficiary_suggestion_service")
+            if not suggestion_service:
+                logger.error("suggestion_service_missing")
+                task.stage = TaskStage.FAILED
+                task.payload["error"] = "System error: Suggestion service unavailable"
+                continue
+
+            alias = task.payload.get("alias")
+            try:
+                msg = await suggestion_service.save_beneficiary(state.phone_number, alias=alias)
+                task.stage = TaskStage.COMPLETED
+                task.payload["result"] = msg
+
+                if len(current_wave) == 1:
+                    updates["final_response"] = msg
+
+            except Exception as e:
+                logger.error("save_beneficiary_exec_error", error=str(e))
+                task.stage = TaskStage.FAILED
+                task.payload["error"] = "Failed to save beneficiary."
 
         else:
             logger.warning("unsupported_task_type", type=task.type)
