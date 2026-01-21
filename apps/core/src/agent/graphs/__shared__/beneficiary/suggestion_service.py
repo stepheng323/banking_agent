@@ -37,7 +37,8 @@ class BeneficiarySuggestionService:
         beneficiary_type: str,
         recipient_data: dict[str, Any],
         transaction_id: str | None = None,
-    ) -> None:
+        send_message: bool = True,
+    ) -> str | None:
         """
         Check if recipient is new beneficiary and suggest saving.
 
@@ -46,16 +47,21 @@ class BeneficiarySuggestionService:
             beneficiary_type: Type of beneficiary ("transfer", "airtime", or "data")
             recipient_data: Dict with recipient information (varies by type)
             transaction_id: Optional transaction ID
+            send_message: Whether to send the message immediately (async) or return it.
+
+        Returns:
+            str: The suggestion message if generated and send_message=False.
+            None: If sent immediately or no suggestion needed.
         """
         try:
             with UnitOfWork() as uow:
                 if not uow.users or not uow.transactions:
-                    return
+                    return None
 
                 user = uow.users.get_by_phone(phone_number)
                 if not user:
                     logger.debug("debug_user")
-                    return
+                    return None
 
                 user_id = str(user.id)
                 has_beneficiary_repo = bool(uow.beneficiaries)
@@ -63,13 +69,13 @@ class BeneficiarySuggestionService:
 
                 if beneficiary_type == "transfer":
                     if recipient_data.get("is_self") or recipient_data.get("is_own_account"):
-                        return
+                        return None
                     account_number = recipient_data.get("account_number")
                     bank_code = recipient_data.get("bank_code")
                     recipient_name = recipient_data.get("name", "")
 
                     if not account_number or not bank_code:
-                        return
+                        return None
 
                     if has_beneficiary_repo:
                         try:
@@ -125,10 +131,14 @@ class BeneficiarySuggestionService:
                                 f"- Reply 'yes' to save\n"
                                 f"- Or send a name (e.g., 'Mum') to save with that alias"
                             )
-                        asyncio.create_task(
-                            self.whatsapp_client.send_text(to=phone_number, text=message)
-                        )
-                        logger.info("beneficiary_suggestion_sent_for")
+                        
+                        if send_message:
+                            asyncio.create_task(
+                                self.whatsapp_client.send_text(to=phone_number, text=message)
+                            )
+                            logger.info("beneficiary_suggestion_sent_for")
+                            return None
+                        return message
 
                 elif beneficiary_type in ("airtime", "data"):
                     recipient_phone = recipient_data.get("phone", "")
@@ -136,12 +146,12 @@ class BeneficiarySuggestionService:
                     recipient_name = recipient_data.get("name", "")
 
                     if not recipient_phone or not network:
-                        return
+                        return None
 
                     if recipient_phone == phone_number or \
                        (len(recipient_phone) >= 10 and phone_number.endswith(recipient_phone[-10:])) or \
                        (len(phone_number) >= 10 and recipient_phone.endswith(phone_number[-10:])):
-                        return
+                        return None
 
                     if has_beneficiary_repo:
                         try:
@@ -188,13 +198,19 @@ class BeneficiarySuggestionService:
                             f"- Reply 'yes' to save\n"
                             f"- Or send a name (e.g., 'Mum') to save with that alias"
                         )
-                        asyncio.create_task(
-                            self.whatsapp_client.send_text(to=phone_number, text=message)
-                        )
-                        logger.info("beneficiary_suggestion_sent_for")
+
+                        if send_message:
+                            asyncio.create_task(
+                                self.whatsapp_client.send_text(to=phone_number, text=message)
+                            )
+                            logger.info("beneficiary_suggestion_sent_for")
+                            return None
+                        return message
                 else:
                     logger.warning("unknown_beneficiary")
-
+        
         except Exception:
             logger.error("error_beneficiary")
             traceback.print_exc()
+        
+        return None

@@ -48,7 +48,10 @@ def validate_transfer(payload: TransferPayload) -> TransferResult:
             recipient_account=payload.recipient_account,
             recipient_bank_code=payload.recipient_bank_code,
             recipient_bank_name=payload.recipient_bank_name,
-            source_account={"account_number": payload.source_account_number},
+            source_account={
+                "account_number": payload.source_account_number,
+                "bank_name": payload.source_bank_name,
+            },
         )
         if not is_valid:
             return TransferResult(outcome=TransferOutcome.FAILED, error=error)
