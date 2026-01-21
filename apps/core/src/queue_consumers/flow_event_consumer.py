@@ -6,6 +6,7 @@ from typing import Any
 from apps.core.src.agent.graphs.airtime.service import AirtimeService
 from apps.core.src.agent.graphs.data.service import DataService
 from apps.core.src.agent.graphs.transfer.service import TransferService
+from apps.core.src.agent.orchestrator.orchestrator import OrchestratorAgent
 from apps.core.src.agent.shared.batch.service import BatchService
 from shared.clients.whatsapp.client import WhatsAppClient
 from shared.queue.messages import FLOW_EVENTS_QUEUE, FlowEventType
@@ -15,7 +16,7 @@ from shared.utils.logging import get_logger
 logger = get_logger(__name__)
 
 
-from apps.core.src.agent.orchestrator.orchestrator import OrchestratorAgent
+
 
 class FlowEventConsumer:
     """Consumes flow events (like PIN verified) and triggers appropriate service resumption."""
@@ -96,16 +97,14 @@ class FlowEventConsumer:
 
         try:
             response = None
-            
+
             # Prefer Orchestrator if available (New Workflow Engine)
             if self.orchestrator:
                 logger.info("resuming_via_orchestrator", phone=phone_number, flow=flow_type)
                 response = await self.orchestrator.resume_transaction(
-                    phone_number=phone_number,
-                    flow_type=flow_type,
-                    pin_verified=True
+                    phone_number=phone_number, flow_type=flow_type, pin_verified=True
                 )
-            
+
             # Legacy fallback / specific services handling if orchestrator didn't handle it
             if not response:
                 if flow_type == "transfer":
@@ -141,8 +140,22 @@ class FlowEventConsumer:
 
             # Send response to user if available
             if response and self.whatsapp_client:
-                await self.whatsapp_client.send_text(phone_number, response)
-                logger.info("pin_response_sent", phone=phone_number, flow_type=flow_type)
+                if isinstance(response, dict):
+                    text = response.get("text") or response.get("final_response")
+                    outbox = response.get("outbox", [])
+
+                    if text:
+                        await self.whatsapp_client.send_text(phone_number, text)
+                        logger.info("pin_response_sent_text", phone=phone_number)
+
+                    for msg in outbox:
+                        if msg.get("type") == "say":
+                            await self.whatsapp_client.send_text(phone_number, msg.get("text"))
+                            logger.info("pin_response_sent_outbox", phone=phone_number)
+                else:
+                    # Legacy String Response
+                    await self.whatsapp_client.send_text(phone_number, response)
+                    logger.info("pin_response_sent_legacy", phone=phone_number, flow_type=flow_type)
 
         except Exception as e:
             logger.error(

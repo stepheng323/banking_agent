@@ -2,6 +2,7 @@
 
 from enum import Enum
 
+
 class UserOnboardingStatusEnum(str, Enum):
     """User onboarding status enum."""
 

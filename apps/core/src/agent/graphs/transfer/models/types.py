@@ -3,7 +3,7 @@
 Strict Pydantic contract for the Transfer Subgraph.
 """
 
-from typing import Any
+from typing import Any, Literal, TypedDict
 
 from pydantic import BaseModel, Field
 
@@ -41,11 +41,13 @@ class TransferPayload(BaseModel):
 
     source_account_id: str | None = None
     source_bank_name: str | None = None
+    source_account_name: str | None = None
     source_account_number: str | None = None
 
     funding_plan: dict[str, Any] | None = None
 
     idempotency_key: str | None = None
+    transaction_id: str | None = None
     narration: str | None = None
 
     confirmation: TransferConfirmation = Field(default_factory=TransferConfirmation)
@@ -57,3 +59,72 @@ class TransferContext(BaseModel):
     phone_number: str
     beneficiaries: list[dict[str, Any]] = Field(default_factory=list)
     accounts: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class TransferRecipient(TypedDict):
+    """Details of the transfer recipient."""
+
+    account_number: str
+    bank_code: str
+    name: str | None
+    bank_name: str | None
+
+
+class TransferSource(TypedDict):
+    """Details of the funding source."""
+
+    account_number: str | None
+    bank_name: str | None
+    account_name: str | None
+    account_id: str | None
+
+
+class FundingStepDict(TypedDict):
+    """Details of a single funding step."""
+
+    account_id: str
+    amount: float
+    bank_name: str
+    sequence: int
+
+
+class FundingPlanDict(TypedDict):
+    """Details of the funding plan."""
+
+    transfer_amount: float
+    total_funded: float
+    is_sufficient: bool
+    is_single_source: bool
+    steps: list[FundingStepDict]
+
+
+class TransferDataDict(TypedDict):
+    """
+    TypedDict for transfer data payload passed to executor.
+
+    This matches the structure expected by the payment provider and logging.
+    """
+
+    amount: float
+    recipient: TransferRecipient
+    source: TransferSource
+    narration: str | None
+    funding_plan: FundingPlanDict | None
+
+
+class TransferResultDict(TypedDict):
+    """
+    TypedDict for transfer execution result from provider.
+
+    Standardized return format from all payment providers.
+    """
+
+    success: bool
+    status: Literal["successful", "pending", "failed"]
+    transaction_id: str | None
+    reference: str | None
+    amount: float | None
+    fee: float | None
+    currency: str | None
+    provider_response: dict[str, Any] | None
+    error: str | None

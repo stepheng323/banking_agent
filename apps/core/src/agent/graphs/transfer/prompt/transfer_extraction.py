@@ -57,7 +57,9 @@ When user corrects mid-flow ("I meant 50k"):
 | "abeg make am dey go every month" | requested_features=["RECURRING"] |
 | "fi 5k si mama" (Yoruba) | amount=5000, recipient_name="mama" |
 | "Add narration: school fees" | narration="school fees", acknowledgment="Got it, added the narration." |
-| "its for groceries" | narration="groceries", acknowledgment="Updated narration to 'groceries'." |
+| "GTBank" | bank_name="GTBank" |
+| "Access Bank" | bank_name="Access Bank" |
+| "its for groceries" | correction.field="narration", correction.new_value="groceries", acknowledgment="Updated narration to 'groceries'." |
 
 ## ACKNOWLEDGMENTS
 If the user is correcting or updating a field:

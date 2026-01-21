@@ -181,7 +181,18 @@ async def handle_transaction_pin(
             idempotency_key=idem_key,
             success=True,
         )
-        await redis_queue.publish_flow_event(flow_event)
+        await redis_queue.enqueue(
+            "banking:flow_events",
+            message={
+                "event_type": flow_event.event_type.value,
+                "phone_number": flow_event.phone_number,
+                "flow_type": flow_event.flow_type,
+                "idempotency_key": flow_event.idempotency_key,
+                "success": flow_event.success,
+                "error": flow_event.error,
+                "extra_data": flow_event.extra_data,
+            },
+        )
     except Exception as e:
         print(f"Error publishing flow event: {e}")
         import traceback

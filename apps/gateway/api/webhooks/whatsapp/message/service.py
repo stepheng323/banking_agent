@@ -98,7 +98,7 @@ class WhatsAppWebhookService:
     ) -> bool:
         """Enqueue message for processing. Returns True on success."""
         try:
-            await self.queue.enqueue_simple(
+            await self.queue.enqueue(
                 queue_name="banking:messages",
                 message=message.model_dump(mode="json"),
             )
