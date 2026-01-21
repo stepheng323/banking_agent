@@ -1,10 +1,8 @@
 """Query extraction models. Pure extraction with requested_capabilities."""
 
 from enum import Enum
-from typing import Literal
 
 from pydantic import BaseModel, Field
-
 
 # Schema version for future-proofing
 SCHEMA_VERSION = 1
@@ -12,7 +10,7 @@ SCHEMA_VERSION = 1
 
 class QueryIntent(str, Enum):
     """Query intent types."""
-    
+
     TRANSACTION_LIST = "transaction_list"       # Show me transactions
     SPENDING_TOTAL = "spending_total"           # How much did I spend
     CATEGORY_BREAKDOWN = "category_breakdown"   # Breakdown by category
@@ -24,7 +22,7 @@ class QueryIntent(str, Enum):
 
 class RequestedCapability(str, Enum):
     """Capabilities the user is requesting (LLM detects these)."""
-    
+
     FILTER_RECIPIENT = "FILTER_RECIPIENT"
     FILTER_AMOUNT = "FILTER_AMOUNT"
     FILTER_CATEGORY = "FILTER_CATEGORY"
@@ -43,7 +41,7 @@ class RequestedCapability(str, Enum):
 
 class TimeReference(str, Enum):
     """How user expressed time."""
-    
+
     EXPLICIT = "explicit"       # "last week", "this month", "January"
     VAGUE = "vague"             # "sometime ago", "recently", "a while back"
     ALL_TIME = "all_time"       # "all my transactions", "everything"
@@ -52,7 +50,7 @@ class TimeReference(str, Enum):
 
 class AmbiguityCode(str, Enum):
     """Ambiguity types for query."""
-    
+
     TIME_VAGUE = "TIME_VAGUE"           # "sometime ago" - unclear when
     RECIPIENT_VAGUE = "RECIPIENT_VAGUE" # "that mechanic" - unclear who
     AMOUNT_VAGUE = "AMOUNT_VAGUE"       # "large transactions" - unclear threshold
@@ -60,7 +58,7 @@ class AmbiguityCode(str, Enum):
 
 class Ambiguity(BaseModel):
     """Structured ambiguity with context."""
-    
+
     code: AmbiguityCode = Field(description="Ambiguity type")
     context: str | None = Field(default=None, description="What user said")
     suggestion: str | None = Field(default=None, description="Resolver can suggest")
@@ -68,7 +66,7 @@ class Ambiguity(BaseModel):
 
 class QueryFilters(BaseModel):
     """Extracted filters from query."""
-    
+
     recipient: str | None = Field(default=None, description="Who to filter by")
     min_amount: float | None = Field(default=None)
     max_amount: float | None = Field(default=None)
@@ -80,7 +78,7 @@ class QueryFilters(BaseModel):
 
 class QueryTimeRange(BaseModel):
     """Time range extracted from query."""
-    
+
     reference_type: TimeReference = Field(default=TimeReference.UNSPECIFIED)
     period: str | None = Field(default=None, description="'last_week', 'this_month', 'january'")
     days_back: int | None = Field(default=None, description="Estimated days if vague")
@@ -88,7 +86,7 @@ class QueryTimeRange(BaseModel):
 
 class QueryAggregation(BaseModel):
     """Aggregation requested."""
-    
+
     type: str | None = Field(default=None, description="sum, count, average, largest")
     group_by: str | None = Field(default=None, description="category, bank, recipient")
 
@@ -99,19 +97,19 @@ class QueryExtractionResult(BaseModel):
     schema_version: int = Field(default=SCHEMA_VERSION)
     intent: QueryIntent = Field(default=QueryIntent.TRANSACTION_LIST)
     intent_confidence: float = Field(default=1.0, ge=0.0, le=1.0)
-    
+
     filters: QueryFilters = Field(default_factory=QueryFilters)
     time_range: QueryTimeRange = Field(default_factory=QueryTimeRange)
     aggregation: QueryAggregation | None = Field(default=None)
-    
+
     requested_capabilities: list[RequestedCapability] = Field(
         default_factory=list,
         description="Capabilities needed for this query (LLM detects)",
     )
-    
+
     ambiguities: list[Ambiguity] = Field(
         default_factory=list,
         description="Detected ambiguities needing clarification",
     )
-    
+
     raw_query: str | None = Field(default=None, description="Original user query")

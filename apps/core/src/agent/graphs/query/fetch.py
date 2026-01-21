@@ -182,7 +182,7 @@ async def fetch_and_filter(
                             "status": l_txn.status,
                             "bank_name": l_txn.source_bank_name or "Wallet",
                         }
-                        
+
                         is_duplicate = False
                         l_prov_id = l_txn.transaction_id
                         for existing in transactions:

@@ -1,6 +1,7 @@
 """Affordability query handler."""
 
 from typing import Any
+
 from apps.core.src.agent.graphs.query.models import NormalizedQuery, QueryResult
 from shared.clients.abstractions.banking import BankingDataProvider
 

@@ -1,30 +1,22 @@
 """Query parsing service - extracts NormalizedQuery from natural language."""
 
 from datetime import date, timedelta
-from typing import Any
 
 from langchain_core.runnables import Runnable
 
+from apps.core.src.agent.graphs.query.capabilities import (
+    QUERY_LIMITS,
+)
 from apps.core.src.agent.graphs.query.models import (
     Aggregation,
     NormalizedQuery,
     QueryIntent,
     TimeRange,
 )
-from apps.core.src.agent.graphs.query.prompts import QUERY_PARSER_PROMPT
-from shared.utils.logging import get_logger
-
-from apps.core.src.agent.graphs.query.capabilities import (
-    CAPABILITY_LABELS,
-    QueryCapability,
-    QUERY_SUPPORTS,
-    QUERY_LIMITS,
-    get_alternative,
-    generate_limitation_message,
-)
 from apps.core.src.agent.graphs.query.models_extraction import QueryExtractionResult
 from apps.core.src.agent.graphs.query.prompts_extraction import QUERY_EXTRACTION_PROMPT
-from apps.core.src.agent.graphs.query.resolver import resolve, Decision
+from apps.core.src.agent.graphs.query.resolver import Decision, resolve
+from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
 
@@ -53,30 +45,30 @@ class QueryParser:
             today=today.isoformat(),
             question=question,
         )
-        
+
         structured_llm = self.llm.with_structured_output(QueryExtractionResult)
-        
+
         try:
             extraction: QueryExtractionResult = await structured_llm.ainvoke(prompt)
             extraction.raw_query = question
-            
+
             # Run through resolver
             decision = resolve(extraction)
-            
+
             if decision.decision == Decision.ASK_CLARIFY:
                 # Return with clarification prompt
                 clarify_msg = decision.prompts[0].vars.get("context", "Could you clarify?") if decision.prompts else "Could you clarify?"
                 return extraction, f"clarify:{clarify_msg}"
-            
+
             if decision.decision == Decision.NEGOTIATE:
                 return decision.extraction, f"negotiate:{decision.negotiation.message}" if decision.negotiation else None
-            
+
             resolver_msg = None
             if decision.clamped.days_back:
                 resolver_msg = f"Showing last {decision.clamped.days_back} days (max available)."
-            
+
             return decision.extraction, resolver_msg
-            
+
         except Exception as e:
             logger.error("parse_error", error=str(e))
             return QueryExtractionResult(raw_query=question), None
@@ -98,28 +90,28 @@ class QueryParser:
             today=today.isoformat(),
             question=question,
         )
-        
+
         structured_llm = self.llm.with_structured_output(QueryExtractionResult)
-        
+
         try:
             extraction: QueryExtractionResult = await structured_llm.ainvoke(prompt)
             extraction.raw_query = question
-            
+
             decision = resolve(extraction)
-            
+
             if decision.decision == Decision.ASK_CLARIFY:
                 clarify_msg = decision.prompts[0].vars.get("context", "Could you clarify?") if decision.prompts else "Could you clarify?"
                 return extraction, f"clarify:{clarify_msg}"
-            
+
             if decision.decision == Decision.NEGOTIATE:
                 return decision.extraction, f"negotiate:{decision.negotiation.message}" if decision.negotiation else None
-            
+
             resolver_msg = None
             if decision.clamped.days_back:
                 resolver_msg = f"Showing last {decision.clamped.days_back} days (max available)."
-            
+
             return decision.extraction, resolver_msg
-            
+
         except Exception as e:
             logger.error("parse_error", error=str(e))
             return QueryExtractionResult(raw_query=question), None
@@ -130,15 +122,15 @@ class QueryParser:
         today: date | None = None,
     ) -> NormalizedQuery:
         """Convert QueryExtractionResult to NormalizedQuery for handlers."""
-        from datetime import timedelta
         from apps.core.src.agent.graphs.query.models_extraction import (
-            QueryExtractionResult,
             QueryIntent as ExtractIntent,
+        )
+        from apps.core.src.agent.graphs.query.models_extraction import (
             TimeReference,
         )
-        
+
         today = today or date.today()
-        
+
         intent_map = {
             ExtractIntent.TRANSACTION_LIST: QueryIntent.TRANSACTION_LIST,
             ExtractIntent.SPENDING_TOTAL: QueryIntent.ANALYTICS_SUMMARY,
@@ -148,7 +140,7 @@ class QueryParser:
             ExtractIntent.SINGLE_TRANSACTION: QueryIntent.TRANSACTION_SEARCH,
             ExtractIntent.AFFORDABILITY: QueryIntent.AFFORDABILITY,
         }
-        
+
         time_range = None
         if extraction.time_range:
             days_back = extraction.time_range.days_back or 30
@@ -156,13 +148,13 @@ class QueryParser:
                 days_back = QUERY_LIMITS["max_lookback_days"]
             elif extraction.time_range.reference_type == TimeReference.UNSPECIFIED:
                 days_back = 30
-            
+
             time_range = TimeRange(
                 start=today - timedelta(days=days_back),
                 end=today,
                 granularity="day",
             )
-        
+
         filters = None
         if extraction.filters:
             from apps.core.src.agent.graphs.query.models import Filters
@@ -174,14 +166,14 @@ class QueryParser:
                 transaction_type=extraction.filters.transaction_type,
                 account_filter=extraction.filters.bank,
             )
-        
+
         aggregation = None
         if extraction.aggregation:
             aggregation = Aggregation(
                 type=extraction.aggregation.type or "sum",
                 group_by=extraction.aggregation.group_by,
             )
-        
+
         return NormalizedQuery(
             intent=intent_map.get(extraction.intent, QueryIntent.TRANSACTION_LIST),
             time_range=time_range or TimeRange(start=today - timedelta(days=30), end=today, granularity="day"),
