@@ -13,7 +13,6 @@ from apps.core.src.agent.graphs.transfer.models.types import (
 )
 from shared.clients.whatsapp.client import WhatsAppClient
 from shared.formatters.transfer import format_transfer_pending_message
-from shared.queue import redis_queue
 from shared.repositories import BeneficiaryRepository
 from shared.repositories.actionable_message_repository import (
     ActionableMessageRepository,
@@ -70,30 +69,6 @@ class TransferCompletionService:
         Pushes receipt to queue for async processing by receipt worker.
         """
         try:
-            logger.info(
-                "queuing_receipt_job",
-                phone=phone_number,
-                transaction_id=transfer_result.get("transaction_id"),
-            )
-
-            import uuid
-
-            signal_key = f"receipt:signal:{transaction_id}" if transaction_id else f"receipt:signal:{uuid.uuid4()}"
-
-            payload = {
-                "phone_number": phone_number,
-                "transaction_reference": transfer_result.get("transaction_id", transaction_id) or "N/A",
-                **transfer_data,
-            }
-
-            receipt_job = {
-                "payload": payload,
-                "signal_key": signal_key,
-            }
-            await redis_queue.enqueue("banking:receipt_jobs", receipt_job)
-
-            logger.info("receipt_job_queued", phone=phone_number, signal_key=signal_key)
-
             if transaction_id:
                 with UnitOfWork() as uow:
                     if uow.transactions:
@@ -101,11 +76,6 @@ class TransferCompletionService:
                         if txn:
                             uow.transactions.update(txn, receipt_sent=False)
                             uow.commit()
-
-            try:
-                await self.redis_client.blpop(signal_key, timeout=20)
-            except Exception as e:
-                logger.warning("receipt_signal_wait_error", error=str(e))
 
             if self.beneficiary_suggestion_service:
                 recipient = transfer_data.get("recipient", {})
