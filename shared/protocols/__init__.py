@@ -1,7 +1,7 @@
 """Protocol definitions for agent services."""
 
 from shared.protocols.services import (
-    AccountManagementServiceProtocol,
+    AccountServiceProtocol,
     AirtimeServiceProtocol,
     DataServiceProtocol,
     FAQServiceProtocol,
@@ -15,7 +15,7 @@ __all__ = [
     "AirtimeServiceProtocol",
     "DataServiceProtocol",
     "QueryServiceProtocol",
-    "AccountManagementServiceProtocol",
+    "AccountServiceProtocol",
     "SupportServiceProtocol",
     "FAQServiceProtocol",
 ]
