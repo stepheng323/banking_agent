@@ -70,3 +70,10 @@ class AirtimeEntityExtractor:
         if isinstance(result, AirtimeExtractionResult):
             return result
         return AirtimeExtractionResult.model_validate(result)
+
+    async def run(self, state: dict[str, Any]) -> dict[str, Any]:
+        """Adapter for pipeline node usage."""
+        text = state.get("message", "")
+        # Pass the whole state as context so beneficiaries/history can be used
+        result = await self.extract(text, smart_context=state)
+        return result.model_dump()
