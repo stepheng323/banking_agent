@@ -2,9 +2,8 @@
 
 import asyncio
 
-from apps.core.src.agent.graphs.airtime.executor import AirtimeExecutor
+from typing import Any
 from apps.core.src.agent.graphs.data.executor import DataExecutor
-from apps.core.src.agent.graphs.transfer.services.executor import TransferExecutor
 from shared.queue.redis_queue import RedisQueue
 from shared.utils.logging import get_logger
 
@@ -17,8 +16,8 @@ class TransactionConsumer:
     def __init__(
         self,
         redis_queue: RedisQueue,
-        transfer_executor: TransferExecutor,
-        airtime_executor: AirtimeExecutor,
+        transfer_executor: Any | None,
+        airtime_executor: Any | None,
         data_executor: DataExecutor | None,
     ):
         """

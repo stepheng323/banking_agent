@@ -3,8 +3,6 @@ from langchain_openai import ChatOpenAI
 from apps.core.src.agent.graphs.__shared__.beneficiary.suggestion_service import BeneficiarySuggestionService
 from apps.core.src.agent.graphs.account.service import AccountService
 from apps.core.src.agent.graphs.airtime import AirtimeService
-from apps.core.src.agent.graphs.airtime.completion import AirtimeCompletionService
-from apps.core.src.agent.graphs.airtime.executor import AirtimeExecutor
 from apps.core.src.agent.graphs.data.completion import DataCompletionService
 from apps.core.src.agent.graphs.data.executor import DataExecutor
 from apps.core.src.agent.graphs.data.service import DataService
@@ -13,8 +11,6 @@ from apps.core.src.agent.graphs.onboarding.service import OnboardingService
 from apps.core.src.agent.graphs.query import QueryService
 from apps.core.src.agent.graphs.support import SupportService
 from apps.core.src.agent.graphs.transfer import TransferService as AgentTransferService
-from apps.core.src.agent.graphs.transfer.services.completion import TransferCompletionService
-from apps.core.src.agent.graphs.transfer.services.executor import TransferExecutor
 from apps.core.src.agent.orchestrator import OrchestratorAgent
 from apps.core.src.agent.orchestrator.config import OrchestratorDependencies
 from apps.core.src.agent.orchestrator.services import MediaService
@@ -59,14 +55,6 @@ def setup_dependencies() -> tuple[MessageConsumer, TransactionConsumer, FlowEven
     beneficiary_suggestion_service = BeneficiarySuggestionService(
         whatsapp_client=whatsapp_client,
         redis_client=shared_redis,
-    )
-
-    transfer_completion_service = TransferCompletionService(
-        whatsapp_client=whatsapp_client,
-        redis_client=shared_redis,
-        beneficiary_repository=beneficiary_repository,
-        actionable_message_repo=actionable_message_repository,
-        beneficiary_suggestion_service=beneficiary_suggestion_service,
     )
 
     llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
@@ -126,6 +114,7 @@ def setup_dependencies() -> tuple[MessageConsumer, TransactionConsumer, FlowEven
         user_repo=user_repository,
         banking_provider=banking_provider,
         bank_cache=bank_cache_service,
+        transaction_repo=transaction_repository,
     )
 
     agent_airtime_service = AirtimeService(
@@ -186,12 +175,6 @@ def setup_dependencies() -> tuple[MessageConsumer, TransactionConsumer, FlowEven
         messaging_client=whatsapp_client,
     )
 
-    airtime_completion_service = AirtimeCompletionService(
-        whatsapp_client=whatsapp_client,
-        redis_client=shared_redis,
-        actionable_message_repo=actionable_message_repository,
-        beneficiary_suggestion_service=beneficiary_suggestion_service,
-    )
     data_completion_service = DataCompletionService(
         whatsapp_client=whatsapp_client,
         redis_client=shared_redis,
@@ -199,14 +182,12 @@ def setup_dependencies() -> tuple[MessageConsumer, TransactionConsumer, FlowEven
         beneficiary_suggestion_service=beneficiary_suggestion_service,
     )
 
-    airtime_executor = AirtimeExecutor(airtime_service=airtime_completion_service)
-    transfer_executor = TransferExecutor(transfer_service=transfer_completion_service)
     data_executor = DataExecutor(data_service=data_completion_service)
 
     transaction_consumer = TransactionConsumer(
         redis_queue=redis_queue,
-        transfer_executor=transfer_executor,
-        airtime_executor=airtime_executor,
+        transfer_executor=None,
+        airtime_executor=None,
         data_executor=data_executor,
     )
 
