@@ -11,7 +11,7 @@ from shared.services.task_queue import TaskQueueService
 from shared.utils.logging import get_logger
 
 if TYPE_CHECKING:
-    from apps.core.src.agent.graphs.account_management.service import AccountManagementService
+    from apps.core.src.agent.graphs.account.service import AccountService
     from apps.core.src.agent.graphs.airtime.service import AirtimeService
     from apps.core.src.agent.graphs.data.service import DataService
     from apps.core.src.agent.graphs.query import QueryService
@@ -34,7 +34,7 @@ class BatchService:
         data_service: Optional["DataService"] = None,
         query_service: Optional["QueryService"] = None,
         user_cache: Optional["UserDataCache"] = None,
-        account_management_service: Optional["AccountManagementService"] = None,
+        account_service: Optional["AccountService"] = None,
     ):
         self.whatsapp_client = whatsapp_client
         self.task_queue_service = task_queue_service
@@ -44,7 +44,7 @@ class BatchService:
         self.data_service = data_service
         self.query_service = query_service
         self.user_cache = user_cache
-        self.account_management_service = account_management_service
+        self.account_service = account_service
         self.redis_client = RedisClient.get_client()
 
     async def resume_after_pin_verification(
@@ -98,7 +98,7 @@ class BatchService:
                 queue=self.queue,
                 query_service=self.query_service,
                 user_cache=self.user_cache,
-                account_management_service=self.account_management_service,
+                account_service=self.account_service,
             )
         )
 
@@ -126,7 +126,7 @@ class BatchService:
                 queue=self.queue,
                 query_service=self.query_service,
                 user_cache=self.user_cache,
-                account_management_service=self.account_management_service,
+                account_service=self.account_service,
             )
         )
 

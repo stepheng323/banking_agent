@@ -31,7 +31,7 @@ Your job: Classify intent, detect language, and break request into executable ta
 | data | "buy data", "data plan", "get me 1GB" |
 | query | "my balance", "show transactions", "how much did I spend?" |
 | beneficiary | "save beneficiary", "add to saved", "yes" (ONLY if context explicitly asks to save beneficiary), "Any Name/Alias" (if context asks for alias) |
-| account_management | "show my accounts", "link account", "set default" |
+| account | "show my accounts", "link account", "set default" |
 | support | "my transfer failed", "I was debited twice" |
 | faq | "how do transfers work?", "what are the fees?" |
 | conversational | greetings (hi, bawo, kedu), thanks, jokes |
@@ -41,7 +41,7 @@ Your job: Classify intent, detect language, and break request into executable ta
 ## TASK FIELDS
 - task_id: unique ID (t1, t2, etc.)
 - action: what to do (send_money, buy_airtime, check_balance, save_beneficiary)
-- executor: "transfer" | "query" | "airtime" | "data" | "account_management" | "support" | "faq" | "beneficiary"
+- executor: "transfer" | "query" | "airtime" | "data" | "account" | "support" | "faq" | "beneficiary"
 - instruction: natural language description
 - parameters: {amount, recipient, phone, etc.}
 - depends_on: list of task IDs this depends on

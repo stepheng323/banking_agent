@@ -28,7 +28,7 @@ class OrchestratorAgent:
             airtime_service=self.deps.airtime_service,
             query_service=self.deps.query_service,
             data_service=self.deps.data_service,
-            account_management_service=self.deps.account_management_service,
+            account_service=self.deps.account_service,
             support_service=self.deps.support_service,
             faq_service=self.deps.faq_service,
             user_cache=self.deps.user_cache,
@@ -68,7 +68,6 @@ class OrchestratorAgent:
         """
         self.message_type = message_type
 
-        # 1. Media Processing
         if self.message_type == "audio" and media_id:
             raw_text = await self.deps.media_service.process_audio(media_id)
             if raw_text:
@@ -96,9 +95,14 @@ class OrchestratorAgent:
         response_text = handler_output.get("final_response")
         outbox = handler_output.get("outbox", [])
 
-        final_response = response_text or "I'm sorry, I'm having trouble processing that right now."
+        final_response = response_text
+        if not final_response and not outbox:
+            final_response = "I'm sorry, I'm having trouble processing that right now."
 
         create_background_task(self.context_manager.add_conversation_turn(phone_number, "user", text))
-        create_background_task(self.context_manager.add_conversation_turn(phone_number, "assistant", final_response))
+        if final_response:
+            create_background_task(
+                self.context_manager.add_conversation_turn(phone_number, "assistant", final_response)
+            )
 
         return {"text": final_response, "outbox": outbox}

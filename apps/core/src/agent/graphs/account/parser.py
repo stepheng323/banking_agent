@@ -10,8 +10,8 @@ from shared.utils.logging import get_logger
 logger = get_logger(__name__)
 
 
-class AccountManagementIntent(BaseModel):
-    """Structured output for account management intent."""
+class AccountIntent(BaseModel):
+    """Structured output for account intent."""
 
     action: Literal["list", "set_default", "unlink", "link", "unknown"] = Field(
         description="The action to perform: 'list', 'set_default', 'unlink', 'link', or 'unknown'"
@@ -23,13 +23,13 @@ class AccountManagementIntent(BaseModel):
     language: str | None = Field(default="english", description="Detected language of the user")
 
 
-class AccountManagementParser:
-    """Parses natural language into structured account management intents."""
+class AccountParser:
+    """Parses natural language into structured account intents."""
 
     def __init__(self, llm: ChatOpenAI):
         self.llm = llm
 
-    async def parse(self, text: str) -> AccountManagementIntent:
+    async def parse(self, text: str) -> AccountIntent:
         """
         Parse user text into structured intent.
 
@@ -37,10 +37,10 @@ class AccountManagementParser:
             text: User's input text
 
         Returns:
-            AccountManagementIntent object
+            AccountIntent object
         """
         system_prompt = (
-            "You are an intent parser for a banking assistant's account management module. "
+            "You are an intent parser for a banking assistant's account module. "
             "Your job is to extract the user's intent and relevant parameters from their message. "
             "Support English, Pidgin, Hausa, Yoruba, Igbo, and French.\n\n"
             "**ACTIONS:**\n"
@@ -61,18 +61,16 @@ class AccountManagementParser:
         )
 
         try:
-            structured_llm = self.llm.with_structured_output(AccountManagementIntent)
+            structured_llm = self.llm.with_structured_output(AccountIntent)
 
             result = await structured_llm.ainvoke(
                 [{"role": "system", "content": system_prompt}, {"role": "user", "content": text}]
             )
 
             if isinstance(result, dict):
-                return AccountManagementIntent(**result)
+                return AccountIntent(**result)
             return result
 
         except Exception as e:
-            logger.error(
-                "parse_account_management_error", text=text[:100], error=str(e), exc_info=True
-            )
-            return AccountManagementIntent(action="list")
+            logger.error("parse_account_error", text=text[:100], error=str(e), exc_info=True)
+            return AccountIntent(action="list")

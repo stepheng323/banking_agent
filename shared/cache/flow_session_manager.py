@@ -1,64 +1,60 @@
 """Global flow session management for all transaction types."""
 
-import time
+import json
+from typing import Any
 
 from shared.cache.redis_client import RedisClient
-from shared.config import settings
+from shared.utils.logging import get_logger
+
+logger = get_logger(__name__)
+
+DEFAULT_SESSION_TTL = 3600  # 1 hour
 
 
-async def get_flow_session_age(phone_number: str, flow_type: str) -> float | None:
+class FlowSessionManager:
+    """Manages flow session data in Redis.
+
+    Generic session manager for multi-step flows like:
+    - Onboarding (BVN verification, account selection)
+    - Account linking
+    - Transaction confirmations
     """
-    Get the age of the current flow session in seconds, or None if no active session.
 
-    Args:
-        phone_number: User's phone number
-        flow_type: Type of flow (e.g., "transfer", "airtime")
+    def __init__(
+        self,
+        redis: RedisClient | None = None,
+        key_prefix: str = "flow",
+        ttl: int = DEFAULT_SESSION_TTL,
+    ):
+        self.redis = redis or RedisClient.get_client()
+        self.key_prefix = key_prefix
+        self.ttl = ttl
 
-    Returns:
-        Session age in seconds, or None if no active session
-    """
-    try:
-        redis_client = RedisClient.get_client()
-        key = f"user:{phone_number}:{flow_type}_session_start"
-        session_start = await redis_client.get(key)
-        if session_start:
-            start_time = float(session_start)
-            age = time.time() - start_time
-            return age
-    except Exception as e:
-        print(f"⚠️  Error getting {flow_type} session age: {e}")
-    return None
+    def _session_key(self, flow_token: str) -> str:
+        return f"{self.key_prefix}:{flow_token}"
 
+    async def get_session(self, flow_token: str) -> dict[str, Any]:
+        """Get session data from Redis."""
+        try:
+            data = await self.redis.get(self._session_key(flow_token))
+            if data:
+                return json.loads(data)
+        except Exception as e:
+            logger.error("get_session_error", error=str(e))
+        return {}
 
-async def start_flow_session(phone_number: str, flow_type: str) -> None:
-    """
-    Start a new flow session by storing the current timestamp.
+    async def update_session(self, flow_token: str, updates: dict[str, Any]) -> None:
+        """Merge updates into existing session."""
+        try:
+            existing = await self.get_session(flow_token)
+            existing.update(updates)
+            await self.redis.set(self._session_key(flow_token), json.dumps(existing), ex=self.ttl)
+        except Exception as e:
+            logger.error("update_session_error", error=str(e))
 
-    Args:
-        phone_number: User's phone number
-        flow_type: Type of flow (e.g., "transfer", "airtime")
-    """
-    try:
-        redis_client = RedisClient.get_client()
-        key = f"user:{phone_number}:{flow_type}_session_start"
-        await redis_client.set(key, str(time.time()), ex=settings.flow_session_timeout)
-        print(f"🕐 Started {flow_type} session for {phone_number}")
-    except Exception as e:
-        print(f"⚠️  Error starting {flow_type} session: {e}")
-
-
-async def clear_flow_session(phone_number: str, flow_type: str) -> None:
-    """
-    Clear the flow session.
-
-    Args:
-        phone_number: User's phone number
-        flow_type: Type of flow (e.g., "transfer", "airtime")
-    """
-    try:
-        redis_client = RedisClient.get_client()
-        key = f"user:{phone_number}:{flow_type}_session_start"
-        await redis_client.delete(key)
-        print(f"🧹 Cleared {flow_type} session for {phone_number}")
-    except Exception as e:
-        print(f"⚠️  Error clearing {flow_type} session: {e}")
+    async def delete_session(self, flow_token: str) -> None:
+        """Delete session from Redis."""
+        try:
+            await self.redis.delete(self._session_key(flow_token))
+        except Exception as e:
+            logger.error("delete_session_error", error=str(e))

@@ -24,18 +24,15 @@ class TransferHandler(BaseTaskHandler):
     async def execute(self, task: PlannedTask, context: WorkflowContext) -> TaskResult:
         """Execute transfer using TransferAuthorization directly."""
         try:
-            # Validate amount
             amount = task.parameters.get("amount") if task.parameters else None
             is_valid, error_msg, validated_amount = validate_amount_limits(amount, TRANSFER_LIMITS)
             if not is_valid:
                 logger.warning(f"[TRANSFER] Invalid amount: {error_msg}")
                 return self._create_failure_result(task, error_msg or "Invalid amount", ErrorKind.BUSINESS)
 
-            # Get collected data from task queue results
             task_result = context.get_result(task.task_id)
             result_data: dict[str, Any] = task_result.data if task_result else {}
 
-            # If no previous result, try to get from services
             if not result_data:
                 task_queue_service = context.task_queue_service
                 if task_queue_service:
@@ -45,7 +42,6 @@ class TransferHandler(BaseTaskHandler):
             account_resolved = result_data.get("account_resolved", {})
             idem_key = self._get_idempotency_key(task, context)
 
-            # Build state for authorization
             state = {
                 "phone_number": context.phone_number,
                 "idempotency_key": idem_key,
@@ -60,7 +56,6 @@ class TransferHandler(BaseTaskHandler):
                 "narration": task.parameters.get("narration") if task.parameters else None,
             }
 
-            # Execute directly (Batch transfers are pre-authorized)
             payload = {
                 "type": "transfer",
                 "idempotency_key": idem_key,
@@ -73,7 +68,6 @@ class TransferHandler(BaseTaskHandler):
 
             await context.queue.enqueue("transfers", payload)
 
-            # Mimic result state for compatibility
             result_state = {"transfer_status": "authorized", "transaction_id": idem_key}
 
             if result_state.get("transfer_status") == "authorized":

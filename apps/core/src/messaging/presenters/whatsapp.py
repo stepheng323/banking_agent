@@ -4,6 +4,7 @@ from apps.core.src.agent.orchestrator.intents import (
     RequestAuth,
     RequestConfirmation,
     Say,
+    ShowFlow,
     ShowReceipt,
     UiIntent,
 )
@@ -33,6 +34,8 @@ class WhatsAppPresenter(Presenter):
                     await self._present_confirmation(intent, context)
                 elif isinstance(intent, ShowReceipt):
                     await self._present_receipt(intent, context)
+                elif isinstance(intent, ShowFlow):
+                    await self._present_flow(intent, context)
                 # Future: Handle other intents (Ask, ShowOptions, etc.)
                 else:
                     logger.warning("unsupported_intent", type=type(intent).__name__)
@@ -128,3 +131,15 @@ class WhatsAppPresenter(Presenter):
                 to=context.phone_number,
                 text="\n".join(lines),
             )
+
+    async def _present_flow(self, intent: ShowFlow, context: PresentationContext) -> None:
+        supports_flows = context.capabilities.get("flows", False)
+        if supports_flows and intent.flow_id:
+            await self.client.send_flow(
+                to=context.phone_number,
+                flow_id=intent.flow_id,
+                flow_config=intent.flow_config,
+            )
+        else:
+            fallback = intent.fallback_text or "This action requires flow support on your channel."
+            await self.client.send_text(to=context.phone_number, text=fallback)

@@ -1,6 +1,6 @@
 """Graph module exports - all graphs expose service facades."""
 
-from .account_management import AccountManagementParser
+from .account.parser import AccountParser
 from .airtime import AirtimeService
 from .data import DataService
 from .query import QueryService
@@ -13,5 +13,5 @@ __all__ = [
     "DataService",
     "QueryService",
     "SupportService",
-    "AccountManagementParser",
+    "AccountParser",
 ]

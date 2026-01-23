@@ -15,7 +15,7 @@ from apps.core.src.agent.shared.batch.workflow import (
     compute_approval_hash,
 )
 from apps.core.src.agent.shared.batch.workflow.handlers import (
-    AccountManagementHandler,
+    AccountHandler,
     AirtimeHandler,
     DataHandler,
     QueryHandler,
@@ -32,7 +32,7 @@ from shared.utils.logging import get_logger
 logger = get_logger(__name__)
 
 if TYPE_CHECKING:
-    from apps.core.src.agent.graphs.account_management.service import AccountManagementService
+    from apps.core.src.agent.graphs.account.service import AccountService
     from apps.core.src.agent.graphs.query import QueryService
     from shared.cache.user_data import UserDataCache
 
@@ -44,7 +44,7 @@ def _build_handler_registry() -> WorkflowHandlerRegistry:
     registry.register("airtime", AirtimeHandler())
     registry.register("data", DataHandler())
     registry.register("query", QueryHandler())
-    registry.register("manage_accounts", AccountManagementHandler())
+    registry.register("account", AccountHandler())
     return registry
 
 
@@ -136,7 +136,7 @@ async def execute_batch_dag(
     queue: RedisQueue,
     query_service: "QueryService | None" = None,
     user_cache: "UserDataCache | None" = None,
-    account_management_service: "AccountManagementService | None" = None,
+    account_service: "AccountService | None" = None,
 ) -> dict[str, Any]:
     """
     Execute all tasks using the DAG-based workflow executor.
@@ -154,7 +154,7 @@ async def execute_batch_dag(
         queue: Redis queue for background jobs
         query_service: Optional query service for balance checks
         user_cache: Optional user data cache
-        account_management_service: Optional account management service
+        account_service: Optional account service
 
     Returns:
         Dict with completed, failed, blocked, skipped counts and workflow result
@@ -243,8 +243,8 @@ async def execute_batch_dag(
             context.register_service("query_service", query_service)
         if user_cache:
             context.register_service("user_cache", user_cache)
-        if account_management_service:
-            context.register_service("account_management_service", account_management_service)
+        if account_service:
+            context.register_service("account_service", account_service)
 
         # Execute with DAG executor
         registry = _build_handler_registry()
@@ -344,7 +344,7 @@ async def retry_failed_tasks(
     queue: RedisQueue,
     query_service: "QueryService | None" = None,
     user_cache: "UserDataCache | None" = None,
-    account_management_service: "AccountManagementService | None" = None,
+    account_service: "AccountService | None" = None,
 ) -> dict[str, Any]:
     """
     Retry previously failed tasks.
@@ -391,8 +391,8 @@ async def retry_failed_tasks(
             context.register_service("query_service", query_service)
         if user_cache:
             context.register_service("user_cache", user_cache)
-        if account_management_service:
-            context.register_service("account_management_service", account_management_service)
+        if account_service:
+            context.register_service("account_service", account_service)
 
         # Execute retry
         registry = _build_handler_registry()

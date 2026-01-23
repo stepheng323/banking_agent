@@ -17,7 +17,7 @@ class BvnVerificationService:
 
     async def get_session_data(self, flow_token: str) -> dict:
         """Get session data for a flow token."""
-        return await self.session.get_session_data(flow_token)
+        return await self.session.get_session(flow_token)
 
     async def initiate_account_linking(self, flow_token: str, phone_number: str) -> dict:
         """
@@ -110,18 +110,19 @@ class BvnVerificationService:
             return {"success": False, "error": "BVN verification failed. Please try again."}
 
     async def send_otp(self, flow_token: str, method: str) -> dict:
-        """Send OTP via selected method (phone/email)."""
+        """Send OTP via a selected method (phone/email)."""
+        logger.info("Got here via otp", method=method, flow_token=flow_token)
         if not method:
             return {"success": False, "error": "Please select a verification method."}
 
         session = await self.session.get_session(flow_token)
-        if not session or not session.session_id:
+        logger.info("Session", session=session)
+        session_id = session.get("session_id")
+        if not session_id:
             return {"success": False, "error": "Session expired. Please start over."}
 
-        logger.info("sending_otp", method=method)
-
         try:
-            await mono_client.verify_bvn(session.session_id, method)
+            await mono_client.verify_bvn(session_id, method)
 
             await self.session.update_session(
                 flow_token,
@@ -133,14 +134,14 @@ class BvnVerificationService:
 
             logger.info("otp_sent", method=method)
 
-            return {"success": True, "data": {"bvn": session.bvn}}
+            return {"success": True, "data": {"bvn": session.get("bvn")}}
 
         except MonoApiError as e:
             logger.error("send_otp_failed", error=e.message)
             return {
                 "success": False,
                 "error": "Failed to send OTP. Please try again.",
-                "data": {"methods": session.methods, "bvn": session.bvn},
+                "data": {"methods": session.get("methods"), "bvn": session.get("bvn")},
             }
 
     async def verify_otp(self, flow_token: str, otp: str) -> dict:
@@ -149,11 +150,12 @@ class BvnVerificationService:
             return {"success": False, "error": "Invalid OTP. Please enter a 6-digit code."}
 
         session = await self.session.get_session(flow_token)
-        if not session or not session.session_id:
+        session_id = session.get("session_id")
+        if not session_id:
             return {"success": False, "error": "Session expired. Please start over."}
 
         try:
-            accounts: list[BankAccount] = await mono_client.verify_otp(session.session_id, otp)
+            accounts: list[BankAccount] = await mono_client.verify_otp(session_id, otp)
 
             accounts_data = [
                 {
@@ -168,8 +170,7 @@ class BvnVerificationService:
             ]
 
             accounts_for_flow = [
-                {"id": acc["id"], "title": f"{acc['bank_name']} - {acc['account_number']}"}
-                for acc in accounts_data
+                {"id": acc["id"], "title": f"{acc['bank_name']} - {acc['account_number']}"} for acc in accounts_data
             ]
 
             await self.session.update_session(
@@ -186,7 +187,7 @@ class BvnVerificationService:
             return {
                 "success": True,
                 "data": {
-                    "bvn": session.bvn,
+                    "bvn": session.get("bvn"),
                     "accounts": accounts_for_flow,
                 },
             }

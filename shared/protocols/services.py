@@ -95,11 +95,11 @@ class QueryServiceProtocol(Protocol):
 
 
 @runtime_checkable
-class AccountManagementServiceProtocol(Protocol):
-    """Protocol for account management operations."""
+class AccountServiceProtocol(Protocol):
+    """Protocol for account operations."""
 
-    async def handle(self, phone: str, text: str) -> str:
-        """Handle an account management request."""
+    async def run_simple(self, phone: str, text: str, classification_result: dict[str, Any], **kwargs: Any) -> str:
+        """Execute a simple account request."""
         ...
 
 

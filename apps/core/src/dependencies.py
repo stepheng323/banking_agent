@@ -1,6 +1,6 @@
 from langchain_openai import ChatOpenAI
 
-from apps.core.src.agent.graphs.account_management.service import AccountManagementService
+from apps.core.src.agent.graphs.account.service import AccountService
 from apps.core.src.agent.graphs.airtime import AirtimeService
 from apps.core.src.agent.graphs.airtime.completion import AirtimeCompletionService
 from apps.core.src.agent.graphs.airtime.executor import AirtimeExecutor
@@ -26,11 +26,11 @@ from apps.core.src.queue_consumers import MessageConsumer
 from apps.core.src.queue_consumers.flow_event_consumer import FlowEventConsumer
 from apps.core.src.queue_consumers.transaction_consumer import TransactionConsumer
 from shared.cache.bank_cache import BankCacheService
+from shared.cache.flow_session_manager import FlowSessionManager
 from shared.cache.redis_client import RedisClient
 from shared.cache.user_data import UserDataCache
 from shared.clients.factories.payment import PaymentProviderFactory
 from shared.clients.providers.mono.banking import MonoBankingProvider
-from shared.clients.providers.mono.direct_debit import MonoDirectDebitProvider
 from shared.clients.whatsapp.client import WhatsAppClient
 from shared.database.connection import get_db_session
 from shared.queue.redis_queue import RedisQueue
@@ -60,16 +60,16 @@ def setup_dependencies() -> tuple[MessageConsumer, TransactionConsumer, FlowEven
     llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
 
     banking_provider = MonoBankingProvider()
-    direct_debit_provider = MonoDirectDebitProvider()
 
     bank_cache = BankCacheService(redis_client=shared_redis)
 
-    account_management_service = AccountManagementService(
+    account_service = AccountService(
         account_repo=account_repository,
         user_repo=user_repository,
         llm=llm,
-        direct_debit_provider=direct_debit_provider,
         messaging_client=whatsapp_client,
+        banking_provider=banking_provider,
+        session_manager=FlowSessionManager(key_prefix="onboarding"),
     )
 
     bill_provider = PaymentProviderFactory.get_bill_payment_provider()
@@ -145,7 +145,7 @@ def setup_dependencies() -> tuple[MessageConsumer, TransactionConsumer, FlowEven
         transfer_service=agent_transfer_service,
         airtime_service=agent_airtime_service,
         query_service=query_service,
-        account_management_service=account_management_service,
+        account_service=account_service,
         media_service=media_service,
         data_service=data_service,
         account_repo=account_repository,
@@ -203,7 +203,7 @@ def setup_dependencies() -> tuple[MessageConsumer, TransactionConsumer, FlowEven
         data_service=data_service,
         query_service=query_service,
         user_cache=user_data_cache,
-        account_management_service=account_management_service,
+        account_service=account_service,
         queue=redis_queue,
     )
 

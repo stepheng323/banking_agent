@@ -1,6 +1,6 @@
 """Handlers package for workflow task execution."""
 
-from .account_management import AccountManagementHandler
+from .account import AccountHandler
 from .airtime import AirtimeHandler
 from .base import BaseTaskHandler
 from .data import DataHandler
@@ -13,5 +13,5 @@ __all__ = [
     "AirtimeHandler",
     "DataHandler",
     "QueryHandler",
-    "AccountManagementHandler",
+    "AccountHandler",
 ]

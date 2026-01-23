@@ -1,13 +1,13 @@
-"""Account management capability definitions.
+"""Account capability definitions.
 
-Defines what the account management graph supports and doesn't support.
+Defines what the account graph supports and doesn't support.
 """
 
 from enum import Enum
 
 
 class AccountCapability(str, Enum):
-    """Capabilities for account management."""
+    """Capabilities for account."""
 
     LIST_ACCOUNTS = "list_accounts"
     LINK_ACCOUNT = "link_account"

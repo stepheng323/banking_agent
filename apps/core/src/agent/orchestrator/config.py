@@ -16,7 +16,7 @@ from shared.services.task_queue import TaskQueueService
 
 if TYPE_CHECKING:
     from apps.core.src.agent.graphs.__shared__.beneficiary.suggestion_service import BeneficiarySuggestionService
-    from apps.core.src.agent.graphs.account_management.service import AccountManagementService
+    from apps.core.src.agent.graphs.account.service import AccountService
     from apps.core.src.agent.graphs.airtime import AirtimeService
     from apps.core.src.agent.graphs.data import DataService
     from apps.core.src.agent.graphs.faq import FAQService
@@ -42,7 +42,7 @@ class OrchestratorDependencies:
     transfer_service: "TransferService"
     airtime_service: "AirtimeService"
     query_service: "QueryService"
-    account_management_service: "AccountManagementService"
+    account_service: "AccountService"
     media_service: Any | None = None
     data_service: "DataService | None" = None
     support_service: "SupportService | None" = None

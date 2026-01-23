@@ -1,4 +1,4 @@
-"""Account management task handler."""
+"""Account task handler."""
 
 from typing import TYPE_CHECKING
 
@@ -10,22 +10,22 @@ from ..workflow_context import WorkflowContext
 from .base import BaseTaskHandler
 
 if TYPE_CHECKING:
-    from apps.core.src.agent.graphs.account_management.service import AccountManagementService
+    from apps.core.src.agent.graphs.account.service import AccountService
 
 logger = get_logger(__name__)
 
 
-class AccountManagementHandler(BaseTaskHandler):
-    """Handler for account management tasks."""
+class AccountHandler(BaseTaskHandler):
+    """Handler for account tasks."""
 
     async def execute(self, task: PlannedTask, context: WorkflowContext) -> TaskResult:
-        """Execute account management using AccountManagementService."""
         try:
-            account_service: AccountManagementService | None = context.get_service("account_management_service")
-            if not account_service:
-                return self._create_failure_result(task, "Account management service not available", ErrorKind.BUSINESS)
+            account_service: AccountService | None = context.get_service("account_service")
+            if not account_service or not getattr(account_service, "worker", None):
+                return self._create_failure_result(task, "Account service or worker not available", ErrorKind.BUSINESS)
 
-            # Get user context
+            worker = account_service.worker
+
             user_cache = context.get_service("user_cache")
             user_ctx = {}
             if user_cache:
@@ -33,22 +33,25 @@ class AccountManagementHandler(BaseTaskHandler):
                 accounts = user_data.get("accounts", []) if user_data else []
                 user_ctx = {"accounts": accounts}
 
-            # Execute task
-            task_message = task.instruction or "show accounts"
-            result = await account_service.run_simple(context.phone_number, task_message, user_context=user_ctx)
+            result = await worker.run(
+                payload=task.parameters.model_dump() if task.parameters else {},
+                context=user_ctx,
+                user_message=task.instruction,
+            )
 
-            # Send result to user if whatsapp client available
+            response = result.response or ""
+
             if context.whatsapp_client and result:
                 await context.whatsapp_client.send_text(context.phone_number, result)
 
             return self._create_success_result(
                 task,
                 data={
-                    "result": result,
-                    "action": task_message,
+                    "result": response,
+                    "action": task.instruction or "list",
                 },
             )
 
         except Exception as e:
-            logger.error(f"[ACCOUNT_MGMT] Error: {e}", exc_info=True)
+            logger.error(f"[ACCOUNT] Error: {e}", exc_info=True)
             return self._create_failure_result(task, str(e), ErrorKind.UNKNOWN)

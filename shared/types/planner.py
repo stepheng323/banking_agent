@@ -32,7 +32,7 @@ class PlannedTask(BaseModel):
 
     task_id: str = Field(..., description="Stable ID referenced by depends_on")
     action: str
-    executor: Literal["transfer", "query", "airtime", "data", "account_management", "support", "faq", "beneficiary"]
+    executor: Literal["transfer", "query", "airtime", "data", "account", "support", "faq", "beneficiary"]
     instruction: str
     description: str | None = None
     parameters: TaskParameters = Field(default_factory=TaskParameters)
@@ -50,7 +50,7 @@ class PlannerOutput(BaseModel):
 
     # Classification fields
     primary_intent: str = Field(
-        description="Primary intent: transfer, airtime, data, query, account_management, support, faq, conversational, cancel, mixed"
+        description="Primary intent: transfer, airtime, data, query, account, support, faq, conversational, cancel, mixed"
     )
     response: str = Field(default="", description="Short acknowledgment message for the user")
     confidence: float = Field(default=0.9, description="Confidence in classification (0.0-1.0)")

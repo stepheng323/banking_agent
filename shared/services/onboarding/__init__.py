@@ -27,7 +27,7 @@ class ServiceResult:
     error: str | None = None
 
 
-_session_manager = SessionManager()
+_session_manager = SessionManager(key_prefix="onboarding")
 _mandate_service = MandateService()
 _bvn_service = BvnVerificationService(_session_manager)
 _account_service = AccountLinkingService(_session_manager, _mandate_service)

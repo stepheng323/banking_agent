@@ -101,6 +101,7 @@ class MessageConsumer:
             RequestConfirmation,
             Say,
             ShowReceipt,
+            ShowFlow,
             UiIntent,
         )
         from apps.core.src.messaging.presenters.base import PresentationContext
@@ -162,8 +163,13 @@ class MessageConsumer:
                     ShowReceipt(task_id="unknown", receipt={"url": item["url"]}, caption=item.get("caption", ""))
                 )
             elif msg_type == "flow":
-                # Direct pass-through disallowed in strict model, but maybe needed for other flows?
-                pass
+                intents.append(
+                    ShowFlow(
+                        flow_id=item.get("flow_id", ""),
+                        flow_config=item.get("flow_config", {}),
+                        fallback_text=item.get("fallback_text", ""),
+                    )
+                )
 
         response_text = orchestrator_output.get("text")
 
