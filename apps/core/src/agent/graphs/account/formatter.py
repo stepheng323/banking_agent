@@ -12,15 +12,12 @@ STATUS_ICONS = {
 }
 
 
-class AccountManagementFormatter:
+class AccountFormatter:
     @staticmethod
     def format_account_list(accounts: list[Any]) -> str:
         """Format list of accounts for display."""
         if not accounts:
-            return (
-                "You don't have any linked bank accounts yet.\n\n"
-                "Say 'link account' to connect your bank."
-            )
+            return "You don't have any linked bank accounts yet.\n\nSay 'link account' to connect your bank."
 
         lines = ["*Your Bank Accounts*\n"]
 

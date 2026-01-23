@@ -6,27 +6,27 @@ from typing import Any
 
 from langchain_openai import ChatOpenAI
 
-from apps.core.src.agent.graphs.account_management.formatter import AccountManagementFormatter
-from apps.core.src.agent.graphs.account_management.parser import (
-    AccountManagementIntent,
-    AccountManagementParser,
+from apps.core.src.agent.graphs.account.formatter import AccountFormatter
+from apps.core.src.agent.graphs.account.parser import (
+    AccountParser,
 )
-from apps.core.src.agent.graphs.interfaces import IAgentService
+from apps.core.src.agent.graphs.account.worker import AccountWorker
+from shared.cache.flow_session_manager import FlowSessionManager
 from shared.cache.user_data import UserDataCache
-from shared.clients.abstractions.direct_debit import DirectDebitProvider
+from shared.clients.abstractions.banking import BankingDataProvider
 from shared.clients.abstractions.messaging import MessagingClient
 from shared.config import settings
 from shared.models.account import Account
 from shared.repositories.account_repository import AccountRepository
 from shared.repositories.unit_of_work import UnitOfWork
 from shared.repositories.user_repository import UserRepository
-from shared.services.onboarding import bvn_service
+from shared.services.onboarding.session import OnboardingStep
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
 
 
-class AccountManagementService(IAgentService):
+class AccountService:
     """Service for managing user bank accounts (link, unlink, list, set default)."""
 
     def __init__(
@@ -35,7 +35,8 @@ class AccountManagementService(IAgentService):
         user_repo: UserRepository,
         llm: ChatOpenAI,
         messaging_client: MessagingClient,
-        direct_debit_provider: DirectDebitProvider | None = None,
+        banking_provider: BankingDataProvider,
+        session_manager: FlowSessionManager,
     ):
         """
         Initialize account management service.
@@ -50,123 +51,10 @@ class AccountManagementService(IAgentService):
         self.user_repo = user_repo
         self.llm = llm
         self.messaging_client = messaging_client
-        self.direct_debit_provider = direct_debit_provider
-        self.parser = AccountManagementParser(llm)
-
-    async def run_simple(
-        self,
-        phone: str,
-        text: str,
-        classification_result: dict | None = None,
-        image_data: str | None = None,
-        quoted_data: dict | None = None,
-        user_context: dict | None = None,
-    ) -> str:
-        """
-        Handle account management intent.
-
-        Args:
-            phone: User's phone number
-            text: User's command text
-            classification_result: Optional classification
-            user_context: User context (accounts, etc.)
-
-        Returns:
-            Response message
-        """
-        user_ctx = user_context or {}
-        from apps.core.src.agent.graphs.account_management.capabilities import (
-            check_capabilities,
-            derive_requirements,
-            generate_limitation_message,
-        )
-
-        requires = derive_requirements(text)
-        missing = check_capabilities(requires)
-
-        if missing:
-            limitation_msg = generate_limitation_message(missing)
-            logger.info(
-                "account_capability_limitation",
-                missing=[cap.value for cap in missing],
-            )
-            return limitation_msg
-
-        profile = user_ctx.get("profile")
-        if not profile:
-            return "User not found."
-        user_id = str(profile["id"])
-
-        parsed: AccountManagementIntent = await self.parser.parse(text)
-        action = parsed.action
-        identifier = parsed.identifier
-
-        response = ""
-        if action == "unlink":
-            if identifier:
-                response = await self.unlink_account(user_id, identifier)
-            else:
-                response = (
-                    "Which account would you like to unlink? Please say 'unlink [bank name]' or 'unlink [number]'."
-                )
-
-        elif action == "set_default":
-            if identifier:
-                response = await self.set_default(user_id, identifier)
-            else:
-                response = "Which account should be your default? Say 'set [bank name] as default'."
-
-        elif action == "link":
-            response = await self.link_account(phone)
-
-        elif action == "list":
-            accounts = user_ctx.get("accounts")
-            if accounts:
-                response = AccountManagementFormatter.format_account_list(accounts)
-            else:
-                response = await self.list_accounts(user_id)
-
-        else:
-            accounts = user_ctx.get("accounts")
-            if accounts:
-                response = AccountManagementFormatter.format_account_list(accounts)
-            else:
-                response = await self.list_accounts(user_id)
-
-        language = user_ctx.get("language")
-        if language and language.lower() not in ("english", "en"):
-            return await self._translate_response(response, language)
-
-        return response
-
-    async def preflight(
-        self,
-        phone: str,
-        text: str,
-        params: dict[str, Any] | None = None,
-    ) -> dict[str, Any]:
-        """Validate and enrich parameters before execution.
-
-        Account management doesn't require preflight validation,
-        so this returns ready=True.
-        """
-        return {
-            "ready": True,
-            "missing_fields": [],
-            "enriched_params": params or {},
-            "question": None,
-        }
-
-    async def clear_checkpoint(self, phone_number: str) -> None:
-        """Clear account management flow checkpoint for a user.
-
-        Account management doesn't use checkpoints, so this is a no-op.
-
-        Args:
-            phone_number: User's phone number
-        """
-        # Account management doesn't use checkpoints
-        pass
+        self.banking_provider = banking_provider
+        self.session_manager = session_manager
+        self.parser = AccountParser(llm)
+        self.worker = AccountWorker(self)
 
     async def _translate_response(self, text: str, language: str) -> str:
         """Translate response to user's preferred language using LLM."""
@@ -185,66 +73,68 @@ class AccountManagementService(IAgentService):
         except Exception:
             return text
 
-    async def link_account(self, phone_number: str) -> str:
-        """
-        Send account linking flow to link a new account.
-
-        Uses stored BVN - flow starts at METHOD_SELECTION (OTP verification).
-
-        Args:
-            phone_number: User's phone number
-
-        Returns:
-            Instruction message
-        """
+    async def build_link_account_flow(self, context: dict[str, Any]) -> dict[str, Any]:
+        """Build flow config for account linking without sending it."""
         flow_id = settings.account_linking_flow_id
-
         if not flow_id:
-            return "Sorry, account linking is temporarily unavailable. Please contact support."
+            return {"error": "Sorry, account linking is temporarily unavailable. Please contact support."}
 
+        phone_number = context.get("phone_number", "")
         timestamp = int(time.time())
         flow_token = f"link-{phone_number}-{timestamp}"
 
-        result = await bvn_service.initiate_account_linking(flow_token, phone_number)
+        profile = context.get("profile") or {}
+        extra_data = profile.get("extra_data") or {}
+        bvn = extra_data.get("bvn")
 
-        if not result["success"]:
-            error_msg = result.get("error", "Failed to start account linking.")
+        if not bvn:
+            return {"error": "BVN not found. Please complete onboarding first."}
+
+        result = await self.banking_provider.initiate_bvn_lookup(bvn)
+        methods = [{"id": m["method"], "title": m["hint"]} for m in result.verification_methods]
+
+        if not result.success:
+            error_msg = result.error_message or "Failed to start account linking."
             logger.error("account_linking_init_failed", phone=phone_number, error=error_msg)
-            return error_msg
+            return {"error": error_msg}
 
-        linking_data = result.get("data", {})
-        methods = linking_data.get("methods", [])
-        bvn = linking_data.get("bvn", "")
+        await self.session_manager.update_session(
+            flow_token,
+            {
+                "phone_number": phone_number,
+                "bvn": bvn,
+                "session_id": result.session_id,
+                "methods": methods,
+                "step": OnboardingStep.METHOD_SELECTION.value,
+                "is_account_linking": True,
+            },
+        )
 
-        if self.messaging_client.supports_flows:
-            await self.messaging_client.send_flow(
-                to=phone_number,
-                flow_id=flow_id,
-                flow_config={
-                    "header": "Link New Account",
-                    "flow_cta": "Continue",
-                    "screen_name": "METHOD_SELECTION",
-                    "flow_token": flow_token,
-                    "text_body": "Tap Continue to link a new bank account.",
-                    "flow_action_payload": {
-                        "screen": "METHOD_SELECTION",
-                        "data": {
-                            "methods": methods,
-                            "bvn": bvn,
-                        },
-                    },
+        flow_config = {
+            "header": "Link New Account",
+            "text_body": "Tap Continue to link a new bank account.",
+            "flow_cta": "Link Account",
+            "screen_name": "METHOD_SELECTION",
+            "flow_token": flow_token,
+            "flow_action_payload": {
+                "screen": "METHOD_SELECTION",
+                "data": {
+                    "methods": methods,
+                    "bvn": result.bvn,
                 },
-            )
-        else:
-            await self.messaging_client.send_text(
-                to=phone_number,
-                text=(
-                    f"To link your account, please visit: https://fusepay.io/link/{flow_token}\n\n"
-                    "(This channel doesn't support interactive forms yet)"
-                ),
-            )
+            },
+        }
 
-        return ""
+        fallback_text = (
+            f"To link your account, please visit: https://fusepay.io/link/{flow_token}\n\n"
+            "(This channel doesn't support interactive forms yet)"
+        )
+
+        return {
+            "flow_id": flow_id,
+            "flow_config": flow_config,
+            "fallback_text": fallback_text,
+        }
 
     async def list_accounts(self, user_id: str) -> str:
         """
@@ -254,10 +144,10 @@ class AccountManagementService(IAgentService):
             user_id: User ID
 
         Returns:
-            Formatted message with account list
+            Formatted message with an account list
         """
         accounts = self.account_repo.get_by_user(user_id)
-        return AccountManagementFormatter.format_account_list(accounts)
+        return AccountFormatter.format_account_list(accounts)
 
     async def set_default(self, user_id: str, account_identifier: str) -> str:
         """
