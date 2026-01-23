@@ -9,7 +9,7 @@ from apps.core.src.agent.graphs.transfer.models.types import (
     TransferPayload,
 )
 from apps.core.src.agent.graphs.transfer.pipeline.base import TransferStep
-from apps.core.src.agent.orchestrator.models.domain import TransferOutcome, TransferResult
+from apps.core.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
 from shared.clients.abstractions.direct_debit import DirectDebitProvider
 from shared.services.funding.planner import FundingPlanner
 from shared.utils.logging import get_logger
@@ -24,11 +24,11 @@ class FundingStep(TransferStep):
         context: TransferContext,
         gates: TransferGates,
         worker_context: Any,
-    ) -> TransferResult:
+    ) -> TransactionResult:
         dd_provider = getattr(worker_context, "dd_provider", None)
         if dd_provider:
             return await plan_transaction_funding(data, context, dd_provider)
-        return TransferResult(outcome=TransferOutcome.OK, patch={})
+        return TransactionResult(outcome=TransactionOutcome.OK, patch={})
 
 
 
@@ -52,10 +52,10 @@ async def plan_transaction_funding(
     payload: TransferPayload,
     ctx: TransferContext,
     dd_provider: DirectDebitProvider,
-) -> TransferResult:
+) -> TransactionResult:
     """Plan funding using shared FundingPlanner."""
     if payload.funding_plan:
-        return TransferResult(outcome=TransferOutcome.OK)
+        return TransactionResult(outcome=TransactionOutcome.OK)
 
     planner = FundingPlanner(direct_debit_provider=dd_provider)
 
@@ -70,11 +70,11 @@ async def plan_transaction_funding(
         )
     except Exception as e:
         logger.error("funding_planning_failed", error=str(e))
-        return TransferResult(outcome=TransferOutcome.FAILED, error="Failed to plan funding.")
+        return TransactionResult(outcome=TransactionOutcome.FAILED, error="Failed to plan funding.")
 
     if not plan.is_sufficient:
-        return TransferResult(
-            outcome=TransferOutcome.FAILED,
+        return TransactionResult(
+            outcome=TransactionOutcome.FAILED,
             error=plan.error or "Insufficient funds.",
         )
 
@@ -89,4 +89,4 @@ async def plan_transaction_funding(
         ],
     }
 
-    return TransferResult(outcome=TransferOutcome.OK, patch={"funding_plan": plan_dict})
+    return TransactionResult(outcome=TransactionOutcome.OK, patch={"funding_plan": plan_dict})

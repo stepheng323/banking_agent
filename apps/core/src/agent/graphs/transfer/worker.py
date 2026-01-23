@@ -4,7 +4,7 @@ Stateless domain worker for Transfer tasks.
 Executes a single pass through the transfer logic pipeline:
 Extract -> Resolve -> Validate -> Confirmation -> Authorization -> Execution.
 
-Returns a standardized TransferResult.
+Returns a standardized TransactionResult.
 """
 
 from types import SimpleNamespace
@@ -25,8 +25,8 @@ from apps.core.src.agent.graphs.transfer.nodes.selection import SourceSelectionS
 from apps.core.src.agent.graphs.transfer.nodes.validation import ValidationStep
 from apps.core.src.agent.graphs.transfer.pipeline.base import TransferPipeline
 from apps.core.src.agent.orchestrator.models.domain import (
-    TransferOutcome,
-    TransferResult,
+    TransactionOutcome,
+    TransactionResult,
 )
 from shared.repositories.transaction_repository import (
     TransactionRepository,
@@ -65,7 +65,7 @@ class TransferWorker:
         context: dict[str, Any],
         user_message: str | None = None,
         pin_verified: bool = False,
-    ) -> TransferResult:
+    ) -> TransactionResult:
         """Execute the transfer pipeline."""
         data = TransferPayload(**payload)
 
@@ -114,8 +114,8 @@ class TransferWorker:
             return await pipeline.run(data, ctx, gates, worker_context)
         except Exception as e:
             logger.error("transfer_pipeline_failed", error=str(e), exc_info=True)
-            return TransferResult(
-                outcome=TransferOutcome.FAILED,
+            return TransactionResult(
+                outcome=TransactionOutcome.FAILED,
                 error=f"Pipeline failed: {str(e)}",
                 retryable=True,
                 patch={"idempotency_key": data.idempotency_key},  # ensure key preservation

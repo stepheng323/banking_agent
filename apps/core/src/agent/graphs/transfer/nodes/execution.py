@@ -10,8 +10,8 @@ from apps.core.src.agent.graphs.transfer.models.types import (
 from apps.core.src.agent.graphs.transfer.nodes.security import require_auth
 from apps.core.src.agent.graphs.transfer.pipeline.base import TransferStep
 from apps.core.src.agent.orchestrator.models.domain import (
-    TransferOutcome,
-    TransferResult,
+    TransactionOutcome,
+    TransactionResult,
 )
 from shared.database.enums import TransactionStatusEnum
 from shared.utils.logging import get_logger
@@ -28,13 +28,13 @@ class ExecutionStep(TransferStep):
         context: TransferContext,
         gates: TransferGates,
         worker_context: Any,
-    ) -> TransferResult:
+    ) -> TransactionResult:
         if not gates.confirmation_confirmed:
-            return TransferResult(outcome=TransferOutcome.OK, patch={})
+            return TransactionResult(outcome=TransactionOutcome.OK, patch={})
 
         res = require_auth(gates)
-        if res.outcome != TransferOutcome.OK:
-            if res.outcome == TransferOutcome.NEEDS_AUTH:
+        if res.outcome != TransactionOutcome.OK:
+            if res.outcome == TransactionOutcome.NEEDS_AUTH:
                 try:
                     key = data.idempotency_key
                     if not worker_context.queue._redis:
@@ -131,11 +131,11 @@ class ExecutionStep(TransferStep):
             if data.source_bank_name:
                 receipt_data["source_bank"] = data.source_bank_name
 
-            return TransferResult(
-                outcome=TransferOutcome.OK,
+            return TransactionResult(
+                outcome=TransactionOutcome.OK,
                 receipt=receipt_data,
                 patch={"transaction_id": transaction_id} if transaction_id else {},
             )
 
         except Exception as e:
-            return TransferResult(outcome=TransferOutcome.FAILED, error=f"Execution failed: {str(e)}", retryable=True)
+            return TransactionResult(outcome=TransactionOutcome.FAILED, error=f"Execution failed: {str(e)}", retryable=True)

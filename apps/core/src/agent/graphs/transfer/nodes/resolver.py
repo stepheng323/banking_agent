@@ -9,7 +9,7 @@ from apps.core.src.agent.graphs.transfer.models.types import (
     TransferPayload,
 )
 from apps.core.src.agent.graphs.transfer.pipeline.base import TransferStep
-from apps.core.src.agent.orchestrator.models.domain import TransferOutcome, TransferResult
+from apps.core.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
 from shared.database.models import Beneficiary
 from shared.utils.logging import get_logger
 
@@ -25,7 +25,7 @@ class ResolutionStep(TransferStep):
         context: TransferContext,
         gates: TransferGates,
         worker_context: Any,
-    ) -> TransferResult:
+    ) -> TransactionResult:
         return await resolve_beneficiary(
             data,
             context,
@@ -39,13 +39,13 @@ async def resolve_beneficiary(
     ctx: TransferContext,
     banking_provider: Any | None = None,
     bank_cache: Any | None = None,
-) -> TransferResult:
+) -> TransactionResult:
     """Resolve recipient name to bank details using BeneficiaryMatcher."""
     if payload.beneficiary_id:
         selected = next((b for b in ctx.beneficiaries if str(b.get("id")) == payload.beneficiary_id), None)
         if selected:
-            return TransferResult(
-                outcome=TransferOutcome.OK,
+            return TransactionResult(
+                outcome=TransactionOutcome.OK,
                 patch={
                     "recipient_account": str(selected.get("account_number")),
                     "recipient_bank_code": str(selected.get("bank_code")),
@@ -56,7 +56,7 @@ async def resolve_beneficiary(
             )
 
     if payload.recipient_resolved_name:
-        return TransferResult(outcome=TransferOutcome.OK)
+        return TransactionResult(outcome=TransactionOutcome.OK)
 
     # 1b. Resolve Bank Code if missing
     if payload.recipient_bank_name and not payload.recipient_bank_code:
@@ -82,8 +82,8 @@ async def resolve_beneficiary(
                 )
                 print(f"DEBUG: Resolution Result: {resolved}")
                 if resolved and resolved.get("success"):
-                    return TransferResult(
-                        outcome=TransferOutcome.OK,
+                    return TransactionResult(
+                        outcome=TransactionOutcome.OK,
                         patch={
                             "recipient_resolved_name": resolved.get("account_name"),
                             "recipient_name": resolved.get("account_name"),  # Ensure name is present
@@ -102,15 +102,15 @@ async def resolve_beneficiary(
         # 2b. If we have an account number, we tried resolution above and failed (or bank was missing)
         if payload.recipient_account:
             if not payload.recipient_bank_code and not payload.recipient_bank_name:
-                return TransferResult(
-                    outcome=TransferOutcome.NEEDS_INPUT,
+                return TransactionResult(
+                    outcome=TransactionOutcome.NEEDS_INPUT,
                     required_fields=["recipient_bank_name"],
                     prompt=f"I have account {payload.recipient_account}, but I need the Bank Name.",
                 )
             # If we have Bank Name but no Code -> Bank Lookup Failed
             if payload.recipient_bank_name and not payload.recipient_bank_code:
-                return TransferResult(
-                    outcome=TransferOutcome.NEEDS_INPUT,
+                return TransactionResult(
+                    outcome=TransactionOutcome.NEEDS_INPUT,
                     required_fields=["recipient_bank_name"],
                     prompt=f"I couldn't find a bank named '{payload.recipient_bank_name}'. Could you verify the name?",
                 )
@@ -118,14 +118,14 @@ async def resolve_beneficiary(
             # If we have Code + Account but still no Name -> Resolution Failed (Network or Invalid Account)
             # We fail gracefully by asking for the name manually, or treating it as a failure?
             # Better to ask for name to allow manual override, but warn.
-            return TransferResult(
-                outcome=TransferOutcome.NEEDS_INPUT,
+            return TransactionResult(
+                outcome=TransactionOutcome.NEEDS_INPUT,
                 required_fields=["recipient_name"],
                 prompt=f"I couldn't verify account {payload.recipient_account} at {payload.recipient_bank_name}. Please provide the Recipient Name to proceed manually.",
             )
 
-        return TransferResult(
-            outcome=TransferOutcome.NEEDS_INPUT,
+        return TransactionResult(
+            outcome=TransactionOutcome.NEEDS_INPUT,
             required_fields=["recipient_name"],
             prompt="Who is the recipient?",
         )
@@ -166,8 +166,8 @@ async def resolve_beneficiary(
         # Confirm intent: User likely meant this account if they specified the bank
         # and didn't provide an external account number
         if not payload.recipient_account:
-            return TransferResult(
-                outcome=TransferOutcome.OK,
+            return TransactionResult(
+                outcome=TransactionOutcome.OK,
                 patch={
                     "recipient_account": str(candidate_account.get("account_number")),
                     "recipient_bank_code": str(candidate_account.get("bank_code")),
@@ -184,8 +184,8 @@ async def resolve_beneficiary(
     status, single, candidates = matcher.match(payload.recipient_name, beneficiaries)
 
     if status == "single" and single:
-        return TransferResult(
-            outcome=TransferOutcome.OK,
+        return TransactionResult(
+            outcome=TransactionOutcome.OK,
             patch={
                 "recipient_account": str(single.account_number),
                 "recipient_bank_code": str(single.bank_code),
@@ -198,8 +198,8 @@ async def resolve_beneficiary(
             {"id": str(b.id), "label": f"{b.account_name or b.alias} • {b.bank_name} • **{str(b.account_number)[-4:]}"}
             for b in candidates
         ]
-        return TransferResult(
-            outcome=TransferOutcome.NEEDS_INPUT,
+        return TransactionResult(
+            outcome=TransactionOutcome.NEEDS_INPUT,
             required_fields=["beneficiary_id"],
             prompt="Which recipient did you mean?",
             details={
@@ -215,10 +215,10 @@ async def resolve_beneficiary(
         missing.append("bank name")
 
     if missing:
-        return TransferResult(
-            outcome=TransferOutcome.NEEDS_INPUT,
+        return TransactionResult(
+            outcome=TransactionOutcome.NEEDS_INPUT,
             required_fields=["recipient_account", "recipient_bank_name"],
             prompt=f"I couldn't find {payload.recipient_name}. Please provide {' and '.join(missing)}.",
         )
 
-    return TransferResult(outcome=TransferOutcome.OK)
+    return TransactionResult(outcome=TransactionOutcome.OK)

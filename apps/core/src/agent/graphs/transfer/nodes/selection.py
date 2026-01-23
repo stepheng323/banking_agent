@@ -8,7 +8,7 @@ from apps.core.src.agent.graphs.transfer.models.types import (
     TransferPayload,
 )
 from apps.core.src.agent.graphs.transfer.pipeline.base import TransferStep
-from apps.core.src.agent.orchestrator.models.domain import TransferOutcome, TransferResult
+from apps.core.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
 from shared.formatters.accounts import format_accounts_list
 
 
@@ -21,33 +21,33 @@ class SourceSelectionStep(TransferStep):
         context: TransferContext,
         gates: TransferGates,
         worker_context: Any,
-    ) -> TransferResult:
+    ) -> TransactionResult:
         return await select_source_account(data, context)
 
 
 async def select_source_account(
     payload: TransferPayload,
     ctx: TransferContext,
-) -> TransferResult:
+) -> TransactionResult:
     """Select source account if not provided."""
     if payload.source_account_id:
         if not payload.source_account_name:
             acc = next((a for a in ctx.accounts if str(a.get("id")) == payload.source_account_id), None)
             if acc:
-                return TransferResult(
-                    outcome=TransferOutcome.OK,
+                return TransactionResult(
+                    outcome=TransactionOutcome.OK,
                     patch={"source_account_name": acc.get("account_name")},
                 )
-        return TransferResult(outcome=TransferOutcome.OK)
+        return TransactionResult(outcome=TransactionOutcome.OK)
 
     accounts = ctx.accounts
     if not accounts:
-        return TransferResult(outcome=TransferOutcome.FAILED, error="No accounts available.")
+        return TransactionResult(outcome=TransactionOutcome.FAILED, error="No accounts available.")
 
     if len(accounts) == 1:
         acc = accounts[0]
-        return TransferResult(
-            outcome=TransferOutcome.OK,
+        return TransactionResult(
+            outcome=TransactionOutcome.OK,
             patch={
                 "source_account_id": str(acc.get("id")),
                 "source_bank_name": acc.get("bank_name"),
@@ -58,8 +58,8 @@ async def select_source_account(
 
     default = next((a for a in accounts if a.get("is_default")), None)
     if default:
-        return TransferResult(
-            outcome=TransferOutcome.OK,
+        return TransactionResult(
+            outcome=TransactionOutcome.OK,
             patch={
                 "source_account_id": str(default.get("id")),
                 "source_bank_name": default.get("bank_name"),
@@ -72,8 +72,8 @@ async def select_source_account(
         index = payload.source_account_index - 1
         if 0 <= index < len(accounts):
             acc = accounts[index]
-            return TransferResult(
-                outcome=TransferOutcome.OK,
+            return TransactionResult(
+                outcome=TransactionOutcome.OK,
                 patch={
                     "source_account_id": str(acc.get("id")),
                     "source_bank_name": acc.get("bank_name"),
@@ -94,8 +94,8 @@ async def select_source_account(
         ]
         if candidates:
             acc = candidates[0]
-            return TransferResult(
-                outcome=TransferOutcome.OK,
+            return TransactionResult(
+                outcome=TransactionOutcome.OK,
                 patch={
                     "source_account_id": str(acc.get("id")),
                     "source_bank_name": acc.get("bank_name"),
@@ -112,8 +112,8 @@ async def select_source_account(
         if matching_recipient:
             source_acc = next((a for a in accounts if a.get("account_number") != recipient_acc_num), None)
             if source_acc:
-                return TransferResult(
-                    outcome=TransferOutcome.OK,
+                return TransactionResult(
+                    outcome=TransactionOutcome.OK,
                     patch={
                         "source_account_id": str(source_acc.get("id")),
                         "source_bank_name": source_acc.get("bank_name"),
@@ -123,8 +123,8 @@ async def select_source_account(
                 )
 
     accounts_list = format_accounts_list(accounts)
-    return TransferResult(
-        outcome=TransferOutcome.NEEDS_INPUT,
+    return TransactionResult(
+        outcome=TransactionOutcome.NEEDS_INPUT,
         required_fields=["source_account_id"],
         prompt=accounts_list,
     )

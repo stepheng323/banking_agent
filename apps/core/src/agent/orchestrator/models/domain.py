@@ -107,8 +107,8 @@ class PendingInterrupt(BaseModel):
 # --- 4. Subgraph Contracts ---
 
 
-class TransferOutcome(str, Enum):
-    """Standardized outcome for a transfer worker pass."""
+class TransactionOutcome(str, Enum):
+    """Standardized outcome for a transaction worker pass."""
 
     OK = "ok"
     NEEDS_INPUT = "needs_input"
@@ -132,13 +132,13 @@ class WorkerResult(BaseModel):
     error: str | None = None
 
 
-class TransferResult(BaseModel):
-    """Result returned by the Transfer Worker Graph.
+class TransactionResult(BaseModel):
+    """Result returned by Transaction (Transfer/Airtime/Data) Worker Graphs.
 
     This is ephemeral. The orchestrator uses it to update the TaskSpec.
     """
 
-    outcome: TransferOutcome
+    outcome: TransactionOutcome
 
     patch: dict[str, Any] = Field(default_factory=dict)
 
@@ -157,7 +157,7 @@ class TransferResult(BaseModel):
 
     @property
     def is_terminal(self) -> bool:
-        return self.outcome == TransferOutcome.FAILED
+        return self.outcome == TransactionOutcome.FAILED
 
 
 class AccountOutcome(str, Enum):
@@ -178,3 +178,6 @@ class AccountResult(BaseModel):
     response: str | None = None
     outbox: list[dict[str, Any]] = Field(default_factory=list)
     error: str | None = None
+
+
+

@@ -8,7 +8,7 @@ from apps.core.src.agent.graphs.transfer.models.types import (
     TransferPayload,
 )
 from apps.core.src.agent.graphs.transfer.pipeline.base import TransferStep
-from apps.core.src.agent.orchestrator.models.domain import TransferOutcome, TransferResult
+from apps.core.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
 from shared.formatters.transfer import format_transfer_summary
 from shared.utils.logging import get_logger
 
@@ -24,9 +24,9 @@ class ConfirmationStep(TransferStep):
         context: TransferContext,
         gates: TransferGates,
         worker_context: Any,
-    ) -> TransferResult:
+    ) -> TransactionResult:
         if gates.confirmation_confirmed:
-            return TransferResult(outcome=TransferOutcome.OK, patch={})
+            return TransactionResult(outcome=TransactionOutcome.OK, patch={})
 
         res = build_confirmation(data, context)
 
@@ -56,7 +56,7 @@ class ConfirmationStep(TransferStep):
 def build_confirmation(
     payload: TransferPayload,
     ctx: TransferContext,
-) -> TransferResult:
+) -> TransactionResult:
     """Build confirmation summary."""
     snap = {
         "amount": payload.amount,
@@ -79,8 +79,8 @@ def build_confirmation(
         }
     )
 
-    return TransferResult(
-        outcome=TransferOutcome.NEEDS_CONFIRMATION,
+    return TransactionResult(
+        outcome=TransactionOutcome.NEEDS_CONFIRMATION,
         confirmation_snapshot=snap,
         confirmation_summary=summary,
     )

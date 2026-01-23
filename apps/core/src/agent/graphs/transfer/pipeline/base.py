@@ -8,7 +8,7 @@ from apps.core.src.agent.graphs.transfer.models.types import (
     TransferGates,
     TransferPayload,
 )
-from apps.core.src.agent.orchestrator.models.domain import TransferOutcome, TransferResult
+from apps.core.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -26,11 +26,11 @@ class TransferStep(ABC):
         context: TransferContext,
         gates: TransferGates,
         worker_context: Any = None,
-    ) -> TransferResult:
+    ) -> TransactionResult:
         """Execute the step logic."""
         pass
 
-    def with_key(self, result: TransferResult, data: TransferPayload) -> TransferResult:
+    def with_key(self, result: TransactionResult, data: TransferPayload) -> TransactionResult:
         """Helper to attach state and idempotency key to result."""
         if result.patch is None:
             result.patch = {}
@@ -58,13 +58,13 @@ class TransferPipeline:
         context: TransferContext,
         gates: TransferGates,
         worker_context: Any = None,
-    ) -> TransferResult:
+    ) -> TransactionResult:
         """Run all steps in sequence."""
         last_result = None
         for step in self.steps:
             result = await step.execute(data, context, gates, worker_context)
 
-            if result.outcome != TransferOutcome.OK:
+            if result.outcome != TransactionOutcome.OK:
                 return self._finalize_result(result, data)
 
             last_result = result
@@ -74,9 +74,9 @@ class TransferPipeline:
         if last_result:
             return self._finalize_result(last_result, data)
 
-        return self._finalize_result(TransferResult(outcome=TransferOutcome.OK, patch={}), data)
+        return self._finalize_result(TransactionResult(outcome=TransactionOutcome.OK, patch={}), data)
 
-    def _finalize_result(self, result: TransferResult, data: TransferPayload) -> TransferResult:
+    def _finalize_result(self, result: TransactionResult, data: TransferPayload) -> TransactionResult:
         """Finalize result with accumulated state."""
         if result.patch is None:
             result.patch = {}
