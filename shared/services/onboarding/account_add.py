@@ -2,11 +2,12 @@
 
 import asyncio
 
+from shared.cache.flow_session_manager import FlowSessionManager
 from shared.clients.whatsapp.client import WhatsAppClient
 from shared.models import CreateAccount
 from shared.repositories.unit_of_work import UnitOfWork
 from shared.services.onboarding.mandate import MandateService
-from shared.services.onboarding.session import OnboardingStep, SessionManager
+from shared.services.onboarding.session import OnboardingStep
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -15,7 +16,7 @@ logger = get_logger(__name__)
 class AccountAddService:
     """Handles adding new accounts to existing users (post-onboarding)."""
 
-    def __init__(self, session_manager: SessionManager, mandate_service: MandateService):
+    def __init__(self, session_manager: FlowSessionManager, mandate_service: MandateService):
         self.session = session_manager
         self.mandate = mandate_service
 
@@ -24,23 +25,23 @@ class AccountAddService:
         Add a new account to an existing user.
 
         Called after BVN verification and account selection.
-        Skips PIN/email/address since user already has these.
+        Skips PIN/email/address since the user already has these.
         """
         session = await self.session.get_session(flow_token)
         if not session:
             return {"success": False, "error": "Session expired. Please try again."}
 
-        phone_number = session.phone_number
+        phone_number = session.get("phone_number")
         if not phone_number:
             return {"success": False, "error": "Phone number missing."}
 
-        # Get selected account from session or parameter
-        selected_account_id = account_id or session.selected_account
-        if not selected_account_id or not session.accounts:
+        accounts = session.get("accounts", [])
+        selected_account_id = account_id or session.get("selected_account")
+        if not selected_account_id or not accounts:
             return {"success": False, "error": "No account selected."}
 
         selected_account = None
-        for acc in session.accounts:
+        for acc in accounts:
             if acc["id"] == selected_account_id:
                 selected_account = acc
                 break
@@ -65,12 +66,10 @@ class AccountAddService:
                         "error": "User not found. Please complete onboarding first.",
                     }
 
-                # Check if account already exists
                 existing_account = uow.accounts.get_by_account_id(selected_account_id)
                 if existing_account and str(existing_account.user_id) == str(user.id):
                     return {"success": False, "error": "This account is already linked."}
 
-                # Create the account
                 uow.accounts.create_account(
                     CreateAccount(
                         user_id=str(user.id),
@@ -88,7 +87,6 @@ class AccountAddService:
 
             await self.session.update_session(flow_token, {"step": OnboardingStep.COMPLETE.value})
 
-            # Background: Create mandate for new account
             if mono_customer_id:
                 asyncio.create_task(
                     self._setup_mandate_for_account(
@@ -146,14 +144,11 @@ class AccountAddService:
                 # Notify user of success
                 whatsapp = WhatsAppClient()
                 msg = (
-                    f"✓ Your {bank_name} account has been added! "
-                    "Complete the ₦50 verification transfer to activate it."
+                    f"✓ Your {bank_name} account has been added! Complete the ₦50 verification transfer to activate it."
                 )
                 await whatsapp.send_text(to=phone_number, text=msg)
             else:
-                logger.error(
-                    "mandate_creation_failed_for_add", error=result.get("error"), phone=phone_number
-                )
+                logger.error("mandate_creation_failed_for_add", error=result.get("error"), phone=phone_number)
 
         except Exception as e:
             import traceback

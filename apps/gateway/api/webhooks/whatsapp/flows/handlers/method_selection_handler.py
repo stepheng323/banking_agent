@@ -15,7 +15,7 @@ from shared.services.onboarding import ServiceResult, bvn_service
 
 
 class MethodSelectionInput(BaseModel):
-    """Input data for method selection screen."""
+    """Input data for the method selection screen."""
 
     bvn: str | None = None
     method: str | None = None
