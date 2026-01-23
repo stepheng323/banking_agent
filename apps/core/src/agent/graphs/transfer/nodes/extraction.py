@@ -34,7 +34,7 @@ class ExtractionStep(TransferStep):
             data,
             worker_context.extractor,
             self.user_message,
-            {"phone_number": context.phone_number},  # Context dict approximation
+            {"phone_number": context.phone_number},
         )
 
         return res
@@ -75,8 +75,17 @@ async def _extract_transfer_update(
         if extracted_data:
             extracted_data["confirmation"] = {"confirmed": False}
 
+        needs_source = (
+            current_payload.recipient_account
+            and current_payload.recipient_bank_name
+            and not current_payload.source_account_id
+        )
+
         if "bank_name" in extracted_data:
-            extracted_data["recipient_bank_name"] = extracted_data.pop("bank_name")
+            if needs_source:
+                extracted_data["source_bank_name"] = extracted_data.pop("bank_name")
+            else:
+                extracted_data["recipient_bank_name"] = extracted_data.pop("bank_name")
         if "bank_code" in extracted_data:
             extracted_data["recipient_bank_code"] = extracted_data.pop("bank_code")
 
@@ -86,6 +95,17 @@ async def _extract_transfer_update(
         if "recipient_bank_name" in extracted_data:
             extracted_data["recipient_bank_code"] = None
             extracted_data["recipient_resolved_name"] = None
+
+        if "source_bank_name" in extracted_data:
+            extracted_data["source_account_id"] = None
+            extracted_data["source_account_name"] = None
+            extracted_data["source_account_number"] = None
+
+        if "source_account_index" in extracted_data:
+            extracted_data["source_account_id"] = None
+            extracted_data["source_bank_name"] = None
+            extracted_data["source_account_name"] = None
+            extracted_data["source_account_number"] = None
 
         if "recipient_account" in extracted_data:
             extracted_data["recipient_resolved_name"] = None

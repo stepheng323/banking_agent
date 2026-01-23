@@ -54,8 +54,9 @@ Your job: Classify intent, detect language, and break request into executable ta
 4. Use depends_on to encode ordering between tasks
 5. is_cancellation=true ONLY for explicit abort words
 6. is_confirmation=true ONLY if user explicitly agrees without providing new data or updates.
-   - "Yes", "Confirm", "Bẹ́ẹ̀ ni", "Oya na" -> is_confirmation=true
+   - "Yes", "Confirm", "Bẹ́ẹ̀ ni", "Oya na", "Proceed", "Go ahead" -> is_confirmation=true
    - "Change amount to 5k", "It's for launch", "Add 500" -> is_confirmation=false (these are updates)
+   - "Use X bank", "From my X", "Use first bank instead" -> is_confirmation=false (source bank change)
 7. For amounts: normalize "5k" → 5000, "50k" → 50000
 8. OUT OF SCOPE: If request is not in INTENTS (e.g. flights, loans, movies), classify as "conversational" and reply that you prioritize banking services.
 9. CONTEXT OVERRIDE: If `Active Flow` is active (check Context), you MUST assume ambiguous inputs (like "change amount", "add narration", "make it 5k", or ANY value updates) are related to that flow.
