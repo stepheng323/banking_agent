@@ -90,10 +90,36 @@ async def handle_pending_interrupt(state: OrchestratorState, config: RunnableCon
                 task = state.tasks[tid]
                 task.stage = TaskStage.EXECUTING
         else:
-            # Retry logic handled by re-emitting interrupt if next pass fails
-            pass
+            # Check if user wants to cancel
+            is_cancellation = False
+            task_planner = config["configurable"].get("task_planner")
+            if task_planner and state.last_message_text:
+                try:
+                    context_summary = f"Active Flow: Auth for tasks {interrupt.task_ids}"
+                    planner_output = await task_planner.plan_tasks(
+                        state.phone_number, state.last_message_text, context=context_summary
+                    )
+                    is_cancellation = getattr(planner_output, "is_cancellation", False)
+                    logger.info("auth_intent_detected", is_canc=is_cancellation)
+                except Exception as e:
+                    logger.error("auth_planner_failed", error=str(e))
+
+            if is_cancellation:
+                logger.info("auth_cancelled", tasks=interrupt.task_ids)
+                for tid in interrupt.task_ids:
+                    task = state.tasks[tid].model_copy(deep=True)
+                    task.stage = TaskStage.CANCELLED
+                    state.tasks[tid] = task
+            else:
+                # If we're here and PIN isn't verified, the user likely typed text.
+                # Reset tasks to EXTRACTED so the worker can re-process the input.
+                for tid in interrupt.task_ids:
+                    task = state.tasks[tid].model_copy(deep=True)
+                    task.stage = TaskStage.EXTRACTED
+                    task.payload["confirmation"] = {}
+                    state.tasks[tid] = task
 
     return {
         "pending_interrupt": None,
-        "tasks": state.tasks,  # Persist updates
+        "tasks": state.tasks,
     }

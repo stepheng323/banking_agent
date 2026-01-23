@@ -22,7 +22,8 @@ async def advance_wave(state: OrchestratorState, config: RunnableConfig) -> dict
     Invokes Domain Workers.
     Aggregates outcomes and sets PendingInterrupt if blocked.
     """
-    if not state.waves:
+    if not state.waves or state.current_wave_index >= len(state.waves):
+        logger.info("advance_wave_skip", index=state.current_wave_index, count=len(state.waves))
         return {}
 
     current_wave = state.waves[state.current_wave_index]
@@ -244,9 +245,9 @@ async def advance_wave(state: OrchestratorState, config: RunnableConfig) -> dict
                 task.stage = TaskStage.FAILED
                 task.payload["error"] = "Failed to save beneficiary."
 
-            else:
-                logger.warning("unsupported_task_type", type=task.type)
-                task.stage = TaskStage.COMPLETED
+        else:
+            logger.warning("unsupported_task_type", type=task.type)
+            task.stage = TaskStage.COMPLETED
 
     if missing_fields_by_task:
         prompt_text = "\n".join(prompts) or "I need some details."
