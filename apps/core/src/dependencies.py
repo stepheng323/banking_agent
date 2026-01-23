@@ -137,6 +137,8 @@ def setup_dependencies() -> tuple[MessageConsumer, TransactionConsumer, FlowEven
         queue=redis_queue,
         actionable_message_repo=actionable_message_repository,
         completion_callback=None,
+        transaction_repo=transaction_repository,
+        banking_provider=banking_provider,
     )
 
     media_service = MediaService(whatsapp_client)

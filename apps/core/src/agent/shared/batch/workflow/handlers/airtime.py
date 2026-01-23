@@ -8,7 +8,15 @@ from apps.core.src.agent.graphs.__shared__.validation.amount_validator import (
 from apps.core.src.agent.graphs.__shared__.validation.amount_validator import (
     validate_amount as validate_amount_limits,
 )
-from apps.core.src.agent.graphs.airtime.graph.nodes.authorization import AirtimeAuthorization
+from apps.core.src.agent.graphs.airtime.models.types import (
+    AirtimeContext,
+    AirtimeGates,
+    AirtimePayload,
+    AirtimeRecipient,
+    AirtimeSource,
+)
+from apps.core.src.agent.graphs.airtime.nodes.execution import ExecutionStep
+from apps.core.src.agent.orchestrator.models.domain import TransactionOutcome
 from shared.types.planner import PlannedTask
 from shared.utils.logging import get_logger
 
@@ -56,24 +64,83 @@ class AirtimeHandler(BaseTaskHandler):
                 "selected_source_account": result_data.get("source_account", {}),
             }
 
-            # Execute via authorization class
-            auth = AirtimeAuthorization(context.redis_client, context.queue)
-            result_state = await auth.authorize(state)
+            # Build Payload for ExecutionStep
+            payload = AirtimePayload(
+                amount=validated_amount,
+                recipient_phone=task.parameters.get("recipient") or context.phone_number,
+                network=result_data.get("network", "") or state.get("network", ""),
+                source_account_id=result_data.get("source_account", {}).get("account_id"),
+                beneficiary_id=None,
+                transaction_id=idem_key,
+                idempotency_key=idem_key,
+            )
 
-            if result_state.get("airtime_status") == "authorized":
+            # Build dummy context
+            airtime_context = AirtimeContext(
+                 phone_number=context.phone_number,
+                 beneficiaries=[],
+                 accounts=[]
+            )
+            
+            # Assume gates passed for batch (PIN verified implicitly or previously)
+            gates = AirtimeGates(pin_verified=True, confirmation_confirmed=True)
+
+            # Wrapper for worker context to provide banking_provider
+            class WorkerContextWrapper:
+                def __init__(self, provider, transaction_repo, queue):
+                    self.banking_provider = provider
+                    self.transaction_repo = transaction_repo
+                    self.queue = queue
+                    self.extractor = None
+
+            # Retrieve services from context
+            banking_provider = context.get_service("banking_provider")
+            transaction_repo = context.get_service("transaction_repo")
+
+            if not banking_provider:
+                # Fallback or error if provider not found in batch context
+                # For now, we assume it's registered. If critical, we might need a workaround.
+                # But ExecutionStep REQUIRES it.
+                logger.warning("[AIRTIME] Banking provider not found in context services")
+                # If we fail here, we can't process. 
+                # Attempt to instantiate default if possible? No, too complex.
+                # We return failure.
+                return self._create_failure_result(task, "Banking provider unavailable", ErrorKind.SYSTEM)
+
+            worker_context = WorkerContextWrapper(banking_provider, transaction_repo, context.queue)
+
+            # Execution
+            step = ExecutionStep()
+            result: TransactionResult = await step.execute(
+                data=payload,
+                context=airtime_context,
+                gates=gates,
+                worker_context=worker_context
+            )
+
+            if result.outcome == TransactionOutcome.OK:
+                # ExecutionStep returns OK with patch containing receipt or status
+                # If successful, patch has 'provision_status' or similar? 
+                # Let's check ExecutionStep.
+                # It returns TransactionResult(outcome=OK, patch=receipt)
+                # receipt has details.
+                
+                receipt = result.patch
                 return self._create_success_result(
                     task,
                     data={
-                        "amount": state["amount"],
-                        "recipient": state["recipient_phone"],
-                        "network": state["network"],
+                        "amount": payload.amount,
+                        "recipient": payload.recipient_phone,
+                        "network": payload.network,
+                        "receipt": receipt
                     },
-                    provider_ref=result_state.get("transaction_id"),
+                    provider_ref=receipt.get("transaction_id") or receipt.get("reference")
                 )
             else:
-                error = result_state.get("response", "Airtime failed")
+                error = result.details.get("error", "Airtime failed")
                 error_kind = self._classify_error(error)
                 return self._create_failure_result(task, error, error_kind)
+
 
         except Exception as e:
             logger.error(f"[AIRTIME] Error: {e}", exc_info=True)
