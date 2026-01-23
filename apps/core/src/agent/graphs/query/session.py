@@ -38,7 +38,9 @@ class QuerySessionManager:
 
             if session.get("query_result") and isinstance(session["query_result"], dict):
                 try:
-                    session["query_result"] = QueryResult.model_validate(session["query_result"])
+                    session["query_result"] = QueryResult.model_validate(
+                        session["query_result"]
+                    )
                 except Exception as e:
                     logger.warning("query_result_restore_error", error=str(e))
                     session["query_result"] = None
@@ -82,10 +84,14 @@ class QuerySessionManager:
                 if k in ("query", "query_result") and v and hasattr(v, "model_dump"):
                     save_state[k] = v.model_dump()
                 elif k == "cached_transactions" and v:
-                    save_state[k] = [t.model_dump() if hasattr(t, "model_dump") else t for t in v]
+                    save_state[k] = [
+                        t.model_dump() if hasattr(t, "model_dump") else t for t in v
+                    ]
                 else:
                     save_state[k] = v
-            await self.redis.set(key, json.dumps(save_state, default=str), ex=SESSION_TTL)
+            await self.redis.set(
+                key, json.dumps(save_state, default=str), ex=SESSION_TTL
+            )
         except Exception as e:
             logger.error("save_session_error", error=str(e))
 

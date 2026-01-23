@@ -141,6 +141,7 @@ class TransactionResult(BaseModel):
     outcome: TransactionOutcome
 
     patch: dict[str, Any] = Field(default_factory=dict)
+    response: str | None = None
 
     required_fields: list[str] = Field(default_factory=list)
     prompt: str | None = None

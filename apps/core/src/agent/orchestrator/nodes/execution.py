@@ -340,6 +340,70 @@ async def advance_wave(state: OrchestratorState, config: RunnableConfig) -> dict
                 task.stage = TaskStage.FAILED
                 task.payload["error"] = result.error or "Airtime purchase failed"
 
+        elif task.type == "query":
+            query_service = services.get("query")
+            if not query_service or not hasattr(query_service, "worker"):
+                logger.error("query_worker_missing")
+                task.stage = TaskStage.FAILED
+                task.payload["error"] = "System error: Query worker unavailable"
+                continue
+            
+            worker = query_service.worker
+            
+            user_msg = state.last_message_text
+            
+            user_repo = config["configurable"].get("user_repo")
+            account_repo = config["configurable"].get("account_repo")
+            
+            context_data = {"phone_number": state.phone_number}
+
+            try:
+                if user_repo:
+                    user = await asyncio.to_thread(user_repo.get_by_phone, state.phone_number)
+                    if user:
+                        context_data["user_id"] = user.id
+                        context_data["profile"] = {"first_name": user.first_name, "id": user.id}
+
+                        if account_repo:
+                             accounts = await asyncio.to_thread(account_repo.get_by_user, user.id)
+                             # Convert to dict
+                             def to_dict(obj):
+                                if not obj: return {}
+                                return {k: v for k, v in obj.__dict__.items() if not k.startswith("_")}
+                             context_data["accounts"] = [to_dict(a) for a in accounts]
+            except Exception as e:
+                logger.error("query_context_failed", error=str(e))
+            
+            result = await worker.run(
+                payload=task.payload,
+                context=context_data,
+            )
+            
+            if result.patch:
+                task.payload.update(result.patch)
+            
+            if result.outcome == TransactionOutcome.OK:
+                task.stage = TaskStage.COMPLETED
+                if result.response:
+                    task.payload["result"] = result.response
+                    updates.setdefault("outbox", [])
+                    updates["outbox"].append({"type": "say", "text": result.response})
+            
+            elif result.outcome == TransactionOutcome.NEEDS_INPUT:
+                 task.stage = TaskStage.EXTRACTED
+                 # If response is present, treat as a prompt
+                 if result.response:
+                     prompts.append(result.response)
+                     # For query flow, "missing fields" is generic, maybe just use "query_clarification"
+                     missing_fields_by_task[tid] = ["clarification"]
+            
+            elif result.outcome == TransactionOutcome.FAILED:
+                task.stage = TaskStage.FAILED
+                task.payload["error"] = result.error or "Query processing failed."
+                if result.response: # Sometimes failed items have a polite response
+                     updates.setdefault("outbox", [])
+                     updates["outbox"].append({"type": "say", "text": result.response})
+
 
     if missing_fields_by_task:
         prompt_text = "\n".join(prompts) or "I need some details."
