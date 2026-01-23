@@ -34,10 +34,12 @@ class OrchestratorAgent:
             user_cache=self.deps.user_cache,
             redis_client=self.deps.redis_client,
             whatsapp_client=self.deps.whatsapp_client,
+            queue=self.deps.queue,
             user_repo=self.deps.user_repo,
             beneficiary_repo=self.deps.beneficiary_repo,
             account_repo=self.deps.account_repo,
             banking_provider=self.deps.banking_provider,
+            beneficiary_suggestion_service=self.deps.beneficiary_suggestion_service,
         )
 
     @property
@@ -45,7 +47,7 @@ class OrchestratorAgent:
         """Get transfer service."""
         return self.deps.transfer_service
 
-    async def resume_transaction(self, phone_number: str, flow_type: str, pin_verified: bool) -> str | None:
+    async def resume_transaction(self, phone_number: str, flow_type: str, pin_verified: bool) -> dict[str, Any]:
         """Resume a transaction after an external event (like PIN verification)."""
         payload = {"pin_verified": pin_verified, "flow_type": flow_type}
         return await self.orchestrator_handler.resume_flow(phone_number=phone_number, payload=payload)

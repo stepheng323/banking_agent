@@ -9,9 +9,10 @@ Prevents cascading failures when external services are down by:
 
 import asyncio
 import time
-from dataclasses import dataclass, field
+from collections.abc import Callable
+from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Callable, TypeVar
+from typing import Any, TypeVar
 
 from shared.utils.logging import get_logger
 

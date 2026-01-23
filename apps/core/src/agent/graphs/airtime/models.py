@@ -5,7 +5,6 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
-
 # Schema version for future-proofing
 SCHEMA_VERSION = 1
 
@@ -54,7 +53,7 @@ class SimpleAirtimeEntities(BaseModel):
 
 class CorrectionField(str, Enum):
     """Fields that can be corrected."""
-    
+
     AMOUNT = "amount"
     RECIPIENT_PHONE = "recipient_phone"
     NETWORK = "network"
@@ -63,7 +62,7 @@ class CorrectionField(str, Enum):
 
 class AmbiguityCode(str, Enum):
     """Structured ambiguity codes."""
-    
+
     AMOUNT_UNCLEAR = "AMOUNT_UNCLEAR"
     NETWORK_UNCLEAR = "NETWORK_UNCLEAR"
     RECIPIENT_UNCLEAR = "RECIPIENT_UNCLEAR"
@@ -71,7 +70,7 @@ class AmbiguityCode(str, Enum):
 
 class RequestedFeature(str, Enum):
     """Features beyond simple airtime purchase."""
-    
+
     SCHEDULED = "SCHEDULED"
     RECURRING = "RECURRING"
 
@@ -85,14 +84,14 @@ class AirtimeCorrection(BaseModel):
 
 class Ambiguity(BaseModel):
     """Structured ambiguity with candidates."""
-    
+
     code: AmbiguityCode = Field(description="Ambiguity type")
     candidates: list[str | float] = Field(default_factory=list, description="Possible values")
 
 
 class References(BaseModel):
     """References to context (e.g., recent purchases)."""
-    
+
     use_recent_purchase: bool = Field(default=False, description="User wants to repeat recent purchase")
     recent_purchase_index: int | None = Field(default=None, description="Index if explicit")
 
@@ -103,25 +102,25 @@ class AirtimeExtractionResult(BaseModel):
     schema_version: int = Field(default=SCHEMA_VERSION, description="Schema version for future-proofing")
     intent: Literal["airtime"] = Field(default="airtime")
     intent_confidence: float = Field(default=1.0, ge=0.0, le=1.0, description="Confidence in intent")
-    
+
     entities: SimpleAirtimeEntities = Field(
         default_factory=SimpleAirtimeEntities, description="Extracted airtime purchase entities"
     )
-    
+
     correction: AirtimeCorrection | None = Field(
         default=None, description="Correction if user updated a value"
     )
-    
+
     ambiguities: list[Ambiguity] = Field(
         default_factory=list,
         description="Structured ambiguities with candidates",
     )
-    
+
     references: References = Field(
         default_factory=References,
         description="References to context",
     )
-    
+
     requested_features: list[RequestedFeature] = Field(
         default_factory=list,
         description="Features beyond simple purchase: SCHEDULED, RECURRING",

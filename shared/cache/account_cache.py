@@ -53,9 +53,9 @@ class AccountCacheService:
             return None
 
     async def set_account(
-        self, 
-        account_number: str, 
-        bank_code: str, 
+        self,
+        account_number: str,
+        bank_code: str,
         data: dict[str, Any]
     ) -> bool:
         """Cache account details."""

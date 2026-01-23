@@ -132,14 +132,38 @@ async def advance_wave(state: OrchestratorState, config: RunnableConfig) -> dict
                         task.payload["confirmation"] = {}
                     task.payload["confirmation"]["summary"] = result.confirmation_summary
                     task.payload["confirmation"]["snapshot"] = result.confirmation_snapshot
+                    if getattr(result, "update_message", None):
+                        task.payload["confirmation"]["update_message"] = result.update_message
 
             elif result.outcome == TransferOutcome.NEEDS_AUTH:
                 task.stage = TaskStage.AWAITING_AUTH
                 needs_auth_tasks.append(tid)
 
-            elif result.outcome == TransferOutcome.FAILED:
+            elif result.outcome == TransferOutcome.FAILED or result.outcome == TransferOutcome.FAILED:
                 task.stage = TaskStage.FAILED
                 task.payload["error"] = result.error
+
+        elif task.type == "beneficiary":
+            suggestion_service = config["configurable"].get("beneficiary_suggestion_service")
+            if not suggestion_service:
+                logger.error("suggestion_service_missing")
+                task.stage = TaskStage.FAILED
+                task.payload["error"] = "System error: Suggestion service unavailable"
+                continue
+
+            alias = task.payload.get("alias")
+            try:
+                msg = await suggestion_service.save_beneficiary(state.phone_number, alias=alias)
+                task.stage = TaskStage.COMPLETED
+                task.payload["result"] = msg
+
+                if len(current_wave) == 1:
+                    updates["final_response"] = msg
+
+            except Exception as e:
+                logger.error("save_beneficiary_exec_error", error=str(e))
+                task.stage = TaskStage.FAILED
+                task.payload["error"] = "Failed to save beneficiary."
 
         else:
             logger.warning("unsupported_task_type", type=task.type)
@@ -160,15 +184,26 @@ async def advance_wave(state: OrchestratorState, config: RunnableConfig) -> dict
         }
 
     if needs_confirm_tasks:
-        summ = state.tasks[needs_confirm_tasks[0]].payload["confirmation"].get("summary", "Confirm transaction?")
-        snap = state.tasks[needs_confirm_tasks[0]].payload["confirmation"].get("snapshot", {})
+        confirmation_payload = state.tasks[needs_confirm_tasks[0]].payload["confirmation"]
+        summ = confirmation_payload.get("summary", "Confirm transaction?")
+        snap = confirmation_payload.get("snapshot", {})
+        update_msg = confirmation_payload.get("update_message")
 
         interrupt = PendingInterrupt(
             kind="confirmation",
             task_ids=needs_confirm_tasks,
         )
 
-        updates["outbox"] = [
+        outbox = []
+        if update_msg:
+            outbox.append(
+                {
+                    "type": "say",
+                    "text": update_msg,
+                }
+            )
+
+        outbox.append(
             {
                 "type": "request_confirmation",
                 "task_ids": needs_confirm_tasks,
@@ -176,7 +211,9 @@ async def advance_wave(state: OrchestratorState, config: RunnableConfig) -> dict
                 "snapshot": snap,
                 "idempotency_key": state.tasks[needs_confirm_tasks[0]].payload.get("idempotency_key", "unknown"),
             }
-        ]
+        )
+
+        updates["outbox"] = outbox
         updates["pending_interrupt"] = interrupt
         updates["final_response"] = summ
         return updates

@@ -15,6 +15,7 @@ from shared.services import ConversationResponder
 from shared.services.task_queue import TaskQueueService
 
 if TYPE_CHECKING:
+    from apps.core.src.agent.graphs.__shared__.beneficiary.suggestion_service import BeneficiarySuggestionService
     from apps.core.src.agent.graphs.account_management.service import AccountManagementService
     from apps.core.src.agent.graphs.airtime import AirtimeService
     from apps.core.src.agent.graphs.data import DataService
@@ -23,6 +24,7 @@ if TYPE_CHECKING:
     from apps.core.src.agent.graphs.support import SupportService
     from apps.core.src.agent.graphs.transfer import TransferService
     from shared.clients.abstractions.banking import BankingDataProvider
+    from shared.queue.redis_queue import RedisQueue
 
 
 @dataclass
@@ -46,6 +48,8 @@ class OrchestratorDependencies:
     support_service: "SupportService | None" = None
     faq_service: "FAQService | None" = None
     banking_provider: "BankingDataProvider | None" = None
+    beneficiary_suggestion_service: "BeneficiarySuggestionService | None" = None
     # For workflow engine
     user_cache: UserDataCache | None = None
     redis_client: redis.Redis | None = None
+    queue: "RedisQueue | None" = None

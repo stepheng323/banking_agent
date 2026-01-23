@@ -120,11 +120,7 @@ class MonoWebhookService:
                 status=new_status,
             )
 
-            transfer = (
-                uow.funded_transfers.get_by_id(str(step.funded_transfer_id))
-                if uow.funded_transfers
-                else None
-            )
+            transfer = uow.funded_transfers.get_by_id(str(step.funded_transfer_id)) if uow.funded_transfers else None
 
             if transfer:
                 await self._check_transfer_completion(uow, transfer, new_status)
@@ -188,7 +184,7 @@ class MonoWebhookService:
 
         for step in successful_steps:
             try:
-                await self.queue.enqueue_simple(
+                await self.queue.enqueue(
                     queue_name="banking:refunds",
                     message={
                         "funding_step_id": str(step.id),
@@ -208,7 +204,7 @@ class MonoWebhookService:
     async def _queue_payout(self, transfer) -> None:
         """Queue payout job after all debits complete."""
         try:
-            await self.queue.enqueue_simple(
+            await self.queue.enqueue(
                 queue_name="banking:payouts",
                 message={
                     "funded_transfer_id": str(transfer.id),

@@ -16,20 +16,20 @@ class QueryCapability(str, Enum):
     FILTER_CATEGORY = "filter_category"
     FILTER_TX_TYPE = "filter_tx_type"
     FILTER_BANK = "filter_bank"
-    
+
     # Search - split for clarity
     SEARCH_NARRATION_KEYWORD = "search_narration_keyword"  # Exact/contains match
     SEARCH_NARRATION_FUZZY = "search_narration_fuzzy"      # Semantic/embeddings
-    
+
     # Time ranges
     TIME_RELATIVE = "time_relative"  # Within limits
     TIME_ALL = "time_all"            # Beyond max_lookback_days
-    
+
     # Aggregations
     AGGREGATE_SUM = "aggregate_sum"
     AGGREGATE_GROUP = "aggregate_group"
     TIME_COMPARISON = "time_comparison"
-    
+
     # Exports
     EXPORT_PDF = "export_pdf"
     EXPORT_CSV = "export_csv"
@@ -104,7 +104,7 @@ def generate_limitation_message(missing: list[QueryCapability]) -> str:
 
     cap = missing[0]
     alt = get_alternative(cap)
-    
+
     if cap == QueryCapability.TIME_ALL:
         months = QUERY_LIMITS["max_lookback_days"] // 30
         return (
@@ -126,9 +126,9 @@ def generate_limitation_message(missing: list[QueryCapability]) -> str:
 
     label = CAPABILITY_LABELS.get(cap, cap.value)
     msg = f"*{label.title()}* isn't available yet."
-    
+
     if alt:
         alt_label = CAPABILITY_LABELS.get(alt, alt.value)
         msg += f" I can do *{alt_label}* instead.\n\nWant me to proceed?"
-    
+
     return msg

@@ -5,11 +5,9 @@ from functools import partial
 from typing import Any
 
 import redis.asyncio as redis
-from langchain_core.runnables import RunnableConfig
 from langgraph.graph import END, StateGraph
 
 from apps.core.src.agent.graphs.__shared__.base_flow_graph import BaseFlowGraph
-
 from apps.core.src.agent.graphs.data.extractor import DataEntityExtractor
 from apps.core.src.agent.graphs.data.graph.nodes.authorization import authorize_transaction
 from apps.core.src.agent.graphs.data.graph.nodes.confirm import confirm_node
@@ -23,7 +21,6 @@ from apps.core.src.agent.graphs.data.models import DataPlan
 from apps.core.src.agent.graphs.data.plan_service import DataPlanService
 from shared.clients.abstractions.bill import BillPaymentProvider
 from shared.clients.whatsapp.client import WhatsAppClient
-from shared.config.settings import settings
 from shared.queue.redis_queue import RedisQueue
 from shared.utils.logging import get_logger
 

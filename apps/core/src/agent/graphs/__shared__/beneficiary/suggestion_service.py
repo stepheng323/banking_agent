@@ -37,7 +37,8 @@ class BeneficiarySuggestionService:
         beneficiary_type: str,
         recipient_data: dict[str, Any],
         transaction_id: str | None = None,
-    ) -> None:
+        send_message: bool = True,
+    ) -> str | None:
         """
         Check if recipient is new beneficiary and suggest saving.
 
@@ -46,16 +47,21 @@ class BeneficiarySuggestionService:
             beneficiary_type: Type of beneficiary ("transfer", "airtime", or "data")
             recipient_data: Dict with recipient information (varies by type)
             transaction_id: Optional transaction ID
+            send_message: Whether to send the message immediately (async) or return it.
+
+        Returns:
+            str: The suggestion message if generated and send_message=False.
+            None: If sent immediately or no suggestion needed.
         """
         try:
             with UnitOfWork() as uow:
                 if not uow.users or not uow.transactions:
-                    return
+                    return None
 
                 user = uow.users.get_by_phone(phone_number)
                 if not user:
                     logger.debug("debug_user")
-                    return
+                    return None
 
                 user_id = str(user.id)
                 has_beneficiary_repo = bool(uow.beneficiaries)
@@ -63,20 +69,18 @@ class BeneficiarySuggestionService:
 
                 if beneficiary_type == "transfer":
                     if recipient_data.get("is_self") or recipient_data.get("is_own_account"):
-                        return
+                        return None
                     account_number = recipient_data.get("account_number")
                     bank_code = recipient_data.get("bank_code")
                     recipient_name = recipient_data.get("name", "")
 
                     if not account_number or not bank_code:
-                        return
+                        return None
 
                     if has_beneficiary_repo:
                         try:
-                            exists_in_beneficiaries = (
-                                not uow.beneficiaries.should_suggest_beneficiary(
-                                    user_id, account_number, bank_code, beneficiary_type="transfer"
-                                )
+                            exists_in_beneficiaries = not uow.beneficiaries.should_suggest_beneficiary(
+                                user_id, account_number, bank_code, beneficiary_type="transfer"
                             )
                         except Exception:
                             exists_in_beneficiaries = False
@@ -125,10 +129,12 @@ class BeneficiarySuggestionService:
                                 f"- Reply 'yes' to save\n"
                                 f"- Or send a name (e.g., 'Mum') to save with that alias"
                             )
-                        asyncio.create_task(
-                            self.whatsapp_client.send_text(to=phone_number, text=message)
-                        )
-                        logger.info("beneficiary_suggestion_sent_for")
+
+                        if send_message:
+                            asyncio.create_task(self.whatsapp_client.send_text(to=phone_number, text=message))
+                            logger.info("beneficiary_suggestion_sent_for")
+                            return None
+                        return message
 
                 elif beneficiary_type in ("airtime", "data"):
                     recipient_phone = recipient_data.get("phone", "")
@@ -136,19 +142,19 @@ class BeneficiarySuggestionService:
                     recipient_name = recipient_data.get("name", "")
 
                     if not recipient_phone or not network:
-                        return
+                        return None
 
-                    if recipient_phone == phone_number or \
-                       (len(recipient_phone) >= 10 and phone_number.endswith(recipient_phone[-10:])) or \
-                       (len(phone_number) >= 10 and recipient_phone.endswith(phone_number[-10:])):
-                        return
+                    if (
+                        recipient_phone == phone_number
+                        or (len(recipient_phone) >= 10 and phone_number.endswith(recipient_phone[-10:]))
+                        or (len(phone_number) >= 10 and recipient_phone.endswith(phone_number[-10:]))
+                    ):
+                        return None
 
                     if has_beneficiary_repo:
                         try:
-                            exists_in_beneficiaries = (
-                                not uow.beneficiaries.should_suggest_airtime_beneficiary(
-                                    user_id, recipient_phone, network
-                                )
+                            exists_in_beneficiaries = not uow.beneficiaries.should_suggest_airtime_beneficiary(
+                                user_id, recipient_phone, network
                             )
                         except Exception:
                             exists_in_beneficiaries = False
@@ -161,11 +167,7 @@ class BeneficiarySuggestionService:
                                 uow.commit()
 
                         suggestion_key = f"user:{phone_number}:beneficiary_suggestion"
-                        masked_phone = (
-                            f"…{recipient_phone[-4:]}"
-                            if len(recipient_phone) >= 4
-                            else recipient_phone
-                        )
+                        masked_phone = f"…{recipient_phone[-4:]}" if len(recipient_phone) >= 4 else recipient_phone
                         recipient_display = recipient_name or masked_phone
 
                         suggestion_context = {
@@ -188,13 +190,77 @@ class BeneficiarySuggestionService:
                             f"- Reply 'yes' to save\n"
                             f"- Or send a name (e.g., 'Mum') to save with that alias"
                         )
-                        asyncio.create_task(
-                            self.whatsapp_client.send_text(to=phone_number, text=message)
-                        )
-                        logger.info("beneficiary_suggestion_sent_for")
+
+                        if send_message:
+                            asyncio.create_task(self.whatsapp_client.send_text(to=phone_number, text=message))
+                            logger.info("beneficiary_suggestion_sent_for")
+                            return None
+                        return message
                 else:
                     logger.warning("unknown_beneficiary")
 
         except Exception:
             logger.error("error_beneficiary")
             traceback.print_exc()
+
+        return None
+
+    async def save_beneficiary(self, phone_number: str, alias: str | None = None) -> str:
+        """
+        Save the pending beneficiary suggestion.
+
+        Args:
+            phone_number: User's phone number
+            alias: Optional alias override
+
+        Returns:
+            Success or error message
+        """
+        suggestion_key = f"user:{phone_number}:beneficiary_suggestion"
+        data_json = await self.redis_client.get(suggestion_key)
+
+        if not data_json:
+            return "I don't recall suggesting a beneficiary recently. Transactions need to be recent to save them."
+
+        try:
+            data = json.loads(data_json)
+            beneficiary_type = data.get("beneficiary_type", "transfer")
+
+            with UnitOfWork() as uow:
+                user = uow.users.get_by_phone(phone_number)
+                if not user:
+                    return "User not found."
+
+                user_id = str(user.id)
+                final_alias = alias or data.get("alias_suggested") or data.get("recipient_name") or "My Beneficiary"
+
+                if beneficiary_type == "transfer":
+                    uow.beneficiaries.create(
+                        user_id=user_id,
+                        account_number=data["account_number"],
+                        bank_code=data["bank_code"],
+                        bank_name=data["bank_name"],
+                        account_name=data.get("recipient_name", ""),
+                        alias=final_alias,
+                        beneficiary_type="transfer",
+                    )
+                elif beneficiary_type in ("airtime", "data"):
+                    uow.beneficiaries.create(
+                        user_id=user_id,
+                        account_number=data["phone_number"],
+                        bank_name=data["network"],
+                        account_name=data.get("recipient_name", data["phone_number"]),
+                        alias=final_alias,
+                        beneficiary_type="airtime",
+                    )
+
+                uow.commit()
+
+            # Clear the suggestion
+            await self.redis_client.delete(suggestion_key)
+
+            return f"✓ Saved **{final_alias.upper()}** to your beneficiaries."
+
+        except Exception as e:
+            logger.error("save_beneficiary_failed", error=str(e))
+            return "Sorry, I couldn't save that beneficiary due to an error."

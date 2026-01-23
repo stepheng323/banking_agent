@@ -1,3 +1,5 @@
+from langchain_core.runnables import RunnableConfig
+
 from apps.core.src.agent.orchestrator.models.domain import TaskStage
 from apps.core.src.agent.orchestrator.state import OrchestratorState
 from shared.utils.logging import get_logger
@@ -5,7 +7,7 @@ from shared.utils.logging import get_logger
 logger = get_logger(__name__)
 
 
-async def handle_pending_interrupt(state: OrchestratorState) -> dict:
+async def handle_pending_interrupt(state: OrchestratorState, config: RunnableConfig) -> dict:
     """Process user input against the pending interrupt (if any)."""
     interrupt = state.pending_interrupt
     if not interrupt:
@@ -24,28 +26,63 @@ async def handle_pending_interrupt(state: OrchestratorState) -> dict:
         text = (state.last_message_text or "").lower()
         new_tasks = state.tasks.copy()
 
-        if state.pin_verified:
-            logger.info("confirmation_via_pin", tasks=interrupt.task_ids)
-            for tid in interrupt.task_ids:
-                task = new_tasks[tid].model_copy(deep=True)
-                task.payload["confirmation"]["confirmed"] = True
-                # Skip AWAITING_AUTH since we already have the PIN
-                task.stage = TaskStage.EXECUTING
-                new_tasks[tid] = task
-        elif "confirm" in text or "yes" in text or "ok" in text or "proceed" in text:
-            for tid in interrupt.task_ids:
-                task = new_tasks[tid].model_copy(deep=True)
-                task.payload["confirmation"]["confirmed"] = True
-                task.stage = TaskStage.AWAITING_AUTH
-                new_tasks[tid] = task
-        else:
-            # Re-extraction logic (unchanged)
-            pass
+        is_confirmation = False
+        is_cancellation = False
 
-        return {
-            "pending_interrupt": None,
-            "tasks": new_tasks,
-        }
+        if state.pin_verified:
+            is_confirmation = True
+        else:
+            task_planner = config["configurable"].get("task_planner")
+            if task_planner:
+                try:
+                    context_summary = f"Active Flow: Confirmation for tasks {interrupt.task_ids}"
+                    planner_output = await task_planner.plan_tasks(
+                        state.phone_number, state.last_message_text or "", context=context_summary
+                    )
+                    is_confirmation = getattr(planner_output, "is_confirmation", False)
+                    is_cancellation = getattr(planner_output, "is_cancellation", False)
+                    logger.info("confirmation_intent_detected", is_conf=is_confirmation, is_canc=is_cancellation)
+                except Exception as e:
+                    logger.error("confirmation_planner_failed", error=str(e))
+                    is_confirmation = False
+                    is_cancellation = False
+
+        if is_confirmation:
+            logger.info("confirmation_confirmed", tasks=interrupt.task_ids, via_pin=state.pin_verified)
+            for tid in interrupt.task_ids:
+                task = new_tasks[tid].model_copy(deep=True)
+                task.payload["confirmation"]["confirmed"] = True
+                task.stage = TaskStage.EXECUTING if state.pin_verified else TaskStage.AWAITING_AUTH
+                new_tasks[tid] = task
+            return {
+                "pending_interrupt": None,
+                "tasks": new_tasks,
+            }
+
+        elif is_cancellation:
+            logger.info("confirmation_cancelled", tasks=interrupt.task_ids)
+            for tid in interrupt.task_ids:
+                task = new_tasks[tid].model_copy(deep=True)
+                task.stage = TaskStage.CANCELLED
+                new_tasks[tid] = task
+
+            return {
+                "pending_interrupt": None,
+                "tasks": new_tasks,
+            }
+
+        else:
+            logger.info("confirmation_interrupt_input_mismatch", text=text)
+            for tid in interrupt.task_ids:
+                task = new_tasks[tid].model_copy(deep=True)
+                task.stage = TaskStage.EXTRACTED
+                task.payload["confirmation"] = {}
+                new_tasks[tid] = task
+
+            return {
+                "pending_interrupt": None,
+                "tasks": new_tasks,
+            }
 
     elif interrupt.kind == "auth":
         if state.pin_verified:

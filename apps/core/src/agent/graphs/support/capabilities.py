@@ -8,7 +8,7 @@ from enum import Enum
 
 class SupportAction(str, Enum):
     """Actions Support can take."""
-    
+
     LOOKUP_TRANSACTION = "lookup_transaction"
     EXPLAIN_STATUS = "explain_status"
     RETRY_PAYOUT = "retry_payout"
@@ -75,7 +75,7 @@ def generate_limitation_message(missing: list[SupportAction]) -> str:
     action = missing[0]
     alt = get_alternative(action)
     label = ACTION_LABELS.get(action, action.value)
-    
+
     if action == SupportAction.RETRY_PAYOUT:
         return (
             f"I can't *{label}* automatically right now.\n\n"
@@ -91,5 +91,5 @@ def generate_limitation_message(missing: list[SupportAction]) -> str:
     if alt:
         alt_label = ACTION_LABELS.get(alt, alt.value)
         return f"I can't *{label}* yet, but I can *{alt_label}*. Want me to proceed?"
-    
+
     return f"*{label.title()}* isn't available yet. I'll escalate this to support."

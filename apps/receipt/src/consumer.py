@@ -1,12 +1,11 @@
 """Redis queue consumer for receipt generation jobs."""
 
 import asyncio
-import json
 from typing import Any
 
 from apps.receipt.src.renderer import ReceiptRenderer
-from shared.cache.redis_client import RedisClient
 from shared.clients.whatsapp.client import WhatsAppClient
+from shared.queue.redis_queue import RedisQueue
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -23,28 +22,24 @@ class ReceiptJobConsumer:
         self.running = False
         self.renderer = ReceiptRenderer()
         self.whatsapp_client = WhatsAppClient()
+        self.queue = RedisQueue()
 
     async def start(self) -> None:
         """Start consuming jobs from the queue."""
         self.running = True
-        redis_client = RedisClient.get_client()
-
-        logger.info("receipt_consumer_starting", queue=QUEUE_NAME)
-
         while self.running:
             try:
-                result = await redis_client.blpop(QUEUE_NAME, timeout=5)
+                job = await self.queue.dequeue_blocking(QUEUE_NAME, timeout=5)
 
-                if result is None:
+                if job is None:
                     continue
 
-                _, job_data = result
-                job = json.loads(job_data)
-
+                payload = job.get("payload", {})
                 logger.info(
                     "receipt_job_received",
-                    phone=job.get("phone_number"),
-                    has_transfer_data=bool(job.get("transfer_data")),
+                    phone=payload.get("phone_number"),
+                    has_payload=bool(payload),
+                    job=job,
                 )
 
                 await self._process_job(job)
@@ -63,9 +58,9 @@ class ReceiptJobConsumer:
 
     async def _process_job(self, job: dict[str, Any]) -> None:
         """Process a single receipt job with retry logic."""
-        phone_number = job.get("phone_number")
-        transfer_data = job.get("transfer_data", {})
-        transfer_result = job.get("transfer_result", {})
+        payload = job.get("payload", {})
+        phone_number = payload.get("phone_number")
+        reference = payload.get("transaction_reference", "N/A")
 
         last_error = None
 
@@ -78,14 +73,14 @@ class ReceiptJobConsumer:
                 )
 
                 image_bytes = await self.renderer.render_receipt(
-                    transfer_data=transfer_data,
-                    transfer_result=transfer_result,
+                    transfer_data=payload,
+                    transaction_reference=reference,
                 )
 
                 await self.whatsapp_client.send_image_data(
                     to=phone_number,
                     data=image_bytes,
-                    caption=f"Transfer Receipt: {transfer_result.get('reference') or transfer_result.get('transaction_id', 'N/A')}",
+                    caption=f"Transfer Receipt: {reference}",
                 )
                 return
 
@@ -113,7 +108,7 @@ class ReceiptJobConsumer:
                 text=(
                     "We couldn't generate your receipt image at this time. "
                     "Don't worry - your transfer was successful! "
-                    f"Reference: {transfer_result.get('transaction_id', 'N/A')}"
+                    f"Reference: {reference}"
                 ),
             )
         except Exception as notify_error:
@@ -127,9 +122,7 @@ class ReceiptJobConsumer:
             signal_key = job.get("signal_key")
             if signal_key:
                 try:
-                    redis_client = RedisClient.get_client()
-                    await redis_client.rpush(signal_key, "DONE")
-                    await redis_client.expire(signal_key, 60)  # Cleanup key quickly
+                    await self.queue._redis.rpush(signal_key, "DONE")
+                    await self.queue._redis.expire(signal_key, 60)  # Cleanup key quickly
                 except Exception as e:
                     logger.warning("receipt_signal_failed", error=str(e))
-

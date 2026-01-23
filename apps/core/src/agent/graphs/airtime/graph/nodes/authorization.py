@@ -77,7 +77,7 @@ class AirtimeAuthorization(AuthorizationBase[AirtimeState]):
             "narration": transaction_params["narration"],
         }
 
-        await self.queue.enqueue_simple(
+        await self.queue.enqueue(
             queue_name="banking:transactions",
             message={
                 "type": "execute_airtime",

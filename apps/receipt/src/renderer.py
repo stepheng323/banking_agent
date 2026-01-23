@@ -51,7 +51,7 @@ class ReceiptRenderer:
     async def render_receipt(
         self,
         transfer_data: dict[str, Any],
-        transfer_result: dict[str, Any],
+        transaction_reference: str,
     ) -> bytes:
         """Render receipt HTML to PNG image bytes."""
         recipient = transfer_data.get("recipient", {})
@@ -71,7 +71,7 @@ class ReceiptRenderer:
             "recipient_name": recipient_name,
             "recipient_bank": recipient.get("bank_name", ""),
             "recipient_account_masked": self._mask_account(recipient.get("account_number", "")),
-            "transaction_reference": transfer_result.get("transaction_id", "N/A"),
+            "transaction_reference": transaction_reference,
             "narration": transfer_data.get("narration", ""),
         }
 

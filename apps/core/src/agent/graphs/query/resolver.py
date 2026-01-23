@@ -12,33 +12,33 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from apps.core.src.agent.graphs.query.capabilities import (
-    QueryCapability,
-    QUERY_SUPPORTS,
     QUERY_LIMITS,
-    get_alternative,
+    QUERY_SUPPORTS,
+    QueryCapability,
     generate_limitation_message,
+    get_alternative,
 )
 from apps.core.src.agent.graphs.query.models_extraction import (
+    Ambiguity,
+    AmbiguityCode,
     QueryExtractionResult,
     RequestedCapability,
     TimeReference,
-    Ambiguity,
-    AmbiguityCode,
 )
 
 
 class Decision(str, Enum):
     """Resolver decision for flow control."""
-    
-    PROCEED = "PROCEED"           
-    NEGOTIATE = "NEGOTIATE"       
-    ASK_CLARIFY = "ASK_CLARIFY"   
-    REJECT = "REJECT"             
+
+    PROCEED = "PROCEED"
+    NEGOTIATE = "NEGOTIATE"
+    ASK_CLARIFY = "ASK_CLARIFY"
+    REJECT = "REJECT"
 
 
 class Negotiation(BaseModel):
     """Negotiation details."""
-    
+
     original_capability: RequestedCapability
     alternative: QueryCapability | None
     message: str
@@ -47,21 +47,21 @@ class Negotiation(BaseModel):
 
 class Prompt(BaseModel):
     """Templated prompt for response."""
-    
+
     key: str
     vars: dict[str, Any] = Field(default_factory=dict)
 
 
 class ClampedValues(BaseModel):
     """Values that were clamped to limits."""
-    
+
     days_back: int | None = Field(default=None, description="Clamped to max_lookback_days")
     result_limit: int | None = Field(default=None, description="Clamped to max_results")
 
 
 class ResolverDecision(BaseModel):
     """Decision contract from resolver."""
-    
+
     decision: Decision
     extraction: QueryExtractionResult
     negotiation: Negotiation | None = Field(default=None)
@@ -104,22 +104,22 @@ def clamp_time_range(extraction: QueryExtractionResult) -> tuple[QueryExtraction
         extraction.time_range.days_back = QUERY_LIMITS["max_lookback_days"]
         extraction.time_range.reference_type = TimeReference.EXPLICIT
         return extraction, QUERY_LIMITS["max_lookback_days"]
-    
+
     if extraction.time_range.days_back and extraction.time_range.days_back > QUERY_LIMITS["max_lookback_days"]:
         original = extraction.time_range.days_back
         extraction.time_range.days_back = QUERY_LIMITS["max_lookback_days"]
         return extraction, QUERY_LIMITS["max_lookback_days"]
-    
+
     if extraction.time_range.reference_type == TimeReference.VAGUE:
         extraction.time_range.days_back = QUERY_LIMITS["default_lookback_days"]
         return extraction, None
-    
+
     return extraction, None
 
 
 def resolve(extraction: QueryExtractionResult) -> ResolverDecision:
     """Main resolver entry point."""
-    
+
     if extraction.ambiguities:
         time_vague = next(
             (a for a in extraction.ambiguities if a.code == AmbiguityCode.TIME_VAGUE),
@@ -135,14 +135,14 @@ def resolve(extraction: QueryExtractionResult) -> ResolverDecision:
                     vars={"context": time_vague.context, "suggestion": f"last {QUERY_LIMITS['default_lookback_days']} days"},
                 )],
             )
-    
+
     # Check capabilities
     missing = check_capabilities(extraction.requested_capabilities)
-    
+
     if missing:
         cap = missing[0]
         alt = get_alternative(cap)
-        
+
         # Can we auto-negotiate?
         if cap == QueryCapability.TIME_ALL:
             # Auto-clamp to max and negotiate
@@ -158,7 +158,7 @@ def resolve(extraction: QueryExtractionResult) -> ResolverDecision:
                 ),
                 clamped=ClampedValues(days_back=clamped_days),
             )
-        
+
         if cap == QueryCapability.SEARCH_NARRATION_FUZZY:
             return ResolverDecision(
                 decision=Decision.NEGOTIATE,
@@ -170,7 +170,7 @@ def resolve(extraction: QueryExtractionResult) -> ResolverDecision:
                     auto_apply=False,
                 ),
             )
-        
+
         # No alternative available
         if cap in (QueryCapability.EXPORT_PDF, QueryCapability.EXPORT_CSV):
             return ResolverDecision(
@@ -183,10 +183,10 @@ def resolve(extraction: QueryExtractionResult) -> ResolverDecision:
                     auto_apply=False,
                 ),
             )
-    
+
     # Clamp time if needed (even for supported queries)
     extraction, clamped_days = clamp_time_range(extraction)
-    
+
     return ResolverDecision(
         decision=Decision.PROCEED,
         extraction=extraction,

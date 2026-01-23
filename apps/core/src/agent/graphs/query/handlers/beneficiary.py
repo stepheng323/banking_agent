@@ -48,7 +48,7 @@ async def handle_beneficiary_summary(
     else:
         sorted_cp = sorted(counterparties.items(), key=lambda x: x[1]["total"], reverse=True)
         heading_type = "Top"
-    
+
     limit = query.aggregation.limit if query.aggregation else 5
 
     # Determine timeframe text

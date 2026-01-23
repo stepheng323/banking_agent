@@ -1,12 +1,10 @@
 """Continuation handlers for query flow."""
 
+import json
 from datetime import datetime
 from typing import Any
 
 from apps.core.src.agent.graphs.query.models import QueryResult, QueryResultItem
-
-
-import json
 from shared.cache.redis_client import RedisClient
 
 QUEUE_NAME = "banking:receipt_jobs"
@@ -43,33 +41,27 @@ async def handle_drill_down(state: dict[str, Any]) -> dict[str, Any]:
                     "bank_name": item.metadata.get("bank_name", "Unknown Bank"),
                     "account_number": item.metadata.get("recipient_account", "N/A"),
                 },
-                "source": {
-                    "account_name": "User Account" 
-                }
+                "source": {"account_name": "User Account"},
             }
-            
+
             if item.metadata.get("recipient_name"):
-                 transfer_data["recipient"]["name"] = item.metadata.get("recipient_name")
-                 
-            transfer_result = {
-                "transaction_id": item.id or "N/A",
-                "reference": item.id or "N/A",
-            }
-            
-            job = {
+                transfer_data["recipient"]["name"] = item.metadata.get("recipient_name")
+
+            payload = {
                 "phone_number": state.get("phone_number"),
-                "transfer_data": transfer_data,
-                "transfer_result": transfer_result,
-                "signal_key": None 
+                "transaction_reference": item.id or "N/A",
+                **transfer_data,
             }
-            
+
+            job = {"payload": payload, "signal_key": None}
+
             await redis_client.rpush(QUEUE_NAME, json.dumps(job))
-            
+
             return {
                 "response": "I'm generating your receipt now. I'll send it to you as an image shortly.",
                 "session_active": True,
             }
-        except Exception as e:
+        except Exception:
             return {
                 "response": "Sorry, I couldn't generate the receipt at this moment. Please try again later.",
                 "session_active": True,
@@ -92,32 +84,32 @@ async def handle_drill_down(state: dict[str, Any]) -> dict[str, Any]:
         }
 
     lines = ["*Transaction Details*", ""]
-    
+
     amount_str = f"₦{item.amount:,.2f}"
     lines.append(f"*Amount:* {amount_str}")
     lines.append(f"*Description:* {item.description}")
     lines.append(f"*Date:* {item.date.strftime('%B %d, %Y') if item.date else 'Unknown'}")
-    
+
     if item.metadata:
         tx_type = item.metadata.get("type", "")
         if tx_type:
             direction = "Outgoing (Debit)" if tx_type == "debit" else "Incoming (Credit)"
             lines.append(f"*Type:* {direction}")
-        
+
         bank_name = item.metadata.get("bank_name", "")
         if bank_name:
             lines.append(f"*Bank:* {bank_name}")
-        
+
         transaction_type = item.metadata.get("transaction_type", "")
         if transaction_type:
             lines.append(f"*Category:* {transaction_type.title()}")
-    
+
     if item.id:
         lines.append(f"*Ref:* {item.id}")
-    
+
     lines.append("")
     lines.append("_Reply: 'receipt' for proof | 'issue' to report a problem_")
-    
+
     return {
         "response": "\n".join(lines),
         "session_active": True,
@@ -281,6 +273,3 @@ def handle_unclear(state: dict[str, Any]) -> dict[str, Any]:
         "clarification_attempts": attempts,
         "session_active": True,
     }
-
-
-

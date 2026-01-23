@@ -6,19 +6,19 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from apps.core.src.agent.graphs.support.capabilities import (
-    SupportAction,
     SUPPORT_LIMITS,
+    SupportAction,
     check_actions,
-    get_alternative,
     generate_limitation_message,
+    get_alternative,
 )
 from apps.core.src.agent.graphs.support.models import (
-    SupportExtractionResult,
-    SupportContext,
-    SupportIntent,
-    RequestedAction,
-    TransactionReference,
     EscalationResult,
+    RequestedAction,
+    SupportContext,
+    SupportExtractionResult,
+    SupportIntent,
+    TransactionReference,
 )
 
 
@@ -82,13 +82,13 @@ def _should_escalate(context: SupportContext, intent: SupportIntent) -> tuple[Es
     """Determine if we should escalate. Returns (escalation_result, notify_human)."""
     if context.attempts >= SUPPORT_LIMITS["max_escalation_attempts"]:
         return EscalationResult(reason="max_attempts", context={"attempts": context.attempts}), True
-    
+
     if intent == SupportIntent.FRAUD_REPORT:
         return EscalationResult(reason="fraud_suspected", transaction_id=context.last_transaction_ref), True
-    
+
     if intent == SupportIntent.HUMAN_HANDOFF:
         return EscalationResult(reason="user_requested"), True
-    
+
     return None, False
 
 
@@ -99,9 +99,9 @@ def _build_negotiation(missing: list[SupportAction]) -> NegotiationResult:
         alt = get_alternative(action)
         if alt and alt not in alternatives:
             alternatives.append(alt)
-    
+
     suggested = alternatives[0] if alternatives else SupportAction.ESCALATE
-    
+
     return NegotiationResult(
         missing_actions=missing,
         suggested_action=suggested,
@@ -118,12 +118,12 @@ def resolve(
     """Main micro-resolver entry point."""
     if context is None:
         context = SupportContext()
-    
+
     context.last_issue_intent = extraction.intent
-    
+
     if has_quoted_message and extraction.transaction_ref:
         extraction.transaction_ref.use_quoted = True
-    
+
     escalation, notify_human = _should_escalate(context, extraction.intent)
     if escalation:
         context.last_support_step = "creating_ticket"
@@ -136,9 +136,9 @@ def resolve(
             notify_human=notify_human,
             prompts=[Prompt(key="support.creating_ticket", vars={"reason": escalation.reason})],
         )
-    
+
     has_ref = _has_transaction_ref(extraction.transaction_ref)
-    
+
     if not has_ref and extraction.intent not in (SupportIntent.LIMITS_FEES, SupportIntent.ACCOUNT_LINKING):
         context.last_support_step = "asked_for_reference"
         return ResolverDecision(
@@ -148,14 +148,14 @@ def resolve(
             context=context,
             prompts=[Prompt(key="support.ask_reference", vars={"intent": extraction.intent.value})],
         )
-    
+
     requested = [ACTION_MAP[a] for a in extraction.requested_actions if a in ACTION_MAP]
     missing = check_actions(requested)
-    
+
     if missing:
         negotiation = _build_negotiation(missing)
         next_step = NextStep.CREATE_TICKET if negotiation.suggested_action == SupportAction.ESCALATE else NextStep.ASK_CLARIFICATION
-        
+
         return ResolverDecision(
             decision=Decision.NEGOTIATE,
             next_step=next_step,
@@ -164,8 +164,8 @@ def resolve(
             negotiation=negotiation,
             prompts=[Prompt(key="support.negotiate", vars={"message": negotiation.message})],
         )
-    
-    if extraction.intent in (SupportIntent.FAILED_TRANSFER, SupportIntent.PENDING_TRANSFER, 
+
+    if extraction.intent in (SupportIntent.FAILED_TRANSFER, SupportIntent.PENDING_TRANSFER,
                              SupportIntent.GENERAL_TX_ISSUE, SupportIntent.TRANSFER_STATUS):
         context.last_support_step = "looking_up"
         return ResolverDecision(
@@ -174,7 +174,7 @@ def resolve(
             extraction=extraction,
             context=context,
         )
-    
+
     if extraction.intent == SupportIntent.RECEIPT_REQUEST:
         context.last_support_step = "looking_up"
         return ResolverDecision(
@@ -183,7 +183,7 @@ def resolve(
             extraction=extraction,
             context=context,
         )
-    
+
     if extraction.intent in (SupportIntent.REVERSAL_REFUND, SupportIntent.WRONG_RECIPIENT):
         context.last_support_step = "creating_ticket"
         return ResolverDecision(
@@ -193,7 +193,7 @@ def resolve(
             context=context,
             prompts=[Prompt(key="support.will_create_ticket", vars={})],
         )
-    
+
     context.last_support_step = "explaining"
     return ResolverDecision(
         decision=Decision.PROCEED,
@@ -213,8 +213,8 @@ def reset_context_on_resolution(context: SupportContext, ticket_id: str | None =
     """Reset context after resolution or ticket creation."""
     if ticket_id:
         context.last_ticket_id = ticket_id
-    
+
     context.attempts = 0
     context.last_support_step = "resolved" if not ticket_id else "ticket_created"
-    
+
     return context

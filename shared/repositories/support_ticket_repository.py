@@ -39,12 +39,12 @@ class SupportTicketRepository(BaseRepository[SupportTicket]):
             self.db.query(SupportTicket)
             .filter(SupportTicket.user_id == lookup_id)
         )
-        
+
         if not include_closed:
             query = query.filter(
                 SupportTicket.status != SupportTicketStatusEnum.CLOSED.value
             )
-        
+
         return query.order_by(SupportTicket.created_at.desc()).limit(limit).all()
 
     def get_open_tickets(self, user_id: str) -> list[SupportTicket]:
@@ -102,15 +102,15 @@ class SupportTicketRepository(BaseRepository[SupportTicket]):
         """Generate a unique ticket code in format SUP-YYYYMMDD-####."""
         today = date.today()
         prefix = f"SUP-{today.strftime('%Y%m%d')}"
-        
+
         # Get count of tickets created today
         today_count = (
             self.db.query(func.count(SupportTicket.id))
             .filter(SupportTicket.ticket_code.like(f"{prefix}-%"))
             .scalar()
         ) or 0
-        
+
         # Increment to get next number
         next_num = today_count + 1
-        
+
         return f"{prefix}-{next_num:04d}"

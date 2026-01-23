@@ -3,9 +3,35 @@
 from typing import Any
 
 from apps.core.src.agent.graphs.__shared__.beneficiary.matcher import BeneficiaryMatcher
-from apps.core.src.agent.graphs.transfer.models.types import TransferContext, TransferPayload
+from apps.core.src.agent.graphs.transfer.models.types import (
+    TransferContext,
+    TransferGates,
+    TransferPayload,
+)
+from apps.core.src.agent.graphs.transfer.pipeline.base import TransferStep
 from apps.core.src.agent.orchestrator.models.domain import TransferOutcome, TransferResult
 from shared.database.models import Beneficiary
+from shared.utils.logging import get_logger
+
+logger = get_logger(__name__)
+
+
+class ResolutionStep(TransferStep):
+    """Resolves beneficiary details."""
+
+    async def execute(
+        self,
+        data: TransferPayload,
+        context: TransferContext,
+        gates: TransferGates,
+        worker_context: Any,
+    ) -> TransferResult:
+        return await resolve_beneficiary(
+            data,
+            context,
+            worker_context.banking_provider,
+            worker_context.bank_cache,
+        )
 
 
 async def resolve_beneficiary(
@@ -103,6 +129,54 @@ async def resolve_beneficiary(
             required_fields=["recipient_name"],
             prompt="Who is the recipient?",
         )
+
+    bank_term = (payload.recipient_bank_name or "").lower()
+
+    own_accounts = ctx.accounts or []
+    candidate_account = None
+
+    if payload.is_self:
+        if bank_term:
+            candidate_account = next(
+                (a for a in own_accounts if bank_term in (a.get("bank_name") or "").lower()),
+                None,
+            )
+        elif payload.is_self and len(own_accounts) == 2:
+            # "Send to myself" (no bank specified) - Smart Inference
+            # If we know the source, the recipient MUST be the other account
+            source_id = payload.source_account_id
+
+            # If source ID missing, try resolving from bank name
+            if not source_id and payload.source_bank_name:
+                src_bank = payload.source_bank_name.lower()
+                src_match = next(
+                    (a for a in own_accounts if src_bank in (a.get("bank_name") or "").lower()),
+                    None,
+                )
+                if src_match:
+                    source_id = str(src_match.get("id"))
+
+            if source_id:
+                candidate_account = next(
+                    (a for a in own_accounts if str(a.get("id")) != source_id),
+                    None,
+                )
+
+    if candidate_account:
+        # Confirm intent: User likely meant this account if they specified the bank
+        # and didn't provide an external account number
+        if not payload.recipient_account:
+            return TransferResult(
+                outcome=TransferOutcome.OK,
+                patch={
+                    "recipient_account": str(candidate_account.get("account_number")),
+                    "recipient_bank_code": str(candidate_account.get("bank_code")),
+                    "recipient_bank_name": candidate_account.get("bank_name"),
+                    "recipient_resolved_name": f"My {candidate_account.get('bank_name')} Account",
+                    "recipient_name": f"My {candidate_account.get('bank_name')}",
+                    "is_self": True,
+                },
+            )
 
     matcher = BeneficiaryMatcher()
     beneficiaries = [Beneficiary(**b) for b in ctx.beneficiaries]

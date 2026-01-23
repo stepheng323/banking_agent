@@ -10,16 +10,14 @@ from sqlalchemy.orm import relationship
 from sqlalchemy.sql import text
 
 from shared.database.enums import (
-    UserOnboardingStatusEnum,
-    MandateStatusEnum,
-    TransactionTypeEnum,
-    TransactionStatusEnum,
+    BeneficiaryTypeEnum,
     FundedTransferStatusEnum,
     FundingStepStatusEnum,
-    BeneficiaryTypeEnum,
-    ActionableMessageTypeEnum,
-    SupportTicketStatusEnum,
+    MandateStatusEnum,
     SupportTicketPriorityEnum,
+    SupportTicketStatusEnum,
+    TransactionTypeEnum,
+    UserOnboardingStatusEnum,
 )
 
 Base = declarative_base()
@@ -342,16 +340,16 @@ class SupportTicket(Base):
     intent = Column(String(50), nullable=False, index=True)
     status = Column(String(20), default=SupportTicketStatusEnum.OPEN.value, nullable=False, index=True)
     priority = Column(String(10), default=SupportTicketPriorityEnum.MEDIUM.value, nullable=False, index=True)
-    
+
     transaction_ref = Column(String(100), nullable=True, index=True)
-    
+
     summary = Column(Text, nullable=False)
     details = Column(JSON, default={}, nullable=False)
-    
+
     created_at = Column(DateTime, server_default=text("now()"), nullable=False, index=True)
     updated_at = Column(DateTime, server_default=text("now()"), onupdate=datetime.utcnow, nullable=False)
     resolved_at = Column(DateTime, nullable=True)
-    
+
     user = relationship("User")
 
     def __repr__(self):

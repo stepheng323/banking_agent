@@ -24,6 +24,7 @@ class TaskParameters(BaseModel):
     scheduled: str | None = None
     recurring: bool | None = None
     international: bool | None = None
+    alias: str | None = None
 
 
 class PlannedTask(BaseModel):
@@ -31,7 +32,7 @@ class PlannedTask(BaseModel):
 
     task_id: str = Field(..., description="Stable ID referenced by depends_on")
     action: str
-    executor: Literal["transfer", "query", "airtime", "data", "account_management", "support", "faq"]
+    executor: Literal["transfer", "query", "airtime", "data", "account_management", "support", "faq", "beneficiary"]
     instruction: str
     description: str | None = None
     parameters: TaskParameters = Field(default_factory=TaskParameters)
@@ -57,6 +58,7 @@ class PlannerOutput(BaseModel):
         default=False, description="True if multiple recipients, mixed intents, or complex request"
     )
     is_cancellation: bool = Field(default=False, description="True if user wants to cancel/abort")
+    is_confirmation: bool = Field(default=False, description="True if user explicitly confirms/agrees")
     detected_language: str | None = Field(
         default=None, description="Detected language: English, Yoruba, Hausa, Igbo, Pidgin, French"
     )

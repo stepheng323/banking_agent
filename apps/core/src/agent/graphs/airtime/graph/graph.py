@@ -10,6 +10,7 @@ from langgraph.graph.state import CompiledStateGraph
 from apps.core.src.agent.graphs.__shared__.base_flow_graph import BaseFlowGraph
 from apps.core.src.agent.graphs.__shared__.beneficiary.matcher import BeneficiaryMatcher
 from apps.core.src.agent.graphs.airtime.extractor import AirtimeEntityExtractor
+from apps.core.src.agent.graphs.airtime.graph.nodes.extraction import extract_entities
 from apps.core.src.agent.graphs.airtime.state import AirtimeState
 from apps.core.src.agent.graphs.interfaces import FlowCompletionCallback
 from shared.cache.user_data import UserDataCache
@@ -19,8 +20,6 @@ from shared.repositories.account_repository import AccountRepository
 from shared.repositories.actionable_message_repository import ActionableMessageRepository
 from shared.repositories.beneficiary_repository import BeneficiaryRepository
 from shared.utils.logging import get_logger
-from apps.core.src.agent.graphs.airtime.graph.nodes.extraction import extract_entities
-
 
 from .builder import build_graph
 from .state import create_initial_state, update_conversation_state

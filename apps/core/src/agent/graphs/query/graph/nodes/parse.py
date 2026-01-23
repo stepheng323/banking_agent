@@ -22,7 +22,7 @@ async def parse_node(state: QueryState, parser: QueryParser) -> dict[str, Any]:
 
     try:
         extraction, resolver_msg = await parser.parse(message, message_id)
-        
+
         if resolver_msg:
             if resolver_msg.startswith("clarify:"):
                 return {
@@ -35,10 +35,10 @@ async def parse_node(state: QueryState, parser: QueryParser) -> dict[str, Any]:
                     "response": resolver_msg.replace("negotiate:", ""),
                     "session_active": True,
                 }
-        
+
         # Convert extraction to NormalizedQuery for handlers
         query = parser.convert_to_normalized(extraction)
-        
+
         result = {
             "flow_state": "fetching",
             "query": query,
@@ -46,13 +46,13 @@ async def parse_node(state: QueryState, parser: QueryParser) -> dict[str, Any]:
             "page_size": query.aggregation.limit if query.aggregation else 5,
             "session_active": True,
         }
-        
+
         # Include clamping message for format node
         if resolver_msg and not resolver_msg.startswith(("clarify:", "negotiate:")):
             result["resolver_message"] = resolver_msg
-        
+
         return result
-        
+
     except Exception as e:
         logger.error("parse_node_error", error=str(e))
         return {

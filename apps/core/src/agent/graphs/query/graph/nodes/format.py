@@ -157,40 +157,40 @@ def _format_query_result(
     if len(result.items) == 1:
         item = result.items[0]
         lines = ["*Transaction Details*", ""]
-        
+
         amount_str = f"₦{item.amount:,.2f}"
         lines.append(f"*Amount:* {amount_str}")
         lines.append(f"*Description:* {item.description}")
         lines.append(f"*Date:* {item.date.strftime('%B %d, %Y') if item.date else 'Unknown'}")
-        
+
         if item.metadata:
             tx_type = item.metadata.get("type", "")
             if tx_type:
                 direction = "Outgoing (Debit)" if tx_type == "debit" else "Incoming (Credit)"
                 lines.append(f"*Type:* {direction}")
-            
+
             bank_name = item.metadata.get("bank_name", "")
             if bank_name:
                 lines.append(f"*Bank:* {bank_name}")
-            
+
             transaction_type = item.metadata.get("transaction_type", "")
             if transaction_type:
                 lines.append(f"*Category:* {transaction_type.title()}")
-            
+
             status = item.metadata.get("status", "")
             if status:
                 status_display = "✅ Successful" if status.lower() in ("success", "completed", "successful") else f"⏳ {status.title()}"
                 lines.append(f"*Status:* {status_display}")
-        
+
         if item.id:
             lines.append(f"*Ref:* {item.id}")
-        
+
         lines.append("")
-        
+
         transaction_type = item.metadata.get("transaction_type", "") if item.metadata else ""
         if transaction_type == "transfer":
             lines.append("_Reply: 'receipt' for proof | 'issue' to report a problem_")
-        
+
         return "\n".join(lines)
 
     lines = []

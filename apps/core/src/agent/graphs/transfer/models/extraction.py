@@ -67,7 +67,7 @@ class References(BaseModel):
 
 
 class TransferExtractionResult(BaseModel):
-    """v2: Pure extraction result with versioned envelope."""
+    """Pure extraction result."""
 
     schema_version: int = Field(default=SCHEMA_VERSION, description="Schema version for future-proofing")
     intent: Literal["transfer"] = Field(default="transfer")
@@ -90,4 +90,14 @@ class TransferExtractionResult(BaseModel):
     requested_features: list[RequestedFeature] = Field(
         default_factory=list,
         description="Features beyond simple transfer: SCHEDULED, RECURRING, INTERNATIONAL",
+    )
+
+    acknowledgment: str | None = Field(
+        default=None,
+        description="Natural language acknowledgment of update/correction (e.g. 'Got it, added the narration')",
+    )
+
+    confirmation_intent: Literal["confirm", "cancel", "update"] | None = Field(
+        default=None,
+        description="Intent detected during confirmation phase",
     )
