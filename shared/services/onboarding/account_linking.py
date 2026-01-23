@@ -29,7 +29,7 @@ class AccountLinkingService:
             return {
                 "success": False,
                 "error": "Please select an account.",
-                "data": {"accounts": session.accounts if session else []},
+                "data": {"accounts": session.get("accounts", []) if session else []},
             }
 
         session = await self.session.get_session(flow_token)
@@ -44,7 +44,7 @@ class AccountLinkingService:
             },
         )
 
-        return {"success": True, "data": {"bvn": session.bvn}}
+        return {"success": True, "data": {"bvn": session.get("bvn")}}
 
     async def complete_onboarding(
         self,
@@ -67,14 +67,16 @@ class AccountLinkingService:
         if not session:
             return {"success": False, "error": "Session expired. Please start over."}
 
-        phone_number = session.phone_number or flow_token.split("-")[-1]
+        phone_number = session.get("phone_number") or flow_token.split("-")[-1]
         if not phone_number:
             return {"success": False, "error": "Phone number missing."}
 
         selected_account = None
-        if session.accounts and session.selected_account:
-            for acc in session.accounts:
-                if acc["id"] == session.selected_account:
+        accounts = session.get("accounts", [])
+        selected_account_id = session.get("selected_account")
+        if accounts and selected_account_id:
+            for acc in accounts:
+                if acc["id"] == selected_account_id:
                     selected_account = acc
                     break
 
@@ -110,14 +112,12 @@ class AccountLinkingService:
                         address=address,
                         transaction_pin=hashed_pin,
                         onboarding_status="onboarding_completed",
-                        extra_data={"bvn": session.bvn},
+                        extra_data={"bvn": session.get("bvn")},
                     ),
                 )
 
                 existing_account = uow.accounts.get_by_account_id(selected_account["id"])
-                if not existing_account or getattr(existing_account, "user_id", None) != str(
-                    user.id
-                ):
+                if not existing_account or getattr(existing_account, "user_id", None) != str(user.id):
                     uow.accounts.create_account(
                         CreateAccount(
                             user_id=str(user.id),
@@ -140,7 +140,7 @@ class AccountLinkingService:
                     last_name=last_name,
                     email=email,
                     address=address,
-                    bvn=session.bvn or "",
+                    bvn=session.get("bvn") or "",
                     account_id=selected_account["id"],
                     account_number=selected_account.get("account_number", ""),
                     bank_code=bank_code,
@@ -152,7 +152,7 @@ class AccountLinkingService:
                 "success": True,
                 "data": {
                     "phone_number": phone_number,
-                    "bvn": session.bvn,
+                    "bvn": session.get("bvn"),
                     "account": selected_account,
                 },
             }
@@ -191,9 +191,7 @@ class AccountLinkingService:
                 if uow.users:
                     user = uow.users.get_by_phone(phone_number)
                     if user:
-                        uow.users.update_user(
-                            str(user.id), UserUpdate(mono_customer_id=customer.id)
-                        )
+                        uow.users.update_user(str(user.id), UserUpdate(mono_customer_id=customer.id))
 
             result = await self.mandate.create_mandate(
                 phone_number=phone_number,
