@@ -8,7 +8,7 @@ from apps.core.src.agent.graphs.transfer.models.types import (
     TransferPayload,
 )
 from apps.core.src.agent.graphs.transfer.pipeline.base import TransferStep
-from apps.core.src.agent.orchestrator.models.domain import TransferOutcome, TransferResult
+from apps.core.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -26,9 +26,9 @@ class ExtractionStep(TransferStep):
         context: TransferContext,
         gates: TransferGates,
         worker_context: Any,
-    ) -> TransferResult:
+    ) -> TransactionResult:
         if not self.user_message:
-            return TransferResult(outcome=TransferOutcome.OK, patch={})
+            return TransactionResult(outcome=TransactionOutcome.OK, patch={})
 
         res = await _extract_transfer_update(
             data,
@@ -45,7 +45,7 @@ async def _extract_transfer_update(
     extractor: Any,
     user_message: str,
     context: dict[str, Any],
-) -> TransferResult:
+) -> TransactionResult:
     """Extract transfer details from user message and merge with current payload."""
     try:
         print(f"DEBUG: Extracting from '{user_message}'", flush=True)
@@ -68,7 +68,7 @@ async def _extract_transfer_update(
 
         if not extracted_data and not extraction.acknowledgment:
             print("DEBUG: No entities or corrections found.", flush=True)
-            return TransferResult(outcome=TransferOutcome.OK)
+            return TransactionResult(outcome=TransactionOutcome.OK)
 
         print(f"DEBUG: Extracted Data (Pre-map): {extracted_data}", flush=True)
 
@@ -117,8 +117,8 @@ async def _extract_transfer_update(
             extracted_data["recipient_resolved_name"] = None
             extracted_data["beneficiary_id"] = None
 
-        return TransferResult(outcome=TransferOutcome.OK, patch=extracted_data)
+        return TransactionResult(outcome=TransactionOutcome.OK, patch=extracted_data)
 
     except Exception as e:
         logger.error("extraction_node_failed", error=str(e))
-        return TransferResult(outcome=TransferOutcome.OK)
+        return TransactionResult(outcome=TransactionOutcome.OK)

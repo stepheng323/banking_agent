@@ -8,7 +8,7 @@ from apps.core.src.agent.graphs.transfer.models.types import (
     TransferPayload,
 )
 from apps.core.src.agent.graphs.transfer.pipeline.base import TransferStep
-from apps.core.src.agent.orchestrator.models.domain import TransferOutcome, TransferResult
+from apps.core.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
 
 
 class AuthorizationStep(TransferStep):
@@ -20,16 +20,16 @@ class AuthorizationStep(TransferStep):
         context: TransferContext,
         gates: TransferGates,
         worker_context: Any,
-    ) -> TransferResult:
+    ) -> TransactionResult:
 
         if gates.confirmation_confirmed:
-            return TransferResult(outcome=TransferOutcome.OK, patch={})
+            return TransactionResult(outcome=TransactionOutcome.OK, patch={})
 
-        return TransferResult(outcome=TransferOutcome.OK, patch={})
+        return TransactionResult(outcome=TransactionOutcome.OK, patch={})
 
 
-def require_auth(gate: TransferGates) -> TransferResult:
+def require_auth(gate: TransferGates) -> TransactionResult:
     """Check authentication gates."""
     if not gate.pin_verified:
-        return TransferResult(outcome=TransferOutcome.NEEDS_AUTH)
-    return TransferResult(outcome=TransferOutcome.OK)
+        return TransactionResult(outcome=TransactionOutcome.NEEDS_AUTH)
+    return TransactionResult(outcome=TransactionOutcome.OK)
