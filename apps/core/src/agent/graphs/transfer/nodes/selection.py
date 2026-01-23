@@ -9,6 +9,7 @@ from apps.core.src.agent.graphs.transfer.models.types import (
 )
 from apps.core.src.agent.graphs.transfer.pipeline.base import TransferStep
 from apps.core.src.agent.orchestrator.models.domain import TransferOutcome, TransferResult
+from shared.formatters.accounts import format_accounts_list
 
 
 class SourceSelectionStep(TransferStep):
@@ -67,7 +68,23 @@ async def select_source_account(
             },
         )
 
+    if payload.source_account_index is not None and not payload.source_account_id:
+        index = payload.source_account_index - 1
+        if 0 <= index < len(accounts):
+            acc = accounts[index]
+            return TransferResult(
+                outcome=TransferOutcome.OK,
+                patch={
+                    "source_account_id": str(acc.get("id")),
+                    "source_bank_name": acc.get("bank_name"),
+                    "source_account_name": acc.get("account_name"),
+                    "source_account_number": acc.get("account_number"),
+                    "source_account_index": None,
+                },
+            )
+
     if payload.source_bank_name and not payload.source_account_id:
+        # Bank name matching
         target_bank = payload.source_bank_name.lower()
         candidates = [
             a
@@ -105,8 +122,9 @@ async def select_source_account(
                     },
                 )
 
+    accounts_list = format_accounts_list(accounts)
     return TransferResult(
         outcome=TransferOutcome.NEEDS_INPUT,
         required_fields=["source_account_id"],
-        prompt="Which account should I debit?",
+        prompt=accounts_list,
     )

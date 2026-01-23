@@ -13,7 +13,11 @@ class TransferEntities(BaseModel):
     source_account_id: str | None = Field(default=None, description="Explicit source account id/reference if provided")
     source_bank_name: str | None = Field(
         default=None,
-        description="Source bank name for internal transfers (e.g., 'Access Bank', 'GTBank')",
+        description=(
+            "Source bank when user specifies where to send FROM. "
+            "Triggers: 'from my X', 'use X bank', 'X bank instead', before → or ->. "
+            "Example: 'use first bank' -> 'First Bank'"
+        ),
     )
     amount: float | None = Field(default=None, description="Transfer amount as numeric value")
     narration: str | None = Field(default=None, description="Transfer description/memo (optional)")
@@ -47,6 +51,13 @@ class TransferEntities(BaseModel):
     explicit_split: dict[str, float] | None = Field(
         default=None,
         description="User-specified split amounts (e.g., {'Access Bank': 60000, 'GTBank': 40000})",
+    )
+    source_account_index: int | None = Field(
+        default=None,
+        description=(
+            "1-based index when user selects from a numbered list. "
+            "Set to 1 for 'first', '1', 'one', 'option 1'; set to 2 for 'second', '2', 'two', 'option 2', etc."
+        ),
     )
 
     @field_validator("amount", mode="before")
