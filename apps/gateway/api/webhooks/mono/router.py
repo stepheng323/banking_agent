@@ -37,12 +37,10 @@ async def mono_webhook(request: Request) -> Response:
 
         service = _get_service()
 
-        # Handle mandate events
         if event.startswith("events.mandate"):
             await service.handle_mandate_event(event, data)
             return Response(status_code=200)
 
-        # Handle debit events
         if event.startswith("events.mandates.debit"):
             await service.handle_debit_event(event, data)
             return Response(status_code=200)

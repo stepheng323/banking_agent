@@ -68,3 +68,12 @@ class ShowReceipt(UiIntent):
     task_id: str
     receipt: dict[str, Any]
     caption: str = ""
+
+
+@dataclass
+class ShowFlow(UiIntent):
+    """Request a channel flow to be presented."""
+
+    flow_id: str
+    flow_config: dict[str, Any]
+    fallback_text: str = ""

@@ -12,7 +12,7 @@ class ClassificationResult(BaseModel):
     intent: str = Field(
         description=(
             "The intent of the user's message. "
-            "Business intents: transfer, airtime, data, query, manage_accounts, conversational, faq, support. "
+            "Business intents: transfer, airtime, data, query, account, conversational, faq, support. "
             "Conversation intents: correct (mid-flow update), add_task (compound request), followup (query follow-up), "
             "dangerous (bypass security/malicious), unsupported (crypto/investment/not offered), cancel, unknown."
         )

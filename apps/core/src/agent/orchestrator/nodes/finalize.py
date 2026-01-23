@@ -17,8 +17,7 @@ logger = get_logger(__name__)
 
 async def finalize(state: OrchestratorState, config: RunnableConfig) -> dict:
     """Final Step. Generate response and queue receipts."""
-    results = []
-    outbox = []
+    outbox = list(state.outbox)
 
     beneficiary_service: BeneficiarySuggestionService | None = config["configurable"].get(
         "beneficiary_suggestion_service"
@@ -41,16 +40,12 @@ async def finalize(state: OrchestratorState, config: RunnableConfig) -> dict:
         )
 
     for task in failed_tasks:
-        results.append(f"Failed: {task.payload.get('error')}")
+        outbox.append({"type": "say", "text": f"Failed: {task.payload.get('error')}"})
 
     for task in cancelled_tasks:
-        results.append("Transaction cancelled, how else can I help you today?")
-
-    # If we had manual sends, results might be empty, which is fine.
-    final_text = "\n".join(results) if results else None
+        outbox.append({"type": "say", "text": "Transaction cancelled, how else can I help you today?"})
 
     return {
-        "final_response": final_text,
         "outbox": outbox,
         "tasks": {},  # Wipe tasks so the next turn is fresh
         "waves": [],  # Clear waves so next turn triggers Planner
@@ -76,6 +71,9 @@ async def _handle_completed_tasks(
         and len(completed_tasks[0].payload.get("recipients", [])) <= 1
     )
 
+    read_only_task_types = {"account", "query", "faq", "support"}
+    all_read_only = all(task.type in read_only_task_types for task in completed_tasks)
+
     if is_single_transfer:
         task = completed_tasks[0]
         await _queue_single_transfer_receipt(
@@ -92,6 +90,8 @@ async def _handle_completed_tasks(
                 phone_number=state.phone_number,
                 outbox=outbox,
             )
+    elif all_read_only:
+        pass
     else:
         summary_text = format_multi_action_summary(completed_tasks)
         outbox.append({"type": "say", "text": summary_text})
@@ -115,9 +115,7 @@ async def _queue_single_transfer_receipt(
 
     payload = {
         "phone_number": state.phone_number,
-        "transaction_reference": task.payload.get("transaction_id")
-        or task.payload.get("idempotency_key")
-        or "N/A",
+        "transaction_reference": task.payload.get("transaction_id") or task.payload.get("idempotency_key") or "N/A",
         "amount": task.payload.get("amount"),
         "source": {
             "name": task.payload.get("source_bank_name"),

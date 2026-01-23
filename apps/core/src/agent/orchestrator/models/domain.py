@@ -76,7 +76,7 @@ class TaskSpec(BaseModel):
     """
 
     id: str
-    type: Literal["transfer", "query", "airtime", "data", "account_management", "support", "faq", "beneficiary"]
+    type: Literal["transfer", "query", "airtime", "data", "account", "support", "faq", "beneficiary"]
     stage: TaskStage = TaskStage.DRAFT
     payload: dict[str, Any] = Field(default_factory=dict)
 
@@ -158,3 +158,23 @@ class TransferResult(BaseModel):
     @property
     def is_terminal(self) -> bool:
         return self.outcome == TransferOutcome.FAILED
+
+
+class AccountOutcome(str, Enum):
+    """Standardized outcomes for account worker."""
+
+    OK = "ok"
+    NEEDS_INPUT = "needs_input"
+    FAILED = "failed"
+
+
+class AccountResult(BaseModel):
+    """Result returned by AccountWorker."""
+
+    outcome: AccountOutcome
+    patch: dict[str, Any] = Field(default_factory=dict)
+    required_fields: list[str] = Field(default_factory=list)
+    prompt: str | None = None
+    response: str | None = None
+    outbox: list[dict[str, Any]] = Field(default_factory=list)
+    error: str | None = None

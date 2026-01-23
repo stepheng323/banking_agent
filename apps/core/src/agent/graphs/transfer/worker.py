@@ -69,7 +69,6 @@ class TransferWorker:
         """Execute the transfer pipeline."""
         data = TransferPayload(**payload)
 
-        # Hydrate ID key if missing
         if not data.idempotency_key or data.idempotency_key == "no-key":
             import uuid
 

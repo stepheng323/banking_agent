@@ -41,7 +41,7 @@ async def extract_entities(state: AirtimeState, extractor: AirtimeEntityExtracto
                     "response": "",
                 }
 
-        if intent in ("manage_accounts", "query", "transfer", "data"):
+        if intent in ("account", "query", "transfer", "data"):
             logger.info("airtime_interrupt", intent=intent)
             return {
                 **state,

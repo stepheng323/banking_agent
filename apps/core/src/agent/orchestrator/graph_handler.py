@@ -21,7 +21,7 @@ from shared.cache.user_data import UserDataCache
 from shared.clients.abstractions.banking import BankingDataProvider
 from shared.clients.whatsapp.client import WhatsAppClient
 from shared.protocols.services import (
-    AccountManagementServiceProtocol,
+    AccountServiceProtocol,
     AirtimeServiceProtocol,
     DataServiceProtocol,
     FAQServiceProtocol,
@@ -50,7 +50,7 @@ class OrchestratorGraphHandler:
         airtime_service: AirtimeServiceProtocol,
         query_service: QueryServiceProtocol,
         data_service: DataServiceProtocol,
-        account_management_service: AccountManagementServiceProtocol,
+        account_service: AccountServiceProtocol,
         support_service: SupportServiceProtocol,
         faq_service: FAQServiceProtocol,
         user_repo: UserRepository,
@@ -81,7 +81,7 @@ class OrchestratorGraphHandler:
             "airtime": airtime_service,
             "query": query_service,
             "data": data_service,
-            "manage_accounts": account_management_service,
+            "account": account_service,
             "support": support_service,
             "faq": faq_service,
         }

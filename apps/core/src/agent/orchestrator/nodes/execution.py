@@ -4,6 +4,7 @@ from typing import Any
 from langchain_core.runnables import RunnableConfig
 
 from apps.core.src.agent.orchestrator.models.domain import (
+    AccountOutcome,
     PendingInterrupt,
     TaskStage,
     TransferOutcome,
@@ -95,7 +96,6 @@ async def advance_wave(state: OrchestratorState, config: RunnableConfig) -> dict
                             context_data["accounts"] = [to_dict(a) for a in results[1]]
             except Exception as e:
                 logger.error("context_loading_failed", error=str(e))
-                # Proceed with partial context
 
             pass
 
@@ -114,7 +114,6 @@ async def advance_wave(state: OrchestratorState, config: RunnableConfig) -> dict
                     task.stage = TaskStage.COMPLETED
                     task.payload["receipt"] = result.receipt
                 else:
-                    # Intermediate OK (e.g. resolved)
                     pass
 
             elif result.outcome == TransferOutcome.NEEDS_INPUT:
@@ -143,6 +142,85 @@ async def advance_wave(state: OrchestratorState, config: RunnableConfig) -> dict
                 task.stage = TaskStage.FAILED
                 task.payload["error"] = result.error
 
+        elif task.type == "account":
+            account_service = services.get("account")
+            if not account_service or not hasattr(account_service, "worker"):
+                logger.error("account_worker_missing")
+                task.stage = TaskStage.FAILED
+                task.payload["error"] = "System error: Account worker unavailable"
+                continue
+
+            worker = account_service.worker
+
+            user_msg = None
+            if task.stage in (TaskStage.DRAFT, TaskStage.EXTRACTED):
+                user_msg = state.last_message_text
+
+            user_repo = config["configurable"].get("user_repo")
+            account_repo = config["configurable"].get("account_repo")
+            redis_client = config["configurable"].get("redis_client")
+
+            context_data = {"phone_number": state.phone_number}
+
+            try:
+                if user_repo:
+                    user = await asyncio.to_thread(user_repo.get_by_phone, state.phone_number)
+                    if user:
+                        context_data["user_id"] = user.id
+
+                        def to_dict(obj):
+                            """Convert SQLAlchemy model to dict, filtering internal state."""
+                            if not obj:
+                                return {}
+                            return {k: v for k, v in obj.__dict__.items() if not k.startswith("_")}
+
+                        context_data["profile"] = to_dict(user)
+
+                        if account_repo:
+                            accounts = await asyncio.to_thread(account_repo.get_by_user, user.id)
+                            context_data["accounts"] = [to_dict(a) for a in accounts]
+
+                if redis_client:
+                    language = await redis_client.get(f"user:{state.phone_number}:language")
+                    if isinstance(language, bytes):
+                        language = language.decode()
+                    if language:
+                        context_data["language"] = language
+            except Exception as e:
+                logger.error("account_context_failed", error=str(e))
+
+            result = await worker.run(
+                payload=task.payload,
+                context=context_data,
+                user_message=user_msg,
+            )
+
+            if result.patch:
+                task.payload.update(result.patch)
+
+            if result.outcome == AccountOutcome.OK:
+                task.stage = TaskStage.COMPLETED
+                if result.response:
+                    task.payload["result"] = result.response
+                    updates.setdefault("outbox", [])
+                    updates["outbox"].append({"type": "say", "text": result.response})
+                if result.outbox:
+                    updates.setdefault("outbox", [])
+                    updates["outbox"].extend(result.outbox)
+
+            elif result.outcome == AccountOutcome.NEEDS_INPUT:
+                task.stage = TaskStage.EXTRACTED
+                missing_fields_by_task[tid] = result.required_fields or ["identifier"]
+                if result.prompt:
+                    prompts.append(result.prompt)
+
+            elif result.outcome == AccountOutcome.FAILED:
+                task.stage = TaskStage.FAILED
+                task.payload["error"] = result.error or "Account action failed."
+                if result.response:
+                    updates.setdefault("outbox", [])
+                    updates["outbox"].append({"type": "say", "text": result.response})
+
         elif task.type == "beneficiary":
             suggestion_service = config["configurable"].get("beneficiary_suggestion_service")
             if not suggestion_service:
@@ -158,16 +236,17 @@ async def advance_wave(state: OrchestratorState, config: RunnableConfig) -> dict
                 task.payload["result"] = msg
 
                 if len(current_wave) == 1:
-                    updates["final_response"] = msg
+                    updates.setdefault("outbox", [])
+                    updates["outbox"].append({"type": "say", "text": msg})
 
             except Exception as e:
                 logger.error("save_beneficiary_exec_error", error=str(e))
                 task.stage = TaskStage.FAILED
                 task.payload["error"] = "Failed to save beneficiary."
 
-        else:
-            logger.warning("unsupported_task_type", type=task.type)
-            task.stage = TaskStage.COMPLETED
+            else:
+                logger.warning("unsupported_task_type", type=task.type)
+                task.stage = TaskStage.COMPLETED
 
     if missing_fields_by_task:
         prompt_text = "\n".join(prompts) or "I need some details."
@@ -180,7 +259,7 @@ async def advance_wave(state: OrchestratorState, config: RunnableConfig) -> dict
         return {
             "pending_interrupt": interrupt,
             "tasks": state.tasks,
-            "final_response": prompt_text,
+            "outbox": [{"type": "say", "text": prompt_text}],
         }
 
     if needs_confirm_tasks:
@@ -215,7 +294,6 @@ async def advance_wave(state: OrchestratorState, config: RunnableConfig) -> dict
 
         updates["outbox"] = outbox
         updates["pending_interrupt"] = interrupt
-        updates["final_response"] = summ
         return updates
 
     if needs_auth_tasks:
@@ -246,7 +324,6 @@ async def advance_wave(state: OrchestratorState, config: RunnableConfig) -> dict
             }
         ]
         updates["pending_interrupt"] = interrupt
-        updates["final_response"] = summ
         return updates
 
     all_terminal = all(

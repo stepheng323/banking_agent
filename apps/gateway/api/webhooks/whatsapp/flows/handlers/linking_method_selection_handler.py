@@ -33,8 +33,8 @@ async def handle_linking_method_selection(
 ) -> Response:
     """Handle METHOD_SELECTION for account linking flow.
 
-    On initial load (no method): Return stored session data with methods.
-    On submit (method selected): Send OTP via chosen method.
+    On the initial load (no method): Return stored session data with methods.
+    On submitting (method selected): Send OTP via chosen method.
     """
     logger.info("linking_method_selection_called", flow_token=flow_token, method=data.method)
 
