@@ -1,6 +1,6 @@
 """Minimal orchestrator: LLM-based multilingual intent+complexity and user context cache."""
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from apps.core.src.agent.graphs.transfer import TransferService
@@ -34,12 +34,11 @@ class OrchestratorAgent:
             user_cache=self.deps.user_cache,
             redis_client=self.deps.redis_client,
             whatsapp_client=self.deps.whatsapp_client,
-            queue=self.deps.queue,
             user_repo=self.deps.user_repo,
             beneficiary_repo=self.deps.beneficiary_repo,
             account_repo=self.deps.account_repo,
             banking_provider=self.deps.banking_provider,
-            beneficiary_suggestion_service=self.deps.beneficiary_suggestion_service,
+            queue=self.deps.queue,
         )
 
     @property
@@ -47,7 +46,7 @@ class OrchestratorAgent:
         """Get transfer service."""
         return self.deps.transfer_service
 
-    async def resume_transaction(self, phone_number: str, flow_type: str, pin_verified: bool) -> dict[str, Any]:
+    async def resume_transaction(self, phone_number: str, flow_type: str, pin_verified: bool) -> str | None:
         """Resume a transaction after an external event (like PIN verification)."""
         payload = {"pin_verified": pin_verified, "flow_type": flow_type}
         return await self.orchestrator_handler.resume_flow(phone_number=phone_number, payload=payload)
@@ -60,14 +59,11 @@ class OrchestratorAgent:
         message_type: str = "text",
         media_id: str | None = None,
         quoted_message_id: str | None = None,
-    ) -> dict[str, Any]:
-        """Invoke the orchestrator with a user message.
-
-        Returns:
-            dict: { "text": str, "outbox": list[dict] }
-        """
+    ) -> str:
+        """Invoke the orchestrator with a user message."""
         self.message_type = message_type
 
+        # 1. Media Processing
         if self.message_type == "audio" and media_id:
             raw_text = await self.deps.media_service.process_audio(media_id)
             if raw_text:
@@ -91,18 +87,10 @@ class OrchestratorAgent:
             quoted_message_id=quoted_message_id,
         )
 
-        handler_output = await self.orchestrator_handler.invoke(context)
-        response_text = handler_output.get("final_response")
-        outbox = handler_output.get("outbox", [])
-
-        final_response = response_text
-        if not final_response and not outbox:
-            final_response = "I'm sorry, I'm having trouble processing that right now."
+        response_text = await self.orchestrator_handler.invoke(context)
+        final_response = response_text or "I'm sorry, I'm having trouble processing that right now."
 
         create_background_task(self.context_manager.add_conversation_turn(phone_number, "user", text))
-        if final_response:
-            create_background_task(
-                self.context_manager.add_conversation_turn(phone_number, "assistant", final_response)
-            )
+        create_background_task(self.context_manager.add_conversation_turn(phone_number, "assistant", final_response))
 
-        return {"text": final_response, "outbox": outbox}
+        return final_response

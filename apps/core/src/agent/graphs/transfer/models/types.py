@@ -43,6 +43,7 @@ class TransferPayload(BaseModel):
     source_bank_name: str | None = None
     source_account_name: str | None = None
     source_account_number: str | None = None
+    source_account_index: int | None = None
 
     funding_plan: dict[str, Any] | None = None
 

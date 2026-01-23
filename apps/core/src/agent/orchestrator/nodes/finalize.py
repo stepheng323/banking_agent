@@ -42,7 +42,7 @@ async def finalize(state: OrchestratorState, config: RunnableConfig) -> dict:
     for task in failed_tasks:
         outbox.append({"type": "say", "text": f"Failed: {task.payload.get('error')}"})
 
-    for task in cancelled_tasks:
+    for _ in cancelled_tasks:
         outbox.append({"type": "say", "text": "Transaction cancelled, how else can I help you today?"})
 
     return {
@@ -134,7 +134,10 @@ async def _queue_single_transfer_receipt(
         "signal_key": signal_key,
     }
 
-    await queue.enqueue("banking:receipt_jobs", job_payload)
+    if queue:
+        await queue.enqueue("banking:receipt_jobs", job_payload)
+    else:
+        logger.warning("queue_not_available", message="Cannot queue receipt, RedisQueue is None")
 
 
 async def _handle_beneficiary_suggestion(

@@ -10,14 +10,19 @@ DO NOT generate reply or decide missing fields — resolver handles that.
 |-------|-------------|------------|
 | amount | Transfer amount | k=×1000, h=×100 (25k→25000, 5h→500) |
 | recipient_account | 10-digit account number | — |
-| bank_name | Destination bank | Standardize: gtb→GTBank, zenith→Zenith Bank |
-| source_bank_name | Source bank | "from my access", before → or -> |
+| bank_name | Destination bank (recipient's bank) | Standardize: gtb→GTBank, zenith→Zenith Bank |
+| source_bank_name | Source bank (sender's account) | Use for: "from my access", "use zenith", "X bank instead", before → or -> |
+| source_account_index | Selection from numbered list | 1 for "first"/"1"/"one", 2 for "second"/"2"/"two" |
 | recipient_name | Name/alias | "to mum", "john's gtb" |
 | is_self | Transfer to own account | true for "to my [bank]", "to myself" |
 | narration | Optional memo | — |
 | transfer_all | User wants to send entire available balance | true when user indicates they want full balance, max amount, or whatever they have |
 | transfer_percentage | Percentage of balance | 50 for "half", 10 for "tithe" |
 | source_accounts | Dual-account pooling | List of bank names |
+
+## SOURCE vs DESTINATION DISAMBIGUATION
+- **source_bank_name**: Use when user says "use X bank", "from X", "X bank instead", or any phrase indicating WHERE to send FROM.
+- **bank_name**: Use when user says "send to X bank", "X bank account", or any phrase indicating WHERE to send TO.
 
 ## AMBIGUITIES
 When value is unclear, set field to null and add to ambiguities array:
@@ -59,6 +64,13 @@ When user corrects mid-flow ("I meant 50k"):
 | "Add narration: school fees" | narration="school fees", acknowledgment="Got it, added the narration." |
 | "GTBank" | bank_name="GTBank" |
 | "Access Bank" | bank_name="Access Bank" |
+| "1" or "first" or "the first one" | source_account_index=1 |
+| "2" or "second" or "option 2" | source_account_index=2 |
+| "use the second account" | source_account_index=2 |
+| "Use First Bank instead" | source_bank_name="First Bank" |
+| "use first bank" | source_bank_name="First Bank" |
+| "from zenith" | source_bank_name="Zenith Bank" |
+| "I want to use my access" | source_bank_name="Access Bank" |
 | "its for groceries" | correction.field="narration", correction.new_value="groceries", acknowledgment="Updated narration to 'groceries'." |
 
 ## ACKNOWLEDGMENTS
