@@ -4,9 +4,8 @@ from typing import Any
 
 import redis.asyncio as redis
 from langchain_core.runnables import Runnable
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from apps.core.src.agent.graphs.interfaces import IAgentService
 from apps.core.src.agent.graphs.support.graph.graph import SupportFlowGraph
 from shared.repositories.actionable_message_repository import ActionableMessageRepository
 from shared.repositories.support_ticket_repository import SupportTicketRepository
@@ -17,7 +16,7 @@ from shared.utils.logging import get_logger
 logger = get_logger(__name__)
 
 
-class SupportService(IAgentService):
+class SupportService:
     """Support service facade using LangGraph."""
 
     def __init__(
@@ -26,7 +25,7 @@ class SupportService(IAgentService):
         transaction_repo: TransactionRepository,
         actionable_message_repo: ActionableMessageRepository,
         redis_client: redis.Redis,
-        db_session: Session | None = None,
+        db_session: AsyncSession | None = None,
     ):
         self.graph = SupportFlowGraph(
             llm=llm,

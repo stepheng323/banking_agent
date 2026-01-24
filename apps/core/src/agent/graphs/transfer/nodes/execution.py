@@ -54,13 +54,13 @@ class ExecutionStep(TransferStep):
 
             from shared.repositories.unit_of_work import UnitOfWork
 
-            with UnitOfWork() as uow:
+            async with UnitOfWork() as uow:
                 try:
-                    existing = uow.transactions.get_by_idempotency_key(key)
+                    existing = await uow.transactions.get_by_idempotency_key(key)
                     if existing:
                         transaction_id = str(existing.id)
                     else:
-                        tx = uow.transactions.create(
+                        tx = await uow.transactions.create(
                             idempotency_key=key,
                             transaction_type="transfer",
                             status=TransactionStatusEnum.PENDING.value,
@@ -76,7 +76,7 @@ class ExecutionStep(TransferStep):
                             narration=data.narration,
                         )
                         transaction_id = str(tx.id)
-                        uow.commit()
+                        await uow.commit()
                         logger.info("transaction_persisted", id=transaction_id, key=key)
                 except Exception as e:
                     logger.error("failed_to_persist_transaction", error=str(e))
@@ -138,4 +138,6 @@ class ExecutionStep(TransferStep):
             )
 
         except Exception as e:
-            return TransactionResult(outcome=TransactionOutcome.FAILED, error=f"Execution failed: {str(e)}", retryable=True)
+            return TransactionResult(
+                outcome=TransactionOutcome.FAILED, error=f"Execution failed: {str(e)}", retryable=True
+            )

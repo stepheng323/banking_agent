@@ -3,10 +3,7 @@
 Integrates the Top-Level LangGraph into the Message Processing Pipeline.
 """
 
-from typing import TYPE_CHECKING, Any, Literal
-
-if TYPE_CHECKING:
-    from shared.queue.redis_queue import RedisQueue
+from typing import Any, Literal
 
 import redis.asyncio as redis
 from langchain_core.runnables import RunnableConfig
@@ -14,21 +11,13 @@ from langgraph.checkpoint.redis.aio import AsyncRedisSaver
 from langgraph.graph.state import CompiledStateGraph
 
 from apps.core.src.agent.graphs.__shared__.beneficiary.suggestion_service import BeneficiarySuggestionService
-from apps.core.src.agent.orchestrator.factory import AdapterFactory
 from apps.core.src.agent.orchestrator.graph import build_orchestrator_graph
 from apps.core.src.agent.orchestrator.models.message_context import MessageContext
 from shared.cache.user_data import UserDataCache
 from shared.clients.abstractions.banking import BankingDataProvider
 from shared.clients.whatsapp.client import WhatsAppClient
-from shared.protocols.services import (
-    AccountServiceProtocol,
-    AirtimeServiceProtocol,
-    DataServiceProtocol,
-    FAQServiceProtocol,
-    QueryServiceProtocol,
-    SupportServiceProtocol,
-    TransferServiceProtocol,
-)
+from shared.protocols.worker import WorkerProtocol
+from shared.queue.redis_queue import RedisQueue
 from shared.repositories.account_repository import AccountRepository
 from shared.repositories.beneficiary_repository import BeneficiaryRepository
 from shared.repositories.user_repository import UserRepository
@@ -46,13 +35,13 @@ class OrchestratorGraphHandler:
     def __init__(
         self,
         task_planner: OrchestratorTaskPlanner,
-        transfer_service: TransferServiceProtocol,
-        airtime_service: AirtimeServiceProtocol,
-        query_service: QueryServiceProtocol,
-        data_service: DataServiceProtocol,
-        account_service: AccountServiceProtocol,
-        support_service: SupportServiceProtocol,
-        faq_service: FAQServiceProtocol,
+        transfer_service: WorkerProtocol,
+        airtime_service: WorkerProtocol,
+        query_service: WorkerProtocol,
+        data_service: WorkerProtocol,
+        account_service: WorkerProtocol,
+        support_service: Any,  # Still using Any as these are services
+        faq_service: Any,
         user_repo: UserRepository,
         beneficiary_repo: BeneficiaryRepository,
         account_repo: AccountRepository,
@@ -60,7 +49,7 @@ class OrchestratorGraphHandler:
         user_cache: UserDataCache,
         redis_client: redis.Redis,
         whatsapp_client: WhatsAppClient,
-        queue: "RedisQueue | None" = None,
+        queue: RedisQueue | None = None,
         beneficiary_suggestion_service: BeneficiarySuggestionService | None = None,
         mode: Literal["planning", "execution", "both"] = "both",
     ):
@@ -86,8 +75,6 @@ class OrchestratorGraphHandler:
             "faq": faq_service,
         }
 
-        self.adapter_factory = AdapterFactory(self.services, user_cache)
-
         self.checkpointer = AsyncRedisSaver(redis_client=redis_client)
         self._checkpointer_setup = False
 
@@ -105,7 +92,6 @@ class OrchestratorGraphHandler:
             "configurable": {
                 "thread_id": phone_number,
                 "task_planner": self.task_planner,
-                "adapter_factory": self.adapter_factory,
                 "services": self.services,
                 "user_repo": self.user_repo,
                 "beneficiary_repo": self.beneficiary_repo,

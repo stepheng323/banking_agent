@@ -146,7 +146,7 @@ class AccountService:
         Returns:
             Formatted message with an account list
         """
-        accounts = self.account_repo.get_by_user(user_id)
+        accounts = await self.account_repo.get_by_user(user_id)
         return AccountFormatter.format_account_list(accounts)
 
     async def set_default(self, user_id: str, account_identifier: str) -> str:
@@ -160,7 +160,7 @@ class AccountService:
         Returns:
             Success or error message
         """
-        accounts = self.account_repo.get_by_user(user_id)
+        accounts = await self.account_repo.get_by_user(user_id)
 
         if not accounts:
             return "You don't have any linked accounts."
@@ -181,11 +181,11 @@ class AccountService:
             )
 
         try:
-            with UnitOfWork() as uow:
-                uow.accounts.set_default_account(user_id, str(selected_account.account_id))
-                uow.commit()
+            async with UnitOfWork() as uow:
+                await uow.accounts.set_default_account(user_id, str(selected_account.account_id))
+                await uow.commit()
 
-            user = self.user_repo.get_by_id(user_id)
+            user = await self.user_repo.get_by_id(user_id)
             if user:
                 asyncio.create_task(UserDataCache().invalidate_accounts(user.phone_number))
 
@@ -216,7 +216,7 @@ class AccountService:
         Returns:
             Success or error message
         """
-        accounts = self.account_repo.get_by_user(user_id)
+        accounts = await self.account_repo.get_by_user(user_id)
 
         if not accounts:
             return "You don't have any linked accounts."
@@ -252,13 +252,13 @@ class AccountService:
                 except Exception as e:
                     logger.warning("cancel_mandate_failed_on_unlink", mandate_id=mandate_id, error=str(e))
 
-            success = self.account_repo.delete_account(str(selected_account.account_id), user_id)
+            success = await self.account_repo.delete_account(str(selected_account.account_id), user_id)
 
             if success:
                 try:
-                    with UnitOfWork() as uow:
+                    async with UnitOfWork() as uow:
                         if uow.users:
-                            user = uow.users.get_by_id(user_id)
+                            user = await uow.users.get_by_id(user_id)
                             if user:
                                 asyncio.create_task(UserDataCache().invalidate_accounts(user.phone_number))
                 except Exception:

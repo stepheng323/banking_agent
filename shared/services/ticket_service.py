@@ -36,7 +36,7 @@ class TicketService:
     def __init__(self, ticket_repo: SupportTicketRepository):
         self.repo = ticket_repo
 
-    def create_ticket(
+    async def create_ticket(
         self,
         user_id: str,
         intent: str,
@@ -47,7 +47,7 @@ class TicketService:
     ) -> SupportTicket:
         """
         Create a new support ticket.
-        
+
         Args:
             user_id: User's UUID
             intent: Support intent (from SupportIntent enum value)
@@ -55,17 +55,15 @@ class TicketService:
             transaction_ref: Optional transaction reference
             details: Optional additional context (JSON)
             channel: Channel source (default: whatsapp)
-        
+
         Returns:
             Created SupportTicket
         """
-        # Generate unique ticket code
-        ticket_code = self.repo.generate_ticket_code()
+        ticket_code = await self.repo.generate_ticket_code()
 
-        # Determine priority based on intent
         priority = INTENT_PRIORITY.get(intent, SupportTicketPriorityEnum.MEDIUM)
 
-        ticket = self.repo.create(
+        ticket = await self.repo.create(
             ticket_code=ticket_code,
             user_id=user_id,
             channel=channel,
@@ -88,32 +86,32 @@ class TicketService:
 
         return ticket
 
-    def get_ticket(self, ticket_code: str) -> SupportTicket | None:
+    async def get_ticket(self, ticket_code: str) -> SupportTicket | None:
         """Get a ticket by its code."""
-        return self.repo.get_by_ticket_code(ticket_code)
+        return await self.repo.get_by_ticket_code(ticket_code)
 
-    def get_user_open_tickets(self, user_id: str) -> list[SupportTicket]:
+    async def get_user_open_tickets(self, user_id: str) -> list[SupportTicket]:
         """Get all open tickets for a user."""
-        return self.repo.get_open_tickets(user_id)
+        return await self.repo.get_open_tickets(user_id)
 
-    def get_latest_ticket(self, user_id: str) -> SupportTicket | None:
+    async def get_latest_ticket(self, user_id: str) -> SupportTicket | None:
         """Get the most recent open ticket for a user."""
-        return self.repo.get_latest_open(user_id)
+        return await self.repo.get_latest_open(user_id)
 
-    def update_status(
+    async def update_status(
         self,
         ticket_code: str,
         status: SupportTicketStatusEnum,
     ) -> SupportTicket | None:
         """Update ticket status."""
-        ticket = self.repo.get_by_ticket_code(ticket_code)
+        ticket = await self.repo.get_by_ticket_code(ticket_code)
         if not ticket:
             return None
 
-        ticket = self.repo.update(ticket, status=status.value)
+        ticket = await self.repo.update(ticket, status=status.value)
 
         if status == SupportTicketStatusEnum.RESOLVED:
-            ticket = self.repo.update(ticket, resolved_at=datetime.utcnow())
+            ticket = await self.repo.update(ticket, resolved_at=datetime.utcnow())
 
         logger.info(
             "support_ticket_status_updated",
@@ -123,10 +121,10 @@ class TicketService:
 
         return ticket
 
-    def resolve_ticket(self, ticket_code: str) -> SupportTicket | None:
+    async def resolve_ticket(self, ticket_code: str) -> SupportTicket | None:
         """Mark a ticket as resolved."""
-        return self.update_status(ticket_code, SupportTicketStatusEnum.RESOLVED)
+        return await self.update_status(ticket_code, SupportTicketStatusEnum.RESOLVED)
 
-    def close_ticket(self, ticket_code: str) -> SupportTicket | None:
+    async def close_ticket(self, ticket_code: str) -> SupportTicket | None:
         """Close a ticket."""
-        return self.update_status(ticket_code, SupportTicketStatusEnum.CLOSED)
+        return await self.update_status(ticket_code, SupportTicketStatusEnum.CLOSED)
