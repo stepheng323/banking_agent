@@ -47,7 +47,7 @@ class AirtimeWorker:
         pin_verified: bool = False,
     ) -> TransactionResult:
         """Execute the airtime pipeline."""
-        
+
         data = AirtimePayload(**payload)
         
         if not data.idempotency_key or data.idempotency_key == "no-key":

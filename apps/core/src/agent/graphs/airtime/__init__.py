@@ -1,6 +1,6 @@
 """Airtime purchase flow."""
 
 from .extractor import AirtimeEntityExtractor
-from .service import AirtimeService
+from .worker import AirtimeWorker
 
-__all__ = ["AirtimeService", "AirtimeEntityExtractor"]
+__all__ = ["AirtimeWorker", "AirtimeEntityExtractor"]

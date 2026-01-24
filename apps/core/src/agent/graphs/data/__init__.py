@@ -2,12 +2,12 @@
 
 from apps.core.src.agent.graphs.data.models import DataPlan, DataPurchaseDraft, DataPurchaseResult
 from apps.core.src.agent.graphs.data.plan_service import DataPlanService
-from apps.core.src.agent.graphs.data.service import DataService
+from apps.core.src.agent.graphs.data.worker import DataWorker
 
 __all__ = [
     "DataPlan",
     "DataPlanService",
     "DataPurchaseDraft",
     "DataPurchaseResult",
-    "DataService",
+    "DataWorker",
 ]
