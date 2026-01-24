@@ -13,7 +13,6 @@ from langgraph.graph.state import CompiledStateGraph
 from apps.core.src.agent.graphs.__shared__.beneficiary.suggestion_service import BeneficiarySuggestionService
 from apps.core.src.agent.orchestrator.graph import build_orchestrator_graph
 from apps.core.src.agent.orchestrator.models.message_context import MessageContext
-from shared.cache.user_data import UserDataCache
 from shared.clients.abstractions.banking import BankingDataProvider
 from shared.clients.whatsapp.client import WhatsAppClient
 from shared.protocols.worker import WorkerProtocol
@@ -21,6 +20,7 @@ from shared.queue.redis_queue import RedisQueue
 from shared.repositories.account_repository import AccountRepository
 from shared.repositories.beneficiary_repository import BeneficiaryRepository
 from shared.repositories.user_repository import UserRepository
+from shared.services.context_manager import ContextManager
 from shared.services.task_planner import OrchestratorTaskPlanner
 from shared.utils.logging import get_logger
 
@@ -40,17 +40,17 @@ class OrchestratorGraphHandler:
         query_service: WorkerProtocol,
         data_service: WorkerProtocol,
         account_service: WorkerProtocol,
-        support_service: Any,  # Still using Any as these are services
-        faq_service: Any,
+        support_service: WorkerProtocol,
+        faq_service: WorkerProtocol,
         user_repo: UserRepository,
         beneficiary_repo: BeneficiaryRepository,
         account_repo: AccountRepository,
         banking_provider: BankingDataProvider,
-        user_cache: UserDataCache,
+        context_manager: ContextManager,
         redis_client: redis.Redis,
         whatsapp_client: WhatsAppClient,
-        queue: RedisQueue | None = None,
-        beneficiary_suggestion_service: BeneficiarySuggestionService | None = None,
+        queue: RedisQueue,
+        beneficiary_suggestion_service: BeneficiarySuggestionService,
         mode: Literal["planning", "execution", "both"] = "both",
     ):
         self.task_planner = task_planner
@@ -59,6 +59,7 @@ class OrchestratorGraphHandler:
         self.queue = queue
         self.beneficiary_suggestion_service = beneficiary_suggestion_service
         self.mode = mode
+        self.context_manager = context_manager
 
         self.user_repo = user_repo
         self.beneficiary_repo = beneficiary_repo
@@ -124,13 +125,26 @@ class OrchestratorGraphHandler:
             "last_message_id": context.message_id,
         }
 
+        # Hydrate via ContextManager (Parallel Fetch)
+        user_ctx, _, _, _ = await self.context_manager.load_context_parallel(phone_number)
+
+        loaded_context = {
+            "profile": user_ctx.get("profile"),
+            "accounts": user_ctx.get("accounts"),
+            "beneficiaries": user_ctx.get("beneficiaries"),
+            "language": user_ctx.get("language"),
+            "user_id": user_ctx.get("profile", {}).get("id") if user_ctx.get("profile") else None,
+        }
+
+        inputs["loaded_context"] = loaded_context
+
         config = self._get_config(phone_number)
 
         logger.info("orchestrator_graph_invoke", user=phone_number)
 
         final_state = await self.graph.ainvoke(inputs, config=config)
         return {
-            "final_response": final_state.get("final_response"),
+            "text": final_state.get("final_response"),
             "outbox": final_state.get("outbox", []),
         }
 
@@ -151,7 +165,7 @@ class OrchestratorGraphHandler:
         try:
             final_state = await self.graph.ainvoke(inputs, config=config)
             return {
-                "final_response": final_state.get("final_response"),
+                "text": final_state.get("final_response"),
                 "outbox": final_state.get("outbox", []),
             }
         except Exception as e:

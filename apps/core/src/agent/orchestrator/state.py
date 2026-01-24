@@ -47,3 +47,5 @@ class OrchestratorState(BaseModel):
     pending_interrupt: PendingInterrupt | None = None
     outbox: list[dict[str, Any]] = Field(default_factory=list)
     final_response: str | None = None
+
+    loaded_context: dict[str, Any] = Field(default_factory=dict)

@@ -1,9 +1,6 @@
 """Minimal orchestrator: LLM-based multilingual intent+complexity and user context cache."""
 
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from apps.core.src.agent.graphs.transfer import TransferService
+from typing import Any
 
 from apps.core.src.agent.orchestrator.config import OrchestratorDependencies
 from apps.core.src.agent.orchestrator.graph_handler import OrchestratorGraphHandler
@@ -19,7 +16,7 @@ class OrchestratorAgent:
         self.deps = deps
         self.message_type = "text"
 
-        self.context_manager = OrchestratorContextManager(deps.user_repo, deps.beneficiary_repo)
+        self.context_manager = OrchestratorContextManager(deps.user_repo, deps.beneficiary_repo, deps.account_repo)
         self.task_planner = OrchestratorTaskPlanner(deps.llm, deps.task_queue_service)
 
         self.orchestrator_handler = OrchestratorGraphHandler(
@@ -31,7 +28,7 @@ class OrchestratorAgent:
             account_service=self.deps.account_service,
             support_service=self.deps.support_service,
             faq_service=self.deps.faq_service,
-            user_cache=self.deps.user_cache,
+            context_manager=self.context_manager,
             redis_client=self.deps.redis_client,
             whatsapp_client=self.deps.whatsapp_client,
             user_repo=self.deps.user_repo,
@@ -39,14 +36,10 @@ class OrchestratorAgent:
             account_repo=self.deps.account_repo,
             banking_provider=self.deps.banking_provider,
             queue=self.deps.queue,
+            beneficiary_suggestion_service=self.deps.beneficiary_suggestion_service,
         )
 
-    @property
-    def transfer(self) -> "TransferService":
-        """Get transfer service."""
-        return self.deps.transfer_service
-
-    async def resume_transaction(self, phone_number: str, flow_type: str, pin_verified: bool) -> str | None:
+    async def resume_transaction(self, phone_number: str, flow_type: str, pin_verified: bool) -> dict[str, Any]:
         """Resume a transaction after an external event (like PIN verification)."""
         payload = {"pin_verified": pin_verified, "flow_type": flow_type}
         return await self.orchestrator_handler.resume_flow(phone_number=phone_number, payload=payload)
@@ -63,7 +56,6 @@ class OrchestratorAgent:
         """Invoke the orchestrator with a user message."""
         self.message_type = message_type
 
-        # 1. Media Processing
         if self.message_type == "audio" and media_id:
             raw_text = await self.deps.media_service.process_audio(media_id)
             if raw_text:
@@ -73,12 +65,6 @@ class OrchestratorAgent:
         if self.message_type == "image" and media_id:
             image_data = await self.deps.media_service.get_image_data(media_id)
 
-        # 2. Context Loading (Lightweight)
-        # We assume the Graph manages its own state via Checkpointer.
-        # But we might want to ensure user exists or load profile into cache?
-        # For now, we rely on the services/adapters to fetch what they need.
-
-        # 3. Build Context (Legacy structure, still used by Handler signature)
         context = MessageContext(
             phone_number=phone_number,
             text=text,

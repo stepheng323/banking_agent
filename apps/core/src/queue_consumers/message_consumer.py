@@ -5,6 +5,16 @@ from typing import Any
 
 from apps.core.src.agent.graphs.onboarding.executor import OnboardingExecutor
 from apps.core.src.agent.orchestrator import OrchestratorAgent
+from apps.core.src.agent.orchestrator.intents import (
+    RequestAuth,
+    RequestConfirmation,
+    Say,
+    ShowFlow,
+    ShowReceipt,
+    UiIntent,
+)
+from apps.core.src.messaging.presenters.base import PresentationContext
+from apps.core.src.messaging.presenters.whatsapp import WhatsAppPresenter
 from shared.cache.rate_limiter import message_rate_limiter
 from shared.clients.abstractions.messaging import MessagingClient
 from shared.database.models import UserOnboardingStatusEnum
@@ -49,7 +59,6 @@ class MessageConsumer:
         """Handle a WhatsApp message."""
         phone_number = message.from_number
 
-        # Rate limiting - prevent spam attacks
         rate_result = await message_rate_limiter.check(phone_number)
         if not rate_result.allowed:
             logger.warning(
@@ -63,11 +72,9 @@ class MessageConsumer:
             )
             return {"status": "rate_limited", "reset_in": rate_result.reset_in_seconds}
 
-        # Sanitize input - protect against malformed/malicious input
         raw_text = message.text or ""
         sanitized_text = sanitize_message(raw_text)
 
-        # Log suspicious input for monitoring (but still process)
         if is_suspicious_input(sanitized_text):
             logger.warning(
                 "suspicious_input_detected",
@@ -78,17 +85,16 @@ class MessageConsumer:
         if message.message_type.value == "flow":
             return {"status": "skipped", "reason": "Flow messages handled by flow webhook"}
 
-        user = await asyncio.to_thread(self.user_repository.get_by_phone, phone_number)
+        user = await self.user_repository.get_by_phone(phone_number)
+        logger.info("user_found", user=user, phone_number=phone_number)
         if user is None or getattr(user, "onboarding_status", None) != UserOnboardingStatusEnum.ONBOARDING_COMPLETED:
             return await self.onboarding_executor.handle_onboarding(message)
-
-        await self.orchestrator.context_manager.load_user_context(phone_number, user=user)
 
         await self.orchestrator.context_manager.save_message_id(phone_number, message.message_id)
 
         orchestrator_output = await self.orchestrator.invoke(
             phone_number,
-            sanitized_text,  # Use sanitized text instead of raw
+            sanitized_text,
             message.message_id,
             message_type=message.message_type.value,
             media_id=message.media_id,
@@ -96,16 +102,6 @@ class MessageConsumer:
         )
 
         # Prepare Presentation
-        from apps.core.src.agent.orchestrator.intents import (
-            RequestAuth,
-            RequestConfirmation,
-            Say,
-            ShowReceipt,
-            ShowFlow,
-            UiIntent,
-        )
-        from apps.core.src.messaging.presenters.base import PresentationContext
-        from apps.core.src.messaging.presenters.whatsapp import WhatsAppPresenter
 
         # Context
         context = PresentationContext(

@@ -1,11 +1,12 @@
-import asyncio
 from typing import Any
 
 from langchain_core.runnables import RunnableConfig
 
 from apps.core.src.agent.orchestrator.models.domain import (
     AccountOutcome,
+    FAQOutcome,
     PendingInterrupt,
+    SupportOutcome,
     TaskStage,
     TransactionOutcome,
 )
@@ -58,62 +59,12 @@ async def advance_wave(state: OrchestratorState, config: RunnableConfig) -> dict
             if task.stage in (TaskStage.DRAFT, TaskStage.EXTRACTED):
                 user_msg = state.last_message_text
 
-            user_repo = config["configurable"].get("user_repo")
-            account_repo = config["configurable"].get("account_repo")
-            beneficiary_repo = config["configurable"].get("beneficiary_repo")
-
-            context_data = {"phone_number": state.phone_number}
-
-            try:
-                if user_repo:
-                    user = await user_repo.get_by_phone(state.phone_number)
-                    if user:
-                        context_data["user_id"] = user.id
-
-                        tasks = []
-                        if beneficiary_repo:
-                            tasks.append(beneficiary_repo.get_by_user(user.id))
-                        else:
-                            tasks.append(asyncio.sleep(0))  # Placeholder
-
-                        if account_repo:
-                            tasks.append(account_repo.get_by_user(user.id))
-                        else:
-                            tasks.append(asyncio.sleep(0))  # Placeholder
-
-                        results = await asyncio.gather(*tasks)
-
-                        def to_dict(obj):
-                            """Convert SQLAlchemy model to dict, filtering internal state."""
-                            if not obj:
-                                return {}
-                            # Handle placeholder result (None from sleep? No sleep returns None)
-                            if isinstance(obj, (int, float)) and obj == 0:  # sleep(0) returns None? No it returns None.
-                                return {}
-                            if obj is None:
-                                return {}
-                            try:
-                                return {k: v for k, v in obj.__dict__.items() if not k.startswith("_")}
-                            except AttributeError:
-                                return {}
-
-                        if beneficiary_repo:
-                            res = results[0]
-                            if isinstance(res, list):
-                                context_data["beneficiaries"] = [to_dict(b) for b in res]
-                            else:
-                                context_data["beneficiaries"] = []
-
-                        if account_repo:
-                            res = results[1]
-                            if isinstance(res, list):
-                                context_data["accounts"] = [to_dict(a) for a in res]
-                            else:
-                                context_data["accounts"] = []
-            except Exception as e:
-                logger.error("context_loading_failed", error=str(e))
-
-            pass
+            context_data = {
+                "phone_number": state.phone_number,
+                "user_id": state.loaded_context.get("user_id"),
+                "accounts": state.loaded_context.get("accounts", []),
+                "beneficiaries": state.loaded_context.get("beneficiaries", []),
+            }
 
             result = await worker.run(
                 payload=task.payload,
@@ -170,38 +121,13 @@ async def advance_wave(state: OrchestratorState, config: RunnableConfig) -> dict
             if task.stage in (TaskStage.DRAFT, TaskStage.EXTRACTED):
                 user_msg = state.last_message_text
 
-            user_repo = config["configurable"].get("user_repo")
-            account_repo = config["configurable"].get("account_repo")
-            redis_client = config["configurable"].get("redis_client")
-
-            context_data = {"phone_number": state.phone_number}
-
-            try:
-                if user_repo:
-                    user = await user_repo.get_by_phone(state.phone_number)
-                    if user:
-                        context_data["user_id"] = user.id
-
-                        def to_dict(obj):
-                            """Convert SQLAlchemy model to dict, filtering internal state."""
-                            if not obj:
-                                return {}
-                            return {k: v for k, v in obj.__dict__.items() if not k.startswith("_")}
-
-                        context_data["profile"] = to_dict(user)
-
-                        if account_repo:
-                            accounts = await account_repo.get_by_user(user.id)
-                            context_data["accounts"] = [to_dict(a) for a in accounts]
-
-                if redis_client:
-                    language = await redis_client.get(f"user:{state.phone_number}:language")
-                    if isinstance(language, bytes):
-                        language = language.decode()
-                    if language:
-                        context_data["language"] = language
-            except Exception as e:
-                logger.error("account_context_failed", error=str(e))
+            context_data = {
+                "phone_number": state.phone_number,
+                "user_id": state.loaded_context.get("user_id"),
+                "profile": state.loaded_context.get("profile", {}),
+                "accounts": state.loaded_context.get("accounts", []),
+                "language": state.loaded_context.get("language"),
+            }
 
             result = await worker.run(
                 payload=task.payload,
@@ -273,47 +199,12 @@ async def advance_wave(state: OrchestratorState, config: RunnableConfig) -> dict
             if task.stage in (TaskStage.DRAFT, TaskStage.EXTRACTED):
                 user_msg = state.last_message_text
 
-            user_repo = config["configurable"].get("user_repo")
-            account_repo = config["configurable"].get("account_repo")
-            beneficiary_repo = config["configurable"].get("beneficiary_repo")
-
-            context_data = {"phone_number": state.phone_number}
-
-            try:
-                if user_repo:
-                    user = await user_repo.get_by_phone(state.phone_number)
-                    if user:
-                        context_data["user_id"] = user.id
-
-                        # Load accounts and beneficiaries
-                        tasks = []
-                        if beneficiary_repo:
-                            tasks.append(beneficiary_repo.get_by_user(user.id))
-                        else:
-                            tasks.append(asyncio.sleep(0))
-
-                        if account_repo:
-                            tasks.append(account_repo.get_by_user(user.id))
-                        else:
-                            tasks.append(asyncio.sleep(0))
-
-                        results = await asyncio.gather(*tasks)
-
-                        def to_dict(obj):
-                            if not obj:
-                                return {}
-                            return {k: v for k, v in obj.__dict__.items() if not k.startswith("_")}
-
-                        if beneficiary_repo:
-                            res = results[0] or []
-                            if isinstance(res, list):
-                                context_data["beneficiaries"] = [to_dict(b) for b in res]
-                        if account_repo:
-                            res = results[1] or []
-                            if isinstance(res, list):
-                                context_data["accounts"] = [to_dict(a) for a in res]
-            except Exception as e:
-                logger.error("airtime_context_failed", error=str(e))
+            context_data = {
+                "phone_number": state.phone_number,
+                "user_id": state.loaded_context.get("user_id"),
+                "accounts": state.loaded_context.get("accounts", []),
+                "beneficiaries": state.loaded_context.get("beneficiaries", []),
+            }
 
             result = await worker.run(
                 payload=task.payload,
@@ -366,30 +257,12 @@ async def advance_wave(state: OrchestratorState, config: RunnableConfig) -> dict
 
             user_msg = state.last_message_text
 
-            user_repo = config["configurable"].get("user_repo")
-            account_repo = config["configurable"].get("account_repo")
-
-            context_data = {"phone_number": state.phone_number}
-
-            try:
-                if user_repo:
-                    user = await user_repo.get_by_phone(state.phone_number)
-                    if user:
-                        context_data["user_id"] = user.id
-                        context_data["profile"] = {"first_name": user.first_name, "id": user.id}
-
-                        if account_repo:
-                            accounts = await account_repo.get_by_user(user.id)
-
-                            # Convert to dict
-                            def to_dict(obj):
-                                if not obj:
-                                    return {}
-                                return {k: v for k, v in obj.__dict__.items() if not k.startswith("_")}
-
-                            context_data["accounts"] = [to_dict(a) for a in accounts]
-            except Exception as e:
-                logger.error("query_context_failed", error=str(e))
+            context_data = {
+                "phone_number": state.phone_number,
+                "user_id": state.loaded_context.get("user_id"),
+                "profile": state.loaded_context.get("profile", {}),
+                "accounts": state.loaded_context.get("accounts", []),
+            }
 
             result = await worker.run(
                 payload=task.payload,
@@ -433,49 +306,12 @@ async def advance_wave(state: OrchestratorState, config: RunnableConfig) -> dict
             if task.stage in (TaskStage.DRAFT, TaskStage.EXTRACTED):
                 user_msg = state.last_message_text
 
-            user_repo = config["configurable"].get("user_repo")
-            account_repo = config["configurable"].get("account_repo")
-            beneficiary_repo = config["configurable"].get("beneficiary_repo")
-
-            context_data = {"phone_number": state.phone_number}
-
-            try:
-                if user_repo:
-                    user = await user_repo.get_by_phone(state.phone_number)
-                    if user:
-                        context_data["user_id"] = user.id
-
-                        # Load accounts and beneficiaries
-                        tasks = []
-                        if beneficiary_repo:
-                            tasks.append(beneficiary_repo.get_by_user(user.id))
-                        else:
-                            tasks.append(asyncio.sleep(0))
-
-                        if account_repo:
-                            tasks.append(account_repo.get_by_user(user.id))
-                        else:
-                            tasks.append(asyncio.sleep(0))
-
-                        results = await asyncio.gather(*tasks)
-
-                        def to_dict(obj):
-                            if not obj:
-                                return {}
-                            if getattr(obj, "__dict__", None):
-                                return {k: v for k, v in obj.__dict__.items() if not k.startswith("_")}
-                            return {}
-
-                        if beneficiary_repo:
-                            res = results[0] or []
-                            if isinstance(res, list):
-                                context_data["beneficiaries"] = [to_dict(b) for b in res]
-                        if account_repo:
-                            res = results[1] or []
-                            if isinstance(res, list):
-                                context_data["accounts"] = [to_dict(a) for a in res]
-            except Exception as e:
-                logger.error("data_context_failed", error=str(e))
+            context_data = {
+                "phone_number": state.phone_number,
+                "user_id": state.loaded_context.get("user_id"),
+                "accounts": state.loaded_context.get("accounts", []),
+                "beneficiaries": state.loaded_context.get("beneficiaries", []),
+            }
 
             result = await worker.run(
                 payload=task.payload,
@@ -517,6 +353,74 @@ async def advance_wave(state: OrchestratorState, config: RunnableConfig) -> dict
             elif result.outcome == TransactionOutcome.FAILED:
                 task.stage = TaskStage.FAILED
                 task.payload["error"] = result.error or "Data purchase failed"
+
+        elif task.type == "faq":
+            worker = services.get("faq")
+            if not worker:
+                logger.error("faq_worker_missing")
+                task.stage = TaskStage.FAILED
+                task.payload["error"] = "System error: FAQ worker unavailable"
+                continue
+
+            user_msg = state.last_message_text
+            context_data = {"phone_number": state.phone_number}
+
+            result = await worker.run(
+                payload=task.payload,
+                context=context_data,
+                user_message=user_msg,
+            )
+
+            if result.outcome == FAQOutcome.OK:
+                task.stage = TaskStage.COMPLETED
+                if result.response:
+                    updates.setdefault("outbox", [])
+                    updates["outbox"].append({"type": "say", "text": result.response})
+            elif result.outcome == FAQOutcome.FAILED:
+                task.stage = TaskStage.FAILED
+                task.payload["error"] = result.error or "FAQ failed"
+                updates.setdefault("outbox", [])
+                updates["outbox"].append({"type": "say", "text": "I'm having trouble retrieving that information."})
+
+        elif task.type == "support":
+            worker = services.get("support")
+            if not worker:
+                logger.error("support_worker_missing")
+                task.stage = TaskStage.FAILED
+                task.payload["error"] = "System error: Support worker unavailable"
+                continue
+
+            user_msg = state.last_message_text
+            context_data = {"phone_number": state.phone_number}
+
+            context_data = {
+                "phone_number": state.phone_number,
+                "user_id": state.loaded_context.get("user_id"),
+                "email": state.loaded_context.get("profile", {}).get("email"),
+            }
+
+            result = await worker.run(
+                payload=task.payload,
+                context=context_data,
+                user_message=user_msg,
+            )
+
+            if result.outcome == SupportOutcome.OK:
+                task.stage = TaskStage.COMPLETED
+                if result.response:
+                    updates.setdefault("outbox", [])
+                    updates["outbox"].append({"type": "say", "text": result.response})
+            elif result.outcome == SupportOutcome.NEEDS_INPUT:
+                # Support might need clarification
+                task.stage = TaskStage.EXTRACTED
+                if result.response:
+                    prompts.append(result.response)
+                    missing_fields_by_task[tid] = ["clarification"]
+            elif result.outcome == SupportOutcome.FAILED:
+                task.stage = TaskStage.FAILED
+                task.payload["error"] = result.error or "Support flow failed"
+                updates.setdefault("outbox", [])
+                updates["outbox"].append({"type": "say", "text": "I can't access support right now."})
 
     if missing_fields_by_task:
         prompt_text = "\n".join(prompts) or "I need some details."
