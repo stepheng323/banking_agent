@@ -7,13 +7,12 @@ from langchain_core.runnables import Runnable
 from sqlalchemy.orm import Session
 
 from apps.core.src.agent.graphs.faq.graph.graph import FAQFlowGraph
-from apps.core.src.agent.graphs.interfaces import IAgentService
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
 
 
-class FAQService(IAgentService):
+class FAQService:
     """FAQ service facade using LangGraph."""
 
     def __init__(self, llm: Runnable, get_db: Callable[[], Session]):

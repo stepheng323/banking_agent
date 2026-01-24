@@ -1,6 +1,6 @@
 """Unit of Work pattern for managing database transactions."""
 
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.database.connection import get_db_session
 from shared.repositories.account_repository import AccountRepository
@@ -13,10 +13,10 @@ from shared.repositories.user_repository import UserRepository
 
 
 class UnitOfWork:
-    """Manages database transactions and repositories."""
+    """Manages database transactions and repositories (Async)."""
 
-    def __init__(self):
-        self.db: Session | None = None
+    def __init__(self) -> None:
+        self.db: AsyncSession | None = None
         self.users: UserRepository | None = None
         self.accounts: AccountRepository | None = None
         self.beneficiaries: BeneficiaryRepository | None = None
@@ -26,7 +26,7 @@ class UnitOfWork:
         self.actionable_messages: ActionableMessageRepository | None = None
         self._rolled_back = False
 
-    def __enter__(self):
+    async def __aenter__(self):
         """Enter transaction context."""
         self.db = get_db_session()
         self.users = UserRepository(self.db)
@@ -38,24 +38,24 @@ class UnitOfWork:
         self.actionable_messages = ActionableMessageRepository(self.db)
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
+    async def __aexit__(self, exc_type, exc_val, exc_tb) -> bool:
         """Exit transaction context and commit or rollback."""
         try:
             if exc_type:
-                self.db.rollback()
+                await self.db.rollback()
                 self._rolled_back = True
             else:
-                self.db.commit()
+                await self.db.commit()
         finally:
-            self.db.close()
+            await self.db.close()
         return False
 
-    def commit(self):
+    async def commit(self):
         """Manually commit transaction."""
         if not self._rolled_back:
-            self.db.commit()
+            await self.db.commit()
 
-    def rollback(self):
+    async def rollback(self):
         """Manually rollback transaction."""
-        self.db.rollback()
+        await self.db.rollback()
         self._rolled_back = True

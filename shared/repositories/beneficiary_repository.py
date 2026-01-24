@@ -2,8 +2,8 @@
 
 from uuid import UUID
 
-from sqlalchemy import or_
-from sqlalchemy.orm import Session
+from sqlalchemy import or_, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.database.models import Beneficiary
 from shared.repositories.base import BaseRepository
@@ -12,10 +12,10 @@ from shared.repositories.base import BaseRepository
 class BeneficiaryRepository(BaseRepository[Beneficiary]):
     """Repository for Beneficiary operations."""
 
-    def __init__(self, db: Session):
+    def __init__(self, db: AsyncSession):
         super().__init__(db, Beneficiary)
 
-    def get_by_user(self, user_id: str, beneficiary_type: str | None = None) -> list[Beneficiary]:
+    async def get_by_user(self, user_id: str, beneficiary_type: str | None = None) -> list[Beneficiary]:
         """Get all beneficiaries for a user, optionally filtered by type."""
         user_uuid: str | UUID = user_id
         if isinstance(user_id, str):
@@ -23,14 +23,13 @@ class BeneficiaryRepository(BaseRepository[Beneficiary]):
                 user_uuid = UUID(user_id)
             except ValueError:
                 pass
-        query = self.db.query(Beneficiary).filter(Beneficiary.user_id == user_uuid)
+        query = select(Beneficiary).filter(Beneficiary.user_id == user_uuid)
         if beneficiary_type:
             query = query.filter(Beneficiary.beneficiary_type == beneficiary_type)
-        return query.all()
+        result = await self.db.execute(query)
+        return list(result.scalars().all())
 
-    def get_by_name(
-        self, user_id: str, name: str, beneficiary_type: str | None = None
-    ) -> Beneficiary | None:
+    async def get_by_name(self, user_id: str, name: str, beneficiary_type: str | None = None) -> Beneficiary | None:
         """Get a beneficiary by exact name or alias match, optionally filtered by type."""
         user_uuid: str | UUID = user_id
         if isinstance(user_id, str):
@@ -38,15 +37,16 @@ class BeneficiaryRepository(BaseRepository[Beneficiary]):
                 user_uuid = UUID(user_id)
             except ValueError:
                 pass
-        query = self.db.query(Beneficiary).filter(
+        query = select(Beneficiary).filter(
             Beneficiary.user_id == user_uuid,
             or_(Beneficiary.account_name == name, Beneficiary.alias == name),
         )
         if beneficiary_type:
             query = query.filter(Beneficiary.beneficiary_type == beneficiary_type)
-        return query.first()
+        result = await self.db.execute(query)
+        return result.scalars().first()
 
-    def search_by_name(
+    async def search_by_name(
         self, user_id: str, search_term: str, beneficiary_type: str | None = None
     ) -> list[Beneficiary]:
         """Search beneficiaries by name/alias (case-insensitive partial match).
@@ -60,7 +60,7 @@ class BeneficiaryRepository(BaseRepository[Beneficiary]):
             except ValueError:
                 pass
         search_pattern = f"%{search_term}%"
-        query = self.db.query(Beneficiary).filter(
+        query = select(Beneficiary).filter(
             Beneficiary.user_id == user_uuid,
             or_(
                 Beneficiary.account_name.ilike(search_pattern),
@@ -69,13 +69,14 @@ class BeneficiaryRepository(BaseRepository[Beneficiary]):
         )
         if beneficiary_type:
             query = query.filter(Beneficiary.beneficiary_type == beneficiary_type)
-        return query.all()
+        result = await self.db.execute(query)
+        return list(result.scalars().all())
 
-    def get_all_for_user(self, user_id: str) -> list[Beneficiary]:
+    async def get_all_for_user(self, user_id: str) -> list[Beneficiary]:
         """Get all beneficiaries for a user (alias for get_by_user)."""
-        return self.get_by_user(user_id)
+        return await self.get_by_user(user_id)
 
-    def should_suggest_beneficiary(
+    async def should_suggest_beneficiary(
         self,
         user_id: str,
         account_number: str,
@@ -83,7 +84,7 @@ class BeneficiaryRepository(BaseRepository[Beneficiary]):
         beneficiary_type: str = "transfer",
     ) -> bool:
         """Check if recipient should be suggested as a beneficiary."""
-        beneficiaries = self.get_by_user(user_id, beneficiary_type=beneficiary_type)
+        beneficiaries = await self.get_by_user(user_id, beneficiary_type=beneficiary_type)
         # Handle None values in comparisons - skip if either field is None
         return not any(
             beneficiary.account_number == account_number and beneficiary.bank_code == bank_code
@@ -91,7 +92,7 @@ class BeneficiaryRepository(BaseRepository[Beneficiary]):
             if beneficiary.account_number is not None and beneficiary.bank_code is not None
         )
 
-    def should_suggest_airtime_beneficiary(
+    async def should_suggest_airtime_beneficiary(
         self,
         user_id: str,
         phone_number: str,
@@ -112,7 +113,7 @@ class BeneficiaryRepository(BaseRepository[Beneficiary]):
         Returns:
             True if recipient should be suggested (doesn't exist), False otherwise
         """
-        beneficiaries = self.get_by_user(user_id, beneficiary_type="airtime")
+        beneficiaries = await self.get_by_user(user_id, beneficiary_type="airtime")
         # Handle None values in comparisons - skip if either field is None
         # For airtime: account_number=phone, bank_name=network (both should always be present)
         return not any(

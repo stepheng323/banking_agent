@@ -2,8 +2,11 @@
 
 import asyncio
 
-from typing import Any
-from apps.core.src.agent.graphs.data.executor import DataExecutor
+from shared.protocols.executor import (
+    AirtimeExecutorProtocol,
+    DataExecutorProtocol,
+    TransferExecutorProtocol,
+)
 from shared.queue.redis_queue import RedisQueue
 from shared.utils.logging import get_logger
 
@@ -16,9 +19,9 @@ class TransactionConsumer:
     def __init__(
         self,
         redis_queue: RedisQueue,
-        transfer_executor: Any | None,
-        airtime_executor: Any | None,
-        data_executor: DataExecutor | None,
+        transfer_executor: TransferExecutorProtocol | None = None,
+        airtime_executor: AirtimeExecutorProtocol | None = None,
+        data_executor: DataExecutorProtocol | None = None,
     ):
         """
         Initialize transaction consumer.
@@ -56,31 +59,22 @@ class TransactionConsumer:
 
         try:
             if transaction_type == "execute_transfer":
-                if not self.transfer_executor:
-                    logger.error("transfer_executor_not_available")
-                    return
-                if hasattr(self.transfer_executor, "handle_transfer"):
+                if self.transfer_executor:
                     await self.transfer_executor.handle_transfer(transaction_data)
                 else:
-                    logger.error("transfer_executor_missing_method", method="handle_transfer")
+                    logger.error("transfer_executor_not_available")
 
             elif transaction_type == "execute_airtime":
-                if not self.airtime_executor:
-                    logger.error("airtime_executor_not_available")
-                    return
-                if hasattr(self.airtime_executor, "handle_airtime"):
+                if self.airtime_executor:
                     await self.airtime_executor.handle_airtime(transaction_data)
                 else:
-                    logger.error("airtime_executor_missing_method", method="handle_airtime")
+                    logger.error("airtime_executor_not_available")
 
             elif transaction_type == "execute_data":
-                if not self.data_executor:
-                    logger.error("data_executor_not_available")
-                    return
-                if hasattr(self.data_executor, "handle_data"):
+                if self.data_executor:
                     await self.data_executor.handle_data(transaction_data)
                 else:
-                    logger.error("data_executor_missing_method", method="handle_data")
+                    logger.error("data_executor_not_available")
 
             else:
                 logger.warning("unknown_transaction_type", transaction_type=transaction_type)

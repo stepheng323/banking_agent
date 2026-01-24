@@ -28,11 +28,11 @@ class OnboardingExecutor:
         """Handle onboarding messages - start flow."""
         phone_number = message.from_number
         await self.onboarding_service.send_onboarding_flow(phone_number)
-        with UnitOfWork() as uow:
+        async with UnitOfWork() as uow:
             user_data = UserCreate(
                 phone_number=phone_number,
                 onboarding_status=UserOnboardingStatusEnum.ONBOARDING_STARTED.value,
             )
-            uow.users.register_user(user_data)
+            await uow.users.register_user(user_data)
 
         return {"status": "success", "message": "Onboarding started"}
