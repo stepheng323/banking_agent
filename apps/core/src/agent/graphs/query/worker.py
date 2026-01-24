@@ -33,7 +33,7 @@ class QueryWorker:
         self.llm = llm
         self.banking_provider = banking_provider
         self.session_manager = session_manager
-        
+
         # Initialize pipeline steps once
         self.extractor = ExtractionStep(llm)
         self.executor = ExecutionStep()
@@ -43,9 +43,11 @@ class QueryWorker:
         self,
         payload: dict[str, Any],
         context: dict[str, Any],
+        user_message: str | None = None,
+        pin_verified: bool = False,
     ) -> TransactionResult:
         """Run the query pipeline."""
-        
+
         # 1. Load Session
         phone_number = context.get("phone_number")
         session_key = f"query:session:{phone_number}"
@@ -55,7 +57,7 @@ class QueryWorker:
         state = {
             "message": payload.get("message", ""),
             "phone_number": phone_number,
-            "account_id": payload.get("account_id"), # Might come from previous context or current
+            "account_id": payload.get("account_id"),  # Might come from previous context or current
             "account_ids": payload.get("account_ids"),
             "accounts": context.get("accounts", []),
             "query_session": query_session,
@@ -64,7 +66,7 @@ class QueryWorker:
             "current_page": query_session.get("current_page", 0),
             "page_size": 5,
         }
-        
+
         # 3. Setup Worker Context
         worker_context = SimpleNamespace(
             banking_provider=self.banking_provider,
@@ -74,28 +76,30 @@ class QueryWorker:
         # 4. Run Pipeline
         try:
             result = await self.pipeline.run(state, worker_context)
-            
+
             # 5. Handle Session Persistence
             if result.outcome.is_successful and result.patch:
                 # Merge patch for saving
                 final_state = {**state, **result.patch}
-                
+
                 # Determine if session should remain active
                 # Logic: If we have results, session is active. If errors or specific end intent, close.
                 # The 'session_active' flag might be set by ExecutionStep.
                 session_active = final_state.get("session_active", False)
-                
+
                 if session_active:
                     final_state["timestamp"] = __import__("time").time()
                     await self.session_manager.save(session_key, final_state)
                 else:
                     await self.session_manager.clear(session_key)
-            
+
             return result
-            
+
         except Exception as e:
             logger.error("query_worker_error", error=str(e), exc_info=True)
             return TransactionResult(
-                outcome=__import__("apps.core.src.agent.orchestrator.models.domain", fromlist=["TransactionOutcome"]).TransactionOutcome.FAILED,
-                error="Sorry, I encountered an error providing that information."
+                outcome=__import__(
+                    "apps.core.src.agent.orchestrator.models.domain", fromlist=["TransactionOutcome"]
+                ).TransactionOutcome.FAILED,
+                error="Sorry, I encountered an error providing that information.",
             )
