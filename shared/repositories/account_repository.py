@@ -2,7 +2,8 @@
 
 from uuid import UUID
 
-from sqlalchemy.orm import Session
+from sqlalchemy import select, update
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.database.models import Account
 from shared.models.account import CreateAccount
@@ -12,10 +13,10 @@ from shared.repositories.base import BaseRepository
 class AccountRepository(BaseRepository[Account]):
     """Repository for Account operations."""
 
-    def __init__(self, db: Session):
+    def __init__(self, db: AsyncSession):
         super().__init__(db, Account)
 
-    def get_by_user(self, user_id: str) -> list[Account]:
+    async def get_by_user(self, user_id: str) -> list[Account]:
         """Get all accounts for a user."""
         user_uuid: str | UUID = user_id
         if isinstance(user_id, str):
@@ -23,13 +24,16 @@ class AccountRepository(BaseRepository[Account]):
                 user_uuid = UUID(user_id)
             except ValueError:
                 pass
-        return self.db.query(Account).filter(Account.user_id == user_uuid).all()
 
-    def get_by_account_id(self, account_id: str) -> Account | None:
+        result = await self.db.execute(select(Account).filter(Account.user_id == user_uuid))
+        return list(result.scalars().all())
+
+    async def get_by_account_id(self, account_id: str) -> Account | None:
         """Get account by account_id (external ID)."""
-        return self.db.query(Account).filter(Account.account_id == account_id).first()
+        result = await self.db.execute(select(Account).filter(Account.account_id == account_id))
+        return result.scalars().first()
 
-    def create_account(
+    async def create_account(
         self,
         create_account: CreateAccount,
     ) -> Account:
@@ -40,17 +44,17 @@ class AccountRepository(BaseRepository[Account]):
 
         account = Account(**account_dict)
         self.db.add(account)
-        self.db.flush()
+        await self.db.flush()
         return account
 
-    def deactivate_account(self, account_id: str) -> Account:
+    async def deactivate_account(self, account_id: str) -> Account | None:
         """Deactivate an account (doesn't commit)."""
-        account = self.get_by_account_id(account_id)
+        account = await self.get_by_account_id(account_id)
         if account:
             account.is_active = False
         return account
 
-    def get_default_account(self, user_id: str) -> Account | None:
+    async def get_default_account(self, user_id: str) -> Account | None:
         """Get user's default account."""
         user_uuid: str | UUID = user_id
         if isinstance(user_id, str):
@@ -59,13 +63,10 @@ class AccountRepository(BaseRepository[Account]):
             except ValueError:
                 pass
 
-        return (
-            self.db.query(Account)
-            .filter(Account.user_id == user_uuid, Account.is_default == True)
-            .first()
-        )
+        result = await self.db.execute(select(Account).filter(Account.user_id == user_uuid, Account.is_default == True))
+        return result.scalars().first()
 
-    def set_default_account(self, user_id: str, account_id: str) -> Account:
+    async def set_default_account(self, user_id: str, account_id: str) -> Account:
         """
         Set an account as the default for a user.
         Unsets any existing default account.
@@ -77,19 +78,20 @@ class AccountRepository(BaseRepository[Account]):
             except ValueError:
                 pass
 
-        self.db.query(Account).filter(
-            Account.user_id == user_uuid, Account.is_default == True
-        ).update({"is_default": False})
+        # Unset existing default
+        await self.db.execute(
+            update(Account).where(Account.user_id == user_uuid, Account.is_default == True).values(is_default=False)
+        )
 
-        account = self.get_by_account_id(account_id)
+        account = await self.get_by_account_id(account_id)
         if account and str(account.user_id) == str(user_uuid):
             account.is_default = True
-            self.db.flush()
+            await self.db.flush()
             return account
 
         raise ValueError(f"Account {account_id} not found for user {user_id}")
 
-    def delete_account(self, account_id: str, user_id: str) -> bool:
+    async def delete_account(self, account_id: str, user_id: str) -> bool:
         """
         Delete (unlink) an account.
         Returns True if successful, False otherwise.
@@ -101,31 +103,32 @@ class AccountRepository(BaseRepository[Account]):
             except ValueError:
                 pass
 
-        account = self.get_by_account_id(account_id)
+        account = await self.get_by_account_id(account_id)
         if account and str(account.user_id) == str(user_uuid):
             was_default = account.is_default
 
-            self.db.delete(account)
-            self.db.flush()
+            await self.db.delete(account)
+            await self.db.flush()
 
             if was_default:
-                remaining_accounts = self.get_by_user(user_id)
+                remaining_accounts = await self.get_by_user(user_id)
                 if remaining_accounts:
                     remaining_accounts[0].is_default = True
-                    self.db.flush()
+                    await self.db.flush()
 
             return True
 
         return False
 
-    def get_by_mandate_id(self, mandate_id: str) -> Account | None:
+    async def get_by_mandate_id(self, mandate_id: str) -> Account | None:
         """Get account by Mono mandate ID."""
-        return self.db.query(Account).filter(Account.mandate_id == mandate_id).first()
+        result = await self.db.execute(select(Account).filter(Account.mandate_id == mandate_id))
+        return result.scalars().first()
 
-    def update_mandate_status(self, mandate_id: str, status: str) -> Account | None:
+    async def update_mandate_status(self, mandate_id: str, status: str) -> Account | None:
         """Update mandate status by mandate ID. Returns updated account or None if not found."""
-        account = self.get_by_mandate_id(mandate_id)
+        account = await self.get_by_mandate_id(mandate_id)
         if account:
             account.mandate_status = status
-            self.db.flush()
+            await self.db.flush()
         return account
