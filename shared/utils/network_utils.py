@@ -47,14 +47,12 @@ def resolve_network_from_phone(phone: str) -> str | None:
     Returns:
         Network name (MTN, AIRTEL, GLO, 9MOBILE) or None if unknown
     """
-    # Normalize to local format
     cleaned = phone.strip()
     if cleaned.startswith("+234"):
         cleaned = "0" + cleaned[4:]
     elif cleaned.startswith("234"):
         cleaned = "0" + cleaned[3:]
 
-    # Get prefix (first 4 digits)
     if len(cleaned) >= 4:
         prefix = cleaned[:4]
         return NETWORK_PREFIXES.get(prefix)

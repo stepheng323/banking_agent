@@ -23,7 +23,7 @@ class SourceSelectionStep(AirtimeStep):
         worker_context: Any,
     ) -> TransactionResult:
         if data.source_account_id:
-             return TransactionResult(outcome=TransactionOutcome.OK)
+            return TransactionResult(outcome=TransactionOutcome.OK)
 
         accounts = context.accounts
         if not accounts:
@@ -43,7 +43,7 @@ class SourceSelectionStep(AirtimeStep):
 
         default = next((a for a in accounts if a.get("is_default")), None)
         if default:
-             return TransactionResult(
+            return TransactionResult(
                 outcome=TransactionOutcome.OK,
                 patch={
                     "source_account_id": str(default.get("id")),
@@ -54,8 +54,8 @@ class SourceSelectionStep(AirtimeStep):
             )
 
         if data.source_account_index is not None:
-             index = data.source_account_index - 1
-             if 0 <= index < len(accounts):
+            index = data.source_account_index - 1
+            if 0 <= index < len(accounts):
                 acc = accounts[index]
                 return TransactionResult(
                     outcome=TransactionOutcome.OK,
@@ -64,7 +64,7 @@ class SourceSelectionStep(AirtimeStep):
                         "source_bank_name": acc.get("bank_name"),
                         "source_account_name": acc.get("account_name"),
                         "source_account_number": acc.get("account_number"),
-                        "source_account_index": None, # clear index
+                        "source_account_index": None,  # clear index
                     },
                 )
 

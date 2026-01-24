@@ -29,6 +29,10 @@ class SimpleAirtimeEntities(BaseModel):
         default=None,
         description="Explicit source account id/reference if user specifies which account to use",
     )
+    source_account_index: int | None = Field(
+        default=None,
+        description="Index of source account if user selects from a numbered list (e.g. '2' for option 2).",
+    )
     is_self: bool | None = Field(
         default=None,
         description=(
@@ -107,9 +111,7 @@ class AirtimeExtractionResult(BaseModel):
         default_factory=SimpleAirtimeEntities, description="Extracted airtime purchase entities"
     )
 
-    correction: AirtimeCorrection | None = Field(
-        default=None, description="Correction if user updated a value"
-    )
+    correction: AirtimeCorrection | None = Field(default=None, description="Correction if user updated a value")
 
     ambiguities: list[Ambiguity] = Field(
         default_factory=list,

@@ -41,20 +41,26 @@ class ExtractionStep(AirtimeStep):
             "recipient_phone": data.recipient_phone,
             "network": data.network,
             "recipient_name": data.recipient_name,
+            "accounts": context.accounts,
         }
 
         try:
             extracted = await extractor.run(temp_state)
-            
+
+            entities = extracted.get("entities", {})
+
             patch = {}
-            
-            if extracted.get("amount"):
-                patch["amount"] = extracted["amount"]
-            if extracted.get("recipient_phone"):
-                patch["recipient_phone"] = extracted["recipient_phone"]
-            if extracted.get("recipient_name"):
-                patch["recipient_name"] = extracted["recipient_name"]
-            
+
+            if entities.get("amount"):
+                patch["amount"] = entities["amount"]
+            if entities.get("recipient_phone"):
+                patch["recipient_phone"] = entities["recipient_phone"]
+            if entities.get("recipient_name"):
+                patch["recipient_name"] = entities["recipient_name"]
+
+            if entities.get("source_account_index") is not None:
+                patch["source_account_index"] = entities["source_account_index"]
+
             correction = extracted.get("correction")
             if correction:
                 field = correction.get("field")
@@ -78,10 +84,10 @@ class ExtractionStep(AirtimeStep):
                     return TransactionResult(
                         outcome=TransactionOutcome.NEEDS_INPUT,
                         prompt=f"Sorry, I can't do {feature_name} airtime transfers yet. I can only do instant transfers defined right now.",
-                        details={"limitation": f"{unsupported[0]}_UNSUPPORTED"}
+                        details={"limitation": f"{unsupported[0]}_UNSUPPORTED"},
                     )
 
-            if extracted.get("is_self"):
+            if entities.get("is_self"):
                 patch["is_self"] = True
 
             return TransactionResult(

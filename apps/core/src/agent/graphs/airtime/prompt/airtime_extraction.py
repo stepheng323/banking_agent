@@ -15,6 +15,7 @@ DO NOT generate reply or decide missing fields — resolver handles that.
 | is_self | Self-purchase | true for "my line", "for me", "myself" |
 | narration | Optional memo | — |
 | source_account_id | Source account | — |
+| source_account_index | Selected account | "1", "2" from list options (int) |
 
 ## AMBIGUITIES
 When value is unclear, set field to null and add to ambiguities:
@@ -41,7 +42,7 @@ When user corrects mid-flow ("I meant 5k"):
 | "I meant 5k" | amount=5000, correction.field="amount", correction.new_value=5000 |
 | "recharge mum's line 1k" | amount=1000, recipient_name="mum" |
 | "ra owo airtime 2k" (Yoruba) | amount=2000 |
+| "2" | source_account_index=2 |
 
 Output ONLY JSON matching the schema.
 """
-

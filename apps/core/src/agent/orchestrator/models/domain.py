@@ -181,4 +181,36 @@ class AccountResult(BaseModel):
     error: str | None = None
 
 
+class FAQOutcome(str, Enum):
+    """Outcomes for FAQ worker."""
 
+    OK = "ok"
+    FAILED = "failed"
+
+
+class FAQResult(BaseModel):
+    """Result returned by FAQWorker."""
+
+    outcome: FAQOutcome
+    response: str | None = None
+    should_route_to_support: bool = False
+    error: str | None = None
+
+
+class SupportOutcome(str, Enum):
+    """Outcomes for Support worker."""
+
+    OK = "ok"
+    NEEDS_INPUT = "needs_input"
+    FAILED = "failed"
+
+
+class SupportResult(BaseModel):
+    """Result returned by SupportWorker."""
+
+    outcome: SupportOutcome
+    response: str | None = None
+    escalation: Any | None = None
+    ticket_code: str | None = None
+    final_message: str | None = None
+    error: str | None = None

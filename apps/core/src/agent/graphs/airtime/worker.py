@@ -29,13 +29,11 @@ class AirtimeWorker:
         self,
         extractor,
         banking_provider,
-        validation_service,
         transaction_repo,
         queue,
     ):
         self.extractor = extractor
         self.banking_provider = banking_provider
-        self.validation_service = validation_service
         self.transaction_repo = transaction_repo
         self.queue = queue
 
@@ -49,10 +47,11 @@ class AirtimeWorker:
         """Execute the airtime pipeline."""
 
         data = AirtimePayload(**payload)
-        
+
         if not data.idempotency_key or data.idempotency_key == "no-key":
-             import uuid
-             data = data.model_copy(update={"idempotency_key": f"airtime-{uuid.uuid4()}"})
+            import uuid
+
+            data = data.model_copy(update={"idempotency_key": f"airtime-{uuid.uuid4()}"})
 
         ctx = AirtimeContext(
             phone_number=context.get("phone_number", ""),
@@ -70,7 +69,6 @@ class AirtimeWorker:
         worker_context = SimpleNamespace(
             extractor=self.extractor,
             banking_provider=self.banking_provider,
-            validation_service=self.validation_service,
             queue=self.queue,
             transaction_repo=self.transaction_repo,
             user_id=context.get("user_id"),
@@ -90,7 +88,7 @@ class AirtimeWorker:
 
         # 6. Run
         try:
-             return await pipeline.run(data, ctx, gates, worker_context)
+            return await pipeline.run(data, ctx, gates, worker_context)
         except Exception as e:
             logger.error("airtime_pipeline_failed", error=str(e), exc_info=True)
             return TransactionResult(
