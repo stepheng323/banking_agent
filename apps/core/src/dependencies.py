@@ -21,6 +21,7 @@ from apps.core.src.agent.orchestrator.config import OrchestratorDependencies
 from apps.core.src.agent.orchestrator.services import MediaService
 from apps.core.src.queue_consumers import MessageConsumer, TransactionConsumer
 from apps.core.src.queue_consumers.flow_event_consumer import FlowEventConsumer
+from apps.core.src.queue_consumers.outbox_consumer import OutboxConsumer
 from shared.cache.bank_cache import BankCacheService
 from shared.cache.flow_session_manager import FlowSessionManager
 from shared.cache.redis_client import RedisClient
@@ -40,7 +41,7 @@ from shared.services import ConversationResponder
 from shared.services.task_queue import TaskQueueService
 
 
-def setup_dependencies() -> tuple[MessageConsumer, TransactionConsumer, FlowEventConsumer]:
+def setup_dependencies() -> tuple[MessageConsumer, TransactionConsumer, FlowEventConsumer, OutboxConsumer]:
     """Setup deps"""
     whatsapp_client = WhatsAppClient()
     redis_queue = RedisQueue(redis_url=settings.redis_url)
@@ -120,7 +121,7 @@ def setup_dependencies() -> tuple[MessageConsumer, TransactionConsumer, FlowEven
 
     agent_airtime_worker = AirtimeWorker(
         extractor=AirtimeEntityExtractor(llm),
-        banking_provider=banking_provider,
+        bill_provider=bill_provider,
         transaction_repo=transaction_repository,
         queue=redis_queue,
     )
@@ -166,8 +167,9 @@ def setup_dependencies() -> tuple[MessageConsumer, TransactionConsumer, FlowEven
     )
 
     airtime_executor = AirtimeExecutor(
-        banking_provider=banking_provider,
+        bill_provider=bill_provider,
         transaction_repo=transaction_repository,
+        queue=redis_queue,
     )
 
     data_executor = None
@@ -187,7 +189,11 @@ def setup_dependencies() -> tuple[MessageConsumer, TransactionConsumer, FlowEven
     flow_event_consumer = FlowEventConsumer(
         redis_queue=redis_queue,
         orchestrator=orchestrator,
-        whatsapp_client=whatsapp_client,
     )
 
-    return message_consumer, transaction_consumer, flow_event_consumer
+    outbox_consumer = OutboxConsumer(
+        redis_queue=redis_queue,
+        messaging_client=whatsapp_client,
+    )
+
+    return message_consumer, transaction_consumer, flow_event_consumer, outbox_consumer
