@@ -3,6 +3,7 @@ from langchain_openai import ChatOpenAI
 from apps.core.src.agent.executors.airtime import AirtimeExecutor
 from apps.core.src.agent.executors.data import DataExecutor
 from apps.core.src.agent.executors.transfer import TransferExecutor
+from apps.core.src.agent.graphs.__shared__.beneficiary.suggestion_service import BeneficiarySuggestionService
 from apps.core.src.agent.graphs.account.worker import AccountWorker
 from apps.core.src.agent.graphs.airtime.extractor import AirtimeEntityExtractor
 from apps.core.src.agent.graphs.airtime.worker import AirtimeWorker
@@ -51,8 +52,8 @@ def setup_dependencies() -> tuple[MessageConsumer, TransactionConsumer, FlowEven
 
     user_data_cache = UserDataCache(redis_client=shared_redis)
 
-    onboarding_service = OnboardingService(whatsapp_client)
-    onboarding_executor = OnboardingExecutor(whatsapp_client, user_repository, onboarding_service)
+    onboarding_service = OnboardingService(redis_queue)
+    onboarding_executor = OnboardingExecutor(user_repository, onboarding_service)
 
     beneficiary_repository = BeneficiaryRepository(db=get_db_session())
     account_repository = AccountRepository(db=get_db_session())
@@ -127,6 +128,10 @@ def setup_dependencies() -> tuple[MessageConsumer, TransactionConsumer, FlowEven
     )
 
     media_service = MediaService(whatsapp_client)
+    beneficiary_suggestion_service = BeneficiarySuggestionService(
+        queue=redis_queue,
+        redis_client=shared_redis,
+    )
 
     orchestrator_deps = OrchestratorDependencies(
         llm=llm,
@@ -149,6 +154,7 @@ def setup_dependencies() -> tuple[MessageConsumer, TransactionConsumer, FlowEven
         redis_client=shared_redis,
         banking_provider=banking_provider,
         queue=redis_queue,
+        beneficiary_suggestion_service=beneficiary_suggestion_service,
     )
 
     orchestrator = OrchestratorAgent(orchestrator_deps)
@@ -158,7 +164,6 @@ def setup_dependencies() -> tuple[MessageConsumer, TransactionConsumer, FlowEven
         user_repository=user_repository,
         onboarding_executor=onboarding_executor,
         orchestrator=orchestrator,
-        messaging_client=whatsapp_client,
     )
 
     transfer_executor = TransferExecutor(
