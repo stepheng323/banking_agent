@@ -88,6 +88,7 @@ class WhatsAppWebhookService:
             quoted_message_id=msg.quoted.message_id if msg.quoted else None,
             timestamp=datetime.utcnow(),
             priority=priority,
+            channel="whatsapp",
         )
 
     async def _enqueue_message(

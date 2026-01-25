@@ -18,10 +18,14 @@ from apps.gateway.api.webhooks.whatsapp.flows.response_helpers import (
 from apps.gateway.core.config import settings
 from shared.cache.redis_client import RedisClient
 from shared.clients.whatsapp.client import WhatsAppClient
-from shared.queue.messages import FlowEvent, FlowEventType
+from shared.queue.messages import OUTBOX_QUEUE, FlowEvent, FlowEventType
 from shared.queue.redis_queue import RedisQueue
 from shared.services.auth import AuthorizationService
 
+from shared.utils.logging import configure_logger, get_logger
+
+configure_logger()
+logger = get_logger(__name__)
 
 async def handle_transaction_pin(
     data: dict[str, Any],
@@ -49,6 +53,12 @@ async def handle_transaction_pin(
     """
     pin = data.get("pin")
 
+    logger.info(f"Received PIN: {pin}")
+    logger.info(f"Received flow_token: {flow_token}")
+    logger.info(f"Received request_was_encrypted: {request_was_encrypted}")
+    logger.info(f"Received aes_key_bytes: {aes_key_bytes}")
+    logger.info(f"Received iv_bytes: {iv_bytes}")
+    
     if not pin:
         return format_error_response(
             "Pin",
@@ -121,10 +131,18 @@ async def handle_transaction_pin(
         phone_number = flow_token.split("-")[-1] if flow_token else None
 
         if phone_number:
+            if redis_queue is None:
+                redis_queue = RedisQueue(redis_url=settings.redis_url)
+
             asyncio.create_task(
-                whatsapp_client.send_text(
-                    to=phone_number,
-                    text="Your transaction session has expired. Please start a new transaction.",
+                redis_queue.enqueue(
+                    queue_name=OUTBOX_QUEUE,
+                    message={
+                        "phone_number": phone_number,
+                        "channel": whatsapp_client.channel_name,
+                        "intents": [{"type": "say", "text": "Your transaction session has expired. Please start a new transaction."}],
+                        "metadata": {"source": "transaction_pin_handler", "status": "expired"}
+                    }
                 )
             )
 
@@ -191,6 +209,7 @@ async def handle_transaction_pin(
                 "success": flow_event.success,
                 "error": flow_event.error,
                 "extra_data": flow_event.extra_data,
+                "channel": whatsapp_client.channel_name,
             },
         )
     except Exception as e:
