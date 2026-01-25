@@ -24,43 +24,79 @@ class ExecutionStep(AirtimeStep):
         gates: AirtimeGates,
         worker_context: Any,
     ) -> TransactionResult:
-        if not walker_context.banking_provider:
-            return TransactionResult(
-                outcome=TransactionOutcome.FAILED,
-                error="Banking provider not available",
-            )
+
 
         try:
-            request_payload = {
+            transaction_id = None
+            key = data.idempotency_key
+
+            from shared.repositories.unit_of_work import UnitOfWork
+            from shared.database.enums import TransactionStatusEnum
+
+            async with UnitOfWork() as uow:
+                try:
+                    existing = await uow.transactions.get_by_idempotency_key(key)
+                    if existing:
+                        transaction_id = str(existing.id)
+                    else:
+                        tx = await uow.transactions.create(
+                            idempotency_key=key,
+                            transaction_type="airtime",
+                            status=TransactionStatusEnum.PENDING.value,
+                            user_id=getattr(worker_context, "user_id", None),
+                            amount=data.amount,
+                            recipient_account_number=data.recipient_phone,
+                            recipient_bank_code=data.network,  # Using bank_code field for network
+                            recipient_name=data.recipient_name or "Airtime Beneficiary",
+                            recipient_bank_name=data.network,
+                            source_account_id=data.source_account_id,
+                            source_account_number=data.source_account_number or "",
+                            source_bank_name=data.source_bank_name or "",
+                            narration=f"Airtime: {data.recipient_phone} ({data.network})",
+                        )
+                        transaction_id = str(tx.id)
+                        await uow.commit()
+                        logger.info("airtime_transaction_persisted", id=transaction_id, key=key)
+                except Exception as e:
+                    logger.error("failed_to_persist_airtime_transaction", error=str(e))
+                    raise e
+
+            queue = worker_context.queue
+            if not queue._redis:
+                await queue.connect()
+
+            airtime_data = {
                 "amount": data.amount,
-                "recipient": {
-                    "phone_number": data.recipient_phone,
-                    "network": data.network,
-                },
-                "source": {
-                    "account_number": data.source_account_number,
-                    "account_id": data.source_account_id,
-                },
-                "idempotency_key": data.idempotency_key,
+                "phone_number": data.recipient_phone,
+                "network": data.network,
+                "source_account_number": data.source_account_number,
+                "source_account_id": data.source_account_id,
             }
 
-            result = await worker_context.banking_provider.purchase_airtime(request_payload)
-
-            if not result.get("success"):
-                return TransactionResult(
-                    outcome=TransactionOutcome.FAILED,
-                    error=result.get("error") or "Airtime purchase failed",
-                )
+            await queue.enqueue(
+                queue_name="banking:transactions",
+                message={
+                    "type": "execute_airtime",
+                    "idempotency_key": key,
+                    "transaction_id": transaction_id,
+                    "phone_number": context.phone_number,
+                    "channel": context.channel,
+                    "airtime_data": airtime_data,
+                },
+            )
 
             return TransactionResult(
                 outcome=TransactionOutcome.OK,
                 receipt={
-                    "transaction_id": result.get("transaction_id"),
+                    "status": "queued",
+                    "id": key,
                     "amount": data.amount,
                     "recipient_phone": data.recipient_phone,
                     "network": data.network,
-                    "status": "success",
+                    "date": "Now",
+                    "message": f"Your purchase of ₦{data.amount:,.2f} airtime for {data.recipient_phone} ({data.network}) has been queued.",
                 },
+                patch={"transaction_id": transaction_id} if transaction_id else {},
             )
 
         except Exception as e:

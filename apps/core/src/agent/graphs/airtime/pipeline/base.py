@@ -67,6 +67,8 @@ class AirtimePipeline:
                 return result
 
         if accumulated_patch:
-            return TransactionResult(outcome=TransactionOutcome.OK, patch=accumulated_patch)
+            # Ensure the final result includes the full accumulated patch
+            result.patch = accumulated_patch
+            return result
 
-        return TransactionResult(outcome=TransactionOutcome.OK)
+        return result

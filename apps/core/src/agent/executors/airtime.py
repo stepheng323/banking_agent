@@ -5,8 +5,12 @@ Handles execution of airtime transactions from the queue.
 
 from typing import Any
 
-from shared.clients.abstractions.banking import BankingDataProvider
+from shared.config import settings
+
+from shared.clients.abstractions.bill import BillPaymentProvider
 from shared.database.enums import TransactionStatusEnum
+from shared.queue.messages import OUTBOX_QUEUE
+from shared.queue.redis_queue import RedisQueue
 from shared.repositories.transaction_repository import TransactionRepository
 from shared.utils.logging import get_logger
 
@@ -18,11 +22,13 @@ class AirtimeExecutor:
 
     def __init__(
         self,
-        banking_provider: BankingDataProvider,
+        bill_provider: BillPaymentProvider,
         transaction_repo: TransactionRepository,
+        queue: RedisQueue,
     ):
-        self.banking_provider = banking_provider
+        self.bill_provider = bill_provider
         self.transaction_repo = transaction_repo
+        self.queue = queue
 
     async def handle_airtime(self, data: dict[str, Any]) -> None:
         """Handle execution of an airtime transaction."""
@@ -42,15 +48,31 @@ class AirtimeExecutor:
             phone_number = airtime_data.get("phone_number")
             network = airtime_data.get("network")
 
-            result = await self.banking_provider.buy_airtime(
+            result = await self.bill_provider.purchase_airtime(
                 amount=amount,
-                phone_number=phone_number,
+                recipient_phone=phone_number,
                 network=network,
             )
 
-            if result.get("status") == "success":
+            if result.get("success"):
                 await self.transaction_repo.update_status(transaction_id, TransactionStatusEnum.SUCCESSFUL.value)
                 logger.info("airtime_success", transaction_id=transaction_id, ref=result.get("reference"))
+                
+                if phone_number:
+                    ref = result.get('reference') or 'N/A'
+                    message = f"✅ Airtime Purchase Successful!\n\nAmount: ₦{amount:,.2f}\nRef: {ref}"
+                    await self.queue.enqueue(
+                        queue_name=OUTBOX_QUEUE,
+                        message={
+                            "phone_number": phone_number,
+                            "channel": data.get("channel", "whatsapp"),
+                            "intents": [{"type": "say", "text": message}],
+                            "metadata": {
+                                "source": "airtime_executor",
+                                "transaction_id": transaction_id
+                            }
+                        }
+                    )
             else:
                 error_msg = result.get("message", "Airtime purchase failed at provider")
                 await self.transaction_repo.update_status(

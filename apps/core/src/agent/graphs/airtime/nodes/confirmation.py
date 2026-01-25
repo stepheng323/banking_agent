@@ -39,7 +39,7 @@ class ConfirmationStep(AirtimeStep):
 
         current_hash = data.confirmation.snapshot_hash if hasattr(data, "confirmation") else None
 
-        if gates.confirmation_confirmed and current_hash == snapshot_hash:
+        if gates.confirmation_confirmed:
             return TransactionResult(outcome=TransactionOutcome.OK)
 
         summary = format_airtime_summary(
@@ -52,6 +52,26 @@ class ConfirmationStep(AirtimeStep):
                 "sourceAccount": data.source_account_number,
             }
         )
+
+        try:
+            if not worker_context.queue._redis:
+                await worker_context.queue.connect()
+
+            key = data.idempotency_key
+
+            # Persist tokens so Webhook can look them up
+            await worker_context.queue._redis.setex(
+                f"airtime:token:{key}:phone",
+                3600,
+                context.phone_number,
+            )
+            await worker_context.queue._redis.setex(
+                f"transaction:token:{key}:phone",
+                3600,
+                context.phone_number,
+            )
+        except Exception as e:
+            logger.error("failed_to_persist_airtime_token", error=str(e))
 
         return TransactionResult(
             outcome=TransactionOutcome.NEEDS_CONFIRMATION,
