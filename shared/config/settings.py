@@ -49,6 +49,8 @@ class Settings:
         self.s3_region: str = os.getenv("AWS_REGION", "us-east-1")
         self.s3_receipt_prefix: str = "receipts"
 
+        self.default_channel: str = os.getenv("DEFAULT_CHANNEL", "whatsapp")
+
         self._validate_whatsapp_config()
 
     def _validate_whatsapp_config(self) -> None:
