@@ -49,6 +49,9 @@ class RedisQueue:
     ) -> None: ...
 
     @overload
+    async def enqueue(self, queue_name: Literal["banking:notifications"], message: dict[str, Any]) -> None: ...
+
+    @overload
     async def enqueue(self, queue_name: Literal["banking:flow_events"], message: FlowEventPayload) -> None: ...
 
     @overload
