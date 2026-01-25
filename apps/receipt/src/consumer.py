@@ -1,10 +1,11 @@
 """Redis queue consumer for receipt generation jobs."""
 
 import asyncio
+import base64
 from typing import Any
 
 from apps.receipt.src.renderer import ReceiptRenderer
-from shared.clients.whatsapp.client import WhatsAppClient
+from shared.queue.messages import OUTBOX_QUEUE
 from shared.queue.redis_queue import RedisQueue
 from shared.utils.logging import get_logger
 
@@ -21,7 +22,6 @@ class ReceiptJobConsumer:
     def __init__(self) -> None:
         self.running = False
         self.renderer = ReceiptRenderer()
-        self.whatsapp_client = WhatsAppClient()
         self.queue = RedisQueue()
 
     async def start(self) -> None:
@@ -77,10 +77,25 @@ class ReceiptJobConsumer:
                     transaction_reference=reference,
                 )
 
-                await self.whatsapp_client.send_image_data(
-                    to=phone_number,
-                    data=image_bytes,
-                    caption=f"Transfer Receipt: {reference}",
+                image_b64 = base64.b64encode(image_bytes).decode("ascii")
+                await self.queue.enqueue(
+                    queue_name=OUTBOX_QUEUE,
+                    message={
+                        "phone_number": phone_number,
+                        "channel": "whatsapp",
+                        "intents": [
+                            {
+                                "type": "show_receipt",
+                                "task_id": reference,
+                                "receipt": {
+                                    "image_base64": image_b64,
+                                    "mime_type": "image/png",
+                                },
+                                "caption": f"Transfer Receipt: {reference}",
+                            }
+                        ],
+                        "metadata": {"source": "receipt_consumer"},
+                    },
                 )
                 return
 
@@ -103,13 +118,23 @@ class ReceiptJobConsumer:
         )
 
         try:
-            await self.whatsapp_client.send_text(
-                to=phone_number,
-                text=(
-                    "We couldn't generate your receipt image at this time. "
-                    "Don't worry - your transfer was successful! "
-                    f"Reference: {reference}"
-                ),
+            await self.queue.enqueue(
+                queue_name=OUTBOX_QUEUE,
+                message={
+                    "phone_number": phone_number,
+                    "channel": "whatsapp",
+                    "intents": [
+                        {
+                            "type": "say",
+                            "text": (
+                                "We couldn't generate your receipt image at this time. "
+                                "Don't worry - your transfer was successful! "
+                                f"Reference: {reference}"
+                            ),
+                        }
+                    ],
+                    "metadata": {"source": "receipt_consumer", "reason": "generation_failed"},
+                },
             )
         except Exception as notify_error:
             logger.error(

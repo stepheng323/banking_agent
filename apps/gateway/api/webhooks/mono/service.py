@@ -1,7 +1,7 @@
 """Mono webhook service - business logic for handling Mono events."""
 
 from shared.cache.user_data import UserDataCache
-from shared.clients.whatsapp.client import WhatsAppClient
+from shared.queue.messages import OUTBOX_QUEUE
 from shared.queue.redis_queue import RedisQueue
 from shared.repositories.unit_of_work import UnitOfWork
 from shared.utils.logging import get_logger
@@ -29,10 +29,8 @@ class MonoWebhookService:
 
     def __init__(
         self,
-        whatsapp_client: WhatsAppClient,
         queue: RedisQueue,
     ):
-        self.whatsapp_client = whatsapp_client
         self.queue = queue
         self.cache = UserDataCache()
 
@@ -142,9 +140,19 @@ class MonoWebhookService:
     ) -> None:
         """Send notification when mandate is ready."""
         try:
-            await self.whatsapp_client.send_text(
-                to=phone_number,
-                text=f"✓ Your {bank_name} account ({account_number}) is now ready for payments.",
+            await self.queue.enqueue(
+                queue_name=OUTBOX_QUEUE,
+                message={
+                    "phone_number": phone_number,
+                    "channel": "whatsapp",
+                    "intents": [
+                        {
+                            "type": "say",
+                            "text": f"✓ Your {bank_name} account ({account_number}) is now ready for payments.",
+                        }
+                    ],
+                    "metadata": {"source": "mono_webhook"},
+                },
             )
         except Exception as e:
             logger.error("mandate_ready_notification_failed", error=str(e))

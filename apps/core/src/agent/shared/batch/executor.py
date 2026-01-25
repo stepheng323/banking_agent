@@ -21,8 +21,9 @@ from apps.core.src.agent.shared.batch.workflow.handlers import (
     QueryHandler,
     TransferHandler,
 )
+from apps.core.src.messaging.outbox import enqueue_outbox_say
 from shared.cache.redis_client import Redis
-from shared.clients.whatsapp.client import WhatsAppClient
+from shared.clients.abstractions.messaging import MessagingClient
 from shared.queue.redis_queue import RedisQueue
 from shared.services.task_queue import TaskQueueService
 from shared.types.agent_types import TaskStatus
@@ -33,6 +34,7 @@ logger = get_logger(__name__)
 
 if TYPE_CHECKING:
     from apps.core.src.agent.graphs.account.service import AccountService
+
     from apps.core.src.agent.graphs.query import QueryService
     from shared.cache.user_data import UserDataCache
 
@@ -130,7 +132,7 @@ async def execute_batch_dag(
     phone_number: str,
     pin_verified: bool,
     user_id: str,
-    whatsapp_client: WhatsAppClient,
+    messaging_client: MessagingClient,
     task_queue_service: TaskQueueService,
     redis_client: Redis,
     queue: RedisQueue,
@@ -148,7 +150,7 @@ async def execute_batch_dag(
         phone_number: User's phone number
         pin_verified: Whether PIN was verified
         user_id: User's ID
-        whatsapp_client: WhatsApp client for sending messages
+        messaging_client: Client reference (outbox handles sending)
         task_queue_service: Service for task queue management
         redis_client: Redis client
         queue: Redis queue for background jobs
@@ -178,8 +180,12 @@ async def execute_batch_dag(
 
         batch_data_ttl = 900  # 15 minutes
         if time.time() - planner_output.created_at > batch_data_ttl:
-            await whatsapp_client.send_text(
-                phone_number, "❌ Batch expired (data too old). Please describe your request again."
+            await enqueue_outbox_say(
+                queue,
+                phone_number,
+                messaging_client.channel_name,
+                "❌ Batch expired (data too old). Please describe your request again.",
+                metadata={"source": "batch_executor"},
             )
             await task_queue_service.clear_task_queue(phone_number)
             return {"completed": 0, "failed": 0, "total": 0, "error": "Batch data expired"}
@@ -198,7 +204,13 @@ async def execute_batch_dag(
             return {"completed": 0, "failed": 0, "total": 0}
 
         if not pin_verified:
-            await whatsapp_client.send_text(phone_number, "❌ PIN verification required. Please try again.")
+            await enqueue_outbox_say(
+                queue,
+                phone_number,
+                messaging_client.channel_name,
+                "❌ PIN verification required. Please try again.",
+                metadata={"source": "batch_executor"},
+            )
             return {"completed": 0, "failed": 0, "total": total, "error": "PIN not verified"}
 
         # Verify Approval Hash
@@ -209,16 +221,24 @@ async def execute_batch_dag(
                 logger.error(
                     f"[BATCH-DAG] Approval hash mismatch for {phone_number}. Stored: {stored_hash}, Computed: {current_hash}"
                 )
-                await whatsapp_client.send_text(
-                    phone_number, "❌ Security Alert: Batch contents have changed since approval. Please try again."
+                await enqueue_outbox_say(
+                    queue,
+                    phone_number,
+                    messaging_client.channel_name,
+                    "❌ Security Alert: Batch contents have changed since approval. Please try again.",
+                    metadata={"source": "batch_executor"},
                 )
                 await redis_client.delete(f"queue:{phone_number}:execution_state")
                 return {"completed": 0, "failed": 0, "total": 0, "error": "Approval hash mismatch"}
         else:
             logger.warning(f"[BATCH-DAG] No approval hash found for {phone_number}. Allowing execution (legacy).")
 
-        await whatsapp_client.send_text(
-            phone_number, f"⏳ Processing {total} task{'s' if total > 1 else ''} in parallel..."
+        await enqueue_outbox_say(
+            queue,
+            phone_number,
+            messaging_client.channel_name,
+            f"⏳ Processing {total} task{'s' if total > 1 else ''} in parallel...",
+            metadata={"source": "batch_executor"},
         )
 
         # Set idempotency keys on tasks
@@ -234,7 +254,7 @@ async def execute_batch_dag(
             pin_verified=True,
             redis_client=redis_client,
             queue=queue,
-            whatsapp_client=whatsapp_client,
+            messaging_client=messaging_client,
             task_queue_service=task_queue_service,
         )
 
@@ -268,7 +288,13 @@ async def execute_batch_dag(
             await _store_retryable_tasks(redis_client, phone_number, workflow_id, tasks_to_execute, result)
             summary += "\n\n💡 Some failures may be retryable. Say 'retry failed' to try again."
 
-        await whatsapp_client.send_text(phone_number, summary)
+        await enqueue_outbox_say(
+            queue,
+            phone_number,
+            messaging_client.channel_name,
+            summary,
+            metadata={"source": "batch_executor"},
+        )
 
         await task_queue_service.clear_task_queue(phone_number)
         if result.stopped_early:
@@ -295,7 +321,13 @@ async def execute_batch_dag(
         logger.error(f"[BATCH-DAG] Error executing batch: {e}", exc_info=True)
 
         try:
-            await whatsapp_client.send_text(phone_number, "❌ An error occurred processing tasks. Please try again.")
+            await enqueue_outbox_say(
+                queue,
+                phone_number,
+                messaging_client.channel_name if "messaging_client" in locals() else "whatsapp",
+                "❌ An error occurred processing tasks. Please try again.",
+                metadata={"source": "batch_executor"},
+            )
         except Exception:
             pass
 
@@ -338,7 +370,7 @@ async def _store_retryable_tasks(
 async def retry_failed_tasks(
     phone_number: str,
     user_id: str,
-    whatsapp_client: WhatsAppClient,
+    messaging_client: MessagingClient,
     task_queue_service: TaskQueueService,
     redis_client: Redis,
     queue: RedisQueue,
@@ -357,7 +389,13 @@ async def retry_failed_tasks(
     data = await redis_client.get(key)
 
     if not data:
-        await whatsapp_client.send_text(phone_number, "No failed tasks to retry.")
+        await enqueue_outbox_say(
+            queue,
+            phone_number,
+            messaging_client.channel_name,
+            "No failed tasks to retry.",
+            metadata={"source": "batch_executor"},
+        )
         return {"completed": 0, "failed": 0, "total": 0, "error": "No retryable tasks"}
 
     try:
@@ -366,14 +404,26 @@ async def retry_failed_tasks(
         tasks_data = parsed.get("tasks", [])
 
         if not tasks_data:
-            await whatsapp_client.send_text(phone_number, "No failed tasks to retry.")
+            await enqueue_outbox_say(
+                queue,
+                phone_number,
+                messaging_client.channel_name,
+                "No failed tasks to retry.",
+                metadata={"source": "batch_executor"},
+            )
             return {"completed": 0, "failed": 0, "total": 0}
 
         # Reconstruct PlannedTask objects
         tasks = [PlannedTask(**t) for t in tasks_data]
         total = len(tasks)
 
-        await whatsapp_client.send_text(phone_number, f"⏳ Retrying {total} failed task{'s' if total > 1 else ''}...")
+        await enqueue_outbox_say(
+            queue,
+            phone_number,
+            messaging_client.channel_name,
+            f"⏳ Retrying {total} failed task{'s' if total > 1 else ''}...",
+            metadata={"source": "batch_executor"},
+        )
 
         # Build context
         context = WorkflowContext(
@@ -383,7 +433,7 @@ async def retry_failed_tasks(
             pin_verified=True,
             redis_client=redis_client,
             queue=queue,
-            whatsapp_client=whatsapp_client,
+            messaging_client=messaging_client,
             task_queue_service=task_queue_service,
         )
 
@@ -404,7 +454,13 @@ async def retry_failed_tasks(
         failed = [{"task_id": r.task_id, "error": r.error_message or "Unknown error"} for r in result.failed]
 
         summary = _generate_final_summary(tasks, completed, failed)
-        await whatsapp_client.send_text(phone_number, summary)
+        await enqueue_outbox_say(
+            queue,
+            phone_number,
+            messaging_client.channel_name,
+            summary,
+            metadata={"source": "batch_executor"},
+        )
 
         # Clear retry data if all succeeded
         if not result.has_failures:
@@ -424,5 +480,11 @@ async def retry_failed_tasks(
 
     except Exception as e:
         logger.error(f"[BATCH-RETRY] Error retrying tasks: {e}", exc_info=True)
-        await whatsapp_client.send_text(phone_number, "❌ Error retrying tasks. Please try again.")
+        await enqueue_outbox_say(
+            queue,
+            phone_number,
+            messaging_client.channel_name,
+            "❌ Error retrying tasks. Please try again.",
+            metadata={"source": "batch_executor"},
+        )
         return {"completed": 0, "failed": 0, "total": 0, "error": str(e)}

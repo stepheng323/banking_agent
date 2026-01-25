@@ -4,7 +4,6 @@ from fastapi import APIRouter, Request, Response
 
 from apps.gateway.api.webhooks.mono.service import MonoWebhookService
 from apps.gateway.core.config import settings
-from shared.clients.whatsapp.client import WhatsAppClient
 from shared.queue.redis_queue import RedisQueue
 from shared.utils.logging import get_logger
 
@@ -18,10 +17,7 @@ def _get_service() -> MonoWebhookService:
     """Get or create Mono webhook service instance."""
     global _service_instance
     if _service_instance is None:
-        _service_instance = MonoWebhookService(
-            whatsapp_client=WhatsAppClient(),
-            queue=RedisQueue(redis_url=settings.redis_url),
-        )
+        _service_instance = MonoWebhookService(queue=RedisQueue(redis_url=settings.redis_url))
     return _service_instance
 
 

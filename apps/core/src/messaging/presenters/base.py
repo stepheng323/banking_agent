@@ -3,7 +3,7 @@
 from dataclasses import dataclass, field
 from typing import Protocol
 
-from apps.core.src.agent.orchestrator.intents import UiIntent
+from apps.core.src.agent.orchestrator.models.intents import UiIntent
 
 
 @dataclass

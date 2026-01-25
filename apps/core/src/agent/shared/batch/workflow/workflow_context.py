@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from shared.cache.redis_client import Redis
-from shared.clients.whatsapp.client import WhatsAppClient
+from shared.clients.abstractions.messaging import MessagingClient
 from shared.queue.redis_queue import RedisQueue
 from shared.services.task_queue import TaskQueueService
 
@@ -32,7 +32,7 @@ class WorkflowContext:
     # Services and clients
     redis_client: Redis | None = None
     queue: RedisQueue | None = None
-    whatsapp_client: WhatsAppClient | None = None
+    messaging_client: MessagingClient | None = None
     task_queue_service: TaskQueueService | None = None
     handler_registry: "WorkflowHandlerRegistry | None" = None
 

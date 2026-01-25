@@ -3,8 +3,7 @@
 import asyncio
 from typing import Any
 
-from apps.core.src.agent.orchestrator.orchestrator import OrchestratorAgent
-
+from apps.core.src.agent.orchestrator.graph.orchestrator import OrchestratorAgent
 from shared.queue.messages import FLOW_EVENTS_QUEUE, OUTBOX_QUEUE, FlowEventType
 from shared.queue.redis_queue import RedisQueue
 from shared.utils.logging import get_logger
@@ -94,10 +93,10 @@ class FlowEventConsumer:
                     intents_to_send = []
                     if text:
                         intents_to_send.append({"type": "say", "text": text})
-                    
+
                     if outbox:
                         intents_to_send.extend(outbox)
-                        
+
                     if intents_to_send:
                         await self.queue.enqueue(
                             queue_name=OUTBOX_QUEUE,

@@ -1,6 +1,8 @@
 """WhatsApp implementation of the Presenter protocol."""
 
-from apps.core.src.agent.orchestrator.intents import (
+import base64
+
+from apps.core.src.agent.orchestrator.models.intents import (
     RequestAuth,
     RequestConfirmation,
     Say,
@@ -127,6 +129,17 @@ class WhatsAppPresenter(Presenter):
         # or if 'url' is in the receipt wrapper, send image.
 
         receipt_data = intent.receipt
+
+        if "image_base64" in receipt_data:
+            mime_type = receipt_data.get("mime_type", "image/png")
+            image_bytes = base64.b64decode(receipt_data["image_base64"])
+            await self.client.send_image_data(
+                to=context.phone_number,
+                data=image_bytes,
+                caption=intent.caption or "Transaction Receipt",
+                mime_type=mime_type,
+            )
+            return
 
         if "url" in receipt_data:
             await self.client.send_image(

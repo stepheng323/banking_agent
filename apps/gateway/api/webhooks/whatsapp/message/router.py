@@ -4,7 +4,6 @@ from fastapi import APIRouter, HTTPException, Request, Response, status
 
 from apps.gateway.adapters.meta_whatsapp import verify_meta_signature
 from apps.gateway.core.config import settings
-from shared.clients.whatsapp.client import WhatsAppClient
 from shared.queue.redis_queue import RedisQueue
 from shared.utils.logging import get_logger
 
@@ -14,7 +13,6 @@ router = APIRouter(prefix="/webhook", tags=["webhooks"])
 logger = get_logger(__name__)
 
 _queue_instance = None
-_whatsapp_client_instance = None
 _service_instance = None
 
 
@@ -26,22 +24,11 @@ def get_redis_queue() -> RedisQueue:
     return _queue_instance
 
 
-def get_whatsapp_client() -> WhatsAppClient:
-    """Dependency factory for WhatsApp client."""
-    global _whatsapp_client_instance
-    if _whatsapp_client_instance is None:
-        _whatsapp_client_instance = WhatsAppClient()
-    return _whatsapp_client_instance
-
-
 def _get_service() -> WhatsAppWebhookService:
     """Get or create WhatsApp webhook service instance."""
     global _service_instance
     if _service_instance is None:
-        _service_instance = WhatsAppWebhookService(
-            queue=get_redis_queue(),
-            whatsapp_client=get_whatsapp_client(),
-        )
+        _service_instance = WhatsAppWebhookService(queue=get_redis_queue())
     return _service_instance
 
 
