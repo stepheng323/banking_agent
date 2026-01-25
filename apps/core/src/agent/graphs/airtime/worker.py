@@ -28,14 +28,12 @@ class AirtimeWorker:
     def __init__(
         self,
         extractor,
-        banking_provider,
-        validation_service,
+        bill_provider,
         transaction_repo,
         queue,
     ):
         self.extractor = extractor
-        self.banking_provider = banking_provider
-        self.validation_service = validation_service
+        self.bill_provider = bill_provider
         self.transaction_repo = transaction_repo
         self.queue = queue
 
@@ -49,13 +47,15 @@ class AirtimeWorker:
         """Execute the airtime pipeline."""
 
         data = AirtimePayload(**payload)
-        
+
         if not data.idempotency_key or data.idempotency_key == "no-key":
-             import uuid
-             data = data.model_copy(update={"idempotency_key": f"airtime-{uuid.uuid4()}"})
+            import uuid
+
+            data = data.model_copy(update={"idempotency_key": f"airtime-{uuid.uuid4()}"})
 
         ctx = AirtimeContext(
             phone_number=context.get("phone_number", ""),
+            channel=context.get("channel", "whatsapp"),
             beneficiaries=context.get("beneficiaries", []),
             accounts=context.get("accounts", []),
         )
@@ -69,8 +69,7 @@ class AirtimeWorker:
 
         worker_context = SimpleNamespace(
             extractor=self.extractor,
-            banking_provider=self.banking_provider,
-            validation_service=self.validation_service,
+            bill_provider=self.bill_provider,
             queue=self.queue,
             transaction_repo=self.transaction_repo,
             user_id=context.get("user_id"),
@@ -88,9 +87,15 @@ class AirtimeWorker:
             ]
         )
 
-        # 6. Run
         try:
-             return await pipeline.run(data, ctx, gates, worker_context)
+            result = await pipeline.run(data, ctx, gates, worker_context)
+            
+            if data.idempotency_key:
+                if result.patch is None:
+                    result.patch = {}
+                result.patch["idempotency_key"] = data.idempotency_key
+                
+            return result
         except Exception as e:
             logger.error("airtime_pipeline_failed", error=str(e), exc_info=True)
             return TransactionResult(

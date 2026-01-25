@@ -55,6 +55,12 @@ class WhatsAppPresenter(Presenter):
             header = intent.reason or "Authorize Transaction"
             cta = "Authorize"
 
+            prefix = "transfer"
+            if "Airtime" in header or "Airtime" in (intent.summary or ""):
+                prefix = "airtime"
+            elif "Data" in header or "Data" in (intent.summary or ""):
+                prefix = "data"
+
             if "Transfer" in header:
                 cta = "Authorize Transfer"
 
@@ -66,7 +72,7 @@ class WhatsAppPresenter(Presenter):
                     "text_body": intent.summary,
                     "flow_cta": cta,
                     "screen_name": "Pin",
-                    "flow_token": f"transfer-pin-{intent.correlation_id}-{context.phone_number}",
+                    "flow_token": f"{prefix}-pin-{intent.correlation_id}-{context.phone_number}",
                     "flow_action_payload": {
                         "screen": "Pin",
                     },
@@ -83,6 +89,13 @@ class WhatsAppPresenter(Presenter):
         supports_flows = context.capabilities.get("flows", False)
 
         if supports_flows:
+            # Dynamic Prefix logic
+            prefix = "transfer"
+            if "Airtime" in (intent.summary or ""):
+                prefix = "airtime"
+            elif "Data" in (intent.summary or ""):
+                prefix = "data"
+
             await self.client.send_flow(
                 to=context.phone_number,
                 flow_id=settings.pin_confirmation_flow_id,
@@ -91,7 +104,7 @@ class WhatsAppPresenter(Presenter):
                     "text_body": intent.summary,
                     "flow_cta": "Authorize",
                     "screen_name": "Pin",
-                    "flow_token": f"transfer-pin-{intent.correlation_id}-{context.phone_number}",
+                    "flow_token": f"{prefix}-pin-{intent.correlation_id}-{context.phone_number}",
                     "flow_action_payload": {
                         "screen": "Pin",
                     },

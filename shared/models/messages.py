@@ -42,6 +42,7 @@ class WhatsAppMessage(BaseModel):
     quoted_message_id: str | None = Field(None, description="ID of quoted/replied message")
     timestamp: datetime = Field(default_factory=datetime.utcnow)
 
+    channel: str = "whatsapp"
     priority: MessagePriority = Field(default=MessagePriority.NORMAL)
     retry_count: int = Field(default=0, description="Number of processing attempts")
 

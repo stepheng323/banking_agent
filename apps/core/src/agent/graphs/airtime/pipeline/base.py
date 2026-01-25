@@ -41,9 +41,34 @@ class AirtimePipeline:
     ) -> TransactionResult:
         """Run all steps in sequence."""
 
+        accumulated_patch = {}
+
         for step in self.steps:
             result = await step.execute(data, context, gates, worker_context)
+
+            if result.patch:
+                data = data.model_copy(update=result.patch)
+                accumulated_patch.update(result.patch)
+
             if result.outcome != TransactionOutcome.OK:
+                if accumulated_patch:
+                    final_patch = result.patch or {}
+                    final_patch = {**accumulated_patch, **final_patch}
+
+                    return TransactionResult(
+                        outcome=result.outcome,
+                        patch=final_patch,
+                        error=result.error,
+                        prompt=result.prompt,
+                        required_fields=result.required_fields,
+                        details=result.details,
+                        confirmation_summary=result.confirmation_summary,
+                    )
                 return result
 
-        return TransactionResult(outcome=TransactionOutcome.OK)
+        if accumulated_patch:
+            # Ensure the final result includes the full accumulated patch
+            result.patch = accumulated_patch
+            return result
+
+        return result

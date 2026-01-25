@@ -44,3 +44,4 @@ class FlowEvent:
 
 # Queue name constants
 FLOW_EVENTS_QUEUE = "banking:flow_events"
+OUTBOX_QUEUE = "banking:outbox"

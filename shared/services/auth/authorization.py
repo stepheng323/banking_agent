@@ -101,13 +101,13 @@ class AuthorizationService:
                 attempts_remaining=0,
             )
 
-        with UnitOfWork() as uow:
+        async with UnitOfWork() as uow:
             if not uow.users:
                 return AuthorizationResult(
                     verified=False, error="Database error", retry_count=retry_count
                 )
 
-            user = uow.users.get_by_phone(phone_number)
+            user = await uow.users.get_by_phone(phone_number)
             if not user:
                 return AuthorizationResult(
                     verified=False,

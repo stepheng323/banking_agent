@@ -27,6 +27,7 @@ class OrchestratorState(BaseModel):
 
     user_id: str
     phone_number: str
+    channel: str = "whatsapp"
 
     last_message_text: str | None = None
     last_message_id: str | None = None
@@ -47,3 +48,5 @@ class OrchestratorState(BaseModel):
     pending_interrupt: PendingInterrupt | None = None
     outbox: list[dict[str, Any]] = Field(default_factory=list)
     final_response: str | None = None
+
+    loaded_context: dict[str, Any] = Field(default_factory=dict)

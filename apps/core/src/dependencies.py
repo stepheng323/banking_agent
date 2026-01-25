@@ -3,17 +3,17 @@ from langchain_openai import ChatOpenAI
 from apps.core.src.agent.executors.airtime import AirtimeExecutor
 from apps.core.src.agent.executors.data import DataExecutor
 from apps.core.src.agent.executors.transfer import TransferExecutor
-from apps.core.src.agent.graphs.__shared__.validation.service import AsyncValidationService
-from apps.core.src.agent.graphs.account.service import AccountService
+from apps.core.src.agent.graphs.account.worker import AccountWorker
 from apps.core.src.agent.graphs.airtime.extractor import AirtimeEntityExtractor
 from apps.core.src.agent.graphs.airtime.worker import AirtimeWorker
 from apps.core.src.agent.graphs.data.extractor import DataEntityExtractor
 from apps.core.src.agent.graphs.data.worker import DataWorker
+from apps.core.src.agent.graphs.faq.worker import FAQWorker
 from apps.core.src.agent.graphs.onboarding.executor import OnboardingExecutor
 from apps.core.src.agent.graphs.onboarding.service import OnboardingService
 from apps.core.src.agent.graphs.query.session import QuerySessionManager
 from apps.core.src.agent.graphs.query.worker import QueryWorker
-from apps.core.src.agent.graphs.support import SupportService
+from apps.core.src.agent.graphs.support.worker import SupportWorker
 from apps.core.src.agent.graphs.transfer.services.extractor import TransferEntityExtractor
 from apps.core.src.agent.graphs.transfer.worker import TransferWorker
 from apps.core.src.agent.orchestrator import OrchestratorAgent
@@ -21,12 +21,14 @@ from apps.core.src.agent.orchestrator.config import OrchestratorDependencies
 from apps.core.src.agent.orchestrator.services import MediaService
 from apps.core.src.queue_consumers import MessageConsumer, TransactionConsumer
 from apps.core.src.queue_consumers.flow_event_consumer import FlowEventConsumer
+from apps.core.src.queue_consumers.outbox_consumer import OutboxConsumer
 from shared.cache.bank_cache import BankCacheService
 from shared.cache.flow_session_manager import FlowSessionManager
 from shared.cache.redis_client import RedisClient
 from shared.cache.user_data import UserDataCache
 from shared.clients.factories.payment import PaymentProviderFactory
 from shared.clients.providers.mono.banking import MonoBankingProvider
+from shared.clients.providers.mono.direct_debit import MonoDirectDebitProvider
 from shared.clients.whatsapp.client import WhatsAppClient
 from shared.config import settings
 from shared.database.connection import get_db_session
@@ -39,7 +41,7 @@ from shared.services import ConversationResponder
 from shared.services.task_queue import TaskQueueService
 
 
-def setup_dependencies() -> tuple[MessageConsumer, TransactionConsumer, FlowEventConsumer]:
+def setup_dependencies() -> tuple[MessageConsumer, TransactionConsumer, FlowEventConsumer, OutboxConsumer]:
     """Setup deps"""
     whatsapp_client = WhatsAppClient()
     redis_queue = RedisQueue(redis_url=settings.redis_url)
@@ -60,13 +62,13 @@ def setup_dependencies() -> tuple[MessageConsumer, TransactionConsumer, FlowEven
 
     banking_provider = MonoBankingProvider()
 
-    account_service = AccountService(
+    account_worker = AccountWorker(
         account_repo=account_repository,
         user_repo=user_repository,
         llm=llm,
-        messaging_client=whatsapp_client,
         banking_provider=banking_provider,
         session_manager=FlowSessionManager(),
+        direct_debit_provider=MonoDirectDebitProvider(),
     )
 
     transaction_repository = TransactionRepository(db=get_db_session())
@@ -81,12 +83,17 @@ def setup_dependencies() -> tuple[MessageConsumer, TransactionConsumer, FlowEven
             queue=redis_queue,
         )
 
-    support_service = SupportService(
+    support_worker = SupportWorker(
         llm=llm,
         transaction_repo=transaction_repository,
         actionable_message_repo=actionable_message_repository,
         redis_client=shared_redis,
         db_session=get_db_session(),
+    )
+
+    faq_worker = FAQWorker(
+        llm=llm,
+        get_db=get_db_session,
     )
 
     query_session_manager = QuerySessionManager(redis_client=shared_redis)
@@ -114,8 +121,7 @@ def setup_dependencies() -> tuple[MessageConsumer, TransactionConsumer, FlowEven
 
     agent_airtime_worker = AirtimeWorker(
         extractor=AirtimeEntityExtractor(llm),
-        banking_provider=banking_provider,
-        validation_service=AsyncValidationService(banking_provider),
+        bill_provider=bill_provider,
         transaction_repo=transaction_repository,
         queue=redis_queue,
     )
@@ -133,9 +139,11 @@ def setup_dependencies() -> tuple[MessageConsumer, TransactionConsumer, FlowEven
         transfer_service=agent_transfer_worker,
         airtime_service=agent_airtime_worker,
         query_service=query_worker,
-        account_service=account_service.worker,
+        account_service=account_worker,
         media_service=media_service,
         data_service=data_worker,
+        support_service=support_worker,
+        faq_service=faq_worker,
         user_cache=user_data_cache,
         account_repo=account_repository,
         redis_client=shared_redis,
@@ -159,8 +167,9 @@ def setup_dependencies() -> tuple[MessageConsumer, TransactionConsumer, FlowEven
     )
 
     airtime_executor = AirtimeExecutor(
-        banking_provider=banking_provider,
+        bill_provider=bill_provider,
         transaction_repo=transaction_repository,
+        queue=redis_queue,
     )
 
     data_executor = None
@@ -180,7 +189,11 @@ def setup_dependencies() -> tuple[MessageConsumer, TransactionConsumer, FlowEven
     flow_event_consumer = FlowEventConsumer(
         redis_queue=redis_queue,
         orchestrator=orchestrator,
-        whatsapp_client=whatsapp_client,
     )
 
-    return message_consumer, transaction_consumer, flow_event_consumer
+    outbox_consumer = OutboxConsumer(
+        redis_queue=redis_queue,
+        messaging_client=whatsapp_client,
+    )
+
+    return message_consumer, transaction_consumer, flow_event_consumer, outbox_consumer

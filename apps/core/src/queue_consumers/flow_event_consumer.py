@@ -4,8 +4,8 @@ import asyncio
 from typing import Any
 
 from apps.core.src.agent.orchestrator.orchestrator import OrchestratorAgent
-from shared.clients.whatsapp.client import WhatsAppClient
-from shared.queue.messages import FLOW_EVENTS_QUEUE, FlowEventType
+
+from shared.queue.messages import FLOW_EVENTS_QUEUE, OUTBOX_QUEUE, FlowEventType
 from shared.queue.redis_queue import RedisQueue
 from shared.utils.logging import get_logger
 
@@ -19,11 +19,9 @@ class FlowEventConsumer:
         self,
         redis_queue: RedisQueue,
         orchestrator: OrchestratorAgent,
-        whatsapp_client: WhatsAppClient,
     ):
         self.queue = redis_queue
         self.orchestrator = orchestrator
-        self.whatsapp_client = whatsapp_client
         self.running = False
 
     async def process_event(self, event_data: dict[str, Any]) -> None:
@@ -48,6 +46,7 @@ class FlowEventConsumer:
                     flow_type=flow_type,
                     phone_number=phone_number,
                     success=success,
+                    channel=event_data.get("channel", "whatsapp"),
                 )
             elif event_type == FlowEventType.PIN_FAILED.value:
                 logger.info(
@@ -72,9 +71,9 @@ class FlowEventConsumer:
 
     async def _handle_pin_verified(
         self,
-        flow_type: str,
         phone_number: str,
         success: bool,
+        channel: str,
     ) -> None:
         """Handle PIN verified event by resuming the appropriate service."""
         if not success:
@@ -87,20 +86,29 @@ class FlowEventConsumer:
                 phone_number=phone_number, flow_type=flow_type, pin_verified=True
             )
 
-            # Send response to user if available
-            if response and self.whatsapp_client:
+            if response:
                 if isinstance(response, dict):
                     text = response.get("text") or response.get("final_response")
                     outbox = response.get("outbox", [])
 
+                    intents_to_send = []
                     if text:
-                        await self.whatsapp_client.send_text(phone_number, text)
-                        logger.info("pin_response_sent_text", phone=phone_number)
-
-                    for msg in outbox:
-                        if msg.get("type") == "say":
-                            await self.whatsapp_client.send_text(phone_number, msg.get("text"))
-                            logger.info("pin_response_sent_outbox", phone=phone_number)
+                        intents_to_send.append({"type": "say", "text": text})
+                    
+                    if outbox:
+                        intents_to_send.extend(outbox)
+                        
+                    if intents_to_send:
+                        await self.queue.enqueue(
+                            queue_name=OUTBOX_QUEUE,
+                            message={
+                                "phone_number": phone_number,
+                                "channel": channel,
+                                "intents": intents_to_send,
+                                "metadata": {"source": "flow_event_consumer", "flow_type": flow_type}
+                            }
+                        )
+                        logger.info("pin_response_enqueued_outbox", phone=phone_number, count=len(intents_to_send))
 
         except Exception as e:
             logger.error(

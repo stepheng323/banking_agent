@@ -46,6 +46,15 @@ class AirtimeEntityExtractor:
             if aliases:
                 parts.append(f"Beneficiaries: {', '.join(aliases)}")
 
+        accounts = smart_context.get("accounts", [])
+        if accounts:
+            acc_list = []
+            for idx, acc in enumerate(accounts, 1):
+                name = acc.get("bank_name", "Bank")
+                num = acc.get("account_number", "")[-4:]
+                acc_list.append(f"{idx}. {name} (...{num})")
+            parts.append("Accounts:\n" + "\n".join(acc_list))
+
         if smart_context.get("language"):
             lang = smart_context["language"]
             parts.append(f"CRITICAL: Reply in {lang.upper()}.")

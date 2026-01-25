@@ -69,6 +69,7 @@ class AirtimeJobPayload(TypedDict):
     idempotency_key: str
     airtime_data: AirtimeData
     transaction_id: str
+    channel: str
 
 
 class DataPurchaseData(TypedDict):
@@ -86,6 +87,7 @@ class DataJobPayload(TypedDict):
     idempotency_key: str
     data_purchase: DataPurchaseData
     transaction_id: str
+    channel: str
 
 
 class FlowEventPayload(TypedDict):
@@ -96,3 +98,19 @@ class FlowEventPayload(TypedDict):
     success: bool
     error: str | None
     extra_data: dict[str, Any] | None
+    channel: str
+
+
+class NotificationJobPayload(TypedDict):
+    phone_number: str
+    message: str
+    type: str  # "text", "template"
+    channel: str  # "whatsapp", "telegram"
+
+
+class OutboxJobPayload(TypedDict):
+    phone_number: str
+    channel: str
+    intents: list[dict[str, Any]]
+    metadata: dict[str, Any] | None
+

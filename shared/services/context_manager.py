@@ -1,12 +1,13 @@
 """Context and state management service."""
 
-import asyncio
 import json
 from typing import Any
 
 from shared.cache.redis_client import RedisClient
 from shared.cache.user_data import UserDataCache
+from shared.repositories.account_repository import AccountRepository
 from shared.repositories.beneficiary_repository import BeneficiaryRepository
+from shared.repositories.unit_of_work import UnitOfWork
 from shared.repositories.user_repository import UserRepository
 from shared.utils.logging import get_logger
 from shared.utils.serialization import sqlalchemy_to_dict
@@ -21,9 +22,11 @@ class ContextManager:
         self,
         user_repo: UserRepository | None = None,
         beneficiary_repo: BeneficiaryRepository | None = None,
+        account_repo: AccountRepository | None = None,
     ) -> None:
         self.user_repo = user_repo
         self.beneficiary_repo = beneficiary_repo
+        self.account_repo = account_repo
         self.data_cache = UserDataCache()
 
     async def load_user_context(self, phone_number: str, user: Any | None = None) -> dict[str, Any]:
@@ -38,7 +41,6 @@ class ContextManager:
         """
         cached_data = await self.data_cache.get_all_user_data(phone_number)
 
-        # Only use cache if both profile AND accounts are present (avoid TTL mismatch)
         if cached_data["profile"] and cached_data["accounts"]:
             return {
                 "profile": cached_data["profile"],
@@ -46,24 +48,22 @@ class ContextManager:
                 "beneficiaries": cached_data["beneficiaries"] or [],
             }
 
-        def fetch_db_data():
-            """Fetch user and accounts in a separate thread to avoid blocking."""
-            current_profile = user
-            if current_profile is None and self.user_repo:
-                current_profile = self.user_repo.get_by_phone(phone_number)
+        current_profile = user
+        if current_profile is None and self.user_repo:
+            current_profile = await self.user_repo.get_by_phone(phone_number)
 
-            current_accounts = []
-            if current_profile:
-                current_accounts = list(current_profile.accounts)
-
-            current_beneficiaries = []
-            if current_profile and self.beneficiary_repo:
+        current_accounts = []
+        if current_profile:
+            if self.account_repo:
                 user_id = str(current_profile.id)
-                current_beneficiaries = self.beneficiary_repo.get_by_user(user_id)
+                current_accounts = await self.account_repo.get_by_user(user_id)
 
-            return current_profile, current_accounts, current_beneficiaries
+        current_beneficiaries = []
+        if current_profile and self.beneficiary_repo:
+            user_id = str(current_profile.id)
+            current_beneficiaries = await self.beneficiary_repo.get_by_user(user_id)
 
-        profile, accounts, beneficiaries = await asyncio.to_thread(fetch_db_data)
+        profile, accounts, beneficiaries = current_profile, current_accounts, current_beneficiaries
 
         safe_profile: dict[str, Any] | None = sqlalchemy_to_dict(profile) if profile is not None else None
 
@@ -101,34 +101,30 @@ class ContextManager:
         Returns a simplified list of recent transactions that can be passed
         to LLM extraction prompts to enable context-aware responses.
         """
-        from shared.repositories.unit_of_work import UnitOfWork
-
         try:
+            async with UnitOfWork() as uow:
+                user = await uow.users.get_by_phone(phone_number)
+                if not user:
+                    return []
 
-            def fetch_transactions():
-                with UnitOfWork() as uow:
-                    user = uow.users.get_by_phone(phone_number)
-                    if not user:
-                        return []
-
-                    txns = uow.transactions.get_by_user(str(user.id), limit=limit)
-                    return [
-                        {
-                            "type": t.transaction_type,
-                            "amount": float(t.amount) if t.amount else 0,
-                            "recipient_name": t.recipient_name,
-                            "recipient_account": t.recipient_account_number,
-                            "recipient_bank": t.recipient_bank_name,
-                            "status": t.status,
-                            "date": t.created_at.isoformat() if t.created_at else None,
-                        }
-                        for t in txns
-                    ]
-
-            return await asyncio.to_thread(fetch_transactions)
+                txns = await uow.transactions.get_by_user(str(user.id), limit=limit)
+                return [
+                    {
+                        "type": t.transaction_type,
+                        "amount": float(t.amount) if t.amount else 0,
+                        "recipient_name": t.recipient_name,
+                        "recipient_account": t.recipient_account_number,
+                        "recipient_bank": t.recipient_bank_name,
+                        "status": t.status,
+                        "date": t.created_at.isoformat() if t.created_at else None,
+                    }
+                    for t in txns
+                ]
         except Exception as e:
             logger.error("get_recent_transactions_error", phone=phone_number, error=str(e))
             return []
+
+        return []
 
     async def get_conversation_state(self, phone_number: str) -> dict[str, Any] | None:
         """Get the current conversation/flow state for this user."""

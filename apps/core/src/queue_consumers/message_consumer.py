@@ -5,10 +5,21 @@ from typing import Any
 
 from apps.core.src.agent.graphs.onboarding.executor import OnboardingExecutor
 from apps.core.src.agent.orchestrator import OrchestratorAgent
+from apps.core.src.agent.orchestrator.intents import (
+    RequestAuth,
+    RequestConfirmation,
+    Say,
+    ShowFlow,
+    ShowReceipt,
+    UiIntent,
+)
+from apps.core.src.messaging.presenters.base import PresentationContext
+# PresenterFactory removed
 from shared.cache.rate_limiter import message_rate_limiter
 from shared.clients.abstractions.messaging import MessagingClient
 from shared.database.models import UserOnboardingStatusEnum
 from shared.models.messages import WhatsAppMessage
+from shared.queue.messages import OUTBOX_QUEUE
 from shared.queue.redis_queue import RedisQueue
 from shared.repositories.user_repository import UserRepository
 from shared.utils.logging import get_logger
@@ -49,7 +60,6 @@ class MessageConsumer:
         """Handle a WhatsApp message."""
         phone_number = message.from_number
 
-        # Rate limiting - prevent spam attacks
         rate_result = await message_rate_limiter.check(phone_number)
         if not rate_result.allowed:
             logger.warning(
@@ -63,11 +73,9 @@ class MessageConsumer:
             )
             return {"status": "rate_limited", "reset_in": rate_result.reset_in_seconds}
 
-        # Sanitize input - protect against malformed/malicious input
         raw_text = message.text or ""
         sanitized_text = sanitize_message(raw_text)
 
-        # Log suspicious input for monitoring (but still process)
         if is_suspicious_input(sanitized_text):
             logger.warning(
                 "suspicious_input_detected",
@@ -78,107 +86,45 @@ class MessageConsumer:
         if message.message_type.value == "flow":
             return {"status": "skipped", "reason": "Flow messages handled by flow webhook"}
 
-        user = await asyncio.to_thread(self.user_repository.get_by_phone, phone_number)
+        user = await self.user_repository.get_by_phone(phone_number)
+        logger.info("user_found", user=user, phone_number=phone_number)
         if user is None or getattr(user, "onboarding_status", None) != UserOnboardingStatusEnum.ONBOARDING_COMPLETED:
             return await self.onboarding_executor.handle_onboarding(message)
-
-        await self.orchestrator.context_manager.load_user_context(phone_number, user=user)
 
         await self.orchestrator.context_manager.save_message_id(phone_number, message.message_id)
 
         orchestrator_output = await self.orchestrator.invoke(
             phone_number,
-            sanitized_text,  # Use sanitized text instead of raw
+            sanitized_text,
             message.message_id,
             message_type=message.message_type.value,
             media_id=message.media_id,
             quoted_message_id=message.quoted_message_id,
+            channel=message.channel,
         )
 
-        # Prepare Presentation
-        from apps.core.src.agent.orchestrator.intents import (
-            RequestAuth,
-            RequestConfirmation,
-            Say,
-            ShowReceipt,
-            ShowFlow,
-            UiIntent,
-        )
-        from apps.core.src.messaging.presenters.base import PresentationContext
-        from apps.core.src.messaging.presenters.whatsapp import WhatsAppPresenter
+        # Intents are now converted by the Orchestrator
+        intents: list[UiIntent] = orchestrator_output.get("intents", [])
 
-        # Context
-        context = PresentationContext(
-            channel=self.messaging_client.channel_name,
-            phone_number=phone_number,
-            capabilities={"flows": self.messaging_client.supports_flows},
-        )
-
-        # Presenter Selection (For now matches WhatsApp, can be dynamic later)
-        presenter = WhatsAppPresenter(self.messaging_client)
-
-        intents: list[UiIntent] = []
-
-        # Convert Outbox (Dicts) -> Intents (Objects)
-        # TODO: Move this conversion to Orchestrator output
-        outbox = orchestrator_output.get("outbox", [])
-        for item in outbox:
-            msg_type = item.get("type")
-
-            if msg_type == "say":
-                intents.append(Say(text=item["text"]))
-
-            elif msg_type == "auth_request":
-                intents.append(
-                    RequestAuth(
-                        method=item.get("method", "pin"),
-                        task_ids=item.get("task_ids", []),
-                        correlation_id=item.get("idempotency_key", "unknown"),
-                        reason=item.get("header"),
-                        summary=item.get("summary"),
-                    )
-                )
-
-            elif msg_type == "request_confirmation":
-                intents.append(
-                    RequestConfirmation(
-                        task_ids=item.get("task_ids", []),
-                        summary=item.get("summary", ""),
-                        correlation_id=item.get("idempotency_key", "unknown"),
-                        token=item.get("idempotency_key", "unknown"),  # redundant but safe
-                    )
-                )
-
-            elif msg_type == "show_receipt":
-                intents.append(
-                    ShowReceipt(
-                        task_id=item.get("task_id", "unknown"),
-                        receipt=item.get("receipt", {}),
-                        caption=item.get("caption", ""),
-                    )
-                )
-
-            elif msg_type == "image" and "receipt" in item.get("caption", "").lower():
-                intents.append(
-                    ShowReceipt(task_id="unknown", receipt={"url": item["url"]}, caption=item.get("caption", ""))
-                )
-            elif msg_type == "flow":
-                intents.append(
-                    ShowFlow(
-                        flow_id=item.get("flow_id", ""),
-                        flow_config=item.get("flow_config", {}),
-                        fallback_text=item.get("fallback_text", ""),
-                    )
-                )
-
+        # Ensure text is covered
         response_text = orchestrator_output.get("text")
-
         has_primary_interaction = any(isinstance(i, (RequestAuth, RequestConfirmation, ShowReceipt)) for i in intents)
         if response_text and not has_primary_interaction and not any(isinstance(i, Say) for i in intents):
             intents.append(Say(text=response_text))
 
         if intents:
-            await presenter.present(intents, context)
+            serialized_intents = [i.to_dict() for i in intents]
+            
+            await self.queue.enqueue(
+                queue_name=OUTBOX_QUEUE,
+                message={
+                    "phone_number": phone_number,
+                    "channel": message.channel,
+                    "intents": serialized_intents,
+                    "metadata": {"source": "message_consumer", "message_id": message.message_id}
+                }
+            )
+            logger.info("message_consumer_enqueued_outbox", count=len(intents))
 
         return {"status": "success", "response": response_text}
 

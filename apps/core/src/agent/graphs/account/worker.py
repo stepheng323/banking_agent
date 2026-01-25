@@ -1,6 +1,6 @@
 """Account management worker (stateless)."""
 
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from apps.core.src.agent.graphs.account.capabilities import (
     check_capabilities,
@@ -8,14 +8,14 @@ from apps.core.src.agent.graphs.account.capabilities import (
     generate_limitation_message,
 )
 from apps.core.src.agent.graphs.account.formatter import AccountFormatter
+from apps.core.src.agent.graphs.account.parser import AccountParser
 from apps.core.src.agent.orchestrator.models.domain import (
     AccountOutcome,
     AccountResult,
 )
+from shared.repositories.account_repository import AccountRepository
+from shared.repositories.user_repository import UserRepository
 from shared.utils.logging import get_logger
-
-if TYPE_CHECKING:
-    from apps.core.src.agent.graphs.account.service import AccountService
 
 logger = get_logger(__name__)
 
@@ -23,15 +23,29 @@ logger = get_logger(__name__)
 class AccountWorker:
     """Stateless worker for account tasks."""
 
-    def __init__(self, service: "AccountService") -> None:
-        self.service = service
-        self.parser = service.parser
+    def __init__(
+        self,
+        account_repo: "AccountRepository",
+        user_repo: "UserRepository",
+        llm: Any,
+        banking_provider: Any,
+        session_manager: Any,
+        direct_debit_provider: Any,
+    ) -> None:
+        self.account_repo = account_repo
+        self.user_repo = user_repo
+        self.llm = llm
+        self.banking_provider = banking_provider
+        self.session_manager = session_manager
+        self.parser = AccountParser(llm)
+        self.direct_debit_provider = direct_debit_provider
 
     async def run(
         self,
         payload: dict[str, Any],
         context: dict[str, Any],
         user_message: str | None = None,
+        pin_verified: bool = False,
     ) -> AccountResult:
         """Execute account management logic and return a structured result."""
         text = (user_message or "").strip()
@@ -90,7 +104,7 @@ class AccountWorker:
 
         try:
             if action == "link":
-                flow_data = await self.service.build_link_account_flow(context)
+                flow_data = await self._build_link_account_flow(context)
                 if flow_data.get("error"):
                     response = flow_data["error"]
                 else:
@@ -107,15 +121,15 @@ class AccountWorker:
                         ],
                     )
             elif action == "set_default":
-                response = await self.service.set_default(user_id, str(identifier))
+                response = await self._set_default(user_id, str(identifier))
             elif action == "unlink":
-                response = await self.service.unlink_account(user_id, str(identifier))
+                response = await self._unlink_account(user_id, str(identifier))
             else:
                 accounts = user_ctx.get("accounts")
                 if accounts:
                     response = AccountFormatter.format_account_list(accounts)
                 else:
-                    response = await self.service.list_accounts(user_id)
+                    response = await self._list_accounts(user_id)
 
             response = await self._translate_if_needed(response, user_ctx, payload)
             return AccountResult(
@@ -146,5 +160,172 @@ class AccountWorker:
     ) -> str:
         language = user_ctx.get("language") or payload.get("language")
         if language and language.lower() not in ("english", "en"):
-            return await self.service._translate_response(text, language)
+            return await self._translate_response(text, language)
         return text
+
+    async def _list_accounts(self, user_id: str) -> str:
+        """List all linked accounts for a user."""
+        accounts = await self.account_repo.get_by_user(user_id)
+        return AccountFormatter.format_account_list(accounts)
+
+    async def _set_default(self, user_id: str, account_identifier: str) -> str:
+        """Set an account as default."""
+        accounts = await self.account_repo.get_by_user(user_id)
+        if not accounts:
+            return "You don't have any linked accounts."
+
+        selected_account = None
+        try:
+            account_index = int(account_identifier)
+            if 1 <= account_index <= len(accounts):
+                selected_account = accounts[account_index - 1]
+        except ValueError:
+            selected_account = self._find_account_by_bank_name(accounts, account_identifier)
+
+        if not selected_account:
+            return (
+                f"I couldn't find an account matching '{account_identifier}'.\n\n"
+                f"You have {len(accounts)} linked account(s)."
+            )
+
+        try:
+            from shared.cache.user_data import UserDataCache
+            from shared.repositories.unit_of_work import UnitOfWork
+
+            async with UnitOfWork() as uow:
+                await uow.accounts.set_default_account(user_id, str(selected_account.account_id))
+                await uow.commit()
+
+            user = await self.user_repo.get_by_id(user_id)
+            if user:
+                import asyncio
+
+                asyncio.create_task(UserDataCache().invalidate_accounts(user.phone_number))
+
+            masked = f"***{selected_account.account_number[-4:]}"
+            return f"✓ *Default account updated!*\n\n{selected_account.bank_name} ({masked}) is now your default."
+        except Exception as e:
+            logger.error(f"set_default_error: {e}")
+            return "Sorry, I couldn't update your default account."
+
+    async def _unlink_account(self, user_id: str, account_identifier: str) -> str:
+        """Unlink an account."""
+        accounts = await self.account_repo.get_by_user(user_id)
+        if not accounts:
+            return "You don't have any linked accounts."
+        if len(accounts) == 1:
+            return "⚠️ You can't unlink your only account. Link another one first."
+
+        selected_account = None
+        try:
+            account_index = int(account_identifier)
+            if 1 <= account_index <= len(accounts):
+                selected_account = accounts[account_index - 1]
+        except ValueError:
+            selected_account = self._find_account_by_bank_name(accounts, account_identifier)
+
+        if not selected_account:
+            return f"I couldn't find an account matching '{account_identifier}'."
+
+        try:
+            if getattr(selected_account, "mandate_id", None):
+                try:
+                    await self.direct_debit_provider.cancel_mandate(selected_account.mandate_id)
+                except Exception:
+                    pass
+
+            success = await self.account_repo.delete_account(str(selected_account.account_id), user_id)
+            if success:
+                from shared.cache.user_data import UserDataCache
+                from shared.repositories.unit_of_work import UnitOfWork
+
+                try:
+                    async with UnitOfWork() as uow:
+                        if uow.users:
+                            user = await uow.users.get_by_id(user_id)
+                            if user:
+                                import asyncio
+
+                                asyncio.create_task(UserDataCache().invalidate_accounts(user.phone_number))
+                except Exception:
+                    pass
+
+                masked = f"***{selected_account.account_number[-4:]}"
+                return f"✓ *Account unlinked!*\n\n{selected_account.bank_name} ({masked}) removed."
+            return "Sorry, I couldn't unlink that account."
+        except Exception as e:
+            logger.error(f"unlink_error: {e}")
+            return "Sorry, I couldn't unlink that account."
+
+    def _find_account_by_bank_name(self, accounts: list[Any], bank_name: str) -> Any | None:
+        from shared.utils.bank_aliases import normalize_bank_name
+
+        bank_name_lower = bank_name.lower().strip()
+        normalized_search = normalize_bank_name(bank_name)
+        for account in accounts:
+            account_bank_lower = account.bank_name.lower()
+            if (
+                normalized_search in account_bank_lower
+                or account_bank_lower in normalized_search
+                or bank_name_lower in account_bank_lower
+            ):
+                return account
+        return None
+
+    async def _build_link_account_flow(self, context: dict[str, Any]) -> dict[str, Any]:
+        """Build account linking flow."""
+        import time
+
+        from shared.config import settings
+        from shared.services.onboarding.session import OnboardingStep
+
+        flow_id = settings.account_linking_flow_id
+        if not flow_id:
+            return {"error": "Account linking unavailable."}
+
+        phone_number = context.get("phone_number", "")
+        profile = context.get("profile") or {}
+        bvn = (profile.get("extra_data") or {}).get("bvn")
+
+        if not bvn:
+            return {"error": "BVN not found. Please complete onboarding first."}
+
+        result = await self.banking_provider.initiate_bvn_lookup(bvn)
+        if not result.success:
+            return {"error": result.error_message or "Failed to start linking."}
+
+        methods = [{"id": m["method"], "title": m["hint"]} for m in result.verification_methods]
+        flow_token = f"link-{phone_number}-{int(time.time())}"
+
+        await self.session_manager.update_session(
+            flow_token,
+            {
+                "phone_number": phone_number,
+                "bvn": bvn,
+                "session_id": result.session_id,
+                "methods": methods,
+                "step": OnboardingStep.METHOD_SELECTION.value,
+                "is_account_linking": True,
+            },
+        )
+
+        return {
+            "flow_id": flow_id,
+            "flow_config": {
+                "header": "Link New Account",
+                "text_body": "Tap Continue to link a new bank account.",
+                "flow_cta": "Link Account",
+                "screen_name": "METHOD_SELECTION",
+                "flow_token": flow_token,
+                "flow_action_payload": {"screen": "METHOD_SELECTION", "data": {"methods": methods, "bvn": result.bvn}},
+            },
+            "fallback_text": f"Link account: https://fusepay.io/link/{flow_token}",
+        }
+
+    async def _translate_response(self, text: str, language: str) -> str:
+        try:
+            prompt = f"Translate to {language}. Keep formatting/emojis. Resp:\\n{text}"
+            result = await self.llm.ainvoke(prompt)
+            return getattr(result, "content", str(result))
+        except Exception:
+            return text

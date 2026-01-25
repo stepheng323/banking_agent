@@ -39,8 +39,8 @@ class OrchestratorDependencies:
     account_service: WorkerProtocol
     media_service: Any | None = None
     data_service: WorkerProtocol | None = None
-    support_service: Any | None = None
-    faq_service: Any | None = None
+    support_service: WorkerProtocol | None = None
+    faq_service: WorkerProtocol | None = None
     banking_provider: BankingDataProvider | None = None
     beneficiary_suggestion_service: "BeneficiarySuggestionService | None" = None
     user_cache: UserDataCache | None = None

@@ -16,7 +16,6 @@ def build_orchestrator_graph(checkpointer=None):
     """Build the top-level Orchestrator Graph (V3)."""
     builder = StateGraph(OrchestratorState)
 
-    # Nodes
     builder.add_node("ingest", ingest_message)
     builder.add_node("handle_interrupt", handle_pending_interrupt)
     builder.add_node("plan", plan_tasks)
@@ -28,7 +27,12 @@ def build_orchestrator_graph(checkpointer=None):
     builder.add_edge("ingest", "handle_interrupt")
     builder.add_edge("handle_interrupt", "plan")
 
+    from shared.utils.logging import get_logger
+
+    logger = get_logger(__name__)
+
     def route_plan(state: OrchestratorState):
+        logger.info("route_plan_check", final_response=state.final_response)
         if state.final_response:
             return END
         return "advance"
