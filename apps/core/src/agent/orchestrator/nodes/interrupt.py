@@ -1,7 +1,7 @@
 from langchain_core.runnables import RunnableConfig
 
-from apps.core.src.agent.orchestrator.models.domain import TaskStage
-from apps.core.src.agent.orchestrator.state import OrchestratorState
+from apps.core.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
+from apps.core.src.agent.orchestrator.models.state import OrchestratorState
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -16,6 +16,60 @@ async def handle_pending_interrupt(state: OrchestratorState, config: RunnableCon
     logger.info("handling_interrupt", kind=interrupt.kind, tasks=interrupt.task_ids)
 
     if interrupt.kind == "input":
+        text = state.last_message_text or ""
+        current_task_types = {state.tasks[tid].type for tid in interrupt.task_ids if tid in state.tasks}
+        task_planner = config["configurable"].get("task_planner")
+        if task_planner and text:
+            try:
+                context_summary = (
+                    "Active Flow: Input required for tasks "
+                    f"{interrupt.task_ids} (types: {', '.join(sorted(current_task_types))})."
+                )
+                planner_output = await task_planner.plan_tasks(state.phone_number, text, context=context_summary)
+                new_task_types = {t.executor for t in planner_output.tasks}
+                logger.info(
+                    "input_interrupt_intent_detected",
+                    intent=planner_output.primary_intent,
+                    confidence=planner_output.confidence,
+                    new_task_types=sorted(new_task_types),
+                )
+
+                if getattr(planner_output, "is_cancellation", False):
+                    for tid in interrupt.task_ids:
+                        task = state.tasks[tid].model_copy(deep=True)
+                        task.stage = TaskStage.CANCELLED
+                        state.tasks[tid] = task
+                    return {"pending_interrupt": None, "tasks": state.tasks}
+
+                if planner_output.tasks and new_task_types != current_task_types:
+                    new_tasks: dict[str, TaskSpec] = {}
+                    wave_tasks: list[str] = []
+                    for plan_item in planner_output.tasks:
+                        payload = plan_item.parameters.model_dump() if plan_item.parameters else {}
+                        if plan_item.executor == "query" and not payload.get("message"):
+                            payload["message"] = plan_item.instruction or text
+                        spec = TaskSpec(
+                            id=plan_item.task_id,
+                            type=plan_item.executor,
+                            stage=TaskStage.DRAFT,
+                            payload=payload,
+                        )
+                        new_tasks[spec.id] = spec
+                        wave_tasks.append(spec.id)
+
+                    logger.info("input_interrupt_replanned", from_types=sorted(current_task_types))
+                    return {
+                        "pending_interrupt": None,
+                        "tasks": new_tasks,
+                        "waves": [wave_tasks],
+                        "current_wave_index": 0,
+                        "normalized_instruction": text,
+                        "planner_output": planner_output,
+                        "task_results": {},
+                    }
+            except Exception as e:
+                logger.warning("input_interrupt_planner_failed", error=str(e))
+
         for tid in interrupt.task_ids:
             task = state.tasks[tid]
             task.stage = TaskStage.EXTRACTED

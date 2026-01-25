@@ -149,17 +149,13 @@ def reconstruct_intent(data: dict[str, Any]) -> UiIntent | None:
 
     elif msg_type == "image" and "receipt" in data.get("caption", "").lower():
         # Legacy/Image based receipt
-        return ShowReceipt(
-            task_id="unknown", 
-            receipt={"url": data["url"]}, 
-            caption=data.get("caption", "")
-        )
-        
+        return ShowReceipt(task_id="unknown", receipt={"url": data["url"]}, caption=data.get("caption", ""))
+
     elif msg_type == "flow":
         return ShowFlow(
             flow_id=data.get("flow_id", ""),
             flow_config=data.get("flow_config", {}),
             fallback_text=data.get("fallback_text", ""),
         )
-        
+
     return None
