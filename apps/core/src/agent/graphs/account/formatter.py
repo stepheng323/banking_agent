@@ -42,3 +42,28 @@ class AccountFormatter:
         lines.append("_'set 2 as default' | 'unlink GTB'_")
 
         return "\n".join(lines)
+
+    @staticmethod
+    def format_balance_response(balances: list[dict], total_balance: float | None) -> str:
+        """Format balance check response."""
+        if not balances:
+            return "No balance information available."
+
+        header = "*Your Balance*" if len(balances) == 1 else "*Your Balances*"
+        lines = [header, ""]
+
+        for index, bal in enumerate(balances, 1):
+            amount = bal["amount"]
+            currency = bal.get("currency", "NGN")
+            symbol = "₦" if currency == "NGN" else currency
+            account_number = bal.get("account_number") or ""
+            last4 = account_number[-4:] if account_number else "????"
+            masked = f"****{last4}"
+
+            lines.append(f"{index}. {bal['bank_name']} ({masked}): **{symbol}{amount:,.2f}**")
+
+        if total_balance is not None:
+            lines.append("")
+            lines.append(f"*Total (all linked):* **₦{total_balance:,.2f}**")
+
+        return "\n".join(lines)

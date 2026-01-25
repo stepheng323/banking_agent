@@ -13,8 +13,10 @@ logger = get_logger(__name__)
 class AccountIntent(BaseModel):
     """Structured output for account intent."""
 
-    action: Literal["list", "set_default", "unlink", "link", "unknown"] = Field(
-        description="The action to perform: 'list', 'set_default', 'unlink', 'link', or 'unknown'"
+    action: Literal["list", "check_balance", "set_default", "unlink", "link", "unknown"] = Field(
+        description=(
+            "The action to perform: 'list', 'check_balance', 'set_default', 'unlink', 'link', or 'unknown'"
+        )
     )
     identifier: str | None = Field(
         default=None,
@@ -44,15 +46,17 @@ class AccountParser:
             "Your job is to extract the user's intent and relevant parameters from their message. "
             "Support English, Pidgin, Hausa, Yoruba, Igbo, and French.\n\n"
             "**ACTIONS:**\n"
-            "1. 'list': User wants to see/check their linked accounts or balance (if implied context).\n"
-            "   - Examples: 'Show my accounts', 'List accounts', 'Wetin be my balance', 'Jer kalli asusu na'\n"
-            "2. 'set_default': User wants to set a specific account as their primary/default account.\n"
+            "1. 'list': User wants to see their linked accounts.\n"
+            "   - Examples: 'Show my accounts', 'List accounts', 'Jer kalli asusu na'\n"
+            "2. 'check_balance': User wants to see the balance of one or all linked accounts.\n"
+            "   - Examples: 'What's my balance', 'overall balance', 'Wetin be my balance', 'Nawa ne balance?'\n"
+            "3. 'set_default': User wants to set a specific account as their primary/default account.\n"
             "   - Examples: 'Make GTB my default', 'Set number 1 as default', 'Yi GTB ya zama default'\n"
-            "3. 'unlink': User wants to remove/disconnect a linked account.\n"
+            "4. 'unlink': User wants to remove/disconnect a linked account.\n"
             "   - Examples: 'Unlink my Access bank', 'Remove account 2', 'Cire asusun UBA'\n"
-            "4. 'link': User wants to add/connect a new bank account.\n"
+            "5. 'link': User wants to add/connect a new bank account.\n"
             "   - Examples: 'Link a new account', 'Add another bank', 'Ina so in kara asusu'\n\n"
-            "5. 'unknown': Intent is unclear or unrelated to account management.\n\n"
+            "6. 'unknown': Intent is unclear or unrelated to account management.\n\n"
             "**IDENTIFIER:**\n"
             "Extract the bank name, alias, or list index (number) mentioned.\n"
             "- 'Set GTBank as default' -> identifier: 'GTBank'\n"

@@ -30,8 +30,8 @@ class ExecutionStep(AirtimeStep):
             transaction_id = None
             key = data.idempotency_key
 
-            from shared.repositories.unit_of_work import UnitOfWork
             from shared.database.enums import TransactionStatusEnum
+            from shared.repositories.unit_of_work import UnitOfWork
 
             async with UnitOfWork() as uow:
                 try:

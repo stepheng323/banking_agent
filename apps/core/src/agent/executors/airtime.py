@@ -5,8 +5,6 @@ Handles execution of airtime transactions from the queue.
 
 from typing import Any
 
-from shared.config import settings
-
 from shared.clients.abstractions.bill import BillPaymentProvider
 from shared.database.enums import TransactionStatusEnum
 from shared.queue.messages import OUTBOX_QUEUE
@@ -57,7 +55,7 @@ class AirtimeExecutor:
             if result.get("success"):
                 await self.transaction_repo.update_status(transaction_id, TransactionStatusEnum.SUCCESSFUL.value)
                 logger.info("airtime_success", transaction_id=transaction_id, ref=result.get("reference"))
-                
+
                 if phone_number:
                     ref = result.get('reference') or 'N/A'
                     message = f"✅ Airtime Purchase Successful!\n\nAmount: ₦{amount:,.2f}\nRef: {ref}"

@@ -124,6 +124,8 @@ class AccountWorker:
                 response = await self._set_default(user_id, str(identifier))
             elif action == "unlink":
                 response = await self._unlink_account(user_id, str(identifier))
+            elif action in ("check_balance", "balance", "show_balance", "overall_balance"):
+                response = await self._check_balance(user_id, str(identifier) if identifier else None)
             else:
                 accounts = user_ctx.get("accounts")
                 if accounts:
@@ -144,6 +146,54 @@ class AccountWorker:
                 error="Account status check failed. Please try again.",
                 patch=patch,
             )
+
+    async def _check_balance(self, user_id: str, account_identifier: str | None) -> str:
+        """Check balance for one or all accounts."""
+        accounts = await self.account_repo.get_by_user(user_id)
+        if not accounts:
+            return "You don't have any linked accounts."
+
+        target_accounts = []
+        if account_identifier:
+            # Find specific account
+            try:
+                idx = int(account_identifier)
+                if 1 <= idx <= len(accounts):
+                    target_accounts = [accounts[idx - 1]]
+            except ValueError:
+                found = self._find_account_by_bank_name(accounts, account_identifier)
+                if found:
+                    target_accounts = [found]
+        else:
+            target_accounts = accounts
+
+        if not target_accounts:
+            return f"I couldn't find an account matching '{account_identifier}'."
+
+        balances = []
+        total_balance = 0.0
+
+        for account in target_accounts:
+            try:
+                # Use provider to get real-time balance
+                bal_data = await self.banking_provider.get_balance(account.account_id)
+                if bal_data:
+                    balances.append(
+                        {
+                            "bank_name": account.bank_name,
+                            "account_number": account.account_number,
+                            "amount": bal_data.available_balance,
+                            "currency": bal_data.currency,
+                        }
+                    )
+                    total_balance += bal_data.available_balance
+            except Exception as e:
+                logger.error("balance_fetch_failed", error=str(e))
+
+        if not balances:
+            return "I couldn't retrieve your balance at the moment."
+
+        return AccountFormatter.format_balance_response(balances, total_balance if len(balances) > 1 else None)
 
     def _missing_identifier_prompt(self, action: str) -> str:
         if action == "unlink":
