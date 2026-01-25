@@ -64,6 +64,9 @@ async def _handle_completed_tasks(
     outbox: list,
 ) -> None:
     """Handle completed tasks and generate receipts or summaries."""
+    logger.info("handling_completed_tasks", count=len(completed_tasks), tasks=[t.type for t in completed_tasks])
+    for t in completed_tasks:
+        logger.info("completed_task_detail", type=t.type, has_receipt="receipt" in t.payload, payload_keys=list(t.payload.keys()))
     is_single_transfer = (
         len(completed_tasks) == 1
         and completed_tasks[0].type == "transfer"
@@ -73,6 +76,20 @@ async def _handle_completed_tasks(
 
     read_only_task_types = {"account", "query", "faq", "support"}
     all_read_only = all(task.type in read_only_task_types for task in completed_tasks)
+
+    # Check for single transfer
+    is_single_transfer = (
+        len(completed_tasks) == 1
+        and completed_tasks[0].type == "transfer"
+        and not completed_tasks[0].payload.get("is_batch", False)
+        and len(completed_tasks[0].payload.get("recipients", [])) <= 1
+    )
+
+    # Check for single async transaction (Airtime/Data)
+    is_async_transaction = (
+        len(completed_tasks) == 1
+        and completed_tasks[0].type in ("airtime", "data")
+    )
 
     if is_single_transfer:
         task = completed_tasks[0]
@@ -90,6 +107,21 @@ async def _handle_completed_tasks(
                 phone_number=state.phone_number,
                 outbox=outbox,
             )
+
+    elif is_async_transaction:
+        task = completed_tasks[0]
+        receipt = task.payload.get("receipt", {})
+        status = receipt.get("status", "").title()
+        message = receipt.get("message", "Transaction completed")
+        
+        logger.info("generating_async_receipt", task_type=task.type, status=status, message=message)
+
+        # Simple text confirmation for async tasks
+        outbox.append({
+            "type": "say", 
+            "text": f"✅ *{status}*: {message}"
+        })
+
     elif all_read_only:
         pass
     else:

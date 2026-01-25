@@ -52,7 +52,8 @@ class OrchestratorAgent:
         message_type: str = "text",
         media_id: str | None = None,
         quoted_message_id: str | None = None,
-    ) -> str:
+        channel: str = "whatsapp",
+    ) -> dict[str, Any]:
         """Invoke the orchestrator with a user message."""
         self.message_type = message_type
 
@@ -71,12 +72,15 @@ class OrchestratorAgent:
             message_id=message_id,
             image_data=image_data,
             quoted_message_id=quoted_message_id,
+            channel=channel,
         )
 
-        response_text = await self.orchestrator_handler.invoke(context)
-        final_response = response_text or "I'm sorry, I'm having trouble processing that right now."
+        result = await self.orchestrator_handler.invoke(context)
+        final_response = result.get("text") or "I'm sorry, I'm having trouble processing that right now."
+        if not result.get("text"):
+             result["text"] = final_response
 
         create_background_task(self.context_manager.add_conversation_turn(phone_number, "user", text))
         create_background_task(self.context_manager.add_conversation_turn(phone_number, "assistant", final_response))
 
-        return final_response
+        return result

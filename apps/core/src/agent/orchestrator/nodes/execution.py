@@ -43,6 +43,8 @@ async def advance_wave(state: OrchestratorState, config: RunnableConfig) -> dict
         task = state.tasks.get(tid)
         if not task:
             continue
+        
+
 
         if task.stage in (TaskStage.COMPLETED, TaskStage.FAILED, TaskStage.CANCELLED):
             continue
@@ -66,20 +68,24 @@ async def advance_wave(state: OrchestratorState, config: RunnableConfig) -> dict
                 "beneficiaries": state.loaded_context.get("beneficiaries", []),
             }
 
+            logger.info("airtime_worker_start", payload=task.payload)
             result = await worker.run(
                 payload=task.payload,
                 context=context_data,
                 user_message=user_msg,
                 pin_verified=state.pin_verified,
             )
+            logger.info("airtime_worker_returned", outcome=result.outcome, has_receipt=bool(result.receipt), result_obj=str(result))
 
             if result.patch:
                 task.payload.update(result.patch)
 
             if result.outcome == TransactionOutcome.OK:
+                logger.info("airtime_worker_ok_branch", has_receipt=bool(result.receipt))
                 if result.receipt:
                     task.stage = TaskStage.COMPLETED
                     task.payload["receipt"] = result.receipt
+                    logger.info("task_stage_completed_set")
                 else:
                     pass
 
@@ -201,6 +207,7 @@ async def advance_wave(state: OrchestratorState, config: RunnableConfig) -> dict
 
             context_data = {
                 "phone_number": state.phone_number,
+                "channel": state.channel,
                 "user_id": state.loaded_context.get("user_id"),
                 "accounts": state.loaded_context.get("accounts", []),
                 "beneficiaries": state.loaded_context.get("beneficiaries", []),

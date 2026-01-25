@@ -21,6 +21,9 @@ class Say(UiIntent):
 
     text: str
 
+    def to_dict(self) -> dict[str, Any]:
+        return {"type": "say", "text": self.text}
+
 
 @dataclass
 class Ask(UiIntent):
@@ -49,6 +52,14 @@ class RequestConfirmation(UiIntent):
     token: str
     correlation_id: str
 
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "type": "request_confirmation",
+            "task_ids": self.task_ids,
+            "summary": self.summary,
+            "idempotency_key": self.correlation_id,
+        }
+
 
 @dataclass
 class RequestAuth(UiIntent):
@@ -60,6 +71,16 @@ class RequestAuth(UiIntent):
     reason: str | None = None  # Semantic reason (e.g. "Transfer Authorization")
     summary: str | None = None  # Specific details (e.g. "Send 5k to Mum")
 
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "type": "auth_request",
+            "method": self.method,
+            "task_ids": self.task_ids,
+            "idempotency_key": self.correlation_id,
+            "header": self.reason,
+            "summary": self.summary,
+        }
+
 
 @dataclass
 class ShowReceipt(UiIntent):
@@ -69,6 +90,14 @@ class ShowReceipt(UiIntent):
     receipt: dict[str, Any]
     caption: str = ""
 
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "type": "show_receipt",
+            "task_id": self.task_id,
+            "receipt": self.receipt,
+            "caption": self.caption,
+        }
+
 
 @dataclass
 class ShowFlow(UiIntent):
@@ -77,3 +106,60 @@ class ShowFlow(UiIntent):
     flow_id: str
     flow_config: dict[str, Any]
     fallback_text: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "type": "flow",
+            "flow_id": self.flow_id,
+            "flow_config": self.flow_config,
+            "fallback_text": self.fallback_text,
+        }
+
+
+def reconstruct_intent(data: dict[str, Any]) -> UiIntent | None:
+    """Reconstruct high-level intent from dictionary (outbox format)."""
+    msg_type = data.get("type")
+
+    if msg_type == "say":
+        return Say(text=data["text"])
+
+    elif msg_type == "auth_request":
+        return RequestAuth(
+            method=data.get("method", "pin"),
+            task_ids=data.get("task_ids", []),
+            correlation_id=data.get("idempotency_key", "unknown"),
+            reason=data.get("header"),
+            summary=data.get("summary"),
+        )
+
+    elif msg_type == "request_confirmation":
+        return RequestConfirmation(
+            task_ids=data.get("task_ids", []),
+            summary=data.get("summary", ""),
+            correlation_id=data.get("idempotency_key", "unknown"),
+            token=data.get("idempotency_key", "unknown"),
+        )
+
+    elif msg_type == "show_receipt":
+        return ShowReceipt(
+            task_id=data.get("task_id", "unknown"),
+            receipt=data.get("receipt", {}),
+            caption=data.get("caption", ""),
+        )
+
+    elif msg_type == "image" and "receipt" in data.get("caption", "").lower():
+        # Legacy/Image based receipt
+        return ShowReceipt(
+            task_id="unknown", 
+            receipt={"url": data["url"]}, 
+            caption=data.get("caption", "")
+        )
+        
+    elif msg_type == "flow":
+        return ShowFlow(
+            flow_id=data.get("flow_id", ""),
+            flow_config=data.get("flow_config", {}),
+            fallback_text=data.get("fallback_text", ""),
+        )
+        
+    return None
