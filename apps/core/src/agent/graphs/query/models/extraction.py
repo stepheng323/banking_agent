@@ -1,6 +1,7 @@
 """Query extraction models. Pure extraction with requested_capabilities."""
 
 from enum import Enum
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -11,13 +12,12 @@ SCHEMA_VERSION = 1
 class QueryIntent(str, Enum):
     """Query intent types."""
 
-    TRANSACTION_LIST = "transaction_list"       # Show me transactions
-    SPENDING_TOTAL = "spending_total"           # How much did I spend
-    CATEGORY_BREAKDOWN = "category_breakdown"   # Breakdown by category
-    TIME_COMPARISON = "time_comparison"         # Compare periods
-    BALANCE_CHECK = "balance_check"             # What's my balance
-    SINGLE_TRANSACTION = "single_transaction"   # Find specific transaction
-    AFFORDABILITY = "affordability"             # Can I afford X
+    TRANSACTION_LIST = "transaction_list"  # Show me transactions
+    SPENDING_TOTAL = "spending_total"  # How much did I spend
+    CATEGORY_BREAKDOWN = "category_breakdown"  # Breakdown by category
+    TIME_COMPARISON = "time_comparison"  # Compare periods
+    SINGLE_TRANSACTION = "single_transaction"  # Find specific transaction
+    AFFORDABILITY = "affordability"  # Can I afford X
 
 
 class RequestedCapability(str, Enum):
@@ -42,18 +42,18 @@ class RequestedCapability(str, Enum):
 class TimeReference(str, Enum):
     """How user expressed time."""
 
-    EXPLICIT = "explicit"       # "last week", "this month", "January"
-    VAGUE = "vague"             # "sometime ago", "recently", "a while back"
-    ALL_TIME = "all_time"       # "all my transactions", "everything"
-    UNSPECIFIED = "unspecified" # No time mentioned
+    EXPLICIT = "explicit"  # "last week", "this month", "January"
+    VAGUE = "vague"  # "sometime ago", "recently", "a while back"
+    ALL_TIME = "all_time"  # "all my transactions", "everything"
+    UNSPECIFIED = "unspecified"  # No time mentioned
 
 
 class AmbiguityCode(str, Enum):
     """Ambiguity types for query."""
 
-    TIME_VAGUE = "TIME_VAGUE"           # "sometime ago" - unclear when
-    RECIPIENT_VAGUE = "RECIPIENT_VAGUE" # "that mechanic" - unclear who
-    AMOUNT_VAGUE = "AMOUNT_VAGUE"       # "large transactions" - unclear threshold
+    TIME_VAGUE = "TIME_VAGUE"  # "sometime ago" - unclear when
+    RECIPIENT_VAGUE = "RECIPIENT_VAGUE"  # "that mechanic" - unclear who
+    AMOUNT_VAGUE = "AMOUNT_VAGUE"  # "large transactions" - unclear threshold
 
 
 class Ambiguity(BaseModel):
@@ -113,3 +113,21 @@ class QueryExtractionResult(BaseModel):
     )
 
     raw_query: str | None = Field(default=None, description="Original user query")
+
+
+class ResolverOutcome(str, Enum):
+    """Outcome of the resolution process."""
+
+    OK = "OK"  # Proceed with query
+    NEEDS_INPUT = "NEEDS_INPUT"  # Ask user for clarification
+    NEGOTIATED = "NEGOTIATED"  # Clamped or modified, but proceeding
+
+
+class QueryParseResult(BaseModel):
+    """Structured result from the Query Parser."""
+
+    outcome: ResolverOutcome
+    extraction: QueryExtractionResult | None = None
+    resolver_message: str | None = Field(default=None, description="Message to show user (e.g. clarification)")
+    notices: list[str] = Field(default_factory=list, description="Infos like 'Clamped to 30 days'")
+    patch: dict[str, Any] | None = Field(default=None, description="State updates")

@@ -15,7 +15,6 @@ class QueryIntent(str, Enum):
     TRANSACTION_SEARCH = "transaction_search"
     ANALYTICS_SUMMARY = "analytics_summary"
     TIME_COMPARISON = "time_comparison"
-    BALANCE_QUERY = "balance_query"
     BENEFICIARY_SUMMARY = "beneficiary_summary"
     AFFORDABILITY = "affordability"
 

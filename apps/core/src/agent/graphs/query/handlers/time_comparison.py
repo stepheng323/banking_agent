@@ -7,13 +7,13 @@ Example: "How did my spending this month compare to last month?"
 from datetime import timedelta
 from typing import Any
 
-from apps.core.src.agent.graphs.query.fetch import fetch_and_filter
 from apps.core.src.agent.graphs.query.models import (
     NormalizedQuery,
     QueryResult,
     QueryResultItem,
     TimeRange,
 )
+from apps.core.src.agent.graphs.query.services.fetch import fetch_and_filter
 from shared.clients.abstractions.banking import BankingDataProvider
 
 

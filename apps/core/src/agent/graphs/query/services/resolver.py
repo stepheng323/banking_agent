@@ -18,7 +18,7 @@ from apps.core.src.agent.graphs.query.capabilities import (
     generate_limitation_message,
     get_alternative,
 )
-from apps.core.src.agent.graphs.query.models_extraction import (
+from apps.core.src.agent.graphs.query.models import (
     Ambiguity,
     AmbiguityCode,
     QueryExtractionResult,

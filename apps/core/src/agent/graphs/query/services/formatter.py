@@ -1,7 +1,6 @@
 """Formatter for query responses."""
 
 from datetime import date, datetime
-from typing import Any
 
 from apps.core.src.agent.graphs.query.models import QueryResult, QueryResultItem
 from shared.utils.logging import get_logger
@@ -23,9 +22,7 @@ class QueryFormatter:
         if not result:
             return "No results to display."
 
-        response = QueryFormatter._format_query_result(
-            result, has_more, show_expanded, current_page
-        )
+        response = QueryFormatter._format_query_result(result, has_more, show_expanded, current_page)
         return response
 
     @staticmethod
@@ -96,7 +93,11 @@ class QueryFormatter:
         # For analytics/summary results, return summary directly (unless expanding to show transactions)
         if not show_expanded and result.summary_text and "|" not in result.summary_text:
             # Balance queries should show summary only
-            if "Balance:" in result.summary_text or "Total balance" in result.summary_text:
+            if (
+                "Balance:" in result.summary_text  # Legacy check
+                or "balance" in result.summary_text.lower()
+                or (result.items and result.items[0].metadata.get("type") == "balance")
+            ):
                 return result.summary_text
 
             # Analytics summaries start with emoji or specific patterns
@@ -151,16 +152,12 @@ class QueryFormatter:
             amount_str = f"₦{item.amount:,.2f}"
             lines.append(f"*Amount:* {amount_str}")
             lines.append(f"*Description:* {item.description}")
-            lines.append(
-                f"*Date:* {item.date.strftime('%B %d, %Y') if item.date else 'Unknown'}"
-            )
+            lines.append(f"*Date:* {item.date.strftime('%B %d, %Y') if item.date else 'Unknown'}")
 
             if item.metadata:
                 tx_type = item.metadata.get("type", "")
                 if tx_type:
-                    direction = (
-                        "Outgoing (Debit)" if tx_type == "debit" else "Incoming (Credit)"
-                    )
+                    direction = "Outgoing (Debit)" if tx_type == "debit" else "Incoming (Credit)"
                     lines.append(f"*Type:* {direction}")
 
                 bank_name = item.metadata.get("bank_name", "")
@@ -185,9 +182,7 @@ class QueryFormatter:
 
             lines.append("")
 
-            transaction_type = (
-                item.metadata.get("transaction_type", "") if item.metadata else ""
-            )
+            transaction_type = item.metadata.get("transaction_type", "") if item.metadata else ""
             if transaction_type == "transfer":
                 lines.append("_Reply: 'receipt' for proof | 'issue' to report a problem_")
 
@@ -206,9 +201,7 @@ class QueryFormatter:
                 heading = result.summary_text.split(chr(10))[0]  # First line only
             elif "|" in result.summary_text:
                 # Standard pagination info
-                parts = dict(
-                    p.split(":") for p in result.summary_text.split("|") if ":" in p
-                )
+                parts = dict(p.split(":") for p in result.summary_text.split("|") if ":" in p)
                 account_count = int(parts.get("accounts", 1))
                 showing = parts.get("showing", "")
                 total = parts.get("total", "")
@@ -224,13 +217,18 @@ class QueryFormatter:
         if result.items:
             # Local pagination for extended items list (analytics drill-down)
             page_size = 5
-            start_idx = current_page * page_size
-            end_idx = start_idx + page_size
 
-            display_items = result.items[start_idx:end_idx]
-            remaining_count = (
-                len(result.items) - end_idx if end_idx < len(result.items) else 0
-            )
+            # Only slice if we seem to have more items than a single page
+            if len(result.items) > page_size:
+                start_idx = current_page * page_size
+                end_idx = start_idx + page_size
+                display_items = result.items[start_idx:end_idx]
+            else:
+                display_items = result.items
+                # If pre-paginated, start_idx for display purposes depends on page
+                start_idx = current_page * page_size
+                end_idx = start_idx + len(display_items)
+            remaining_count = len(result.items) - end_idx if end_idx < len(result.items) else 0
 
             # Update pagination display for local paging
             if show_expanded:
@@ -242,15 +240,11 @@ class QueryFormatter:
             for date_str, items in grouped.items():
                 lines.append(f"*{date_str}*")
                 for item in items:
-                    counterparty = (
-                        item.metadata.get("counterparty") if item.metadata else None
-                    )
+                    counterparty = item.metadata.get("counterparty") if item.metadata else None
                     amount = QueryFormatter._format_amount(item.amount)
                     tx_type = item.metadata.get("type", "") if item.metadata else ""
 
-                    real_type = (
-                        item.metadata.get("transaction_type") if item.metadata else None
-                    )
+                    real_type = item.metadata.get("transaction_type") if item.metadata else None
 
                     if real_type in ("airtime", "data"):
                         # Extract recipient from counterparty or description
@@ -260,37 +254,27 @@ class QueryFormatter:
                             import re
 
                             phone_match = re.search(r"(\d{10,11})", item.description or "")
-                            recipient = (
-                                phone_match.group(1) if phone_match else "recipient"
-                            )
+                            recipient = phone_match.group(1) if phone_match else "recipient"
                         narration = f"{real_type.title()} for {recipient}"
                     elif counterparty:
                         if "transfer" in item.description.lower():
-                            prefix = (
-                                "Transfer from" if tx_type == "credit" else "Transfer to"
-                            )
+                            prefix = "Transfer from" if tx_type == "credit" else "Transfer to"
                             narration = f"{prefix} {counterparty}"
                         else:
                             narration = counterparty
                     else:
                         narration = QueryFormatter._humanize_narration(item.description)
                     label = "Received" if tx_type == "credit" else "Sent"
-                    bank_name = (
-                        item.metadata.get("bank_name", "") if item.metadata else ""
-                    )
+                    bank_name = item.metadata.get("bank_name", "") if item.metadata else ""
 
                     if bank_name:
-                        lines.append(
-                            f"{amount} • {label} — {narration} _({bank_name})_"
-                        )
+                        lines.append(f"{amount} • {label} — {narration} _({bank_name})_")
                     else:
                         lines.append(f"{amount} • {label} — {narration}")
                 lines.append("")
 
             if remaining_count > 0:
-                lines.append(
-                    f"_{remaining_count} more transactions. Reply **Next** to continue._"
-                )
+                lines.append(f"_{remaining_count} more transactions. Reply **Next** to continue._")
                 lines.append("")
 
             if lines and lines[-1] == "":

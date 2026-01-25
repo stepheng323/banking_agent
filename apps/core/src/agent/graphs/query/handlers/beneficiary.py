@@ -4,8 +4,8 @@ from collections import defaultdict
 from datetime import date
 from typing import Any
 
-from apps.core.src.agent.graphs.query.fetch import extract_counterparty, fetch_and_filter
 from apps.core.src.agent.graphs.query.models import NormalizedQuery, QueryResult, QueryResultItem
+from apps.core.src.agent.graphs.query.services.fetch import extract_counterparty, fetch_and_filter
 from shared.clients.abstractions.banking import BankingDataProvider
 
 

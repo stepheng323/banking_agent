@@ -1,0 +1,206 @@
+"""Query parsing service - extracts NormalizedQuery from natural language."""
+
+from datetime import date, timedelta
+
+from langchain_core.runnables import Runnable
+
+from apps.core.src.agent.graphs.query.capabilities import (
+    QUERY_LIMITS,
+)
+from apps.core.src.agent.graphs.query.models import (
+    Aggregation,
+    NormalizedQuery,
+    QueryExtractionResult,
+    QueryIntent,
+    QueryParseResult,
+    ResolverOutcome,
+    TimeRange,
+    TimeReference,
+)
+from apps.core.src.agent.graphs.query.prompts import QUERY_PARSER_PROMPT
+from apps.core.src.agent.graphs.query.services.resolver import Decision, resolve
+from shared.utils.logging import get_logger
+
+logger = get_logger(__name__)
+
+
+class QueryParser:
+    """Parse natural language financial questions into NormalizedQuery."""
+
+    """Parse natural language financial questions into NormalizedQuery."""
+
+    def __init__(self, llm: Runnable):
+        self.llm = llm
+
+    async def parse(
+        self,
+        question: str,
+        today: date,
+    ) -> "QueryParseResult":
+        """
+        Parse query using extraction with resolver integration.
+
+        Args:
+            question: User's natural language query
+            today: Today's date (context-aware)
+
+        Returns:
+            QueryParseResult with outcome and extraction details
+        """
+        from apps.core.src.agent.graphs.query.models import (
+            QueryParseResult,
+        )
+
+        prompt = QUERY_PARSER_PROMPT.format(
+            today=today.isoformat(),
+            question=question,
+        )
+
+        structured_llm = self.llm.with_structured_output(QueryExtractionResult)
+
+        try:
+            extraction: QueryExtractionResult = await structured_llm.ainvoke(prompt)
+            extraction.raw_query = question
+
+            # Deterministic capability validation
+            self._validate_capabilities(extraction)
+
+            # Run through resolver
+            decision = resolve(extraction)
+
+            outcome = ResolverOutcome.OK
+            message = None
+            notices = []
+
+            if decision.decision == Decision.ASK_CLARIFY:
+                outcome = ResolverOutcome.NEEDS_INPUT
+                message = (
+                    decision.prompts[0].vars.get("context", "Could you clarify?")
+                    if decision.prompts
+                    else "Could you clarify?"
+                )
+
+            elif decision.decision == Decision.NEGOTIATE:
+                outcome = ResolverOutcome.NEGOTIATED
+                if decision.negotiation:
+                    message = decision.negotiation.message
+
+            # Add notices for clamping/modifications
+            if decision.clamped.days_back:
+                notices.append(f"Showing last {decision.clamped.days_back} days (max available).")
+
+            return QueryParseResult(
+                outcome=outcome,
+                extraction=decision.extraction,
+                resolver_message=message,
+                notices=notices,
+                patch={},
+            )
+
+        except Exception as e:
+            logger.error("parse_error", error=str(e))
+
+            return QueryParseResult(
+                outcome=ResolverOutcome.OK,  # Fallback to try best effort
+                extraction=QueryExtractionResult(raw_query=question),
+            )
+
+    def _validate_capabilities(self, extraction: "QueryExtractionResult") -> None:
+        """Enforce capability dependencies deterministically."""
+        from apps.core.src.agent.graphs.query.models import (
+            RequestedCapability,
+            TimeReference,
+        )
+
+        if extraction.filters.min_amount is not None or extraction.filters.max_amount is not None:
+            if RequestedCapability.FILTER_AMOUNT not in extraction.requested_capabilities:
+                extraction.requested_capabilities.append(RequestedCapability.FILTER_AMOUNT)
+
+        if extraction.filters.recipient:
+            if RequestedCapability.FILTER_RECIPIENT not in extraction.requested_capabilities:
+                extraction.requested_capabilities.append(RequestedCapability.FILTER_RECIPIENT)
+
+        if extraction.filters.category:
+            if RequestedCapability.FILTER_CATEGORY not in extraction.requested_capabilities:
+                extraction.requested_capabilities.append(RequestedCapability.FILTER_CATEGORY)
+
+        if extraction.time_range.reference_type == TimeReference.ALL_TIME:
+            if RequestedCapability.TIME_ALL not in extraction.requested_capabilities:
+                extraction.requested_capabilities.append(RequestedCapability.TIME_ALL)
+        else:
+            if RequestedCapability.TIME_ALL in extraction.requested_capabilities:
+                extraction.requested_capabilities.remove(RequestedCapability.TIME_ALL)
+
+    def convert_to_normalized(
+        self,
+        extraction: "QueryExtractionResult",
+        today: date | None = None,
+    ) -> NormalizedQuery:
+        """Convert QueryExtractionResult to NormalizedQuery for handlers."""
+        from apps.core.src.agent.graphs.query.models import (
+            QueryIntent as ExtractIntent,
+        )
+
+        today = today or date.today()
+
+        intent_map = {
+            ExtractIntent.TRANSACTION_LIST: QueryIntent.TRANSACTION_LIST,
+            ExtractIntent.SPENDING_TOTAL: QueryIntent.ANALYTICS_SUMMARY,
+            ExtractIntent.CATEGORY_BREAKDOWN: QueryIntent.ANALYTICS_SUMMARY,
+            ExtractIntent.TIME_COMPARISON: QueryIntent.TIME_COMPARISON,
+            ExtractIntent.SINGLE_TRANSACTION: QueryIntent.TRANSACTION_SEARCH,
+            ExtractIntent.AFFORDABILITY: QueryIntent.AFFORDABILITY,
+        }
+
+        time_range = None
+        if extraction.time_range:
+            days_back = extraction.time_range.days_back or 30
+            if extraction.time_range.reference_type == TimeReference.ALL_TIME:
+                days_back = QUERY_LIMITS["max_lookback_days"]
+            elif extraction.time_range.reference_type == TimeReference.UNSPECIFIED:
+                days_back = 30
+
+            time_range = TimeRange(
+                start=today - timedelta(days=days_back),
+                end=today,
+                granularity="day",
+            )
+
+        filters = None
+        if extraction.filters:
+            from apps.core.src.agent.graphs.query.models import Filters
+
+            transaction_type = extraction.filters.transaction_type
+            if not transaction_type and extraction.intent in (
+                ExtractIntent.SPENDING_TOTAL,
+                ExtractIntent.CATEGORY_BREAKDOWN,
+            ):
+                transaction_type = "debit"
+
+            filters = Filters(
+                merchant=[extraction.filters.recipient] if extraction.filters.recipient else None,
+                category=[extraction.filters.category] if extraction.filters.category else None,
+                min_amount=extraction.filters.min_amount,
+                max_amount=extraction.filters.max_amount,
+                transaction_type=transaction_type,
+                account_filter=extraction.filters.bank,
+            )
+
+        aggregation = None
+        if extraction.aggregation:
+            aggregation = Aggregation(
+                type=extraction.aggregation.type or "sum",
+                group_by=extraction.aggregation.group_by,
+            )
+        elif extraction.intent == ExtractIntent.SPENDING_TOTAL:
+            aggregation = Aggregation(type="sum")
+        elif extraction.intent == ExtractIntent.CATEGORY_BREAKDOWN:
+            aggregation = Aggregation(type="breakdown", group_by="category")
+
+        return NormalizedQuery(
+            intent=intent_map.get(extraction.intent, QueryIntent.TRANSACTION_LIST),
+            time_range=time_range or TimeRange(start=today - timedelta(days=30), end=today, granularity="day"),
+            filters=filters,
+            aggregation=aggregation,
+            accounts_scope="all",
+        )

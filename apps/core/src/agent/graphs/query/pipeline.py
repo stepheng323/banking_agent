@@ -35,7 +35,7 @@ class QueryPipeline:
     ) -> TransactionResult:
         """Run all steps in sequence."""
         last_result = None
-        
+
         for step in self.steps:
             result = await step.run(state, worker_context)
 
@@ -58,8 +58,8 @@ class QueryPipeline:
         """Finalize result with accumulated state."""
         if result.patch is None:
             result.patch = {}
-        
+
         # Merge current state into result.patch
         result.patch.update(state)
-        
+
         return result

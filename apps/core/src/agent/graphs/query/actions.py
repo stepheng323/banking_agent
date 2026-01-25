@@ -1,11 +1,10 @@
 """Continuity actions for query flow (drill-down, receipts, etc)."""
 
 import json
-from datetime import datetime
 from typing import Any
 
-from apps.core.src.agent.graphs.query.models import QueryResult, QueryResultItem
-from apps.core.src.agent.orchestrator.models.domain import TransactionResult, TransactionOutcome
+from apps.core.src.agent.graphs.query.models import QueryResult
+from apps.core.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
 from shared.cache.redis_client import RedisClient
 
 QUEUE_NAME = "banking:receipt_jobs"
@@ -16,7 +15,7 @@ async def handle_drill_down(state: dict[str, Any]) -> TransactionResult:
 
     # Note: State here is the working state (with session merged)
     query_result = state.get("query_result")
-    
+
     # Check if we have items
     # In V3 pipeline, query_result might be in the session part of state
     if isinstance(query_result, dict):
@@ -99,7 +98,7 @@ async def handle_drill_down(state: dict[str, Any]) -> TransactionResult:
         )
 
     # VIEW DETAILS (Default)
-    from apps.core.src.agent.graphs.query.formatter import QueryFormatter
+    from apps.core.src.agent.graphs.query.services.formatter import QueryFormatter
     # Create single-item result for formatter to pick up "Detailed View" logic
     detail_result = QueryResult(
         summary_text="",
@@ -107,7 +106,7 @@ async def handle_drill_down(state: dict[str, Any]) -> TransactionResult:
         context_key=query_result.context_key
     )
     formatted = QueryFormatter.format(detail_result, show_expanded=True)
-    
+
     return TransactionResult(
         outcome=TransactionOutcome.OK,
         response=formatted,

@@ -166,9 +166,9 @@ async def fetch_and_filter(
         try:
             from shared.repositories.unit_of_work import UnitOfWork
 
-            with UnitOfWork() as uow:
+            async with UnitOfWork() as uow:
                 if uow.transactions:
-                    local_txns = uow.transactions.get_by_user(user_id, limit=20)
+                    local_txns = await uow.transactions.get_by_user(user_id, limit=20)
                     for l_txn in local_txns:
                         raw_date = l_txn.created_at
                         txn_dict = {

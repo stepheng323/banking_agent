@@ -2,7 +2,6 @@
 
 from apps.core.src.agent.graphs.query.handlers.affordability import handle_affordability
 from apps.core.src.agent.graphs.query.handlers.analytics import handle_analytics
-from apps.core.src.agent.graphs.query.handlers.balance import handle_balance
 from apps.core.src.agent.graphs.query.handlers.beneficiary import handle_beneficiary_summary
 from apps.core.src.agent.graphs.query.handlers.time_comparison import handle_time_comparison
 from apps.core.src.agent.graphs.query.handlers.transactions import (
@@ -12,7 +11,6 @@ from apps.core.src.agent.graphs.query.handlers.transactions import (
 from apps.core.src.agent.graphs.query.models import QueryIntent
 
 HANDLER_REGISTRY = {
-    QueryIntent.BALANCE_QUERY: handle_balance,
     QueryIntent.TRANSACTION_LIST: handle_transaction_list,
     QueryIntent.TRANSACTION_SEARCH: handle_transaction_search,
     QueryIntent.ANALYTICS_SUMMARY: handle_analytics,
@@ -23,7 +21,6 @@ HANDLER_REGISTRY = {
 
 __all__ = [
     "HANDLER_REGISTRY",
-    "handle_balance",
     "handle_transaction_list",
     "handle_transaction_search",
     "handle_analytics",
