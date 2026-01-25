@@ -1,12 +1,12 @@
 """Shared service for beneficiary suggestions across all transaction types."""
 
-import asyncio
 import json
 import traceback
 from typing import Any
 
+from apps.core.src.messaging.outbox import enqueue_outbox_say
 from shared.cache.redis_client import RedisClient
-from shared.clients.whatsapp.client import WhatsAppClient
+from shared.queue.redis_queue import RedisQueue
 from shared.repositories.unit_of_work import UnitOfWork
 from shared.utils.logging import get_logger
 
@@ -18,17 +18,17 @@ class BeneficiarySuggestionService:
 
     def __init__(
         self,
-        whatsapp_client: WhatsAppClient,
+        queue: RedisQueue,
         redis_client=None,
     ):
         """
         Initialize beneficiary suggestion service.
 
         Args:
-            whatsapp_client: WhatsApp client for sending notifications
+            queue: Redis queue for outbox intents
             redis_client: Redis client for storing suggestion context
         """
-        self.whatsapp_client = whatsapp_client
+        self.queue = queue
         self.redis_client = redis_client or RedisClient.get_client()
 
     async def check_and_suggest_beneficiary(
@@ -38,6 +38,7 @@ class BeneficiarySuggestionService:
         recipient_data: dict[str, Any],
         transaction_id: str | None = None,
         send_message: bool = True,
+        channel: str = "whatsapp",
     ) -> str | None:
         """
         Check if recipient is new beneficiary and suggest saving.
@@ -47,7 +48,8 @@ class BeneficiarySuggestionService:
             beneficiary_type: Type of beneficiary ("transfer", "airtime", or "data")
             recipient_data: Dict with recipient information (varies by type)
             transaction_id: Optional transaction ID
-            send_message: Whether to send the message immediately (async) or return it.
+            send_message: Whether to enqueue the message or return it.
+            channel: Target channel for outbox delivery.
 
         Returns:
             str: The suggestion message if generated and send_message=False.
@@ -131,8 +133,14 @@ class BeneficiarySuggestionService:
                             )
 
                         if send_message:
-                            asyncio.create_task(self.whatsapp_client.send_text(to=phone_number, text=message))
-                            logger.info("beneficiary_suggestion_sent_for")
+                            await enqueue_outbox_say(
+                                self.queue,
+                                phone_number,
+                                channel,
+                                message,
+                                metadata={"source": "beneficiary_suggestion"},
+                            )
+                            logger.info("beneficiary_suggestion_enqueued_for")
                             return None
                         return message
 
@@ -192,8 +200,14 @@ class BeneficiarySuggestionService:
                         )
 
                         if send_message:
-                            asyncio.create_task(self.whatsapp_client.send_text(to=phone_number, text=message))
-                            logger.info("beneficiary_suggestion_sent_for")
+                            await enqueue_outbox_say(
+                                self.queue,
+                                phone_number,
+                                channel,
+                                message,
+                                metadata={"source": "beneficiary_suggestion"},
+                            )
+                            logger.info("beneficiary_suggestion_enqueued_for")
                             return None
                         return message
                 else:
