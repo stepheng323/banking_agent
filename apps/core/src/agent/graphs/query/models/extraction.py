@@ -87,8 +87,9 @@ class QueryTimeRange(BaseModel):
 class QueryAggregation(BaseModel):
     """Aggregation requested."""
 
-    type: str | None = Field(default=None, description="sum, count, average, largest")
+    type: str | None = Field(default=None, description="sum, count, average, largest, smallest")
     group_by: str | None = Field(default=None, description="category, bank, recipient")
+    limit: int | None = Field(default=None, description="Max items (1 for singular, N for plural)")
 
 
 class QueryExtractionResult(BaseModel):
