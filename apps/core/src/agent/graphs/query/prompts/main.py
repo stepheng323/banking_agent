@@ -64,6 +64,8 @@ Today's date: {today}
 CONTEXT
 - A previous query session exists.
 - The user is currently viewing results (or a summary).
+- Result Surface: {surface_type}
+- Surface Keys/Context: {surface_context}
 - Items may be provided below.
 
 USER MESSAGE
@@ -121,25 +123,19 @@ Use ONLY when prior response was an analytics/summary (not a list) and user asks
 "show transactions", "show the items", "which ones"
 If they also add a time/filter qualifier ("recent", "this month", "over 10k") => continuation_type="new_query".
 
-7) DRILL DOWN (details/action on a specific item)
-If user asks for details/receipt/problem for a specific transaction:
-"show details", "tell me more", "what was this", "I need receipt", "something's wrong"
+9) DRILL DOWN (details/action on a specific item)
+If user asks to see details for a specific item/category:
+- "Show details", "tell me more"
+- IF SURFACE=BREAKDOWN: "Show [Category]", "What's in [Category]", "Just [Category]" => drill_down (index matching category)
+- IF SURFACE=LIST: "Show the first one", "number 5" => drill_down
 => continuation_type="drill_down"
-- If items_section exists, select drill_down_index by:
-  amount match ("15k"), ordinal ("first/second"), keyword/merchant ("Netflix"), relative ("largest").
-- If unclear which one and only 1 item exists => index 0.
-- If unclear which one and multiple items exist => continuation_type="unclear" (ask which item).
-Set drill_down_action:
-- receipt/proof/evidence => "get_receipt"
-- wrong/debited/failed/problem => "report_issue"
-- otherwise => "view_details"
+- If items_section exists, select drill_down_index.
 
-8) RECIPIENT DRILL DOWN
-Use ONLY if the prior context explicitly shows a "Top Recipients" list and user replies with a name:
-"Uber", "Mum", "Shoprite" => continuation_type="recipient_drill_down" with recipient_name.
+10) RECIPIENT DRILL DOWN
+Use ONLY if the prior context explicitly shows a "Top Recipients" list and user replies with a name.
 
-9) UNCLEAR
-If none fit or message ambiguous/gibberish => continuation_type="unclear" (preserve session).
+11) UNCLEAR
+If none fit or message ambiguous/gibberish => continuation_type="unclear".
 
 LANGUAGES
 Support English + Nigerian Pidgin + Yoruba/Igbo/Hausa + others.

@@ -82,6 +82,7 @@ class ExtractionStep(QueryStep):
             has_active_session=True,
             today=date.today().isoformat(),
             items=items,
+            surface=session.get("surface"),
         )
 
         logger.info(
