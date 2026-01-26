@@ -82,6 +82,7 @@ class ExecutionStep(QueryStep):
             response=formatted_response,
             patch={
                 "query_result": result,
+                "surface": result.surface,  # Persist surface state
                 "session_active": True,
                 "flow_state": "complete",
                 "last_successful_query": query,

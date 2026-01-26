@@ -137,7 +137,6 @@ class QueryFormatter:
             lines = [f"📊 *{result.summary_text}*", ""]
 
             if result.items:
-                # Use absolute sum for percentage calculation to handle debits (negative values)
                 total_abs = sum(abs(item.amount) for item in result.items)
 
                 for item in result.items:

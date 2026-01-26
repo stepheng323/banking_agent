@@ -73,6 +73,26 @@ class NormalizedQuery(BaseModel):
     )
 
 
+class SurfaceType(str, Enum):
+    """Type of result surface presented to the user."""
+
+    LIST = "list"
+    BREAKDOWN = "breakdown"
+    SUMMARY = "summary"
+    SINGLE_ITEM = "single_item"
+
+
+class ResultSurface(BaseModel):
+    """
+    Describes the current 'view' or 'surface' the user is looking at.
+    Used for deterministic continuation and drill-down.
+    """
+
+    type: SurfaceType
+    items: list[dict[str, Any]] = Field(default_factory=list, description="Simplified items context (id, key, amount)")
+    context: dict[str, Any] = Field(default_factory=dict, description="Context metadata (group_by, time_range, etc)")
+
+
 class QueryResultItem(BaseModel):
     """Single item in query results - quotable and drill-down capable."""
 
@@ -95,6 +115,7 @@ class QueryResult(BaseModel):
     context_key: str = Field(default_factory=lambda: f"qr:{uuid4()}")
     has_more: bool = False
     query_snapshot: NormalizedQuery | None = None  # For follow-up deltas
+    surface: ResultSurface | None = None  # UI/Interaction surface state
 
 
 CATEGORY_KEYWORDS: dict[str, list[str]] = {
@@ -131,23 +152,3 @@ def detect_category(narration: str) -> str | None:
             if keyword in narration_lower:
                 return category
     return None
-
-
-class SurfaceType(str, Enum):
-    """Type of result surface presented to the user."""
-
-    LIST = "list"
-    BREAKDOWN = "breakdown"
-    SUMMARY = "summary"
-    SINGLE_ITEM = "single_item"
-
-
-class ResultSurface(BaseModel):
-    """
-    Describes the current 'view' or 'surface' the user is looking at.
-    Used for deterministic continuation and drill-down.
-    """
-
-    type: SurfaceType
-    items: list[dict[str, Any]] = Field(default_factory=list, description="Simplified items context (id, key, amount)")
-    context: dict[str, Any] = Field(default_factory=dict, description="Context metadata (group_by, time_range, etc)")

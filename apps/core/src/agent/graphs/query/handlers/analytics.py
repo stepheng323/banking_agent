@@ -32,21 +32,18 @@ async def handle_analytics(
     agg_type = query.aggregation.type
 
     if agg_type == "sum":
-        # Use absolute values for spending totals
         total = sum(abs(t.get("amount", 0)) for t in transactions)
         count = len(transactions)
         if count == 0:
             return QueryResult(summary_text="No matching transactions found.")
         merchant = query.filters.merchant[0] if query.filters and query.filters.merchant else "your search"
 
-        # Determine timeframe text
         timeframe = " (last 30 days)"
         if query.time_range:
             start_str = query.time_range.start.strftime("%b %d")
             end_str = query.time_range.end.strftime("%b %d")
             timeframe = f" ({start_str} - {end_str})"
 
-        # Include items for drill-down capability
         items = [
             QueryResultItem(
                 id=t.get("id", "")[:8] if t.get("id") else str(i),
@@ -73,14 +70,12 @@ async def handle_analytics(
             avg = sum(abs(t.get("amount", 0)) for t in transactions) / len(transactions)
             count = len(transactions)
 
-            # Determine timeframe text
             timeframe = " (last 30 days)"
             if query.time_range:
                 start_str = query.time_range.start.strftime("%b %d")
                 end_str = query.time_range.end.strftime("%b %d")
                 timeframe = f" ({start_str} - {end_str})"
 
-            # Include items for drill-down capability
             items = [
                 QueryResultItem(
                     id=t.get("id", "")[:8] if t.get("id") else str(i),
@@ -152,18 +147,60 @@ async def _aggregate_breakdown(transactions: list[dict], query: NormalizedQuery)
             grouped[key][tx_type] += t.get("amount", 0)
             grouped[key]["count"] += 1
 
+    # Sort: Amount (desc) -> Count (desc)
+    # Special case: "Other" always goes to the bottom
+    def sort_key(item):
+        key, data = item
+        if key.lower() == "other":
+            return (-1.0, 0)
+        return (data["debit"] + data["credit"], data["count"])
+
+    sorted_items = sorted(grouped.items(), key=sort_key, reverse=True)
+
+    # Apply limit if requested
+    limit = query.aggregation.limit or 10
+    sorted_items = sorted_items[:limit]
+
     items = [
         QueryResultItem(
             id=str(i),
             description=key,
-            amount=(data["debit"] + data["credit"]),
+            amount=data["debit"] + data["credit"],
             date=parse_date(key) if group_by == "day" else date.today(),
-            metadata={"debit": data["debit"], "credit": data["credit"], "count": data["count"]},
+            metadata={
+                "debit": data["debit"],
+                "credit": data["credit"],
+                "count": data["count"],
+                "key": key,  # Original key for drill-down
+            },
         )
-        for i, (key, data) in enumerate(sorted(grouped.items(), reverse=True)[:10])
+        for i, (key, data) in enumerate(sorted_items)
     ]
+
+    # Construct Surface for interactive session
+    from apps.core.src.agent.graphs.query.models import ResultSurface, SurfaceType
+
+    surface_items = [
+        {
+            "id": item.id,
+            "key": item.description,
+            "amount": item.amount,
+            "count": item.metadata.get("count", 0),
+        }
+        for item in items
+    ]
+
+    surface = ResultSurface(
+        type=SurfaceType.BREAKDOWN,
+        items=surface_items,
+        context={
+            "group_by": group_by,
+            "time_range": query.time_range.model_dump() if query.time_range else None,
+        },
+    )
 
     return QueryResult(
         summary_text=f"Breakdown by {group_by}",
         items=items,
+        surface=surface,
     )
