@@ -89,12 +89,12 @@ class AirtimeWorker:
 
         try:
             result = await pipeline.run(data, ctx, gates, worker_context)
-            
+
             if data.idempotency_key:
                 if result.patch is None:
                     result.patch = {}
                 result.patch["idempotency_key"] = data.idempotency_key
-                
+
             return result
         except Exception as e:
             logger.error("airtime_pipeline_failed", error=str(e), exc_info=True)

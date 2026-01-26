@@ -12,11 +12,9 @@ from apps.core.src.agent.graphs.airtime.models.types import (
     AirtimeContext,
     AirtimeGates,
     AirtimePayload,
-    AirtimeRecipient,
-    AirtimeSource,
 )
 from apps.core.src.agent.graphs.airtime.nodes.execution import ExecutionStep
-from apps.core.src.agent.orchestrator.models.domain import TransactionOutcome
+from apps.core.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
 from shared.types.planner import PlannedTask
 from shared.utils.logging import get_logger
 
@@ -76,12 +74,8 @@ class AirtimeHandler(BaseTaskHandler):
             )
 
             # Build dummy context
-            airtime_context = AirtimeContext(
-                 phone_number=context.phone_number,
-                 beneficiaries=[],
-                 accounts=[]
-            )
-            
+            airtime_context = AirtimeContext(phone_number=context.phone_number, beneficiaries=[], accounts=[])
+
             # Assume gates passed for batch (PIN verified implicitly or previously)
             gates = AirtimeGates(pin_verified=True, confirmation_confirmed=True)
 
@@ -102,7 +96,7 @@ class AirtimeHandler(BaseTaskHandler):
                 # For now, we assume it's registered. If critical, we might need a workaround.
                 # But ExecutionStep REQUIRES it.
                 logger.warning("[AIRTIME] Banking provider not found in context services")
-                # If we fail here, we can't process. 
+                # If we fail here, we can't process.
                 # Attempt to instantiate default if possible? No, too complex.
                 # We return failure.
                 return self._create_failure_result(task, "Banking provider unavailable", ErrorKind.SYSTEM)
@@ -112,19 +106,16 @@ class AirtimeHandler(BaseTaskHandler):
             # Execution
             step = ExecutionStep()
             result: TransactionResult = await step.execute(
-                data=payload,
-                context=airtime_context,
-                gates=gates,
-                worker_context=worker_context
+                data=payload, context=airtime_context, gates=gates, worker_context=worker_context
             )
 
             if result.outcome == TransactionOutcome.OK:
                 # ExecutionStep returns OK with patch containing receipt or status
-                # If successful, patch has 'provision_status' or similar? 
+                # If successful, patch has 'provision_status' or similar?
                 # Let's check ExecutionStep.
                 # It returns TransactionResult(outcome=OK, patch=receipt)
                 # receipt has details.
-                
+
                 receipt = result.patch
                 return self._create_success_result(
                     task,
@@ -132,15 +123,14 @@ class AirtimeHandler(BaseTaskHandler):
                         "amount": payload.amount,
                         "recipient": payload.recipient_phone,
                         "network": payload.network,
-                        "receipt": receipt
+                        "receipt": receipt,
                     },
-                    provider_ref=receipt.get("transaction_id") or receipt.get("reference")
+                    provider_ref=receipt.get("transaction_id") or receipt.get("reference"),
                 )
             else:
                 error = result.details.get("error", "Airtime failed")
                 error_kind = self._classify_error(error)
                 return self._create_failure_result(task, error, error_kind)
-
 
         except Exception as e:
             logger.error(f"[AIRTIME] Error: {e}", exc_info=True)

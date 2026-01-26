@@ -33,10 +33,10 @@ class AirtimePayload(BaseModel):
     """Core business data for the airtime purchase."""
 
     amount: float | None = None
-    
+
     recipient_phone: str | None = None
     network: str | None = None
-    
+
     recipient_name: str | None = None
     beneficiary_id: str | None = None
     is_self: bool = False
@@ -50,7 +50,7 @@ class AirtimePayload(BaseModel):
     idempotency_key: str | None = None
     transaction_id: str | None = None
     narration: str | None = None
-    
+
     correction_field: str | None = None
     correction_value: Any | None = None
 

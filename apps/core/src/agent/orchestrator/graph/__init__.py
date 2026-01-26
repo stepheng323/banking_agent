@@ -2,6 +2,7 @@
 
 from langgraph.graph import END, StateGraph
 
+from apps.core.src.agent.orchestrator.models.state import OrchestratorState
 from apps.core.src.agent.orchestrator.nodes import (
     advance_wave,
     finalize,
@@ -9,7 +10,6 @@ from apps.core.src.agent.orchestrator.nodes import (
     ingest_message,
     plan_tasks,
 )
-from apps.core.src.agent.orchestrator.state import OrchestratorState
 
 
 def build_orchestrator_graph(checkpointer=None):

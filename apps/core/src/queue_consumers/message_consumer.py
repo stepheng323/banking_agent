@@ -5,21 +5,17 @@ from typing import Any
 
 from apps.core.src.agent.graphs.onboarding.executor import OnboardingExecutor
 from apps.core.src.agent.orchestrator import OrchestratorAgent
-from apps.core.src.agent.orchestrator.intents import (
+from apps.core.src.agent.orchestrator.models.intents import (
     RequestAuth,
     RequestConfirmation,
     Say,
-    ShowFlow,
     ShowReceipt,
     UiIntent,
 )
-from apps.core.src.messaging.presenters.base import PresentationContext
-# PresenterFactory removed
+from apps.core.src.messaging.outbox import enqueue_outbox_intents, enqueue_outbox_say
 from shared.cache.rate_limiter import message_rate_limiter
-from shared.clients.abstractions.messaging import MessagingClient
 from shared.database.models import UserOnboardingStatusEnum
 from shared.models.messages import WhatsAppMessage
-from shared.queue.messages import OUTBOX_QUEUE
 from shared.queue.redis_queue import RedisQueue
 from shared.repositories.user_repository import UserRepository
 from shared.utils.logging import get_logger
@@ -37,13 +33,11 @@ class MessageConsumer:
         user_repository: UserRepository,
         onboarding_executor: OnboardingExecutor,
         orchestrator: OrchestratorAgent,
-        messaging_client: MessagingClient,
     ):
         self.queue = redis_queue
         self.user_repository = user_repository
         self.onboarding_executor = onboarding_executor
         self.orchestrator = orchestrator
-        self.messaging_client = messaging_client
         self.running = False
 
     async def process_message(self, message_data: dict) -> None:
@@ -67,9 +61,12 @@ class MessageConsumer:
                 phone_number=phone_number,
                 reset_in=rate_result.reset_in_seconds,
             )
-            await self.messaging_client.send_text(
+            await enqueue_outbox_say(
+                self.queue,
                 phone_number,
+                message.channel,
                 f"⏳ Too many messages. Please wait {rate_result.reset_in_seconds} seconds.",
+                metadata={"source": "message_consumer", "reason": "rate_limit"},
             )
             return {"status": "rate_limited", "reset_in": rate_result.reset_in_seconds}
 
@@ -103,26 +100,20 @@ class MessageConsumer:
             channel=message.channel,
         )
 
-        # Intents are now converted by the Orchestrator
         intents: list[UiIntent] = orchestrator_output.get("intents", [])
 
-        # Ensure text is covered
         response_text = orchestrator_output.get("text")
         has_primary_interaction = any(isinstance(i, (RequestAuth, RequestConfirmation, ShowReceipt)) for i in intents)
         if response_text and not has_primary_interaction and not any(isinstance(i, Say) for i in intents):
             intents.append(Say(text=response_text))
 
         if intents:
-            serialized_intents = [i.to_dict() for i in intents]
-            
-            await self.queue.enqueue(
-                queue_name=OUTBOX_QUEUE,
-                message={
-                    "phone_number": phone_number,
-                    "channel": message.channel,
-                    "intents": serialized_intents,
-                    "metadata": {"source": "message_consumer", "message_id": message.message_id}
-                }
+            await enqueue_outbox_intents(
+                self.queue,
+                phone_number,
+                message.channel,
+                intents,
+                metadata={"source": "message_consumer", "message_id": message.message_id},
             )
             logger.info("message_consumer_enqueued_outbox", count=len(intents))
 

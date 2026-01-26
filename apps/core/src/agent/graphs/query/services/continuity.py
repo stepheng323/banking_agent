@@ -8,6 +8,7 @@ Handles:
 Uses LLM for multilingual continuation classification.
 """
 
+from datetime import date
 from typing import Any, Literal
 
 from langchain_core.runnables import Runnable
@@ -17,6 +18,8 @@ from apps.core.src.agent.graphs.query.models import (
     Filters,
     NormalizedQuery,
     QueryResultItem,
+    ResultSurface,
+    SurfaceType,
     TimeRange,
 )
 from apps.core.src.agent.graphs.query.prompts import CONTINUATION_CLASSIFIER_PROMPT
@@ -39,6 +42,14 @@ class ContinuationType:
     NEW_QUERY = "new_query"
 
 
+class ProposedTimeRange(BaseModel):
+    """Loose time range for classification (handles missing/partial LLM output)."""
+
+    start: date | None = None
+    end: date | None = None
+    granularity: Literal["day", "week", "month"] | None = None
+
+
 class ContinuationClassification(BaseModel):
     """LLM output for continuation classification."""
 
@@ -54,7 +65,13 @@ class ContinuationClassification(BaseModel):
         "new_query",
     ] = Field(description="Type of continuation the user is requesting")
 
-    time_range: TimeRange | None = Field(default=None, description="Resolved date range if time_delta")
+    confidence: float | None = Field(default=None, description="Confidence in classification (0.0-1.0)")
+    reason: str | None = Field(default=None, description="Short reason for the classification decision")
+    is_new_query_override: bool | None = Field(
+        default=None, description="Explicit signal to treat as a new query despite active session"
+    )
+
+    time_range: ProposedTimeRange | None = Field(default=None, description="Resolved date range if time_delta")
 
     filters: Filters | None = Field(default=None, description="Filter modifications if filter_delta")
 
@@ -88,6 +105,7 @@ class ContinuationClassifier:
         has_active_session: bool,
         today: str,
         items: list[QueryResultItem] | None = None,
+        surface: ResultSurface | None = None,
     ) -> tuple[str, dict[str, Any]]:
         """
         Classify a user message as a continuation type.
@@ -97,6 +115,7 @@ class ContinuationClassifier:
             has_active_session: Whether there's an active query session
             today: Today's date in YYYY-MM-DD format
             items: Optional list of items for drill-down resolution
+            surface: Optional active result surface context
 
         Returns:
             Tuple of (continuation_type, extracted_data)
@@ -114,15 +133,34 @@ class ContinuationClassifier:
                     f"\nAvailable items (for drill_down, set drill_down_index to item number):\n{items_list}\n"
                 )
 
+            # Format surface context
+            surface_type = "unknown"
+            surface_context = "none"
+            if surface:
+                surface_type = surface.type.value
+                if surface.type == SurfaceType.BREAKDOWN:
+                    keys = [item.get("key", "") for item in surface.items[:5]]
+                    surface_context = f"Top keys: {', '.join(keys)}"
+                elif surface.type == SurfaceType.LIST:
+                    surface_context = f"Showing {len(surface.items)} items"
+
             prompt = CONTINUATION_CLASSIFIER_PROMPT.format(
                 today=today,
                 message=message,
                 items_section=items_section,
+                surface_type=surface_type,
+                surface_context=surface_context,
             )
 
             result: ContinuationClassification = await self.structured_llm.ainvoke(prompt)
 
             data: dict[str, Any] = {}
+            if result.confidence is not None:
+                data["confidence"] = result.confidence
+            if result.reason:
+                data["reason"] = result.reason
+            if result.is_new_query_override is not None:
+                data["is_new_query_override"] = result.is_new_query_override
 
             if result.continuation_type == "time_delta" and result.time_range:
                 data["time_range"] = result.time_range

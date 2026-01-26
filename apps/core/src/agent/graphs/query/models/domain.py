@@ -15,7 +15,6 @@ class QueryIntent(str, Enum):
     TRANSACTION_SEARCH = "transaction_search"
     ANALYTICS_SUMMARY = "analytics_summary"
     TIME_COMPARISON = "time_comparison"
-    BALANCE_QUERY = "balance_query"
     BENEFICIARY_SUMMARY = "beneficiary_summary"
     AFFORDABILITY = "affordability"
 
@@ -43,10 +42,12 @@ class Filters(BaseModel):
 class Aggregation(BaseModel):
     """Aggregation options for analytics queries."""
 
-    type: Literal["sum", "average", "count", "largest", "breakdown"] = Field(default="sum")
+    type: Literal["sum", "average", "count", "largest", "smallest", "breakdown"] = Field(default="sum")
     group_by: Literal["category", "merchant", "day", "account"] | None = None
-    limit: int | None = Field(default=10, ge=1, le=100)
-    sort_by: Literal["amount", "count"] | None = Field(default="amount", description="Sort by total amount or transaction count")
+    limit: int | None = Field(default=5, ge=1, le=100)
+    sort_by: Literal["amount", "count"] | None = Field(
+        default="amount", description="Sort by total amount or transaction count"
+    )
 
 
 class NormalizedQuery(BaseModel):
@@ -67,7 +68,29 @@ class NormalizedQuery(BaseModel):
     amount_check: float | None = Field(default=None, description="Amount for affordability check")
     item_name: str | None = Field(default=None, description="Product name for price lookup")
     analysis_type: Literal["immediate", "relative", "simulated", "remainder"] = "immediate"
-    result_limit: int | None = Field(default=None, ge=1, le=100, description="Max results to return (e.g., 'last transaction' = 1)")
+    result_limit: int | None = Field(
+        default=None, ge=1, le=100, description="Max results to return (e.g., 'last transaction' = 1)"
+    )
+
+
+class SurfaceType(str, Enum):
+    """Type of result surface presented to the user."""
+
+    LIST = "list"
+    BREAKDOWN = "breakdown"
+    SUMMARY = "summary"
+    SINGLE_ITEM = "single_item"
+
+
+class ResultSurface(BaseModel):
+    """
+    Describes the current 'view' or 'surface' the user is looking at.
+    Used for deterministic continuation and drill-down.
+    """
+
+    type: SurfaceType
+    items: list[dict[str, Any]] = Field(default_factory=list, description="Simplified items context (id, key, amount)")
+    context: dict[str, Any] = Field(default_factory=dict, description="Context metadata (group_by, time_range, etc)")
 
 
 class QueryResultItem(BaseModel):
@@ -92,6 +115,7 @@ class QueryResult(BaseModel):
     context_key: str = Field(default_factory=lambda: f"qr:{uuid4()}")
     has_more: bool = False
     query_snapshot: NormalizedQuery | None = None  # For follow-up deltas
+    surface: ResultSurface | None = None  # UI/Interaction surface state
 
 
 CATEGORY_KEYWORDS: dict[str, list[str]] = {
@@ -111,11 +135,12 @@ def match_category(narration: str, categories: list[str]) -> bool:
     """Check if narration matches any of the specified categories."""
     narration_lower = narration.lower()
     for cat in categories:
-        if cat in CATEGORY_KEYWORDS:
-            for keyword in CATEGORY_KEYWORDS[cat]:
+        cat_key = cat.lower().strip()
+        if cat_key in CATEGORY_KEYWORDS:
+            for keyword in CATEGORY_KEYWORDS[cat_key]:
                 if keyword in narration_lower:
                     return True
-        elif cat.lower() in narration_lower:
+        elif cat_key in narration_lower:
             return True
     return False
 

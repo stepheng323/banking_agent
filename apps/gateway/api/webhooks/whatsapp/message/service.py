@@ -3,8 +3,7 @@
 from datetime import datetime
 
 from apps.gateway.adapters.meta_whatsapp import ParsedMessage, parse_payload
-from apps.gateway.adapters.sender import send_text
-from shared.clients.whatsapp.client import WhatsAppClient
+from shared.queue.messages import OUTBOX_QUEUE
 from shared.models.messages import MessagePriority, MessageType, WhatsAppMessage
 from shared.queue.redis_queue import RedisQueue
 from shared.utils.logging import get_logger
@@ -21,10 +20,8 @@ class WhatsAppWebhookService:
     def __init__(
         self,
         queue: RedisQueue,
-        whatsapp_client: WhatsAppClient,
     ):
         self.queue = queue
-        self.whatsapp_client = whatsapp_client
 
     async def process_payload(self, payload: dict) -> int:
         """
@@ -108,8 +105,16 @@ class WhatsAppWebhookService:
 
         except Exception as e:
             logger.error("message_enqueue_failed", error=str(e))
-            await send_text(
-                to=from_id,
-                text="Sorry, I'm having trouble processing your message right now.",
-            )
+            try:
+                await self.queue.enqueue(
+                    queue_name=OUTBOX_QUEUE,
+                    message={
+                        "phone_number": from_id,
+                        "channel": "whatsapp",
+                        "intents": [{"type": "say", "text": "Sorry, I'm having trouble processing your message right now."}],
+                        "metadata": {"source": "whatsapp_webhook", "reason": "enqueue_failed"},
+                    },
+                )
+            except Exception as enqueue_error:
+                logger.error("outbox_enqueue_failed", error=str(enqueue_error))
             return False

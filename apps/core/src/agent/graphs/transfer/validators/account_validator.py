@@ -3,7 +3,9 @@
 from apps.core.src.agent.graphs.__shared__.validation.service import (
     AsyncValidationService,
 )
+from apps.core.src.messaging.outbox import enqueue_outbox_say
 from shared.clients.whatsapp.client import WhatsAppClient
+from shared.queue.redis_queue import RedisQueue
 from shared.utils.async_helpers import create_background_task
 from shared.utils.logging import get_logger
 
@@ -17,16 +19,19 @@ class AccountValidator:
         self,
         validation_service: AsyncValidationService,
         whatsapp_client: WhatsAppClient | None = None,
+        queue: RedisQueue | None = None,
     ):
         """
         Initialize validator.
 
         Args:
             validation_service: Service for account validation
-            whatsapp_client: Optional WhatsApp client for sending acknowledgments
+            whatsapp_client: Optional WhatsApp client (unused; presenters handle sending)
+            queue: Optional outbox queue for acknowledgments
         """
         self.validation_service = validation_service
         self.whatsapp_client = whatsapp_client
+        self.queue = queue
 
     async def validate(
         self,
@@ -49,16 +54,16 @@ class AccountValidator:
             - resolved_account: Account resolution result or None if failed
             - balance: Balance info or None if not available
         """
-        if self.whatsapp_client and phone_number:
-            try:
-                # message_id will be auto-fetched from Redis by send_text() if not provided
-                create_background_task(
-                    self.whatsapp_client.send_text(
-                        phone_number, "🔍 Validating account details..."
-                    )
+        if self.queue and phone_number:
+            create_background_task(
+                enqueue_outbox_say(
+                    self.queue,
+                    phone_number,
+                    "whatsapp",
+                    "🔍 Validating account details...",
+                    metadata={"source": "account_validator"},
                 )
-            except Exception as e:
-                logger.warning("validation_ack_failed", error=str(e))
+            )
 
         logger.debug(
             "account_validation_started",

@@ -7,7 +7,7 @@ to send messages to various channels (WhatsApp, etc.).
 import asyncio
 from typing import Any
 
-from apps.core.src.agent.orchestrator.intents import Say, UiIntent, reconstruct_intent
+from apps.core.src.agent.orchestrator.models.intents import UiIntent, reconstruct_intent
 from apps.core.src.messaging.presenters.base import PresentationContext
 from apps.core.src.messaging.presenters.factory import PresenterFactory
 from shared.clients.abstractions.messaging import MessagingClient
@@ -35,9 +35,7 @@ class OutboxConsumer:
         phone_number = payload.get("phone_number")
         channel = payload.get("channel", "whatsapp")
         intents_data = payload.get("intents", [])
-        
 
-        
         if not phone_number:
             logger.warning("outbox_missing_phone_number", payload=payload)
             return
@@ -51,14 +49,14 @@ class OutboxConsumer:
                     intents.append(intent)
                 else:
                     logger.warning("outbox_unknown_intent", item=item)
-            
+
             if not intents:
                 logger.warning("outbox_no_valid_intents", payload=payload)
                 return
 
             # Select Presenter
             presenter = PresenterFactory.create(channel=channel, client=self.messaging_client)
-            
+
             # Context
             context = PresentationContext(
                 channel=channel,

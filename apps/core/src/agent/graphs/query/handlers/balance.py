@@ -71,7 +71,7 @@ async def handle_balance(
         bank_name = account_info.get("bank_name", "Account") if account_info else "Account"
 
         return QueryResult(
-            summary_text=f"Balance: ₦{balance.available_balance:,.2f}",
+            summary_text=f"Your {bank_name} balance: ₦{balance.available_balance:,.2f}",
             items=[
                 QueryResultItem(
                     id=account_id[:8],

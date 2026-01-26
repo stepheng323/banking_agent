@@ -2,6 +2,7 @@
 
 from typing import TYPE_CHECKING
 
+from apps.core.src.messaging.outbox import enqueue_outbox_say
 from shared.types.planner import PlannedTask
 from shared.utils.logging import get_logger
 
@@ -41,8 +42,14 @@ class AccountHandler(BaseTaskHandler):
 
             response = result.response or ""
 
-            if context.whatsapp_client and result:
-                await context.whatsapp_client.send_text(context.phone_number, result)
+            if context.queue and response:
+                await enqueue_outbox_say(
+                    context.queue,
+                    context.phone_number,
+                    "whatsapp",
+                    response,
+                    metadata={"source": "batch_account_handler"},
+                )
 
             return self._create_success_result(
                 task,

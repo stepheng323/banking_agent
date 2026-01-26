@@ -3,7 +3,6 @@
 import asyncio
 
 from shared.cache.flow_session_manager import FlowSessionManager
-from shared.clients.whatsapp.client import WhatsAppClient
 from shared.models import CreateAccount
 from shared.repositories.unit_of_work import UnitOfWork
 from shared.services.onboarding.mandate import MandateService
@@ -142,11 +141,10 @@ class AccountAddService:
                 )
 
                 # Notify user of success
-                whatsapp = WhatsAppClient()
                 msg = (
                     f"✓ Your {bank_name} account has been added! Complete the ₦50 verification transfer to activate it."
                 )
-                await whatsapp.send_text(to=phone_number, text=msg)
+                await self.mandate.enqueue_outbox_say(phone_number, msg)
             else:
                 logger.error("mandate_creation_failed_for_add", error=result.get("error"), phone=phone_number)
 

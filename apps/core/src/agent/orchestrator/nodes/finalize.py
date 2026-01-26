@@ -7,7 +7,7 @@ if TYPE_CHECKING:
     from apps.core.src.agent.graphs.__shared__.beneficiary.suggestion_service import BeneficiarySuggestionService
 
 from apps.core.src.agent.orchestrator.models.domain import TaskStage
-from apps.core.src.agent.orchestrator.state import OrchestratorState
+from apps.core.src.agent.orchestrator.models.state import OrchestratorState
 from shared.formatters import format_multi_action_summary
 from shared.queue.redis_queue import RedisQueue
 from shared.utils.logging import get_logger
@@ -66,7 +66,12 @@ async def _handle_completed_tasks(
     """Handle completed tasks and generate receipts or summaries."""
     logger.info("handling_completed_tasks", count=len(completed_tasks), tasks=[t.type for t in completed_tasks])
     for t in completed_tasks:
-        logger.info("completed_task_detail", type=t.type, has_receipt="receipt" in t.payload, payload_keys=list(t.payload.keys()))
+        logger.info(
+            "completed_task_detail",
+            type=t.type,
+            has_receipt="receipt" in t.payload,
+            payload_keys=list(t.payload.keys()),
+        )
     is_single_transfer = (
         len(completed_tasks) == 1
         and completed_tasks[0].type == "transfer"
@@ -86,10 +91,7 @@ async def _handle_completed_tasks(
     )
 
     # Check for single async transaction (Airtime/Data)
-    is_async_transaction = (
-        len(completed_tasks) == 1
-        and completed_tasks[0].type in ("airtime", "data")
-    )
+    is_async_transaction = len(completed_tasks) == 1 and completed_tasks[0].type in ("airtime", "data")
 
     if is_single_transfer:
         task = completed_tasks[0]
@@ -113,14 +115,11 @@ async def _handle_completed_tasks(
         receipt = task.payload.get("receipt", {})
         status = receipt.get("status", "").title()
         message = receipt.get("message", "Transaction completed")
-        
+
         logger.info("generating_async_receipt", task_type=task.type, status=status, message=message)
 
         # Simple text confirmation for async tasks
-        outbox.append({
-            "type": "say", 
-            "text": f"✅ *{status}*: {message}"
-        })
+        outbox.append({"type": "say", "text": f"✅ *{status}*: {message}"})
 
     elif all_read_only:
         pass

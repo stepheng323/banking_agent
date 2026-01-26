@@ -3,7 +3,7 @@
 from typing import Any
 
 from apps.core.src.agent.orchestrator.config import OrchestratorDependencies
-from apps.core.src.agent.orchestrator.graph_handler import OrchestratorGraphHandler
+from apps.core.src.agent.orchestrator.graph.handler import OrchestratorGraphHandler
 from apps.core.src.agent.orchestrator.models.message_context import MessageContext
 from shared.services import OrchestratorContextManager, OrchestratorTaskPlanner
 from shared.utils.async_helpers import create_background_task

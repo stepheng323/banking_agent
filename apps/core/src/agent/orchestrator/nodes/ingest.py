@@ -1,4 +1,4 @@
-from apps.core.src.agent.orchestrator.state import OrchestratorState
+from apps.core.src.agent.orchestrator.models.state import OrchestratorState
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)

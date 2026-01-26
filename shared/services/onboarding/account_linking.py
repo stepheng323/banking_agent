@@ -3,7 +3,6 @@
 import asyncio
 
 from shared.clients.providers.mono import mono_client
-from shared.clients.whatsapp.client import WhatsAppClient
 from shared.models import CreateAccount, UserUpdate
 from shared.repositories.unit_of_work import UnitOfWork
 from shared.utils import hash_plaintext, is_valid_pin_format
@@ -222,11 +221,10 @@ class AccountLinkingService:
                 traceback=traceback.format_exc(),
             )
             try:
-                whatsapp = WhatsAppClient()
                 error_msg = (
                     "⚠️ We encountered an issue setting up your account. "
                     "Our team has been notified. Please try again later or contact support."
                 )
-                await whatsapp.send_text(to=phone_number, text=error_msg)
+                await self.mandate.enqueue_outbox_say(phone_number, error_msg)
             except Exception:
                 pass

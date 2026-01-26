@@ -4,8 +4,9 @@ import asyncio
 from typing import TYPE_CHECKING, Any, Optional
 
 from apps.core.src.agent.shared.batch.executor import execute_batch_dag, retry_failed_tasks
+from apps.core.src.messaging.outbox import enqueue_outbox_say
 from shared.cache.redis_client import RedisClient
-from shared.clients.whatsapp.client import WhatsAppClient
+from shared.clients.abstractions.messaging import MessagingClient
 from shared.queue.redis_queue import RedisQueue
 from shared.services.task_queue import TaskQueueService
 from shared.utils.logging import get_logger
@@ -14,8 +15,9 @@ if TYPE_CHECKING:
     from apps.core.src.agent.graphs.account.service import AccountService
     from apps.core.src.agent.graphs.airtime.service import AirtimeService
     from apps.core.src.agent.graphs.data.service import DataService
-    from apps.core.src.agent.graphs.query import QueryService
     from apps.core.src.agent.graphs.transfer.service import TransferService
+
+    from apps.core.src.agent.graphs.query import QueryService
     from shared.cache.user_data import UserDataCache
 
 logger = get_logger(__name__)
@@ -26,7 +28,7 @@ class BatchService:
 
     def __init__(
         self,
-        whatsapp_client: WhatsAppClient,
+        messaging_client: MessagingClient,
         task_queue_service: TaskQueueService,
         transfer_service: "TransferService",
         queue: RedisQueue,
@@ -36,7 +38,7 @@ class BatchService:
         user_cache: Optional["UserDataCache"] = None,
         account_service: Optional["AccountService"] = None,
     ):
-        self.whatsapp_client = whatsapp_client
+        self.messaging_client = messaging_client
         self.task_queue_service = task_queue_service
         self.transfer_service = transfer_service
         self.queue = queue
@@ -63,7 +65,13 @@ class BatchService:
             pin_verified: Whether PIN was verified successfully
             extra_data: Optional extra data
         """
-        await self.whatsapp_client.send_text(phone_number, "✓ PIN verified. Processing your transactions...")
+        await enqueue_outbox_say(
+            self.queue,
+            phone_number,
+            self.messaging_client.channel_name,
+            "✓ PIN verified. Processing your transactions...",
+            metadata={"source": "batch_service"},
+        )
 
         if pin_verified:
             from apps.core.src.agent.shared.batch.state_machine import BatchStateMachine
@@ -72,8 +80,12 @@ class BatchService:
             sm = BatchStateMachine(self.redis_client, phone_number)
             if not await sm.transition_to(ExecutionState.AUTHORIZED):
                 logger.warning(f"Invalid state transition for {phone_number} to AUTHORIZED")
-                await self.whatsapp_client.send_text(
-                    phone_number, "❌ Batch session invalid or expired. Please start over."
+                await enqueue_outbox_say(
+                    self.queue,
+                    phone_number,
+                    self.messaging_client.channel_name,
+                    "❌ Batch session invalid or expired. Please start over.",
+                    metadata={"source": "batch_service"},
                 )
                 await self.task_queue_service.clear_task_queue(phone_number)
                 return "Session invalid."
@@ -92,7 +104,7 @@ class BatchService:
                 phone_number=phone_number,
                 pin_verified=pin_verified,
                 user_id=user_id,
-                whatsapp_client=self.whatsapp_client,
+                messaging_client=self.messaging_client,
                 task_queue_service=self.task_queue_service,
                 redis_client=self.redis_client,
                 queue=self.queue,
@@ -120,7 +132,7 @@ class BatchService:
             retry_failed_tasks(
                 phone_number=phone_number,
                 user_id=user_id,
-                whatsapp_client=self.whatsapp_client,
+                messaging_client=self.messaging_client,
                 task_queue_service=self.task_queue_service,
                 redis_client=self.redis_client,
                 queue=self.queue,

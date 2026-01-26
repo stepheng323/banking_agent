@@ -37,12 +37,12 @@ class OrchestratorDependencies:
     airtime_service: WorkerProtocol
     query_service: WorkerProtocol
     account_service: WorkerProtocol
-    media_service: Any | None = None
-    data_service: WorkerProtocol | None = None
-    support_service: WorkerProtocol | None = None
-    faq_service: WorkerProtocol | None = None
-    banking_provider: BankingDataProvider | None = None
-    beneficiary_suggestion_service: "BeneficiarySuggestionService | None" = None
-    user_cache: UserDataCache | None = None
-    redis_client: redis.Redis | None = None
-    queue: "RedisQueue | None" = None
+    media_service: Any
+    data_service: WorkerProtocol
+    support_service: WorkerProtocol
+    faq_service: WorkerProtocol
+    banking_provider: BankingDataProvider
+    beneficiary_suggestion_service: "BeneficiarySuggestionService"
+    user_cache: UserDataCache
+    redis_client: redis.Redis
+    queue: "RedisQueue"
