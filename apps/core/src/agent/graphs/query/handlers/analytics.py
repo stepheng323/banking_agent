@@ -24,9 +24,7 @@ async def handle_analytics(
     user_id: str | None = None,
 ) -> QueryResult:
     """Handle analytics summary queries."""
-    transactions = await fetch_and_filter(
-        provider, query, account_id, account_ids, accounts_info, user_id=user_id
-    )
+    transactions = await fetch_and_filter(provider, query, account_id, account_ids, accounts_info, user_id=user_id)
 
     if not query.aggregation:
         return QueryResult(summary_text="No aggregation specified.")
@@ -35,7 +33,7 @@ async def handle_analytics(
 
     if agg_type == "sum":
         # Use absolute values for spending totals
-        total = sum(abs(t.get("amount", 0)) for t in transactions) / 100
+        total = sum(abs(t.get("amount", 0)) for t in transactions)
         count = len(transactions)
         if count == 0:
             return QueryResult(summary_text="No matching transactions found.")
@@ -53,7 +51,7 @@ async def handle_analytics(
             QueryResultItem(
                 id=t.get("id", "")[:8] if t.get("id") else str(i),
                 description=t.get("narration", "Transaction"),
-                amount=abs(t.get("amount", 0)) / 100,
+                amount=abs(t.get("amount", 0)),
                 date=parse_date(t.get("date", "")),
                 metadata={
                     "bank_name": t.get("bank_name", ""),
@@ -72,7 +70,7 @@ async def handle_analytics(
 
     elif agg_type == "average":
         if transactions:
-            avg = sum(abs(t.get("amount", 0)) for t in transactions) / len(transactions) / 100
+            avg = sum(abs(t.get("amount", 0)) for t in transactions) / len(transactions)
             count = len(transactions)
 
             # Determine timeframe text
@@ -87,7 +85,7 @@ async def handle_analytics(
                 QueryResultItem(
                     id=t.get("id", "")[:8] if t.get("id") else str(i),
                     description=t.get("narration", "Transaction"),
-                    amount=abs(t.get("amount", 0)) / 100,
+                    amount=abs(t.get("amount", 0)),
                     date=parse_date(t.get("date", "")),
                     metadata={
                         "bank_name": t.get("bank_name", ""),
@@ -116,7 +114,7 @@ async def handle_analytics(
             QueryResultItem(
                 id=t.get("id", "")[:8] if t.get("id") else str(i),
                 description=t.get("narration", "Transaction"),
-                amount=t.get("amount", 0) / 100,
+                amount=t.get("amount", 0),
                 date=parse_date(t.get("date", "")),
             )
             for i, t in enumerate(sorted_txns[:limit])
@@ -158,9 +156,9 @@ async def _aggregate_breakdown(transactions: list[dict], query: NormalizedQuery)
         QueryResultItem(
             id=str(i),
             description=key,
-            amount=(data["debit"] + data["credit"]) / 100,
+            amount=(data["debit"] + data["credit"]),
             date=parse_date(key) if group_by == "day" else date.today(),
-            metadata={"debit": data["debit"] / 100, "credit": data["credit"] / 100, "count": data["count"]},
+            metadata={"debit": data["debit"], "credit": data["credit"], "count": data["count"]},
         )
         for i, (key, data) in enumerate(sorted(grouped.items(), reverse=True)[:10])
     ]
