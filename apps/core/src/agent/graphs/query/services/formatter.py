@@ -137,11 +137,18 @@ class QueryFormatter:
             lines = [f"📊 *{result.summary_text}*", ""]
 
             if result.items:
+                total_breakdown_amount = sum(item.amount for item in result.items)
+
                 for item in result.items:
                     name = item.description.title()
                     amount = QueryFormatter._format_amount(item.amount)
                     count = item.metadata.get("count", 0) if item.metadata else 0
-                    lines.append(f"{amount} — {name} ({count} txns)")
+
+                    percentage = 0
+                    if total_breakdown_amount > 0:
+                        percentage = int((item.amount / total_breakdown_amount) * 100)
+
+                    lines.append(f"{amount} — {name} ({percentage}%, {count} txns)")
 
             return "\n".join(lines)
 
