@@ -45,7 +45,9 @@ class Aggregation(BaseModel):
     type: Literal["sum", "average", "count", "largest", "breakdown"] = Field(default="sum")
     group_by: Literal["category", "merchant", "day", "account"] | None = None
     limit: int | None = Field(default=10, ge=1, le=100)
-    sort_by: Literal["amount", "count"] | None = Field(default="amount", description="Sort by total amount or transaction count")
+    sort_by: Literal["amount", "count"] | None = Field(
+        default="amount", description="Sort by total amount or transaction count"
+    )
 
 
 class NormalizedQuery(BaseModel):
@@ -66,7 +68,9 @@ class NormalizedQuery(BaseModel):
     amount_check: float | None = Field(default=None, description="Amount for affordability check")
     item_name: str | None = Field(default=None, description="Product name for price lookup")
     analysis_type: Literal["immediate", "relative", "simulated", "remainder"] = "immediate"
-    result_limit: int | None = Field(default=None, ge=1, le=100, description="Max results to return (e.g., 'last transaction' = 1)")
+    result_limit: int | None = Field(
+        default=None, ge=1, le=100, description="Max results to return (e.g., 'last transaction' = 1)"
+    )
 
 
 class QueryResultItem(BaseModel):
@@ -127,3 +131,23 @@ def detect_category(narration: str) -> str | None:
             if keyword in narration_lower:
                 return category
     return None
+
+
+class SurfaceType(str, Enum):
+    """Type of result surface presented to the user."""
+
+    LIST = "list"
+    BREAKDOWN = "breakdown"
+    SUMMARY = "summary"
+    SINGLE_ITEM = "single_item"
+
+
+class ResultSurface(BaseModel):
+    """
+    Describes the current 'view' or 'surface' the user is looking at.
+    Used for deterministic continuation and drill-down.
+    """
+
+    type: SurfaceType
+    items: list[dict[str, Any]] = Field(default_factory=list, description="Simplified items context (id, key, amount)")
+    context: dict[str, Any] = Field(default_factory=dict, description="Context metadata (group_by, time_range, etc)")

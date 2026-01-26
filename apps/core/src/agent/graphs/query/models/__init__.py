@@ -5,6 +5,8 @@ from .domain import (
     QueryIntent,
     QueryResult,
     QueryResultItem,
+    ResultSurface,
+    SurfaceType,
     TimeRange,
     detect_category,
     match_category,
