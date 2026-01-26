@@ -136,20 +136,29 @@ class QueryFormatter:
         if result.summary_text and result.summary_text.startswith("Breakdown by"):
             lines = [f"📊 *{result.summary_text}*", ""]
 
+            total_abs = 0
             if result.items:
+                # Use absolute sum for percentage calculation to handle debits (negative values)
                 total_abs = sum(abs(item.amount) for item in result.items)
 
                 for item in result.items:
-                    name = item.description.title()
+                    # Normalize name (snake_case -> Title Case)
+                    name = item.description.replace("_", " ").title()
                     amount = QueryFormatter._format_amount(item.amount)
                     count = item.metadata.get("count", 0) if item.metadata else 0
 
-                    percentage = 0
+                    percentage_str = "0%"
                     if total_abs > 0:
-                        percentage = int((abs(item.amount) / total_abs) * 100)
+                        pct = (abs(item.amount) / total_abs) * 100
+                        if 0 < pct < 1:
+                            percentage_str = "<1%"
+                        else:
+                            percentage_str = f"{int(pct)}%"
 
-                    lines.append(f"{amount} — {name} ({percentage}%, {count} txns)")
+                    lines.append(f"{amount} — {name} ({percentage_str}, {count} txns)")
 
+            lines.append("")
+            lines.append(f"Total spent this month: ₦{total_abs:,.0f}")
             return "\n".join(lines)
 
         logger.info(
