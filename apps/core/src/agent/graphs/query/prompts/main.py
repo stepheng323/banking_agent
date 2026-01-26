@@ -13,15 +13,15 @@ Choose the best intent:
 - transaction_list → show/list/history/statement of transactions
 - single_transaction → one specific transaction ("that 15k", "the Uber one", "last transfer")
 - spending_total → totals/sums ("how much did I spend/pay")
-- category_breakdown → breakdown/split/top categories or merchants
+- category_breakdown → breakdown/split/categorize ("break down my spending", "split by merchant", "how did I spend")
 - time_comparison → compare periods ("this month vs last month")
 - affordability → "can I afford", "do I have enough"
 
 FILTER INFERENCE
 - recipient: merchant or person name ("Uber", "Mum")
 - transaction_type:
-  - "spent", "paid", "bought" → debit
-  - "received", "earned", "salary" → credit
+  - "spent", "paid", "bought", "spending", "expense", "cost" → debit
+  - "received", "earned", "salary", "income" → credit
 - amount thresholds:
   - "over X", "above X", "at least X" → min_amount
   - "under X", "below X", "less than X" → max_amount
@@ -35,7 +35,12 @@ TIME NORMALIZATION
 
 AGGREGATION RULES
 - spending_total → aggregation.type = sum
+    - "largest transaction", "highest expense" (singular) → aggregation.type = largest, limit = 1
+    - "largest expenses", "top 3 spending" (plural/numbered) → aggregation.type = largest, limit = N (default 5)
+    - "smallest transaction", "least expense", "lowest" → aggregation.type = smallest
 - category_breakdown → aggregation.type = breakdown (default group_by=category)
+    - "breakdown by merchant" → group_by=merchant
+    - "spending by bank" → group_by=account
 - time_comparison → aggregation.type = sum unless user implies otherwise
 - transaction_list / single_transaction → no aggregation
 
@@ -95,16 +100,18 @@ If user expresses thanks/closing ("thanks", "I'm done", "e se", etc) => continua
 2) NEW QUERY OVERRIDE
 If user asks something outside the current transaction-viewing session, especially accounts/balance:
 Examples: "show my accounts", "what's my balance", "how much do I have"
+OR if user issues a fresh command unrelated to the current view:
+"Break down my spending", "Show me transfers", "Check airtime"
 => continuation_type="new_query" AND is_new_query_override=true.
 
 3) SHOW MORE (highest priority among list navigation)
 If the message means pagination/continuation ONLY:
-"more", "next", "continue", "show more", "next page", "another page", "wetin else", "siwaju"
+"more", "next", "continue", "show more", "next page", "another page", "wetin else", "siwaju", "any others", "others", "any other ones"
 => continuation_type="show_more"
 IMPORTANT: Do NOT misclassify these as drill_down.
 
 4) TIME DELTA
-If user changes time period:
+If user ONLY changes time period (without restating the full intent):
 "last month", "December", "yesterday", "this week", "on Christmas"
 => continuation_type="time_delta" and resolve start/end using {today}.
 
@@ -130,6 +137,7 @@ If user asks to see details for a specific item/category:
 - IF SURFACE=LIST: "Show the first one", "number 5" => drill_down
 => continuation_type="drill_down"
 - If items_section exists, select drill_down_index.
+CRITICAL: "Break down my spending" IS NOT A DRILL DOWN. It is a NEW QUERY.
 
 10) RECIPIENT DRILL DOWN
 Use ONLY if the prior context explicitly shows a "Top Recipients" list and user replies with a name.

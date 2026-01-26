@@ -172,11 +172,21 @@ class QueryParser:
             from apps.core.src.agent.graphs.query.models import Filters
 
             transaction_type = extraction.filters.transaction_type
-            if not transaction_type and extraction.intent in (
-                ExtractionIntent.SPENDING_TOTAL,
-                ExtractionIntent.CATEGORY_BREAKDOWN,
-            ):
-                transaction_type = "debit"
+            if not transaction_type:
+                # Force debit for specific intents OR if keywords are present
+                is_expense_query = extraction.intent in (
+                    ExtractionIntent.SPENDING_TOTAL,
+                    ExtractionIntent.CATEGORY_BREAKDOWN,
+                )
+
+                # Check for expense keywords in raw query if not already explicit
+                if not is_expense_query and extraction.raw_query:
+                    raw_lower = extraction.raw_query.lower()
+                    if any(k in raw_lower for k in ("spending", "expense", "spent", "cost", "paid")):
+                        is_expense_query = True
+
+                if is_expense_query:
+                    transaction_type = "debit"
 
             filters = Filters(
                 merchant=[extraction.filters.recipient] if extraction.filters.recipient else None,
@@ -189,12 +199,70 @@ class QueryParser:
 
         aggregation = None
         if extraction.aggregation:
+            agg_type = extraction.aggregation.type or "sum"
+            # Enforce breakdown type if intent matches, correcting LLM 'sum' hallucination
+            if extraction.intent == ExtractionIntent.CATEGORY_BREAKDOWN and agg_type == "sum":
+                agg_type = "breakdown"
+
+            # Validate limit
+            limit = extraction.aggregation.limit
+
+            # Programmatic fallback for singular superlatives if limit is missing or >1
+            if agg_type in ("largest", "smallest") and extraction.raw_query:
+                raw_lower = extraction.raw_query.lower()
+                # If singular "expense" or "transaction" appearing without "s" at end
+                # Heuristic: check if "expense" is present but "expenses" is NOT (or similar for transaction)
+
+                is_singular = False
+                for singular, plural in [
+                    ("expense", "expenses"),
+                    ("transaction", "transactions"),
+                    ("spending", "spendings"),
+                ]:
+                    if singular in raw_lower and plural not in raw_lower:
+                        is_singular = True
+                        break
+
+                # Also check "largest one", "top one"
+                if " one" in raw_lower:
+                    is_singular = True
+
+                if is_singular:
+                    limit = 1
+
             aggregation = Aggregation(
-                type=extraction.aggregation.type or "sum",
+                type=agg_type,
                 group_by=extraction.aggregation.group_by,
+                limit=limit or 5,  # Default to 5 if still None
             )
+
+            # Default group_by for breakdown if missing
+            if agg_type == "breakdown" and not aggregation.group_by:
+                aggregation.group_by = "category"
+
         elif extraction.intent == ExtractionIntent.SPENDING_TOTAL:
-            aggregation = Aggregation(type="sum")
+            # Check for largest/smallest/top keywords in raw query to upgrade intent
+            agg_type = "sum"
+            limit = 5
+
+            if extraction.raw_query:
+                raw_lower = extraction.raw_query.lower()
+                if any(x in raw_lower for x in ("largest", "biggest", "highest", "top")):
+                    agg_type = "largest"
+                elif any(x in raw_lower for x in ("smallest", "least", "lowest")):
+                    agg_type = "smallest"
+
+                # Check singular
+                is_singular = False
+                for singular, plural in [("expense", "expenses"), ("transaction", "transactions")]:
+                    if singular in raw_lower and plural not in raw_lower:
+                        is_singular = True
+                        break
+
+                if is_singular:
+                    limit = 1
+
+            aggregation = Aggregation(type=agg_type, limit=limit)
         elif extraction.intent == ExtractionIntent.CATEGORY_BREAKDOWN:
             aggregation = Aggregation(type="breakdown", group_by="category")
 

@@ -2,7 +2,7 @@
 
 from typing import Literal
 
-from langchain_openai import ChatOpenAI
+from langchain_core.runnables import Runnable
 from pydantic import BaseModel, Field
 
 from shared.utils.logging import get_logger
@@ -14,9 +14,7 @@ class AccountIntent(BaseModel):
     """Structured output for account intent."""
 
     action: Literal["list", "check_balance", "set_default", "unlink", "link", "unknown"] = Field(
-        description=(
-            "The action to perform: 'list', 'check_balance', 'set_default', 'unlink', 'link', or 'unknown'"
-        )
+        description=("The action to perform: 'list', 'check_balance', 'set_default', 'unlink', 'link', or 'unknown'")
     )
     identifier: str | None = Field(
         default=None,
@@ -28,7 +26,7 @@ class AccountIntent(BaseModel):
 class AccountParser:
     """Parses natural language into structured account intents."""
 
-    def __init__(self, llm: ChatOpenAI):
+    def __init__(self, llm: Runnable):
         self.llm = llm
 
     async def parse(self, text: str) -> AccountIntent:

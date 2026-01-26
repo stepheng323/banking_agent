@@ -5,7 +5,7 @@ from typing import Any
 
 from langchain_core.runnables import Runnable
 
-from apps.core.src.agent.graphs.query.models import NormalizedQuery, QueryResultItem, ResolverOutcome
+from apps.core.src.agent.graphs.query.models import NormalizedQuery, QueryResultItem, ResolverOutcome, SurfaceType
 from apps.core.src.agent.graphs.query.pipeline import QueryStep
 from apps.core.src.agent.graphs.query.services.continuity import (
     ContinuationClassifier,
@@ -139,7 +139,47 @@ class ExtractionStep(QueryStep):
 
         elif cont_type == "drill_down":
             drill_idx = data.get("drill_down_index", 0)
-            if items and 0 <= drill_idx < len(items):
+
+            # Special handling for BREAKDOWN surface: Drill down means filter by category
+            surface = session.get("surface")
+            if surface and surface.type == SurfaceType.BREAKDOWN:
+                if items and 0 <= drill_idx < len(items):
+                    selected_item = items[drill_idx]
+                    category_name = selected_item.description  # Description holds the category name (e.g., "Food")
+
+                    # Convert to filter_delta
+                    from apps.core.src.agent.graphs.query.models import Filters
+
+                    original_query = session.get("query")
+                    if original_query:
+                        if isinstance(original_query, dict):
+                            original_query = NormalizedQuery.model_validate(original_query)
+
+                        # Apply category filter
+                        # Normalize category name (lowercase, handle 'Other' if needed)
+                        cat_filter = category_name.lower()
+
+                        logger.info(
+                            "breakdown_drill_down_debug",
+                            original_description=category_name,
+                            applied_filter=cat_filter,
+                            item_index=drill_idx,
+                        )
+
+                        new_filters = Filters(category=[cat_filter])
+                        new_query = apply_filter_delta(original_query, new_filters)
+
+                        # Reset aggregation to None (list view) or keep it?
+                        # If drilling down, we usually want to see the transactions (List), not a sub-breakdown.
+                        # Setting aggregation to None will switch to Transaction List.
+                        new_query.aggregation = None
+
+                        updates["query"] = new_query
+                        updates["current_page"] = 0
+                        updates["show_expanded"] = False
+
+            # Default behavior for LIST surface (Item Detail)
+            elif items and 0 <= drill_idx < len(items):
                 updates["selected_item_index"] = drill_idx
                 updates["drill_down_action"] = data.get("drill_down_action")
 
