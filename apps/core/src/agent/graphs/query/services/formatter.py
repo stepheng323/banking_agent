@@ -133,6 +133,18 @@ class QueryFormatter:
 
             return "\n".join(lines)
 
+        if result.summary_text and result.summary_text.startswith("Breakdown by"):
+            lines = [f"📊 *{result.summary_text}*", ""]
+
+            if result.items:
+                for item in result.items:
+                    name = item.description.title()
+                    amount = QueryFormatter._format_amount(item.amount)
+                    count = item.metadata.get("count", 0) if item.metadata else 0
+                    lines.append(f"{amount} — {name} ({count} txns)")
+
+            return "\n".join(lines)
+
         logger.info(
             "FORMAT_DEBUG",
             show_expanded=show_expanded,
