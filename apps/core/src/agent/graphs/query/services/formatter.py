@@ -2,7 +2,7 @@
 
 from datetime import date, datetime
 
-from apps.core.src.agent.graphs.query.models import QueryResult, QueryResultItem
+from apps.core.src.agent.graphs.query.models import QueryResult, QueryResultItem, SurfaceType
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -90,17 +90,14 @@ class QueryFormatter:
         current_page: int = 0,
     ) -> str:
         """Format QueryResult to response string."""
-        # For analytics/summary results, return summary directly (unless expanding to show transactions)
         if not show_expanded and result.summary_text and "|" not in result.summary_text:
-            # Balance queries should show summary only
             if (
-                "Balance:" in result.summary_text  # Legacy check
+                "Balance:" in result.summary_text
                 or "balance" in result.summary_text.lower()
-                or (result.items and result.items[0].metadata.get("type") == "balance")
+                or (result.items and result.items[0].metadata and result.items[0].metadata.get("type") == "balance")
             ):
                 return result.summary_text
 
-            # Analytics summaries start with emoji or specific patterns
             if (
                 result.summary_text.startswith("💸")
                 or "You spent" in result.summary_text
@@ -109,7 +106,7 @@ class QueryFormatter:
                 or "You made" in result.summary_text
                 or "Top Recipients" in result.summary_text
             ):
-                return result.summary_text
+                pass
 
         if (
             result.summary_text
@@ -138,11 +135,9 @@ class QueryFormatter:
 
             total_abs = 0
             if result.items:
-                # Use absolute sum for percentage calculation to handle debits (negative values)
                 total_abs = sum(abs(item.amount) for item in result.items)
 
                 for item in result.items:
-                    # Normalize name (snake_case -> Title Case)
                     name = item.description.replace("_", " ").title()
                     amount = QueryFormatter._format_amount(item.amount)
                     count = item.metadata.get("count", 0) if item.metadata else 0
@@ -150,16 +145,47 @@ class QueryFormatter:
                     percentage_str = "0%"
                     if total_abs > 0:
                         pct = (abs(item.amount) / total_abs) * 100
-                        if 0 < pct < 1:
-                            percentage_str = "<1%"
-                        else:
-                            percentage_str = f"{int(pct)}%"
+                        percentage_str = "<1%" if 0 < pct < 1 else f"{int(pct)}%"
 
                     lines.append(f"{amount} — {name} ({percentage_str}, {count} txns)")
 
             lines.append("")
             lines.append(f"Total spent this month: ₦{total_abs:,.0f}")
             return "\n".join(lines)
+
+        # Trigger ranked list view if title matches or if items have explicit rank metadata
+        is_ranked_title = "Top" in result.summary_text and (
+            "Largest" in result.summary_text or "Smallest" in result.summary_text
+        )
+        is_ranked_continuation = "Other" in result.summary_text and "Rank" in result.summary_text
+        has_rank_metadata = result.items and result.items[0].metadata and result.items[0].metadata.get("rank")
+
+        if result.summary_text and (is_ranked_title or is_ranked_continuation or has_rank_metadata):
+            # Bypass list rendering if surface is explicitly SINGLE_ITEM (e.g. "Highest expense")
+            if result.surface and result.surface.type == SurfaceType.SINGLE_ITEM:
+                pass
+            else:
+                heading = f"🏆 *{result.summary_text}*" if "🏆" not in result.summary_text else result.summary_text
+                lines = [heading, ""]
+
+                for i, item in enumerate(result.items):
+                    amount = QueryFormatter._format_amount(item.amount)
+                    date_str = QueryFormatter._format_date(item.date)
+                    name = item.description
+
+                    # Use absolute rank if available (from backend pagination), else relative
+                    rank = i + 1
+                    if item.metadata and item.metadata.get("rank"):
+                        rank = item.metadata["rank"]
+
+                    # Check for bank name in metadata
+                    bank_suffix = ""
+                    if item.metadata and item.metadata.get("bank_name"):
+                        bank_suffix = f" _({item.metadata['bank_name']})_"
+
+                    lines.append(f"{rank}. *{amount}* — {name} {date_str}{bank_suffix}")
+
+                return "\n".join(lines)
 
         logger.info(
             "FORMAT_DEBUG",
