@@ -4,7 +4,13 @@ from collections import defaultdict
 from datetime import date
 from typing import Any
 
-from apps.core.src.agent.graphs.query.models import NormalizedQuery, QueryResult, QueryResultItem
+from apps.core.src.agent.graphs.query.models import (
+    NormalizedQuery,
+    QueryResult,
+    QueryResultItem,
+    ResultSurface,
+    SurfaceType,
+)
 from apps.core.src.agent.graphs.query.services.fetch import (
     extract_counterparty,
     fetch_and_filter,
@@ -59,10 +65,17 @@ async def handle_analytics(
             for i, t in enumerate(transactions)
         ]
 
+        surface = ResultSurface(
+            type=SurfaceType.SUMMARY,
+            items=[{"key": "total", "amount": total, "count": count}],
+            context={"merchant": merchant, "timeframe": timeframe},
+        )
+
         return QueryResult(
             summary_text=f"💸 You spent *₦{total:,.2f}* on {merchant}{timeframe} ({count} transaction{'s' if count > 1 else ''}).\n\n_'show transactions' to see details_",
             items=items,
             total_count=count,
+            surface=surface,
         )
 
     elif agg_type == "average":
@@ -91,16 +104,33 @@ async def handle_analytics(
                 for i, t in enumerate(transactions)
             ]
 
+            surface = ResultSurface(
+                type=SurfaceType.SUMMARY,
+                items=[{"key": "average", "amount": avg, "count": count}],
+                context={"timeframe": timeframe},
+            )
+
             return QueryResult(
                 summary_text=f"Your average transaction is *₦{int(avg):,}*{timeframe} ({count} transaction{'s' if count > 1 else ''}).\n\n_'show transactions' to see details_",
                 items=items,
                 total_count=count,
+                surface=surface,
             )
         return QueryResult(summary_text="No transactions found.")
 
     elif agg_type == "count":
         count = len(transactions)
-        return QueryResult(summary_text=f"You made *{count}* transaction{'s' if count != 1 else ''}{timeframe}.")
+
+        surface = ResultSurface(
+            type=SurfaceType.SUMMARY,
+            items=[{"key": "count", "amount": 0, "count": count}],
+            context={"timeframe": timeframe},
+        )
+
+        return QueryResult(
+            summary_text=f"You made *{count}* transaction{'s' if count != 1 else ''}{timeframe}.",
+            surface=surface,
+        )
 
     elif agg_type == "largest":
         limit = query.aggregation.limit or 5
@@ -114,9 +144,26 @@ async def handle_analytics(
             )
             for i, t in enumerate(sorted_txns[:limit])
         ]
+        surface_items = [
+            {
+                "id": item.id,
+                "key": item.description,
+                "amount": item.amount,
+                "count": 1,
+            }
+            for item in items
+        ]
+
+        surface = ResultSurface(
+            type=SurfaceType.LIST,
+            items=surface_items,
+            context={"limit": limit, "type": "largest"},
+        )
+
         return QueryResult(
             summary_text=f"Top {limit} largest transactions",
             items=items,
+            surface=surface,
         )
 
     elif agg_type == "breakdown":
@@ -178,7 +225,6 @@ async def _aggregate_breakdown(transactions: list[dict], query: NormalizedQuery)
     ]
 
     # Construct Surface for interactive session
-    from apps.core.src.agent.graphs.query.models import ResultSurface, SurfaceType
 
     surface_items = [
         {
