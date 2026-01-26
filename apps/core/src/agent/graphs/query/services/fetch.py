@@ -156,7 +156,7 @@ async def fetch_and_filter(
                 td = to_dict(t)
                 td["bank_name"] = bank_map.get(acc_id, "")
                 all_txns.append(td)
-        transactions = sorted(all_txns, key=lambda t: t.get("date", ""), reverse=True)
+        transactions = sorted(all_txns, key=lambda t: (t.get("date", ""), t.get("id", "")), reverse=True)
     else:
         txns = await provider.get_transactions(account_id, start_date=start, end_date=end, limit=100)
         transactions = [to_dict(t) for t in txns]
@@ -173,7 +173,9 @@ async def fetch_and_filter(
                         raw_date = l_txn.created_at
                         txn_dict = {
                             "id": str(l_txn.id),
-                            "type": "debit" if l_txn.transaction_type in ("transfer", "airtime", "data", "bill") else "credit",
+                            "type": "debit"
+                            if l_txn.transaction_type in ("transfer", "airtime", "data", "bill")
+                            else "credit",
                             "transaction_type": l_txn.transaction_type,
                             "amount": l_txn.amount,
                             "narration": l_txn.narration or f"Transfer to {l_txn.recipient_name}",
@@ -198,7 +200,9 @@ async def fetch_and_filter(
                         if not is_duplicate:
                             transactions.append(txn_dict)
 
-                    transactions = sorted(transactions, key=lambda t: t.get("date", ""), reverse=True)
+                    transactions = sorted(
+                        transactions, key=lambda t: (t.get("date", ""), t.get("id", "")), reverse=True
+                    )
         except Exception as e:
             logger.warning("failed_to_merge_local_transactions", error=str(e))
 

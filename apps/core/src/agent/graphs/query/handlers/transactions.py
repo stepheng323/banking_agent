@@ -54,8 +54,6 @@ async def handle_transaction_list(
     result_summary = f"accounts:{account_count}|showing:{offset + 1}-{showing_end}|total:{total}"
     has_more = showing_end < total
 
-    # Construct ResultSurface for interactive session
-
     surface = None
     if transactions:
         surface_items = [
@@ -68,15 +66,22 @@ async def handle_transaction_list(
             for item in items
         ]
 
-        surface = ResultSurface(
-            type=SurfaceType.LIST,
-            items=surface_items,
-            context={
-                "count": len(items),
-                "total_results": total,
-                "has_more": has_more,
-            },
-        )
+        if total == 1 and (query.result_limit == 1 or query.intent.name == "SINGLE_TRANSACTION"):
+            surface = ResultSurface(
+                type=SurfaceType.SINGLE_ITEM,
+                items=surface_items,
+                context={"type": "single_transaction"},
+            )
+        else:
+            surface = ResultSurface(
+                type=SurfaceType.LIST,
+                items=surface_items,
+                context={
+                    "count": len(items),
+                    "total_results": total,
+                    "has_more": has_more,
+                },
+            )
 
     return QueryResult(
         summary_text=result_summary,
