@@ -137,19 +137,20 @@ class QueryParser:
         today: date | None = None,
     ) -> NormalizedQuery:
         """Convert QueryExtractionResult to NormalizedQuery for handlers."""
+
         from apps.core.src.agent.graphs.query.models import (
-            QueryIntent as ExtractIntent,
+            ExtractionIntent,
         )
 
         today = today or date.today()
 
         intent_map = {
-            ExtractIntent.TRANSACTION_LIST: QueryIntent.TRANSACTION_LIST,
-            ExtractIntent.SPENDING_TOTAL: QueryIntent.ANALYTICS_SUMMARY,
-            ExtractIntent.CATEGORY_BREAKDOWN: QueryIntent.ANALYTICS_SUMMARY,
-            ExtractIntent.TIME_COMPARISON: QueryIntent.TIME_COMPARISON,
-            ExtractIntent.SINGLE_TRANSACTION: QueryIntent.TRANSACTION_SEARCH,
-            ExtractIntent.AFFORDABILITY: QueryIntent.AFFORDABILITY,
+            ExtractionIntent.TRANSACTION_LIST: QueryIntent.TRANSACTION_LIST,
+            ExtractionIntent.SPENDING_TOTAL: QueryIntent.ANALYTICS_SUMMARY,
+            ExtractionIntent.CATEGORY_BREAKDOWN: QueryIntent.ANALYTICS_SUMMARY,
+            ExtractionIntent.TIME_COMPARISON: QueryIntent.TIME_COMPARISON,
+            ExtractionIntent.SINGLE_TRANSACTION: QueryIntent.TRANSACTION_SEARCH,
+            ExtractionIntent.AFFORDABILITY: QueryIntent.AFFORDABILITY,
         }
 
         time_range = None
@@ -172,8 +173,8 @@ class QueryParser:
 
             transaction_type = extraction.filters.transaction_type
             if not transaction_type and extraction.intent in (
-                ExtractIntent.SPENDING_TOTAL,
-                ExtractIntent.CATEGORY_BREAKDOWN,
+                ExtractionIntent.SPENDING_TOTAL,
+                ExtractionIntent.CATEGORY_BREAKDOWN,
             ):
                 transaction_type = "debit"
 
@@ -192,9 +193,9 @@ class QueryParser:
                 type=extraction.aggregation.type or "sum",
                 group_by=extraction.aggregation.group_by,
             )
-        elif extraction.intent == ExtractIntent.SPENDING_TOTAL:
+        elif extraction.intent == ExtractionIntent.SPENDING_TOTAL:
             aggregation = Aggregation(type="sum")
-        elif extraction.intent == ExtractIntent.CATEGORY_BREAKDOWN:
+        elif extraction.intent == ExtractionIntent.CATEGORY_BREAKDOWN:
             aggregation = Aggregation(type="breakdown", group_by="category")
 
         return NormalizedQuery(

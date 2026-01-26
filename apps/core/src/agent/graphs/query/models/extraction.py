@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 SCHEMA_VERSION = 1
 
 
-class QueryIntent(str, Enum):
+class ExtractionIntent(str, Enum):
     """Query intent types."""
 
     TRANSACTION_LIST = "transaction_list"  # Show me transactions
@@ -95,7 +95,7 @@ class QueryExtractionResult(BaseModel):
     """Pure query extraction with requested_capabilities."""
 
     schema_version: int = Field(default=SCHEMA_VERSION)
-    intent: QueryIntent = Field(default=QueryIntent.TRANSACTION_LIST)
+    intent: ExtractionIntent = Field(default=ExtractionIntent.TRANSACTION_LIST)
     intent_confidence: float = Field(default=1.0, ge=0.0, le=1.0)
 
     filters: QueryFilters = Field(default_factory=QueryFilters)

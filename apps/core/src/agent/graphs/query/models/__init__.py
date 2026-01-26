@@ -11,6 +11,7 @@ from .domain import (
 from .extraction import (
     Ambiguity,
     AmbiguityCode,
+    ExtractionIntent,
     QueryAggregation,
     QueryExtractionResult,
     QueryFilters,
