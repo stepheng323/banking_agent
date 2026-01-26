@@ -1,6 +1,12 @@
 """Transaction list and search handlers."""
 
-from apps.core.src.agent.graphs.query.models import NormalizedQuery, QueryResult, QueryResultItem
+from apps.core.src.agent.graphs.query.models import (
+    NormalizedQuery,
+    QueryResult,
+    QueryResultItem,
+    ResultSurface,
+    SurfaceType,
+)
 from apps.core.src.agent.graphs.query.services.fetch import fetch_and_filter, parse_date
 from shared.clients.abstractions.banking import BankingDataProvider
 
@@ -16,9 +22,7 @@ async def handle_transaction_list(
     user_id: str | None = None,
 ) -> QueryResult:
     """Handle transaction list queries."""
-    transactions = await fetch_and_filter(
-        provider, query, account_id, account_ids, accounts_info, user_id=user_id
-    )
+    transactions = await fetch_and_filter(provider, query, account_id, account_ids, accounts_info, user_id=user_id)
 
     # Apply result_limit if specified (e.g., "last transaction" → 1)
     if query.result_limit:
@@ -47,12 +51,38 @@ async def handle_transaction_list(
     showing_end = offset + len(paginated)
     account_count = len(account_ids) if account_ids else 1
 
-    summary_text = f"accounts:{account_count}|showing:{offset + 1}-{showing_end}|total:{total}"
+    result_summary = f"accounts:{account_count}|showing:{offset + 1}-{showing_end}|total:{total}"
+    has_more = showing_end < total
+
+    # Construct ResultSurface for interactive session
+
+    surface = None
+    if transactions:
+        surface_items = [
+            {
+                "id": item.id,
+                "key": item.description,
+                "amount": item.amount,
+                "count": 1,
+            }
+            for item in items
+        ]
+
+        surface = ResultSurface(
+            type=SurfaceType.LIST,
+            items=surface_items,
+            context={
+                "count": len(items),
+                "total_results": total,
+                "has_more": has_more,
+            },
+        )
 
     return QueryResult(
-        summary_text=summary_text,
+        summary_text=result_summary,
         items=items,
-        has_more=showing_end < total,
+        has_more=has_more,
+        surface=surface,
     )
 
 
