@@ -6,6 +6,7 @@ from .domain import (
     QueryResult,
     QueryResultItem,
     TimeRange,
+    detect_category,
     match_category,
 )
 from .extraction import (
