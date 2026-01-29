@@ -70,10 +70,20 @@ class ContinuationClassification(BaseModel):
     is_new_query_override: bool | None = Field(
         default=None, description="Explicit signal to treat as a new query despite active session"
     )
+    restates_query: bool | None = Field(
+        default=None, description="True if the user restated a full query rather than a follow-up"
+    )
+    delta_type: Literal["filter", "time", "limit", "reference", "none"] | None = Field(
+        default=None, description="Primary follow-up change type when continuation_type is filter_delta/time_delta"
+    )
 
     time_range: ProposedTimeRange | None = Field(default=None, description="Resolved date range if time_delta")
 
     filters: Filters | None = Field(default=None, description="Filter modifications if filter_delta")
+    result_limit: int | None = Field(default=None, description="Max results to return if user specifies a count")
+    result_reference: Literal["latest", "oldest"] | None = Field(
+        default=None, description="Relative positioning if user asks for most recent/oldest"
+    )
 
     drill_down_index: int | None = Field(
         default=None, description="Index of item user is referencing (0-indexed) if drill_down"
@@ -161,12 +171,26 @@ class ContinuationClassifier:
                 data["reason"] = result.reason
             if result.is_new_query_override is not None:
                 data["is_new_query_override"] = result.is_new_query_override
+            if result.restates_query is not None:
+                data["restates_query"] = result.restates_query
+            if result.delta_type is not None:
+                data["delta_type"] = result.delta_type
 
             if result.continuation_type == "time_delta" and result.time_range:
                 data["time_range"] = result.time_range
 
             elif result.continuation_type == "filter_delta" and result.filters:
                 data["filters"] = result.filters
+                if result.result_limit is not None:
+                    data["result_limit"] = result.result_limit
+                if result.result_reference is not None:
+                    data["result_reference"] = result.result_reference
+
+            elif result.continuation_type == "filter_delta":
+                if result.result_limit is not None:
+                    data["result_limit"] = result.result_limit
+                if result.result_reference is not None:
+                    data["result_reference"] = result.result_reference
 
             elif result.continuation_type == "drill_down":
                 # Default to index 0 if not specified (common when only 1 item shown)

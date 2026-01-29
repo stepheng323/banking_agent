@@ -1,7 +1,7 @@
 """Query extraction models. Pure extraction with requested_capabilities."""
 
 from enum import Enum
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -102,6 +102,11 @@ class QueryExtractionResult(BaseModel):
     filters: QueryFilters = Field(default_factory=QueryFilters)
     time_range: QueryTimeRange = Field(default_factory=QueryTimeRange)
     aggregation: QueryAggregation | None = Field(default=None)
+    result_limit: int | None = Field(default=None, ge=1, le=100, description="Max results to return")
+    result_reference: Literal["latest", "oldest"] | None = Field(
+        default=None,
+        description="Relative positioning for results when user asks for most recent/oldest",
+    )
 
     requested_capabilities: list[RequestedCapability] = Field(
         default_factory=list,
