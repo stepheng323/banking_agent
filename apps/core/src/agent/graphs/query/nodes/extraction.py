@@ -22,6 +22,8 @@ logger = get_logger(__name__)
 class ExtractionStep(QueryStep):
     """Extracts intent and parameters for query."""
 
+    _LOW_CONFIDENCE_THRESHOLD = 0.45
+
     def __init__(self, llm: Runnable):
         self.parser = QueryParser(llm)
         self.classifier = ContinuationClassifier(llm)
@@ -94,7 +96,10 @@ class ExtractionStep(QueryStep):
         )
 
         # LLM override for new query or low-confidence classifications.
-        if data.get("is_new_query_override"):
+        if data.get("is_new_query_override") or data.get("restates_query"):
+            return await self._parse_new_query(state)
+
+        if self._should_force_new_query(message, cont_type, data):
             return await self._parse_new_query(state)
 
         # Trust the LLM classification unless it explicitly signals a new-query override.
@@ -119,6 +124,10 @@ class ExtractionStep(QueryStep):
                     original_query = NormalizedQuery.model_validate(original_query)
 
                 new_query = apply_time_delta(original_query, data["time_range"])
+                if "result_limit" in data:
+                    new_query.result_limit = data["result_limit"]
+                if "result_reference" in data:
+                    new_query.result_reference = data["result_reference"]
                 updates["query"] = new_query
                 updates["current_page"] = 0
                 updates["show_expanded"] = False
@@ -129,7 +138,19 @@ class ExtractionStep(QueryStep):
                 if isinstance(original_query, dict):
                     original_query = NormalizedQuery.model_validate(original_query)
 
-                new_query = apply_filter_delta(original_query, data["filters"])
+                delta_type = data.get("delta_type")
+                allow_limit = delta_type in (None, "limit", "reference")
+                allow_reference = delta_type in (None, "reference", "limit")
+
+                if "filters" in data:
+                    new_query = apply_filter_delta(original_query, data["filters"])
+                else:
+                    new_query = original_query
+
+                if "result_limit" in data and allow_limit:
+                    new_query.result_limit = data["result_limit"]
+                if "result_reference" in data and allow_reference:
+                    new_query.result_reference = data["result_reference"]
                 updates["query"] = new_query
                 updates["current_page"] = 0
                 updates["show_expanded"] = False
@@ -254,3 +275,15 @@ class ExtractionStep(QueryStep):
             "session_active": True,
             "show_expanded": False,
         }
+
+    def _should_force_new_query(self, message: str, cont_type: str, data: dict[str, Any]) -> bool:
+        """Rule-based fallback when follow-up classification is low confidence."""
+        confidence = data.get("confidence")
+        if confidence is None or confidence >= self._LOW_CONFIDENCE_THRESHOLD:
+            return False
+
+        if cont_type in ("show_more", "end_session"):
+            return False
+
+        word_count = len(message.split())
+        return word_count >= 3

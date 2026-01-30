@@ -1,5 +1,4 @@
 """Query parsing service - extracts NormalizedQuery from natural language."""
-
 from datetime import date, timedelta
 
 from langchain_core.runnables import Runnable
@@ -26,9 +25,6 @@ logger = get_logger(__name__)
 
 class QueryParser:
     """Parse natural language financial questions into NormalizedQuery."""
-
-    """Parse natural language financial questions into NormalizedQuery."""
-
     def __init__(self, llm: Runnable):
         self.llm = llm
 
@@ -143,6 +139,13 @@ class QueryParser:
         )
 
         today = today or date.today()
+
+        result_limit = extraction.result_limit
+        if extraction.intent == ExtractionIntent.SINGLE_TRANSACTION:
+            result_limit = result_limit or 1
+
+        if result_limit:
+            result_limit = min(result_limit, QUERY_LIMITS["max_results"])
 
         intent_map = {
             ExtractionIntent.TRANSACTION_LIST: QueryIntent.TRANSACTION_LIST,
@@ -272,4 +275,6 @@ class QueryParser:
             filters=filters,
             aggregation=aggregation,
             accounts_scope="all",
+            result_limit=result_limit,
+            result_reference=extraction.result_reference,
         )

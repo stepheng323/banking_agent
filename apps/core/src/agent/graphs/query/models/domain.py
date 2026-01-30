@@ -71,6 +71,9 @@ class NormalizedQuery(BaseModel):
     result_limit: int | None = Field(
         default=None, ge=1, le=100, description="Max results to return (e.g., 'last transaction' = 1)"
     )
+    result_reference: Literal["latest", "oldest"] | None = Field(
+        default=None, description="Relative positioning for results when user asks for most recent/oldest"
+    )
 
 
 class SurfaceType(str, Enum):

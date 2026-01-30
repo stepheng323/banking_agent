@@ -2,7 +2,7 @@
 
 from datetime import date, datetime
 
-from apps.core.src.agent.graphs.query.models import QueryResult, QueryResultItem, SurfaceType
+from apps.core.src.agent.graphs.query.models import QueryIntent, QueryResult, QueryResultItem, SurfaceType
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -201,7 +201,14 @@ class QueryFormatter:
         # Special handling for single transaction - show detailed view
         if len(result.items) == 1:
             item = result.items[0]
-            lines = ["*Transaction Details*", ""]
+            title = "Transaction Details"
+            if result.query_snapshot and result.query_snapshot.result_reference == "latest":
+                title = "Your last transaction was:"
+                tx_filters = result.query_snapshot.filters
+                if tx_filters and tx_filters.transaction_type in ("debit", "credit"):
+                    title = f"Your last {tx_filters.transaction_type} transaction was:"
+
+            lines = [f"*{title}*", ""]
 
             amount_str = f"₦{item.amount:,.2f}"
             lines.append(f"*Amount:* {amount_str}")

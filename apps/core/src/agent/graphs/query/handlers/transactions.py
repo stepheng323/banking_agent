@@ -2,6 +2,7 @@
 
 from apps.core.src.agent.graphs.query.models import (
     NormalizedQuery,
+    QueryIntent,
     QueryResult,
     QueryResultItem,
     ResultSurface,
@@ -66,7 +67,7 @@ async def handle_transaction_list(
             for item in items
         ]
 
-        if total == 1 and (query.result_limit == 1 or query.intent.name == "SINGLE_TRANSACTION"):
+        if total == 1 and (query.result_limit == 1 or query.intent == QueryIntent.TRANSACTION_SEARCH):
             surface = ResultSurface(
                 type=SurfaceType.SINGLE_ITEM,
                 items=surface_items,

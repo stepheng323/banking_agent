@@ -10,8 +10,8 @@ USER MESSAGE: {question}
 
 INTENT SELECTION
 Choose the best intent:
-- transaction_list → show/list/history/statement of transactions
-- single_transaction → one specific transaction ("that 15k", "the Uber one", "last transfer")
+- transaction_list → show/list/history/statement of transactions (including "last/most recent N transactions")
+- single_transaction → one specific transaction ("that 15k", "the Uber one")
 - spending_total → totals/sums ("how much did I spend/pay")
 - category_breakdown → breakdown/split/categorize ("break down my spending", "split by merchant", "how did I spend")
 - time_comparison → compare periods ("this month vs last month")
@@ -43,6 +43,14 @@ AGGREGATION RULES
     - "spending by bank" → group_by=account
 - time_comparison → aggregation.type = sum unless user implies otherwise
 - transaction_list / single_transaction → no aggregation
+
+RESULT LIMIT
+- If user asks for "last/latest/most recent" N transactions/transfers/payments, set result_limit = N.
+- If singular ("last transaction", "most recent transfer"), set result_limit = 1.
+
+RESULT REFERENCE
+- If user asks for most recent/latest/last, set result_reference = "latest".
+- If user asks for oldest/earliest/first, set result_reference = "oldest".
 
 REQUESTED CAPABILITIES (IMPORTANT)
 List every capability required by the extracted intent and fields.
@@ -85,10 +93,14 @@ Return exactly one JSON object with:
 - confidence: number 0.0-1.0
 - reason: short string
 - is_new_query_override: boolean
+- restates_query: boolean
+- delta_type: one of ["filter","time","limit","reference","none"]
 
 Optional fields (fill the ONE relevant to the type):
 - time_range: {{ "start": "YYYY-MM-DD", "end": "YYYY-MM-DD", "granularity": "day|month" }}
 - filters: {{ "merchant": ["string"], "category": ["string"], "transaction_type": "credit|debit", "min_amount": number, "max_amount": number, "account_filter": "string", "exclude": ["string"] }}
+- result_limit: number
+- result_reference: "latest|oldest"
 - drill_down_index: number
 - drill_down_action: "view_details|get_receipt|report_issue"
 - recipient_name: "string"
@@ -102,7 +114,10 @@ If user asks something outside the current transaction-viewing session, especial
 Examples: "show my accounts", "what's my balance", "how much do I have"
 OR if user issues a fresh command unrelated to the current view:
 "Break down my spending", "Show me transfers", "Check airtime"
+OR if user restates a full query such as:
+"show my last transaction", "show my last 5 transfers", "list my transactions"
 => continuation_type="new_query" AND is_new_query_override=true.
+Also set restates_query=true when the message stands alone as a full query.
 
 3) SHOW MORE (highest priority among list navigation)
 If the message means pagination/continuation ONLY:
@@ -114,15 +129,22 @@ IMPORTANT: Do NOT misclassify these as drill_down.
 If user ONLY changes time period (without restating the full intent):
 "last month", "December", "yesterday", "this week", "on Christmas"
 => continuation_type="time_delta" and resolve start/end using {today}.
+Set delta_type="time".
 
 5) FILTER DELTA
 If user changes filters/search:
 - tx type: "only credits", "just debits", "only spent" => transaction_type
+- corrections: "I mean debit/credit", "make that debit" => transaction_type
 - amount: "over 10k", "below 5k" => min_amount/max_amount
 - category: "just food", "only transfers"
 - bank: "just Zenith"
 - keyword/merchant: "Uber only", "Netflix", "search 'fuel'"
+If they specify a count or recency within the same context:
+- "last 5", "most recent 3" => set result_limit and result_reference="latest"
+If they specify oldest/earliest:
+- "oldest 5", "first 3" => set result_limit and result_reference="oldest"
 => continuation_type="filter_delta"
+Set delta_type="filter" for filter changes, "limit" for count changes, "reference" for latest/oldest changes.
 NOTE: replace the previous filter of the same kind.
 
 6) EXPAND (only from summaries)

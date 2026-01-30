@@ -206,6 +206,8 @@ async def fetch_and_filter(
         except Exception as e:
             logger.warning("failed_to_merge_local_transactions", error=str(e))
 
+    transactions = sorted(transactions, key=lambda t: (t.get("date", ""), t.get("id", "")), reverse=True)
+
     transactions = [t for t in transactions if start <= t.get("date", "")[:10] <= end]
 
     if query.filters:
