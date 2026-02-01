@@ -12,6 +12,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 from apps.core.src.agent.orchestrator.models.domain import PendingInterrupt, TaskSpec
+from apps.core.src.agent.orchestrator.context.models import ContextFrame
 from shared.types.planner import PlannerOutput
 
 
@@ -49,4 +50,8 @@ class OrchestratorState(BaseModel):
     outbox: list[dict[str, Any]] = Field(default_factory=list)
     final_response: str | None = None
 
+    context_frames: list[ContextFrame] = Field(default_factory=list)
+
     loaded_context: dict[str, Any] = Field(default_factory=dict)
+
+    stashed_sessions: list[dict[str, Any]] = Field(default_factory=list)

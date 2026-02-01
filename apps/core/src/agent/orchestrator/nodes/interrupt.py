@@ -44,8 +44,25 @@ async def handle_pending_interrupt(state: OrchestratorState, config: RunnableCon
                 if planner_output.tasks and new_task_types != current_task_types:
                     new_tasks: dict[str, TaskSpec] = {}
                     wave_tasks: list[str] = []
+                    
+                    # Stash current session
+                    active_type = next(iter(current_task_types)) if current_task_types else "unknown"
+                    current_session = {
+                        "tasks": state.tasks,
+                        "waves": state.waves,
+                        "current_wave_index": state.current_wave_index,
+                        "pending_interrupt": interrupt,
+                        "intent": active_type
+                    }
+                    stashed = state.stashed_sessions + [current_session]
+
                     for plan_item in planner_output.tasks:
                         payload = plan_item.parameters.model_dump() if plan_item.parameters else {}
+                        if plan_item.action:
+                            payload["action"] = plan_item.action
+                        if plan_item.instruction:
+                            payload["instruction"] = plan_item.instruction
+                        
                         if plan_item.executor == "query" and not payload.get("message"):
                             payload["message"] = plan_item.instruction or text
                         spec = TaskSpec(
@@ -66,6 +83,7 @@ async def handle_pending_interrupt(state: OrchestratorState, config: RunnableCon
                         "normalized_instruction": text,
                         "planner_output": planner_output,
                         "task_results": {},
+                        "stashed_sessions": stashed,
                     }
             except Exception as e:
                 logger.warning("input_interrupt_planner_failed", error=str(e))
@@ -124,6 +142,50 @@ async def handle_pending_interrupt(state: OrchestratorState, config: RunnableCon
                 "pending_interrupt": None,
                 "tasks": new_tasks,
             }
+            
+        active_type = state.tasks[interrupt.task_ids[0]].type if interrupt.task_ids and interrupt.task_ids[0] in state.tasks else "unknown"
+        if planner_output and planner_output.tasks and planner_output.primary_intent not in (active_type, "conversational", "mixed"):
+             logger.info("confirmation_intent_switch", old=active_type, new=planner_output.primary_intent)
+             # Replan Logic (similar to input interrupt)
+             new_tasks_map: dict[str, TaskSpec] = {}
+             wave_tasks: list[str] = []
+             
+             # Stash current session
+             current_session = {
+                 "tasks": state.tasks,
+                 "waves": state.waves,
+                 "current_wave_index": state.current_wave_index,
+                 "pending_interrupt": interrupt, # The current confirmation interrupt
+                 "intent": active_type 
+             }
+             stashed = state.stashed_sessions + [current_session]
+             
+             for plan_item in planner_output.tasks:
+                 payload = plan_item.parameters.model_dump() if plan_item.parameters else {}
+                 if plan_item.action:
+                     payload["action"] = plan_item.action
+                 if plan_item.instruction:
+                     payload["instruction"] = plan_item.instruction
+                 
+                 if plan_item.executor == "query" and not payload.get("message"):
+                     payload["message"] = plan_item.instruction or text
+                 spec = TaskSpec(
+                     id=plan_item.task_id,
+                     type=plan_item.executor,
+                     stage=TaskStage.DRAFT,
+                     payload=payload,
+                 )
+                 new_tasks_map[spec.id] = spec
+                 wave_tasks.append(spec.id)
+                 
+             return {
+                 "pending_interrupt": None,
+                 "tasks": new_tasks_map,
+                 "waves": [wave_tasks],
+                 "current_wave_index": 0,
+                 "planner_output": planner_output,
+                 "stashed_sessions": stashed,
+             }
 
         else:
             logger.info("confirmation_interrupt_input_mismatch", text=text)

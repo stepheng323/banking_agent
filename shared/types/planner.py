@@ -5,6 +5,14 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 
+
+class ContextReference(BaseModel):
+    """Pointer to a context entity."""
+    selector: Literal["previous", "index", "label"]
+    index: int | None = None
+    label: str | None = None
+
+
 class TaskParameters(BaseModel):
     """Common parameters for tasks."""
 
@@ -19,12 +27,12 @@ class TaskParameters(BaseModel):
     plan: str | None = None
     is_self: bool = False
 
-    # Capability flags
     schedule: str | None = None
     scheduled: str | None = None
     recurring: bool | None = None
     international: bool | None = None
     alias: str | None = None
+    reference: ContextReference | None = None
 
 
 class PlannedTask(BaseModel):

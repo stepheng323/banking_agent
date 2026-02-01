@@ -56,11 +56,11 @@ class BeneficiarySuggestionService:
             None: If sent immediately or no suggestion needed.
         """
         try:
-            with UnitOfWork() as uow:
+            async with UnitOfWork() as uow:
                 if not uow.users or not uow.transactions:
                     return None
 
-                user = uow.users.get_by_phone(phone_number)
+                user = await uow.users.get_by_phone(phone_number)
                 if not user:
                     logger.debug("debug_user")
                     return None
@@ -81,7 +81,7 @@ class BeneficiarySuggestionService:
 
                     if has_beneficiary_repo:
                         try:
-                            exists_in_beneficiaries = not uow.beneficiaries.should_suggest_beneficiary(
+                            exists_in_beneficiaries = not await uow.beneficiaries.should_suggest_beneficiary(
                                 user_id, account_number, bank_code, beneficiary_type="transfer"
                             )
                         except Exception:
@@ -89,10 +89,10 @@ class BeneficiarySuggestionService:
 
                     if has_beneficiary_repo and not exists_in_beneficiaries:
                         if transaction_id:
-                            transaction = uow.transactions.get_by_id(str(transaction_id))
+                            transaction = await uow.transactions.get_by_id(str(transaction_id))
                             if transaction:
-                                uow.transactions.update(transaction, beneficiary_suggested=True)
-                                uow.commit()
+                                await uow.transactions.update(transaction, beneficiary_suggested=True)
+                                await uow.commit()
 
                         suggestion_key = f"user:{phone_number}:beneficiary_suggestion"
                         masked_acct = f"…{str(account_number)[-4:]}"
@@ -161,7 +161,7 @@ class BeneficiarySuggestionService:
 
                     if has_beneficiary_repo:
                         try:
-                            exists_in_beneficiaries = not uow.beneficiaries.should_suggest_airtime_beneficiary(
+                            exists_in_beneficiaries = not await uow.beneficiaries.should_suggest_airtime_beneficiary(
                                 user_id, recipient_phone, network
                             )
                         except Exception:
@@ -169,10 +169,10 @@ class BeneficiarySuggestionService:
 
                     if has_beneficiary_repo and not exists_in_beneficiaries:
                         if transaction_id:
-                            transaction = uow.transactions.get_by_id(str(transaction_id))
+                            transaction = await uow.transactions.get_by_id(str(transaction_id))
                             if transaction:
-                                uow.transactions.update(transaction, beneficiary_suggested=True)
-                                uow.commit()
+                                await uow.transactions.update(transaction, beneficiary_suggested=True)
+                                await uow.commit()
 
                         suggestion_key = f"user:{phone_number}:beneficiary_suggestion"
                         masked_phone = f"…{recipient_phone[-4:]}" if len(recipient_phone) >= 4 else recipient_phone
@@ -240,8 +240,8 @@ class BeneficiarySuggestionService:
             data = json.loads(data_json)
             beneficiary_type = data.get("beneficiary_type", "transfer")
 
-            with UnitOfWork() as uow:
-                user = uow.users.get_by_phone(phone_number)
+            async with UnitOfWork() as uow:
+                user = await uow.users.get_by_phone(phone_number)
                 if not user:
                     return "User not found."
 
@@ -249,7 +249,7 @@ class BeneficiarySuggestionService:
                 final_alias = alias or data.get("alias_suggested") or data.get("recipient_name") or "My Beneficiary"
 
                 if beneficiary_type == "transfer":
-                    uow.beneficiaries.create(
+                    await uow.beneficiaries.create(
                         user_id=user_id,
                         account_number=data["account_number"],
                         bank_code=data["bank_code"],
@@ -259,7 +259,7 @@ class BeneficiarySuggestionService:
                         beneficiary_type="transfer",
                     )
                 elif beneficiary_type in ("airtime", "data"):
-                    uow.beneficiaries.create(
+                    await uow.beneficiaries.create(
                         user_id=user_id,
                         account_number=data["phone_number"],
                         bank_name=data["network"],
@@ -268,7 +268,7 @@ class BeneficiarySuggestionService:
                         beneficiary_type="airtime",
                     )
 
-                uow.commit()
+                await uow.commit()
 
             # Clear the suggestion
             await self.redis_client.delete(suggestion_key)

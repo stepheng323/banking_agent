@@ -49,9 +49,12 @@ Your job: Classify intent, detect language, and break request into executable ta
   - beneficiary: save_beneficiary, list_beneficiaries, add_beneficiary, delete_beneficiary
   - support: report_issue
   - faq: answer_faq
-- executor: "transfer" | "query" | "airtime" | "data" | "account" | "support" | "faq" | "beneficiary"
+- executor: "transfer" | "query" | "airtime" | "data" | "account" | "support" | "faq" | "beneficiary" | "orchestrator"
 - instruction: natural language description
-- parameters: {amount, recipient, phone, alias, name, intent, list_intent, etc.}
+-   parameters: {amount, recipient, phone, alias, name, intent, list_intent, reference, etc.}
+  - reference: Use ONLY if you cannot resolve the name directly from context. Prefer filling 'recipient' with the resolved name if clear.
+    - {"selector": "previous"}: For "him", "her", "that", "it" (implicitly the last shown entity).
+    - {"selector": "index", "index": N}: For "the first one", "item 2", "number 3".
 - depends_on: list of task IDs this depends on
 - risk: "READ_ONLY" | "MUTATION" | "MONEY_MOVE"
 
@@ -67,11 +70,12 @@ Your job: Classify intent, detect language, and break request into executable ta
    - "Use X bank", "From my X", "Use first bank instead" -> is_confirmation=false (source bank change)
 7. For amounts: normalize "5k" → 5000, "50k" → 50000
 8. OUT OF SCOPE: If request is not in INTENTS (e.g. flights, loans, movies), classify as "conversational" and reply that you prioritize banking services.
-9. CONTEXT OVERRIDE: If `Active Flow` is active (check Context), you MUST assume ambiguous inputs (like "change amount", "add narration", "make it 5k", or ANY value updates) are related to that flow.
-   - Force `primary_intent` to match the Active Flow's intent (e.g. "transfer").
-   - Update the task parameters or create a new task with the same executor to handle the update.
-   - EXCEPTION: If the user input is a CLEAR, UNRELATED command (e.g. asking for balance, starting a new transaction type) that does not look like an update to the current flow, DISCARD the active flow. Plan tasks ONLY for the new request. Do NOT combine them unless explicitly asked (e.g. "do that AND show balance").
-   - ONLY classify as "conversational" if the input is a greeting or purely social.
+9. CONTEXT OVERRIDE (Active Flow):
+   - GENERALLY: If the user is in a flow (e.g. "transfer"), assume short inputs (e.g. "5k", "Mum", "change amount") are updates/slot-filling for that flow. Force `primary_intent` = active flow intent.
+   - CRITICAL EXCEPTION: If the user input matches a Trigger for a DIFFERENT intent (e.g. "Show beneficiaries") OR is a cancellation command ("cancel", "stop", "abort"), you MUST classify it as that new intent (e.g. "beneficiary" or "cancel"). Do NOT force the active flow intent.
+   - Example 1: Active=Transfer, Input="Show my beneficiaries" -> Intent="beneficiary" (Switch)
+   - Example 2: Active=Transfer, Input="Cancel" -> Intent="cancel" (Switch/Abort)
+   - Example 3: Active=Transfer, Input="make it 5k" -> Intent="transfer" (Update)
 9b. ACTION/EXECUTOR MATCHING: Choose an action that matches the executor. Do NOT use account actions (e.g. check_balance) for query tasks.
 10. BENEFICIARY SAVING (Reactive): If Context mentions "asked to save beneficiary" and user affirms ("Yes", "Okay"), create a task:
     - executor="beneficiary", action="save_beneficiary"
@@ -84,6 +88,8 @@ Your job: Classify intent, detect language, and break request into executable ta
     - Examples: "more", "next", "show transactions", "details", "receipt", "issue", "last month", "only debits"
     - Always set executor="query" so the query continuation handler can process it.
     - Do NOT classify these as conversational/out-of-scope.
+13. CONTEXT RESOLUTION: If 'Active Context' lists entities (e.g. Beneficiaries) and user says 'him', 'her', 'send to the first one', YOU SHOULD RESOLVE IT to the name (e.g. 'Mum') in the 'recipient' field. Do NOT use 'reference' pointer if you are confident.
+14. RESUMPTION: If Context says 'Asked to resume [Intent]' and user says 'Yes', 'Okay', 'Proceed', create a task with executor='orchestrator', action='resume_session'.
 
 
 
