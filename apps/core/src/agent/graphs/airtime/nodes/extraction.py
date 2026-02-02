@@ -30,6 +30,10 @@ class ExtractionStep(AirtimeStep):
         if not self.user_message:
             return TransactionResult(outcome=TransactionOutcome.OK)
 
+        if data.skip_extraction:
+            logger.info("skip_redundant_extraction", task="airtime")
+            return TransactionResult(outcome=TransactionOutcome.OK, patch={"skip_extraction": False})
+
         extractor = worker_context.extractor
         if not extractor:
             logger.warning("airtime_extractor_missing")

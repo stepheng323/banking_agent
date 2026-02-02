@@ -55,6 +55,7 @@ class AirtimePayload(BaseModel):
     correction_value: Any | None = None
 
     confirmation: AirtimeConfirmation = Field(default_factory=AirtimeConfirmation)
+    skip_extraction: bool = False
 
 
 class AirtimeContext(BaseModel):

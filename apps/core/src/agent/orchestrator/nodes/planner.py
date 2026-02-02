@@ -2,6 +2,7 @@ from typing import Any
 
 from langchain_core.runnables import RunnableConfig
 
+from apps.core.src.agent.orchestrator.meta_reply import generate_meta_reply
 from apps.core.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
 from apps.core.src.agent.orchestrator.models.state import OrchestratorState
 from shared.utils.logging import get_logger
@@ -79,11 +80,13 @@ async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[s
                 if t_id in state.tasks:
                     active_task = state.tasks[t_id]
                     active_intent = active_task.type
-                    
+
                     # Serialize simplified payload
                     # Remove internal fields to save tokens
-                    payload_view = {k: v for k, v in active_task.payload.items() if k not in ["result", "error", "confirmation"]}
-                    
+                    payload_view = {
+                        k: v for k, v in active_task.payload.items() if k not in ["result", "error", "confirmation"]
+                    }
+
                     planner_context_parts.append(
                         f"Active Flow: {active_intent.upper()} (User is currently in this flow).\n"
                         f"Current Task Data: {payload_view}\n"
@@ -98,10 +101,10 @@ async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[s
     # [NEW] Context Manager Integration (Pattern A)
     # Inject short-term memory (transactions, beneficiaries, etc.)
     from apps.core.src.agent.orchestrator.services.context_manager import OrchestratorContextManager
-    
+
     ctx_manager = OrchestratorContextManager()
     short_term_context = ctx_manager.build_llm_summary(state)
-    
+
     if short_term_context:
         planner_context_parts.append(short_term_context)
         logger.info("planner_context_injected", context="short_term_memory")
@@ -134,12 +137,21 @@ async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[s
         # If no tasks, verify if we should switch context or pass-through
         # E.g. "Hi" -> conversational -> no tasks
         if state.waves and planner_output and planner_output.primary_intent != "conversational":
-             # If planner sees a structured intent but 0 tasks, it might be a cancellation or error
-             # If intent differs from active, we probably want to clear waves
-             if planner_output.primary_intent != active_intent:
-                  logger.info("planner_switch_empty_tasks", old=active_intent, new=planner_output.primary_intent)
-                  return {"waves": [], "final_response": planner_output.response}
-        
+            # If planner sees a structured intent but 0 tasks, it might be a cancellation or error
+            # If intent differs from active, we probably want to clear waves
+            if planner_output.primary_intent != active_intent:
+                logger.info("planner_switch_empty_tasks", old=active_intent, new=planner_output.primary_intent)
+                return {"waves": [], "final_response": planner_output.response}
+
+        if planner_output and planner_output.primary_intent == "conversational":
+            message, handoff = await generate_meta_reply(
+                task_planner.planner_llm if task_planner else None,
+                user_message=text,
+                user_language_hint=state.loaded_context.get("language"),
+                active_session=None,
+            )
+            if handoff == "meta" and message:
+                return {"final_response": message}
         return {"final_response": planner_output.response if planner_output else "I didn't understand."}
 
     # [NEW] Decision: Switch vs Pass-through
@@ -148,8 +160,8 @@ async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[s
         # UNLESS it's a "mixed" intent (which might add tasks)
         if planner_output.primary_intent == active_intent and planner_output.primary_intent != "mixed":
             logger.info("planner_intent_match_active", intent=active_intent, action="pass_through")
-            return {} 
-        
+            return {}
+
         # If intent differs (e.g. Transfer -> Beneficiary), we Switch.
         logger.info("planner_intent_switch", old=active_intent, new=planner_output.primary_intent)
         # Proceed to generate new tasks (which will overwrite active waves)
@@ -167,6 +179,9 @@ async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[s
 
         if plan_item.executor == "query" and not payload.get("message"):
             payload["message"] = plan_item.instruction or text
+
+        if plan_item.executor == "transfer" or plan_item.executor == "airtime" or plan_item.executor == "data":
+            payload["skip_extraction"] = True
 
         spec = TaskSpec(
             id=plan_item.task_id,

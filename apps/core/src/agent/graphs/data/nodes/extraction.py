@@ -14,8 +14,11 @@ class ExtractionStep(PipelineStep):
     async def run(
         self, payload: DataPayload, context: DataContext, gates: DataGates, worker_context: Any
     ) -> TransactionResult | None:
-
         if not self.user_message:
+            return None
+
+        if payload.skip_extraction:
+            payload.skip_extraction = False
             return None
 
         extractor = worker_context.extractor
