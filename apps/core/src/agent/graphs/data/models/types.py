@@ -22,6 +22,7 @@ class DataPayload(BaseModel):
     transaction_id: str | None = None
     receipt: dict[str, Any] | None = None
     error: str | None = None
+    skip_extraction: bool = False
 
 
 class DataContext(BaseModel):

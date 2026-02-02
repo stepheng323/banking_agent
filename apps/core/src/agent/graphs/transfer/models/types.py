@@ -52,6 +52,7 @@ class TransferPayload(BaseModel):
     narration: str | None = None
 
     confirmation: TransferConfirmation = Field(default_factory=TransferConfirmation)
+    skip_extraction: bool = False
 
 
 class TransferContext(BaseModel):

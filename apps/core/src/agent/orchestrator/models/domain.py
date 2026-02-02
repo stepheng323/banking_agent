@@ -214,3 +214,13 @@ class SupportResult(BaseModel):
     ticket_code: str | None = None
     final_message: str | None = None
     error: str | None = None
+
+
+class ActiveSession(BaseModel):
+    """Represents an active interactive session on the stack."""
+
+    domain: str  # "query", "transfer", "support", etc.
+    state: Literal["WAITING_FOR_INPUT", "WAITING_FOR_AUTH", "RUNNING"]
+    interrupt_policy: Literal["BLOCK", "CONFIRM", "ALLOW"]
+    resume_hint: dict[str, Any] = Field(default_factory=dict)
+    ttl_expires_at: float | None = None

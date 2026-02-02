@@ -110,7 +110,6 @@ def setup_dependencies() -> tuple[MessageConsumer, TransactionConsumer, FlowEven
     bank_cache_service = BankCacheService(redis_client=shared_redis)
 
     agent_transfer_worker = TransferWorker(
-        validation_service=None,
         beneficiary_repo=beneficiary_repository,
         account_repo=account_repository,
         queue=redis_queue,

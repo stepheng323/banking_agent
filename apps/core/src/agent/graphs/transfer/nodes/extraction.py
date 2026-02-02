@@ -30,6 +30,12 @@ class ExtractionStep(TransferStep):
         if not self.user_message:
             return TransactionResult(outcome=TransactionOutcome.OK, patch={})
 
+        # Optimization: Phase 4 (Planner-as-Extractor)
+        # Skip extraction if Planner already did it (signaled by flag)
+        if data.skip_extraction:
+            logger.info("skip_redundant_extraction", task="transfer")
+            return TransactionResult(outcome=TransactionOutcome.OK, patch={"skip_extraction": False})
+
         res = await _extract_transfer_update(
             data,
             worker_context.extractor,
