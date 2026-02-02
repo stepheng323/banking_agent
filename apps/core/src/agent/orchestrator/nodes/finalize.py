@@ -45,6 +45,42 @@ async def finalize(state: OrchestratorState, config: RunnableConfig) -> dict:
     for _ in cancelled_tasks:
         outbox.append({"type": "say", "text": "Transaction cancelled, how else can I help you today?"})
 
+    # Check for stashed sessions and prompt
+    context_updates = {}
+    if state.stashed_sessions:
+        last_session = state.stashed_sessions[-1]
+        intent = last_session.get("intent", "transaction")
+        prompt = f"\n\nWould you like to resume your {intent}?"
+        
+        # Add prompt to outbox
+        if outbox and outbox[-1].get("type") == "say":
+             outbox[-1]["text"] += prompt
+        else:
+             outbox.append({"type": "say", "text": prompt.strip()})
+        
+        # Add Context Frame to signal active prompt
+        from apps.core.src.agent.orchestrator.context.models import ContextFrame, ContextFrameType, ContextEntity, EntityType
+        import time
+        import uuid
+        
+        frame = ContextFrame(
+             frame_id=str(uuid.uuid4()),
+             frame_type=ContextFrameType.GENERIC, 
+             items=[
+                 ContextEntity(
+                     entity_id="resumption_prompt",
+                     label=f"Resume {intent}",
+                     entity_type=EntityType.GENERIC,
+                     data={"intent": intent, "resume_prompt": True}
+                 )
+             ],
+             created_at_ts=int(time.time()),
+             ttl_seconds=300
+        )
+        current_frames = list(state.context_frames)
+        current_frames.append(frame)
+        context_updates["context_frames"] = current_frames
+
     return {
         "outbox": outbox,
         "tasks": {},  # Wipe tasks so the next turn is fresh
@@ -52,6 +88,7 @@ async def finalize(state: OrchestratorState, config: RunnableConfig) -> dict:
         "current_wave_index": 0,
         "pin_verified": False,  # Security: Reset PIN verification status
         "last_callback": None,  # Security: Clear stale callback data
+        **context_updates
     }
 
 
@@ -79,7 +116,7 @@ async def _handle_completed_tasks(
         and len(completed_tasks[0].payload.get("recipients", [])) <= 1
     )
 
-    read_only_task_types = {"account", "query", "faq", "support"}
+    read_only_task_types = {"account", "query", "faq", "support", "beneficiary"}
     all_read_only = all(task.type in read_only_task_types for task in completed_tasks)
 
     # Check for single transfer

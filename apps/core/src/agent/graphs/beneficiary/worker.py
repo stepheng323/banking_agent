@@ -27,11 +27,10 @@ class BeneficiaryWorker:
             user_id = context.get("user_id") or payload.get("user_id")
 
             if not user_id:
-                # Try to resolve user from phone if user_id missing
                 phone = context.get("phone_number")
                 if phone:
-                    with UnitOfWork() as uow:
-                        user = uow.users.get_by_phone(phone)
+                    async with UnitOfWork() as uow:
+                        user = await uow.users.get_by_phone(phone)
                         if user:
                             user_id = str(user.id)
 
@@ -39,27 +38,41 @@ class BeneficiaryWorker:
                 return TransactionResult(outcome=TransactionOutcome.FAILED, error="User identification failed.")
 
             if intent == BeneficiaryIntent.LIST or payload.get("list_intent"):
-                return self._list_beneficiaries(user_id)
+                return await self._list_beneficiaries(user_id, context)
 
             elif intent == BeneficiaryIntent.ADD:
                 return await self._add_beneficiary(user_id, payload, context)
 
             elif intent == BeneficiaryIntent.DELETE:
-                return self._delete_beneficiary(user_id, payload)
+                return await self._delete_beneficiary(user_id, payload)
 
             elif intent == BeneficiaryIntent.UPDATE:
-                return self._update_beneficiary(user_id, payload)
+                # Default to list if ambiguous but routed here
+                return await self._list_beneficiaries(user_id, context)
 
-            # Default to list if ambiguous but routed here
-            return self._list_beneficiaries(user_id)
+            return await self._list_beneficiaries(user_id, context)
 
         except Exception as e:
             logger.error("beneficiary_worker_error", error=str(e), exc_info=True)
             return TransactionResult(outcome=TransactionOutcome.FAILED, error="Failed to process beneficiary request.")
 
-    def _list_beneficiaries(self, user_id: str) -> TransactionResult:
-        with UnitOfWork() as uow:
-            beneficiaries = uow.beneficiaries.get_all_by_user(user_id)
+
+    async def _list_beneficiaries(self, user_id: str, context: dict[str, Any]) -> TransactionResult:
+        async with UnitOfWork() as uow:
+            import json
+
+            beneficiaries = await uow.beneficiaries.get_all_for_user(user_id)
+
+            # Format for context
+            simple_list = [
+                {
+                    "name": b.account_name,
+                    "alias": b.alias,
+                    "bank": b.bank_name,
+                    "account": b.account_number
+                }
+                for b in beneficiaries
+            ]
 
             if not beneficiaries:
                 return TransactionResult(
@@ -69,6 +82,13 @@ class BeneficiaryWorker:
             lines = ["*Saved Beneficiaries*", ""]
             for b in beneficiaries:
                 alias = b.alias or b.account_name
+                account_name = b.account_name
+
+                if alias and account_name and alias.lower() != account_name.lower():
+                    name_line = f"*{alias}* ({account_name})"
+                else:
+                    name_line = f"*{alias}*"
+
                 detail_parts = []
                 if b.bank_name:
                     detail_parts.append(b.bank_name)
@@ -76,16 +96,19 @@ class BeneficiaryWorker:
                     masked = f"…{b.account_number[-4:]}"
                     detail_parts.append(masked)
 
-                details = " • ".join(detail_parts)
-                lines.append(f"• **{alias}** ({details})")
+                details_line = "  " + " • ".join(detail_parts)
 
-            return TransactionResult(outcome=TransactionOutcome.OK, response="\n".join(lines))
+                lines.append(name_line)
+                lines.append(details_line)
+                lines.append("")
+
+            return TransactionResult(
+                outcome=TransactionOutcome.OK, 
+                response="\n".join(lines),
+                details={"viewed_beneficiaries": simple_list}
+            )
 
     async def _add_beneficiary(self, user_id: str, payload: dict, context: dict) -> TransactionResult:
-        # Check required fields
-        # Ideally, we should have an extraction step before this to ensure we have data.
-        # But for now, we assume planner/extractor did its job or we fail gracefully.
-
         name = payload.get("name") or payload.get("account_name")
         alias = payload.get("alias")
         account_number = payload.get("account_number")
@@ -101,29 +124,24 @@ class BeneficiaryWorker:
         resolved_name = None
 
         if provider:
-            # 1. Resolve Bank Code if missing
             if not bank_code and bank_name:
                 try:
                     banks_resp = await provider.get_banks()
                     if banks_resp.get("success"):
-                        # Fuzzy match or exact match
                         target = bank_name.lower()
                         for b in banks_resp.get("banks", []):
                             if b["name"].lower() == target or target in b["name"].lower():
                                 bank_code = b["code"]
-                                # Use official bank name
                                 bank_name = b["name"]
                                 break
                 except Exception:
                     logger.warning("bank_resolution_failed")
 
-            # 2. Resolve Account Name
             if account_number and bank_code:
                 try:
                     resolved = await provider.resolve_account_number(account_number, bank_code)
                     if resolved:
                         resolved_name = resolved.account_name
-                        # Auto-correct bank code/name if provider returns it
                         if resolved.bank_code:
                             bank_code = resolved.bank_code
                 except Exception as e:
@@ -134,20 +152,17 @@ class BeneficiaryWorker:
                     )
 
             if not resolved_name and provider:
-                # If provider exists but resolution returned None or failed silently
                 return TransactionResult(
                     outcome=TransactionOutcome.FAILED,
                     error=f"Account lookup failed/invalid for {account_number} at {bank_name}.",
                 )
-
-        # Use resolved name if available, else provided name (if provider wasn't available)
         final_account_name = resolved_name or name or ""
 
-        with UnitOfWork() as uow:
+        async with UnitOfWork() as uow:
             uow.beneficiaries.create(
                 user_id=user_id,
                 account_number=account_number,
-                bank_code=bank_code or "999",  # Fallback
+                bank_code=bank_code or "",  # Fallback
                 bank_name=bank_name or "Unknown Bank",
                 account_name=final_account_name,
                 alias=alias or name or final_account_name or "My Beneficiary",
@@ -161,23 +176,17 @@ class BeneficiaryWorker:
             response=f"✓ Verified & Added **{display_name}** ({final_account_name}) to your beneficiaries.",
         )
 
-    def _delete_beneficiary(self, user_id: str, payload: dict) -> TransactionResult:
+    async def _delete_beneficiary(self, user_id: str, payload: dict) -> TransactionResult:
         target = payload.get("target_alias") or payload.get("name") or payload.get("alias")
         if not target:
             return TransactionResult(
                 outcome=TransactionOutcome.FAILED, error="Please specify which beneficiary to remove."
             )
 
-        with UnitOfWork() as uow:
-            # Fuzzy search or match by alias logic needed in Repo?
-            # Generally UOW repo might only have list. We filter here or assume exact match for now.
-            # Ideally repo has `find_by_alias`.
-            # We'll fetch all and fuzzy match in code for simplicity or simplicity.
-
-            all_bens = uow.beneficiaries.get_all_by_user(user_id)
+        async with UnitOfWork() as uow:
+            all_bens = await uow.beneficiaries.get_all_for_user(user_id)
             match = None
 
-            # Try exact match on alias
             for b in all_bens:
                 if (b.alias and b.alias.lower() == target.lower()) or (
                     b.account_name and b.account_name.lower() == target.lower()

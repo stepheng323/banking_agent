@@ -3,14 +3,16 @@ from typing import Any
 
 from langchain_core.runnables import RunnableConfig
 
+from apps.core.src.agent.orchestrator.context.models import ContextEntity, ContextFrame, ContextFrameType, EntityType
 from apps.core.src.agent.orchestrator.models.domain import (
     AccountOutcome,
     FAQOutcome,
-    SupportOutcome,
     TaskStage,
     TransactionOutcome,
+    TransactionResult,
 )
 from apps.core.src.agent.orchestrator.models.state import OrchestratorState
+from apps.core.src.agent.orchestrator.services.context_manager import OrchestratorContextManager
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -143,8 +145,18 @@ async def handle_transfer_task(task: Any, task_id: str, ctx: ExecutionContext) -
     )
     if not worker:
         return
-
+    
     user_msg = _maybe_user_message(task, ctx.state)
+    
+    # [SAFETY] If recipient is known/valid (not placeholder), synthesize message to enforce it
+    # This prevents TransferWorker from re-extracting "him" from original message if LLM resolved it.
+    if task.payload.get("recipient_name"):
+        r_name = task.payload["recipient_name"]
+        if isinstance(r_name, str) and r_name.lower() not in ("him", "her", "them", "that", "it", "this", "previous"):
+             amt = task.payload.get("amount") or ""
+             user_msg = f"Send {amt} to {r_name}"
+             logger.info("user_msg_synthesized", msg=user_msg)
+
     context_data = {
         "phone_number": ctx.state.phone_number,
         "user_id": ctx.state.loaded_context.get("user_id"),
@@ -228,14 +240,22 @@ async def handle_account_task(task: Any, task_id: str, ctx: ExecutionContext) ->
 
 
 async def handle_beneficiary_task(task: Any, task_id: str, ctx: ExecutionContext) -> None:
-    # Check for explicit management intent (List/Add/Delete)
-    if task.payload.get("intent") or task.payload.get("list_intent"):
+    action = task.payload.get("action")
+    is_management = (
+        task.payload.get("intent")
+        or task.payload.get("list_intent")
+        or action in ("list_beneficiaries", "add_beneficiary", "delete_beneficiary", "update_beneficiary")
+    )
+
+    if is_management:
         from apps.core.src.agent.graphs.beneficiary.worker import BeneficiaryWorker
         from apps.core.src.agent.orchestrator.execution.handlers import _apply_result_patch
 
+        if not task.payload.get("intent") and action:
+            task.payload["intent"] = action
+
         worker = BeneficiaryWorker()
 
-        # Try to get banking provider for validation
         provider = None
         transfer_worker = ctx.services.get("transfer")
         if transfer_worker and hasattr(transfer_worker, "banking_provider"):
@@ -252,6 +272,40 @@ async def handle_beneficiary_task(task: Any, task_id: str, ctx: ExecutionContext
 
         if result.outcome == TransactionOutcome.OK:
             task.stage = TaskStage.COMPLETED
+            
+            # [NEW] Context Push (Pattern A)
+            if result.details and "viewed_beneficiaries" in result.details:
+                viewed = result.details["viewed_beneficiaries"]
+                if viewed:
+                    import time
+                    ctx_manager = OrchestratorContextManager()
+                    
+                    entities = []
+                    for b in viewed:
+                        entities.append(
+                            ContextEntity(
+                                entity_type=EntityType.BENEFICIARY,
+                                label=b.get("alias") or b.get("name"),
+                                data=b
+                            )
+                        )
+                    
+                    frame = ContextFrame(
+                        frame_id=f"frame_{int(time.time())}",
+                        frame_type=ContextFrameType.BENEFICIARY_LIST,
+                        items=entities,
+                        created_at_ts=int(time.time()),
+                        source_message_id=ctx.state.last_message_id
+                    )
+                    
+                    # Update State via Manager
+                    ctx_manager.push_frame(ctx.state, frame)
+                    
+                    if hasattr(ctx.agg, "updates"):
+                        ctx.agg.updates["context_frames"] = ctx.state.context_frames
+                    
+                    logger.info("context_frame_pushed", type="beneficiary_list", count=len(entities))
+
             if result.response:
                 task.payload["result"] = result.response
                 ctx.agg.say(result.response)
@@ -470,3 +524,31 @@ async def handle_support_task(task: Any, task_id: str, ctx: ExecutionContext) ->
         task.stage = TaskStage.FAILED
         task.payload["error"] = result.error or "Support flow failed"
         ctx.agg.say("I can't access support right now.")
+
+
+async def handle_orchestrator_task(task: Any, task_id: str, ctx: ExecutionContext) -> None:
+    """Handle orchestrator tasks (e.g. resumption)."""
+    action = task.payload.get("action")
+    if action == "resume_session":
+        if not ctx.state.stashed_sessions:
+            ctx.agg.say("No session to resume.")
+            task.stage = TaskStage.FAILED
+            task.payload["error"] = "No stashed session"
+            return
+        
+        # Pop last session
+        last_session = ctx.state.stashed_sessions[-1]
+        remaining_stash = ctx.state.stashed_sessions[:-1]
+        
+        intent = last_session.get("intent", "transaction")
+        p_interrupt = last_session.get("pending_interrupt")
+        logger.info("resuming_session", intent=intent, has_interrupt=bool(p_interrupt))
+        
+        # Restore State
+        ctx.agg.updates["tasks"] = last_session["tasks"]
+        ctx.agg.updates["waves"] = last_session["waves"]
+        ctx.agg.updates["current_wave_index"] = last_session["current_wave_index"]
+        ctx.agg.updates["pending_interrupt"] = p_interrupt
+        ctx.agg.updates["stashed_sessions"] = remaining_stash
+        
+        ctx.agg.say(f"Resuming {intent}...")

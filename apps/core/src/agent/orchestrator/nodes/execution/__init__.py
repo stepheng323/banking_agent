@@ -13,6 +13,7 @@ from apps.core.src.agent.orchestrator.execution.handlers import (
     handle_query_task,
     handle_support_task,
     handle_transfer_task,
+    handle_orchestrator_task,
 )
 from apps.core.src.agent.orchestrator.models.domain import (
     PendingInterrupt,
@@ -36,7 +37,13 @@ async def advance_wave(state: OrchestratorState, config: RunnableConfig) -> dict
         return {}
 
     current_wave = state.waves[state.current_wave_index]
-    logger.info("advance_wave", index=state.current_wave_index, tasks=current_wave)
+    logger.info("advance_wave", index=state.current_wave_index, tasks=current_wave, context_frames_len=len(state.context_frames))
+    
+    # [SAFETY] If pending_interrupt is already set (e.g. valid restoration), do NOT execute tasks.
+    # Return it to force graph to stop/route correctly.
+    if state.pending_interrupt:
+        logger.info("advance_wave_blocked_by_interrupt", kind=state.pending_interrupt.kind)
+        return {"pending_interrupt": state.pending_interrupt}
 
     services = config["configurable"].get("services") or {}
     agg = ExecutionAggregation(state.tasks)
@@ -58,6 +65,7 @@ async def advance_wave(state: OrchestratorState, config: RunnableConfig) -> dict
         "data": handle_data_task,
         "faq": handle_faq_task,
         "support": handle_support_task,
+        "orchestrator": handle_orchestrator_task,
     }
 
     for task_id in current_wave:

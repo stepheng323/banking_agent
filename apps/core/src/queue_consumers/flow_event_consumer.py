@@ -70,6 +70,7 @@ class FlowEventConsumer:
 
     async def _handle_pin_verified(
         self,
+        flow_type: str,
         phone_number: str,
         success: bool,
         channel: str,

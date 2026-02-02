@@ -18,8 +18,9 @@ async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[s
     if state.waves and state.pending_interrupt is None:
         return {}
 
-    if state.waves:
-        return {}  # Don't disrupt existing plan mid-flight for now
+    # [MODIFIED] Always run planner to check for context switching
+    # if state.waves:
+    #     return {}
 
     task_planner = config["configurable"].get("task_planner")
     text = state.last_message_text or ""
@@ -67,6 +68,44 @@ async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[s
         except Exception as e:
             logger.warning("planner_context_check_failed", error=str(e))
 
+    # [NEW] Active Flow Context
+    active_intent = None
+    if state.waves:
+        try:
+            current_wave = state.waves[state.current_wave_index]
+            if current_wave:
+                # Check first task of wave to determine active flow type
+                t_id = current_wave[0]
+                if t_id in state.tasks:
+                    active_task = state.tasks[t_id]
+                    active_intent = active_task.type
+                    
+                    # Serialize simplified payload
+                    # Remove internal fields to save tokens
+                    payload_view = {k: v for k, v in active_task.payload.items() if k not in ["result", "error", "confirmation"]}
+                    
+                    planner_context_parts.append(
+                        f"Active Flow: {active_intent.upper()} (User is currently in this flow).\n"
+                        f"Current Task Data: {payload_view}\n"
+                        "Review Rule 9 (CONTEXT OVERRIDE):"
+                        f"- If input is slot-filling or update (e.g. 'Mum', '5k'), KEEP intent='{active_intent}'.\n"
+                        "- If input is CLEARLY unrelated (e.g. 'Show beneficiaries', 'Balance'), CHANGE intent to new one."
+                    )
+                    logger.info("planner_context_active_flow_injected", intent=active_intent)
+        except Exception as e:
+            logger.warning("active_flow_context_failed", error=str(e))
+
+    # [NEW] Context Manager Integration (Pattern A)
+    # Inject short-term memory (transactions, beneficiaries, etc.)
+    from apps.core.src.agent.orchestrator.services.context_manager import OrchestratorContextManager
+    
+    ctx_manager = OrchestratorContextManager()
+    short_term_context = ctx_manager.build_llm_summary(state)
+    
+    if short_term_context:
+        planner_context_parts.append(short_term_context)
+        logger.info("planner_context_injected", context="short_term_memory")
+
     planner_context = "\n\n".join(planner_context_parts) if planner_context_parts else "None"
 
     try:
@@ -86,8 +125,34 @@ async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[s
         logger.error("planner_failed", error=str(e))
         return {"final_response": "I'm having trouble understanding. Could you rephrase?"}
 
+    # [NEW] Handle Cancellation Explicitly
+    if getattr(planner_output, "is_cancellation", False) or planner_output.primary_intent == "cancel":
+        logger.info("planner_cancellation_detected", intent=planner_output.primary_intent)
+        return {"waves": [], "final_response": planner_output.response or "Cancelled."}
+
     if not planner_output or not planner_output.tasks:
+        # If no tasks, verify if we should switch context or pass-through
+        # E.g. "Hi" -> conversational -> no tasks
+        if state.waves and planner_output and planner_output.primary_intent != "conversational":
+             # If planner sees a structured intent but 0 tasks, it might be a cancellation or error
+             # If intent differs from active, we probably want to clear waves
+             if planner_output.primary_intent != active_intent:
+                  logger.info("planner_switch_empty_tasks", old=active_intent, new=planner_output.primary_intent)
+                  return {"waves": [], "final_response": planner_output.response}
+        
         return {"final_response": planner_output.response if planner_output else "I didn't understand."}
+
+    # [NEW] Decision: Switch vs Pass-through
+    if state.waves and active_intent:
+        # If intent matches, assume slot-filling/update and let Extractor handle it
+        # UNLESS it's a "mixed" intent (which might add tasks)
+        if planner_output.primary_intent == active_intent and planner_output.primary_intent != "mixed":
+            logger.info("planner_intent_match_active", intent=active_intent, action="pass_through")
+            return {} 
+        
+        # If intent differs (e.g. Transfer -> Beneficiary), we Switch.
+        logger.info("planner_intent_switch", old=active_intent, new=planner_output.primary_intent)
+        # Proceed to generate new tasks (which will overwrite active waves)
 
     new_tasks = {}
     wave_tasks = []
