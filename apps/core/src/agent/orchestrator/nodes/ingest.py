@@ -8,7 +8,7 @@ async def ingest_message(state: OrchestratorState) -> dict:
     """Entry point. Setup state for the new turn."""
     logger.info("ingest_message", user=state.phone_number, text=state.last_message_text)
 
-    updates = {"outbox": [], "final_response": None}
+    updates = {"outbox": [], "final_response": None, "fast_path_triggered": False}
 
     if state.last_callback:
         logger.info("processing_callback", payload=state.last_callback)
