@@ -87,12 +87,12 @@ app = FastAPI(title="Core Banking Service", lifespan=lifespan)
 
 
 @app.get("/")
-async def root():
+async def root() -> dict[str, str]:
     """Root endpoint"""
     return {"service": "Core Banking Service", "status": "running", "version": "1.0.0"}
 
 
 @app.get("/health")
-async def health():
+async def health() -> dict[str, str]:
     """Health check endpoint"""
     return {"status": "healthy"}
