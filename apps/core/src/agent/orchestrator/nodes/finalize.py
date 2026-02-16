@@ -51,31 +51,37 @@ async def finalize(state: OrchestratorState, config: RunnableConfig) -> dict:
         last_session = state.stashed_sessions[-1]
         intent = last_session.get("intent", "transaction")
         prompt = f"\n\nWould you like to resume your {intent}?"
-        
+
         # Add prompt to outbox
         if outbox and outbox[-1].get("type") == "say":
-             outbox[-1]["text"] += prompt
+            outbox[-1]["text"] += prompt
         else:
-             outbox.append({"type": "say", "text": prompt.strip()})
-        
+            outbox.append({"type": "say", "text": prompt.strip()})
+
         # Add Context Frame to signal active prompt
-        from apps.core.src.agent.orchestrator.context.models import ContextFrame, ContextFrameType, ContextEntity, EntityType
         import time
         import uuid
-        
+
+        from apps.core.src.agent.orchestrator.context.models import (
+            ContextEntity,
+            ContextFrame,
+            ContextFrameType,
+            EntityType,
+        )
+
         frame = ContextFrame(
-             frame_id=str(uuid.uuid4()),
-             frame_type=ContextFrameType.GENERIC, 
-             items=[
-                 ContextEntity(
-                     entity_id="resumption_prompt",
-                     label=f"Resume {intent}",
-                     entity_type=EntityType.GENERIC,
-                     data={"intent": intent, "resume_prompt": True}
-                 )
-             ],
-             created_at_ts=int(time.time()),
-             ttl_seconds=300
+            frame_id=str(uuid.uuid4()),
+            frame_type=ContextFrameType.GENERIC,
+            items=[
+                ContextEntity(
+                    entity_id="resumption_prompt",
+                    label=f"Resume {intent}",
+                    entity_type=EntityType.GENERIC,
+                    data={"intent": intent, "resume_prompt": True},
+                )
+            ],
+            created_at_ts=int(time.time()),
+            ttl_seconds=300,
         )
         current_frames = list(state.context_frames)
         current_frames.append(frame)
@@ -88,7 +94,7 @@ async def finalize(state: OrchestratorState, config: RunnableConfig) -> dict:
         "current_wave_index": 0,
         "pin_verified": False,  # Security: Reset PIN verification status
         "last_callback": None,  # Security: Clear stale callback data
-        **context_updates
+        **context_updates,
     }
 
 
@@ -138,6 +144,11 @@ async def _handle_completed_tasks(
             queue=queue,
             redis_client=redis_client,
         )
+
+        # Immediate success feedback (receipt follows asynchronously)
+        display_name = task.payload.get("recipient_resolved_name") or task.payload.get("recipient_name") or "recipient"
+        amount = task.payload.get("amount", "")
+        outbox.append({"type": "say", "text": f"✅ Transfer of ₦{amount:,.2f} to {display_name} is being processed."})
 
         if beneficiary_service:
             await _handle_beneficiary_suggestion(
@@ -190,7 +201,7 @@ async def _queue_single_transfer_receipt(
             "account_name": task.payload.get("source_account_name"),
         },
         "recipient": {
-            "name": task.payload.get("recipient_name"),
+            "name": task.payload.get("recipient_resolved_name") or task.payload.get("recipient_name"),
             "account_number": task.payload.get("recipient_account"),
             "bank_name": task.payload.get("recipient_bank_name"),
         },

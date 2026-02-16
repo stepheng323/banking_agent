@@ -27,7 +27,16 @@ class TaskStage(str, Enum):
     CANCELLED = "cancelled"
 
 
-# --- 2. Task Definition (Durable Truth) ---
+class MetaIntent(str, Enum):
+    """Deterministic intents for meta interactions."""
+
+    IDENTITY = "identity"
+    CAPABILITIES = "capabilities"
+    LIMITS = "limits"
+    BRAND_ORIGIN = "brand_origin"
+    GREETING = "greeting"
+    THANKS = "thanks"
+
 
 
 class TransferConfirmation(BaseModel):

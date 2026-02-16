@@ -1,3 +1,4 @@
+import re
 from typing import Any
 
 from langchain_core.runnables import RunnableConfig
@@ -19,10 +20,6 @@ async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[s
     if state.waves and state.pending_interrupt is None:
         return {}
 
-    # [MODIFIED] Always run planner to check for context switching
-    # if state.waves:
-    #     return {}
-
     task_planner = config["configurable"].get("task_planner")
     text = state.last_message_text or ""
 
@@ -31,9 +28,22 @@ async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[s
 
     if redis_client:
         try:
-            # Check for pending beneficiary suggestion
+            import asyncio
+
             suggestion_key = f"user:{state.phone_number}:beneficiary_suggestion"
-            suggestion_data = await redis_client.get(suggestion_key)
+            query_session_key = f"query:session:{state.phone_number}"
+
+            # Pre-check transactional keywords to skip query session processing
+            transactional_keywords = {"send", "transfer", "pay", "airtime", "data", "buy", "recharge", "topup"}
+            message_tokens = set(re.findall(r"[a-z0-9']+", text.lower()))
+            is_transactional = bool(message_tokens & transactional_keywords)
+
+            # Parallel Redis fetch
+            suggestion_data, query_session_data = await asyncio.gather(
+                redis_client.get(suggestion_key),
+                redis_client.get(query_session_key) if not is_transactional else asyncio.sleep(0),
+            )
+
             if suggestion_data:
                 import json
 
@@ -46,10 +56,7 @@ async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[s
                 )
                 logger.info("planner_context_injected", context="beneficiary_suggestion")
 
-            # Check for active query session (continuation context)
-            query_session_key = f"query:session:{state.phone_number}"
-            query_session_data = await redis_client.get(query_session_key)
-            if query_session_data:
+            if not is_transactional and query_session_data:
                 import json
 
                 session = json.loads(query_session_data)
@@ -66,23 +73,21 @@ async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[s
                     "- If the user asks a fresh query (e.g., 'show my recent transactions'), still create a query task as a new query."
                 )
                 logger.info("planner_context_injected", context="query_session")
+            elif is_transactional:
+                logger.info("planner_query_context_skipped", reason="transactional_keywords_detected")
         except Exception as e:
             logger.warning("planner_context_check_failed", error=str(e))
 
-    # [NEW] Active Flow Context
     active_intent = None
     if state.waves:
         try:
             current_wave = state.waves[state.current_wave_index]
             if current_wave:
-                # Check first task of wave to determine active flow type
                 t_id = current_wave[0]
                 if t_id in state.tasks:
                     active_task = state.tasks[t_id]
                     active_intent = active_task.type
 
-                    # Serialize simplified payload
-                    # Remove internal fields to save tokens
                     payload_view = {
                         k: v for k, v in active_task.payload.items() if k not in ["result", "error", "confirmation"]
                     }
@@ -180,8 +185,23 @@ async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[s
         if plan_item.executor == "query" and not payload.get("message"):
             payload["message"] = plan_item.instruction or text
 
-        if plan_item.executor == "transfer" or plan_item.executor == "airtime" or plan_item.executor == "data":
+        if plan_item.executor in ("transfer", "airtime", "data"):
             payload["skip_extraction"] = True
+
+        # Map planner's generic field names to TransferPayload field names
+        if plan_item.executor == "transfer":
+            if "recipient" in payload:
+                recipient_val = payload.pop("recipient")
+                if recipient_val:
+                    recipient_val = recipient_val.rstrip("},. ")
+                if not payload.get("recipient_name"):
+                    payload["recipient_name"] = recipient_val
+
+            from shared.utils.narration import format_narration
+
+            payload["narration"] = format_narration(
+                payload.get("narration"), payload.get("recipient_resolved_name") or payload.get("recipient_name")
+            )
 
         spec = TaskSpec(
             id=plan_item.task_id,
