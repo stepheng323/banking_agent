@@ -18,7 +18,7 @@ def _calculate_transfer_fee(amount: float) -> float:
     return float(max(fee, 10))
 
 
-def format_transfer_summary(data: dict) -> str:
+def format_transfer_summary(data: dict, include_source: bool = True) -> str:
     """Format a WhatsApp-friendly transfer confirmation summary.
 
     Expected keys in data:
@@ -29,6 +29,8 @@ def format_transfer_summary(data: dict) -> str:
       sourceBank: str
       sourceAccount: str
       narration: Optional[str]
+      description: Optional[str]
+      user_note: Optional[str]
     """
     amount = float(data.get("amount", 0))
     recipient_name = str(data.get("recipientName") or "")
@@ -37,6 +39,8 @@ def format_transfer_summary(data: dict) -> str:
     source_bank = str(data.get("sourceBank") or "")
     source_account = str(data.get("sourceAccount") or "")
     narration: str | None = data.get("narration")
+    description: str | None = data.get("description")
+    user_note: str | None = data.get("user_note")
 
     last4 = source_account[-4:] if source_account else "????"
 
@@ -45,11 +49,17 @@ def format_transfer_summary(data: dict) -> str:
         f"{recipient_bank.title()} • {recipient_account}",
     ]
 
-    if narration:
-        lines.append(f"Narration: _{narration.strip().capitalize()}_")
+    # Preference: description > narration (if no description)
+    current_desc = description or narration
+    if current_desc:
+        lines.append(f"Description: {current_desc.strip().capitalize()}")
 
-    lines.append("")
-    lines.append(f"From: {source_bank} (···{last4})")
+    if user_note:
+        lines.append(f"User note: _{user_note.strip().capitalize()}_")
+
+    if include_source:
+        lines.append("")
+        lines.append(f"From: {source_bank} (···{last4})")
 
     return "\n".join(lines)
 

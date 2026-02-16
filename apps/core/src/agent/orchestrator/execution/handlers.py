@@ -26,6 +26,7 @@ class ExecutionAggregation:
         self.needs_confirm_tasks: list[str] = []
         self.needs_auth_tasks: list[str] = []
         self.prompts: list[str] = []
+        self.prompts_by_task: dict[str, str] = {}
 
     def add_outbox(self, entry: dict[str, Any]) -> None:
         self.updates.setdefault("outbox", [])
@@ -40,9 +41,11 @@ class ExecutionAggregation:
         if text:
             self.add_outbox({"type": "say", "text": text})
 
-    def add_prompt(self, prompt: str | None) -> None:
+    def add_prompt(self, prompt: str | None, task_id: str | None = None) -> None:
         if prompt:
             self.prompts.append(prompt)
+            if task_id:
+                self.prompts_by_task[task_id] = prompt
 
     def add_missing_fields(self, task_id: str, fields: list[str] | None) -> None:
         if fields:
@@ -59,7 +62,17 @@ class ExecutionContext:
 
 
 def _maybe_user_message(task: Any, state: OrchestratorState) -> str | None:
+    logger.info(
+        "maybe_user_msg_check",
+        task_id=task.id,
+        last_int=state.last_interrupt.task_ids if state.last_interrupt else None,
+    )
     if task.stage in (TaskStage.DRAFT, TaskStage.EXTRACTED):
+        # [Prevention of Cross-Contamination]
+        # Only provide user input to tasks that were actively soliciting it (part of the last interrupt).
+        # This prevents background/suppressed tasks from consuming input meant for the active task.
+        if state.last_interrupt and task.id not in state.last_interrupt.task_ids:
+            return None
         return state.last_message_text
     return None
 
@@ -117,7 +130,7 @@ def _handle_transaction_outcome(
     elif result.outcome == TransactionOutcome.NEEDS_INPUT:
         task.stage = TaskStage.EXTRACTED
         agg.add_missing_fields(task_id, result.required_fields)
-        agg.add_prompt(result.prompt)
+        agg.add_prompt(result.prompt, task_id)
 
     elif result.outcome == TransactionOutcome.NEEDS_CONFIRMATION:
         task.stage = TaskStage.AWAITING_CONFIRMATION
@@ -151,7 +164,9 @@ async def handle_transfer_task(task: Any, task_id: str, ctx: ExecutionContext) -
 
     # [SAFETY] If recipient is known/valid (not placeholder), synthesize message to enforce it
     # This prevents TransferWorker from re-extracting "him" from original message if LLM resolved it.
-    if task.payload.get("recipient_name"):
+    # Skip synthesis when waiting for account selection — raw input (e.g. "2") must reach the extractor.
+    needs_account_selection = not task.payload.get("source_account_id")
+    if task.payload.get("recipient_name") and not needs_account_selection:
         r_name = task.payload["recipient_name"]
         if isinstance(r_name, str) and r_name.lower() not in ("him", "her", "them", "that", "it", "this", "previous"):
             amt = task.payload.get("amount") or ""
@@ -165,7 +180,12 @@ async def handle_transfer_task(task: Any, task_id: str, ctx: ExecutionContext) -
         "beneficiaries": ctx.state.loaded_context.get("beneficiaries", []),
     }
 
-    logger.info("transfer_worker_start", payload=task.payload)
+    logger.info("transfer_worker_start", payload=task.payload, task_id=task_id)
+    try:
+        with open("/tmp/debug_trace.txt", "a") as f:
+            f.write(f"WorkerStart: {task_id} | Payload: {task.payload}\n")
+    except:
+        pass
     result = await worker.run(
         payload=task.payload,
         context=context_data,
@@ -177,6 +197,8 @@ async def handle_transfer_task(task: Any, task_id: str, ctx: ExecutionContext) -
         outcome=result.outcome,
         has_receipt=bool(result.receipt),
         result_obj=str(result),
+        task_id=task_id,
+        patch_skip_ext=result.patch.get("skip_extraction") if result.patch else None,
     )
 
     _apply_result_patch(task, result)
@@ -262,7 +284,7 @@ async def handle_account_task(task: Any, task_id: str, ctx: ExecutionContext) ->
     elif result.outcome == AccountOutcome.NEEDS_INPUT:
         task.stage = TaskStage.EXTRACTED
         ctx.agg.add_missing_fields(task_id, result.required_fields or ["identifier"])
-        ctx.agg.add_prompt(result.prompt)
+        ctx.agg.add_prompt(result.prompt, task_id)
 
     elif result.outcome == AccountOutcome.FAILED:
         task.stage = TaskStage.FAILED
@@ -442,7 +464,7 @@ async def handle_query_task(task: Any, task_id: str, ctx: ExecutionContext) -> N
     elif result.outcome == TransactionOutcome.NEEDS_INPUT:
         task.stage = TaskStage.EXTRACTED
         if result.response:
-            ctx.agg.add_prompt(result.response)
+            ctx.agg.add_prompt(result.response, task_id)
             ctx.agg.add_missing_fields(task_id, ["clarification"])
 
     elif result.outcome == TransactionOutcome.FAILED:
@@ -563,7 +585,7 @@ async def handle_support_task(task: Any, task_id: str, ctx: ExecutionContext) ->
     elif result.outcome == SupportOutcome.NEEDS_INPUT:
         task.stage = TaskStage.EXTRACTED
         if result.response:
-            ctx.agg.add_prompt(result.response)
+            ctx.agg.add_prompt(result.response, task_id)
             ctx.agg.add_missing_fields(task_id, ["clarification"])
     elif result.outcome == SupportOutcome.FAILED:
         task.stage = TaskStage.FAILED

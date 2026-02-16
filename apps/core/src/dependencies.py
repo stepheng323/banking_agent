@@ -4,27 +4,22 @@ from apps.core.src.agent.executors.airtime import AirtimeExecutor
 from apps.core.src.agent.executors.data import DataExecutor
 from apps.core.src.agent.executors.transfer import TransferExecutor
 from apps.core.src.agent.graphs.__shared__.beneficiary.suggestion_service import BeneficiarySuggestionService
-from apps.core.src.agent.graphs.account.worker import AccountWorker
-from apps.core.src.agent.graphs.airtime.extractor import AirtimeEntityExtractor
-from apps.core.src.agent.graphs.airtime.worker import AirtimeWorker
-from apps.core.src.agent.graphs.data.extractor import DataEntityExtractor
-from apps.core.src.agent.graphs.data.worker import DataWorker
-from apps.core.src.agent.graphs.faq.worker import FAQWorker
+from apps.core.src.agent.graphs.account import AccountWorker
+from apps.core.src.agent.graphs.airtime import AirtimeWorker
+from apps.core.src.agent.graphs.data import DataWorker as AgentDataWorker
+from apps.core.src.agent.graphs.faq import FAQWorker
 from apps.core.src.agent.graphs.onboarding.executor import OnboardingExecutor
 from apps.core.src.agent.graphs.onboarding.service import OnboardingService
 from apps.core.src.agent.graphs.query.session import QuerySessionManager
-from apps.core.src.agent.graphs.query.worker import QueryWorker
-from apps.core.src.agent.graphs.support.worker import SupportWorker
-from apps.core.src.agent.graphs.transfer.services.extractor import TransferEntityExtractor
-from apps.core.src.agent.graphs.transfer.worker import TransferWorker
+from apps.core.src.agent.graphs.query.worker import QueryWorker as AgentQueryWorker
+from apps.core.src.agent.graphs.support import SupportWorker
+from apps.core.src.agent.graphs.transfer import TransferWorker
 from apps.core.src.agent.orchestrator import OrchestratorAgent
 from apps.core.src.agent.orchestrator.config import OrchestratorDependencies
-from apps.core.src.agent.orchestrator.services import MediaService
-from apps.core.src.queue_consumers import MessageConsumer, TransactionConsumer
+from apps.core.src.agent.orchestrator.services.media_service import MediaService
+from apps.core.src.queue_consumers import MessageConsumer, OutboxConsumer, TransactionConsumer
 from apps.core.src.queue_consumers.flow_event_consumer import FlowEventConsumer
-from apps.core.src.queue_consumers.outbox_consumer import OutboxConsumer
 from shared.cache.bank_cache import BankCacheService
-from shared.cache.flow_session_manager import FlowSessionManager
 from shared.cache.redis_client import RedisClient
 from shared.cache.user_data import UserDataCache
 from shared.clients.factories.payment import PaymentProviderFactory
@@ -58,31 +53,31 @@ def setup_dependencies() -> tuple[MessageConsumer, TransactionConsumer, FlowEven
     beneficiary_repository = BeneficiaryRepository(db=get_db_session())
     account_repository = AccountRepository(db=get_db_session())
     actionable_message_repository = ActionableMessageRepository(db=get_db_session())
+    transaction_repository = TransactionRepository(db=get_db_session())
+
+    beneficiary_suggestion_service = BeneficiarySuggestionService(redis_queue)
 
     llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
 
     banking_provider = MonoBankingProvider()
+    direct_debit_provider = MonoDirectDebitProvider()
 
     account_worker = AccountWorker(
         account_repo=account_repository,
         user_repo=user_repository,
         llm=llm,
         banking_provider=banking_provider,
-        session_manager=FlowSessionManager(),
-        direct_debit_provider=MonoDirectDebitProvider(),
+        session_manager=None,
+        direct_debit_provider=direct_debit_provider,
     )
 
-    transaction_repository = TransactionRepository(db=get_db_session())
-
     bill_provider = PaymentProviderFactory.get_bill_payment_provider()
-    data_worker = None
-    if bill_provider:
-        data_worker = DataWorker(
-            extractor=DataEntityExtractor(llm),
-            bill_provider=bill_provider,
-            transaction_repo=transaction_repository,
-            queue=redis_queue,
-        )
+    data_worker = AgentDataWorker(
+        extractor=None,
+        bill_provider=bill_provider,
+        transaction_repo=transaction_repository,
+        queue=redis_queue,
+    )
 
     support_worker = SupportWorker(
         llm=llm,
@@ -92,13 +87,8 @@ def setup_dependencies() -> tuple[MessageConsumer, TransactionConsumer, FlowEven
         db_session=get_db_session(),
     )
 
-    faq_worker = FAQWorker(
-        llm=llm,
-        get_db=get_db_session,
-    )
-
-    query_session_manager = QuerySessionManager(redis_client=shared_redis)
-    query_worker = QueryWorker(
+    query_session_manager = QuerySessionManager(shared_redis)
+    query_worker = AgentQueryWorker(
         llm=llm,
         banking_provider=banking_provider,
         session_manager=query_session_manager,
@@ -109,51 +99,53 @@ def setup_dependencies() -> tuple[MessageConsumer, TransactionConsumer, FlowEven
 
     bank_cache_service = BankCacheService(redis_client=shared_redis)
 
-    agent_transfer_worker = TransferWorker(
-        beneficiary_repo=beneficiary_repository,
-        account_repo=account_repository,
-        queue=redis_queue,
-        extractor=TransferEntityExtractor(llm),
-        banking_provider=banking_provider,
-        bank_cache=bank_cache_service,
-        transaction_repo=transaction_repository,
-    )
-
     agent_airtime_worker = AirtimeWorker(
-        extractor=AirtimeEntityExtractor(llm),
+        extractor=None,
         bill_provider=bill_provider,
         transaction_repo=transaction_repository,
         queue=redis_queue,
     )
 
-    media_service = MediaService(whatsapp_client)
-    beneficiary_suggestion_service = BeneficiarySuggestionService(
-        queue=redis_queue,
-        redis_client=shared_redis,
+    faq_worker = FAQWorker(
+        llm=llm,
+        get_db=get_db_session,
     )
+
+    agent_transfer_worker = TransferWorker(
+        validation_service=None,
+        beneficiary_repo=beneficiary_repository,
+        account_repo=account_repository,
+        queue=redis_queue,
+        extractor=None,
+        banking_provider=banking_provider,
+        bank_cache=bank_cache_service,
+        transaction_repo=transaction_repository,
+    )
+
+    media_service = MediaService(whatsapp_client)
 
     orchestrator_deps = OrchestratorDependencies(
         llm=llm,
         user_repo=user_repository,
         beneficiary_repo=beneficiary_repository,
         actionable_message_repo=actionable_message_repository,
-        whatsapp_client=whatsapp_client,
         task_queue_service=task_queue_service,
         conversation_responder=conversation_responder,
         transfer_service=agent_transfer_worker,
         airtime_service=agent_airtime_worker,
         query_service=query_worker,
+        support_service=support_worker,
         account_service=account_worker,
         media_service=media_service,
         data_service=data_worker,
-        support_service=support_worker,
-        faq_service=faq_worker,
         user_cache=user_data_cache,
+        faq_service=faq_worker,
+        whatsapp_client=whatsapp_client,
+        queue=redis_queue,
+        beneficiary_suggestion_service=beneficiary_suggestion_service,
         account_repo=account_repository,
         redis_client=shared_redis,
         banking_provider=banking_provider,
-        queue=redis_queue,
-        beneficiary_suggestion_service=beneficiary_suggestion_service,
     )
 
     orchestrator = OrchestratorAgent(orchestrator_deps)
@@ -165,23 +157,19 @@ def setup_dependencies() -> tuple[MessageConsumer, TransactionConsumer, FlowEven
         orchestrator=orchestrator,
     )
 
-    transfer_executor = TransferExecutor(
-        banking_provider=banking_provider,
-        transaction_repo=transaction_repository,
-    )
-
     airtime_executor = AirtimeExecutor(
         bill_provider=bill_provider,
         transaction_repo=transaction_repository,
         queue=redis_queue,
     )
-
-    data_executor = None
-    if bill_provider:
-        data_executor = DataExecutor(
-            bill_provider=bill_provider,
-            transaction_repo=transaction_repository,
-        )
+    transfer_executor = TransferExecutor(
+        banking_provider=banking_provider,
+        transaction_repo=transaction_repository,
+    )
+    data_executor = DataExecutor(
+        bill_provider=bill_provider,
+        transaction_repo=transaction_repository,
+    )
 
     transaction_consumer = TransactionConsumer(
         redis_queue=redis_queue,

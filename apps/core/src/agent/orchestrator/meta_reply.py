@@ -8,6 +8,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
+from apps.core.src.agent.orchestrator.models.domain import MetaIntent
 from apps.core.src.agent.orchestrator.system_profile import SYSTEM_PROFILE, SystemProfile
 
 
@@ -20,19 +21,13 @@ class MetaReply(BaseModel):
 
 
 META_SYSTEM_PROMPT = (
-    "You are the Meta Reply module for a banking assistant.\n"
-    "Your job: answer user questions about identity, name origin, help, capabilities, and basic social niceties.\n"
-    "You MUST follow the provided system_profile strictly.\n\n"
-    "Rules:\n"
-    "- Never invent capabilities. Only mention items in system_profile.supported_domains.\n"
-    "- When listing capabilities, use the items in system_profile.supported_domains verbatim.\n"
+    "You write short WhatsApp replies for a banking assistant.\n"
+    "You MUST follow system_profile exactly.\n"
+    "- Never claim a feature that is not listed in system_profile.supported_domains.\n"
     "- If asked about something not supported, say it's not available yet and suggest a supported alternative.\n"
-    "- If asked about something unrelated to banking, say you focus on the supported domains and offer those.\n"
-    "- Keep responses short (max 6 lines).\n"
-    "- Use the user's language if obvious from the message; otherwise use system_profile.user_language_hint.\n"
-    "- Maintain a calm, minimal money-tool tone (not chatty).\n"
-    '- If the user asks for normal banking actions (send money, buy data, check balance), output handoff="domain" and leave message empty.\n'
-    'Output ONLY JSON with keys: handoff, language, message.'
+    "- Keep the tone minimal and confident (not chatty).\n"
+    "- Keep the reply under 5 lines.\n\n"
+    'Return ONLY JSON: {"message":"...", "language":"en|yo|pcm|ha"}'
 )
 
 
@@ -53,39 +48,7 @@ def normalize_language_hint(language: str | None) -> str:
 
 def fallback_meta_message(profile: SystemProfile) -> str:
     supported = ", ".join(profile.supported_domains)
-    unsupported = ", ".join(profile.unsupported_capabilities)
-    return (
-        f"I'm {profile.name}. {profile.description}\n"
-        f"I can help with: {supported}.\n"
-        f"I can't do: {unsupported}.\n"
-        "What would you like to do?"
-    )
-
-
-def enforce_capability_contract(message: str, profile: SystemProfile) -> str:
-    if not message:
-        return fallback_meta_message(profile)
-
-    lowered = message.lower()
-    neg_markers = (
-        "not",
-        "can't",
-        "cannot",
-        "do not",
-        "don't",
-        "not yet",
-        "not available",
-        "unsupported",
-        "coming soon",
-        "not currently",
-    )
-
-    for capability in profile.unsupported_capabilities:
-        cap_lower = capability.lower()
-        if cap_lower in lowered and not any(marker in lowered for marker in neg_markers):
-            return fallback_meta_message(profile)
-
-    return message
+    return f"I'm {profile.name}. {profile.description}\nI can help with: {supported}.\nWhat would you like to do?"
 
 
 async def generate_meta_reply(
@@ -93,23 +56,42 @@ async def generate_meta_reply(
     *,
     user_message: str,
     user_language_hint: str | None,
+    meta_intent: MetaIntent | None = None,
+    redis_client: Any | None = None,
     profile: SystemProfile = SYSTEM_PROFILE,
     active_session: dict[str, Any] | None = None,
 ) -> tuple[str, Literal["meta", "domain"]]:
-    """Generate a meta response grounded in the SystemProfile."""
+    """Generate a meta response grounded in the SystemProfile with Caching."""
+
+    # 1. Deterministic Cache Key Construction
+    language = normalize_language_hint(user_language_hint)
+
+    if meta_intent and redis_client:
+        cache_key = f"meta:v3:{language}:{meta_intent.value}"
+        try:
+            cached_msg = await redis_client.get(cache_key)
+            if cached_msg:
+                # Return cached UTF-8 string
+                return cached_msg.decode("utf-8") if isinstance(cached_msg, bytes) else str(cached_msg), "meta"
+        except Exception:
+            pass  # Fallback to generation on cache error
+
     if not llm:
         return fallback_meta_message(profile), "meta"
 
+    # 2. LLM Generation (Cache Miss)
     payload: dict[str, Any] = {
         "user_message": user_message,
-        "user_language_hint": normalize_language_hint(user_language_hint),
+        "language_hint": language,
         "system_profile": asdict(profile),
     }
-    if active_session:
-        payload["active_session"] = active_session
+    if meta_intent:
+        payload["intent_context"] = meta_intent.value
 
     try:
-        meta_llm = llm.with_structured_output(MetaReply)
+        # Use low temperature for deterministic generation
+        meta_llm = llm.with_structured_output(MetaReply).with_config({"configurable": {"temperature": 0.1}})
+
         result = await meta_llm.ainvoke(
             [
                 {"role": "system", "content": META_SYSTEM_PROMPT},
@@ -117,11 +99,20 @@ async def generate_meta_reply(
             ]
         )
         meta_reply = result if isinstance(result, MetaReply) else MetaReply.model_validate(result)
+
+        # 3. Cache Write-Back
+        if meta_intent and redis_client and meta_reply.handoff == "meta":
+            safe_msg = meta_reply.message
+            try:
+                # Cache for 7 days (static branding answers don't change often)
+                await redis_client.setex(cache_key, 604800, safe_msg)
+            except Exception:
+                pass
+
+        if meta_reply.handoff != "meta":
+            return "", meta_reply.handoff
+
+        return meta_reply.message, "meta"
+
     except Exception:
         return fallback_meta_message(profile), "meta"
-
-    if meta_reply.handoff != "meta":
-        return "", meta_reply.handoff
-
-    safe_message = enforce_capability_contract(meta_reply.message, profile)
-    return safe_message, "meta"

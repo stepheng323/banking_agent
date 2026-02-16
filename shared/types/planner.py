@@ -5,9 +5,9 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 
-
 class ContextReference(BaseModel):
     """Pointer to a context entity."""
+
     selector: Literal["previous", "index", "label"]
     index: int | None = None
     label: str | None = None
@@ -19,6 +19,7 @@ class TaskParameters(BaseModel):
     amount: str | float | None = None
     recipient: str | None = None
     recipient_name: str | None = None
+    narration: str | None = None
     recipient_phone: str | None = None
     recipient_account: str | None = None
     bank_name: str | None = None

@@ -80,7 +80,7 @@ class PaymentProviderFactory:
         return None
 
     @staticmethod
-    def get_bill_payment_provider(provider_name: str = "flutterwave") -> BillPaymentProvider | None:
+    def get_bill_payment_provider(provider_name: str = "flutterwave") -> BillPaymentProvider:
         """
         Get a bill payment provider for airtime, data, and utility payments.
 
@@ -88,12 +88,9 @@ class PaymentProviderFactory:
             provider_name: Name of the provider (default: "flutterwave")
 
         Returns:
-            Bill payment provider instance if available, None otherwise
+            Bill payment provider instance
         """
-        provider = PaymentProviderFactory.create_bill_payment_provider(provider_name)
-        if provider and provider.is_available:
-            return provider
-        return None
+        return PaymentProviderFactory.create_bill_payment_provider(provider_name)
 
     @staticmethod
     def get_banking_data_provider(provider_name: str = "mono") -> BankingDataProvider | None:

@@ -63,9 +63,11 @@ def build_confirmation(
         "recipient_name": payload.recipient_resolved_name or payload.recipient_name,
         "recipient_bank": payload.recipient_bank_name,
         "recipient_account": payload.recipient_account,
-        "source_bank": payload.source_bank_name,
-        "source_account": payload.source_account_number,
+        "sourceBank": payload.source_bank_name,
+        "sourceAccount": payload.source_account_number,
         "narration": payload.narration,
+        "description": payload.description,
+        "user_note": payload.user_note,
     }
     summary = format_transfer_summary(
         {
@@ -76,7 +78,10 @@ def build_confirmation(
             "sourceBank": payload.source_bank_name,
             "sourceAccount": payload.source_account_number,
             "narration": payload.narration,
-        }
+            "description": payload.description,
+            "user_note": payload.user_note,
+        },
+        include_source=False,  # Orchestrator will handle the "From" line for batching
     )
 
     return TransactionResult(

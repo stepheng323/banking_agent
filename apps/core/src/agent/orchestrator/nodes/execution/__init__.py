@@ -10,16 +10,17 @@ from apps.core.src.agent.orchestrator.execution.handlers import (
     handle_beneficiary_task,
     handle_data_task,
     handle_faq_task,
+    handle_orchestrator_task,
     handle_query_task,
     handle_support_task,
     handle_transfer_task,
-    handle_orchestrator_task,
 )
 from apps.core.src.agent.orchestrator.models.domain import (
     PendingInterrupt,
     TaskStage,
 )
 from apps.core.src.agent.orchestrator.models.state import OrchestratorState
+from shared.formatters.accounts import format_accounts_list
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -37,8 +38,20 @@ async def advance_wave(state: OrchestratorState, config: RunnableConfig) -> dict
         return {}
 
     current_wave = state.waves[state.current_wave_index]
-    logger.info("advance_wave", index=state.current_wave_index, tasks=current_wave, context_frames_len=len(state.context_frames))
-    
+    logger.info(
+        "advance_wave", index=state.current_wave_index, tasks=current_wave, context_frames_len=len(state.context_frames)
+    )
+
+    # [DEBUG] Dump State to File
+    try:
+        with open("/tmp/debug_trace.txt", "a") as f:
+            f.write(f"\n--- ADVANCE WAVE {state.current_wave_index} ---\n")
+            f.write(f"Tasks: {list(state.tasks.keys())}\n")
+            for tid, t in state.tasks.items():
+                f.write(f"{tid}: {t.stage} | Payload: {t.payload}\n")
+    except Exception:
+        pass
+
     # [SAFETY] If pending_interrupt is already set (e.g. valid restoration), do NOT execute tasks.
     # Return it to force graph to stop/route correctly.
     if state.pending_interrupt:
@@ -83,7 +96,199 @@ async def advance_wave(state: OrchestratorState, config: RunnableConfig) -> dict
         await handler(task, task_id, ctx)
 
     if agg.missing_fields_by_task:
-        prompt_text = "\n".join(agg.prompts) or "I need some details."
+        # [Prioritized Prompting]
+        # If ANY task needs basic details (beneficiary, amount, etc.), suppress "Execution" prompts (Source/PIN)
+        # for ALL tasks. This prevents confusing parallel prompts like "Select Account" + "Who is Dad?".
+
+        execution_fields = {"source_account_id", "pin", "confirmation_summary"}
+
+        has_basic_blocker = False
+        for fields in agg.missing_fields_by_task.values():
+            if any(f not in execution_fields for f in fields):
+                has_basic_blocker = True
+                break
+
+        if has_basic_blocker:
+            # Suppress tasks that are ONLY waiting for execution fields
+            suppressed_tasks = []
+            for tid, fields in agg.missing_fields_by_task.items():
+                if all(f in execution_fields for f in fields):
+                    suppressed_tasks.append(tid)
+
+            for tid in suppressed_tasks:
+                del agg.missing_fields_by_task[tid]
+                logger.info("suppressed_execution_prompt", task_id=tid, reason="basic_blocker_active")
+
+        # [Batch transfer] If ALL blocked tasks are transfer and ONLY need source_account_id,
+        # ask once for the whole batch (one "Which account?" prompt) instead of per-task.
+        transfer_tasks_only_source = [
+            tid
+            for tid in agg.missing_fields_by_task
+            if state.tasks.get(tid)
+            and state.tasks[tid].type == "transfer"
+            and set(agg.missing_fields_by_task[tid]) == {"source_account_id"}
+        ]
+        all_batch_source = (
+            len(transfer_tasks_only_source) >= 2
+            and len(transfer_tasks_only_source) == len(agg.missing_fields_by_task)
+        )
+
+        if all_batch_source:
+            # [Option C] Batch funding: only newly resolved in prompt, then amount + account list.
+            accounts = state.loaded_context.get("accounts") or []
+            lines = []
+            total_amount = 0.0
+            amounts = []
+            for tid in transfer_tasks_only_source:
+                task = state.tasks[tid]
+                amt = task.payload.get("amount") or 0.0
+                total_amount += amt
+                amounts.append(amt)
+                if task.payload.get("recipient_ui_confirmed"):
+                    continue
+                label = task.payload.get("recipient_name") or task.payload.get("recipient_resolved_name") or "recipient"
+                resolved = task.payload.get("recipient_resolved_name") or task.payload.get("recipient_name") or ""
+                bank = task.payload.get("recipient_bank_name")
+                acc = task.payload.get("recipient_account")
+                if bank and acc and resolved:
+                    lines.append(f"✅ {label} resolved: {resolved} ({bank} • {acc})")
+                elif resolved:
+                    lines.append(f"✅ {label} resolved: {resolved}")
+                else:
+                    lines.append(f"✅ {label} resolved")
+
+            prompt_parts = []
+            if lines:
+                prompt_parts.append("\n".join(lines))
+            if total_amount > 0:
+                if len(set(amounts)) == 1 and amounts:
+                    prompt_parts.append(
+                        f"You're sending ₦{amounts[0]:,.0f} each (total ₦{total_amount:,.0f})."
+                    )
+                else:
+                    prompt_parts.append(f"Total: ₦{total_amount:,.0f}.")
+            prompt_parts.append("")
+            if accounts:
+                prompt_parts.append(format_accounts_list(accounts))
+            else:
+                prompt_parts.append("*Which account would you like to use?*")
+            prompt_text = "\n".join(prompt_parts)
+            for tid in transfer_tasks_only_source:
+                state.tasks[tid].payload["recipient_ui_confirmed"] = True
+        else:
+            # [One-at-a-time] When multiple tasks need basic details, focus on one per turn.
+            execution_fields = {"source_account_id", "pin", "confirmation_summary"}
+            tasks_needing_basic = [
+                tid
+                for tid in agg.missing_fields_by_task
+                if any(f not in execution_fields for f in agg.missing_fields_by_task[tid])
+            ]
+            focused_tid = None
+            if tasks_needing_basic:
+                for tid in current_wave:
+                    if tid in tasks_needing_basic:
+                        focused_tid = tid
+                        break
+
+            if focused_tid is not None:
+                # One-at-a-time: prompt for one recipient only; only that task gets next message.
+                focused_task = state.tasks[focused_tid]
+                focused_name = focused_task.payload.get("recipient_name") or focused_task.payload.get(
+                    "recipient_resolved_name"
+                ) or "this recipient"
+                just_resolved_tid = None
+                if state.last_interrupt and state.last_interrupt.task_ids:
+                    for tid in state.last_interrupt.task_ids:
+                        if tid not in agg.missing_fields_by_task and state.tasks.get(tid):
+                            just_resolved_tid = tid
+                            break
+                if just_resolved_tid is not None:
+                    rt = state.tasks[just_resolved_tid]
+                    rname = rt.payload.get("recipient_resolved_name") or rt.payload.get("recipient_name")
+                    rbank = rt.payload.get("recipient_bank_name")
+                    if rname and rbank:
+                        prompt_text = f"I found {rname} ({rbank}). I now need account details for {focused_name}."
+                    elif rname:
+                        prompt_text = f"I found {rname}. I now need account details for {focused_name}."
+                    else:
+                        prompt_text = f"I need account details for {focused_name}."
+                else:
+                    found_names = []
+                    for tid in current_wave:
+                        task = state.tasks.get(tid)
+                        if not task or task.stage in (TaskStage.COMPLETED, TaskStage.FAILED, TaskStage.CANCELLED):
+                            continue
+                        if tid not in agg.missing_fields_by_task:
+                            if name := task.payload.get("recipient_resolved_name") or task.payload.get("recipient_name"):
+                                if name not in found_names:
+                                    found_names.append(name)
+                    if found_names:
+                        prompt_text = f"I found {', '.join(found_names)}. I need account details for {focused_name}."
+                    else:
+                        prompt_text = f"I need account details for {focused_name}."
+                # Mark recipients we mentioned as announced (found_names + just_resolved)
+                for tid in current_wave:
+                    task = state.tasks.get(tid)
+                    if not task:
+                        continue
+                    if tid == focused_tid:
+                        continue
+                    name = task.payload.get("recipient_resolved_name") or task.payload.get("recipient_name")
+                    if name and (tid not in agg.missing_fields_by_task or tid == just_resolved_tid):
+                        task.payload["recipient_ui_confirmed"] = True
+                interrupt = PendingInterrupt(
+                    kind="input",
+                    task_ids=[focused_tid],
+                    fields_by_task={focused_tid: agg.missing_fields_by_task[focused_tid]},
+                    prompt=prompt_text,
+                )
+                return {
+                    "pending_interrupt": interrupt,
+                    "tasks": state.tasks,
+                    "outbox": [{"type": "say", "text": prompt_text}],
+                }
+
+            # [UX] Smart Unified Prompt (Found X, Missing Y) — multiple blockers or no single focus
+            found_names = []
+            missing_prompts = []
+
+            for tid in current_wave:
+                task = state.tasks.get(tid)
+                if not task or task.stage in (TaskStage.COMPLETED, TaskStage.FAILED, TaskStage.CANCELLED):
+                    continue
+
+                if tid not in agg.missing_fields_by_task:
+                    if name := task.payload.get("recipient_resolved_name") or task.payload.get("recipient_name"):
+                        if name not in found_names:
+                            found_names.append(name)
+                else:
+                    if p := agg.prompts_by_task.get(tid):
+                        missing_prompts.append(p)
+
+            parts = []
+            if found_names:
+                parts.append(f"I found {', '.join(found_names)}.")
+
+            if missing_prompts:
+                unique_missing = []
+                seen_p = set()
+                for p in missing_prompts:
+                    if p not in seen_p:
+                        unique_missing.append(p)
+                        seen_p.add(p)
+                parts.extend(unique_missing)
+
+            prompt_text = "\n".join(parts) if parts else "I need some details."
+
+            # Mark resolved tasks that were mentioned in the prompt
+            for tid in current_wave:
+                task = state.tasks.get(tid)
+                if not task:
+                    continue
+                name = task.payload.get("recipient_resolved_name") or task.payload.get("recipient_name")
+                if name and name in found_names:
+                    task.payload["recipient_ui_confirmed"] = True
+
         interrupt = PendingInterrupt(
             kind="input",
             task_ids=list(agg.missing_fields_by_task.keys()),
@@ -98,11 +303,44 @@ async def advance_wave(state: OrchestratorState, config: RunnableConfig) -> dict
 
     updates = agg.updates
 
+    # [Confirmation Aggregation]
     if agg.needs_confirm_tasks:
-        confirmation_payload = state.tasks[agg.needs_confirm_tasks[0]].payload["confirmation"]
-        summ = confirmation_payload.get("summary", "Confirm transaction?")
-        snap = confirmation_payload.get("snapshot", {})
-        update_msg = confirmation_payload.get("update_message")
+        total_amount = 0.0
+        source_account_info = None
+        summaries = []
+
+        for tid in agg.needs_confirm_tasks:
+            task = state.tasks[tid]
+            t_payload = task.payload.get("confirmation", {})
+            snap = t_payload.get("snapshot", {})
+            total_amount += snap.get("amount", 0)
+
+            # Extract source info from the first task (assume batch shares source)
+            if source_account_info is None:
+                bank = snap.get("sourceBank") or snap.get("source_bank")
+                acc = snap.get("sourceAccount") or snap.get("source_account")
+                if bank and acc:
+                    last4 = str(acc)[-4:]
+                    source_account_info = f"From: {bank} (···{last4})"
+
+            if s := t_payload.get("summary"):
+                summaries.append(s)
+
+        title = f"*Confirm Transfers ({len(agg.needs_confirm_tasks)})*"
+        total_str = f"Total: ₦{total_amount:,.2f}".replace(".00", "")
+
+        parts = [title]
+        if source_account_info:
+            parts.append(source_account_info)
+        parts.append(total_str)
+        parts.append("")
+        parts.append("\n\n".join(summaries))
+        parts.append("\nConfirm / Cancel")
+
+        summ = "\n".join(parts)
+        first_task_payload = state.tasks[agg.needs_confirm_tasks[0]].payload.get("confirmation", {})
+        snap = first_task_payload.get("snapshot", {})
+        update_msg = first_task_payload.get("update_message")
 
         interrupt = PendingInterrupt(
             kind="confirmation",
@@ -160,10 +398,14 @@ async def advance_wave(state: OrchestratorState, config: RunnableConfig) -> dict
         updates["pending_interrupt"] = interrupt
         return updates
 
-    all_terminal = all(
-        state.tasks[task_id].stage in (TaskStage.COMPLETED, TaskStage.FAILED, TaskStage.CANCELLED)
-        for task_id in current_wave
-    )
+    all_terminal = True
+    for task_id in current_wave:
+        task = state.tasks.get(task_id)
+        if not task:
+            continue
+        if task.stage not in (TaskStage.COMPLETED, TaskStage.FAILED, TaskStage.CANCELLED):
+            all_terminal = False
+            break
 
     if all_terminal:
         updates["current_wave_index"] = state.current_wave_index + 1

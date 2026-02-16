@@ -3,7 +3,8 @@
 from datetime import datetime
 
 from apps.gateway.adapters.meta_whatsapp import ParsedMessage, parse_payload
-from shared.queue.messages import OUTBOX_QUEUE
+from apps.gateway.adapters.sender import send_text
+from shared.clients.whatsapp.client import WhatsAppClient
 from shared.models.messages import MessagePriority, MessageType, WhatsAppMessage
 from shared.queue.redis_queue import RedisQueue
 from shared.utils.logging import get_logger
@@ -20,8 +21,10 @@ class WhatsAppWebhookService:
     def __init__(
         self,
         queue: RedisQueue,
+        whatsapp_client: WhatsAppClient,
     ):
         self.queue = queue
+        self.whatsapp_client = whatsapp_client
 
     async def process_payload(self, payload: dict) -> int:
         """
@@ -85,7 +88,6 @@ class WhatsAppWebhookService:
             quoted_message_id=msg.quoted.message_id if msg.quoted else None,
             timestamp=datetime.utcnow(),
             priority=priority,
-            channel="whatsapp",
         )
 
     async def _enqueue_message(
@@ -96,7 +98,7 @@ class WhatsAppWebhookService:
     ) -> bool:
         """Enqueue message for processing. Returns True on success."""
         try:
-            await self.queue.enqueue(
+            await self.queue.enqueue_simple(
                 queue_name="banking:messages",
                 message=message.model_dump(mode="json"),
             )
@@ -105,16 +107,8 @@ class WhatsAppWebhookService:
 
         except Exception as e:
             logger.error("message_enqueue_failed", error=str(e))
-            try:
-                await self.queue.enqueue(
-                    queue_name=OUTBOX_QUEUE,
-                    message={
-                        "phone_number": from_id,
-                        "channel": "whatsapp",
-                        "intents": [{"type": "say", "text": "Sorry, I'm having trouble processing your message right now."}],
-                        "metadata": {"source": "whatsapp_webhook", "reason": "enqueue_failed"},
-                    },
-                )
-            except Exception as enqueue_error:
-                logger.error("outbox_enqueue_failed", error=str(enqueue_error))
+            await send_text(
+                to=from_id,
+                text="Sorry, I'm having trouble processing your message right now.",
+            )
             return False

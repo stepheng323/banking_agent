@@ -95,6 +95,7 @@ class TransferWorker:
             transaction_repo=self.transaction_repo,
             dd_provider=getattr(self, "dd_provider", None),
             user_id=context.get("user_id"),
+            validation_service=self.validation_service,
         )
 
         pipeline = TransferPipeline(

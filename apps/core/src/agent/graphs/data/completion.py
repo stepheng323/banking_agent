@@ -5,7 +5,6 @@ from typing import Any
 
 from apps.core.src.agent.graphs.__shared__.beneficiary.suggestion_service import BeneficiarySuggestionService
 from shared.cache.redis_client import RedisClient
-from shared.clients.whatsapp.client import WhatsAppClient
 from shared.repositories.actionable_message_repository import ActionableMessageRepository
 from shared.repositories.beneficiary_repository import BeneficiaryRepository
 from shared.utils.logging import get_logger
@@ -18,7 +17,6 @@ class DataCompletionService:
 
     def __init__(
         self,
-        whatsapp_client: WhatsAppClient,
         redis_client=None,
         beneficiary_repository: BeneficiaryRepository | None = None,
         actionable_message_repo: ActionableMessageRepository | None = None,
@@ -28,12 +26,10 @@ class DataCompletionService:
         Initialize data service.
 
         Args:
-            whatsapp_client: WhatsApp client for sending notifications
             redis_client: Redis client for cleanup operations
             beneficiary_repository: Beneficiary repository for checking existing beneficiaries
             beneficiary_suggestion_service: Optional shared service for beneficiary suggestions
         """
-        self.whatsapp_client = whatsapp_client
         self.redis_client = redis_client or RedisClient.get_client()
         self.beneficiary_repository = beneficiary_repository
         self.actionable_message_repo = actionable_message_repo

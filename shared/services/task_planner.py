@@ -51,7 +51,8 @@ Your job: Classify intent, detect language, and break request into executable ta
   - faq: answer_faq
 - executor: "transfer" | "query" | "airtime" | "data" | "account" | "support" | "faq" | "beneficiary" | "orchestrator"
 - instruction: natural language description
--   parameters: {amount, recipient, phone, alias, name, intent, list_intent, reference, etc.}
+-   parameters: {amount, recipient, narration, phone, alias, name, intent, list_intent, reference, etc.}
+  - narration: OPTIONAL personal note from user (e.g. "for food", "school fees"). Leave EMPTY if user didn't provide a specific reason. Do NOT invent one.
   - reference: Use ONLY if you cannot resolve the name directly from context. Prefer filling 'recipient' with the resolved name if clear.
     - {"selector": "previous"}: For "him", "her", "that", "it" (implicitly the last shown entity).
     - {"selector": "index", "index": N}: For "the first one", "item 2", "number 3".
@@ -71,11 +72,12 @@ Your job: Classify intent, detect language, and break request into executable ta
 7. For amounts: normalize "5k" → 5000, "50k" → 50000
 8. OUT OF SCOPE: If request is not in INTENTS (e.g. flights, loans, movies), classify as "conversational" and reply that you prioritize banking services.
 9. CONTEXT OVERRIDE (Active Flow):
-   - GENERALLY: If the user is in a flow (e.g. "transfer"), assume short inputs (e.g. "5k", "Mum", "change amount") are updates/slot-filling for that flow. Force `primary_intent` = active flow intent.
-   - CRITICAL EXCEPTION: If the user input matches a Trigger for a DIFFERENT intent (e.g. "Show beneficiaries") OR is a cancellation command ("cancel", "stop", "abort"), you MUST classify it as that new intent (e.g. "beneficiary" or "cancel"). Do NOT force the active flow intent.
+   - GENERALLY: If the user is in a flow (e.g. "transfer"), assume inputs (e.g. "5k", "Mum", "change amount", "Opay", "8067882221") are updates/slot-filling for that flow. Force `primary_intent` = active flow intent.
+   - CRITICAL EXCEPTION: If the user input matches a Trigger for a DIFFERENT intent (e.g. "Show beneficiaries") OR is a cancellation command ("cancel", "stop", "abort"), you MUST classify it as that new intent (e.g. "beneficiary" or "cancel").
    - Example 1: Active=Transfer, Input="Show my beneficiaries" -> Intent="beneficiary" (Switch)
    - Example 2: Active=Transfer, Input="Cancel" -> Intent="cancel" (Switch/Abort)
    - Example 3: Active=Transfer, Input="make it 5k" -> Intent="transfer" (Update)
+   - Example 4: Active=Transfer, Input="Opay 8067..." -> Intent="transfer" (Data Input). Do NOT classify as "account" or "beneficiary".
 9b. ACTION/EXECUTOR MATCHING: Choose an action that matches the executor. Do NOT use account actions (e.g. check_balance) for query tasks.
 10. BENEFICIARY SAVING (Reactive): If Context mentions "asked to save beneficiary" and user affirms ("Yes", "Okay"), create a task:
     - executor="beneficiary", action="save_beneficiary"
@@ -92,54 +94,17 @@ Your job: Classify intent, detect language, and break request into executable ta
 14. RESUMPTION: If Context says 'Asked to resume [Intent]' and user says 'Yes', 'Okay', 'Proceed', create a task with executor='orchestrator', action='resume_session'.
 
 
-
 ## EXAMPLES
-
-Greeting:
-primary_intent="conversational", response="Hi there! 👋", tasks=[]
-
-Single transfer:
-primary_intent="transfer", response="Sending ₦10k to Mum...", is_complex=false
-tasks=[{task_id="t1", action="send_money", executor="transfer", instruction="Send ₦10,000 to Mum", parameters={amount:10000,recipient:"Mum"}, depends_on=[], risk="MONEY_MOVE"}]
-
-Multi-recipient:
-primary_intent="transfer", response="Sending to Mum and Dad...", is_complex=true
-tasks=[
-  {task_id="t1", executor="transfer", parameters={amount:50000,recipient:"Mum"}, depends_on=[], risk="MONEY_MOVE"},
-  {task_id="t2", executor="transfer", parameters={amount:30000,recipient:"Dad"}, depends_on=[], risk="MONEY_MOVE"}
-]
-
-Mixed:
-primary_intent="mixed", response="Sending ₦5k to Mum and checking balance...", is_complex=true
-tasks=[
-  {task_id="t1", executor="transfer", parameters={amount:5000,recipient:"Mum"}, depends_on=[], risk="MONEY_MOVE"},
-  {task_id="t2", executor="account", action="check_balance", instruction="Check balance", depends_on=["t1"], risk="READ_ONLY"}
-]
-
-Balance Check:
-User: "What is my overall balance?"
-primary_intent="account", response="Checking your balance...", is_complex=false
-tasks=[{task_id="t1", executor="account", action="check_balance", instruction="Check overall balance", parameters={}, depends_on=[], risk="READ_ONLY"}]
-
-Spending Summary:
-User: "How much did I spend last week on airtime?"
-primary_intent="query", response="Checking your airtime spending for last week...", is_complex=false
-tasks=[{task_id="t1", executor="query", action="analytics_summary", instruction="Check airtime spending for last week", parameters={}, depends_on=[], risk="READ_ONLY"}]
-
-Beneficiary List:
-User: "Who are my beneficiaries?"
-primary_intent="beneficiary", response="Fetching your beneficiaries...", is_complex=false
-tasks=[{task_id="t1", executor="beneficiary", action="list_beneficiaries", instruction="List beneficiaries", parameters={list_intent:true}, depends_on=[], risk="READ_ONLY"}]
-
-Beneficiary Add:
-User: "Add Mum as beneficiary covering 0123456789 GTBank"
-primary_intent="beneficiary", response="Adding Mum...", is_complex=false
-tasks=[{task_id="t1", executor="beneficiary", action="add_beneficiary", instruction="Add Mum (GBank 0123...)", parameters={intent:"add_beneficiary", alias:"Mum", account_number:"0123456789", bank_name:"GTBank"}, depends_on=[], risk="MUTATION"}]
-
-Beneficiary Alias (Context: "Asked to save beneficiary"):
-User: "Gaines"
-primary_intent="beneficiary", response="Saving as Gaines...", is_complex=false
-tasks=[{task_id="t1", executor="beneficiary", action="save_beneficiary", parameters={alias:"Gaines"}, depends_on=[], risk="MUTATION"}]
+- Greeting -> intent=conversational, tasks=[]
+- "Send 10k to Mum" -> intent=transfer, task: t1 send_money transfer amount=10000 recipient="Mum" MONEY_MOVE
+- "Send 10k to Tolu for food" -> intent=transfer, task: t1 send_money transfer amount=10000 recipient="Tolu" narration="for food" MONEY_MOVE
+- "Send 50k to Mum and 30k to Dad" -> intent=transfer, is_complex=true, tasks: t1 transfer amount=50000 recipient="Mum" | t2 transfer amount=30000 recipient="Dad"
+- "Send 5k to Mum and check balance" -> intent=mixed, is_complex=true, tasks: t1 transfer amount=5000 recipient="Mum" MONEY_MOVE | t2 account check_balance depends_on=t1 READ_ONLY
+- "What is my balance?" -> intent=account, task: t1 account check_balance READ_ONLY
+- "How much did I spend last week on airtime?" -> intent=query, task: t1 query analytics_summary READ_ONLY
+- "Who are my beneficiaries?" -> intent=beneficiary, task: t1 beneficiary list_beneficiaries list_intent=true READ_ONLY
+- "Add Mum 0123456789 GTBank" -> intent=beneficiary, task: t1 beneficiary add_beneficiary alias="Mum" account_number="0123456789" bank_name="GTBank" MUTATION
+- Context="Asked to save beneficiary", User="Gaines" -> intent=beneficiary, task: t1 beneficiary save_beneficiary alias="Gaines" MUTATION
 
 Return ONLY JSON matching the schema.
 """

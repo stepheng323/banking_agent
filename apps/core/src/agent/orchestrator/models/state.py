@@ -47,6 +47,7 @@ class OrchestratorState(BaseModel):
 
     pin_verified: bool = False
     pending_interrupt: PendingInterrupt | None = None
+    last_interrupt: PendingInterrupt | None = None
     outbox: list[dict[str, Any]] = Field(default_factory=list)
     final_response: str | None = None
 

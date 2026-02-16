@@ -123,8 +123,17 @@ async def select_source_account(
                 )
 
     accounts_list = format_accounts_list(accounts)
+
+    # [UX] Proactive Name Feedback — echo name enquiry clearly (name + bank when available).
+    prefix = ""
+    if payload.recipient_resolved_name:
+        if payload.recipient_bank_name:
+            prefix = f"I found {payload.recipient_resolved_name} ({payload.recipient_bank_name}).\n"
+        else:
+            prefix = f"I found {payload.recipient_resolved_name}.\n"
+
     return TransactionResult(
         outcome=TransactionOutcome.NEEDS_INPUT,
         required_fields=["source_account_id"],
-        prompt=accounts_list,
+        prompt=f"{prefix}{accounts_list}",
     )

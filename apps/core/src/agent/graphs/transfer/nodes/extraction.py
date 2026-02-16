@@ -81,6 +81,21 @@ async def _extract_transfer_update(
         if extracted_data:
             extracted_data["confirmation"] = {"confirmed": False}
 
+        # [UX] Narration vs Description Split
+        # Default description to "Transfer to {name}"
+        # user_note only populated if user actually typed one.
+        name = (
+            extracted_data.get("recipient_resolved_name")
+            or extracted_data.get("recipient_name")
+            or current_payload.recipient_resolved_name
+            or current_payload.recipient_name
+        )
+        if name:
+            extracted_data["description"] = f"Transfer to {name.title()}"
+
+        if "narration" in extracted_data:
+            extracted_data["user_note"] = extracted_data.pop("narration")
+
         needs_source = (
             current_payload.recipient_account
             and current_payload.recipient_bank_name
@@ -117,11 +132,20 @@ async def _extract_transfer_update(
             extracted_data["recipient_resolved_name"] = None
 
         if "recipient_name" in extracted_data and "recipient_account" not in extracted_data:
-            extracted_data["recipient_account"] = None
-            extracted_data["recipient_bank_code"] = None
-            extracted_data["recipient_bank_name"] = None
-            extracted_data["recipient_resolved_name"] = None
-            extracted_data["beneficiary_id"] = None
+            # [FIX] Only clear account details if the name actually changed.
+            # This prevents re-extraction (e.g. from proper nouns in synthesized messages)
+            # from wiping out valid account details we just collected.
+            new_name = extracted_data["recipient_name"]
+            current_name = current_payload.recipient_name or ""
+
+            names_match = new_name and current_name and new_name.lower().strip() == current_name.lower().strip()
+
+            if not names_match:
+                extracted_data["recipient_account"] = None
+                extracted_data["recipient_bank_code"] = None
+                extracted_data["recipient_bank_name"] = None
+                extracted_data["recipient_resolved_name"] = None
+                extracted_data["beneficiary_id"] = None
 
         return TransactionResult(outcome=TransactionOutcome.OK, patch=extracted_data)
 
