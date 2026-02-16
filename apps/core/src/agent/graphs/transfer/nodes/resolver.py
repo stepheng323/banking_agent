@@ -215,10 +215,23 @@ async def resolve_beneficiary(
         missing.append("bank name")
 
     if missing:
+        missing_str = " and ".join(missing)
+
+        # [UX] Conversational Prompt
+        # Acknowledge what we know (Recipient + Amount) before asking for what's missing.
+        base = f"I'm ready to send money to {payload.recipient_name}"
+        if payload.amount:
+            amt = payload.amount
+            if isinstance(amt, (int, float)):
+                amt = f"₦{amt:,.2f}".replace(".00", "")
+            base = f"I can send {amt} to {payload.recipient_name}"
+
+        prompt = f"{base}, but I need their {missing_str}. Please provide the account details."
+
         return TransactionResult(
             outcome=TransactionOutcome.NEEDS_INPUT,
             required_fields=["recipient_account", "recipient_bank_name"],
-            prompt=f"I couldn't find {payload.recipient_name}. Please provide {' and '.join(missing)}.",
+            prompt=prompt,
         )
 
     return TransactionResult(outcome=TransactionOutcome.OK)

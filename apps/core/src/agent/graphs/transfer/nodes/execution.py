@@ -15,6 +15,7 @@ from apps.core.src.agent.orchestrator.models.domain import (
 )
 from shared.database.enums import TransactionStatusEnum
 from shared.utils.logging import get_logger
+from shared.utils.narration import format_narration
 
 logger = get_logger(__name__)
 
@@ -52,6 +53,9 @@ class ExecutionStep(TransferStep):
             transaction_id = None
             key = data.idempotency_key
 
+            # Format narration with deterministic rules
+            narration = format_narration(data.narration, data.recipient_resolved_name or data.recipient_name)
+
             from shared.repositories.unit_of_work import UnitOfWork
 
             async with UnitOfWork() as uow:
@@ -73,7 +77,7 @@ class ExecutionStep(TransferStep):
                             source_account_id=data.source_account_id,
                             source_account_number=data.source_account_number or "",
                             source_bank_name=data.source_bank_name or "",
-                            narration=data.narration,
+                            narration=narration,
                         )
                         transaction_id = str(tx.id)
                         await uow.commit()
@@ -92,7 +96,7 @@ class ExecutionStep(TransferStep):
                         "funding_plan": data.funding_plan,
                         "recipient_account": data.recipient_account,
                         "recipient_bank_code": data.recipient_bank_code,
-                        "narration": data.narration,
+                        "narration": narration,
                     },
                 )
             else:
@@ -113,7 +117,7 @@ class ExecutionStep(TransferStep):
                                 "account_id": data.source_account_id,
                                 "account_number": data.source_account_number,
                             },
-                            "narration": data.narration,
+                            "narration": narration,
                         },
                     },
                 )
@@ -124,8 +128,8 @@ class ExecutionStep(TransferStep):
                 "amount": data.amount,
                 "recipient_account": data.recipient_account,
                 "recipient_bank_code": data.recipient_bank_code,
-                "recipient_name": data.recipient_name or data.recipient_resolved_name,
-                "narration": data.narration,
+                "recipient_name": data.recipient_resolved_name or data.recipient_name,
+                "narration": narration,
                 "date": "Now",
             }
             if data.source_bank_name:

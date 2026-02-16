@@ -5,7 +5,6 @@ import traceback
 from typing import Any
 
 from apps.core.src.messaging.outbox import enqueue_outbox_say
-from shared.cache.redis_client import RedisClient
 from shared.queue.redis_queue import RedisQueue
 from shared.repositories.unit_of_work import UnitOfWork
 from shared.utils.logging import get_logger
@@ -19,7 +18,6 @@ class BeneficiarySuggestionService:
     def __init__(
         self,
         queue: RedisQueue,
-        redis_client=None,
     ):
         """
         Initialize beneficiary suggestion service.
@@ -29,7 +27,6 @@ class BeneficiarySuggestionService:
             redis_client: Redis client for storing suggestion context
         """
         self.queue = queue
-        self.redis_client = redis_client or RedisClient.get_client()
 
     async def check_and_suggest_beneficiary(
         self,

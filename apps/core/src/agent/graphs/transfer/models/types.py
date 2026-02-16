@@ -50,6 +50,8 @@ class TransferPayload(BaseModel):
     idempotency_key: str | None = None
     transaction_id: str | None = None
     narration: str | None = None
+    description: str | None = None
+    user_note: str | None = None
 
     confirmation: TransferConfirmation = Field(default_factory=TransferConfirmation)
     skip_extraction: bool = False
