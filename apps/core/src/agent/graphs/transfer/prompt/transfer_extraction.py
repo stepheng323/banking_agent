@@ -21,8 +21,12 @@ DO NOT generate reply or decide missing fields — resolver handles that.
 | source_accounts | Dual-account pooling | List of bank names |
 
 ## SOURCE vs DESTINATION DISAMBIGUATION
-- **source_bank_name**: Use when user says "use X bank", "from X", "X bank instead", or any phrase indicating WHERE to send FROM.
-- **bank_name**: Use when user says "send to X bank", "X bank account", or any phrase indicating WHERE to send TO.
+- **source_bank_name**: Use ONLY when the user indicates WHERE to funds come FROM.
+  - TRIGGERS: "from [bank]", "use [bank]", "using [bank]", "charge my [bank]", "with my [bank]", "[bank] instead".
+  - DIRECTION: If sentence has "X to Y", X is usually source and Y is destination.
+  - POSITIONAL: If no preposition, but follows "use" or "from", it's the source.
+- **bank_name**: Use when user indicates WHERE funds go TO (the destination).
+  - TRIGGERS: "to [bank]", "into [bank]", "[bank] account", "send to [bank]".
 
 ## AMBIGUITIES
 When value is unclear, set field to null and add to ambiguities array:
@@ -54,24 +58,18 @@ When user corrects mid-flow ("I meant 50k"):
 | "send 5 to john" | recipient_name="john", ambiguities=[AMOUNT_UNCLEAR: [5,5000]] |
 | "send 50k to mum tomorrow" | amount=50000, recipient_name="mum", requested_features=["SCHEDULED"] |
 | "Send to my GTB" | bank_name="GTBank", is_self=true |
-| "From my Access send 2k to Kuda" | amount=2000, source_bank_name="Access Bank", bank_name="Kuda" |
+| "From my Access send 14k to tolu" | amount=14000, source_bank_name="Access Bank", recipient_name="tolu" |
+| "Send 14k to tolu from my first bank" | amount=14000, recipient_name="tolu", source_bank_name="First Bank" |
+| "use zenith bank instead" | source_bank_name="Zenith Bank" |
+| "Send 2k using my kuda" | amount=2000, source_bank_name="Kuda" |
 | "send 100k using access and gtb" | amount=100000, source_accounts=["Access Bank","GTBank"] |
 | "same as last time" | references.use_recent_transfer=true |
 | "I meant 50k" | amount=50000, correction.field="amount", correction.new_value=50000 |
-| "send all" or "just send what I have" | transfer_all=true (user wants full balance) |
+| "send all" or "just send what I have" | transfer_all=true |
 | "abeg make am dey go every month" | requested_features=["RECURRING"] |
 | "fi 5k si mama" (Yoruba) | amount=5000, recipient_name="mama" |
-| "Add narration: school fees" | narration="school fees", acknowledgment="Got it, added the narration." |
-| "GTBank" | bank_name="GTBank" |
-| "Access Bank" | bank_name="Access Bank" |
-| "1" or "first" or "the first one" | source_account_index=1 |
-| "2" or "second" or "option 2" | source_account_index=2 |
-| "use the second account" | source_account_index=2 |
-| "Use First Bank instead" | source_bank_name="First Bank" |
-| "use first bank" | source_bank_name="First Bank" |
-| "from zenith" | source_bank_name="Zenith Bank" |
-| "I want to use my access" | source_bank_name="Access Bank" |
-| "its for groceries" | correction.field="narration", correction.new_value="groceries", acknowledgment="Updated narration to 'groceries'." |
+| "Oya send 14k to tolu from first bank" | amount=14000, recipient_name="tolu", source_bank_name="First Bank" |
+| "It's for groceries" | correction.field="narration", correction.new_value="groceries", acknowledgment="Updated." |
 
 ## ACKNOWLEDGMENTS
 If the user is correcting or updating a field:

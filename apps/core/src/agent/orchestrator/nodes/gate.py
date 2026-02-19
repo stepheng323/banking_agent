@@ -12,6 +12,7 @@ from langchain_core.runnables import RunnableConfig
 from apps.core.src.agent.orchestrator.meta_reply import generate_meta_reply
 from apps.core.src.agent.orchestrator.models.domain import MetaIntent, TaskSpec, TaskStage
 from apps.core.src.agent.orchestrator.models.state import OrchestratorState
+from apps.core.src.agent.orchestrator.utils.task_state import reset_tasks_to_extracted
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -145,11 +146,12 @@ async def session_gate_fastpath(state: OrchestratorState, config: RunnableConfig
                         "tasks": new_tasks,
                         "fast_path_triggered": True,
                     }
-                    for tid in state.pending_interrupt.task_ids:
-                        task = new_tasks[tid].model_copy(deep=True)
-                        task.stage = TaskStage.EXTRACTED
-                        task.payload["confirmation"] = {}
-                        new_tasks[tid] = task
+                    reset_tasks_to_extracted(
+                        new_tasks,
+                        state.pending_interrupt.task_ids,
+                        copy_task=True,
+                        clear_idempotency=False,
+                    )
 
                     logger.info("fast_path_input_match", domain=session.domain, tasks=state.pending_interrupt.task_ids)
                     for tid, t in new_tasks.items():

@@ -1,7 +1,5 @@
 """Airtime confirmation step."""
 
-import hashlib
-import json
 from typing import Any
 
 from apps.core.src.agent.graphs.airtime.models.types import (
@@ -33,11 +31,6 @@ class ConfirmationStep(AirtimeStep):
             "network": data.network,
             "source_account": data.source_account_number,
         }
-
-        snapshot_str = json.dumps(snapshot, sort_keys=True)
-        snapshot_hash = hashlib.sha256(snapshot_str.encode()).hexdigest()
-
-        current_hash = data.confirmation.snapshot_hash if hasattr(data, "confirmation") else None
 
         if gates.confirmation_confirmed:
             return TransactionResult(outcome=TransactionOutcome.OK)

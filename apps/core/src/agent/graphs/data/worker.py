@@ -4,7 +4,9 @@ Stateless domain worker for Data tasks.
 Executes a single pass through the data logic pipeline.
 """
 
-from types import SimpleNamespace
+import time
+import uuid
+from dataclasses import dataclass
 from typing import Any
 
 from apps.core.src.agent.graphs.data.models.types import (
@@ -29,6 +31,15 @@ from shared.utils.logging import get_logger
 logger = get_logger(__name__)
 
 
+@dataclass(slots=True)
+class DataWorkerContext:
+    extractor: Any
+    bill_provider: Any
+    queue: Any
+    transaction_repo: Any
+    user_id: str | None
+
+
 class DataWorker:
     """Stateless worker for data tasks."""
 
@@ -44,37 +55,37 @@ class DataWorker:
         self.transaction_repo = transaction_repo
         self.queue = queue
 
-    async def run(
-        self,
-        payload: dict[str, Any],
-        context: dict[str, Any],
-        user_message: str | None = None,
-        pin_verified: bool = False,
-    ) -> TransactionResult:
-        """Execute the data pipeline."""
+    def _ensure_idempotency_key(self, data: DataPayload) -> DataPayload:
+        if data.idempotency_key and data.idempotency_key != "no-key":
+            return data
+        return data.model_copy(update={"idempotency_key": f"data-{uuid.uuid4()}"})
 
-        data = DataPayload(**payload)
-
-        if not data.idempotency_key or data.idempotency_key == "no-key":
-            import uuid
-
-            data = data.model_copy(update={"idempotency_key": f"data-{uuid.uuid4()}"})
-
-        ctx = DataContext(
+    @staticmethod
+    def _build_context(context: dict[str, Any]) -> DataContext:
+        return DataContext(
             phone_number=context.get("phone_number", ""),
             beneficiaries=context.get("beneficiaries", []),
             accounts=context.get("accounts", []),
             user_id=context.get("user_id"),
         )
 
-        gates = DataGates(
+    @staticmethod
+    def _is_confirmation_confirmed(data: DataPayload, pin_verified: bool) -> bool:
+        if pin_verified:
+            return True
+        confirmation = data.confirmation or {}
+        if isinstance(confirmation, dict):
+            return bool(confirmation.get("confirmed"))
+        return bool(getattr(confirmation, "confirmed", False))
+
+    def _build_gates(self, data: DataPayload, pin_verified: bool) -> DataGates:
+        return DataGates(
             pin_verified=pin_verified,
-            confirmation_confirmed=(
-                pin_verified or (data.confirmation.get("confirmed") if data.confirmation else False)
-            ),
+            confirmation_confirmed=self._is_confirmation_confirmed(data, pin_verified),
         )
 
-        worker_context = SimpleNamespace(
+    def _build_worker_context(self, context: dict[str, Any]) -> DataWorkerContext:
+        return DataWorkerContext(
             extractor=self.extractor,
             bill_provider=self.bill_provider,
             queue=self.queue,
@@ -82,7 +93,9 @@ class DataWorker:
             user_id=context.get("user_id"),
         )
 
-        pipeline = DataPipeline(
+    @staticmethod
+    def _build_pipeline(user_message: str | None) -> DataPipeline:
+        return DataPipeline(
             [
                 ExtractionStep(user_message),
                 ResolutionStep(),
@@ -94,8 +107,28 @@ class DataWorker:
             ]
         )
 
+    async def run(
+        self,
+        payload: dict[str, Any],
+        context: dict[str, Any],
+        user_message: str | None = None,
+        pin_verified: bool = False,
+    ) -> TransactionResult:
+        """Execute the data pipeline."""
+        start_time = time.perf_counter()
+        data = self._ensure_idempotency_key(DataPayload(**payload))
+        ctx = self._build_context(context)
+        gates = self._build_gates(data, pin_verified)
+        worker_context = self._build_worker_context(context)
+        pipeline = self._build_pipeline(user_message)
+
         try:
-            return await pipeline.run(data, ctx, gates, worker_context)
+            result = await pipeline.run(data, ctx, gates, worker_context)
+            if data.idempotency_key:
+                if result.patch is None:
+                    result.patch = {}
+                result.patch["idempotency_key"] = data.idempotency_key
+            return result
         except Exception as e:
             logger.error("data_pipeline_failed", error=str(e), exc_info=True)
             return TransactionResult(
@@ -103,4 +136,12 @@ class DataWorker:
                 error=f"Pipeline failed: {str(e)}",
                 retryable=True,
                 patch={"idempotency_key": data.idempotency_key},
+            )
+        finally:
+            duration = (time.perf_counter() - start_time) * 1000
+            logger.info(
+                "perf_timer_latency",
+                gate="data_worker_total",
+                duration_ms=round(duration, 2),
+                phone_number=context.get("phone_number"),
             )

@@ -125,14 +125,6 @@ async def _handle_completed_tasks(
     read_only_task_types = {"account", "query", "faq", "support", "beneficiary"}
     all_read_only = all(task.type in read_only_task_types for task in completed_tasks)
 
-    # Check for single transfer
-    is_single_transfer = (
-        len(completed_tasks) == 1
-        and completed_tasks[0].type == "transfer"
-        and not completed_tasks[0].payload.get("is_batch", False)
-        and len(completed_tasks[0].payload.get("recipients", [])) <= 1
-    )
-
     # Check for single async transaction (Airtime/Data)
     is_async_transaction = len(completed_tasks) == 1 and completed_tasks[0].type in ("airtime", "data")
 

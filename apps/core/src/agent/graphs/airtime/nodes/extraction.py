@@ -2,6 +2,7 @@
 
 from typing import Any
 
+from apps.core.src.agent.graphs.__shared__.extraction_utils import try_extract_numeric_index
 from apps.core.src.agent.graphs.airtime.models.types import (
     AirtimeContext,
     AirtimeGates,
@@ -33,6 +34,15 @@ class ExtractionStep(AirtimeStep):
         if data.skip_extraction:
             logger.info("skip_redundant_extraction", task="airtime")
             return TransactionResult(outcome=TransactionOutcome.OK, patch={"skip_extraction": False})
+
+        # [DETERMINISTIC FALLBACK] Numeric index selection
+        # If user replies with "1" or "2" to an account selection prompt, map it directly.
+        numeric_patch = try_extract_numeric_index(self.user_message, "airtime")
+        if numeric_patch:
+            return TransactionResult(
+                outcome=TransactionOutcome.OK,
+                patch=numeric_patch,
+            )
 
         extractor = worker_context.extractor
         if not extractor:

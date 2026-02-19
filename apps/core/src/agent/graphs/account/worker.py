@@ -1,6 +1,9 @@
 """Account management worker (stateless)."""
 
+import time
 from typing import Any
+
+from langchain_core.language_models import BaseChatModel
 
 from apps.core.src.agent.graphs.account.capabilities import (
     check_capabilities,
@@ -13,8 +16,11 @@ from apps.core.src.agent.orchestrator.models.domain import (
     AccountOutcome,
     AccountResult,
 )
+from shared.clients.abstractions.banking import BankingDataProvider
+from shared.clients.abstractions.direct_debit import DirectDebitProvider
 from shared.repositories.account_repository import AccountRepository
 from shared.repositories.user_repository import UserRepository
+from shared.services.onboarding import SessionManager
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -25,12 +31,12 @@ class AccountWorker:
 
     def __init__(
         self,
-        account_repo: "AccountRepository",
-        user_repo: "UserRepository",
-        llm: Any,
-        banking_provider: Any,
-        session_manager: Any,
-        direct_debit_provider: Any,
+        account_repo: AccountRepository,
+        user_repo: UserRepository,
+        llm: BaseChatModel,
+        banking_provider: BankingDataProvider,
+        session_manager: SessionManager,
+        direct_debit_provider: DirectDebitProvider,
     ) -> None:
         self.account_repo = account_repo
         self.user_repo = user_repo
@@ -324,7 +330,6 @@ class AccountWorker:
 
     async def _build_link_account_flow(self, context: dict[str, Any]) -> dict[str, Any]:
         """Build account linking flow."""
-        import time
 
         from shared.config import settings
         from shared.services.onboarding.session import OnboardingStep

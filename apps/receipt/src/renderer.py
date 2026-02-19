@@ -85,8 +85,7 @@ class ReceiptRenderer:
         )
 
         try:
-            await page.set_content(html_content)
-            await page.wait_for_load_state("networkidle")
+            await page.set_content(html_content, wait_until="load")
 
             element = await page.query_selector("#receipt-container")
             if element:

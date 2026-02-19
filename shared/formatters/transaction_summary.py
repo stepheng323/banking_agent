@@ -1,3 +1,5 @@
+from typing import Any
+
 """Transaction summary formatting utilities for batch and multi-action transactions."""
 
 
@@ -11,6 +13,33 @@ def mask_account_number(account: str) -> str:
     if not account:
         return ""
     return f"•••{account[-4:]}" if len(account) >= 4 else account
+
+
+def format_batch_transfer_summary(
+    num_transfers: int, total_amount: float, source_account_info: str | None, summaries: list[str]
+) -> str:
+    """Format a confirmation summary for a batch of transfers.
+
+    Args:
+        num_transfers: Number of transfers in the batch
+        total_amount: Total amount of all transfers
+        source_account_info: Formatted source account string (e.g. "From: GT Bank (···1234)")
+        summaries: List of individual transfer summaries
+
+    Returns:
+        WhatsApp-formatted batch transfer confirmation
+    """
+    title = f"*Confirm Transfers ({num_transfers})*"
+    total_str = f"Total: {format_amount(total_amount)}".replace(".00", "")
+
+    parts = [title]
+    if source_account_info:
+        parts.append(source_account_info)
+    parts.append(total_str)
+    parts.append("")
+    parts.append("\n\n".join(summaries))
+
+    return "\n".join(parts)
 
 
 def format_multi_action_summary(completed_tasks: list) -> str:
@@ -109,3 +138,20 @@ def format_multi_action_summary(completed_tasks: list) -> str:
     lines.append("_All transactions completed successfully_")
 
     return "\n".join(lines)
+
+
+def format_intent_line(task_type: str, payload: dict[str, Any]) -> str:
+    """Generate a precise intent string for a task."""
+    if task_type == "transfer":
+        amount = payload.get("amount", 0)
+        recipient = payload.get("recipient_resolved_name") or payload.get("recipient_name") or "Recipient"
+        return f"{format_amount(amount).replace('.00', '')} → {recipient}"
+    elif task_type == "airtime":
+        amount = payload.get("amount", 0)
+        phone = payload.get("recipient_phone") or "your line"
+        return f"{format_amount(amount).replace('.00', '')} airtime recharge on {phone}"
+    elif task_type == "data":
+        plan = payload.get("plan_name") or "Data"
+        phone = payload.get("target_phone") or "your line"
+        return f"Buy {plan} for {phone}"
+    return f"{task_type.title()} transaction"

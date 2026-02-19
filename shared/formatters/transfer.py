@@ -38,8 +38,6 @@ def format_transfer_summary(data: dict, include_source: bool = True) -> str:
     recipient_account = str(data.get("recipientAccount") or "")
     source_bank = str(data.get("sourceBank") or "")
     source_account = str(data.get("sourceAccount") or "")
-    narration: str | None = data.get("narration")
-    description: str | None = data.get("description")
     user_note: str | None = data.get("user_note")
 
     last4 = source_account[-4:] if source_account else "????"
@@ -48,11 +46,6 @@ def format_transfer_summary(data: dict, include_source: bool = True) -> str:
         f"*{_format_currency_naira(amount)} → {recipient_name.title()}*",
         f"{recipient_bank.title()} • {recipient_account}",
     ]
-
-    # Preference: description > narration (if no description)
-    current_desc = description or narration
-    if current_desc:
-        lines.append(f"Description: {current_desc.strip().capitalize()}")
 
     if user_note:
         lines.append(f"User note: _{user_note.strip().capitalize()}_")

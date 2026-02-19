@@ -103,6 +103,16 @@ async def select_source_account(
                     "source_account_number": acc.get("account_number"),
                 },
             )
+        else:
+            update_msg = f"I couldn't find your {payload.source_bank_name} account."
+            accounts_list = format_accounts_list(accounts)
+            return TransactionResult(
+                outcome=TransactionOutcome.NEEDS_INPUT,
+                required_fields=["source_account_id"],
+                prompt=f"*Which account would you like to use?*\n\n{accounts_list}",
+                update_message=update_msg,
+                patch={"source_bank_name": payload.source_bank_name},
+            )
 
     if len(accounts) == 2 and payload.recipient_account:
         recipient_acc_num = payload.recipient_account
@@ -124,16 +134,8 @@ async def select_source_account(
 
     accounts_list = format_accounts_list(accounts)
 
-    # [UX] Proactive Name Feedback — echo name enquiry clearly (name + bank when available).
-    prefix = ""
-    if payload.recipient_resolved_name:
-        if payload.recipient_bank_name:
-            prefix = f"I found {payload.recipient_resolved_name} ({payload.recipient_bank_name}).\n"
-        else:
-            prefix = f"I found {payload.recipient_resolved_name}.\n"
-
     return TransactionResult(
         outcome=TransactionOutcome.NEEDS_INPUT,
         required_fields=["source_account_id"],
-        prompt=f"{prefix}{accounts_list}",
+        prompt=f"*Which account would you like to use?*\n\n{accounts_list}",
     )

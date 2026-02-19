@@ -1,10 +1,33 @@
+from typing import Any
+
 from langchain_core.runnables import RunnableConfig
 
-from apps.core.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
+from apps.core.src.agent.orchestrator.models.domain import TaskStage
 from apps.core.src.agent.orchestrator.models.state import OrchestratorState
+from apps.core.src.agent.orchestrator.utils.task_payload import build_task_spec_from_plan_item
+from apps.core.src.agent.orchestrator.utils.task_state import (
+    reset_tasks_to_extracted,
+    set_tasks_cancelled,
+)
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
+
+
+def _stash_current_session(
+    state: OrchestratorState,
+    *,
+    interrupt: Any,
+    intent: str,
+) -> list[dict[str, Any]]:
+    current_session = {
+        "tasks": state.tasks,
+        "waves": state.waves,
+        "current_wave_index": state.current_wave_index,
+        "pending_interrupt": interrupt,
+        "intent": intent,
+    }
+    return state.stashed_sessions + [current_session]
 
 
 async def handle_pending_interrupt(state: OrchestratorState, config: RunnableConfig) -> dict:
@@ -35,21 +58,11 @@ async def handle_pending_interrupt(state: OrchestratorState, config: RunnableCon
                 )
 
                 if getattr(planner_output, "is_cancellation", False):
-                    for tid in interrupt.task_ids:
-                        task = state.tasks[tid].model_copy(deep=True)
-                        task.stage = TaskStage.CANCELLED
-                        state.tasks[tid] = task
+                    set_tasks_cancelled(state.tasks, interrupt.task_ids, copy_task=True)
                     return {"pending_interrupt": None, "last_interrupt": interrupt, "tasks": state.tasks}
 
                 # Check if we should replan
                 should_replan = False
-                try:
-                    with open("/tmp/debug_trace.txt", "a") as f:
-                        f.write(
-                            f"InterruptCheck: Current={current_task_types} New={new_task_types} Intent={planner_output.primary_intent}\n"
-                        )
-                except:
-                    pass
 
                 if planner_output.tasks and new_task_types != current_task_types:
                     should_replan = True
@@ -67,11 +80,6 @@ async def handle_pending_interrupt(state: OrchestratorState, config: RunnableCon
                                 attempted_types=sorted(new_task_types),
                                 input_text=text,
                             )
-                            try:
-                                with open("/tmp/debug_trace.txt", "a") as f:
-                                    f.write("Guard: Blocking context switch\n")
-                            except:
-                                pass
                             should_replan = False
 
                         # [Stability] Sticky Transfer: If Transfer -> Transfer, prefer Update (Extraction) over Replan.
@@ -79,56 +87,24 @@ async def handle_pending_interrupt(state: OrchestratorState, config: RunnableCon
                         # which would wipe out other parallel tasks (e.g. Tolu).
                         elif "transfer" in new_task_types and not getattr(planner_output, "is_cancellation", False):
                             logger.info("enforcing_sticky_transfer", reason="prevent_replan_wipe")
-                            try:
-                                with open("/tmp/debug_trace.txt", "a") as f:
-                                    f.write("Guard: Enforcing Sticky Transfer\n")
-                            except:
-                                pass
                             should_replan = False
 
                 if should_replan:
-                    new_tasks: dict[str, TaskSpec] = {}
+                    new_tasks = {}
                     wave_tasks: list[str] = []
 
                     # Stash current session
                     active_type = next(iter(current_task_types)) if current_task_types else "unknown"
-                    current_session = {
-                        "tasks": state.tasks,
-                        "waves": state.waves,
-                        "current_wave_index": state.current_wave_index,
-                        "pending_interrupt": interrupt,
-                        "intent": active_type,
-                    }
-                    stashed = state.stashed_sessions + [current_session]
+                    stashed = _stash_current_session(state, interrupt=interrupt, intent=active_type)
 
                     for plan_item in planner_output.tasks:
-                        payload = plan_item.parameters.model_dump() if plan_item.parameters else {}
-                        if plan_item.action:
-                            payload["action"] = plan_item.action
-                        if plan_item.instruction:
-                            payload["instruction"] = plan_item.instruction
-
-                        if plan_item.executor == "query" and not payload.get("message"):
-                            payload["message"] = plan_item.instruction or text
-                        # Map planner field names to TransferPayload field names
-                        if plan_item.executor == "transfer" and "recipient" in payload:
-                            recipient_val = payload.pop("recipient")
-                            if not payload.get("recipient_name"):
-                                payload["recipient_name"] = recipient_val
-
-                            # Format and set narration immediately
-                            from shared.utils.narration import format_narration
-
-                            # Always format to ensure capitalization/fallback even if LLM extracted it
-                            payload["narration"] = format_narration(
-                                payload.get("narration"),
-                                payload.get("recipient_resolved_name") or payload.get("recipient_name"),
-                            )
-                        spec = TaskSpec(
-                            id=plan_item.task_id,
-                            type=plan_item.executor,
-                            stage=TaskStage.DRAFT,
-                            payload=payload,
+                        spec = build_task_spec_from_plan_item(
+                            plan_item,
+                            text,
+                            preserve_existing_action_instruction=False,
+                            include_skip_extraction=False,
+                            strip_transfer_recipient_suffix=False,
+                            format_narration_requires_recipient_field=True,
                         )
                         new_tasks[spec.id] = spec
                         wave_tasks.append(spec.id)
@@ -148,16 +124,18 @@ async def handle_pending_interrupt(state: OrchestratorState, config: RunnableCon
             except Exception as e:
                 logger.warning("input_interrupt_planner_failed", error=str(e))
 
-        for tid in interrupt.task_ids:
-            task = state.tasks[tid]
-            task.stage = TaskStage.EXTRACTED
-            task.payload["confirmation"] = {}
-            task.payload.pop("idempotency_key", None)
+        reset_tasks_to_extracted(
+            state.tasks,
+            interrupt.task_ids,
+            copy_task=False,
+            clear_idempotency=True,
+        )
 
     elif interrupt.kind == "confirmation":
         text = (state.last_message_text or "").lower()
         new_tasks = state.tasks.copy()
 
+        planner_output = None
         is_confirmation = False
         is_cancellation = False
 
@@ -194,10 +172,7 @@ async def handle_pending_interrupt(state: OrchestratorState, config: RunnableCon
 
         elif is_cancellation:
             logger.info("confirmation_cancelled", tasks=interrupt.task_ids)
-            for tid in interrupt.task_ids:
-                task = new_tasks[tid].model_copy(deep=True)
-                task.stage = TaskStage.CANCELLED
-                new_tasks[tid] = task
+            set_tasks_cancelled(new_tasks, interrupt.task_ids, copy_task=True)
 
             return {
                 "pending_interrupt": None,
@@ -217,47 +192,20 @@ async def handle_pending_interrupt(state: OrchestratorState, config: RunnableCon
         ):
             logger.info("confirmation_intent_switch", old=active_type, new=planner_output.primary_intent)
             # Replan Logic (similar to input interrupt)
-            new_tasks_map: dict[str, TaskSpec] = {}
+            new_tasks_map = {}
             wave_tasks: list[str] = []
 
             # Stash current session
-            current_session = {
-                "tasks": state.tasks,
-                "waves": state.waves,
-                "current_wave_index": state.current_wave_index,
-                "pending_interrupt": interrupt,  # The current confirmation interrupt
-                "intent": active_type,
-            }
-            stashed = state.stashed_sessions + [current_session]
+            stashed = _stash_current_session(state, interrupt=interrupt, intent=active_type)
 
             for plan_item in planner_output.tasks:
-                payload = plan_item.parameters.model_dump() if plan_item.parameters else {}
-                if plan_item.action:
-                    payload["action"] = plan_item.action
-                if plan_item.instruction:
-                    payload["instruction"] = plan_item.instruction
-
-                if plan_item.executor == "query" and not payload.get("message"):
-                    payload["message"] = plan_item.instruction or text
-                # Map planner field names to TransferPayload field names
-                if plan_item.executor == "transfer" and "recipient" in payload:
-                    recipient_val = payload.pop("recipient")
-                    if not payload.get("recipient_name"):
-                        payload["recipient_name"] = recipient_val
-
-                    # Format and set narration immediately
-                    from shared.utils.narration import format_narration
-
-                    # Always format to ensure capitalization/fallback even if LLM extracted it
-                    payload["narration"] = format_narration(
-                        payload.get("narration"),
-                        payload.get("recipient_resolved_name") or payload.get("recipient_name"),
-                    )
-                spec = TaskSpec(
-                    id=plan_item.task_id,
-                    type=plan_item.executor,
-                    stage=TaskStage.DRAFT,
-                    payload=payload,
+                spec = build_task_spec_from_plan_item(
+                    plan_item,
+                    text,
+                    preserve_existing_action_instruction=False,
+                    include_skip_extraction=False,
+                    strip_transfer_recipient_suffix=False,
+                    format_narration_requires_recipient_field=True,
                 )
                 new_tasks_map[spec.id] = spec
                 wave_tasks.append(spec.id)
@@ -274,11 +222,12 @@ async def handle_pending_interrupt(state: OrchestratorState, config: RunnableCon
 
         else:
             logger.info("confirmation_interrupt_input_mismatch", text=text)
-            for tid in interrupt.task_ids:
-                task = new_tasks[tid].model_copy(deep=True)
-                task.stage = TaskStage.EXTRACTED
-                task.payload["confirmation"] = {}
-                new_tasks[tid] = task
+            reset_tasks_to_extracted(
+                new_tasks,
+                interrupt.task_ids,
+                copy_task=True,
+                clear_idempotency=False,
+            )
 
             return {
                 "pending_interrupt": None,
@@ -308,18 +257,16 @@ async def handle_pending_interrupt(state: OrchestratorState, config: RunnableCon
 
             if is_cancellation:
                 logger.info("auth_cancelled", tasks=interrupt.task_ids)
-                for tid in interrupt.task_ids:
-                    task = state.tasks[tid].model_copy(deep=True)
-                    task.stage = TaskStage.CANCELLED
-                    state.tasks[tid] = task
+                set_tasks_cancelled(state.tasks, interrupt.task_ids, copy_task=True)
             else:
                 # If we're here and PIN isn't verified, the user likely typed text.
                 # Reset tasks to EXTRACTED so the worker can re-process the input.
-                for tid in interrupt.task_ids:
-                    task = state.tasks[tid].model_copy(deep=True)
-                    task.stage = TaskStage.EXTRACTED
-                    task.payload["confirmation"] = {}
-                    state.tasks[tid] = task
+                reset_tasks_to_extracted(
+                    state.tasks,
+                    interrupt.task_ids,
+                    copy_task=True,
+                    clear_idempotency=False,
+                )
 
     return {
         "pending_interrupt": None,
