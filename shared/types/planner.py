@@ -34,6 +34,8 @@ class TaskParameters(BaseModel):
     international: bool | None = None
     alias: str | None = None
     reference: ContextReference | None = None
+    source_bank_name: str | None = None
+    source_account_index: int | None = None
 
 
 class PlannedTask(BaseModel):

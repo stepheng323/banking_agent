@@ -6,7 +6,9 @@ from apps.core.src.agent.executors.transfer import TransferExecutor
 from apps.core.src.agent.graphs.__shared__.beneficiary.suggestion_service import BeneficiarySuggestionService
 from apps.core.src.agent.graphs.account import AccountWorker
 from apps.core.src.agent.graphs.airtime import AirtimeWorker
+from apps.core.src.agent.graphs.airtime.extractor import AirtimeEntityExtractor
 from apps.core.src.agent.graphs.data import DataWorker as AgentDataWorker
+from apps.core.src.agent.graphs.data.extractor import DataEntityExtractor
 from apps.core.src.agent.graphs.faq import FAQWorker
 from apps.core.src.agent.graphs.onboarding.executor import OnboardingExecutor
 from apps.core.src.agent.graphs.onboarding.service import OnboardingService
@@ -14,6 +16,7 @@ from apps.core.src.agent.graphs.query.session import QuerySessionManager
 from apps.core.src.agent.graphs.query.worker import QueryWorker as AgentQueryWorker
 from apps.core.src.agent.graphs.support import SupportWorker
 from apps.core.src.agent.graphs.transfer import TransferWorker
+from apps.core.src.agent.graphs.transfer.services.extractor import TransferEntityExtractor
 from apps.core.src.agent.orchestrator import OrchestratorAgent
 from apps.core.src.agent.orchestrator.config import OrchestratorDependencies
 from apps.core.src.agent.orchestrator.services.media_service import MediaService
@@ -34,6 +37,7 @@ from shared.repositories.actionable_message_repository import ActionableMessageR
 from shared.repositories.transaction_repository import TransactionRepository
 from shared.repositories.user_repository import UserRepository
 from shared.services import ConversationResponder
+from shared.services.onboarding import session_manager as onboarding_session_manager
 from shared.services.task_queue import TaskQueueService
 
 
@@ -67,13 +71,13 @@ def setup_dependencies() -> tuple[MessageConsumer, TransactionConsumer, FlowEven
         user_repo=user_repository,
         llm=llm,
         banking_provider=banking_provider,
-        session_manager=None,
+        session_manager=onboarding_session_manager,
         direct_debit_provider=direct_debit_provider,
     )
 
     bill_provider = PaymentProviderFactory.get_bill_payment_provider()
     data_worker = AgentDataWorker(
-        extractor=None,
+        extractor=DataEntityExtractor(llm=llm),
         bill_provider=bill_provider,
         transaction_repo=transaction_repository,
         queue=redis_queue,
@@ -100,7 +104,7 @@ def setup_dependencies() -> tuple[MessageConsumer, TransactionConsumer, FlowEven
     bank_cache_service = BankCacheService(redis_client=shared_redis)
 
     agent_airtime_worker = AirtimeWorker(
-        extractor=None,
+        extractor=AirtimeEntityExtractor(llm=llm),
         bill_provider=bill_provider,
         transaction_repo=transaction_repository,
         queue=redis_queue,
@@ -113,10 +117,8 @@ def setup_dependencies() -> tuple[MessageConsumer, TransactionConsumer, FlowEven
 
     agent_transfer_worker = TransferWorker(
         validation_service=None,
-        beneficiary_repo=beneficiary_repository,
-        account_repo=account_repository,
         queue=redis_queue,
-        extractor=None,
+        extractor=TransferEntityExtractor(llm=llm),
         banking_provider=banking_provider,
         bank_cache=bank_cache_service,
         transaction_repo=transaction_repository,

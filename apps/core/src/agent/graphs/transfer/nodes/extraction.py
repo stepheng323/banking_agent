@@ -2,6 +2,7 @@
 
 from typing import Any
 
+from apps.core.src.agent.graphs.__shared__.extraction_utils import try_extract_numeric_index
 from apps.core.src.agent.graphs.transfer.models.types import (
     TransferContext,
     TransferGates,
@@ -36,6 +37,19 @@ class ExtractionStep(TransferStep):
             logger.info("skip_redundant_extraction", task="transfer")
             return TransactionResult(outcome=TransactionOutcome.OK, patch={"skip_extraction": False})
 
+        # [DETERMINISTIC FALLBACK] Numeric index selection
+        # If user replies with "1" or "2" to an account selection prompt, map it directly.
+        numeric_patch = try_extract_numeric_index(self.user_message, "transfer")
+        if numeric_patch:
+            return TransactionResult(
+                outcome=TransactionOutcome.OK,
+                patch=numeric_patch,
+            )
+
+        if not worker_context.extractor:
+            logger.info("transfer_extraction_skipped", reason="extractor_unavailable")
+            return TransactionResult(outcome=TransactionOutcome.OK)
+
         res = await _extract_transfer_update(
             data,
             worker_context.extractor,
@@ -54,9 +68,7 @@ async def _extract_transfer_update(
 ) -> TransactionResult:
     """Extract transfer details from user message and merge with current payload."""
     try:
-        print(f"DEBUG: Extracting from '{user_message}'", flush=True)
         extraction = await extractor.extract(user_message, smart_context=context)
-        print(f"DEBUG: Extraction Result: {extraction}", flush=True)
 
         extracted_data = {}
         if extraction.entities:
@@ -70,13 +82,10 @@ async def _extract_transfer_update(
             else:
                 extracted_data[field] = value
 
-            print(f"DEBUG: Applied Correction: {field}={value}", flush=True)
+            logger.info("transfer_extraction_correction_applied", field=field)
 
         if not extracted_data and not extraction.acknowledgment:
-            print("DEBUG: No entities or corrections found.", flush=True)
             return TransactionResult(outcome=TransactionOutcome.OK)
-
-        print(f"DEBUG: Extracted Data (Pre-map): {extracted_data}", flush=True)
 
         if extracted_data:
             extracted_data["confirmation"] = {"confirmed": False}
@@ -107,6 +116,7 @@ async def _extract_transfer_update(
                 extracted_data["source_bank_name"] = extracted_data.pop("bank_name")
             else:
                 extracted_data["recipient_bank_name"] = extracted_data.pop("bank_name")
+
         if "bank_code" in extracted_data:
             extracted_data["recipient_bank_code"] = extracted_data.pop("bank_code")
 

@@ -3,6 +3,7 @@
 Integrates the Top-Level LangGraph into the Message Processing Pipeline.
 """
 
+import time
 from typing import Any, Literal
 
 import redis.asyncio as redis
@@ -128,7 +129,15 @@ class OrchestratorGraphHandler:
         }
 
         # Hydrate via ContextManager (Parallel Fetch)
+        h_start = time.perf_counter()
         user_ctx, _, _, _ = await self.context_manager.load_context_parallel(phone_number)
+        h_duration = (time.perf_counter() - h_start) * 1000
+        logger.info(
+            "perf_timer_latency",
+            gate="orchestrator_context_hydration",
+            duration_ms=round(h_duration, 2),
+            phone_number=phone_number,
+        )
 
         loaded_context = {
             "profile": user_ctx.get("profile"),
@@ -144,7 +153,15 @@ class OrchestratorGraphHandler:
 
         logger.info("orchestrator_graph_invoke", user=phone_number)
 
+        g_start = time.perf_counter()
         final_state = await self.graph.ainvoke(inputs, config=config)
+        g_duration = (time.perf_counter() - g_start) * 1000
+        logger.info(
+            "perf_timer_latency",
+            gate="orchestrator_graph_execution",
+            duration_ms=round(g_duration, 2),
+            phone_number=phone_number,
+        )
         outbox = final_state.get("outbox", [])
         response_text = final_state.get("final_response")
 
@@ -178,4 +195,4 @@ class OrchestratorGraphHandler:
             }
         except Exception as e:
             logger.exception("graph_resume_error", error=str(e))
-            return {"final_response": None, "outbox": []}
+            return {"text": None, "outbox": []}

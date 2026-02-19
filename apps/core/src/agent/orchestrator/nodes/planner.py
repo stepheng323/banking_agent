@@ -4,12 +4,11 @@ from typing import Any
 from langchain_core.runnables import RunnableConfig
 
 from apps.core.src.agent.orchestrator.meta_reply import generate_meta_reply
-from apps.core.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
 from apps.core.src.agent.orchestrator.models.state import OrchestratorState
+from apps.core.src.agent.orchestrator.utils.task_payload import build_task_spec_from_plan_item
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
-
 
 async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[str, Any]:
     """Planner Node.
@@ -131,7 +130,7 @@ async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[s
 
     except Exception as e:
         logger.error("planner_failed", error=str(e))
-        return {"final_response": "I'm having trouble understanding. Could you rephrase?"}
+        return {}
 
     # [NEW] Handle Cancellation Explicitly
     if getattr(planner_output, "is_cancellation", False) or planner_output.primary_intent == "cancel":
@@ -157,7 +156,9 @@ async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[s
             )
             if handoff == "meta" and message:
                 return {"final_response": message}
-        return {"final_response": planner_output.response if planner_output else "I didn't understand."}
+        if planner_output and planner_output.response:
+            return {"final_response": planner_output.response}
+        return {}
 
     # [NEW] Decision: Switch vs Pass-through
     if state.waves and active_intent:
@@ -175,39 +176,13 @@ async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[s
     wave_tasks = []
 
     for plan_item in planner_output.tasks:
-        payload = plan_item.parameters.model_dump() if plan_item.parameters else {}
-
-        if plan_item.action:
-            payload.setdefault("action", plan_item.action)
-        if plan_item.instruction:
-            payload.setdefault("instruction", plan_item.instruction)
-
-        if plan_item.executor == "query" and not payload.get("message"):
-            payload["message"] = plan_item.instruction or text
-
-        if plan_item.executor in ("transfer", "airtime", "data"):
-            payload["skip_extraction"] = True
-
-        # Map planner's generic field names to TransferPayload field names
-        if plan_item.executor == "transfer":
-            if "recipient" in payload:
-                recipient_val = payload.pop("recipient")
-                if recipient_val:
-                    recipient_val = recipient_val.rstrip("},. ")
-                if not payload.get("recipient_name"):
-                    payload["recipient_name"] = recipient_val
-
-            from shared.utils.narration import format_narration
-
-            payload["narration"] = format_narration(
-                payload.get("narration"), payload.get("recipient_resolved_name") or payload.get("recipient_name")
-            )
-
-        spec = TaskSpec(
-            id=plan_item.task_id,
-            type=plan_item.executor,
-            stage=TaskStage.DRAFT,
-            payload=payload,
+        spec = build_task_spec_from_plan_item(
+            plan_item,
+            text,
+            preserve_existing_action_instruction=True,
+            include_skip_extraction=True,
+            strip_transfer_recipient_suffix=True,
+            format_narration_requires_recipient_field=False,
         )
         new_tasks[spec.id] = spec
         wave_tasks.append(spec.id)

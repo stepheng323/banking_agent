@@ -1,5 +1,6 @@
 """Transfer Pipeline Abstractions."""
 
+import time
 from abc import ABC, abstractmethod
 from typing import Any, TypeVar
 
@@ -62,7 +63,17 @@ class TransferPipeline:
         """Run all steps in sequence."""
         last_result = None
         for step in self.steps:
+            step_name = step.__class__.__name__
+            s_start = time.perf_counter()
             result = await step.execute(data, context, gates, worker_context)
+            s_duration = (time.perf_counter() - s_start) * 1000
+
+            logger.info(
+                "perf_timer_latency",
+                gate=f"transfer_pipeline_step_{step_name.lower().replace('step', '')}",
+                duration_ms=round(s_duration, 2),
+                phone_number=context.phone_number,
+            )
 
             if result.outcome != TransactionOutcome.OK:
                 return self._finalize_result(result, data)

@@ -23,6 +23,11 @@ class DataPayload(BaseModel):
     receipt: dict[str, Any] | None = None
     error: str | None = None
     skip_extraction: bool = False
+    source_account_id: str | None = None
+    source_bank_name: str | None = None
+    source_account_name: str | None = None
+    source_account_number: str | None = None
+    source_account_index: int | None = None
 
 
 class DataContext(BaseModel):

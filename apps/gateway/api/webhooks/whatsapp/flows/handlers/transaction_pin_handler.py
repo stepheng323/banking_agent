@@ -1,4 +1,4 @@
-"""Unified PIN handler for all transaction types (transfer, airtime, data, batch).
+"""Unified PIN handler for all transaction types (transfer, airtime, data).
 
 This handler:
 1. Validates and verifies PIN using shared.services.auth
@@ -21,7 +21,6 @@ from shared.clients.whatsapp.client import WhatsAppClient
 from shared.queue.messages import OUTBOX_QUEUE, FlowEvent, FlowEventType
 from shared.queue.redis_queue import RedisQueue
 from shared.services.auth import AuthorizationService
-
 from shared.utils.logging import configure_logger, get_logger
 
 configure_logger()
@@ -44,7 +43,7 @@ async def handle_transaction_pin(
 
     Args:
         data: Flow data containing PIN
-        flow_token: Flow token (format: transaction-pin-{idempotency_key})
+        flow_token: Flow token (format: {type}-pin-{idempotency_key}-{phone_number})
         request_was_encrypted: Whether request was encrypted
         aes_key_bytes: AES key for encryption
         iv_bytes: IV for encryption
@@ -53,12 +52,8 @@ async def handle_transaction_pin(
     """
     pin = data.get("pin")
 
-    logger.info(f"Received PIN: {pin}")
-    logger.info(f"Received flow_token: {flow_token}")
-    logger.info(f"Received request_was_encrypted: {request_was_encrypted}")
-    logger.info(f"Received aes_key_bytes: {aes_key_bytes}")
-    logger.info(f"Received iv_bytes: {iv_bytes}")
-    
+    logger.info("transaction_pin_received", has_flow_token=bool(flow_token))
+
     if not pin:
         return format_error_response(
             "Pin",
@@ -68,19 +63,21 @@ async def handle_transaction_pin(
             iv_bytes,
         )
 
-    if not flow_token or not flow_token.startswith("transaction-pin-"):
-        if flow_token and flow_token.startswith("batch-auth-"):
-            transaction_type = "batch"
-            idem_key = flow_token
-        elif flow_token and flow_token.startswith("transfer-pin-"):
-            parts = flow_token.split("-")
-            idem_key = "-".join(parts[2:-1])
-            transaction_type = "transfer"
-        elif flow_token and flow_token.startswith("airtime-pin-"):
-            parts = flow_token.split("-")
-            idem_key = "-".join(parts[2:-1])
-            transaction_type = "airtime"
-        else:
+    transaction_type = None
+    idem_key = None
+    if flow_token and flow_token.startswith("transaction-pin-"):
+        parts = flow_token.split("-")
+        idem_key = "-".join(parts[2:-1])
+    elif flow_token:
+        for prefix in ("transfer", "airtime", "data"):
+            token_prefix = f"{prefix}-pin-"
+            if flow_token.startswith(token_prefix):
+                parts = flow_token.split("-")
+                idem_key = "-".join(parts[2:-1])
+                transaction_type = prefix
+                break
+
+        if idem_key is None:
             return format_success_response(
                 "SUCCESS",
                 request_was_encrypted,
@@ -95,37 +92,29 @@ async def handle_transaction_pin(
                 },
             )
     else:
-        parts = flow_token.split("-")
-        idem_key = "-".join(parts[2:-1])
-        transaction_type = None
+        return format_success_response(
+            "SUCCESS",
+            request_was_encrypted,
+            aes_key_bytes,
+            iv_bytes,
+            extension_message_response={
+                "params": {
+                    "flow_token": "completed",
+                    "pin": str(pin),
+                    "success": True,
+                }
+            },
+        )
 
     redis_client = RedisClient.get_client()
 
-    if transaction_type == "batch":
-        parts = flow_token.split("-")
-        phone_number = parts[2] if len(parts) >= 3 else None
-    else:
-        # DEBUG PROBE
-        print(f"DEBUG: Processing flow_token: {flow_token}", flush=True)
-        print(f"DEBUG: Extracted idem_key: {idem_key}", flush=True)
-
-        last_token = await redis_client.get("debug:last_set_token")
-        print(f"DEBUG: Last Worker Token: {last_token}", flush=True)
-
-        if last_token:
-            debug_phone = await redis_client.get(f"debug:token:{last_token}")
-            print(f"DEBUG: Phone for Last Token: {debug_phone}", flush=True)
-
-        phone_number = await redis_client.get(f"transaction:token:{idem_key}:phone")
-        print(f"DEBUG: Lookup transaction:token -> {phone_number}", flush=True)
-
-        if not phone_number:
-            phone_number = await redis_client.get(f"transfer:token:{idem_key}:phone")
-            print(f"DEBUG: Lookup transfer:token -> {phone_number}", flush=True)
-
-            if not phone_number:
-                phone_number = await redis_client.get(f"airtime:token:{idem_key}:phone")
-                print(f"DEBUG: Lookup airtime:token -> {phone_number}", flush=True)
+    phone_number = await redis_client.get(f"transaction:token:{idem_key}:phone")
+    if not phone_number:
+        phone_number = await redis_client.get(f"transfer:token:{idem_key}:phone")
+    if not phone_number:
+        phone_number = await redis_client.get(f"airtime:token:{idem_key}:phone")
+    if not phone_number:
+        phone_number = await redis_client.get(f"data:token:{idem_key}:phone")
 
     if not phone_number:
         phone_number = flow_token.split("-")[-1] if flow_token else None
@@ -213,10 +202,7 @@ async def handle_transaction_pin(
             },
         )
     except Exception as e:
-        print(f"Error publishing flow event: {e}")
-        import traceback
-
-        traceback.print_exc()
+        logger.error("flow_event_publish_failed", error=str(e), exc_info=True)
         return format_error_response(
             "Pin",
             f"Failed to process {transaction_type} authorization. Please try again.",

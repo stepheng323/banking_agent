@@ -1,6 +1,7 @@
 """Message consumer for processing queued messages."""
 
 import asyncio
+import time
 from typing import Any
 
 from apps.core.src.agent.graphs.onboarding.executor import OnboardingExecutor
@@ -52,6 +53,7 @@ class MessageConsumer:
 
     async def _handle_message(self, message: WhatsAppMessage) -> dict[str, Any] | None:
         """Handle a WhatsApp message."""
+        start_time = time.perf_counter()
         phone_number = message.from_number
 
         rate_result = await message_rate_limiter.check(phone_number)
@@ -116,6 +118,14 @@ class MessageConsumer:
                 metadata={"source": "message_consumer", "message_id": message.message_id},
             )
             logger.info("message_consumer_enqueued_outbox", count=len(intents))
+
+        duration = (time.perf_counter() - start_time) * 1000
+        logger.info(
+            "perf_timer_latency",
+            gate="message_consumer_handle",
+            duration_ms=round(duration, 2),
+            phone_number=phone_number,
+        )
 
         return {"status": "success", "response": response_text}
 

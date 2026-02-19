@@ -69,18 +69,19 @@ async def resolve_beneficiary(
             if code:
                 # Update payload directly as we are about to use it for account resolution
                 payload.recipient_bank_code = code
-        # else:
-        #     print("DEBUG: Bank cache is None") # This line was removed, but the else block is now empty. Keeping it commented for clarity.
 
     if payload.recipient_account and payload.recipient_bank_code and not payload.recipient_resolved_name:
         if banking_provider:
             try:
                 # Use resolve_account (dict return) instead of resolve_account_number (object return)
-                print(f"DEBUG: Resolving {payload.recipient_account} with {payload.recipient_bank_code}")
+                logger.info(
+                    "resolving_recipient_account",
+                    account=payload.recipient_account,
+                    bank_code=payload.recipient_bank_code,
+                )
                 resolved = await banking_provider.resolve_account(
                     payload.recipient_account, payload.recipient_bank_code
                 )
-                print(f"DEBUG: Resolution Result: {resolved}")
                 if resolved and resolved.get("success"):
                     return TransactionResult(
                         outcome=TransactionOutcome.OK,
@@ -91,8 +92,13 @@ async def resolve_beneficiary(
                             "recipient_bank_code": payload.recipient_bank_code,
                         },
                     )
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning(
+                    "recipient_account_resolution_failed",
+                    error=str(e),
+                    account=payload.recipient_account,
+                    bank_code=payload.recipient_bank_code,
+                )
 
         if not payload.recipient_name and not payload.recipient_resolved_name:
             # Logic to ask for name will trigger below if we don't return OK here

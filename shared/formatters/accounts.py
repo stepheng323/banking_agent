@@ -33,11 +33,7 @@ def get_bank_label(account: Any) -> str:
     """Get bank label (name or type)."""
     if isinstance(account, dict):
         return str(
-            account.get("bank_name")
-            or account.get("bank")
-            or account.get("name")
-            or account.get("type")
-            or "Account"
+            account.get("bank_name") or account.get("bank") or account.get("name") or account.get("type") or "Account"
         )
     else:
         return str(
@@ -54,7 +50,7 @@ def format_accounts_list(accounts: list[Any] | None) -> str:
     if not accounts:
         return "No accounts found."
 
-    lines: list[str] = ["*Which account would you like to use?*", ""]
+    lines: list[str] = []
     for idx, account in enumerate(accounts):
         last4 = get_last4(account)
         bank = get_bank_label(account)

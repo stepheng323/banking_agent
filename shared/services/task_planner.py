@@ -51,11 +51,13 @@ Your job: Classify intent, detect language, and break request into executable ta
   - faq: answer_faq
 - executor: "transfer" | "query" | "airtime" | "data" | "account" | "support" | "faq" | "beneficiary" | "orchestrator"
 - instruction: natural language description
--   parameters: {amount, recipient, narration, phone, alias, name, intent, list_intent, reference, etc.}
+-   parameters: {amount, recipient, narration, phone, alias, name, intent, list_intent, reference, source_bank_name, source_account_index, etc.}
   - narration: OPTIONAL personal note from user (e.g. "for food", "school fees"). Leave EMPTY if user didn't provide a specific reason. Do NOT invent one.
   - reference: Use ONLY if you cannot resolve the name directly from context. Prefer filling 'recipient' with the resolved name if clear.
     - {"selector": "previous"}: For "him", "her", "that", "it" (implicitly the last shown entity).
     - {"selector": "index", "index": N}: For "the first one", "item 2", "number 3".
+  - source_bank_name: Source bank name when user specifies "from my X bank", "use X bank", "using X bank" (e.g. "First Bank", "Access Bank", "Zenith Bank")
+  - source_account_index: Account selection index when user says "first", "second", "1", "2" referring to account list (1 for first, 2 for second, etc.)
 - depends_on: list of task IDs this depends on
 - risk: "READ_ONLY" | "MUTATION" | "MONEY_MOVE"
 
@@ -98,7 +100,11 @@ Your job: Classify intent, detect language, and break request into executable ta
 - Greeting -> intent=conversational, tasks=[]
 - "Send 10k to Mum" -> intent=transfer, task: t1 send_money transfer amount=10000 recipient="Mum" MONEY_MOVE
 - "Send 10k to Tolu for food" -> intent=transfer, task: t1 send_money transfer amount=10000 recipient="Tolu" narration="for food" MONEY_MOVE
+- "Send 14k to tolu from my first bank" -> intent=transfer, task: t1 send_money transfer amount=14000 recipient="tolu" source_bank_name="First Bank" MONEY_MOVE
+- "Buy 1k airtime from Access" -> intent=airtime, task: t1 buy_airtime airtime amount=1000 source_bank_name="Access Bank" MONEY_MOVE
+- "Get 2GB data using First Bank" -> intent=data, task: t1 buy_data data plan="2GB" source_bank_name="First Bank" MONEY_MOVE
 - "Send 50k to Mum and 30k to Dad" -> intent=transfer, is_complex=true, tasks: t1 transfer amount=50000 recipient="Mum" | t2 transfer amount=30000 recipient="Dad"
+- "Send 5k to Tolu from First Bank, send 3k to Mum from Zenith" -> intent=transfer, is_complex=true, tasks: t1 transfer amount=5000 recipient="Tolu" source_bank_name="First Bank" | t2 transfer amount=3000 recipient="Mum" source_bank_name="Zenith Bank"
 - "Send 5k to Mum and check balance" -> intent=mixed, is_complex=true, tasks: t1 transfer amount=5000 recipient="Mum" MONEY_MOVE | t2 account check_balance depends_on=t1 READ_ONLY
 - "What is my balance?" -> intent=account, task: t1 account check_balance READ_ONLY
 - "How much did I spend last week on airtime?" -> intent=query, task: t1 query analytics_summary READ_ONLY
