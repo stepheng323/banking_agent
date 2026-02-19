@@ -62,6 +62,38 @@ class SourceSelectionStep(AirtimeStep):
                 },
             )
 
+        if data.source_bank_name and not data.source_account_id:
+            # Bank name matching
+            target_bank = data.source_bank_name.lower()
+            candidates = [
+                a
+                for a in accounts
+                if target_bank in (a.get("bank_name") or "").lower()
+                or (a.get("alias") and target_bank in a.get("alias").lower())
+            ]
+            if candidates:
+                acc = candidates[0]
+                return TransactionResult(
+                    outcome=TransactionOutcome.OK,
+                    patch={
+                        "source_account_id": str(acc.get("id")),
+                        "source_bank_name": acc.get("bank_name"),
+                        "source_account_name": acc.get("account_name"),
+                        "source_account_number": acc.get("account_number"),
+                    },
+                )
+            else:
+                # Feedback: requested bank not found
+                update_msg = f"I couldn't find your {data.source_bank_name} account."
+                accounts_list = format_accounts_list(accounts)
+                return TransactionResult(
+                    outcome=TransactionOutcome.NEEDS_INPUT,
+                    required_fields=["source_account_id"],
+                    prompt=f"*Which account would you like to use?*\n\n{accounts_list}",
+                    update_message=update_msg,
+                    patch={"source_bank_name": data.source_bank_name},
+                )
+
         if data.source_account_index is not None:
             index = data.source_account_index - 1
             if 0 <= index < len(accounts):
@@ -81,5 +113,5 @@ class SourceSelectionStep(AirtimeStep):
         return TransactionResult(
             outcome=TransactionOutcome.NEEDS_INPUT,
             required_fields=["source_account_id"],
-            prompt=accounts_list,
+            prompt=f"*Which account would you like to use?*\n\n{accounts_list}",
         )

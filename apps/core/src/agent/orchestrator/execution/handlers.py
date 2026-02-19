@@ -27,6 +27,8 @@ class ExecutionAggregation:
         self.needs_auth_tasks: list[str] = []
         self.prompts: list[str] = []
         self.prompts_by_task: dict[str, str] = {}
+        self.feedback_messages: list[str] = []
+        self.source_bank_hints: list[str] = []
 
     def add_outbox(self, entry: dict[str, Any]) -> None:
         self.updates.setdefault("outbox", [])
@@ -131,6 +133,12 @@ def _handle_transaction_outcome(
         task.stage = TaskStage.EXTRACTED
         agg.add_missing_fields(task_id, result.required_fields)
         agg.add_prompt(result.prompt, task_id)
+        if result.update_message:
+            agg.feedback_messages.append(result.update_message)
+
+        # Capture source bank hint if present in patch (worker returns what it tried to match)
+        if hint := result.patch.get("source_bank_name"):
+            agg.source_bank_hints.append(hint)
 
     elif result.outcome == TransactionOutcome.NEEDS_CONFIRMATION:
         task.stage = TaskStage.AWAITING_CONFIRMATION
@@ -181,11 +189,6 @@ async def handle_transfer_task(task: Any, task_id: str, ctx: ExecutionContext) -
     }
 
     logger.info("transfer_worker_start", payload=task.payload, task_id=task_id)
-    try:
-        with open("/tmp/debug_trace.txt", "a") as f:
-            f.write(f"WorkerStart: {task_id} | Payload: {task.payload}\n")
-    except:
-        pass
     result = await worker.run(
         payload=task.payload,
         context=context_data,
@@ -353,8 +356,7 @@ async def handle_beneficiary_task(task: Any, task_id: str, ctx: ExecutionContext
                     # Update State via Manager
                     ctx_manager.push_frame(ctx.state, frame)
 
-                    if hasattr(ctx.agg, "updates"):
-                        ctx.agg.updates["context_frames"] = ctx.state.context_frames
+                    ctx.agg.updates["context_frames"] = ctx.state.context_frames
 
                     logger.info("context_frame_pushed", type="beneficiary_list", count=len(entities))
 
@@ -392,12 +394,35 @@ async def handle_beneficiary_task(task: Any, task_id: str, ctx: ExecutionContext
 
 
 async def handle_airtime_task(task: Any, task_id: str, ctx: ExecutionContext) -> None:
+    await _handle_purchase_task(
+        task,
+        task_id,
+        ctx,
+        worker_name="airtime",
+        worker_missing_log_key="airtime_worker_missing",
+        worker_missing_error_message="System error: Airtime worker unavailable",
+        default_error="Airtime purchase failed",
+        include_channel=True,
+    )
+
+
+async def _handle_purchase_task(
+    task: Any,
+    task_id: str,
+    ctx: ExecutionContext,
+    *,
+    worker_name: str,
+    worker_missing_log_key: str,
+    worker_missing_error_message: str,
+    default_error: str,
+    include_channel: bool,
+) -> None:
     worker = _get_worker(
         ctx.services,
-        "airtime",
+        worker_name,
         task,
-        log_key="airtime_worker_missing",
-        error_message="System error: Airtime worker unavailable",
+        log_key=worker_missing_log_key,
+        error_message=worker_missing_error_message,
     )
     if not worker:
         return
@@ -405,11 +430,12 @@ async def handle_airtime_task(task: Any, task_id: str, ctx: ExecutionContext) ->
     user_msg = _maybe_user_message(task, ctx.state)
     context_data = {
         "phone_number": ctx.state.phone_number,
-        "channel": ctx.state.channel,
         "user_id": ctx.state.loaded_context.get("user_id"),
         "accounts": ctx.state.loaded_context.get("accounts", []),
         "beneficiaries": ctx.state.loaded_context.get("beneficiaries", []),
     }
+    if include_channel:
+        context_data["channel"] = ctx.state.channel
 
     result = await worker.run(
         payload=task.payload,
@@ -426,7 +452,7 @@ async def handle_airtime_task(task: Any, task_id: str, ctx: ExecutionContext) ->
         result,
         ctx.agg,
         confirmation_gate="summary",
-        default_error="Airtime purchase failed",
+        default_error=default_error,
     )
 
 
@@ -489,40 +515,15 @@ async def handle_query_task(task: Any, task_id: str, ctx: ExecutionContext) -> N
 
 
 async def handle_data_task(task: Any, task_id: str, ctx: ExecutionContext) -> None:
-    worker = _get_worker(
-        ctx.services,
-        "data",
-        task,
-        log_key="data_worker_missing",
-        error_message="System error: Data worker unavailable",
-    )
-    if not worker:
-        return
-
-    user_msg = _maybe_user_message(task, ctx.state)
-    context_data = {
-        "phone_number": ctx.state.phone_number,
-        "user_id": ctx.state.loaded_context.get("user_id"),
-        "accounts": ctx.state.loaded_context.get("accounts", []),
-        "beneficiaries": ctx.state.loaded_context.get("beneficiaries", []),
-    }
-
-    result = await worker.run(
-        payload=task.payload,
-        context=context_data,
-        user_message=user_msg,
-        pin_verified=ctx.state.pin_verified,
-    )
-
-    _apply_result_patch(task, result)
-
-    _handle_transaction_outcome(
+    await _handle_purchase_task(
         task,
         task_id,
-        result,
-        ctx.agg,
-        confirmation_gate="summary",
+        ctx,
+        worker_name="data",
+        worker_missing_log_key="data_worker_missing",
+        worker_missing_error_message="System error: Data worker unavailable",
         default_error="Data purchase failed",
+        include_channel=False,
     )
 
 
