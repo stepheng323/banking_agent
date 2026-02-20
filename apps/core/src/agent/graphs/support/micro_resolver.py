@@ -20,6 +20,9 @@ from apps.core.src.agent.graphs.support.models import (
     SupportIntent,
     TransactionReference,
 )
+from shared.utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 
 class Decision(str, Enum):
@@ -102,6 +105,10 @@ def _build_negotiation(missing: list[SupportAction]) -> NegotiationResult:
 
     suggested = alternatives[0] if alternatives else SupportAction.ESCALATE
 
+    logger.info("capability_blocked", domain="support", actions=[action.value for action in missing])
+    if alternatives:
+        logger.info("capability_alternative_offered", domain="support", alternative=suggested.value)
+
     return NegotiationResult(
         missing_actions=missing,
         suggested_action=suggested,
@@ -154,7 +161,11 @@ def resolve(
 
     if missing:
         negotiation = _build_negotiation(missing)
-        next_step = NextStep.CREATE_TICKET if negotiation.suggested_action == SupportAction.ESCALATE else NextStep.ASK_CLARIFICATION
+        next_step = (
+            NextStep.CREATE_TICKET
+            if negotiation.suggested_action == SupportAction.ESCALATE
+            else NextStep.ASK_CLARIFICATION
+        )
 
         return ResolverDecision(
             decision=Decision.NEGOTIATE,

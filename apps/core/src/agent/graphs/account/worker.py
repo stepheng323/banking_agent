@@ -6,6 +6,7 @@ from typing import Any
 from langchain_core.language_models import BaseChatModel
 
 from apps.core.src.agent.graphs.account.capabilities import (
+    AccountCapability,
     check_capabilities,
     derive_requirements,
     generate_limitation_message,
@@ -24,6 +25,20 @@ from shared.services.onboarding import SessionManager
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
+
+ACTION_CAPABILITY_MAP: dict[str, AccountCapability] = {
+    "list": AccountCapability.LIST_ACCOUNTS,
+    "check_balance": AccountCapability.LIST_ACCOUNTS,
+    "show_balance": AccountCapability.LIST_ACCOUNTS,
+    "balance": AccountCapability.LIST_ACCOUNTS,
+    "overall_balance": AccountCapability.LIST_ACCOUNTS,
+    "set_default": AccountCapability.SET_DEFAULT,
+    "unlink": AccountCapability.UNLINK_ACCOUNT,
+    "link": AccountCapability.LINK_ACCOUNT,
+    "close_account": AccountCapability.CLOSE_ACCOUNT,
+    "change_bvn": AccountCapability.CHANGE_BVN,
+    "add_joint_holder": AccountCapability.ADD_JOINT_HOLDER,
+}
 
 
 class AccountWorker:
@@ -66,6 +81,7 @@ class AccountWorker:
         if text:
             missing_caps = check_capabilities(derive_requirements(text))
             if missing_caps:
+                logger.info("capability_blocked", domain="account", capabilities=[cap.value for cap in missing_caps])
                 response = generate_limitation_message(missing_caps)
                 response = await self._translate_if_needed(response, user_ctx, payload)
                 return AccountResult(outcome=AccountOutcome.OK, response=response)
@@ -90,6 +106,15 @@ class AccountWorker:
         if action == "unknown" or not action:
             action = "list"
             patch["action"] = action
+
+        capability = ACTION_CAPABILITY_MAP.get(str(action))
+        if capability:
+            missing_caps = check_capabilities([capability])
+            if missing_caps:
+                logger.info("capability_blocked", domain="account", capabilities=[cap.value for cap in missing_caps])
+                response = generate_limitation_message(missing_caps)
+                response = await self._translate_if_needed(response, user_ctx, payload)
+                return AccountResult(outcome=AccountOutcome.OK, response=response, patch=patch)
 
         if action in ("unlink", "set_default") and not identifier:
             prompt = self._missing_identifier_prompt(action)

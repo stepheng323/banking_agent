@@ -2,6 +2,7 @@
 
 from langchain_openai import ChatOpenAI
 
+from shared.policy import build_planner_policy_block, get_cached_policy
 from shared.services.task_queue import TaskQueueService
 from shared.types.planner import PlannerOutput
 from shared.utils.logging import get_logger
@@ -9,7 +10,7 @@ from shared.utils.logging import get_logger
 logger = get_logger(__name__)
 
 # Planner prompts
-PLANNER_SYSTEM_PROMPT = """You are an intent classifier AND task planner for a Nigerian digital bank assistant.
+BASE_PLANNER_SYSTEM_PROMPT = """You are an intent classifier AND task planner for a Nigerian digital bank assistant.
 Your job: Classify intent, detect language, and break request into executable tasks.
 
 ## OUTPUT FIELDS (all required)
@@ -116,6 +117,21 @@ Return ONLY JSON matching the schema.
 """
 
 
+
+def build_planner_system_prompt() -> str:
+    """Build planner prompt with policy guardrails prepended."""
+    policy_block = build_planner_policy_block(get_cached_policy())
+    return f"{policy_block}\n\n{BASE_PLANNER_SYSTEM_PROMPT}"
+
+
+PLANNER_SYSTEM_PROMPT = build_planner_system_prompt()
+
+
+def refresh_planner_system_prompt() -> None:
+    """Refresh module-level planner prompt after policy reload."""
+    global PLANNER_SYSTEM_PROMPT
+    PLANNER_SYSTEM_PROMPT = build_planner_system_prompt()
+
 PLANNER_USER_PROMPT_TEMPLATE = """User phone: {phone_number}
 Context: {context}
 Message: \"\"\"{user_message}\"\"\"
@@ -147,7 +163,6 @@ class TaskPlanner:
             PlannerOutput with planned tasks
         """
         user_prompt = PLANNER_USER_PROMPT_TEMPLATE.format(phone_number=phone_number, user_message=text, context=context)
-
         result = await self.structured_planner.ainvoke(
             [
                 {"role": "system", "content": PLANNER_SYSTEM_PROMPT},

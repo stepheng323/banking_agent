@@ -6,9 +6,67 @@ from langchain_core.runnables import RunnableConfig
 from apps.core.src.agent.orchestrator.meta_reply import generate_meta_reply
 from apps.core.src.agent.orchestrator.models.state import OrchestratorState
 from apps.core.src.agent.orchestrator.utils.task_payload import build_task_spec_from_plan_item
+from shared.policy import get_cached_policy
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
+
+
+SUPPORTED_EXECUTOR_LABELS = {
+    "transfer": "money transfer",
+    "airtime": "airtime purchase",
+    "data": "data purchase",
+    "query": "transaction query",
+    "account": "account actions",
+    "support": "support request",
+    "faq": "banking help",
+    "beneficiary": "beneficiary management",
+}
+
+UNSUPPORTED_PATTERNS: dict[str, tuple[str, ...]] = {
+    "Financial advice": ("advice", "advise", "what should i do", "recommendation"),
+    "Investments": ("invest", "investment", "stocks", "mutual fund", "crypto"),
+    "International transfers": ("international transfer", "send abroad", "swift", "dollar transfer", "usd"),
+    "Scheduled or recurring transfers": ("schedule", "scheduled", "recurring", "every week", "every month"),
+    "All-time transaction history": ("all-time", "all time", "entire history", "lifetime history"),
+    "PDF exports": ("pdf", "export statement", "download statement"),
+}
+
+
+def _detect_unsupported_capabilities(message_text: str) -> list[str]:
+    text = message_text.lower()
+    detected: list[str] = []
+    for capability, patterns in UNSUPPORTED_PATTERNS.items():
+        if any(pattern in text for pattern in patterns):
+            detected.append(capability)
+    return detected
+
+
+def _build_policy_notice(message_text: str, planner_output: Any) -> str | None:
+    if not planner_output or not planner_output.tasks:
+        return None
+
+    unsupported = _detect_unsupported_capabilities(message_text)
+    if not unsupported:
+        return None
+
+    configured_unsupported = set(get_cached_policy().unsupported_capabilities)
+    unsupported = [cap for cap in unsupported if cap in configured_unsupported]
+    if not unsupported:
+        return None
+
+    supported_labels = []
+    for executor in {t.executor for t in planner_output.tasks if t.executor in SUPPORTED_EXECUTOR_LABELS}:
+        supported_labels.append(SUPPORTED_EXECUTOR_LABELS[executor])
+
+    if not supported_labels:
+        return None
+
+    supported_text = ", ".join(sorted(supported_labels))
+    unsupported_text = ", ".join(unsupported)
+    plural = "is" if len(unsupported) == 1 else "are"
+    return f"I can proceed with {supported_text}. {unsupported_text} {plural} not available yet."
+
 
 async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[str, Any]:
     """Planner Node.
@@ -187,10 +245,13 @@ async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[s
         new_tasks[spec.id] = spec
         wave_tasks.append(spec.id)
 
+    policy_notice = _build_policy_notice(text, planner_output)
+
     return {
         "tasks": new_tasks,
         "waves": [wave_tasks],
         "current_wave_index": 0,
         "normalized_instruction": text,
         "planner_output": planner_output,
+        "policy_notice": policy_notice,
     }
