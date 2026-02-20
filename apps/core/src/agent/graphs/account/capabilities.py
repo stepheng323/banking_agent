@@ -5,6 +5,8 @@ Defines what the account graph supports and doesn't support.
 
 from enum import Enum
 
+from shared.policy import resolve_capability_alternative, resolve_capability_message, resolve_capability_rule
+
 
 class AccountCapability(str, Enum):
     """Capabilities for account."""
@@ -39,7 +41,16 @@ CAPABILITY_LABELS: dict[AccountCapability, str] = {
 
 def check_capabilities(requires: list[AccountCapability]) -> list[AccountCapability]:
     """Check which required capabilities are missing."""
-    return [cap for cap in requires if cap not in ACCOUNT_SUPPORTS]
+    missing: list[AccountCapability] = []
+    for cap in requires:
+        policy_rule = resolve_capability_rule(domain="account", action=cap.value)
+        if policy_rule is not None:
+            if not policy_rule.supported:
+                missing.append(cap)
+            continue
+        if cap not in ACCOUNT_SUPPORTS:
+            missing.append(cap)
+    return missing
 
 
 def derive_requirements(user_message: str) -> list[AccountCapability]:
@@ -66,6 +77,13 @@ def generate_limitation_message(missing: list[AccountCapability]) -> str:
     """Generate user-friendly limitation message."""
     if not missing:
         return ""
+
+    first = missing[0]
+    if policy_message := resolve_capability_message(domain="account", action=first.value):
+        return policy_message
+
+    if alt := resolve_capability_alternative(domain="account", action=first.value):
+        return f"*{CAPABILITY_LABELS.get(first, first.value).title()}* isn't available yet. I can help with *{alt}*."
 
     if AccountCapability.CLOSE_ACCOUNT in missing:
         return (

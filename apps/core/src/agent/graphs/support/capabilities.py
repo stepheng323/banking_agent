@@ -5,6 +5,8 @@ Defines what actions Support can take and their alternatives.
 
 from enum import Enum
 
+from shared.policy import resolve_capability_alternative, resolve_capability_message, resolve_capability_rule
+
 
 class SupportAction(str, Enum):
     """Actions Support can take."""
@@ -59,11 +61,26 @@ ACTION_ALTERNATIVES: dict[SupportAction, SupportAction] = {
 
 def check_actions(requested: list[SupportAction]) -> list[SupportAction]:
     """Check which requested actions are not supported."""
-    return [action for action in requested if action not in SUPPORTED_ACTIONS]
+    missing: list[SupportAction] = []
+    for action in requested:
+        policy_rule = resolve_capability_rule(domain="support", action=action.value)
+        if policy_rule is not None:
+            if not policy_rule.supported:
+                missing.append(action)
+            continue
+        if action not in SUPPORTED_ACTIONS:
+            missing.append(action)
+    return missing
 
 
 def get_alternative(action: SupportAction) -> SupportAction | None:
     """Get alternative action if requested one isn't available."""
+    policy_alternative = resolve_capability_alternative(domain="support", action=action.value)
+    if policy_alternative:
+        try:
+            return SupportAction(policy_alternative)
+        except ValueError:
+            return None
     return ACTION_ALTERNATIVES.get(action)
 
 
@@ -73,6 +90,9 @@ def generate_limitation_message(missing: list[SupportAction]) -> str:
         return ""
 
     action = missing[0]
+    if policy_message := resolve_capability_message(domain="support", action=action.value):
+        return policy_message
+
     alt = get_alternative(action)
     label = ACTION_LABELS.get(action, action.value)
 
