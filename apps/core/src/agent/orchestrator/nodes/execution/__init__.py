@@ -34,6 +34,13 @@ from shared.utils.logging import get_logger
 logger = get_logger(__name__)
 
 
+def _with_policy_notice(state: OrchestratorState, outbox: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Prepend policy notice once per turn when present."""
+    if not state.policy_notice:
+        return outbox
+    return [{"type": "say", "text": state.policy_notice}, *outbox]
+
+
 async def advance_wave(state: OrchestratorState, config: RunnableConfig) -> dict[str, Any]:
     """Execution Node.
 
@@ -235,7 +242,8 @@ async def advance_wave(state: OrchestratorState, config: RunnableConfig) -> dict
                 return {
                     "pending_interrupt": interrupt,
                     "tasks": state.tasks,
-                    "outbox": [{"type": "say", "text": prompt_text}],
+                    "outbox": _with_policy_notice(state, [{"type": "say", "text": prompt_text}]),
+                    "policy_notice": None,
                 }
 
             # [UX] Smart Unified Prompt (Found X, Missing Y) — multiple blockers or no single focus
@@ -298,10 +306,15 @@ async def advance_wave(state: OrchestratorState, config: RunnableConfig) -> dict
         return {
             "pending_interrupt": interrupt,
             "tasks": state.tasks,
-            "outbox": [{"type": "say", "text": prompt_text}],
+            "outbox": _with_policy_notice(state, [{"type": "say", "text": prompt_text}]),
+            "policy_notice": None,
         }
 
     updates = agg.updates
+    if state.policy_notice:
+        existing = updates.get("outbox", [])
+        updates["outbox"] = _with_policy_notice(state, existing)
+        updates["policy_notice"] = None
 
     # [Confirmation Aggregation]
     if agg.needs_confirm_tasks:

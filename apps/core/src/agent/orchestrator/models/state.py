@@ -50,6 +50,7 @@ class OrchestratorState(BaseModel):
     last_interrupt: PendingInterrupt | None = None
     outbox: list[dict[str, Any]] = Field(default_factory=list)
     final_response: str | None = None
+    policy_notice: str | None = None
 
     # Context Frames (Upstream)
     context_frames: list[ContextFrame] = Field(default_factory=list)
