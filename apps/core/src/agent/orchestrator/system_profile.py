@@ -2,6 +2,8 @@
 
 from dataclasses import dataclass
 
+from shared.policy import build_system_profile, get_cached_policy
+
 
 @dataclass(frozen=True)
 class SystemProfile:
@@ -15,26 +17,4 @@ class SystemProfile:
     tone: str
 
 
-SYSTEM_PROFILE = SystemProfile(
-    name="Fusepay",
-    description="A WhatsApp-based money tool that helps you move and understand your money.",
-    positioning="Not a chatbot. Not a financial advisor. A fast, reliable money tool.",
-    supported_domains=[
-        "Send money",
-        "Buy airtime",
-        "Buy data",
-        "Check balances",
-        "View transactions",
-        "Get receipts",
-        "Raise support tickets",
-    ],
-    unsupported_capabilities=[
-        "Financial advice",
-        "Investments",
-        "International transfers",
-        "Scheduled or recurring transfers",
-        "All-time transaction history",
-        "PDF exports",
-    ],
-    tone="clear, calm, non-conversational",
-)
+SYSTEM_PROFILE = SystemProfile(**build_system_profile(get_cached_policy()))

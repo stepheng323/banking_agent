@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 
 from apps.core.src.agent.orchestrator.models.domain import MetaIntent
 from apps.core.src.agent.orchestrator.system_profile import SYSTEM_PROFILE, SystemProfile
+from shared.policy import build_meta_policy_payload, get_cached_policy
 
 
 class MetaReply(BaseModel):
@@ -22,7 +23,7 @@ class MetaReply(BaseModel):
 
 META_SYSTEM_PROMPT = (
     "You write short WhatsApp replies for a banking assistant.\n"
-    "You MUST follow system_profile exactly.\n"
+    "You MUST follow system_profile and soul_policy exactly.\n"
     "- Never claim a feature that is not listed in system_profile.supported_domains.\n"
     "- If asked about something not supported, say it's not available yet and suggest a supported alternative.\n"
     "- Keep the tone minimal and confident (not chatty).\n"
@@ -62,6 +63,7 @@ async def generate_meta_reply(
     active_session: dict[str, Any] | None = None,
 ) -> tuple[str, Literal["meta", "domain"]]:
     """Generate a meta response grounded in the SystemProfile with Caching."""
+    policy = get_cached_policy()
 
     # 1. Deterministic Cache Key Construction
     language = normalize_language_hint(user_language_hint)
@@ -84,6 +86,7 @@ async def generate_meta_reply(
         "user_message": user_message,
         "language_hint": language,
         "system_profile": asdict(profile),
+        "soul_policy": build_meta_policy_payload(policy),
     }
     if meta_intent:
         payload["intent_context"] = meta_intent.value
