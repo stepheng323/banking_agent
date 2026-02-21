@@ -14,6 +14,7 @@ from apps.core.src.agent.orchestrator.models.domain import (
     TransactionResult,
 )
 from shared.database.enums import TransactionStatusEnum
+from shared.i18n import render_message
 from shared.utils.logging import get_logger
 from shared.utils.narration import format_narration
 
@@ -30,6 +31,7 @@ class ExecutionStep(TransferStep):
         gates: TransferGates,
         worker_context: Any,
     ) -> TransactionResult:
+        locale = context.language
         if not gates.confirmation_confirmed:
             return TransactionResult(outcome=TransactionOutcome.OK, patch={})
 
@@ -130,7 +132,7 @@ class ExecutionStep(TransferStep):
                 "recipient_bank_code": data.recipient_bank_code,
                 "recipient_name": data.recipient_resolved_name or data.recipient_name,
                 "narration": narration,
-                "date": "Now",
+                "date": render_message("transfer.execution.date_now", locale),
             }
             if data.source_bank_name:
                 receipt_data["source_bank"] = data.source_bank_name
@@ -143,5 +145,7 @@ class ExecutionStep(TransferStep):
 
         except Exception as e:
             return TransactionResult(
-                outcome=TransactionOutcome.FAILED, error=f"Execution failed: {str(e)}", retryable=True
+                outcome=TransactionOutcome.FAILED,
+                error=render_message("transfer.execution.failed", locale, {"error": str(e)}),
+                retryable=True,
             )

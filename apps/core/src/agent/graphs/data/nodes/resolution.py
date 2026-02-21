@@ -3,6 +3,7 @@ from typing import Any
 from apps.core.src.agent.graphs.data.models.types import DataContext, DataGates, DataPayload
 from apps.core.src.agent.graphs.data.pipeline.base import PipelineStep
 from apps.core.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
+from shared.i18n import render_message
 
 
 class ResolutionStep(PipelineStep):
@@ -11,6 +12,7 @@ class ResolutionStep(PipelineStep):
     async def run(
         self, payload: DataPayload, context: DataContext, gates: DataGates, worker_context: Any
     ) -> TransactionResult | None:
+        locale = context.language
         # 1. Resolve Target Phone
         if not payload.target_phone:
             if payload.extraction and payload.extraction.entities.is_self:
@@ -24,7 +26,7 @@ class ResolutionStep(PipelineStep):
             return TransactionResult(
                 outcome=TransactionOutcome.NEEDS_INPUT,
                 required_fields=["target_phone"],
-                prompt="Who do you want to calculate data for?",
+                prompt=render_message("data.resolve.ask_target_phone", locale),
                 patch=payload.model_dump(exclude_none=True),
             )
 
@@ -35,7 +37,7 @@ class ResolutionStep(PipelineStep):
             return TransactionResult(
                 outcome=TransactionOutcome.NEEDS_INPUT,
                 required_fields=["network"],
-                prompt=f"Which network is {payload.target_phone} on?",
+                prompt=render_message("data.resolve.ask_network", locale, {"target_phone": payload.target_phone}),
                 patch=payload.model_dump(exclude_none=True),
             )
 

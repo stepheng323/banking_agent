@@ -4,6 +4,8 @@ import re
 
 from langchain_core.runnables import Runnable
 
+from shared.i18n import MessageKey, render_message
+from shared.i18n.message_keys import as_message_key
 from shared.utils.logging import get_logger
 
 from .context import ResponseContext
@@ -65,12 +67,28 @@ class ResponseSynthesizer:
 
         Handles missing variables gracefully.
         """
-        variables = {
+        variables = self._build_template_variables(context)
+
+        if template.startswith("response."):
+            return render_message(as_message_key(template), context.language, variables)
+
+        # Legacy literal-template path (kept for compatibility during migration).
+        def replace_var(match):
+            var_name = match.group(1)
+            value = variables.get(var_name, "")
+            return str(value) if value is not None else ""
+
+        return re.sub(r"\{(\w+)\}", replace_var, template)
+
+    def _build_template_variables(self, context: ResponseContext) -> dict[str, object]:
+        """Build interpolation variables for deterministic template rendering."""
+        variables: dict[str, object] = {
             "user_name": context.user_name or "",
             "user_greeting": f" {context.user_name}" if context.user_name else "",
             "amount": context.amount,
             "formatted_amount": context.format_amount(),
-            "recipient_name": context.recipient_name or "recipient",
+            "recipient_name": context.recipient_name
+            or render_message("response.common.recipient_fallback", context.language),
             "recipient_account": context.recipient_account or "",
             "recipient_account_masked": context.recipient_account_masked
             or context.mask_account(context.recipient_account),
@@ -82,7 +100,8 @@ class ResponseSynthesizer:
             "source_account_name": context.source_account_name or "",
             "source_bank_name": context.source_bank_name or "",
             "balance": context.balance,
-            "error_message": context.error_message or "An error occurred",
+            "error_message": context.error_message
+            or render_message("response.common.error_occurred", context.language),
             "transaction_id": context.transaction_id or "",
             "transaction_reference": context.transaction_reference or "",
         }
@@ -90,7 +109,18 @@ class ResponseSynthesizer:
         if context.candidates:
             candidates_list = "\n".join(
                 [
-                    f"• {c.get('name', c.get('account_name', 'Unknown'))} ({c.get('bank_name', 'N/A')} • …{str(c.get('account_number', ''))[-4:]})"
+                    render_message(
+                        "response.format.candidate_item",
+                        context.language,
+                        {
+                            "name": c.get("name")
+                            or c.get("account_name")
+                            or render_message("response.common.unknown", context.language),
+                            "bank_name": c.get("bank_name")
+                            or render_message("response.common.na", context.language),
+                            "last4": str(c.get("account_number", ""))[-4:],
+                        },
+                    )
                     for c in context.candidates
                 ]
             )
@@ -99,27 +129,22 @@ class ResponseSynthesizer:
             variables["candidates_list"] = ""
 
         variables.update(context.extra)
-
-        def replace_var(match):
-            var_name = match.group(1)
-            value = variables.get(var_name, "")
-            return str(value) if value is not None else ""
-
-        return re.sub(r"\{(\w+)\}", replace_var, template)
+        return variables
 
     async def _llm_synthesize(self, context: ResponseContext) -> str:
         """Generate response using LLM."""
         if not self.llm:
             return self._get_fallback(context)
 
-        system_prompt = """You are a helpful banking assistant. Generate a natural, friendly response based on the intent and context provided. Keep responses concise and conversational.
-
-Rules:
-- Be warm but professional
-- Use Nigerian English style when appropriate
-- Format currency as ₦X,XXX
-- Keep responses under 2 sentences when possible
-"""
+        system_prompt = (
+            "You are a helpful banking assistant. Generate a natural, friendly response "
+            "based on the intent and context provided. Keep responses concise and conversational.\n\n"
+            "Rules:\n"
+            "- Be warm but professional\n"
+            "- Use Nigerian English style when appropriate\n"
+            "- Format currency as ₦X,XXX\n"
+            "- Keep responses under 2 sentences when possible\n"
+        )
 
         user_prompt = f"""Intent: {context.intent.value}
 Context:
@@ -144,15 +169,22 @@ Generate a natural response for this intent."""
 
     def _get_fallback(self, context: ResponseContext) -> str:
         """Get fallback response for unknown intents."""
-        fallbacks = {
-            ResponseIntent.ASK_AMOUNT: "How much would you like to send?",
-            ResponseIntent.ASK_RECIPIENT: "Who would you like to send to?",
-            ResponseIntent.ASK_BANK: "Which bank?",
-            ResponseIntent.CANCELLED: "Transaction cancelled.",
-            ResponseIntent.TRANSFER_FAILED: f"Transfer failed: {context.error_message or 'Unknown error'}",
+        fallback_keys: dict[ResponseIntent, MessageKey] = {
+            ResponseIntent.ASK_AMOUNT: "response.templates.ask_amount",
+            ResponseIntent.ASK_RECIPIENT: "response.templates.ask_recipient_no_name",
+            ResponseIntent.ASK_BANK: "response.templates.ask_bank",
+            ResponseIntent.CANCELLED: "response.templates.cancelled",
+            ResponseIntent.TRANSFER_FAILED: "response.templates.transfer_failed",
         }
 
-        return fallbacks.get(context.intent, "I'm sorry, something went wrong. Please try again.")
+        template_key = fallback_keys.get(context.intent)
+        if template_key:
+            return render_message(template_key, context.language, self._build_template_variables(context))
+
+        return render_message(
+            "response.fallback.generic",
+            context.language,
+        )
 
 
 _synthesizer: ResponseSynthesizer | None = None

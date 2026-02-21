@@ -4,20 +4,24 @@ from __future__ import annotations
 
 import json
 from dataclasses import asdict
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 from pydantic import BaseModel, Field
 
 from apps.core.src.agent.orchestrator.models.domain import MetaIntent
 from apps.core.src.agent.orchestrator.system_profile import SYSTEM_PROFILE, SystemProfile
+from shared.i18n import LocaleManager, render_message
 from shared.policy import build_meta_policy_payload, get_cached_policy
+from shared.utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 
 class MetaReply(BaseModel):
     """Output for meta identity/capability replies."""
 
     handoff: Literal["meta", "domain"] = Field(description="Whether to answer or route to domain")
-    language: Literal["en", "yo", "pcm", "ha"] = Field(description="Response language")
+    language: Literal["en", "yo", "pcm", "ha", "ig"] = Field(description="Response language")
     message: str = Field(description="Response message")
 
 
@@ -28,28 +32,33 @@ META_SYSTEM_PROMPT = (
     "- If asked about something not supported, say it's not available yet and suggest a supported alternative.\n"
     "- Keep the tone minimal and confident (not chatty).\n"
     "- Keep the reply under 5 lines.\n\n"
-    'Return ONLY JSON: {"message":"...", "language":"en|yo|pcm|ha"}'
+    'Return ONLY JSON: {"message":"...", "language":"en|yo|pcm|ha|ig"}'
+)
+
+META_STRICT_LANGUAGE_PROMPT = (
+    "CRITICAL: Return language exactly '{language}'."
+    " If you cannot, return handoff='domain'."
 )
 
 
 def normalize_language_hint(language: str | None) -> str:
-    if not language:
-        return "en"
-    value = language.strip().lower()
-    if value in {"en", "english"}:
-        return "en"
-    if value in {"yo", "yoruba"}:
-        return "yo"
-    if value in {"ha", "hausa"}:
-        return "ha"
-    if value in {"pcm", "pidgin", "nigerian pidgin", "naija"}:
-        return "pcm"
-    return "en"
+    return cast(str, LocaleManager.normalize(language).value)
 
 
-def fallback_meta_message(profile: SystemProfile) -> str:
+def fallback_meta_message(profile: SystemProfile, *, locale: str = "en") -> str:
     supported = ", ".join(profile.supported_domains)
-    return f"I'm {profile.name}. {profile.description}\nI can help with: {supported}.\nWhat would you like to do?"
+    return cast(
+        str,
+        render_message(
+        "meta.fallback",
+        locale,
+        {"name": profile.name, "description": profile.description, "supported": supported},
+        fallback_en=(
+            f"I'm {profile.name}. {profile.description}\n"
+            f"I can help with: {supported}.\nWhat would you like to do?"
+        ),
+        ),
+    )
 
 
 async def generate_meta_reply(
@@ -79,7 +88,7 @@ async def generate_meta_reply(
             pass  # Fallback to generation on cache error
 
     if not llm:
-        return fallback_meta_message(profile), "meta"
+        return fallback_meta_message(profile, locale=language), "meta"
 
     # 2. LLM Generation (Cache Miss)
     payload: dict[str, Any] = {
@@ -95,13 +104,36 @@ async def generate_meta_reply(
         # Use low temperature for deterministic generation
         meta_llm = llm.with_structured_output(MetaReply).with_config({"configurable": {"temperature": 0.1}})
 
-        result = await meta_llm.ainvoke(
-            [
-                {"role": "system", "content": META_SYSTEM_PROMPT},
-                {"role": "user", "content": json.dumps(payload, ensure_ascii=True)},
-            ]
-        )
-        meta_reply = result if isinstance(result, MetaReply) else MetaReply.model_validate(result)
+        async def _invoke_meta(strict_language: bool = False) -> MetaReply:
+            system_prompt = META_SYSTEM_PROMPT
+            if strict_language:
+                system_prompt = f"{META_SYSTEM_PROMPT}\n{META_STRICT_LANGUAGE_PROMPT.format(language=language)}"
+
+            result = await meta_llm.ainvoke(
+                [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": json.dumps(payload, ensure_ascii=True)},
+                ]
+            )
+            return result if isinstance(result, MetaReply) else MetaReply.model_validate(result)
+
+        meta_reply = await _invoke_meta()
+        resolved_reply_language = normalize_language_hint(meta_reply.language)
+        if resolved_reply_language != language:
+            logger.info(
+                "meta_reply_language_mismatch_retry",
+                expected=language,
+                got=resolved_reply_language,
+            )
+            meta_reply = await _invoke_meta(strict_language=True)
+            resolved_reply_language = normalize_language_hint(meta_reply.language)
+            if resolved_reply_language != language:
+                logger.info(
+                    "meta_reply_language_retry_failed",
+                    expected=language,
+                    got=resolved_reply_language,
+                )
+                return fallback_meta_message(profile, locale=language), "meta"
 
         # 3. Cache Write-Back
         if meta_intent and redis_client and meta_reply.handoff == "meta":
@@ -118,4 +150,4 @@ async def generate_meta_reply(
         return meta_reply.message, "meta"
 
     except Exception:
-        return fallback_meta_message(profile), "meta"
+        return fallback_meta_message(profile, locale=language), "meta"

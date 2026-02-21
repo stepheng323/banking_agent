@@ -4,6 +4,7 @@ from typing import Any
 
 from apps.core.src.agent.graphs.query.models import NormalizedQuery, QueryResult
 from shared.clients.abstractions.banking import BankingDataProvider
+from shared.i18n import render_message
 
 
 async def handle_affordability(
@@ -14,19 +15,37 @@ async def handle_affordability(
     **kwargs: Any,
 ) -> QueryResult:
     """Handle affordability queries."""
+    language = kwargs.get("language", "en")
+
     # Get balance
     balance = await provider.get_balance(account_id, real_time=True)
     if not balance:
-        return QueryResult(summary_text="Could not retrieve balance.")
+        return QueryResult(summary_text=render_message("query.affordability.balance_unavailable", language))
 
     amount = query.amount_check or 0
     can_afford = balance.available_balance >= amount
     remaining = balance.available_balance - amount
 
     if can_afford:
-        msg = f"Your balance (₦{balance.available_balance:,.2f}) covers ₦{amount:,.0f}. Remaining: ₦{remaining:,.0f}"
+        msg = render_message(
+            "query.affordability.can_afford",
+            language,
+            {
+                "balance": f"{balance.available_balance:,.2f}",
+                "amount": f"{amount:,.0f}",
+                "remaining": f"{remaining:,.0f}",
+            },
+        )
         return QueryResult(summary_text=msg)
-    else:
-        shortfall = amount - balance.available_balance
-        msg = f"₦{amount:,.0f} exceeds your balance (₦{balance.available_balance:,.2f}). Shortfall: ₦{shortfall:,.0f}"
-        return QueryResult(summary_text=msg)
+
+    shortfall = amount - balance.available_balance
+    msg = render_message(
+        "query.affordability.cannot_afford",
+        language,
+        {
+            "amount": f"{amount:,.0f}",
+            "balance": f"{balance.available_balance:,.2f}",
+            "shortfall": f"{shortfall:,.0f}",
+        },
+    )
+    return QueryResult(summary_text=msg)

@@ -8,6 +8,7 @@ class FAQState(TypedDict, total=False):
 
     # Input
     phone_number: str
+    language: str
     message: str
     message_id: str
 

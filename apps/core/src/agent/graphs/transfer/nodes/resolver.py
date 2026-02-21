@@ -11,6 +11,7 @@ from apps.core.src.agent.graphs.transfer.models.types import (
 from apps.core.src.agent.graphs.transfer.pipeline.base import TransferStep
 from apps.core.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
 from shared.database.models import Beneficiary
+from shared.i18n import render_message
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -41,6 +42,7 @@ async def resolve_beneficiary(
     bank_cache: Any | None = None,
 ) -> TransactionResult:
     """Resolve recipient name to bank details using BeneficiaryMatcher."""
+    locale = ctx.language
     if payload.beneficiary_id:
         selected = next((b for b in ctx.beneficiaries if str(b.get("id")) == payload.beneficiary_id), None)
         if selected:
@@ -111,14 +113,22 @@ async def resolve_beneficiary(
                 return TransactionResult(
                     outcome=TransactionOutcome.NEEDS_INPUT,
                     required_fields=["recipient_bank_name"],
-                    prompt=f"I have account {payload.recipient_account}, but I need the Bank Name.",
+                    prompt=render_message(
+                        "transfer.resolve.need_bank_name_for_account",
+                        locale,
+                        {"recipient_account": payload.recipient_account},
+                    ),
                 )
             # If we have Bank Name but no Code -> Bank Lookup Failed
             if payload.recipient_bank_name and not payload.recipient_bank_code:
                 return TransactionResult(
                     outcome=TransactionOutcome.NEEDS_INPUT,
                     required_fields=["recipient_bank_name"],
-                    prompt=f"I couldn't find a bank named '{payload.recipient_bank_name}'. Could you verify the name?",
+                    prompt=render_message(
+                        "transfer.resolve.bank_name_not_found",
+                        locale,
+                        {"bank_name": payload.recipient_bank_name},
+                    ),
                 )
 
             # If we have Code + Account but still no Name -> Resolution Failed (Network or Invalid Account)
@@ -127,13 +137,20 @@ async def resolve_beneficiary(
             return TransactionResult(
                 outcome=TransactionOutcome.NEEDS_INPUT,
                 required_fields=["recipient_name"],
-                prompt=f"I couldn't verify account {payload.recipient_account} at {payload.recipient_bank_name}. Please provide the Recipient Name to proceed manually.",
+                prompt=render_message(
+                    "transfer.resolve.account_verification_failed_need_name",
+                    locale,
+                    {
+                        "recipient_account": payload.recipient_account,
+                        "recipient_bank_name": payload.recipient_bank_name or "",
+                    },
+                ),
             )
 
         return TransactionResult(
             outcome=TransactionOutcome.NEEDS_INPUT,
             required_fields=["recipient_name"],
-            prompt="Who is the recipient?",
+            prompt=render_message("transfer.resolve.ask_recipient", locale),
         )
 
     bank_term = (payload.recipient_bank_name or "").lower()
@@ -178,16 +195,35 @@ async def resolve_beneficiary(
                     "recipient_account": str(candidate_account.get("account_number")),
                     "recipient_bank_code": str(candidate_account.get("bank_code")),
                     "recipient_bank_name": candidate_account.get("bank_name"),
-                    "recipient_resolved_name": f"My {candidate_account.get('bank_name')} Account",
-                    "recipient_name": f"My {candidate_account.get('bank_name')}",
+                    "recipient_resolved_name": render_message(
+                        "transfer.resolve.my_bank_account",
+                        locale,
+                        {"bank_name": candidate_account.get("bank_name")},
+                    ),
+                    "recipient_name": render_message(
+                        "transfer.resolve.my_bank_name",
+                        locale,
+                        {"bank_name": candidate_account.get("bank_name")},
+                    ),
                     "is_self": True,
                 },
             )
 
     matcher = BeneficiaryMatcher()
     beneficiaries = [Beneficiary(**b) for b in ctx.beneficiaries]
+    logger.info(
+        "beneficiary_match_attempt",
+        recipient_name=payload.recipient_name,
+        beneficiary_count=len(beneficiaries),
+    )
 
     status, single, candidates = matcher.match(payload.recipient_name, beneficiaries)
+    logger.info(
+        "beneficiary_match_result",
+        status=status,
+        candidate_count=len(candidates),
+        matched=bool(single),
+    )
 
     if status == "single" and single:
         return TransactionResult(
@@ -207,7 +243,7 @@ async def resolve_beneficiary(
         return TransactionResult(
             outcome=TransactionOutcome.NEEDS_INPUT,
             required_fields=["beneficiary_id"],
-            prompt="Which recipient did you mean?",
+            prompt=render_message("transfer.resolve.which_recipient", locale),
             details={
                 "ambiguity": "MULTIPLE_BENEFICIARIES",
                 "candidates": candidate_list,
@@ -216,23 +252,31 @@ async def resolve_beneficiary(
 
     missing = []
     if not payload.recipient_account:
-        missing.append("account number")
+        missing.append(render_message("transfer.resolve.missing_account_number", locale))
     if not payload.recipient_bank_name and not payload.recipient_bank_code:
-        missing.append("bank name")
+        missing.append(render_message("transfer.resolve.missing_bank_name", locale))
 
     if missing:
         missing_str = " and ".join(missing)
 
         # [UX] Conversational Prompt
         # Acknowledge what we know (Recipient + Amount) before asking for what's missing.
-        base = f"I'm ready to send money to {payload.recipient_name}"
+        base = render_message("transfer.resolve.ready_to_send", locale, {"recipient_name": payload.recipient_name})
         if payload.amount:
             amt = payload.amount
             if isinstance(amt, (int, float)):
                 amt = f"₦{amt:,.2f}".replace(".00", "")
-            base = f"I can send {amt} to {payload.recipient_name}"
+            base = render_message(
+                "transfer.resolve.can_send_amount",
+                locale,
+                {"amount": str(amt), "recipient_name": payload.recipient_name},
+            )
 
-        prompt = f"{base}, but I need their {missing_str}. Please provide the account details."
+        prompt = render_message(
+            "transfer.resolve.need_missing_details",
+            locale,
+            {"base": base, "missing": missing_str},
+        )
 
         return TransactionResult(
             outcome=TransactionOutcome.NEEDS_INPUT,

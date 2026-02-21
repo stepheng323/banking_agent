@@ -62,6 +62,7 @@ class AirtimeContext(BaseModel):
     """Read-only context injected into pure nodes."""
 
     phone_number: str
+    language: str = "en"
     channel: str = "whatsapp"
     beneficiaries: list[dict[str, Any]] = Field(default_factory=list)
     accounts: list[dict[str, Any]] = Field(default_factory=list)

@@ -7,6 +7,7 @@ from typing import Any
 
 from shared.clients.abstractions.banking import BankingDataProvider
 from shared.database.enums import TransactionStatusEnum
+from shared.i18n import render_message
 from shared.repositories.transaction_repository import TransactionRepository
 from shared.utils.logging import get_logger
 
@@ -28,9 +29,10 @@ class TransferExecutor:
         """Handle execution of a transfer transaction."""
         transaction_id = data.get("transaction_id")
         transfer_data = data.get("transfer_data", {})
+        locale = data.get("language", "en")
 
         if not transaction_id:
-            logger.error("transfer_execution_error", error="Missing transaction_id")
+            logger.error("transfer_execution_error", error="missing_transaction_id")
             return
 
         logger.info("executing_transfer", transaction_id=transaction_id)
@@ -55,7 +57,7 @@ class TransferExecutor:
                 await self.transaction_repo.update_status(transaction_id, TransactionStatusEnum.SUCCESSFUL.value)
                 logger.info("transfer_success", transaction_id=transaction_id, ref=result.get("reference"))
             else:
-                error_msg = result.get("message", "Transfer failed at provider")
+                error_msg = result.get("message") or render_message("transfer.error.provider_failed", locale)
                 await self.transaction_repo.update_status(
                     transaction_id, TransactionStatusEnum.FAILED.value, error_message=error_msg
                 )

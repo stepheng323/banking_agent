@@ -82,6 +82,7 @@ def build_confirmation(
             "user_note": payload.user_note,
         },
         include_source=False,  # Orchestrator will handle the "From" line for batching
+        locale=ctx.language,
     )
 
     return TransactionResult(

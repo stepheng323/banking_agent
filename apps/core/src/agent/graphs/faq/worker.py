@@ -11,10 +11,10 @@ from apps.core.src.agent.graphs.faq.nodes.normalize import normalize_query_node
 from apps.core.src.agent.graphs.faq.nodes.retrieve import create_retrieve_node
 from apps.core.src.agent.graphs.faq.nodes.synthesize import create_synthesize_node
 from apps.core.src.agent.graphs.faq.nodes.validate import validate_intent_node
-from apps.core.src.agent.graphs.faq.prompts import SUPPORT_HANDOFF_RESPONSE
 from apps.core.src.agent.graphs.faq.retrieval.embeddings import EmbeddingService
 from apps.core.src.agent.graphs.faq.state import FAQState
 from apps.core.src.agent.orchestrator.models.domain import FAQOutcome, FAQResult
+from shared.i18n import LocaleManager, render_message
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -39,9 +39,11 @@ class FAQWorker:
         """Run the FAQ flow."""
         phone_number = context.get("phone_number", "")
         message = (user_message or "").strip()
+        locale = LocaleManager.normalize(context.get("language")).value
 
         state: FAQState = {
             "phone_number": phone_number,
+            "language": locale,
             "message": message,
             "message_id": "",
             "is_forbidden_scope": False,
@@ -53,7 +55,7 @@ class FAQWorker:
             if state.get("is_forbidden_scope"):
                 return FAQResult(
                     outcome=FAQOutcome.OK,
-                    response=SUPPORT_HANDOFF_RESPONSE,
+                    response=render_message("faq.support_handoff", LocaleManager.normalize(state.get("language")).value),
                     should_route_to_support=True,
                 )
 

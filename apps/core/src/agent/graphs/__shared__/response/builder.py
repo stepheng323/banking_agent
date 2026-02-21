@@ -29,7 +29,6 @@ def build_response_context(
     amount = state.get("amount")
 
     recipient_name = state.get("recipient_name")
-    recipient_name = state.get("recipient_name")
     recipient_account = state.get("recipient_account")
     bank_name = state.get("recipient_bank_name")
     bank_code = state.get("recipient_bank_code")

@@ -13,6 +13,7 @@ from apps.core.src.agent.graphs.__shared__.response import (
     get_synthesizer,
 )
 from shared.cache.bank_cache import BankCacheService
+from shared.i18n import LocaleManager, render_message
 from shared.utils.logging import get_logger
 
 from .account_validator import AccountValidator
@@ -67,6 +68,7 @@ class ValidationCoordinator:
             Updated transfer state
         """
         is_internal_transfer = state.get("is_internal_transfer", False)
+        locale = LocaleManager.normalize(state.get("language")).value
         if is_internal_transfer:
             state = await self._resolve_internal_transfer(state)
             if state.get("flow_state") == "error":
@@ -83,6 +85,7 @@ class ValidationCoordinator:
             recipient_bank_code=recipient_bank_code,
             recipient_bank_name=recipient_bank_name,
             source_account=selected_source_account,
+            locale=locale,
         )
 
         if not is_valid:
@@ -179,7 +182,12 @@ class ValidationCoordinator:
                 return {
                     **state,
                     "flow_state": "collecting_recipient",
-                    "response": response + "\n\nPlease try again or provide different details.",
+                    "response": response
+                    + "\n\n"
+                    + render_message(
+                        "transfer.validation.try_again_or_provide_details",
+                        locale,
+                    ),
                     "validation_errors": ["account_resolution_failed"],
                 }
 
@@ -274,6 +282,7 @@ class ValidationCoordinator:
         """
 
         accounts = state.get("accounts", [])
+        locale = LocaleManager.normalize(state.get("language")).value
         recipient_bank_name = state.get("recipient_bank_name")
         selected_source_account = state.get("selected_source_account")
 
@@ -305,13 +314,17 @@ class ValidationCoordinator:
                 recipient_bank_code=destination_account.get("bank_code"),
                 recipient_bank_name=destination_account.get("bank_name"),
                 source_account=selected_source_account,
+                locale=locale,
             )
             if not is_valid:
                 return {
                     **state,
                     "flow_state": "error",
                     "response": error_message
-                    or "Source and destination accounts are the same. Please specify different accounts.",
+                    or render_message(
+                        "transfer.validation.same_source_destination_fallback",
+                        locale,
+                    ),
                     "validation_errors": ["same_source_destination"],
                 }
 

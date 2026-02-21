@@ -7,6 +7,7 @@ from typing import Any
 
 from apps.core.src.agent.graphs.beneficiary.models import BeneficiaryIntent
 from apps.core.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
+from shared.i18n import LocaleManager, render_message
 from shared.repositories.unit_of_work import UnitOfWork
 from shared.utils.logging import get_logger
 
@@ -22,6 +23,7 @@ class BeneficiaryWorker:
         context: dict[str, Any],
     ) -> TransactionResult:
         """Run beneficiary operation."""
+        locale = LocaleManager.normalize(context.get("language")).value
         try:
             intent = payload.get("intent")
             user_id = context.get("user_id") or payload.get("user_id")
@@ -35,7 +37,10 @@ class BeneficiaryWorker:
                             user_id = str(user.id)
 
             if not user_id:
-                return TransactionResult(outcome=TransactionOutcome.FAILED, error="User identification failed.")
+                return TransactionResult(
+                    outcome=TransactionOutcome.FAILED,
+                    error=render_message("beneficiary.error.user_identification_failed", locale),
+                )
 
             if intent == BeneficiaryIntent.LIST or payload.get("list_intent"):
                 return await self._list_beneficiaries(user_id, context)
@@ -44,7 +49,7 @@ class BeneficiaryWorker:
                 return await self._add_beneficiary(user_id, payload, context)
 
             elif intent == BeneficiaryIntent.DELETE:
-                return await self._delete_beneficiary(user_id, payload)
+                return await self._delete_beneficiary(user_id, payload, context)
 
             elif intent == BeneficiaryIntent.UPDATE:
                 # Default to list if ambiguous but routed here
@@ -54,13 +59,15 @@ class BeneficiaryWorker:
 
         except Exception as e:
             logger.error("beneficiary_worker_error", error=str(e), exc_info=True)
-            return TransactionResult(outcome=TransactionOutcome.FAILED, error="Failed to process beneficiary request.")
+            return TransactionResult(
+                outcome=TransactionOutcome.FAILED,
+                error=render_message("beneficiary.error.process_failed", locale),
+            )
 
 
     async def _list_beneficiaries(self, user_id: str, context: dict[str, Any]) -> TransactionResult:
+        locale = LocaleManager.normalize(context.get("language")).value
         async with UnitOfWork() as uow:
-            import json
-
             beneficiaries = await uow.beneficiaries.get_all_for_user(user_id)
 
             # Format for context
@@ -76,10 +83,11 @@ class BeneficiaryWorker:
 
             if not beneficiaries:
                 return TransactionResult(
-                    outcome=TransactionOutcome.OK, response="You haven't saved any beneficiaries yet."
+                    outcome=TransactionOutcome.OK,
+                    response=render_message("beneficiary.list.empty", locale),
                 )
 
-            lines = ["*Saved Beneficiaries*", ""]
+            lines = [render_message("beneficiary.list.header", locale), ""]
             for b in beneficiaries:
                 alias = b.alias or b.account_name
                 account_name = b.account_name
@@ -103,12 +111,13 @@ class BeneficiaryWorker:
                 lines.append("")
 
             return TransactionResult(
-                outcome=TransactionOutcome.OK, 
+                outcome=TransactionOutcome.OK,
                 response="\n".join(lines),
                 details={"viewed_beneficiaries": simple_list}
             )
 
     async def _add_beneficiary(self, user_id: str, payload: dict, context: dict) -> TransactionResult:
+        locale = LocaleManager.normalize(context.get("language")).value
         name = payload.get("name") or payload.get("account_name")
         alias = payload.get("alias")
         account_number = payload.get("account_number")
@@ -117,7 +126,8 @@ class BeneficiaryWorker:
 
         if not account_number or (not bank_code and not bank_name):
             return TransactionResult(
-                outcome=TransactionOutcome.FAILED, error="I need the account number and bank to add a beneficiary."
+                outcome=TransactionOutcome.FAILED,
+                error=render_message("beneficiary.add.missing_account_or_bank", locale),
             )
 
         provider = context.get("banking_provider")
@@ -148,13 +158,24 @@ class BeneficiaryWorker:
                     logger.warning("account_resolution_failed", error=str(e))
                     return TransactionResult(
                         outcome=TransactionOutcome.FAILED,
-                        error=f"Could not verify account {account_number}. Please check the details.",
+                        error=render_message(
+                            "beneficiary.add.account_verification_failed",
+                            locale,
+                            {"account_number": account_number},
+                        ),
                     )
 
             if not resolved_name and provider:
                 return TransactionResult(
                     outcome=TransactionOutcome.FAILED,
-                    error=f"Account lookup failed/invalid for {account_number} at {bank_name}.",
+                    error=render_message(
+                        "beneficiary.add.account_lookup_failed",
+                        locale,
+                        {
+                            "account_number": account_number,
+                            "bank_name": bank_name or "",
+                        },
+                    ),
                 )
         final_account_name = resolved_name or name or ""
 
@@ -163,24 +184,36 @@ class BeneficiaryWorker:
                 user_id=user_id,
                 account_number=account_number,
                 bank_code=bank_code or "",  # Fallback
-                bank_name=bank_name or "Unknown Bank",
+                bank_name=bank_name or render_message("beneficiary.common.bank_unknown", locale),
                 account_name=final_account_name,
-                alias=alias or name or final_account_name or "My Beneficiary",
+                alias=alias
+                or name
+                or final_account_name
+                or render_message("beneficiary.suggestion.default_alias", locale),
                 beneficiary_type="transfer",
             )
             uow.commit()
 
-        display_name = alias or final_account_name or "Beneficiary"
+        display_name = alias or final_account_name or render_message("beneficiary.common.default_name", locale)
         return TransactionResult(
             outcome=TransactionOutcome.OK,
-            response=f"✓ Verified & Added **{display_name}** ({final_account_name}) to your beneficiaries.",
+            response=render_message(
+                "beneficiary.add.success",
+                locale,
+                {
+                    "display_name": display_name,
+                    "account_name": final_account_name,
+                },
+            ),
         )
 
-    async def _delete_beneficiary(self, user_id: str, payload: dict) -> TransactionResult:
+    async def _delete_beneficiary(self, user_id: str, payload: dict, context: dict[str, Any]) -> TransactionResult:
+        locale = LocaleManager.normalize(context.get("language")).value
         target = payload.get("target_alias") or payload.get("name") or payload.get("alias")
         if not target:
             return TransactionResult(
-                outcome=TransactionOutcome.FAILED, error="Please specify which beneficiary to remove."
+                outcome=TransactionOutcome.FAILED,
+                error=render_message("beneficiary.delete.missing_target", locale),
             )
 
         async with UnitOfWork() as uow:
@@ -196,16 +229,26 @@ class BeneficiaryWorker:
 
             if not match:
                 return TransactionResult(
-                    outcome=TransactionOutcome.FAILED, error=f"I couldn't find a beneficiary named '{target}'."
+                    outcome=TransactionOutcome.FAILED,
+                    error=render_message(
+                        "beneficiary.delete.not_found",
+                        locale,
+                        {"target": target},
+                    ),
                 )
 
             uow.beneficiaries.delete(match.id)
             uow.commit()
 
-        return TransactionResult(outcome=TransactionOutcome.OK, response=f"Deleted **{target}** from beneficiaries.")
+        return TransactionResult(
+            outcome=TransactionOutcome.OK,
+            response=render_message("beneficiary.delete.success", locale, {"target": target}),
+        )
 
     def _update_beneficiary(self, user_id: str, payload: dict) -> TransactionResult:
         # Placeholder for update logic
+        locale = LocaleManager.normalize(payload.get("language")).value
         return TransactionResult(
-            outcome=TransactionOutcome.FAILED, error="Updating beneficiaries is not yet supported."
+            outcome=TransactionOutcome.FAILED,
+            error=render_message("beneficiary.update.not_supported", locale),
         )

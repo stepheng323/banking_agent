@@ -10,6 +10,7 @@ from apps.core.src.agent.graphs.transfer.models.types import (
 from apps.core.src.agent.graphs.transfer.pipeline.base import TransferStep
 from apps.core.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
 from shared.formatters.accounts import format_accounts_list
+from shared.i18n import render_message
 
 
 class SourceSelectionStep(TransferStep):
@@ -30,6 +31,7 @@ async def select_source_account(
     ctx: TransferContext,
 ) -> TransactionResult:
     """Select source account if not provided."""
+    locale = ctx.language
     if payload.source_account_id:
         if not payload.source_account_name:
             acc = next((a for a in ctx.accounts if str(a.get("id")) == payload.source_account_id), None)
@@ -42,7 +44,10 @@ async def select_source_account(
 
     accounts = ctx.accounts
     if not accounts:
-        return TransactionResult(outcome=TransactionOutcome.FAILED, error="No accounts available.")
+        return TransactionResult(
+            outcome=TransactionOutcome.FAILED,
+            error=render_message("source_account.no_accounts", locale),
+        )
 
     if len(accounts) == 1:
         acc = accounts[0]
@@ -104,12 +109,16 @@ async def select_source_account(
                 },
             )
         else:
-            update_msg = f"I couldn't find your {payload.source_bank_name} account."
-            accounts_list = format_accounts_list(accounts)
+            update_msg = render_message(
+                "source_account.bank_not_found",
+                locale,
+                {"bank_name": payload.source_bank_name or ""},
+            )
+            accounts_list = format_accounts_list(accounts, locale=locale)
             return TransactionResult(
                 outcome=TransactionOutcome.NEEDS_INPUT,
                 required_fields=["source_account_id"],
-                prompt=f"*Which account would you like to use?*\n\n{accounts_list}",
+                prompt=render_message("source_account.choose_prompt", locale, {"accounts_list": accounts_list}),
                 update_message=update_msg,
                 patch={"source_bank_name": payload.source_bank_name},
             )
@@ -132,10 +141,10 @@ async def select_source_account(
                     },
                 )
 
-    accounts_list = format_accounts_list(accounts)
+    accounts_list = format_accounts_list(accounts, locale=locale)
 
     return TransactionResult(
         outcome=TransactionOutcome.NEEDS_INPUT,
         required_fields=["source_account_id"],
-        prompt=f"*Which account would you like to use?*\n\n{accounts_list}",
+        prompt=render_message("source_account.choose_prompt", locale, {"accounts_list": accounts_list}),
     )

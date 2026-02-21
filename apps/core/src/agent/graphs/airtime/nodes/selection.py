@@ -10,6 +10,7 @@ from apps.core.src.agent.graphs.airtime.models.types import (
 from apps.core.src.agent.graphs.airtime.pipeline.base import AirtimeStep
 from apps.core.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
 from shared.formatters.accounts import format_accounts_list
+from shared.i18n import render_message
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -25,6 +26,7 @@ class SourceSelectionStep(AirtimeStep):
         gates: AirtimeGates,
         worker_context: Any,
     ) -> TransactionResult:
+        locale = context.language
         if data.source_account_id:
             logger.info("airtime_selection_preselected", source_account_id=data.source_account_id)
             return TransactionResult(outcome=TransactionOutcome.OK)
@@ -34,7 +36,10 @@ class SourceSelectionStep(AirtimeStep):
 
         if not accounts:
             logger.warning("airtime_selection_no_accounts")
-            return TransactionResult(outcome=TransactionOutcome.FAILED, error="No accounts available.")
+            return TransactionResult(
+                outcome=TransactionOutcome.FAILED,
+                error=render_message("source_account.no_accounts", locale),
+            )
 
         if len(accounts) == 1:
             acc = accounts[0]
@@ -84,12 +89,16 @@ class SourceSelectionStep(AirtimeStep):
                 )
             else:
                 # Feedback: requested bank not found
-                update_msg = f"I couldn't find your {data.source_bank_name} account."
-                accounts_list = format_accounts_list(accounts)
+                update_msg = render_message(
+                    "source_account.bank_not_found",
+                    locale,
+                    {"bank_name": data.source_bank_name or ""},
+                )
+                accounts_list = format_accounts_list(accounts, locale=locale)
                 return TransactionResult(
                     outcome=TransactionOutcome.NEEDS_INPUT,
                     required_fields=["source_account_id"],
-                    prompt=f"*Which account would you like to use?*\n\n{accounts_list}",
+                    prompt=render_message("source_account.choose_prompt", locale, {"accounts_list": accounts_list}),
                     update_message=update_msg,
                     patch={"source_bank_name": data.source_bank_name},
                 )
@@ -109,9 +118,9 @@ class SourceSelectionStep(AirtimeStep):
                     },
                 )
 
-        accounts_list = format_accounts_list(accounts)
+        accounts_list = format_accounts_list(accounts, locale=locale)
         return TransactionResult(
             outcome=TransactionOutcome.NEEDS_INPUT,
             required_fields=["source_account_id"],
-            prompt=f"*Which account would you like to use?*\n\n{accounts_list}",
+            prompt=render_message("source_account.choose_prompt", locale, {"accounts_list": accounts_list}),
         )

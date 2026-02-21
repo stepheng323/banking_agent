@@ -33,6 +33,7 @@ from apps.core.src.agent.graphs.support.models import (
 )
 from apps.core.src.agent.graphs.support.resolver import TransactionResolver
 from apps.core.src.agent.orchestrator.models.domain import SupportOutcome, SupportResult
+from shared.i18n import LocaleManager, render_message
 from shared.repositories.support_ticket_repository import SupportTicketRepository
 from shared.services.ticket_service import TicketService
 from shared.utils.logging import get_logger
@@ -71,6 +72,7 @@ class SupportWorker:
         """Run the Support flow."""
         phone_number = context.get("phone_number", "")
         user_id = context.get("user_id") or phone_number
+        locale = LocaleManager.normalize(context.get("language")).value
         message = (user_message or "").strip()
 
         # Extract inputs from payload
@@ -90,7 +92,8 @@ class SupportWorker:
 
             if not intent:
                 return SupportResult(
-                    outcome=SupportOutcome.OK, response="I'm not sure how to help with that support request."
+                    outcome=SupportOutcome.OK,
+                    response=render_message("support.not_sure", locale),
                 )
 
             # 2. Extract Transaction Reference
@@ -117,6 +120,7 @@ class SupportWorker:
                 extraction=extraction,
                 context=support_ctx,
                 has_quoted_message=bool(quoted_message_id),
+                language=locale,
             )
             await self.context_manager.save(user_id, decision.context)
 
@@ -126,11 +130,11 @@ class SupportWorker:
             if next_step == NextStep.ASK_REFERENCE:
                 return SupportResult(
                     outcome=SupportOutcome.NEEDS_INPUT,
-                    response="Which transaction are you asking about?",
+                    response=render_message("support.ask_reference", locale),
                 )
             elif next_step == NextStep.ASK_CLARIFICATION:
                 await self.context_manager.increment_attempts(user_id)
-                prompt = "Could you provide more details?"
+                prompt = render_message("support.ask_clarification", locale)
                 if decision.prompts:
                     if decision.prompts[0].key == "support.negotiate":
                         prompt = decision.negotiation.message if decision.negotiation else prompt
@@ -154,29 +158,41 @@ class SupportWorker:
                     await self.context_manager.increment_attempts(user_id)
                     # Start linear escalation after max attempts -> handled next time or via escalation logic
                     if decision.context.attempts >= 3:
-                        return await self._create_ticket_response(user_id, intent, None, "tx_not_found_max_attempts")
+                        return await self._create_ticket_response(
+                            user_id,
+                            intent,
+                            None,
+                            "tx_not_found_max_attempts",
+                            locale=locale,
+                        )
 
                     return SupportResult(
-                        outcome=SupportOutcome.OK, response="I couldn't find a recent transaction matching your query."
+                        outcome=SupportOutcome.OK,
+                        response=render_message("support.tx_not_found", locale),
                     )
 
                 if not tx_obj and method == "ambiguous":
                     return SupportResult(
-                        outcome=SupportOutcome.NEEDS_INPUT, response="Which transaction? Please be more specific."
+                        outcome=SupportOutcome.NEEDS_INPUT,
+                        response=render_message("support.tx_ambiguous", locale),
                     )
 
             # 6. Dispatch to Handler
             if next_step == NextStep.CREATE_TICKET:
                 reason = decision.escalation.reason if decision.escalation else "micro_resolver_escalation"
-                return await self._create_ticket_response(user_id, intent, resolved_tx, reason)
+                return await self._create_ticket_response(user_id, intent, resolved_tx, reason, locale=locale)
 
             if resolved_tx or intent in (SupportIntent.TICKET_STATUS, SupportIntent.FRAUD_REPORT):
-                response = await self._dispatch_handler(intent, resolved_tx)
+                response = await self._dispatch_handler(intent, resolved_tx, user_id=user_id, locale=locale)
 
                 if response and response.next_step == "NEEDS_INFO":
                     await self.context_manager.increment_attempts(user_id)
 
-                final_msg = response.message if response else "Unable to process."
+                final_msg = (
+                    response.message
+                    if response
+                    else render_message("support.unable_to_process", locale)
+                )
                 return SupportResult(
                     outcome=SupportOutcome.OK,
                     response=final_msg,
@@ -184,17 +200,27 @@ class SupportWorker:
                 )
 
             return SupportResult(
-                outcome=SupportOutcome.OK, response="I need a transaction reference to help with that."
+                outcome=SupportOutcome.OK,
+                response=render_message("support.need_tx_reference", locale),
             )
 
         except Exception as e:
             logger.error(f"Support worker failed: {e}", exc_info=True)
             return SupportResult(outcome=SupportOutcome.FAILED, error=str(e))
 
-    async def _create_ticket_response(self, user_id: str, intent: Any, transaction: Any, reason: str) -> SupportResult:
+    async def _create_ticket_response(
+        self,
+        user_id: str,
+        intent: Any,
+        transaction: Any,
+        reason: str,
+        *,
+        locale: str = "en",
+    ) -> SupportResult:
         if not self._ticket_service:
             return SupportResult(
-                outcome=SupportOutcome.OK, response="I'm escalating this to support, but ticket service is unavailable."
+                outcome=SupportOutcome.OK,
+                response=render_message("support.escalation_unavailable", locale),
             )
 
         resp = await handle_escalation(
@@ -203,6 +229,7 @@ class SupportWorker:
             ticket_service=self._ticket_service,
             transaction=transaction,
             reason=reason,
+            locale=locale,
         )
 
         ticket_code = None
@@ -219,38 +246,46 @@ class SupportWorker:
             outcome=SupportOutcome.OK, response=resp.message, ticket_code=ticket_code, escalation=resp.escalation
         )
 
-    async def _dispatch_handler(self, intent: Any, transaction: Any) -> SupportResponse:
+    async def _dispatch_handler(
+        self,
+        intent: Any,
+        transaction: Any,
+        *,
+        user_id: str,
+        locale: str,
+    ) -> SupportResponse:
         """Dispatch to handlers."""
         # Reuse the logic from SupportFlowGraph._dispatch_handler
         # Map intents to handler functions
         if intent == SupportIntent.TICKET_STATUS:
             # Ticket status needs context
-            ctx = await self.context_manager.get(transaction.get("user_id") if transaction else "")
+            ctx = await self.context_manager.get(user_id)
             if not self._ticket_service:
-                return SupportResponse(message="No ticket access.")
+                return SupportResponse(message=render_message("support.unavailable", locale))
             return await handle_ticket_status(
-                user_id="",  # Handled inside if needed, or pass from context
+                user_id=user_id,
                 ticket_service=self._ticket_service,
                 last_ticket_id=ctx.last_ticket_id,
+                locale=locale,
             )
 
         if intent == SupportIntent.TRANSFER_STATUS:
-            return await handle_transfer_status(transaction)
+            return await handle_transfer_status(transaction, locale=locale)
         elif intent == SupportIntent.PENDING_TRANSFER:
-            return await handle_pending(transaction)
+            return await handle_pending(transaction, locale=locale)
         elif intent == SupportIntent.FAILED_TRANSFER:
-            return await handle_failure_reason(transaction)
+            return await handle_failure_reason(transaction, locale=locale)
         elif intent == SupportIntent.WRONG_DEBIT:
-            return await handle_wrong_debit(transaction)
+            return await handle_wrong_debit(transaction, locale=locale)
         elif intent == SupportIntent.REVERSAL_REFUND or intent == SupportIntent.WRONG_RECIPIENT:
-            return await handle_reversal_status(transaction)
+            return await handle_reversal_status(transaction, locale=locale)
         elif intent == SupportIntent.RETRY_TRANSFER:
-            return await handle_retry(transaction)
+            return await handle_retry(transaction, locale=locale)
         elif intent == SupportIntent.FRAUD_REPORT:
-            return await handle_fraud(transaction)
+            return await handle_fraud(transaction, locale=locale)
         elif intent == SupportIntent.RECEIPT_REQUEST:
-            return await handle_receipt_request(transaction)
+            return await handle_receipt_request(transaction, locale=locale)
         elif intent == SupportIntent.GENERAL_TX_ISSUE:
-            return await handle_transfer_status(transaction)
+            return await handle_transfer_status(transaction, locale=locale)
         else:
-            return SupportResponse(message="I couldn't understand your request.")
+            return SupportResponse(message=render_message("support.not_sure", locale))

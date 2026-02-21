@@ -6,6 +6,8 @@ to prevent negative, zero, or out-of-bounds values from being processed.
 
 from dataclasses import dataclass
 
+from shared.i18n import render_message
+
 
 @dataclass(frozen=True)
 class AmountLimits:
@@ -39,6 +41,7 @@ DATA_LIMITS = AmountLimits(
 def validate_amount(
     amount: float | int | str | None,
     limits: AmountLimits,
+    locale: str = "en",
 ) -> tuple[bool, str | None, float | None]:
     """
     Validate transaction amount against limits.
@@ -54,34 +57,45 @@ def validate_amount(
         - validated_amount: The amount as float if valid, None otherwise
     """
     if amount is None:
-        return False, "Amount is required", None
+        return False, render_message("validation.amount.required", locale), None
 
     try:
         amount_float = float(amount)
     except (ValueError, TypeError):
-        return False, "Invalid amount format. Please enter a valid number.", None
+        return False, render_message("validation.amount.invalid_format", locale), None
 
     if amount_float <= 0:
-        return False, "Amount must be greater than zero.", None
+        return False, render_message("validation.amount.gt_zero", locale), None
 
     if amount_float < limits.min_amount:
         return (
             False,
-            f"Minimum {limits.transaction_type} amount is ₦{limits.min_amount:,.0f}.",
+            render_message(
+                "validation.amount.minimum",
+                locale,
+                {"transaction_type": limits.transaction_type, "amount": f"{limits.min_amount:,.0f}"},
+            ),
             None,
         )
 
     if amount_float > limits.max_amount:
         return (
             False,
-            f"Maximum {limits.transaction_type} amount is ₦{limits.max_amount:,.0f}.",
+            render_message(
+                "validation.amount.maximum",
+                locale,
+                {"transaction_type": limits.transaction_type, "amount": f"{limits.max_amount:,.0f}"},
+            ),
             None,
         )
 
     return True, None, amount_float
 
 
-def validate_percentage(percentage: float | int | str | None) -> tuple[bool, str | None, float | None]:
+def validate_percentage(
+    percentage: float | int | str | None,
+    locale: str = "en",
+) -> tuple[bool, str | None, float | None]:
     """
     Validate transfer percentage (0-100 exclusive of 0, inclusive of 100).
 
@@ -102,18 +116,18 @@ def validate_percentage(percentage: float | int | str | None) -> tuple[bool, str
     try:
         pct = float(percentage)
     except (ValueError, TypeError):
-        return False, "Invalid percentage format. Please enter a valid number.", None
+        return False, render_message("validation.percentage.invalid_format", locale), None
 
     if pct <= 0:
-        return False, "Percentage must be greater than zero.", None
+        return False, render_message("validation.percentage.gt_zero", locale), None
 
     if pct > 100:
-        return False, "Percentage cannot exceed 100%.", None
+        return False, render_message("validation.percentage.max_100", locale), None
 
     return True, None, pct
 
 
-def validate_amount_basic(amount: float | int | str | None) -> tuple[bool, str | None]:
+def validate_amount_basic(amount: float | int | str | None, locale: str = "en") -> tuple[bool, str | None]:
     """
     Basic amount validation without transaction-specific limits.
 
@@ -127,14 +141,14 @@ def validate_amount_basic(amount: float | int | str | None) -> tuple[bool, str |
         Tuple of (is_valid, error_message)
     """
     if amount is None:
-        return False, "Amount is required"
+        return False, render_message("validation.amount.required", locale)
 
     try:
         amount_float = float(amount)
     except (ValueError, TypeError):
-        return False, "Invalid amount format"
+        return False, render_message("validation.amount.invalid_format_short", locale)
 
     if amount_float <= 0:
-        return False, "Amount must be greater than zero"
+        return False, render_message("validation.amount.gt_zero", locale)
 
     return True, None

@@ -34,7 +34,7 @@ class ValidationStep(TransferStep):
 
         data_for_val = data.model_copy(update=res_amount.patch) if res_amount.patch else data
 
-        res_transfer = service.validate_transfer(data_for_val)
+        res_transfer = service.validate_transfer(data_for_val, context)
         if res_transfer.outcome != TransactionOutcome.OK:
             return res_transfer
 

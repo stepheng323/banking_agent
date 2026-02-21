@@ -5,6 +5,8 @@ import traceback
 from typing import Any
 
 from apps.core.src.messaging.outbox import enqueue_outbox_say
+from shared.cache.redis_client import RedisClient
+from shared.i18n import render_message
 from shared.queue.redis_queue import RedisQueue
 from shared.repositories.unit_of_work import UnitOfWork
 from shared.utils.logging import get_logger
@@ -27,6 +29,7 @@ class BeneficiarySuggestionService:
             redis_client: Redis client for storing suggestion context
         """
         self.queue = queue
+        self.redis_client = queue._redis or RedisClient.get_client()
 
     async def check_and_suggest_beneficiary(
         self,
@@ -36,6 +39,7 @@ class BeneficiarySuggestionService:
         transaction_id: str | None = None,
         send_message: bool = True,
         channel: str = "whatsapp",
+        locale: str = "en",
     ) -> str | None:
         """
         Check if recipient is new beneficiary and suggest saving.
@@ -115,18 +119,25 @@ class BeneficiarySuggestionService:
                         )
 
                         if original_alias and original_alias.lower() != recipient_name.lower():
-                            message = (
-                                f"Would you like to save {recipient_display} "
-                                f"({bank_display} • {masked_acct}) as a beneficiary?\n"
-                                f"- Reply 'yes' to save as '{original_alias.title()}'\n"
-                                f"- Or send a different name"
+                            message = render_message(
+                                "beneficiary.suggestion.ask_save_transfer_with_alias",
+                                locale,
+                                {
+                                    "recipient_display": recipient_display,
+                                    "bank_display": bank_display,
+                                    "masked_account": masked_acct,
+                                    "alias": original_alias.title(),
+                                },
                             )
                         else:
-                            message = (
-                                f"Would you like to save {recipient_display} "
-                                f"({bank_display} • {masked_acct}) as a beneficiary?\n"
-                                f"- Reply 'yes' to save\n"
-                                f"- Or send a name (e.g., 'Mum') to save with that alias"
+                            message = render_message(
+                                "beneficiary.suggestion.ask_save_transfer_default",
+                                locale,
+                                {
+                                    "recipient_display": recipient_display,
+                                    "bank_display": bank_display,
+                                    "masked_account": masked_acct,
+                                },
                             )
 
                         if send_message:
@@ -189,11 +200,14 @@ class BeneficiarySuggestionService:
                             ex=3600,
                         )
 
-                        message = (
-                            f"Would you like to save {recipient_display} "
-                            f"({network} • {masked_phone}) as a beneficiary?\n"
-                            f"- Reply 'yes' to save\n"
-                            f"- Or send a name (e.g., 'Mum') to save with that alias"
+                        message = render_message(
+                            "beneficiary.suggestion.ask_save_phone_default",
+                            locale,
+                            {
+                                "recipient_display": recipient_display,
+                                "network": network,
+                                "masked_phone": masked_phone,
+                            },
                         )
 
                         if send_message:
@@ -216,7 +230,7 @@ class BeneficiarySuggestionService:
 
         return None
 
-    async def save_beneficiary(self, phone_number: str, alias: str | None = None) -> str:
+    async def save_beneficiary(self, phone_number: str, alias: str | None = None, locale: str = "en") -> str:
         """
         Save the pending beneficiary suggestion.
 
@@ -231,7 +245,7 @@ class BeneficiarySuggestionService:
         data_json = await self.redis_client.get(suggestion_key)
 
         if not data_json:
-            return "I don't recall suggesting a beneficiary recently. Transactions need to be recent to save them."
+            return render_message("beneficiary.suggestion.no_recent", locale)
 
         try:
             data = json.loads(data_json)
@@ -240,10 +254,15 @@ class BeneficiarySuggestionService:
             async with UnitOfWork() as uow:
                 user = await uow.users.get_by_phone(phone_number)
                 if not user:
-                    return "User not found."
+                    return render_message("beneficiary.suggestion.user_not_found", locale)
 
                 user_id = str(user.id)
-                final_alias = alias or data.get("alias_suggested") or data.get("recipient_name") or "My Beneficiary"
+                final_alias = (
+                    alias
+                    or data.get("alias_suggested")
+                    or data.get("recipient_name")
+                    or render_message("beneficiary.suggestion.default_alias", locale)
+                )
 
                 if beneficiary_type == "transfer":
                     await uow.beneficiaries.create(
@@ -270,8 +289,12 @@ class BeneficiarySuggestionService:
             # Clear the suggestion
             await self.redis_client.delete(suggestion_key)
 
-            return f"✓ Saved **{final_alias.upper()}** to your beneficiaries."
+            return render_message(
+                "beneficiary.suggestion.saved",
+                locale,
+                {"alias": final_alias.upper()},
+            )
 
         except Exception as e:
             logger.error("save_beneficiary_failed", error=str(e))
-            return "Sorry, I couldn't save that beneficiary due to an error."
+            return render_message("beneficiary.suggestion.save_failed", locale)

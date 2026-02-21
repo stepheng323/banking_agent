@@ -1,5 +1,6 @@
 """Query parsing service - extracts NormalizedQuery from natural language."""
 from datetime import date, timedelta
+from typing import Any, Literal, cast
 
 from langchain_core.runnables import Runnable
 
@@ -18,6 +19,7 @@ from apps.core.src.agent.graphs.query.models import (
 )
 from apps.core.src.agent.graphs.query.prompts import QUERY_PARSER_PROMPT
 from apps.core.src.agent.graphs.query.services.resolver import Decision, resolve
+from shared.i18n import render_message
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -32,6 +34,7 @@ class QueryParser:
         self,
         question: str,
         today: date,
+        language: str = "en",
     ) -> "QueryParseResult":
         """
         Parse query using extraction with resolver integration.
@@ -52,7 +55,7 @@ class QueryParser:
             question=question,
         )
 
-        structured_llm = self.llm.with_structured_output(QueryExtractionResult)
+        structured_llm = cast(Any, self.llm).with_structured_output(QueryExtractionResult)
 
         try:
             extraction: QueryExtractionResult = await structured_llm.ainvoke(prompt)
@@ -62,7 +65,7 @@ class QueryParser:
             self._validate_capabilities(extraction)
 
             # Run through resolver
-            decision = resolve(extraction)
+            decision = resolve(extraction, language=language)
 
             outcome = ResolverOutcome.OK
             message = None
@@ -71,9 +74,9 @@ class QueryParser:
             if decision.decision == Decision.ASK_CLARIFY:
                 outcome = ResolverOutcome.NEEDS_INPUT
                 message = (
-                    decision.prompts[0].vars.get("context", "Could you clarify?")
+                    decision.prompts[0].vars.get("context", render_message("query.clarify.default", language))
                     if decision.prompts
-                    else "Could you clarify?"
+                    else render_message("query.clarify.default", language)
                 )
 
             elif decision.decision == Decision.NEGOTIATE:
@@ -83,7 +86,13 @@ class QueryParser:
 
             # Add notices for clamping/modifications
             if decision.clamped.days_back:
-                notices.append(f"Showing last {decision.clamped.days_back} days (max available).")
+                notices.append(
+                    render_message(
+                        "query.notice.clamped_days",
+                        language,
+                        {"days_back": decision.clamped.days_back},
+                    )
+                )
 
             return QueryParseResult(
                 outcome=outcome,
@@ -191,12 +200,16 @@ class QueryParser:
                 if is_expense_query:
                     transaction_type = "debit"
 
+            typed_transaction_type = (
+                cast(Literal["credit", "debit"], transaction_type) if transaction_type in {"credit", "debit"} else None
+            )
+
             filters = Filters(
                 merchant=[extraction.filters.recipient] if extraction.filters.recipient else None,
                 category=[extraction.filters.category] if extraction.filters.category else None,
                 min_amount=extraction.filters.min_amount,
                 max_amount=extraction.filters.max_amount,
-                transaction_type=transaction_type,
+                transaction_type=typed_transaction_type,
                 account_filter=extraction.filters.bank,
             )
 
@@ -233,9 +246,19 @@ class QueryParser:
                 if is_singular:
                     limit = 1
 
+            typed_agg_type = cast(
+                Literal["sum", "average", "count", "largest", "smallest", "breakdown"],
+                agg_type if agg_type in {"sum", "average", "count", "largest", "smallest", "breakdown"} else "sum",
+            )
+            typed_group_by = (
+                cast(Literal["category", "merchant", "day", "account"], extraction.aggregation.group_by)
+                if extraction.aggregation.group_by in {"category", "merchant", "day", "account"}
+                else None
+            )
+
             aggregation = Aggregation(
-                type=agg_type,
-                group_by=extraction.aggregation.group_by,
+                type=typed_agg_type,
+                group_by=typed_group_by,
                 limit=limit or 5,  # Default to 5 if still None
             )
 
@@ -265,7 +288,11 @@ class QueryParser:
                 if is_singular:
                     limit = 1
 
-            aggregation = Aggregation(type=agg_type, limit=limit)
+            typed_agg_type = cast(
+                Literal["sum", "average", "count", "largest", "smallest", "breakdown"],
+                agg_type if agg_type in {"sum", "average", "count", "largest", "smallest", "breakdown"} else "sum",
+            )
+            aggregation = Aggregation(type=typed_agg_type, limit=limit)
         elif extraction.intent == ExtractionIntent.CATEGORY_BREAKDOWN:
             aggregation = Aggregation(type="breakdown", group_by="category")
 

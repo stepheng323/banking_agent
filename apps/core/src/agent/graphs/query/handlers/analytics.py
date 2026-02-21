@@ -17,6 +17,7 @@ from apps.core.src.agent.graphs.query.services.fetch import (
     parse_date,
 )
 from shared.clients.abstractions.banking import BankingDataProvider
+from shared.i18n import render_message
 
 
 async def handle_analytics(
@@ -28,12 +29,21 @@ async def handle_analytics(
     current_page: int = 0,
     page_size: int = 5,
     user_id: str | None = None,
+    language: str = "en",
 ) -> QueryResult:
     """Handle analytics summary queries."""
-    transactions = await fetch_and_filter(provider, query, account_id, account_ids, accounts_info, user_id=user_id)
+    transactions = await fetch_and_filter(
+        provider,
+        query,
+        account_id,
+        account_ids,
+        accounts_info,
+        user_id=user_id,
+        language=language,
+    )
 
     if not query.aggregation:
-        return QueryResult(summary_text="No aggregation specified.")
+        return QueryResult(summary_text=render_message("query.analytics.no_aggregation", language))
 
     agg_type = query.aggregation.type
 
@@ -41,21 +51,18 @@ async def handle_analytics(
         total = sum(abs(t.get("amount", 0)) for t in transactions)
         count = len(transactions)
         if count == 0:
-            return QueryResult(summary_text="No matching transactions found.")
+            return QueryResult(summary_text=render_message("query.format.no_matching_transactions", language))
         merchant = query.filters.merchant[0] if query.filters and query.filters.merchant else None
 
-        target_description = f"on {merchant}" if merchant else ""
-
-        timeframe = " (last 30 days)"
-        if query.time_range:
-            start_str = query.time_range.start.strftime("%b %d")
-            end_str = query.time_range.end.strftime("%b %d")
-            timeframe = f" ({start_str} - {end_str})"
+        target_description = (
+            render_message("query.analytics.target_merchant", language, {"merchant": merchant}) if merchant else ""
+        )
+        timeframe = _build_timeframe_suffix(query, language)
 
         items = [
             QueryResultItem(
                 id=t.get("id", "")[:8] if t.get("id") else str(i),
-                description=t.get("narration", "Transaction"),
+                description=t.get("narration", render_message("query.common.transaction", language)),
                 amount=abs(t.get("amount", 0)),
                 date=parse_date(t.get("date", "")),
                 metadata={
@@ -74,9 +81,17 @@ async def handle_analytics(
         )
 
         return QueryResult(
-            summary_text=f"💸 You spent *₦{total:,.2f}*{target_description}{timeframe} ({count} transaction{'s' if count > 1 else ''}).",
+            summary_text=render_message(
+                "query.analytics.summary_spent",
+                language,
+                {
+                    "total": f"{total:,.2f}",
+                    "target_description": target_description,
+                    "timeframe": timeframe,
+                    "count": count,
+                },
+            ),
             items=items,
-            total_count=count,
             surface=surface,
         )
 
@@ -85,16 +100,12 @@ async def handle_analytics(
             avg = sum(abs(t.get("amount", 0)) for t in transactions) / len(transactions)
             count = len(transactions)
 
-            timeframe = " (last 30 days)"
-            if query.time_range:
-                start_str = query.time_range.start.strftime("%b %d")
-                end_str = query.time_range.end.strftime("%b %d")
-                timeframe = f" ({start_str} - {end_str})"
+            timeframe = _build_timeframe_suffix(query, language)
 
             items = [
                 QueryResultItem(
                     id=t.get("id", "")[:8] if t.get("id") else str(i),
-                    description=t.get("narration", "Transaction"),
+                    description=t.get("narration", render_message("query.common.transaction", language)),
                     amount=abs(t.get("amount", 0)),
                     date=parse_date(t.get("date", "")),
                     metadata={
@@ -113,15 +124,23 @@ async def handle_analytics(
             )
 
             return QueryResult(
-                summary_text=f"Your average transaction is *₦{int(avg):,}*{timeframe} ({count} transaction{'s' if count > 1 else ''}).\n\n_'show transactions' to see details_",
+                summary_text=render_message(
+                    "query.analytics.summary_average",
+                    language,
+                    {
+                        "average": f"{int(avg):,}",
+                        "timeframe": timeframe,
+                        "count": count,
+                    },
+                ),
                 items=items,
-                total_count=count,
                 surface=surface,
             )
-        return QueryResult(summary_text="No transactions found.")
+        return QueryResult(summary_text=render_message("query.analytics.no_transactions", language))
 
     elif agg_type == "count":
         count = len(transactions)
+        timeframe = _build_timeframe_suffix(query, language)
 
         surface = ResultSurface(
             type=SurfaceType.SUMMARY,
@@ -130,7 +149,11 @@ async def handle_analytics(
         )
 
         return QueryResult(
-            summary_text=f"You made *{count}* transaction{'s' if count != 1 else ''}{timeframe}.",
+            summary_text=render_message(
+                "query.analytics.summary_count",
+                language,
+                {"count": count, "timeframe": timeframe},
+            ),
             surface=surface,
         )
 
@@ -140,11 +163,7 @@ async def handle_analytics(
 
         sorted_txns = sorted(transactions, key=lambda t: abs(t.get("amount", 0)), reverse=reverse_sort)
 
-        timeframe = " (last 30 days)"
-        if query.time_range:
-            start_str = query.time_range.start.strftime("%b %d")
-            end_str = query.time_range.end.strftime("%b %d")
-            timeframe = f" ({start_str} - {end_str})"
+        timeframe = _build_timeframe_suffix(query, language)
 
         # Pagination for ranked surface:
         # Page 0: Uses 'limit' (e.g. 1)
@@ -161,13 +180,13 @@ async def handle_analytics(
         items = [
             QueryResultItem(
                 id=t.get("id", "")[:8] if t.get("id") else str(i),
-                description=t.get("narration", "Transaction"),
+                description=t.get("narration", render_message("query.common.transaction", language)),
                 amount=abs(t.get("amount", 0)),
                 date=parse_date(t.get("date", "")),
                 metadata={
                     "bank_name": t.get("bank_name", ""),
                     "type": t.get("type", ""),
-                    "counterparty": extract_counterparty(t.get("narration", "")),
+                    "counterparty": extract_counterparty(t.get("narration", ""), locale=language),
                     "rank": start_idx + i + 1,  # Strict ranking
                 },
             )
@@ -178,7 +197,10 @@ async def handle_analytics(
         if limit == 1 and current_page == 0 and items:
             # Return single item surface views
             surface_type = "largest_single" if agg_type == "largest" else "smallest_single"
-            adjective = "biggest" if agg_type == "largest" else "smallest"
+            adjective = render_message(
+                "query.analytics.adjective_biggest" if agg_type == "largest" else "query.analytics.adjective_smallest",
+                language,
+            )
 
             surface = ResultSurface(
                 type=SurfaceType.SINGLE_ITEM,
@@ -186,19 +208,41 @@ async def handle_analytics(
                 context={"type": surface_type},
             )
             return QueryResult(
-                summary_text=f"💸 Your {adjective} expense{timeframe}",
+                summary_text=render_message(
+                    "query.analytics.single_expense",
+                    language,
+                    {"adjective": adjective, "timeframe": timeframe},
+                ),
                 items=items,
                 surface=surface,
             )
 
-        label = "Expenses" if query.filters and query.filters.transaction_type == "debit" else "Transactions"
-        adj_title = "Largest" if agg_type == "largest" else "Smallest"
-        adjective = "biggest" if agg_type == "largest" else "smallest"
+        label = render_message(
+            "query.analytics.label_expenses" if query.filters and query.filters.transaction_type == "debit"
+            else "query.analytics.label_transactions",
+            language,
+        )
+        adj_title = render_message(
+            "query.analytics.title_largest" if agg_type == "largest" else "query.analytics.title_smallest",
+            language,
+        )
+        adjective = render_message(
+            "query.analytics.adjective_biggest" if agg_type == "largest" else "query.analytics.adjective_smallest",
+            language,
+        )
 
         if current_page > 0:
-            summary_text = f"Other {adjective} expenses (Rank {start_idx + 1}-{end_idx})"
+            summary_text = render_message(
+                "query.analytics.ranked_other",
+                language,
+                {"adjective": adjective, "start": start_idx + 1, "end": end_idx},
+            )
         else:
-            summary_text = f"Top {limit} {adj_title} {label}"
+            summary_text = render_message(
+                "query.analytics.ranked_top",
+                language,
+                {"limit": limit, "adj_title": adj_title, "label": label},
+            )
 
         total = len(sorted_txns)
         has_more = end_idx < total
@@ -211,7 +255,7 @@ async def handle_analytics(
                     "key": item.description,
                     "amount": item.amount,
                     "count": 1,
-                    "rank": item.metadata.get("rank"),
+                    "rank": item.metadata.get("rank") if item.metadata else None,
                 }
                 for item in items
             ],
@@ -221,12 +265,25 @@ async def handle_analytics(
         return QueryResult(summary_text=summary_text, items=items, surface=surface, has_more=has_more)
 
     elif agg_type == "breakdown":
-        return await _aggregate_breakdown(transactions, query)
+        return await _aggregate_breakdown(transactions, query, language)
 
-    return QueryResult(summary_text="Aggregation completed.")
+    return QueryResult(summary_text=render_message("query.analytics.aggregation_completed", language))
 
 
-async def _aggregate_breakdown(transactions: list[dict], query: NormalizedQuery) -> QueryResult:
+def _build_timeframe_suffix(query: NormalizedQuery, locale: str) -> str:
+    if query.time_range:
+        return render_message(
+            "query.analytics.timeframe_range",
+            locale,
+            {
+                "start": query.time_range.start.strftime("%b %d"),
+                "end": query.time_range.end.strftime("%b %d"),
+            },
+        )
+    return render_message("query.analytics.timeframe_default", locale)
+
+
+async def _aggregate_breakdown(transactions: list[dict], query: NormalizedQuery, language: str = "en") -> QueryResult:
     """Aggregate transactions by day/category/merchant."""
     group_by = query.aggregation.group_by if query.aggregation else "day"
     grouped: dict[str, dict[str, Any]] = defaultdict(lambda: {"debit": 0, "credit": 0, "count": 0})
@@ -239,7 +296,7 @@ async def _aggregate_breakdown(transactions: list[dict], query: NormalizedQuery)
 
             key = detect_category(t.get("narration", "")) or "other"
         elif group_by == "merchant":
-            key = extract_counterparty(t.get("narration", ""))
+            key = extract_counterparty(t.get("narration", ""), locale=language)
         else:
             key = t.get("date", "")[:10]
 
@@ -250,16 +307,16 @@ async def _aggregate_breakdown(transactions: list[dict], query: NormalizedQuery)
 
     # Sort: Amount (desc) -> Count (desc)
     # Special case: "Other" always goes to the bottom
-    def sort_key(item):
+    def sort_key(item: tuple[str, dict[str, Any]]) -> tuple[float, int]:
         key, data = item
         if key.lower() == "other":
             return (-1.0, 0)
-        return (abs(data["debit"] + data["credit"]), data["count"])
+        return (abs(float(data["debit"]) + float(data["credit"])), int(data["count"]))
 
     sorted_items = sorted(grouped.items(), key=sort_key, reverse=True)
 
     # Apply limit if requested
-    limit = query.aggregation.limit or 10
+    limit = query.aggregation.limit if query.aggregation and query.aggregation.limit is not None else 10
     sorted_items = sorted_items[:limit]
 
     items = [
@@ -285,7 +342,7 @@ async def _aggregate_breakdown(transactions: list[dict], query: NormalizedQuery)
             "id": item.id,
             "key": item.description,
             "amount": item.amount,
-            "count": item.metadata.get("count", 0),
+            "count": item.metadata.get("count", 0) if item.metadata else 0,
         }
         for item in items
     ]
@@ -300,7 +357,7 @@ async def _aggregate_breakdown(transactions: list[dict], query: NormalizedQuery)
     )
 
     return QueryResult(
-        summary_text=f"Breakdown by {group_by}",
+        summary_text=render_message("query.analytics.breakdown_by", language, {"group_by": group_by}),
         items=items,
         surface=surface,
     )

@@ -18,6 +18,7 @@ from apps.core.src.agent.orchestrator.models.domain import (
     TransactionOutcome,
     TransactionResult,
 )
+from shared.i18n import render_message
 
 
 class ValidationService:
@@ -25,8 +26,9 @@ class ValidationService:
 
     def validate_amount(self, payload: TransferPayload, ctx: TransferContext) -> TransactionResult:
         """Validate amount limits and percentages."""
+        locale = ctx.language
         if payload.transfer_percentage:
-            is_valid, error, pct = validate_percentage(payload.transfer_percentage)
+            is_valid, error, pct = validate_percentage(payload.transfer_percentage, locale=locale)
             if not is_valid:
                 return TransactionResult(outcome=TransactionOutcome.FAILED, error=error)
             return TransactionResult(outcome=TransactionOutcome.OK, patch={"transfer_percentage": pct})
@@ -38,10 +40,10 @@ class ValidationService:
             return TransactionResult(
                 outcome=TransactionOutcome.NEEDS_INPUT,
                 required_fields=["amount"],
-                prompt="How much would you like to send?",
+                prompt=render_message("transfer.validation.ask_amount", locale),
             )
 
-        is_valid, error, amount = validate_amount_limits(payload.amount, TRANSFER_LIMITS)
+        is_valid, error, amount = validate_amount_limits(payload.amount, TRANSFER_LIMITS, locale=locale)
         if not is_valid:
             return TransactionResult(outcome=TransactionOutcome.FAILED, error=error)
 
@@ -50,7 +52,7 @@ class ValidationService:
 
         return TransactionResult(outcome=TransactionOutcome.OK)
 
-    def validate_transfer(self, payload: TransferPayload) -> TransactionResult:
+    def validate_transfer(self, payload: TransferPayload, ctx: TransferContext) -> TransactionResult:
         """Business rule validations (self-transfer, etc)."""
         if payload.source_account_number and payload.recipient_account:
             val = SelfTransferValidator()
@@ -62,6 +64,7 @@ class ValidationService:
                     "account_number": payload.source_account_number,
                     "bank_name": payload.source_bank_name,
                 },
+                locale=ctx.language,
             )
             if not is_valid:
                 return TransactionResult(outcome=TransactionOutcome.FAILED, error=error)

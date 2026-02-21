@@ -1,9 +1,12 @@
 """Query executor - thin dispatch layer for normalized queries."""
 
+from typing import Awaitable, Callable, cast
+
 from apps.core.src.agent.graphs.__shared__.account_selection.service import find_account_by_bank_name
 from apps.core.src.agent.graphs.query.handlers import HANDLER_REGISTRY
 from apps.core.src.agent.graphs.query.models import NormalizedQuery, QueryResult
 from shared.clients.abstractions.banking import BankingDataProvider
+from shared.i18n import render_message
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -29,6 +32,7 @@ class QueryExecutor:
         current_page: int = 0,
         page_size: int = 5,
         user_id: str | None = None,
+        language: str = "en",
     ) -> QueryResult:
         """
         Execute a normalized query.
@@ -54,7 +58,11 @@ class QueryExecutor:
                 all_account_ids = [resolved_id]
             else:
                 return QueryResult(
-                    summary_text=f"I couldn't find an account matching '{query.account_name}'.",
+                    summary_text=render_message(
+                        "query.account.not_found_by_name",
+                        language,
+                        {"account_name": query.account_name},
+                    ),
                 )
         elif query.accounts_scope == "single":
             all_account_ids = [account_id]
@@ -62,10 +70,12 @@ class QueryExecutor:
         handler = HANDLER_REGISTRY.get(query.intent)
         if not handler:
             logger.error("unknown_query_intent", intent=query.intent)
-            return QueryResult(summary_text="I couldn't understand that query.")
+            return QueryResult(summary_text=render_message("query.error.unknown_intent", language))
+
+        typed_handler = cast(Callable[..., Awaitable[QueryResult]], handler)
 
         try:
-            result = await handler(
+            result = await typed_handler(
                 self.provider,
                 query,
                 account_id,
@@ -74,12 +84,13 @@ class QueryExecutor:
                 current_page,
                 page_size,
                 user_id=user_id,  # Explicitly passing it
+                language=language,
             )
             result.query_snapshot = query
             return result
         except Exception as e:
             logger.error("query_execution_error", intent=query.intent, error=str(e))
-            return QueryResult(summary_text="Something went wrong. Please try again.")
+            return QueryResult(summary_text=render_message("query.error.execution_failed", language))
 
     def _resolve_account_by_name(self, name: str, accounts: list[dict]) -> str | None:
         """Resolve account name to account ID using existing AccountSelectionService."""

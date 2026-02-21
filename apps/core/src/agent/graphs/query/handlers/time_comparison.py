@@ -15,6 +15,7 @@ from apps.core.src.agent.graphs.query.models import (
 )
 from apps.core.src.agent.graphs.query.services.fetch import fetch_and_filter
 from shared.clients.abstractions.banking import BankingDataProvider
+from shared.i18n import render_message
 
 
 async def handle_time_comparison(
@@ -26,10 +27,11 @@ async def handle_time_comparison(
     current_page: int = 0,
     page_size: int = 5,
     user_id: str | None = None,
+    language: str = "en",
 ) -> QueryResult:
     """Handle time comparison queries (this month vs last month, etc.)."""
     if not query.time_range:
-        return QueryResult(summary_text="Please specify a time period to compare.")
+        return QueryResult(summary_text=render_message("query.time_comparison.prompt_specify_period", language))
 
     # Get current period data
     current_period = query.time_range
@@ -40,7 +42,13 @@ async def handle_time_comparison(
 
     # Fetch transactions for both periods
     current_txns = await fetch_and_filter(
-        provider, query, account_id, account_ids, accounts_info, user_id=user_id
+        provider,
+        query,
+        account_id,
+        account_ids,
+        accounts_info,
+        user_id=user_id,
+        language=language,
     )
     comparison_txns = await fetch_and_filter(
         provider,
@@ -49,6 +57,7 @@ async def handle_time_comparison(
         account_ids,
         accounts_info,
         user_id=user_id,
+        language=language,
     )
 
     # Calculate totals
@@ -69,7 +78,11 @@ async def handle_time_comparison(
         items.append(
             QueryResultItem(
                 id="spending",
-                description=f"Spending: {_format_change(change, pct_change)}",
+                description=render_message(
+                    "query.time_comparison.item_spending",
+                    language,
+                    {"change": _format_change(change, pct_change, language)},
+                ),
                 amount=current_stats["debit_total"],
                 date=current_period.end,
                 metadata={
@@ -89,7 +102,11 @@ async def handle_time_comparison(
         items.append(
             QueryResultItem(
                 id="income",
-                description=f"Income: {_format_change(change, pct_change)}",
+                description=render_message(
+                    "query.time_comparison.item_income",
+                    language,
+                    {"change": _format_change(change, pct_change, language)},
+                ),
                 amount=current_stats["credit_total"],
                 date=current_period.end,
                 metadata={
@@ -105,7 +122,11 @@ async def handle_time_comparison(
     items.append(
         QueryResultItem(
             id="count",
-            description=f"Transactions: {current_stats['count']} vs {comparison_stats['count']}",
+            description=render_message(
+                "query.time_comparison.item_transactions",
+                language,
+                {"current": current_stats["count"], "comparison": comparison_stats["count"]},
+            ),
             amount=float(current_stats["count"]),
             date=current_period.end,
             metadata={
@@ -115,7 +136,7 @@ async def handle_time_comparison(
         )
     )
 
-    summary = _build_summary(current_label, comparison_label, current_stats, comparison_stats)
+    summary = _build_summary(current_label, comparison_label, current_stats, comparison_stats, language)
 
     return QueryResult(
         summary_text=summary,
@@ -169,17 +190,16 @@ def _calculate_percentage_change(old_value: float, new_value: float) -> float | 
     return ((new_value - old_value) / old_value) * 100
 
 
-def _format_change(change: float, pct_change: float | None) -> str:
+def _format_change(change: float, pct_change: float | None, locale: str = "en") -> str:
     """Format change for display."""
     direction = "↑" if change > 0 else "↓" if change < 0 else "→"
     abs_change = abs(change)
 
     if pct_change is not None:
         return f"{direction} ₦{abs_change:,.0f} ({abs(pct_change):.0f}%)"
-    elif change != 0:
+    if change != 0:
         return f"{direction} ₦{abs_change:,.0f}"
-    else:
-        return "No change"
+    return render_message("query.time_comparison.no_change", locale)
 
 
 def _format_period_label(period: TimeRange) -> str:
@@ -194,17 +214,31 @@ def _build_summary(
     comparison_label: str,
     current_stats: dict[str, Any],
     comparison_stats: dict[str, Any],
+    locale: str = "en",
 ) -> str:
     """Build the summary text."""
     spending_change = current_stats["debit_total"] - comparison_stats["debit_total"]
 
     if spending_change > 0:
-        verb = "spent more"
+        verb = render_message("query.time_comparison.verb_spent_more", locale)
         amount = spending_change
     elif spending_change < 0:
-        verb = "spent less"
+        verb = render_message("query.time_comparison.verb_spent_less", locale)
         amount = abs(spending_change)
     else:
-        return f"Your spending in {current_label} is the same as {comparison_label}."
+        return render_message(
+            "query.time_comparison.same_spending",
+            locale,
+            {"current_label": current_label, "comparison_label": comparison_label},
+        )
 
-    return f"You {verb} (₦{amount:,.0f}) in {current_label} compared to {comparison_label}."
+    return render_message(
+        "query.time_comparison.summary",
+        locale,
+        {
+            "verb": verb,
+            "amount": f"{amount:,.0f}",
+            "current_label": current_label,
+            "comparison_label": comparison_label,
+        },
+    )

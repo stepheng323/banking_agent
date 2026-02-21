@@ -16,6 +16,7 @@ from apps.core.src.agent.orchestrator.graph import build_orchestrator_graph
 from apps.core.src.agent.orchestrator.models.message_context import MessageContext
 from apps.core.src.agent.orchestrator.presentation.intents import map_outbox_to_intents
 from shared.clients.abstractions.banking import BankingDataProvider
+from shared.i18n import LocaleManager
 from shared.clients.whatsapp.client import WhatsAppClient
 from shared.protocols.worker import WorkerProtocol
 from shared.queue.redis_queue import RedisQueue
@@ -143,7 +144,8 @@ class OrchestratorGraphHandler:
             "profile": user_ctx.get("profile"),
             "accounts": user_ctx.get("accounts"),
             "beneficiaries": user_ctx.get("beneficiaries"),
-            "language": user_ctx.get("language"),
+            "language": LocaleManager.normalize(user_ctx.get("language")).value,
+            "detected_language": LocaleManager.normalize(user_ctx.get("language")).value,
             "user_id": user_ctx.get("profile", {}).get("id") if user_ctx.get("profile") else None,
         }
 
@@ -164,6 +166,9 @@ class OrchestratorGraphHandler:
         )
         outbox = final_state.get("outbox", [])
         response_text = final_state.get("final_response")
+        resolved_locale = LocaleManager.normalize(
+            (final_state.get("loaded_context") or {}).get("language") or loaded_context.get("language")
+        ).value
 
         intents = map_outbox_to_intents(outbox, response_text)
 
@@ -171,6 +176,7 @@ class OrchestratorGraphHandler:
             "text": response_text,
             "intents": intents,
             "outbox": outbox,  # Keep raw outbox for logging/debug if needed
+            "locale": resolved_locale,
         }
 
     async def resume_flow(self, phone_number: str, payload: dict[str, Any]) -> dict[str, Any]:
@@ -189,10 +195,12 @@ class OrchestratorGraphHandler:
 
         try:
             final_state = await self.graph.ainvoke(inputs, config=config)
+            resolved_locale = LocaleManager.normalize((final_state.get("loaded_context") or {}).get("language")).value
             return {
                 "text": final_state.get("final_response"),
                 "outbox": final_state.get("outbox", []),
+                "locale": resolved_locale,
             }
         except Exception as e:
             logger.exception("graph_resume_error", error=str(e))
-            return {"text": None, "outbox": []}
+            return {"text": None, "outbox": [], "locale": LocaleManager.DEFAULT_LOCALE.value}

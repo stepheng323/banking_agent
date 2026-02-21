@@ -3,12 +3,13 @@
 from typing import Any
 
 from apps.core.src.agent.graphs.support.models import EscalationResult, SupportResponse
+from shared.i18n import render_message
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
 
 
-async def handle_fraud(transaction: dict[str, Any] | None) -> SupportResponse:
+async def handle_fraud(transaction: dict[str, Any] | None, *, locale: str = "en") -> SupportResponse:
     """
     Handle fraud_suspected intent.
     ALWAYS escalates immediately - never provides operational details.
@@ -18,9 +19,7 @@ async def handle_fraud(transaction: dict[str, Any] | None) -> SupportResponse:
         transaction_id=transaction.get("id") if transaction else None,
     )
 
-    message = "⚠ We're taking this seriously.\n"
-    message += "A support agent will contact you shortly to investigate.\n"
-    message += "Do not share any PINs or passwords."
+    message = render_message("support.fraud.alert", locale)
 
     return SupportResponse(
         message=message,

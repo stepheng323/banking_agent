@@ -17,6 +17,7 @@ from apps.core.src.agent.graphs.query.pipeline import QueryPipeline
 from apps.core.src.agent.graphs.query.session import QuerySessionManager
 from apps.core.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
 from shared.clients.abstractions.banking import BankingDataProvider
+from shared.i18n import LocaleManager, render_message
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -48,6 +49,7 @@ class QueryWorker:
         pin_verified: bool = False,
     ) -> TransactionResult:
         """Run the query pipeline."""
+        locale = LocaleManager.normalize(context.get("language")).value
 
         # 1. Load Session
         phone_number = context.get("phone_number")
@@ -72,6 +74,7 @@ class QueryWorker:
             "account_id": payload.get("account_id"),  # Might come from previous context or current
             "account_ids": payload.get("account_ids"),
             "accounts": context.get("accounts", []),
+            "language": locale,
             "query_session": query_session,
             "flow_state": "parsing",
             # Default pagination params
@@ -118,5 +121,5 @@ class QueryWorker:
                 outcome=__import__(
                     "apps.core.src.agent.orchestrator.models.domain", fromlist=["TransactionOutcome"]
                 ).TransactionOutcome.FAILED,
-                error="Sorry, I encountered an error providing that information.",
+                error=render_message("query.error.general", locale),
             )

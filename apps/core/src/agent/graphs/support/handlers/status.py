@@ -3,12 +3,13 @@
 from typing import Any
 
 from apps.core.src.agent.graphs.support.models import SupportResponse
+from shared.i18n import render_message
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
 
 
-async def handle_transfer_status(transaction: dict[str, Any]) -> SupportResponse:
+async def handle_transfer_status(transaction: dict[str, Any], *, locale: str = "en") -> SupportResponse:
     """
     Handle transfer_status intent.
     Confirms success or explains current state.
@@ -30,11 +31,17 @@ async def handle_transfer_status(transaction: dict[str, Any]) -> SupportResponse
             time_str = ""
 
     if status == "success":
-        message = f"• This transfer of ₦{amount:,.0f} to {recipient} was successful"
+        message = render_message(
+            "support.status.success_no_time",
+            locale,
+            {"amount": f"{amount:,.0f}", "recipient": recipient},
+        )
         if time_str:
-            message += f" on {time_str}."
-        else:
-            message += "."
+            message = render_message(
+                "support.status.success_with_time",
+                locale,
+                {"amount": f"{amount:,.0f}", "recipient": recipient, "time": time_str},
+            )
         return SupportResponse(
             message=message,
             offer_receipt=True,
@@ -42,8 +49,11 @@ async def handle_transfer_status(transaction: dict[str, Any]) -> SupportResponse
         )
 
     elif status == "pending":
-        message = f"○ This transfer of ₦{amount:,.0f} to {recipient} is still pending.\n"
-        message += "We're awaiting confirmation from the bank."
+        message = render_message(
+            "support.status.pending",
+            locale,
+            {"amount": f"{amount:,.0f}", "recipient": recipient},
+        )
         return SupportResponse(
             message=message,
             transaction_data=transaction,
@@ -51,9 +61,13 @@ async def handle_transfer_status(transaction: dict[str, Any]) -> SupportResponse
 
     elif status == "failed":
         error = transaction.get("error_message", "")
-        message = f"× This transfer of ₦{amount:,.0f} to {recipient} failed."
+        message = render_message(
+            "support.status.failed",
+            locale,
+            {"amount": f"{amount:,.0f}", "recipient": recipient},
+        )
         if error:
-            message += f"\nReason: {error}"
+            message = f"{message}\n{render_message('support.common.reason', locale, {'reason': error})}"
         return SupportResponse(
             message=message,
             offer_retry=True,
@@ -62,12 +76,12 @@ async def handle_transfer_status(transaction: dict[str, Any]) -> SupportResponse
 
     else:
         return SupportResponse(
-            message=f"Transfer status: {status}",
+            message=render_message("support.status.raw_status", locale, {"status": status}),
             transaction_data=transaction,
         )
 
 
-async def handle_pending(transaction: dict[str, Any]) -> SupportResponse:
+async def handle_pending(transaction: dict[str, Any], *, locale: str = "en") -> SupportResponse:
     """
     Handle pending_transfer intent.
     Explains why transfer is stuck.
@@ -77,15 +91,18 @@ async def handle_pending(transaction: dict[str, Any]) -> SupportResponse:
     recipient = transaction.get("recipient_name", "recipient")
 
     if status == "pending":
-        message = f"○ Your transfer of ₦{amount:,.0f} to {recipient} is still being processed.\n"
-        message += "Bank confirmations can take a few minutes."
+        message = render_message(
+            "support.pending.pending",
+            locale,
+            {"amount": f"{amount:,.0f}", "recipient": recipient},
+        )
         return SupportResponse(
             message=message,
             transaction_data=transaction,
         )
 
     elif status == "success":
-        message = "• Good news! This transfer actually completed successfully."
+        message = render_message("support.pending.success_completed", locale)
         return SupportResponse(
             message=message,
             offer_receipt=True,
@@ -94,9 +111,9 @@ async def handle_pending(transaction: dict[str, Any]) -> SupportResponse:
 
     elif status == "failed":
         error = transaction.get("error_message", "")
-        message = "× This transfer failed and is no longer pending."
+        message = render_message("support.pending.failed_no_longer_pending", locale)
         if error:
-            message += f"\nReason: {error}"
+            message = f"{message}\n{render_message('support.common.reason', locale, {'reason': error})}"
         return SupportResponse(
             message=message,
             offer_retry=True,
@@ -105,6 +122,6 @@ async def handle_pending(transaction: dict[str, Any]) -> SupportResponse:
 
     else:
         return SupportResponse(
-            message=f"Current status: {status}",
+            message=render_message("support.pending.raw_status", locale, {"status": status}),
             transaction_data=transaction,
         )

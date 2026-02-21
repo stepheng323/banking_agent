@@ -17,6 +17,7 @@ from apps.core.src.agent.orchestrator.models.domain import (
     AccountOutcome,
     AccountResult,
 )
+from shared.i18n import LocaleManager, render_message
 from shared.clients.abstractions.banking import BankingDataProvider
 from shared.clients.abstractions.direct_debit import DirectDebitProvider
 from shared.repositories.account_repository import AccountRepository
@@ -77,12 +78,13 @@ class AccountWorker:
             "accounts": context.get("accounts", []),
             "language": context.get("language"),
         }
+        locale = self._resolve_locale(user_ctx, payload)
 
         if text:
             missing_caps = check_capabilities(derive_requirements(text))
             if missing_caps:
                 logger.info("capability_blocked", domain="account", capabilities=[cap.value for cap in missing_caps])
-                response = generate_limitation_message(missing_caps)
+                response = generate_limitation_message(missing_caps, locale=locale)
                 response = await self._translate_if_needed(response, user_ctx, payload)
                 return AccountResult(outcome=AccountOutcome.OK, response=response)
 
@@ -112,12 +114,12 @@ class AccountWorker:
             missing_caps = check_capabilities([capability])
             if missing_caps:
                 logger.info("capability_blocked", domain="account", capabilities=[cap.value for cap in missing_caps])
-                response = generate_limitation_message(missing_caps)
+                response = generate_limitation_message(missing_caps, locale=locale)
                 response = await self._translate_if_needed(response, user_ctx, payload)
                 return AccountResult(outcome=AccountOutcome.OK, response=response, patch=patch)
 
         if action in ("unlink", "set_default") and not identifier:
-            prompt = self._missing_identifier_prompt(action)
+            prompt = self._missing_identifier_prompt(action, locale)
             prompt = await self._translate_if_needed(prompt, user_ctx, payload)
             return AccountResult(
                 outcome=AccountOutcome.NEEDS_INPUT,
@@ -129,7 +131,7 @@ class AccountWorker:
         profile = user_ctx.get("profile") or {}
         user_id = str(profile.get("id") or context.get("user_id") or "")
         if not user_id and action != "link":
-            response = "User not found."
+            response = render_message("account.user_not_found", locale)
             response = await self._translate_if_needed(response, user_ctx, payload)
             return AccountResult(outcome=AccountOutcome.OK, response=response, patch=patch)
 
@@ -152,17 +154,17 @@ class AccountWorker:
                         ],
                     )
             elif action == "set_default":
-                response = await self._set_default(user_id, str(identifier))
+                response = await self._set_default(user_id, str(identifier), locale=locale)
             elif action == "unlink":
-                response = await self._unlink_account(user_id, str(identifier))
+                response = await self._unlink_account(user_id, str(identifier), locale=locale)
             elif action in ("check_balance", "balance", "show_balance", "overall_balance"):
-                response = await self._check_balance(user_id, str(identifier) if identifier else None)
+                response = await self._check_balance(user_id, str(identifier) if identifier else None, locale=locale)
             else:
                 accounts = user_ctx.get("accounts")
                 if accounts:
-                    response = AccountFormatter.format_account_list(accounts)
+                    response = AccountFormatter.format_account_list(accounts, locale=locale)
                 else:
-                    response = await self._list_accounts(user_id)
+                    response = await self._list_accounts(user_id, locale=locale)
 
             response = await self._translate_if_needed(response, user_ctx, payload)
             return AccountResult(
@@ -174,15 +176,15 @@ class AccountWorker:
             logger.error("account_worker_failed", error=str(e), exc_info=True)
             return AccountResult(
                 outcome=AccountOutcome.FAILED,
-                error="Account status check failed. Please try again.",
+                error=render_message("account.error.status_check_failed", locale),
                 patch=patch,
             )
 
-    async def _check_balance(self, user_id: str, account_identifier: str | None) -> str:
+    async def _check_balance(self, user_id: str, account_identifier: str | None, *, locale: str = "en") -> str:
         """Check balance for one or all accounts."""
         accounts = await self.account_repo.get_by_user(user_id)
         if not accounts:
-            return "You don't have any linked accounts."
+            return render_message("account.no_linked_accounts", locale)
 
         target_accounts = []
         if account_identifier:
@@ -199,7 +201,11 @@ class AccountWorker:
             target_accounts = accounts
 
         if not target_accounts:
-            return f"I couldn't find an account matching '{account_identifier}'."
+            return render_message(
+                "account.account_not_found",
+                locale,
+                {"identifier": account_identifier or ""},
+            )
 
         balances = []
         total_balance = 0.0
@@ -222,16 +228,20 @@ class AccountWorker:
                 logger.error("balance_fetch_failed", error=str(e))
 
         if not balances:
-            return "I couldn't retrieve your balance at the moment."
+            return render_message("account.balance.unavailable", locale)
 
-        return AccountFormatter.format_balance_response(balances, total_balance if len(balances) > 1 else None)
+        return AccountFormatter.format_balance_response(
+            balances,
+            total_balance if len(balances) > 1 else None,
+            locale=locale,
+        )
 
-    def _missing_identifier_prompt(self, action: str) -> str:
+    def _missing_identifier_prompt(self, action: str, locale: str = "en") -> str:
         if action == "unlink":
-            return "Which account would you like to unlink? Say 'unlink [bank name]' or 'unlink [number]'."
+            return render_message("account.prompt.unlink_identifier", locale)
         if action == "set_default":
-            return "Which account should be your default? Say 'set [bank name] as default'."
-        return "Which account?"
+            return render_message("account.prompt.default_identifier", locale)
+        return render_message("account.prompt.which_account", locale)
 
     async def _translate_if_needed(
         self,
@@ -239,21 +249,24 @@ class AccountWorker:
         user_ctx: dict[str, Any],
         payload: dict[str, Any],
     ) -> str:
-        language = user_ctx.get("language") or payload.get("language")
-        if language and language.lower() not in ("english", "en"):
-            return await self._translate_response(text, language)
+        del user_ctx, payload
         return text
 
-    async def _list_accounts(self, user_id: str) -> str:
+    @staticmethod
+    def _resolve_locale(user_ctx: dict[str, Any], payload: dict[str, Any]) -> str:
+        language = user_ctx.get("language") or payload.get("language")
+        return LocaleManager.normalize(language).value
+
+    async def _list_accounts(self, user_id: str, *, locale: str = "en") -> str:
         """List all linked accounts for a user."""
         accounts = await self.account_repo.get_by_user(user_id)
-        return AccountFormatter.format_account_list(accounts)
+        return AccountFormatter.format_account_list(accounts, locale=locale)
 
-    async def _set_default(self, user_id: str, account_identifier: str) -> str:
+    async def _set_default(self, user_id: str, account_identifier: str, *, locale: str = "en") -> str:
         """Set an account as default."""
         accounts = await self.account_repo.get_by_user(user_id)
         if not accounts:
-            return "You don't have any linked accounts."
+            return render_message("account.no_linked_accounts", locale)
 
         selected_account = None
         try:
@@ -264,9 +277,13 @@ class AccountWorker:
             selected_account = self._find_account_by_bank_name(accounts, account_identifier)
 
         if not selected_account:
-            return (
-                f"I couldn't find an account matching '{account_identifier}'.\n\n"
-                f"You have {len(accounts)} linked account(s)."
+            return render_message(
+                "account.account_not_found_with_count",
+                locale,
+                {
+                    "identifier": account_identifier,
+                    "count": len(accounts),
+                },
             )
 
         try:
@@ -284,18 +301,25 @@ class AccountWorker:
                 asyncio.create_task(UserDataCache().invalidate_accounts(user.phone_number))
 
             masked = f"***{selected_account.account_number[-4:]}"
-            return f"✓ *Default account updated!*\n\n{selected_account.bank_name} ({masked}) is now your default."
+            return render_message(
+                "account.default_updated",
+                locale,
+                {
+                    "bank_name": selected_account.bank_name,
+                    "masked": masked,
+                },
+            )
         except Exception as e:
             logger.error(f"set_default_error: {e}")
-            return "Sorry, I couldn't update your default account."
+            return render_message("account.error.default_update_failed", locale)
 
-    async def _unlink_account(self, user_id: str, account_identifier: str) -> str:
+    async def _unlink_account(self, user_id: str, account_identifier: str, *, locale: str = "en") -> str:
         """Unlink an account."""
         accounts = await self.account_repo.get_by_user(user_id)
         if not accounts:
-            return "You don't have any linked accounts."
+            return render_message("account.no_linked_accounts", locale)
         if len(accounts) == 1:
-            return "⚠️ You can't unlink your only account. Link another one first."
+            return render_message("account.unlink.only_account", locale)
 
         selected_account = None
         try:
@@ -306,7 +330,11 @@ class AccountWorker:
             selected_account = self._find_account_by_bank_name(accounts, account_identifier)
 
         if not selected_account:
-            return f"I couldn't find an account matching '{account_identifier}'."
+            return render_message(
+                "account.account_not_found",
+                locale,
+                {"identifier": account_identifier},
+            )
 
         try:
             if getattr(selected_account, "mandate_id", None):
@@ -332,11 +360,18 @@ class AccountWorker:
                     pass
 
                 masked = f"***{selected_account.account_number[-4:]}"
-                return f"✓ *Account unlinked!*\n\n{selected_account.bank_name} ({masked}) removed."
-            return "Sorry, I couldn't unlink that account."
+                return render_message(
+                    "account.unlink.success",
+                    locale,
+                    {
+                        "bank_name": selected_account.bank_name,
+                        "masked": masked,
+                    },
+                )
+            return render_message("account.error.unlink_failed", locale)
         except Exception as e:
             logger.error(f"unlink_error: {e}")
-            return "Sorry, I couldn't unlink that account."
+            return render_message("account.error.unlink_failed", locale)
 
     def _find_account_by_bank_name(self, accounts: list[Any], bank_name: str) -> Any | None:
         from shared.utils.bank_aliases import normalize_bank_name
@@ -360,19 +395,20 @@ class AccountWorker:
         from shared.services.onboarding.session import OnboardingStep
 
         flow_id = settings.account_linking_flow_id
+        locale = LocaleManager.normalize(context.get("language")).value
         if not flow_id:
-            return {"error": "Account linking unavailable."}
+            return {"error": render_message("account.linking.unavailable", locale)}
 
         phone_number = context.get("phone_number", "")
         profile = context.get("profile") or {}
         bvn = (profile.get("extra_data") or {}).get("bvn")
 
         if not bvn:
-            return {"error": "BVN not found. Please complete onboarding first."}
+            return {"error": render_message("account.linking.bvn_missing", locale)}
 
         result = await self.banking_provider.initiate_bvn_lookup(bvn)
         if not result.success:
-            return {"error": result.error_message or "Failed to start linking."}
+            return {"error": result.error_message or render_message("account.linking.start_failed", locale)}
 
         methods = [{"id": m["method"], "title": m["hint"]} for m in result.verification_methods]
         flow_token = f"link-{phone_number}-{int(time.time())}"
@@ -399,13 +435,9 @@ class AccountWorker:
                 "flow_token": flow_token,
                 "flow_action_payload": {"screen": "METHOD_SELECTION", "data": {"methods": methods, "bvn": result.bvn}},
             },
-            "fallback_text": f"Link account: https://fusepay.io/link/{flow_token}",
+            "fallback_text": render_message(
+                "account.linking.fallback_link",
+                locale,
+                {"flow_token": flow_token},
+            ),
         }
-
-    async def _translate_response(self, text: str, language: str) -> str:
-        try:
-            prompt = f"Translate to {language}. Keep formatting/emojis. Resp:\\n{text}"
-            result = await self.llm.ainvoke(prompt)
-            return getattr(result, "content", str(result))
-        except Exception:
-            return text

@@ -8,6 +8,7 @@ from datetime import datetime
 from typing import Any
 
 from apps.core.src.agent.graphs.support.models import EscalationResult, SupportResponse
+from shared.i18n import render_message
 from shared.services.ticket_service import TicketService
 from shared.utils.logging import get_logger
 
@@ -22,10 +23,11 @@ async def handle_escalation(
     reason: str = "",
     summary: str | None = None,
     notify_human: bool = False,
+    locale: str = "en",
 ) -> SupportResponse:
     """
     Handle escalation by creating a ticket.
-    
+
     Args:
         user_id: User's UUID
         intent: Support intent that triggered escalation
@@ -34,20 +36,24 @@ async def handle_escalation(
         reason: Why we're escalating
         summary: Brief description (auto-generated if not provided)
         notify_human: Whether to alert support team immediately
-    
+
     Returns:
         SupportResponse with ticket info
     """
     # Auto-generate summary if not provided
     if not summary:
         if reason == "fraud_suspected":
-            summary = "User reported suspected fraud"
+            summary = render_message("support.escalation.summary_fraud_suspected", locale)
         elif reason == "max_attempts":
-            summary = "Unable to resolve after multiple attempts"
+            summary = render_message("support.escalation.summary_max_attempts", locale)
         elif reason == "user_requested":
-            summary = "User requested human support"
+            summary = render_message("support.escalation.summary_user_requested", locale)
         else:
-            summary = f"Support escalation: {reason or intent}"
+            summary = render_message(
+                "support.escalation.summary_default",
+                locale,
+                {"reason_or_intent": reason or intent},
+            )
 
     # Transaction reference for linking
     transaction_ref = None
@@ -92,16 +98,15 @@ async def handle_escalation(
         # await notify_support_team(ticket)  # Future implementation
 
     # Build response message
-    message = "I've logged this for review.\n\n"
-    message += f"**Ticket:** {ticket.ticket_code}\n\n"
+    message = render_message("support.escalation.logged", locale)
+    message += render_message("support.escalation.ticket", locale, {"ticket_code": ticket.ticket_code})
 
     if reason == "fraud_suspected":
-        message += "Our security team will prioritize this. "
-        message += "You'll hear back within 1 hour."
+        message += render_message("support.escalation.fraud_priority", locale)
     elif transaction_ref:
-        message += "Our team will investigate and get back to you within 24 hours."
+        message += render_message("support.escalation.with_transaction_ref", locale)
     else:
-        message += "If you have the transaction reference, reply with it to speed things up."
+        message += render_message("support.escalation.ask_transaction_ref", locale)
 
     return SupportResponse(
         message=message,
@@ -122,14 +127,19 @@ async def handle_generic_escalation(
     intent: str = "general_tx_issue",
     transaction: dict[str, Any] | None = None,
     context: dict[str, Any] | None = None,
+    locale: str = "en",
 ) -> SupportResponse:
     """
     Generic escalation for system-triggered handoffs.
     Used when we can't resolve an issue automatically.
     """
-    summary = f"System escalation: {reason}"
+    summary = render_message("support.escalation.summary_system", locale, {"reason": reason})
     if context:
-        summary += f" - {context.get('message', '')}"
+        summary += render_message(
+            "support.escalation.summary_context_suffix",
+            locale,
+            {"message": context.get("message", "")},
+        )
 
     return await handle_escalation(
         user_id=user_id,
@@ -139,4 +149,5 @@ async def handle_generic_escalation(
         reason=reason,
         summary=summary,
         notify_human=True,
+        locale=locale,
     )

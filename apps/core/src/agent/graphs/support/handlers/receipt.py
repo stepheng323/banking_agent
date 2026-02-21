@@ -3,12 +3,13 @@
 from typing import Any
 
 from apps.core.src.agent.graphs.support.models import SupportResponse
+from shared.i18n import render_message
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
 
 
-async def handle_receipt_request(transaction: dict[str, Any]) -> SupportResponse:
+async def handle_receipt_request(transaction: dict[str, Any], *, locale: str = "en") -> SupportResponse:
     """
     Handle receipt_request intent.
     Only provides receipt for successful transactions.
@@ -20,7 +21,7 @@ async def handle_receipt_request(transaction: dict[str, Any]) -> SupportResponse
     created_at = transaction.get("created_at", "")
 
     if status != "success":
-        message = f"× Cannot provide receipt. This transfer {status}."
+        message = render_message("support.receipt.unavailable_for_status", locale, {"status": status})
         return SupportResponse(
             message=message,
             offer_receipt=False,
@@ -39,17 +40,25 @@ async def handle_receipt_request(transaction: dict[str, Any]) -> SupportResponse
             time_str = created_at[:10] if created_at else ""
 
     # Build receipt message
-    receipt = "*Transfer Receipt*\n"
-    receipt += "─────────────────\n"
-    receipt += f"Amount: ₦{amount:,.2f}\n"
-    receipt += f"To: {recipient}\n"
-    receipt += f"Bank: {transaction.get('recipient_bank_name', '')}\n"
-    receipt += f"Account: {transaction.get('recipient_account_number', '')}\n"
+    receipt = f"{render_message('support.receipt.title', locale)}\n"
+    receipt += f"{render_message('support.receipt.divider', locale)}\n"
+    receipt += render_message("support.receipt.amount", locale, {"amount": f"{amount:,.2f}"}) + "\n"
+    receipt += render_message("support.receipt.to", locale, {"recipient": recipient}) + "\n"
+    receipt += render_message(
+        "support.receipt.bank",
+        locale,
+        {"bank": transaction.get("recipient_bank_name", "")},
+    ) + "\n"
+    receipt += render_message(
+        "support.receipt.account",
+        locale,
+        {"account": transaction.get("recipient_account_number", "")},
+    ) + "\n"
     if tx_id:
-        receipt += f"Ref: {tx_id}\n"
+        receipt += render_message("support.receipt.ref", locale, {"reference": tx_id}) + "\n"
     if time_str:
-        receipt += f"Date: {time_str}\n"
-    receipt += "Status: • Successful"
+        receipt += render_message("support.receipt.date", locale, {"date": time_str}) + "\n"
+    receipt += render_message("support.receipt.status_success", locale)
 
     return SupportResponse(
         message=receipt,

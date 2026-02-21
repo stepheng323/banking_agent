@@ -14,6 +14,7 @@ from apps.core.src.agent.graphs.query.services.continuity import (
 )
 from apps.core.src.agent.graphs.query.services.parser import QueryParser
 from apps.core.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
+from shared.i18n import LocaleManager, render_message
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -31,8 +32,9 @@ class ExtractionStep(QueryStep):
     async def run(self, state: dict[str, Any], worker_context: Any = None) -> TransactionResult:
         """Run extraction logic."""
         query_session = state.get("query_session")
+        locale = LocaleManager.normalize(state.get("language")).value
 
-        updates = {}
+        updates: dict[str, Any] = {}
 
         # If we have an active session, check for continuity
         if query_session and query_session.get("session_active"):
@@ -52,7 +54,7 @@ class ExtractionStep(QueryStep):
         if updates.get("flow_state") == "complete":
             return TransactionResult(
                 outcome=TransactionOutcome.OK,
-                response=updates.get("response", "Query completed."),
+                response=updates.get("response", render_message("query.session.completed", locale)),
                 patch=updates,
             )
 
@@ -85,6 +87,7 @@ class ExtractionStep(QueryStep):
             today=date.today().isoformat(),
             items=items,
             surface=session.get("surface"),
+            language=LocaleManager.normalize(state.get("language")).value,
         )
 
         logger.info(
@@ -105,7 +108,7 @@ class ExtractionStep(QueryStep):
         # Trust the LLM classification unless it explicitly signals a new-query override.
 
         # Default state updates
-        updates = {
+        updates: dict[str, Any] = {
             "flow_state": "executing",
             "continuation_type": cont_type,
             # Merging session data is handled by the worker initiating the state,
@@ -230,9 +233,10 @@ class ExtractionStep(QueryStep):
             return await self._parse_new_query(state)
 
         elif cont_type == "end_session":
+            locale = LocaleManager.normalize(state.get("language")).value
             return {
                 "transaction_outcome": TransactionOutcome.OK,  # Or OK?
-                "response": data.get("end_session_response", "Goodbye!"),
+                "response": data.get("end_session_response", render_message("query.session.goodbye", locale)),
                 "session_active": False,
                 "flow_state": "complete",
             }
@@ -243,14 +247,16 @@ class ExtractionStep(QueryStep):
         """Parse a fresh query."""
         message = state.get("message", "")
         today = state.get("today", date.today())
+        language = LocaleManager.normalize(state.get("language")).value
 
-        result = await self.parser.parse(message, today=today)
+        result = await self.parser.parse(message, today=today, language=language)
 
         # Check for resolver outcomes
         if result.outcome == ResolverOutcome.NEEDS_INPUT:
+            clarify_fallback = render_message("query.clarify.default", language)
             return {
                 "transaction_outcome": TransactionOutcome.NEEDS_INPUT,
-                "response": result.resolver_message or "Could you clarify?",
+                "response": result.resolver_message or clarify_fallback,
                 "flow_state": "parsing",
             }
 
@@ -263,6 +269,13 @@ class ExtractionStep(QueryStep):
             resolver_msg_parts.extend(result.notices)
 
         resolver_msg = "\n".join(resolver_msg_parts) if resolver_msg_parts else None
+
+        if result.extraction is None:
+            return {
+                "transaction_outcome": TransactionOutcome.FAILED,
+                "response": render_message("query.error.general", language),
+                "flow_state": "parsing",
+            }
 
         # Convert to NormalizedQuery
         query = self.parser.convert_to_normalized(result.extraction, today=today)

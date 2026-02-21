@@ -3,12 +3,13 @@
 from typing import Any
 
 from apps.core.src.agent.graphs.support.models import SupportResponse
+from shared.i18n import render_message
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
 
 
-async def handle_retry(transaction: dict[str, Any]) -> SupportResponse:
+async def handle_retry(transaction: dict[str, Any], *, locale: str = "en") -> SupportResponse:
     """
     Handle retry_transfer intent.
     Checks if retryable and prepares for TransferFlowGraph hydration.
@@ -18,8 +19,11 @@ async def handle_retry(transaction: dict[str, Any]) -> SupportResponse:
     recipient = transaction.get("recipient_name", "recipient")
 
     if status == "success":
-        message = "• This transfer was already successful.\n"
-        message += f"Would you like to send another ₦{amount:,.0f} to {recipient}?"
+        message = render_message(
+            "support.retry.already_success",
+            locale,
+            {"amount": f"{amount:,.0f}", "recipient": recipient},
+        )
         return SupportResponse(
             message=message,
             offer_retry=True,  # Actually means "send again"
@@ -27,8 +31,7 @@ async def handle_retry(transaction: dict[str, Any]) -> SupportResponse:
         )
 
     if status == "pending":
-        message = "○ This transfer is still processing.\n"
-        message += "Please wait for it to complete before retrying."
+        message = render_message("support.retry.pending_wait", locale)
         return SupportResponse(
             message=message,
             offer_retry=False,
@@ -43,16 +46,18 @@ async def handle_retry(transaction: dict[str, Any]) -> SupportResponse:
         is_retryable = not any(e in error.lower() for e in non_retryable_errors)
 
         if is_retryable:
-            message = f"Ready to retry ₦{amount:,.0f} to {recipient}.\n"
-            message += "Reply 'yes' to confirm."
+            message = render_message(
+                "support.retry.ready",
+                locale,
+                {"amount": f"{amount:,.0f}", "recipient": recipient},
+            )
             return SupportResponse(
                 message=message,
                 offer_retry=True,
                 transaction_data=transaction,
             )
         else:
-            message = f"× Cannot retry this transfer: {error}\n"
-            message += "Please resolve the issue first."
+            message = render_message("support.retry.not_retryable", locale, {"error": error})
             return SupportResponse(
                 message=message,
                 offer_retry=False,
@@ -60,7 +65,7 @@ async def handle_retry(transaction: dict[str, Any]) -> SupportResponse:
             )
 
     return SupportResponse(
-        message=f"Cannot determine if this transfer can be retried. Status: {status}",
+        message=render_message("support.retry.unknown_status", locale, {"status": status}),
         transaction_data=transaction,
     )
 

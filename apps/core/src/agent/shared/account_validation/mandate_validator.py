@@ -8,6 +8,7 @@ from typing import Any
 import structlog
 
 from shared.config.settings import settings
+from shared.i18n import render_message
 
 logger = structlog.get_logger(__name__)
 
@@ -39,7 +40,7 @@ def _parse_extra_data(raw_data: Any) -> dict:
     return {}
 
 
-def _get_pending_mandate_info(account: dict) -> tuple[str, dict[str, Any]]:
+def _get_pending_mandate_info(account: dict, locale: str = "en") -> tuple[str, dict[str, Any]]:
     """
     Get appropriate message and metadata for pending mandate based on time.
 
@@ -54,7 +55,7 @@ def _get_pending_mandate_info(account: dict) -> tuple[str, dict[str, Any]]:
 
     if not created_at_str:
         return (
-            "Your account authorization has expired. Please reinitiate to continue.",
+            render_message("mandate.expired_reinitiate", locale),
             {"needs_reinitiation": True},
         )
 
@@ -64,7 +65,7 @@ def _get_pending_mandate_info(account: dict) -> tuple[str, dict[str, Any]]:
             created_at = created_at.replace(tzinfo=None)
     except (ValueError, AttributeError):
         return (
-            "Your account authorization has expired. Please reinitiate to continue.",
+            render_message("mandate.expired_reinitiate", locale),
             {"needs_reinitiation": True},
         )
 
@@ -84,22 +85,27 @@ def _get_pending_mandate_info(account: dict) -> tuple[str, dict[str, Any]]:
                 ]
             )
             message = (
-                f"Your account authorization is pending.\n\n"
-                f"Transfer ₦50 to any of these accounts:\n{dest_lines}\n\n"
-                f"⏱️ {minutes_left} minutes remaining"
+                render_message(
+                    "mandate.pending_with_destinations",
+                    locale,
+                    {"destinations": dest_lines, "minutes_left": minutes_left},
+                )
             )
         else:
-            message = "Your account authorization is pending. Please complete the ₦50 transfer to activate your account."
+            message = render_message("mandate.pending_complete_transfer", locale)
 
         return (message, {"transfer_destinations": transfer_destinations})
     else:
         return (
-            "Your account authorization has expired. Please reinitiate to continue.",
+            render_message("mandate.expired_reinitiate", locale),
             {"needs_reinitiation": True},
         )
 
 
-def validate_mandate_status(account: dict) -> tuple[bool, str | None, dict[str, Any] | None]:
+def validate_mandate_status(
+    account: dict,
+    locale: str = "en",
+) -> tuple[bool, str | None, dict[str, Any] | None]:
     """
     Validate that an account's mandate status allows transactions.
 
@@ -123,38 +129,28 @@ def validate_mandate_status(account: dict) -> tuple[bool, str | None, dict[str, 
 
     # Handle pending/initiated - user hasn't sent ₦50 transfer yet
     if mandate_status in ("pending", "initiated"):
-        message, metadata = _get_pending_mandate_info(account)
+        message, metadata = _get_pending_mandate_info(account, locale=locale)
         return (False, message, metadata)
 
     # Handle approved - transfer received, waiting for NIBSS confirmation (up to 24 hours)
     if mandate_status == "approved":
-        bank_name = account.get("bank_name", "your bank")
+        bank_name = account.get("bank_name", render_message("mandate.bank_fallback", locale))
         account_number = account.get("account_number", "")
         account_suffix = f"({account_number[-4:]})" if account_number else ""
-        message = (
-            f"✓ Your ₦50 authorization transfer was received!\n\n"
-            f"Your {bank_name} account {account_suffix} is being verified by NIBSS. "
-            f"This usually takes a few minutes but can take up to 24 hours.\n\n"
-            f"We'll notify you as soon as it's ready! 🔔"
+        message = render_message(
+            "mandate.approved_awaiting_nibss",
+            locale,
+            {"bank_name": bank_name, "account_suffix": account_suffix},
         )
         return (False, message, {"awaiting_nibss": True})
 
     status_messages = {
-        "paused": (
-            "⏸️ Your account has been temporarily paused.\n"
-            "Please contact support to reinstate it."
-        ),
-        "rejected": (
-            "❌ Your account authorization was rejected.\n"
-            "Please contact support to resolve this."
-        ),
-        "cancelled": (
-            "Your account authorization was cancelled.\n"
-            "Would you like to reinitiate? Say *'reinitiate'* to start again."
-        ),
+        "paused": render_message("mandate.status_paused", locale),
+        "rejected": render_message("mandate.status_rejected", locale),
+        "cancelled": render_message("mandate.status_cancelled", locale),
     }
 
-    message = status_messages.get(mandate_status, "Your account is not ready for payments yet.")
+    message = status_messages.get(mandate_status, render_message("mandate.status_not_ready", locale))
 
     metadata = {"needs_reinitiation": True} if mandate_status == "cancelled" else None
 

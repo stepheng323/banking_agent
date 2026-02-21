@@ -7,6 +7,7 @@ from typing import Any
 
 from shared.clients.abstractions.bill import BillPaymentProvider
 from shared.database.enums import TransactionStatusEnum
+from shared.i18n import render_message
 from shared.queue.messages import OUTBOX_QUEUE
 from shared.queue.redis_queue import RedisQueue
 from shared.repositories.transaction_repository import TransactionRepository
@@ -32,9 +33,10 @@ class AirtimeExecutor:
         """Handle execution of an airtime transaction."""
         transaction_id = data.get("transaction_id")
         airtime_data = data.get("airtime_data", {})
+        locale = data.get("language", "en")
 
         if not transaction_id:
-            logger.error("airtime_execution_error", error="Missing transaction_id")
+            logger.error("airtime_execution_error", error="missing_transaction_id")
             return
 
         logger.info("executing_airtime", transaction_id=transaction_id)
@@ -57,8 +59,12 @@ class AirtimeExecutor:
                 logger.info("airtime_success", transaction_id=transaction_id, ref=result.get("reference"))
 
                 if phone_number:
-                    ref = result.get('reference') or 'N/A'
-                    message = f"✅ Airtime Purchase Successful!\n\nAmount: ₦{amount:,.2f}\nRef: {ref}"
+                    ref = result.get("reference") or render_message("airtime.executor.reference_fallback", locale)
+                    message = render_message(
+                        "airtime.executor.success_message",
+                        locale,
+                        {"amount": f"{amount:,.2f}", "reference": ref},
+                    )
                     await self.queue.enqueue(
                         queue_name=OUTBOX_QUEUE,
                         message={
@@ -68,11 +74,11 @@ class AirtimeExecutor:
                             "metadata": {
                                 "source": "airtime_executor",
                                 "transaction_id": transaction_id
-                            }
+                            },
                         }
                     )
             else:
-                error_msg = result.get("message", "Airtime purchase failed at provider")
+                error_msg = result.get("message") or render_message("airtime.error.provider_failed", locale)
                 await self.transaction_repo.update_status(
                     transaction_id, TransactionStatusEnum.FAILED.value, error_message=error_msg
                 )

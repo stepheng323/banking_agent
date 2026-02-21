@@ -7,6 +7,7 @@ from openai import AsyncOpenAI
 
 from shared.clients.whatsapp.client import WhatsAppClient
 from shared.config import settings
+from shared.i18n import render_message
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -25,12 +26,13 @@ class MediaService:
         self.whatsapp_client = whatsapp_client
         self.openai_client = AsyncOpenAI(api_key=settings.openai_api_key)
 
-    async def process_audio(self, media_id: str) -> str:
+    async def process_audio(self, media_id: str, locale: str = "en") -> str:
         """
         Download and transcribe audio message.
 
         Args:
             media_id: WhatsApp media ID
+            locale: User locale for deterministic fallback messaging
 
         Returns:
             Transcribed text
@@ -52,7 +54,7 @@ class MediaService:
 
         except Exception:
             logger.error("failed_to_process")
-            return "Attributes of the audio could not be processed."
+            return render_message("orchestrator.error.audio_unprocessable", locale)
 
     async def get_image_data(self, media_id: str) -> str | None:
         """
