@@ -67,3 +67,6 @@ logs/
 *.tfvars
 .terraform/
 terraform.tfstate*
+
+# Local agent instructions
+AGENTS.md
