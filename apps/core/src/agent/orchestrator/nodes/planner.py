@@ -23,23 +23,69 @@ SUPPORTED_EXECUTOR_LABELS = {
     "beneficiary": "beneficiary management",
 }
 
-UNSUPPORTED_PATTERNS: dict[str, tuple[str, ...]] = {
-    "Financial advice": ("advice", "advise", "what should i do", "recommendation"),
-    "Investments": ("invest", "investment", "stocks", "mutual fund", "crypto"),
-    "International transfers": ("international transfer", "send abroad", "swift", "dollar transfer", "usd"),
-    "Scheduled or recurring transfers": ("schedule", "scheduled", "recurring", "every week", "every month"),
-    "All-time transaction history": ("all-time", "all time", "entire history", "lifetime history"),
-    "PDF exports": ("pdf", "export statement", "download statement"),
-}
+SAFE_CAPABILITY_FALLBACK = (
+    "I can't handle that yet. I can help with transfers, airtime/data purchase, "
+    "balances, and transaction queries."
+)
 
 
 def _detect_unsupported_capabilities(message_text: str) -> list[str]:
-    text = message_text.lower()
-    detected: list[str] = []
-    for capability, patterns in UNSUPPORTED_PATTERNS.items():
-        if any(pattern in text for pattern in patterns):
-            detected.append(capability)
-    return detected
+    """Resolve unsupported capabilities from policy-defined phrase patterns."""
+    policy = get_cached_policy()
+    text = message_text.lower().strip()
+
+    if not text:
+        return []
+
+    configured_unsupported = policy.unsupported_capabilities
+    pattern_map = policy.unsupported_detection
+
+    detected_set: set[str] = set()
+    for capability, patterns in pattern_map.items():
+        if not patterns:
+            continue
+        normalized_patterns = [p.lower().strip() for p in patterns if p and p.strip()]
+        if any(pattern in text for pattern in normalized_patterns):
+            detected_set.add(capability)
+
+    # Deterministic order for stable output/tests.
+    ordered_detected = [cap for cap in configured_unsupported if cap in detected_set]
+    return ordered_detected
+
+
+def _resolve_unsupported_alternatives(unsupported: list[str]) -> list[str]:
+    """Resolve up to two unique alternatives from policy."""
+    policy = get_cached_policy()
+    alternatives: list[str] = []
+
+    for capability in unsupported:
+        cap_alts = policy.unsupported_alternatives.get(capability, [])
+        for alt in cap_alts:
+            if alt and alt not in alternatives:
+                alternatives.append(alt)
+            if len(alternatives) >= 2:
+                return alternatives
+    return alternatives
+
+
+def _looks_like_request(text: str) -> bool:
+    """Conservative heuristic for open-world fallback."""
+    tokens = set(re.findall(r"[a-z0-9']+", text.lower()))
+    request_markers = {
+        "want",
+        "need",
+        "please",
+        "can",
+        "help",
+        "transfer",
+        "buy",
+        "send",
+        "invest",
+        "schedule",
+        "statement",
+        "history",
+    }
+    return bool(tokens & request_markers)
 
 
 def _build_policy_notice(message_text: str, planner_output: Any) -> str | None:
@@ -49,11 +95,7 @@ def _build_policy_notice(message_text: str, planner_output: Any) -> str | None:
     unsupported = _detect_unsupported_capabilities(message_text)
     if not unsupported:
         return None
-
-    configured_unsupported = set(get_cached_policy().unsupported_capabilities)
-    unsupported = [cap for cap in unsupported if cap in configured_unsupported]
-    if not unsupported:
-        return None
+    logger.info("unsupported_detected", capabilities=unsupported)
 
     supported_labels = []
     for executor in {t.executor for t in planner_output.tasks if t.executor in SUPPORTED_EXECUTOR_LABELS}:
@@ -64,8 +106,15 @@ def _build_policy_notice(message_text: str, planner_output: Any) -> str | None:
 
     supported_text = ", ".join(sorted(supported_labels))
     unsupported_text = ", ".join(unsupported)
-    plural = "is" if len(unsupported) == 1 else "are"
-    return f"I can proceed with {supported_text}. {unsupported_text} {plural} not available yet."
+    verb = "isn't" if len(unsupported) == 1 else "aren't"
+    alternatives = _resolve_unsupported_alternatives(unsupported)
+    if alternatives:
+        alt_text = alternatives[0] if len(alternatives) == 1 else f"{alternatives[0]} or {alternatives[1]}"
+        return (
+            f"I can proceed with {supported_text}. {unsupported_text} {verb} available yet. "
+            f"I can help with {alt_text} instead."
+        )
+    return f"I can proceed with {supported_text}. {unsupported_text} {verb} available yet."
 
 
 async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[str, Any]:
@@ -196,6 +245,8 @@ async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[s
         return {"waves": [], "final_response": planner_output.response or "Cancelled."}
 
     if not planner_output or not planner_output.tasks:
+        unsupported = _detect_unsupported_capabilities(text)
+
         # If no tasks, verify if we should switch context or pass-through
         # E.g. "Hi" -> conversational -> no tasks
         if state.waves and planner_output and planner_output.primary_intent != "conversational":
@@ -204,6 +255,9 @@ async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[s
             if planner_output.primary_intent != active_intent:
                 logger.info("planner_switch_empty_tasks", old=active_intent, new=planner_output.primary_intent)
                 return {"waves": [], "final_response": planner_output.response}
+
+        if planner_output and not unsupported and _looks_like_request(text):
+            return {"final_response": SAFE_CAPABILITY_FALLBACK}
 
         if planner_output and planner_output.primary_intent == "conversational":
             message, handoff = await generate_meta_reply(
@@ -246,6 +300,8 @@ async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[s
         wave_tasks.append(spec.id)
 
     policy_notice = _build_policy_notice(text, planner_output)
+    if policy_notice:
+        logger.info("policy_notice_created")
 
     return {
         "tasks": new_tasks,

@@ -38,6 +38,7 @@ def _with_policy_notice(state: OrchestratorState, outbox: list[dict[str, Any]]) 
     """Prepend policy notice once per turn when present."""
     if not state.policy_notice:
         return outbox
+    logger.info("policy_notice_injected")
     return [{"type": "say", "text": state.policy_notice}, *outbox]
 
 
