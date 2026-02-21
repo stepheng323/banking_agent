@@ -1,5 +1,7 @@
 """Transfer summary formatting utilities."""
 
+from shared.i18n import render_message
+
 
 def _format_currency_naira(amount: float) -> str:
     try:
@@ -18,7 +20,7 @@ def _calculate_transfer_fee(amount: float) -> float:
     return float(max(fee, 10))
 
 
-def format_transfer_summary(data: dict, include_source: bool = True) -> str:
+def format_transfer_summary(data: dict, include_source: bool = True, locale: str = "en") -> str:
     """Format a WhatsApp-friendly transfer confirmation summary.
 
     Expected keys in data:
@@ -33,31 +35,58 @@ def format_transfer_summary(data: dict, include_source: bool = True) -> str:
       user_note: Optional[str]
     """
     amount = float(data.get("amount", 0))
-    recipient_name = str(data.get("recipientName") or "")
+    recipient_name = str(
+        data.get("recipientName")
+        or render_message("transfer.format.summary.recipient_fallback", locale)
+    )
     recipient_bank = str(data.get("recipientBank") or "")
     recipient_account = str(data.get("recipientAccount") or "")
     source_bank = str(data.get("sourceBank") or "")
     source_account = str(data.get("sourceAccount") or "")
     user_note: str | None = data.get("user_note")
 
-    last4 = source_account[-4:] if source_account else "????"
+    last4 = (
+        source_account[-4:]
+        if source_account
+        else render_message("transfer.format.summary.last4_fallback", locale)
+    )
 
     lines = [
-        f"*{_format_currency_naira(amount)} → {recipient_name.title()}*",
-        f"{recipient_bank.title()} • {recipient_account}",
+        render_message(
+            "transfer.format.summary.title",
+            locale,
+            {"amount": _format_currency_naira(amount), "recipient_name": recipient_name.title()},
+        ),
+        render_message(
+            "transfer.format.summary.recipient_line",
+            locale,
+            {"recipient_bank": recipient_bank.title(), "recipient_account": recipient_account},
+        ),
     ]
 
     if user_note:
-        lines.append(f"User note: _{user_note.strip().capitalize()}_")
+        lines.append(
+            render_message(
+                "transfer.format.summary.user_note",
+                locale,
+                {"user_note": user_note.strip().capitalize()},
+            )
+        )
 
     if include_source:
         lines.append("")
-        lines.append(f"From: {source_bank} (···{last4})")
+        lines.append(
+            render_message(
+                "transfer.format.summary.source_line",
+                locale,
+                {"source_bank": source_bank, "last4": last4},
+            )
+        )
 
     return "\n".join(lines)
 
 
-def format_multi_source_transfer_summary(data: dict) -> str:
+def format_multi_source_transfer_summary(data: dict, locale: str = "en") -> str:
     """Format transfer confirmation for multi-account funding.
 
     Expected keys in data:
@@ -69,7 +98,10 @@ def format_multi_source_transfer_summary(data: dict) -> str:
       narration: Optional[str]
     """
     amount = float(data.get("amount", 0))
-    recipient_name = str(data.get("recipientName") or "")
+    recipient_name = str(
+        data.get("recipientName")
+        or render_message("transfer.format.summary.recipient_fallback", locale)
+    )
     recipient_bank = str(data.get("recipientBank") or "")
     recipient_account = str(data.get("recipientAccount") or "")
     funding_sources: list[dict] = data.get("funding_sources", [])
@@ -79,35 +111,82 @@ def format_multi_source_transfer_summary(data: dict) -> str:
     total = amount + fee
 
     lines = [
-        f"*Amount:* {_format_currency_naira(amount)}",
-        f"*To:* {recipient_name.title()}",
-        f"*Bank:* {recipient_bank.title()}",
-        f"*Account:* `{recipient_account}`",
+        render_message(
+            "transfer.format.multi_source_summary.field_amount",
+            locale,
+            {"amount": _format_currency_naira(amount)},
+        ),
+        render_message(
+            "transfer.format.multi_source_summary.field_to",
+            locale,
+            {"recipient_name": recipient_name.title()},
+        ),
+        render_message(
+            "transfer.format.multi_source_summary.field_bank",
+            locale,
+            {"recipient_bank": recipient_bank.title()},
+        ),
+        render_message(
+            "transfer.format.multi_source_summary.field_account",
+            locale,
+            {"recipient_account": recipient_account},
+        ),
     ]
 
     if narration:
-        lines.append(f"Narration: _{narration.strip().capitalize()}_")
+        lines.append(
+            render_message(
+                "transfer.format.multi_source_summary.narration",
+                locale,
+                {"narration": narration.strip().capitalize()},
+            )
+        )
 
     lines.append("")
-    lines.append("*Funding from:*")
+    lines.append(render_message("transfer.format.multi_source_summary.funding_header", locale))
 
     for source in funding_sources:
-        bank = source.get("bank_name", "Account")
+        bank = source.get(
+            "bank_name",
+            render_message("transfer.format.multi_source_summary.bank_fallback", locale),
+        )
         account = source.get("account_number", "")
         source_amount = float(source.get("amount", 0))
-        last4 = account[-4:] if account else "????"
-        lines.append(f"  • {bank} (···{last4}): {_format_currency_naira(source_amount)}")
+        last4 = (
+            account[-4:]
+            if account
+            else render_message("transfer.format.summary.last4_fallback", locale)
+        )
+        lines.append(
+            render_message(
+                "transfer.format.multi_source_summary.funding_item",
+                locale,
+                {"bank": bank, "last4": last4, "amount": _format_currency_naira(source_amount)},
+            )
+        )
 
     lines.append("")
-    lines.append(f"*Fee:* {_format_currency_naira(fee)}")
-    lines.append(f"*Total:* {_format_currency_naira(total)}")
+    lines.append(
+        render_message(
+            "transfer.format.multi_source_summary.fee",
+            locale,
+            {"fee": _format_currency_naira(fee)},
+        )
+    )
+    lines.append(
+        render_message(
+            "transfer.format.multi_source_summary.total",
+            locale,
+            {"total": _format_currency_naira(total)},
+        )
+    )
     lines.append("")
-    lines.append("Tap *Authorize* to enter your PIN.")
+    lines.append(render_message("transfer.format.multi_source_summary.authorize", locale))
 
     return "\n".join(lines)
 
 
-def format_multi_source_receipt(data: dict) -> str:
+def format_multi_source_receipt(data: dict, locale: str = "en") -> str:
     """Format receipt for completed multi-account transfer.
 
     Expected keys in data:
@@ -120,7 +199,10 @@ def format_multi_source_receipt(data: dict) -> str:
       timestamp: Optional[str]
     """
     amount = float(data.get("amount", 0))
-    recipient_name = str(data.get("recipientName") or "")
+    recipient_name = str(
+        data.get("recipientName")
+        or render_message("transfer.format.summary.recipient_fallback", locale)
+    )
     recipient_bank = str(data.get("recipientBank") or "")
     recipient_account = str(data.get("recipientAccount") or "")
     funding_sources: list[dict] = data.get("funding_sources", [])
@@ -128,35 +210,81 @@ def format_multi_source_receipt(data: dict) -> str:
     timestamp = data.get("timestamp", "")
 
     lines = [
-        "✓ *Transfer Successful!*",
+        render_message("transfer.format.multi_source_receipt.success_header", locale),
         "",
-        f"*{_format_currency_naira(amount)}* → {recipient_name.title()}",
-        f"📍 {recipient_bank.title()} (`{recipient_account}`)",
+        render_message(
+            "transfer.format.multi_source_receipt.title",
+            locale,
+            {"amount": _format_currency_naira(amount), "recipient_name": recipient_name.title()},
+        ),
+        render_message(
+            "transfer.format.multi_source_receipt.location_line",
+            locale,
+            {"recipient_bank": recipient_bank.title(), "recipient_account": recipient_account},
+        ),
         "",
     ]
 
     if len(funding_sources) > 1:
-        lines.append("*Funded from:*")
+        lines.append(render_message("transfer.format.multi_source_receipt.funded_header", locale))
         for source in funding_sources:
-            bank = source.get("bank_name", "Account")
+            bank = source.get(
+                "bank_name",
+                render_message("transfer.format.multi_source_summary.bank_fallback", locale),
+            )
             account = source.get("account_number", "")
             source_amount = float(source.get("amount", 0))
-            last4 = account[-4:] if account else "????"
-            lines.append(f"  • {bank} (···{last4}): {_format_currency_naira(source_amount)}")
+            last4 = (
+                account[-4:]
+                if account
+                else render_message("transfer.format.summary.last4_fallback", locale)
+            )
+            lines.append(
+                render_message(
+                    "transfer.format.multi_source_summary.funding_item",
+                    locale,
+                    {"bank": bank, "last4": last4, "amount": _format_currency_naira(source_amount)},
+                )
+            )
         lines.append("")
     else:
         source = funding_sources[0] if funding_sources else {}
-        bank = source.get("bank_name", "Account")
+        bank = source.get(
+            "bank_name",
+            render_message("transfer.format.multi_source_summary.bank_fallback", locale),
+        )
         account = source.get("account_number", "")
-        last4 = account[-4:] if account else "????"
-        lines.append(f"*From:* {bank} (···{last4})")
+        last4 = (
+            account[-4:]
+            if account
+            else render_message("transfer.format.summary.last4_fallback", locale)
+        )
+        lines.append(
+            render_message(
+                "transfer.format.multi_source_receipt.from_line",
+                locale,
+                {"bank": bank, "last4": last4},
+            )
+        )
         lines.append("")
 
     if reference:
-        lines.append(f"*Ref:* `{reference}`")
+        lines.append(
+            render_message(
+                "transfer.format.multi_source_receipt.ref",
+                locale,
+                {"reference": reference},
+            )
+        )
 
     if timestamp:
-        lines.append(f"*Time:* {timestamp}")
+        lines.append(
+            render_message(
+                "transfer.format.multi_source_receipt.time",
+                locale,
+                {"time": timestamp},
+            )
+        )
 
     return "\n".join(lines)
 
@@ -169,6 +297,7 @@ def format_funding_plan_summary(
     recipient_name: str = "",
     recipient_bank: str = "",
     recipient_account: str = "",
+    locale: str = "en",
 ) -> str:
     """Format funding plan summary for multi-account transfer authorization.
 
@@ -188,7 +317,10 @@ def format_funding_plan_summary(
     secondary_amount = 0.0
     for step in steps:
         if step.get("bank_name") != primary_bank:
-            secondary_bank = step.get("bank_name", "another account")
+            secondary_bank = step.get(
+                "bank_name",
+                render_message("transfer.format.funding_plan.secondary_bank_fallback", locale),
+            )
             secondary_amount = float(step.get("amount", 0))
             break
 
@@ -196,27 +328,70 @@ def format_funding_plan_summary(
 
     if recipient_name and recipient_bank:
         recipient_display = recipient_name.title()
-        lines.append(f"*{_format_currency_naira(amount)} → {recipient_display} ({recipient_bank})*")
+        lines.append(
+            render_message(
+                "transfer.format.funding_plan.recipient_title",
+                locale,
+                {
+                    "amount": _format_currency_naira(amount),
+                    "recipient_display": recipient_display,
+                    "recipient_bank": recipient_bank,
+                },
+            )
+        )
         if recipient_account:
-            lines.append(f"Account: {recipient_account}")
+            lines.append(
+                render_message(
+                    "transfer.format.funding_plan.account_line",
+                    locale,
+                    {"recipient_account": recipient_account},
+                )
+            )
         lines.append("")
 
     balance_str = _format_currency_naira(balance_available)
-    lines.append(f"Your {primary_bank} has *{balance_str}* — not enough for this transfer.")
+    lines.append(
+        render_message(
+            "transfer.format.funding_plan.primary_balance",
+            locale,
+            {"primary_bank": primary_bank, "balance": balance_str},
+        )
+    )
     lines.append("")
 
     amount_str = _format_currency_naira(secondary_amount)
-    lines.append(f"Would you like to use *{amount_str}* from your {secondary_bank} to complete it?")
+    lines.append(
+        render_message(
+            "transfer.format.funding_plan.ask_use_secondary",
+            locale,
+            {"amount": amount_str, "secondary_bank": secondary_bank},
+        )
+    )
     lines.append("")
 
-    lines.append("*Suggested breakdown:*")
+    lines.append(render_message("transfer.format.funding_plan.suggested_header", locale))
     for step in steps:
-        bank = step.get("bank_name", "Account")
+        bank = step.get(
+            "bank_name",
+            render_message("transfer.format.funding_plan.bank_fallback", locale),
+        )
         amt = float(step.get("amount", 0))
-        lines.append(f"• {bank}: *{_format_currency_naira(amt)}*")
+        lines.append(
+            render_message(
+                "transfer.format.funding_plan.suggested_item",
+                locale,
+                {"bank": bank, "amount": _format_currency_naira(amt)},
+            )
+        )
 
-    lines.append("─────────────")
-    lines.append(f"*Total:* {_format_currency_naira(amount)}")
+    lines.append(render_message("transfer.format.funding_plan.divider", locale))
+    lines.append(
+        render_message(
+            "transfer.format.funding_plan.total_line",
+            locale,
+            {"amount": _format_currency_naira(amount)},
+        )
+    )
 
     return "\n".join(lines)
 
@@ -225,6 +400,7 @@ def format_transfer_success_message(
     amount: float,
     recipient_name: str,
     transaction_id: str,
+    locale: str = "en",
 ) -> str:
     """Format transfer success notification message.
 
@@ -236,15 +412,21 @@ def format_transfer_success_message(
     Returns:
         WhatsApp-formatted success message
     """
-    return (
-        f"✓ Transfer successful! {_format_currency_naira(amount)} has been sent to "
-        f"{recipient_name}. Transaction ID: {transaction_id}"
+    return render_message(
+        "transfer.format.notifications.success",
+        locale,
+        {
+            "amount": _format_currency_naira(amount),
+            "recipient_name": recipient_name,
+            "transaction_id": transaction_id,
+        },
     )
 
 
 def format_transfer_pending_message(
     amount: float,
     recipient_name: str,
+    locale: str = "en",
 ) -> str:
     """Format transfer pending notification message.
 
@@ -255,16 +437,20 @@ def format_transfer_pending_message(
     Returns:
         WhatsApp-formatted pending message
     """
-    return (
-        f"⏳ Your {_format_currency_naira(amount)} transfer to {recipient_name} is processing.\n\n"
-        "You'll receive confirmation shortly. If you don't receive it within 5 minutes,\n"
-        "please contact support."
+    return render_message(
+        "transfer.format.notifications.pending",
+        locale,
+        {
+            "amount": _format_currency_naira(amount),
+            "recipient_name": recipient_name,
+        },
     )
 
 
 def format_transfer_queued_message(
     amount: float,
     recipient_name: str,
+    locale: str = "en",
 ) -> str:
     """
     Sent immediately after PIN verification when transfer is queued for processing.
@@ -276,7 +462,8 @@ def format_transfer_queued_message(
     Returns:
         WhatsApp-formatted acknowledgment message
     """
-    return (
-        f"✓ Your transfer of {_format_currency_naira(amount)} to {recipient_name} "
-        "has been authorized and is being processed."
+    return render_message(
+        "transfer.format.notifications.queued",
+        locale,
+        {"amount": _format_currency_naira(amount), "recipient_name": recipient_name},
     )

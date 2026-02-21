@@ -5,6 +5,7 @@ from typing import Any
 
 from shared.cache.redis_client import RedisClient
 from shared.cache.user_data import UserDataCache
+from shared.i18n import LanguageDetectionSignal, LocaleManager
 from shared.repositories.account_repository import AccountRepository
 from shared.repositories.beneficiary_repository import BeneficiaryRepository
 from shared.repositories.unit_of_work import UnitOfWork
@@ -211,9 +212,8 @@ class ContextManager:
     async def get_user_language(self, phone_number: str) -> str | None:
         """Get user's preferred language."""
         try:
-            redis_client = RedisClient.get_client()
-            key = f"user:{phone_number}:language"
-            return await redis_client.get(key)
+            locale = await LocaleManager.get_locale(phone_number)
+            return locale.value if locale else None
         except Exception as e:
             logger.warning("get_user_language_error", phone=phone_number, error=str(e))
             return None
@@ -221,11 +221,24 @@ class ContextManager:
     async def set_user_language(self, phone_number: str, language: str) -> None:
         """Set user's preferred language."""
         try:
-            redis_client = RedisClient.get_client()
-            key = f"user:{phone_number}:language"
-            await redis_client.set(key, language, ex=2592000)  # 30 days
+            await LocaleManager.set_locale(phone_number, language, source="context_set_user_language")
         except Exception as e:
             logger.warning("set_user_language_error", phone=phone_number, error=str(e))
+
+    async def update_user_locale(self, phone_number: str, signal: LanguageDetectionSignal) -> str:
+        """Update persisted locale using detection/explicit signals."""
+        locale = await LocaleManager.update_locale(phone_number, signal)
+        return locale.value
+
+    async def set_user_locale_explicit(self, phone_number: str, locale: str) -> str:
+        """Set locale immediately from explicit user command."""
+        resolved = await LocaleManager.set_locale(phone_number, locale, source="user_command")
+        return resolved.value
+
+    async def get_effective_locale(self, phone_number: str, detected_language: str | None = None) -> str:
+        """Resolve effective locale from persisted preference and hint."""
+        locale = await LocaleManager.get_effective_locale(phone_number, detected_language)
+        return locale.value
 
     async def load_context_parallel(
         self, phone_number: str
@@ -286,6 +299,7 @@ class ContextManager:
                 pass
 
             user_ctx["language"] = language
+            user_ctx["detected_language"] = language
             user_ctx["history"] = history
 
             return user_ctx, conversation_state, last_response, suggestion_data
@@ -306,6 +320,7 @@ class ContextManager:
                 suggestion_data = None
 
             user_ctx["language"] = language
+            user_ctx["detected_language"] = language
             user_ctx["history"] = history
 
             return user_ctx, conversation_state, last_response, suggestion_data

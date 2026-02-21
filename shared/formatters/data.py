@@ -1,5 +1,7 @@
 """Data purchase formatting utilities."""
 
+from shared.i18n import render_message
+
 
 def format_data_plan_suggestion(
     plan_name: str,
@@ -8,6 +10,7 @@ def format_data_plan_suggestion(
     validity_days: int | None,
     size_gb: float | None,
     reason: str,
+    locale: str = "en",
 ) -> str:
     """
     Format data plan suggestion message.
@@ -23,26 +26,30 @@ def format_data_plan_suggestion(
     Returns:
         Formatted suggestion message
     """
-    validity = f"{validity_days} days" if validity_days else ""
+    validity = (
+        render_message("data.format.validity_days", locale, {"days": validity_days})
+        if validity_days
+        else ""
+    )
     size = f"{size_gb}GB" if size_gb else plan_name
 
     if reason == "repeat":
-        return (
-            f"You usually buy *{size} {network}* ({validity}) for ₦{amount:,}.\n"
-            f"Want me to get that again?\n\n"
-            f"Reply *yes* to continue or *show plans* to see other options."
+        return render_message(
+            "data.format.suggestion.repeat",
+            locale,
+            {"size": size, "network": network, "validity": validity, "amount": f"{amount:,}"},
         )
     elif reason == "budget":
-        return (
-            f"With ₦{amount:,}, the best option is:\n"
-            f"• *{network} {size}* — valid {validity}\n\n"
-            f"Reply *yes* to continue or *show plans* to choose."
+        return render_message(
+            "data.format.suggestion.budget",
+            locale,
+            {"size": size, "network": network, "validity": validity, "amount": f"{amount:,}"},
         )
     else:
-        return (
-            f"I recommend:\n"
-            f"• *{network} {size}* — ₦{amount:,} ({validity})\n\n"
-            f"Reply *yes* to continue or *show plans* to see other options."
+        return render_message(
+            "data.format.suggestion.default",
+            locale,
+            {"size": size, "network": network, "validity": validity, "amount": f"{amount:,}"},
         )
 
 
@@ -50,6 +57,7 @@ def format_data_plan_list(
     plans: list[dict],
     network: str,
     has_more: bool = False,
+    locale: str = "en",
 ) -> str:
     """
     Format paginated data plan list.
@@ -62,24 +70,34 @@ def format_data_plan_list(
     Returns:
         Formatted plan list
     """
-    lines = [f"*{network} Data Plans:*\n"]
+    lines = [render_message("data.format.plan_list.header", locale, {"network": network}), ""]
 
     for plan in plans:
         size = f"{plan.get('size_gb')}GB" if plan.get("size_gb") else plan.get("name", "")
-        validity = f"{plan.get('validity_days')} days" if plan.get("validity_days") else ""
+        validity = (
+            render_message("data.format.validity_days", locale, {"days": plan.get("validity_days")})
+            if plan.get("validity_days")
+            else ""
+        )
         amount = plan.get("amount", 0)
-        lines.append(f"• *{size}* — ₦{amount:,} ({validity})")
+        lines.append(
+            render_message(
+                "data.format.plan_list.item",
+                locale,
+                {"size": size, "amount": f"{amount:,}", "validity": validity},
+            )
+        )
 
     lines.append("")
     if has_more:
-        lines.append("Reply with plan size (e.g. *5GB*) or *show more*.")
+        lines.append(render_message("data.format.plan_list.reply_show_more", locale))
     else:
-        lines.append("Reply with plan size (e.g. *5GB*) to select.")
+        lines.append(render_message("data.format.plan_list.reply_select", locale))
 
     return "\n".join(lines)
 
 
-def format_data_summary(data: dict) -> str:
+def format_data_summary(data: dict, locale: str = "en") -> str:
     """
     Format a WhatsApp-friendly data purchase confirmation summary.
 
@@ -92,22 +110,47 @@ def format_data_summary(data: dict) -> str:
       sourceAccount: str
       isSelf: bool
     """
-    plan_name = data.get("planName", "Data Plan")
+    plan_name = data.get("planName", render_message("data.format.summary.plan_name_fallback", locale))
     amount = float(data.get("amount", 0))
     recipient_phone = str(data.get("recipientPhone") or "")
     network = str(data.get("network") or "")
-    source_bank = str(data.get("sourceBank") or "Account")
+    source_bank = str(data.get("sourceBank") or render_message("data.format.summary.source_bank_fallback", locale))
     source_account = str(data.get("sourceAccount") or "")
     is_self = data.get("isSelf", False)
 
-    target_display = "your number" if is_self else recipient_phone
+    target_display = (
+        render_message("data.format.summary.target_self", locale)
+        if is_self
+        else recipient_phone
+    )
 
     lines = [
-        f"*{plan_name} → {target_display}*",
-        f"Network: {network} • Amount: ₦{amount:,.0f}",
+        render_message(
+            "data.format.summary.title",
+            locale,
+            {"plan_name": plan_name, "target_display": target_display},
+        ),
+        render_message(
+            "data.format.summary.network_amount",
+            locale,
+            {"network": network, "amount": f"{amount:,.0f}"},
+        ),
     ]
 
     lines.append("")
-    lines.append(f"From: {source_bank} (···{source_account[-4:] if source_account else '????'})")
+    lines.append(
+        render_message(
+            "data.format.summary.from_line",
+            locale,
+            {
+                "source_bank": source_bank,
+                "last4": (
+                    source_account[-4:]
+                    if source_account
+                    else render_message("data.format.summary.last4_fallback", locale)
+                ),
+            },
+        )
+    )
 
     return "\n".join(lines)

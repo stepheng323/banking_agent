@@ -1,9 +1,12 @@
 """Beneficiary suggestion formatter."""
 
+from shared.i18n import render_message
 
-def format_beneficiary_suggestion(recipient_name: str) -> str:
+
+def format_beneficiary_suggestion(recipient_name: str, locale: str = "en") -> str:
     """Format beneficiary suggestion message."""
-    return (
-        f"💡 Would you like to save {recipient_name} as a beneficiary "
-        f"for faster transfers? Reply to confirm."
+    return render_message(
+        "beneficiary.format.suggestion",
+        locale,
+        {"recipient_name": recipient_name},
     )

@@ -1,6 +1,8 @@
+"""Transaction summary formatting utilities for batch and multi-action transactions."""
+
 from typing import Any
 
-"""Transaction summary formatting utilities for batch and multi-action transactions."""
+from shared.i18n import render_message
 
 
 def format_amount(amount: float | int) -> str:
@@ -16,7 +18,7 @@ def mask_account_number(account: str) -> str:
 
 
 def format_batch_transfer_summary(
-    num_transfers: int, total_amount: float, source_account_info: str | None, summaries: list[str]
+    num_transfers: int, total_amount: float, source_account_info: str | None, summaries: list[str], locale: str = "en"
 ) -> str:
     """Format a confirmation summary for a batch of transfers.
 
@@ -29,8 +31,12 @@ def format_batch_transfer_summary(
     Returns:
         WhatsApp-formatted batch transfer confirmation
     """
-    title = f"*Confirm Transfers ({num_transfers})*"
-    total_str = f"Total: {format_amount(total_amount)}".replace(".00", "")
+    title = render_message("transaction_summary.batch.confirm_title", locale, {"count": num_transfers})
+    total_str = render_message(
+        "transaction_summary.batch.total",
+        locale,
+        {"amount": format_amount(total_amount).replace(".00", "")},
+    )
 
     parts = [title]
     if source_account_info:
@@ -42,7 +48,7 @@ def format_batch_transfer_summary(
     return "\n".join(parts)
 
 
-def format_multi_action_summary(completed_tasks: list) -> str:
+def format_multi_action_summary(completed_tasks: list, locale: str = "en") -> str:
     """Format a text summary for batch/multi-action transactions.
 
     Args:
@@ -64,7 +70,7 @@ def format_multi_action_summary(completed_tasks: list) -> str:
 
         _All transactions completed successfully_
     """
-    lines = ["✅ *Transaction Summary*", ""]
+    lines = [render_message("transaction_summary.multi.header", locale), ""]
     total_spent = 0
 
     # Group by task type
@@ -83,10 +89,20 @@ def format_multi_action_summary(completed_tasks: list) -> str:
                 # Batch transfer
                 total_amount = sum(r.get("amount", 0) for r in recipients)
                 total_spent += total_amount
-                lines.append(f"*Transfer:* {format_amount(total_amount)} to {len(recipients)} recipients")
+                lines.append(
+                    render_message(
+                        "transaction_summary.multi.transfer_batch_line",
+                        locale,
+                        {"amount": format_amount(total_amount), "count": len(recipients)},
+                    )
+                )
 
                 for r in recipients:
-                    name = r.get("name") or r.get("recipient_name", "Unknown")
+                    name = (
+                        r.get("name")
+                        or r.get("recipient_name")
+                        or render_message("transaction_summary.multi.recipient_unknown", locale)
+                    )
                     amount = r.get("amount", 0)
                     bank = r.get("bank_name") or r.get("recipient_bank_name", "")
                     account = r.get("account") or r.get("recipient_account", "")
@@ -98,9 +114,17 @@ def format_multi_action_summary(completed_tasks: list) -> str:
             else:
                 # Single transfer in multi-action context
                 amount = task.payload.get("amount", 0)
-                recipient = task.payload.get("recipient_name", "recipient")
+                recipient = task.payload.get("recipient_name") or render_message(
+                    "transaction_summary.multi.recipient_fallback", locale
+                )
                 total_spent += amount
-                lines.append(f"✓ *Transfer:* {format_amount(amount)} to {recipient}")
+                lines.append(
+                    render_message(
+                        "transaction_summary.multi.transfer_single_line",
+                        locale,
+                        {"amount": format_amount(amount), "recipient": recipient},
+                    )
+                )
 
         lines.append("")
 
@@ -108,50 +132,94 @@ def format_multi_action_summary(completed_tasks: list) -> str:
     if airtime_tasks:
         for task in airtime_tasks:
             amount = task.payload.get("amount", 0)
-            phone = task.payload.get("phone_number", "N/A")
+            phone = task.payload.get("phone_number") or render_message(
+                "transaction_summary.multi.phone_fallback",
+                locale,
+            )
             network = task.payload.get("network", "")
             total_spent += amount
-            lines.append(f"✓ *Airtime:* {format_amount(amount)} for {phone} ({network})")
+            lines.append(
+                render_message(
+                    "transaction_summary.multi.airtime_line",
+                    locale,
+                    {"amount": format_amount(amount), "phone": phone, "network": network},
+                )
+            )
         lines.append("")
 
     # Handle data purchases
     if data_tasks:
         for task in data_tasks:
             amount = task.payload.get("amount", 0)
-            phone = task.payload.get("phone_number", "N/A")
-            plan = task.payload.get("plan_name", "data")
+            phone = task.payload.get("phone_number") or render_message(
+                "transaction_summary.multi.phone_fallback",
+                locale,
+            )
+            plan = task.payload.get("plan_name") or render_message(
+                "transaction_summary.multi.data_plan_fallback",
+                locale,
+            )
             total_spent += amount
-            lines.append(f"✓ *Data:* {plan} - {format_amount(amount)} for {phone}")
+            lines.append(
+                render_message(
+                    "transaction_summary.multi.data_line",
+                    locale,
+                    {"plan": plan, "amount": format_amount(amount), "phone": phone},
+                )
+            )
         lines.append("")
 
     # Handle other task types
     if other_tasks:
         for task in other_tasks:
-            lines.append(f"✓ *{task.type.replace('_', ' ').title()}:* Completed")
+            lines.append(
+                render_message(
+                    "transaction_summary.multi.other_completed_line",
+                    locale,
+                    {"task_type": task.type.replace("_", " ").title()},
+                )
+            )
         lines.append("")
 
     # Add total if multiple transactions
     if len(completed_tasks) > 1:
-        lines.append(f"*Total Spent:* {format_amount(total_spent)}")
+        lines.append(
+            render_message(
+                "transaction_summary.multi.total_spent",
+                locale,
+                {"amount": format_amount(total_spent)},
+            )
+        )
         lines.append("")
 
-    lines.append("_All transactions completed successfully_")
+    lines.append(render_message("transaction_summary.multi.success_footer", locale))
 
     return "\n".join(lines)
 
 
-def format_intent_line(task_type: str, payload: dict[str, Any]) -> str:
+def format_intent_line(task_type: str, payload: dict[str, Any], locale: str = "en") -> str:
     """Generate a precise intent string for a task."""
     if task_type == "transfer":
         amount = payload.get("amount", 0)
-        recipient = payload.get("recipient_resolved_name") or payload.get("recipient_name") or "Recipient"
-        return f"{format_amount(amount).replace('.00', '')} → {recipient}"
+        recipient = payload.get("recipient_resolved_name") or payload.get("recipient_name") or render_message(
+            "transaction_summary.intent.transfer_recipient_fallback",
+            locale,
+        )
+        return render_message(
+            "transaction_summary.intent.transfer",
+            locale,
+            {"amount": format_amount(amount).replace(".00", ""), "recipient": recipient},
+        )
     elif task_type == "airtime":
         amount = payload.get("amount", 0)
-        phone = payload.get("recipient_phone") or "your line"
-        return f"{format_amount(amount).replace('.00', '')} airtime recharge on {phone}"
+        phone = payload.get("recipient_phone") or render_message("transaction_summary.intent.phone_fallback", locale)
+        return render_message(
+            "transaction_summary.intent.airtime",
+            locale,
+            {"amount": format_amount(amount).replace(".00", ""), "phone": phone},
+        )
     elif task_type == "data":
-        plan = payload.get("plan_name") or "Data"
-        phone = payload.get("target_phone") or "your line"
-        return f"Buy {plan} for {phone}"
-    return f"{task_type.title()} transaction"
+        plan = payload.get("plan_name") or render_message("transaction_summary.intent.data_plan_fallback", locale)
+        phone = payload.get("target_phone") or render_message("transaction_summary.intent.phone_fallback", locale)
+        return render_message("transaction_summary.intent.data", locale, {"plan": plan, "phone": phone})
+    return render_message("transaction_summary.intent.generic", locale, {"task_type": task_type.title()})

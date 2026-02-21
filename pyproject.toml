@@ -145,6 +145,9 @@ warn_unused_ignores = true
 no_implicit_optional = true
 check_untyped_defs = true
 ignore_missing_imports = true
+explicit_package_bases = true
+namespace_packages = true
+mypy_path = ["."]
 
 # Disable strict checks that are too noisy
 disallow_untyped_defs = true
@@ -163,6 +166,9 @@ testpaths = ["tests"]
 python_files = ["test_*.py", "*_test.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
+filterwarnings = [
+    "ignore:.*'crypt' is deprecated and slated for removal in Python 3\\.13.*:DeprecationWarning:passlib\\..*",
+]
 addopts = [
     "-v",
     "--strict-markers",
@@ -170,4 +176,3 @@ addopts = [
     "--cov=apps",
     "--cov-report=term-missing",
 ]
-
