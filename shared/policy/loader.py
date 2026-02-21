@@ -6,7 +6,6 @@ import json
 import re
 from pathlib import Path
 
-from shared.policy.defaults import build_default_policy
 from shared.policy.models import SoulPolicy
 from shared.utils.logging import get_logger
 
@@ -36,7 +35,7 @@ def load_soul_policy(path: str = "soul.md") -> SoulPolicy:
 
 
 def get_cached_policy(path: str = "soul.md", force_reload: bool = False) -> SoulPolicy:
-    """Get cached policy with safe fallback."""
+    """Get cached policy and fail fast when policy is invalid/missing."""
     global _POLICY_CACHE
 
     if _POLICY_CACHE is not None and not force_reload:
@@ -46,7 +45,7 @@ def get_cached_policy(path: str = "soul.md", force_reload: bool = False) -> Soul
         _POLICY_CACHE = load_soul_policy(path=path)
         logger.info("policy_loaded", path=path, version=_POLICY_CACHE.version)
     except Exception as exc:
-        _POLICY_CACHE = build_default_policy()
-        logger.warning("policy_fallback_used", path=path, error=str(exc), version=_POLICY_CACHE.version)
+        logger.error("policy_load_failed", path=path, error=str(exc))
+        raise
 
     return _POLICY_CACHE

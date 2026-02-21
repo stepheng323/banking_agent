@@ -43,5 +43,7 @@ class SoulPolicy(BaseModel):
     tone: SoulTone
     supported_domains: list[str] = Field(default_factory=list)
     unsupported_capabilities: list[str] = Field(default_factory=list)
+    unsupported_detection: dict[str, list[str]] = Field(default_factory=dict)
+    unsupported_alternatives: dict[str, list[str]] = Field(default_factory=dict)
     safety_rules: list[str] = Field(default_factory=list)
     capability_matrix: dict[str, DomainCapabilityPolicy] = Field(default_factory=dict)

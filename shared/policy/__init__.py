@@ -10,6 +10,7 @@ from shared.policy.adapters import (
 )
 from shared.policy.loader import get_cached_policy, load_soul_policy
 from shared.policy.models import CapabilityRule, DomainCapabilityPolicy, SoulIdentity, SoulPolicy, SoulTone
+from shared.policy.validation import validate_policy_coverage
 
 __all__ = [
     "SoulPolicy",
@@ -25,4 +26,5 @@ __all__ = [
     "resolve_capability_rule",
     "resolve_capability_message",
     "resolve_capability_alternative",
+    "validate_policy_coverage",
 ]
