@@ -26,6 +26,7 @@ from apps.core.src.agent.orchestrator.models.domain import (
     TransactionOutcome,
     TransactionResult,
 )
+from shared.policy import resolve_capability_alternative, resolve_capability_message, resolve_capability_rule
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -94,6 +95,23 @@ class DataWorker:
         )
 
     @staticmethod
+    def _policy_gate_message(action: str) -> str | None:
+        rule = resolve_capability_rule(domain="data", action=action)
+        if rule is not None and rule.supported:
+            return None
+
+        if policy_message := resolve_capability_message(domain="data", action=action):
+            return policy_message
+
+        if alt := resolve_capability_alternative(domain="data", action=action):
+            alt_text = alt.replace("_", " ")
+            action_text = action.replace("_", " ")
+            return f"{action_text} isn't available yet. I can help with {alt_text} instead."
+
+        action_text = action.replace("_", " ")
+        return f"{action_text} isn't available yet."
+
+    @staticmethod
     def _build_pipeline(user_message: str | None) -> DataPipeline:
         return DataPipeline(
             [
@@ -116,6 +134,17 @@ class DataWorker:
     ) -> TransactionResult:
         """Execute the data pipeline."""
         start_time = time.perf_counter()
+
+        action = str(payload.get("action") or "buy_data")
+        if limitation := self._policy_gate_message(action):
+            logger.info("capability_blocked", domain="data", action=action)
+            return TransactionResult(
+                outcome=TransactionOutcome.FAILED,
+                error=limitation,
+                response=limitation,
+                patch={"capability_blocked": True},
+            )
+
         data = self._ensure_idempotency_key(DataPayload(**payload))
         ctx = self._build_context(context)
         gates = self._build_gates(data, pin_verified)
