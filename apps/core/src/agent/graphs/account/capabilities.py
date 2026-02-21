@@ -1,7 +1,4 @@
-"""Account capability definitions.
-
-Defines what the account graph supports and doesn't support.
-"""
+"""Account capability definitions."""
 
 from enum import Enum
 
@@ -20,14 +17,6 @@ class AccountCapability(str, Enum):
     ADD_JOINT_HOLDER = "add_joint_holder"
 
 
-ACCOUNT_SUPPORTS: list[AccountCapability] = [
-    AccountCapability.LIST_ACCOUNTS,
-    AccountCapability.LINK_ACCOUNT,
-    AccountCapability.UNLINK_ACCOUNT,
-    AccountCapability.SET_DEFAULT,
-]
-
-
 CAPABILITY_LABELS: dict[AccountCapability, str] = {
     AccountCapability.LIST_ACCOUNTS: "list accounts",
     AccountCapability.LINK_ACCOUNT: "link new account",
@@ -40,15 +29,14 @@ CAPABILITY_LABELS: dict[AccountCapability, str] = {
 
 
 def check_capabilities(requires: list[AccountCapability]) -> list[AccountCapability]:
-    """Check which required capabilities are missing."""
+    """Check which required capabilities are missing.
+
+    Policy is authoritative: if an action has no rule, treat it as unsupported.
+    """
     missing: list[AccountCapability] = []
     for cap in requires:
         policy_rule = resolve_capability_rule(domain="account", action=cap.value)
-        if policy_rule is not None:
-            if not policy_rule.supported:
-                missing.append(cap)
-            continue
-        if cap not in ACCOUNT_SUPPORTS:
+        if policy_rule is None or not policy_rule.supported:
             missing.append(cap)
     return missing
 
@@ -84,24 +72,6 @@ def generate_limitation_message(missing: list[AccountCapability]) -> str:
 
     if alt := resolve_capability_alternative(domain="account", action=first.value):
         return f"*{CAPABILITY_LABELS.get(first, first.value).title()}* isn't available yet. I can help with *{alt}*."
-
-    if AccountCapability.CLOSE_ACCOUNT in missing:
-        return (
-            "I can't close bank accounts — that needs to be done directly with your bank.\n\n"
-            "Would you like me to *unlink* an account from this app instead?"
-        )
-
-    if AccountCapability.CHANGE_BVN in missing:
-        return (
-            "BVN changes need to be done through your bank or NIBSS.\n\n"
-            "I can only help with linking/unlinking accounts here."
-        )
-
-    if AccountCapability.ADD_JOINT_HOLDER in missing:
-        return (
-            "Adding joint account holders needs to be done through your bank.\n\n"
-            "Is there something else I can help with?"
-        )
 
     missing_labels = [CAPABILITY_LABELS.get(cap, cap.value) for cap in missing]
     return f"*{missing_labels[0].title()}* isn't available yet."

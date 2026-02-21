@@ -1,9 +1,16 @@
 """Tests for Soul policy loading and adapters."""
 
+import json
 from types import SimpleNamespace
 
+import pytest
+
 from apps.core.src.agent.graphs.account.worker import AccountWorker
-from apps.core.src.agent.orchestrator.models.domain import AccountOutcome
+from apps.core.src.agent.graphs.airtime.worker import AirtimeWorker
+from apps.core.src.agent.graphs.data.worker import DataWorker
+from apps.core.src.agent.graphs.query import capabilities as query_capabilities
+from apps.core.src.agent.graphs.transfer.worker import TransferWorker
+from apps.core.src.agent.orchestrator.models.domain import AccountOutcome, TransactionOutcome
 from apps.core.src.agent.orchestrator.nodes.planner import _build_policy_notice
 from shared.policy import (
     build_planner_policy_block,
@@ -11,6 +18,7 @@ from shared.policy import (
     load_soul_policy,
     resolve_capability_message,
     resolve_capability_rule,
+    validate_policy_coverage,
 )
 
 
@@ -62,16 +70,25 @@ def test_policy_loads_from_soul_md():
     policy = load_soul_policy("soul.md")
     assert policy.identity.name == "Fusepay"
     assert "Send money" in policy.supported_domains
+    validate_policy_coverage(policy)
 
 
-def test_policy_fallback_when_file_missing():
-    """Missing file should fallback safely via cache helper."""
-    policy = get_cached_policy(path="missing-soul.md", force_reload=True)
-    assert policy.identity.name == "Fusepay"
-    assert policy.version == "1.0.0"
+def test_policy_raises_when_file_missing():
+    """Missing file should raise in strict single-source mode."""
+    with pytest.raises(Exception):
+        get_cached_policy(path="missing-soul.md", force_reload=True)
 
     # Reset cache back to real policy for subsequent tests.
     get_cached_policy(path="soul.md", force_reload=True)
+
+
+def test_policy_raises_when_json_block_missing(tmp_path):
+    """Malformed policy document should raise."""
+    bad_policy_path = tmp_path / "bad_soul.md"
+    bad_policy_path.write_text("# bad policy", encoding="utf-8")
+
+    with pytest.raises(Exception):
+        load_soul_policy(str(bad_policy_path))
 
 
 def test_planner_policy_block_contains_guardrails():
@@ -102,3 +119,116 @@ def test_policy_notice_acknowledges_supported_and_unsupported_mix():
     assert notice is not None
     assert "money transfer" in notice
     assert "Investments" in notice
+    assert "send money or review recent transactions" in notice
+
+
+def test_policy_detection_uses_runtime_policy_rules(tmp_path):
+    """Detection behavior should follow soul policy edits without code changes."""
+    raw = load_soul_policy("soul.md").model_dump()
+    raw["unsupported_detection"]["Investments"] = ["portfolio"]
+
+    test_path = tmp_path / "soul_custom.md"
+    json_payload = json.dumps(raw, ensure_ascii=True, indent=2)
+    test_path.write_text(
+        "<!-- SOUL_POLICY_JSON_START -->\n```json\n"
+        f"{json_payload}\n"
+        "```\n<!-- SOUL_POLICY_JSON_END -->\n",
+        encoding="utf-8",
+    )
+
+    get_cached_policy(path=str(test_path), force_reload=True)
+    planner_output = SimpleNamespace(tasks=[SimpleNamespace(executor="transfer")])
+
+    notice = _build_policy_notice("send 10k to tolu and portfolio 10k", planner_output)
+    assert notice is not None
+    assert "Investments" in notice
+
+    # Restore cache to default project policy.
+    get_cached_policy(path="soul.md", force_reload=True)
+
+
+def test_policy_validation_raises_when_required_action_missing():
+    """Required account/support actions must exist in policy matrix."""
+    base = load_soul_policy("soul.md")
+    raw = base.model_dump()
+    del raw["capability_matrix"]["support"]["actions"]["create_ticket"]
+    policy = base.__class__.model_validate(raw)
+
+    with pytest.raises(ValueError):
+        validate_policy_coverage(policy)
+
+
+def test_query_capability_checks_use_policy_rules():
+    """Query capability checks should be policy-backed."""
+    missing = query_capabilities.check_capabilities(
+        [query_capabilities.QueryCapability.TIME_ALL, query_capabilities.QueryCapability.FILTER_RECIPIENT]
+    )
+    assert query_capabilities.QueryCapability.TIME_ALL in missing
+    assert query_capabilities.QueryCapability.FILTER_RECIPIENT not in missing
+
+
+def test_query_limitation_message_prefers_policy_text():
+    """Query limitation messaging should resolve from policy first."""
+    message = query_capabilities.generate_limitation_message(
+        [query_capabilities.QueryCapability.SEARCH_NARRATION_FUZZY]
+    )
+    assert "exact keywords" in message.lower()
+
+
+async def test_transfer_worker_blocks_unsupported_action_from_policy():
+    """Transfer worker should fail fast on unsupported policy action."""
+    worker = TransferWorker(
+        validation_service=None,
+        queue=None,
+        extractor=None,
+        banking_provider=None,
+        bank_cache=None,
+        transaction_repo=None,
+    )
+
+    result = await worker.run(
+        payload={"action": "schedule_transfer", "amount": 10000, "recipient_name": "Tolu"},
+        context={"phone_number": "2348000000000"},
+    )
+
+    assert result.outcome == TransactionOutcome.FAILED
+    assert result.error is not None
+    assert "scheduled transfers" in result.error.lower()
+
+
+async def test_airtime_worker_blocks_unknown_action_from_policy():
+    """Airtime worker should block actions not allowed by policy."""
+    worker = AirtimeWorker(
+        extractor=None,
+        bill_provider=None,
+        transaction_repo=None,
+        queue=None,
+    )
+
+    result = await worker.run(
+        payload={"action": "refund_airtime", "amount": 1000},
+        context={"phone_number": "2348000000000"},
+    )
+
+    assert result.outcome == TransactionOutcome.FAILED
+    assert result.error is not None
+    assert "isn't available yet" in result.error.lower()
+
+
+async def test_data_worker_blocks_unknown_action_from_policy():
+    """Data worker should block actions not allowed by policy."""
+    worker = DataWorker(
+        extractor=None,
+        bill_provider=None,
+        transaction_repo=None,
+        queue=None,
+    )
+
+    result = await worker.run(
+        payload={"action": "refund_data", "amount": 1000},
+        context={"phone_number": "2348000000000"},
+    )
+
+    assert result.outcome == TransactionOutcome.FAILED
+    assert result.error is not None
+    assert "isn't available yet" in result.error.lower()

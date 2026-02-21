@@ -1,7 +1,7 @@
 """Query resolver.
 
 Handles negotiation and clamping for query capabilities.
-- Checks requested_capabilities against QUERY_SUPPORTS
+- Checks requested_capabilities against policy-backed capability rules
 - Negotiates down (TIME_ALL → TIME_RELATIVE within limits)
 - Clamps values (time range, result count, etc.)
 """
@@ -11,12 +11,11 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from apps.core.src.agent.graphs.query import capabilities as query_capabilities
 from apps.core.src.agent.graphs.query.capabilities import (
     QUERY_LIMITS,
-    QUERY_SUPPORTS,
     QueryCapability,
     generate_limitation_message,
-    get_alternative,
 )
 from apps.core.src.agent.graphs.query.models import (
     Ambiguity,
@@ -93,9 +92,9 @@ def check_capabilities(requested: list[RequestedCapability]) -> list[QueryCapabi
     missing = []
     for req in requested:
         cap = CAPABILITY_MAP.get(req)
-        if cap and cap not in QUERY_SUPPORTS:
+        if cap:
             missing.append(cap)
-    return missing
+    return query_capabilities.check_capabilities(missing)
 
 
 def clamp_time_range(extraction: QueryExtractionResult) -> tuple[QueryExtractionResult, int | None]:
@@ -106,7 +105,6 @@ def clamp_time_range(extraction: QueryExtractionResult) -> tuple[QueryExtraction
         return extraction, QUERY_LIMITS["max_lookback_days"]
 
     if extraction.time_range.days_back and extraction.time_range.days_back > QUERY_LIMITS["max_lookback_days"]:
-        original = extraction.time_range.days_back
         extraction.time_range.days_back = QUERY_LIMITS["max_lookback_days"]
         return extraction, QUERY_LIMITS["max_lookback_days"]
 
@@ -132,7 +130,10 @@ def resolve(extraction: QueryExtractionResult) -> ResolverDecision:
                 ambiguity_to_resolve=time_vague,
                 prompts=[Prompt(
                     key="query.time_vague",
-                    vars={"context": time_vague.context, "suggestion": f"last {QUERY_LIMITS['default_lookback_days']} days"},
+                    vars={
+                        "context": time_vague.context,
+                        "suggestion": f"last {QUERY_LIMITS['default_lookback_days']} days",
+                    },
                 )],
             )
 
@@ -141,7 +142,6 @@ def resolve(extraction: QueryExtractionResult) -> ResolverDecision:
 
     if missing:
         cap = missing[0]
-        alt = get_alternative(cap)
 
         # Can we auto-negotiate?
         if cap == QueryCapability.TIME_ALL:
@@ -177,7 +177,11 @@ def resolve(extraction: QueryExtractionResult) -> ResolverDecision:
                 decision=Decision.NEGOTIATE,
                 extraction=extraction,
                 negotiation=Negotiation(
-                    original_capability=RequestedCapability.EXPORT_PDF if cap == QueryCapability.EXPORT_PDF else RequestedCapability.EXPORT_CSV,
+                    original_capability=(
+                        RequestedCapability.EXPORT_PDF
+                        if cap == QueryCapability.EXPORT_PDF
+                        else RequestedCapability.EXPORT_CSV
+                    ),
                     alternative=None,
                     message=generate_limitation_message([cap]),
                     auto_apply=False,

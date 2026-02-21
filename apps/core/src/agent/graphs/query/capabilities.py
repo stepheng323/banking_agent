@@ -6,6 +6,8 @@ LLM outputs requested_capabilities, resolver checks and negotiates.
 
 from enum import Enum
 
+from shared.policy import resolve_capability_alternative, resolve_capability_message, resolve_capability_rule
+
 
 class QueryCapability(str, Enum):
     """Capabilities that can be required by a query plan."""
@@ -33,21 +35,6 @@ class QueryCapability(str, Enum):
     # Exports
     EXPORT_PDF = "export_pdf"
     EXPORT_CSV = "export_csv"
-
-
-# What's supported
-QUERY_SUPPORTS: list[QueryCapability] = [
-    QueryCapability.FILTER_RECIPIENT,
-    QueryCapability.FILTER_AMOUNT,
-    QueryCapability.FILTER_CATEGORY,
-    QueryCapability.FILTER_TX_TYPE,
-    QueryCapability.FILTER_BANK,
-    QueryCapability.SEARCH_NARRATION_KEYWORD,  # Exact match only
-    QueryCapability.TIME_RELATIVE,
-    QueryCapability.AGGREGATE_SUM,
-    QueryCapability.AGGREGATE_GROUP,
-    QueryCapability.TIME_COMPARISON,
-]
 
 
 # Limits for resolver negotiation (clamp instead of fail)
@@ -78,23 +65,28 @@ CAPABILITY_LABELS: dict[QueryCapability, str] = {
 }
 
 
-# Fallbacks for negotiation
-CAPABILITY_ALTERNATIVES: dict[QueryCapability, QueryCapability | None] = {
-    QueryCapability.TIME_ALL: QueryCapability.TIME_RELATIVE,
-    QueryCapability.SEARCH_NARRATION_FUZZY: QueryCapability.SEARCH_NARRATION_KEYWORD,
-    QueryCapability.EXPORT_PDF: None,
-    QueryCapability.EXPORT_CSV: None,
-}
-
-
 def check_capabilities(requires: list[QueryCapability]) -> list[QueryCapability]:
-    """Check which required capabilities are missing."""
-    return [cap for cap in requires if cap not in QUERY_SUPPORTS]
+    """Check which required capabilities are missing.
+
+    Policy is authoritative: if a capability has no rule, treat it as unsupported.
+    """
+    missing: list[QueryCapability] = []
+    for cap in requires:
+        policy_rule = resolve_capability_rule(domain="query", action=cap.value)
+        if policy_rule is None or not policy_rule.supported:
+            missing.append(cap)
+    return missing
 
 
 def get_alternative(cap: QueryCapability) -> QueryCapability | None:
     """Get alternative capability for a missing one."""
-    return CAPABILITY_ALTERNATIVES.get(cap)
+    policy_alternative = resolve_capability_alternative(domain="query", action=cap.value)
+    if not policy_alternative:
+        return None
+    try:
+        return QueryCapability(policy_alternative)
+    except ValueError:
+        return None
 
 
 def generate_limitation_message(missing: list[QueryCapability]) -> str:
@@ -103,26 +95,10 @@ def generate_limitation_message(missing: list[QueryCapability]) -> str:
         return ""
 
     cap = missing[0]
+    if policy_message := resolve_capability_message(domain="query", action=cap.value):
+        return policy_message
+
     alt = get_alternative(cap)
-
-    if cap == QueryCapability.TIME_ALL:
-        months = QUERY_LIMITS["max_lookback_days"] // 30
-        return (
-            f"I can show transactions up to *{months} months* back.\n\n"
-            "Want me to show that instead?"
-        )
-
-    if cap == QueryCapability.SEARCH_NARRATION_FUZZY:
-        return (
-            "I can search for *exact keywords* but not similar descriptions yet.\n\n"
-            "Want me to search for the exact word?"
-        )
-
-    if cap == QueryCapability.EXPORT_PDF:
-        return "PDF export isn't available yet.\n\nI can show the results here. Continue?"
-
-    if cap == QueryCapability.EXPORT_CSV:
-        return "CSV export isn't available yet.\n\nI can show the results here. Continue?"
 
     label = CAPABILITY_LABELS.get(cap, cap.value)
     msg = f"*{label.title()}* isn't available yet."

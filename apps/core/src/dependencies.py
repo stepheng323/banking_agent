@@ -31,7 +31,7 @@ from shared.clients.providers.mono.direct_debit import MonoDirectDebitProvider
 from shared.clients.whatsapp.client import WhatsAppClient
 from shared.config import settings
 from shared.database.connection import get_db_session
-from shared.policy import get_cached_policy
+from shared.policy import get_cached_policy, validate_policy_coverage
 from shared.queue.redis_queue import RedisQueue
 from shared.repositories import AccountRepository, BeneficiaryRepository
 from shared.repositories.actionable_message_repository import ActionableMessageRepository
@@ -45,7 +45,8 @@ from shared.services.task_queue import TaskQueueService
 
 def setup_dependencies() -> tuple[MessageConsumer, TransactionConsumer, FlowEventConsumer, OutboxConsumer]:
     """Setup deps"""
-    get_cached_policy(force_reload=True)
+    policy = get_cached_policy(force_reload=True)
+    validate_policy_coverage(policy)
     refresh_planner_system_prompt()
 
     whatsapp_client = WhatsAppClient()

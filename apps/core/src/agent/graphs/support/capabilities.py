@@ -1,7 +1,4 @@
-"""Support graph capability definitions.
-
-Defines what actions Support can take and their alternatives.
-"""
+"""Support graph capability definitions."""
 
 from enum import Enum
 
@@ -21,20 +18,6 @@ class SupportAction(str, Enum):
     ESCALATE = "escalate"
 
 
-SUPPORTED_ACTIONS: list[SupportAction] = [
-    SupportAction.LOOKUP_TRANSACTION,
-    SupportAction.EXPLAIN_STATUS,
-    SupportAction.COLLECT_DETAILS,
-    SupportAction.CREATE_TICKET,
-    SupportAction.ESCALATE,
-]
-
-UNAVAILABLE_ACTIONS: list[SupportAction] = [
-    SupportAction.RETRY_PAYOUT,
-    SupportAction.INITIATE_REFUND,
-    SupportAction.QUEUE_REFUND_REQUEST,
-]
-
 SUPPORT_LIMITS = {
     "max_escalation_attempts": 3,
     "max_tx_lookback_days": 90,
@@ -52,23 +35,15 @@ ACTION_LABELS: dict[SupportAction, str] = {
     SupportAction.ESCALATE: "escalate to human support",
 }
 
-ACTION_ALTERNATIVES: dict[SupportAction, SupportAction] = {
-    SupportAction.RETRY_PAYOUT: SupportAction.CREATE_TICKET,
-    SupportAction.INITIATE_REFUND: SupportAction.CREATE_TICKET,
-    SupportAction.QUEUE_REFUND_REQUEST: SupportAction.CREATE_TICKET,
-}
-
-
 def check_actions(requested: list[SupportAction]) -> list[SupportAction]:
-    """Check which requested actions are not supported."""
+    """Check which requested actions are not supported.
+
+    Policy is authoritative: if an action has no rule, treat it as unsupported.
+    """
     missing: list[SupportAction] = []
     for action in requested:
         policy_rule = resolve_capability_rule(domain="support", action=action.value)
-        if policy_rule is not None:
-            if not policy_rule.supported:
-                missing.append(action)
-            continue
-        if action not in SUPPORTED_ACTIONS:
+        if policy_rule is None or not policy_rule.supported:
             missing.append(action)
     return missing
 
@@ -81,7 +56,7 @@ def get_alternative(action: SupportAction) -> SupportAction | None:
             return SupportAction(policy_alternative)
         except ValueError:
             return None
-    return ACTION_ALTERNATIVES.get(action)
+    return None
 
 
 def generate_limitation_message(missing: list[SupportAction]) -> str:
@@ -95,18 +70,6 @@ def generate_limitation_message(missing: list[SupportAction]) -> str:
 
     alt = get_alternative(action)
     label = ACTION_LABELS.get(action, action.value)
-
-    if action == SupportAction.RETRY_PAYOUT:
-        return (
-            f"I can't *{label}* automatically right now.\n\n"
-            "I can create a support ticket for the team to retry it. Want me to do that?"
-        )
-
-    if action == SupportAction.INITIATE_REFUND:
-        return (
-            f"I can't *{label}* instantly, but I can submit a refund request.\n\n"
-            "The team will process it within 24-48 hours. Want me to submit it?"
-        )
 
     if alt:
         alt_label = ACTION_LABELS.get(alt, alt.value)

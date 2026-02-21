@@ -40,7 +40,11 @@ async def finalize(state: OrchestratorState, config: RunnableConfig) -> dict:
         )
 
     for task in failed_tasks:
-        outbox.append({"type": "say", "text": f"Failed: {task.payload.get('error')}"})
+        if task.payload.get("capability_blocked"):
+            message = task.payload.get("error") or "That action isn't available yet."
+            outbox.append({"type": "say", "text": message})
+        else:
+            outbox.append({"type": "say", "text": f"Failed: {task.payload.get('error')}"})
 
     for _ in cancelled_tasks:
         outbox.append({"type": "say", "text": "Transaction cancelled, how else can I help you today?"})
