@@ -3,6 +3,7 @@ from typing import Any
 
 from apps.core.src.agent.graphs.data.models.types import DataContext, DataGates, DataPayload
 from apps.core.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
+from shared.i18n import render_message
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -31,6 +32,7 @@ class DataPipeline:
         """Run the pipeline steps sequentially."""
 
         current_payload = payload
+        locale = context.language
 
         for step in self.steps:
             try:
@@ -41,8 +43,10 @@ class DataPipeline:
                     return result
 
                 # If step returns None, it means "continue to next step"
-                # Typically step modifies payload in place or returns nothing if pure side-effect/validation pass
-                # But our standard V3 worker pattern often implies payload updates via reference or discrete patch return.
+                # Typically step modifies payload in place or returns nothing
+                # if pure side-effect/validation pass.
+                # But our standard V3 worker pattern often implies payload
+                # updates via reference or discrete patch return.
                 # Here we assume steps modify payload if needed or we'd need a different contract.
                 # However, looking at TransferPipeline, steps usually return TransactionResult if they need to stop.
 
@@ -50,11 +54,11 @@ class DataPipeline:
                 logger.error(f"step_{step.__class__.__name__}_failed", error=str(e), exc_info=True)
                 return TransactionResult(
                     outcome=TransactionOutcome.FAILED,
-                    error="System error during transaction processing.",
+                    error=render_message("data.error.system_processing", locale),
                 )
 
         # Fallback if no step halts (shouldn't happen for complete flow)
         return TransactionResult(
             outcome=TransactionOutcome.FAILED,
-            error="Pipeline completed without definitive result.",
+            error=render_message("data.error.pipeline_no_result", locale),
         )

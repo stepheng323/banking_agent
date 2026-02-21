@@ -5,6 +5,7 @@ from typing import Any
 from apps.core.src.agent.orchestrator.config import OrchestratorDependencies
 from apps.core.src.agent.orchestrator.graph.handler import OrchestratorGraphHandler
 from apps.core.src.agent.orchestrator.models.message_context import MessageContext
+from shared.i18n import LocaleManager, render_message
 from shared.services import OrchestratorContextManager, OrchestratorTaskPlanner
 from shared.utils.async_helpers import create_background_task
 
@@ -56,9 +57,10 @@ class OrchestratorAgent:
     ) -> dict[str, Any]:
         """Invoke the orchestrator with a user message."""
         self.message_type = message_type
+        fallback_locale = (await LocaleManager.get_effective_locale(phone_number)).value
 
         if self.message_type == "audio" and media_id:
-            raw_text = await self.deps.media_service.process_audio(media_id)
+            raw_text = await self.deps.media_service.process_audio(media_id, locale=fallback_locale)
             if raw_text:
                 text = raw_text
 
@@ -76,9 +78,11 @@ class OrchestratorAgent:
         )
 
         result = await self.orchestrator_handler.invoke(context)
-        final_response = result.get("text") or "I'm sorry, I'm having trouble processing that right now."
+        result_locale = LocaleManager.normalize(result.get("locale") or fallback_locale).value
+        final_response = result.get("text") or render_message("orchestrator.fallback.processing_error", result_locale)
         if not result.get("text"):
-             result["text"] = final_response
+            result["text"] = final_response
+        result["locale"] = result_locale
 
         create_background_task(self.context_manager.add_conversation_turn(phone_number, "user", text))
         create_background_task(self.context_manager.add_conversation_turn(phone_number, "assistant", final_response))

@@ -1,7 +1,9 @@
 """Tests for Soul policy loading and adapters."""
 
 import json
+from pathlib import Path
 from types import SimpleNamespace
+from typing import Any
 
 import pytest
 
@@ -15,35 +17,38 @@ from apps.core.src.agent.orchestrator.nodes.planner import _build_policy_notice
 from shared.policy import (
     build_planner_policy_block,
     get_cached_policy,
+    load_policy,
     load_soul_policy,
     resolve_capability_message,
     resolve_capability_rule,
     validate_policy_coverage,
 )
 
+POLICY_PATH = "config/soul_policy.json"
+
 
 class _DummyLLM:
     """Minimal stub for AccountWorker tests."""
 
-    def with_structured_output(self, _schema):
+    def with_structured_output(self, _schema: Any) -> Any:
         raise NotImplementedError
 
 
 class _DummyRepo:
     """Minimal stub for worker constructor."""
 
-    async def get_by_user(self, _user_id):
+    async def get_by_user(self, _user_id: str) -> list[Any]:
         return []
 
 
 class _DummyBankingProvider:
     """Minimal stub for worker constructor."""
 
-    async def get_balance(self, _account_id):
+    async def get_balance(self, _account_id: str) -> None:
         return None
 
 
-async def test_account_action_level_capability_gate():
+async def test_account_action_level_capability_gate() -> None:
     """Unsupported action in payload should be blocked deterministically."""
     worker = AccountWorker(
         account_repo=_DummyRepo(),
@@ -62,45 +67,58 @@ async def test_account_action_level_capability_gate():
 
     assert result.outcome == AccountOutcome.OK
     assert result.response is not None
-    assert "close bank accounts" in result.response.lower()
+    assert "isn't available yet" in result.response.lower()
+    assert "unlink account" in result.response.lower()
 
 
-def test_policy_loads_from_soul_md():
-    """soul.md should load into a validated policy model."""
-    policy = load_soul_policy("soul.md")
+def test_policy_loads_from_json_file() -> None:
+    """Canonical JSON policy should load into a validated policy model."""
+    policy = load_policy(POLICY_PATH)
     assert policy.identity.name == "Fusepay"
     assert "Send money" in policy.supported_domains
     validate_policy_coverage(policy)
 
 
-def test_policy_raises_when_file_missing():
+def test_policy_raises_when_file_missing() -> None:
     """Missing file should raise in strict single-source mode."""
     with pytest.raises(Exception):
-        get_cached_policy(path="missing-soul.md", force_reload=True)
+        get_cached_policy(path="missing-policy.json", force_reload=True)
 
     # Reset cache back to real policy for subsequent tests.
-    get_cached_policy(path="soul.md", force_reload=True)
+    get_cached_policy(path=POLICY_PATH, force_reload=True)
 
 
-def test_policy_raises_when_json_block_missing(tmp_path):
-    """Malformed policy document should raise."""
-    bad_policy_path = tmp_path / "bad_soul.md"
-    bad_policy_path.write_text("# bad policy", encoding="utf-8")
+def test_policy_raises_when_json_invalid(tmp_path: Path) -> None:
+    """Malformed JSON policy should raise."""
+    bad_policy_path = tmp_path / "bad_policy.json"
+    bad_policy_path.write_text("{not valid json", encoding="utf-8")
 
     with pytest.raises(Exception):
-        load_soul_policy(str(bad_policy_path))
+        load_policy(str(bad_policy_path))
 
 
-def test_planner_policy_block_contains_guardrails():
+def test_policy_loader_does_not_parse_markdown_legacy_format(tmp_path: Path) -> None:
+    """Loader should not accept embedded-json markdown documents."""
+    legacy_path = tmp_path / "legacy_soul.md"
+    legacy_path.write_text(
+        "<!-- SOUL_POLICY_JSON_START -->\n```json\n{}\n```\n<!-- SOUL_POLICY_JSON_END -->\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(Exception):
+        load_soul_policy(str(legacy_path))
+
+
+def test_planner_policy_block_contains_guardrails() -> None:
     """Planner policy block should expose key policy constraints."""
-    policy = get_cached_policy(path="soul.md", force_reload=True)
+    policy = get_cached_policy(path=POLICY_PATH, force_reload=True)
     block = build_planner_policy_block(policy)
     assert "SOUL POLICY" in block
     assert "Supported domains" in block
     assert "Unsupported capabilities" in block
 
 
-def test_capability_resolution_uses_policy_matrix():
+def test_capability_resolution_uses_policy_matrix() -> None:
     """Capability lookups should resolve from policy matrix."""
     message = resolve_capability_message(domain="support", action="retry_payout")
     rule = resolve_capability_rule(domain="account", action="close_account")
@@ -111,7 +129,7 @@ def test_capability_resolution_uses_policy_matrix():
     assert rule.supported is False
 
 
-def test_policy_notice_acknowledges_supported_and_unsupported_mix():
+def test_policy_notice_acknowledges_supported_and_unsupported_mix() -> None:
     """Mixed request should acknowledge both supported and unsupported parts."""
     planner_output = SimpleNamespace(tasks=[SimpleNamespace(executor="transfer")])
     notice = _build_policy_notice("send 10k to tolu and invest 10k", planner_output)
@@ -122,19 +140,14 @@ def test_policy_notice_acknowledges_supported_and_unsupported_mix():
     assert "send money or review recent transactions" in notice
 
 
-def test_policy_detection_uses_runtime_policy_rules(tmp_path):
-    """Detection behavior should follow soul policy edits without code changes."""
-    raw = load_soul_policy("soul.md").model_dump()
+def test_policy_detection_uses_runtime_policy_rules(tmp_path: Path) -> None:
+    """Detection behavior should follow policy JSON edits without code changes."""
+    raw = load_policy(POLICY_PATH).model_dump()
     raw["unsupported_detection"]["Investments"] = ["portfolio"]
 
-    test_path = tmp_path / "soul_custom.md"
+    test_path = tmp_path / "soul_custom.json"
     json_payload = json.dumps(raw, ensure_ascii=True, indent=2)
-    test_path.write_text(
-        "<!-- SOUL_POLICY_JSON_START -->\n```json\n"
-        f"{json_payload}\n"
-        "```\n<!-- SOUL_POLICY_JSON_END -->\n",
-        encoding="utf-8",
-    )
+    test_path.write_text(json_payload, encoding="utf-8")
 
     get_cached_policy(path=str(test_path), force_reload=True)
     planner_output = SimpleNamespace(tasks=[SimpleNamespace(executor="transfer")])
@@ -144,12 +157,12 @@ def test_policy_detection_uses_runtime_policy_rules(tmp_path):
     assert "Investments" in notice
 
     # Restore cache to default project policy.
-    get_cached_policy(path="soul.md", force_reload=True)
+    get_cached_policy(path=POLICY_PATH, force_reload=True)
 
 
-def test_policy_validation_raises_when_required_action_missing():
+def test_policy_validation_raises_when_required_action_missing() -> None:
     """Required account/support actions must exist in policy matrix."""
-    base = load_soul_policy("soul.md")
+    base = load_policy(POLICY_PATH)
     raw = base.model_dump()
     del raw["capability_matrix"]["support"]["actions"]["create_ticket"]
     policy = base.__class__.model_validate(raw)
@@ -158,7 +171,7 @@ def test_policy_validation_raises_when_required_action_missing():
         validate_policy_coverage(policy)
 
 
-def test_query_capability_checks_use_policy_rules():
+def test_query_capability_checks_use_policy_rules() -> None:
     """Query capability checks should be policy-backed."""
     missing = query_capabilities.check_capabilities(
         [query_capabilities.QueryCapability.TIME_ALL, query_capabilities.QueryCapability.FILTER_RECIPIENT]
@@ -167,15 +180,16 @@ def test_query_capability_checks_use_policy_rules():
     assert query_capabilities.QueryCapability.FILTER_RECIPIENT not in missing
 
 
-def test_query_limitation_message_prefers_policy_text():
+def test_query_limitation_message_prefers_policy_text() -> None:
     """Query limitation messaging should resolve from policy first."""
     message = query_capabilities.generate_limitation_message(
         [query_capabilities.QueryCapability.SEARCH_NARRATION_FUZZY]
     )
-    assert "exact keywords" in message.lower()
+    assert "isn't available yet" in message.lower()
+    assert "keyword search" in message.lower()
 
 
-async def test_transfer_worker_blocks_unsupported_action_from_policy():
+async def test_transfer_worker_blocks_unsupported_action_from_policy() -> None:
     """Transfer worker should fail fast on unsupported policy action."""
     worker = TransferWorker(
         validation_service=None,
@@ -193,10 +207,11 @@ async def test_transfer_worker_blocks_unsupported_action_from_policy():
 
     assert result.outcome == TransactionOutcome.FAILED
     assert result.error is not None
-    assert "scheduled transfers" in result.error.lower()
+    assert "isn't available yet" in result.error.lower()
+    assert "send money" in result.error.lower()
 
 
-async def test_airtime_worker_blocks_unknown_action_from_policy():
+async def test_airtime_worker_blocks_unknown_action_from_policy() -> None:
     """Airtime worker should block actions not allowed by policy."""
     worker = AirtimeWorker(
         extractor=None,
@@ -215,7 +230,7 @@ async def test_airtime_worker_blocks_unknown_action_from_policy():
     assert "isn't available yet" in result.error.lower()
 
 
-async def test_data_worker_blocks_unknown_action_from_policy():
+async def test_data_worker_blocks_unknown_action_from_policy() -> None:
     """Data worker should block actions not allowed by policy."""
     worker = DataWorker(
         extractor=None,
@@ -232,3 +247,18 @@ async def test_data_worker_blocks_unknown_action_from_policy():
     assert result.outcome == TransactionOutcome.FAILED
     assert result.error is not None
     assert "isn't available yet" in result.error.lower()
+
+
+def test_policy_file_exists_and_parses() -> None:
+    """CI guardrail: canonical policy file must exist and parse."""
+    policy_file = Path(POLICY_PATH)
+    assert policy_file.exists(), f"Missing canonical policy file: {POLICY_PATH}"
+    payload = json.loads(policy_file.read_text(encoding="utf-8"))
+    assert isinstance(payload, dict)
+
+
+def test_soul_markdown_has_no_legacy_policy_markers() -> None:
+    """CI guardrail: soul.md should not embed runtime policy JSON."""
+    soul_text = Path("soul.md").read_text(encoding="utf-8")
+    assert "SOUL_POLICY_JSON_START" not in soul_text
+    assert "SOUL_POLICY_JSON_END" not in soul_text

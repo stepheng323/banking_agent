@@ -1,7 +1,7 @@
 """Confidence gate node - check if retrieval quality is sufficient."""
 
-from apps.core.src.agent.graphs.faq.prompts import UNCERTAINTY_RESPONSE
 from apps.core.src.agent.graphs.faq.state import FAQState
+from shared.i18n import LocaleManager, render_message
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -19,13 +19,14 @@ def confidence_gate_node(state: FAQState) -> FAQState:
     """
     confidence = state.get("retrieval_confidence", 0.0)
     retrieved = state.get("retrieved_entries", [])
+    locale = LocaleManager.normalize(state.get("language")).value
 
     # No results at all
     if not retrieved:
         logger.info("No FAQ entries retrieved - returning uncertainty response")
         return {
             **state,
-            "response": UNCERTAINTY_RESPONSE,
+            "response": render_message("faq.uncertainty_response", locale),
         }
 
     # Very low confidence
@@ -33,7 +34,7 @@ def confidence_gate_node(state: FAQState) -> FAQState:
         logger.info(f"Confidence too low ({confidence}) - returning uncertainty response")
         return {
             **state,
-            "response": UNCERTAINTY_RESPONSE,
+            "response": render_message("faq.uncertainty_response", locale),
         }
 
     # Confidence is acceptable - continue to synthesis

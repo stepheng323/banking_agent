@@ -67,28 +67,6 @@ async def handle_pending_interrupt(state: OrchestratorState, config: RunnableCon
                 if planner_output.tasks and new_task_types != current_task_types:
                     should_replan = True
 
-                    # [Guard] if we are in a Transfer flow, be very skeptical of switching to
-                    # 'account', 'beneficiary', or 'query' unless explicit cancellation.
-                    if "transfer" in current_task_types:
-                        suspicious = any(
-                            t.executor in ("account", "beneficiary", "query") for t in planner_output.tasks
-                        )
-                        if suspicious and not getattr(planner_output, "is_cancellation", False):
-                            logger.warning(
-                                "blocking_context_switch",
-                                reason="active_transfer_protected",
-                                attempted_types=sorted(new_task_types),
-                                input_text=text,
-                            )
-                            should_replan = False
-
-                        # [Stability] Sticky Transfer: If Transfer -> Transfer, prefer Update (Extraction) over Replan.
-                        # This prevents data entry (e.g. "Opay") from incorrectly being seen as a new single task,
-                        # which would wipe out other parallel tasks (e.g. Tolu).
-                        elif "transfer" in new_task_types and not getattr(planner_output, "is_cancellation", False):
-                            logger.info("enforcing_sticky_transfer", reason="prevent_replan_wipe")
-                            should_replan = False
-
                 if should_replan:
                     new_tasks = {}
                     wave_tasks: list[str] = []
@@ -109,6 +87,11 @@ async def handle_pending_interrupt(state: OrchestratorState, config: RunnableCon
                         new_tasks[spec.id] = spec
                         wave_tasks.append(spec.id)
 
+                    logger.info(
+                        "interrupt_replan_switched",
+                        from_types=sorted(current_task_types),
+                        to_types=sorted(new_task_types),
+                    )
                     logger.info("input_interrupt_replanned", from_types=sorted(current_task_types))
                     return {
                         "pending_interrupt": None,
@@ -193,7 +176,7 @@ async def handle_pending_interrupt(state: OrchestratorState, config: RunnableCon
             logger.info("confirmation_intent_switch", old=active_type, new=planner_output.primary_intent)
             # Replan Logic (similar to input interrupt)
             new_tasks_map = {}
-            wave_tasks: list[str] = []
+            replanned_wave_tasks: list[str] = []
 
             # Stash current session
             stashed = _stash_current_session(state, interrupt=interrupt, intent=active_type)
@@ -208,13 +191,13 @@ async def handle_pending_interrupt(state: OrchestratorState, config: RunnableCon
                     format_narration_requires_recipient_field=True,
                 )
                 new_tasks_map[spec.id] = spec
-                wave_tasks.append(spec.id)
+                replanned_wave_tasks.append(spec.id)
 
             return {
                 "pending_interrupt": None,
                 "last_interrupt": interrupt,
                 "tasks": new_tasks_map,
-                "waves": [wave_tasks],
+                "waves": [replanned_wave_tasks],
                 "current_wave_index": 0,
                 "planner_output": planner_output,
                 "stashed_sessions": stashed,

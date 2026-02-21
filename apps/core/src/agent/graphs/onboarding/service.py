@@ -1,6 +1,7 @@
 from apps.core.src.agent.orchestrator.models.intents import ShowFlow
 from apps.core.src.messaging.outbox import enqueue_outbox_intents
 from shared.config import settings
+from shared.i18n import render_message
 from shared.queue.redis_queue import RedisQueue
 from shared.utils.logging import get_logger
 
@@ -11,21 +12,23 @@ class OnboardingService:
     def __init__(self, queue: RedisQueue):
         self.queue = queue
 
-    async def send_onboarding_flow(self, phone_number: str, channel: str = "whatsapp") -> None:
+    async def send_onboarding_flow(self, phone_number: str, channel: str = "whatsapp", locale: str = "en") -> None:
         """Send the onboarding flow to the user."""
         try:
-            fallback_text = (
-                "Welcome to Fusepay! To complete your onboarding, please visit our secure portal: "
-                "https://fusepay.io/onboard\n\n(Interactive onboarding is not supported on this channel)"
+            onboarding_url = "https://fusepay.io/onboard"
+            fallback_text = render_message(
+                "onboarding.fallback_text",
+                locale,
+                {"onboarding_url": onboarding_url},
             )
             intent = ShowFlow(
                 flow_id=settings.onboarding_flow_id,
                 flow_config={
-                    "flow_cta": "Start Onboarding",
+                    "flow_cta": render_message("onboarding.flow.cta", locale),
                     "screen_name": "BVN_ENTRY",
-                    "header": "Welcome to Fusepay",
+                    "header": render_message("onboarding.flow.header", locale),
                     "flow_token": f"onboarding-flow-{phone_number}",
-                    "text_body": "Hi, I'm Fusepay an AI banking assistant that can help you with your banking needs. To get started, please complete the onboarding form below.",
+                    "text_body": render_message("onboarding.flow.body", locale),
                 },
                 fallback_text=fallback_text,
             )

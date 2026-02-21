@@ -2,10 +2,11 @@
 
 from dataclasses import asdict, is_dataclass
 from datetime import date, datetime
-from typing import Any
+from typing import Any, cast
 
 from apps.core.src.agent.graphs.query.models import Filters, NormalizedQuery, match_category
 from shared.clients.abstractions.banking import BankingDataProvider
+from shared.i18n import render_message
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -21,10 +22,10 @@ def parse_date(date_str: str) -> date:
         return date.today()
 
 
-def extract_counterparty(narration: str) -> str:
+def extract_counterparty(narration: str, locale: str = "en") -> str:
     """Extract counterparty name from narration."""
     if not narration:
-        return "Unknown"
+        return render_message("query.fetch.counterparty.unknown", locale)
 
     narration = narration.strip().upper()
 
@@ -34,18 +35,30 @@ def extract_counterparty(narration: str) -> str:
             if direction in narration:
                 idx = narration.index(direction) + len(direction)
                 name = narration[idx:].strip()
-                return name.title()[:25] if name else "Bank Transfer"
-        return "Bank Transfer"
+                return (
+                    name.title()[:25]
+                    if name
+                    else render_message("query.fetch.counterparty.bank_transfer", locale)
+                )
+        return render_message("query.fetch.counterparty.bank_transfer", locale)
 
     for prefix in ("TRANSFER TO ", "TRANSFER FROM ", "PAYMENT TO ", "FROM ", "TO "):
         if narration.startswith(prefix):
             name = narration[len(prefix) :].strip()
             parts = name.split(" - ")
-            return parts[0].title()[:25] if parts[0] else "Transfer"
+            return (
+                parts[0].title()[:25]
+                if parts[0]
+                else render_message("query.fetch.counterparty.transfer", locale)
+            )
 
     if narration.startswith("POS PURCHASE"):
         merchant = narration[14:].strip(" -")
-        return merchant.title()[:25] if merchant else "POS Purchase"
+        return (
+            merchant.title()[:25]
+            if merchant
+            else render_message("query.fetch.counterparty.pos_purchase", locale)
+        )
 
     known = {
         "UBER": "Uber",
@@ -63,22 +76,22 @@ def extract_counterparty(narration: str) -> str:
             return name
 
     if any(x in narration for x in ("CHARGE", "FEE", "STAMP DUTY", "VAT", "SMS ALERT")):
-        return "Bank Charges"
+        return render_message("query.fetch.counterparty.bank_charges", locale)
 
     if "AIRTIME" in narration:
-        return "Airtime"
+        return render_message("query.fetch.counterparty.airtime", locale)
 
     if "ATM" in narration:
-        return "ATM Withdrawal"
+        return render_message("query.fetch.counterparty.atm_withdrawal", locale)
 
     parts = narration.split(" - ")
     result = parts[0].strip().title()
     if len(result) > 25:
         result = result[:22] + "..."
-    return result if result else "Unknown"
+    return result if result else render_message("query.fetch.counterparty.unknown", locale)
 
 
-def apply_filters(transactions: list[dict], filters: Filters) -> list[dict]:
+def apply_filters(transactions: list[dict[str, Any]], filters: Filters) -> list[dict[str, Any]]:
     """Apply filters to transaction list."""
     result = transactions
 
@@ -114,6 +127,7 @@ async def fetch_and_filter(
     account_ids: list[str],
     accounts_info: list[dict] | None = None,
     user_id: str | None = None,
+    language: str = "en",
 ) -> list[dict]:
     """Fetch transactions and apply filters."""
     if query.time_range:
@@ -134,18 +148,18 @@ async def fetch_and_filter(
             if acc_id and bank_name:
                 bank_map[acc_id] = bank_name
 
-    def to_dict(t: Any) -> dict:
+    def to_dict(t: Any) -> dict[str, Any]:
         if hasattr(t, "model_dump"):
-            return t.model_dump()
+            return cast(dict[str, Any], t.model_dump())
         elif is_dataclass(t) and not isinstance(t, type):
             d = asdict(t)
             if "transaction_id" in d:
                 d["id"] = d.pop("transaction_id")
             if "transaction_type" in d:
                 d["type"] = d.pop("transaction_type")
-            return d
+            return cast(dict[str, Any], d)
         elif isinstance(t, dict):
-            return t
+            return cast(dict[str, Any], t)
         return {"raw": str(t)}
 
     if query.accounts_scope == "all" and len(account_ids) > 1:
@@ -171,6 +185,7 @@ async def fetch_and_filter(
                     local_txns = await uow.transactions.get_by_user(user_id, limit=20)
                     for l_txn in local_txns:
                         raw_date = l_txn.created_at
+                        recipient_name = l_txn.recipient_name or render_message("query.common.transaction", language)
                         txn_dict = {
                             "id": str(l_txn.id),
                             "type": "debit"
@@ -178,11 +193,17 @@ async def fetch_and_filter(
                             else "credit",
                             "transaction_type": l_txn.transaction_type,
                             "amount": l_txn.amount,
-                            "narration": l_txn.narration or f"Transfer to {l_txn.recipient_name}",
+                            "narration": l_txn.narration
+                            or render_message(
+                                "query.fetch.local.transfer_to",
+                                language,
+                                {"recipient": recipient_name},
+                            ),
                             "date": raw_date.isoformat(),
                             "currency": l_txn.currency,
                             "status": l_txn.status,
-                            "bank_name": l_txn.source_bank_name or "Wallet",
+                            "bank_name": l_txn.source_bank_name
+                            or render_message("query.fetch.local.wallet", language),
                         }
 
                         is_duplicate = False

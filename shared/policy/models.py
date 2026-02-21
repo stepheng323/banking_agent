@@ -35,7 +35,7 @@ class DomainCapabilityPolicy(BaseModel):
 
 
 class SoulPolicy(BaseModel):
-    """Top-level policy model loaded from soul.md."""
+    """Top-level policy model loaded from JSON policy file."""
 
     version: str = "1.0.0"
     last_updated: str | None = None

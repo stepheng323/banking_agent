@@ -1,6 +1,6 @@
 """Models for task planning and normalization."""
 
-from typing import Literal
+from typing import Literal, TypeAlias
 
 from pydantic import BaseModel, Field
 
@@ -53,6 +53,40 @@ class PlannedTask(BaseModel):
     idempotency_key: str | None = None  # Set by engine
 
 
+PlannerResponseKey: TypeAlias = Literal[
+    "conversational.greeting",
+    "conversational.appreciation",
+    "conversational.checkin",
+    "conversational.identity",
+    "conversational.brand_origin",
+    "conversational.capability_question",
+    "conversational.out_of_scope",
+    "conversational.clarify",
+    "planner.cancelled",
+]
+
+
+InterruptRoutingDecision: TypeAlias = Literal["continue_flow", "switch_intent", "cancel", "unclear"]
+
+
+class InterruptRouteDecision(BaseModel):
+    """LLM decision for pending-input routing while a session is active."""
+
+    decision: InterruptRoutingDecision = Field(
+        description="Routing decision for pending-input turn",
+    )
+    confidence: float = Field(default=0.0, description="Confidence in routing decision (0.0-1.0)")
+    detected_language: str | None = Field(
+        default=None,
+        description="Detected language for the turn",
+    )
+    target_intent: str | None = Field(
+        default=None,
+        description="Intent to switch to when decision=switch_intent",
+    )
+    reason: str | None = Field(default=None, description="Short explanation for observability/debugging")
+
+
 class PlannerOutput(BaseModel):
     """Structured output returned by the planner LLM.
 
@@ -61,9 +95,16 @@ class PlannerOutput(BaseModel):
 
     # Classification fields
     primary_intent: str = Field(
-        description="Primary intent: transfer, airtime, data, query, account, support, faq, conversational, cancel, mixed"
+        description=(
+            "Primary intent: transfer, airtime, data, query, account, support, "
+            "faq, conversational, cancel, mixed"
+        )
     )
-    response: str = Field(default="", description="Short acknowledgment message for the user")
+    response: str = Field(default="", description="Transitional acknowledgment text for non-keyed cases")
+    response_key: PlannerResponseKey | None = Field(
+        default=None,
+        description="Deterministic keyed response for conversational/cancel paths",
+    )
     confidence: float = Field(default=0.9, description="Confidence in classification (0.0-1.0)")
     is_complex: bool = Field(
         default=False, description="True if multiple recipients, mixed intents, or complex request"

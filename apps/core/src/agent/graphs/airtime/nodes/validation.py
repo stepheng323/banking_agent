@@ -9,6 +9,7 @@ from apps.core.src.agent.graphs.airtime.models.types import (
 )
 from apps.core.src.agent.graphs.airtime.pipeline.base import AirtimeStep
 from apps.core.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
+from shared.i18n import render_message
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -24,6 +25,7 @@ class ValidationStep(AirtimeStep):
         gates: AirtimeGates,
         worker_context: Any,
     ) -> TransactionResult:
+        locale = context.language
         missing = []
         logger.info("Validating airtime data", data=data)
 
@@ -37,28 +39,32 @@ class ValidationStep(AirtimeStep):
             return TransactionResult(
                 outcome=TransactionOutcome.NEEDS_INPUT,
                 required_fields=["amount", "recipient_phone"] if len(missing) > 1 else [missing[0].replace(" ", "_")],
-                prompt=f"Please provide the {' and '.join(missing)}.",
+                prompt=render_message("airtime.validation.missing_fields", locale, {"missing": " and ".join(missing)}),
             )
 
         if data.amount <= 0:
             return TransactionResult(
                 outcome=TransactionOutcome.NEEDS_INPUT,
                 required_fields=["amount"],
-                prompt="The amount must be greater than zero.",
+                prompt=render_message("airtime.validation.amount_gt_zero", locale),
             )
 
         if data.amount > 50000:
             return TransactionResult(
                 outcome=TransactionOutcome.NEEDS_INPUT,
                 required_fields=["amount"],
-                prompt="The maximum airtime purchase is ₦50,000. Please enter a lower amount.",
+                prompt=render_message("airtime.validation.max_amount", locale),
             )
 
         if not data.network:
             return TransactionResult(
                 outcome=TransactionOutcome.NEEDS_INPUT,
                 required_fields=["recipient_phone"],
-                prompt=f"I couldn't identify the network for {data.recipient_phone}. Please check the number.",
+                prompt=render_message(
+                    "airtime.validation.network_not_identified",
+                    locale,
+                    {"recipient_phone": data.recipient_phone or ""},
+                ),
             )
 
         return TransactionResult(outcome=TransactionOutcome.OK)

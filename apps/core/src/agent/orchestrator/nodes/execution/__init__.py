@@ -29,6 +29,7 @@ from shared.formatters.prompts import (
     format_source_repair_prompt,
 )
 from shared.formatters.transaction_summary import format_batch_transfer_summary, format_intent_line
+from shared.i18n import render_message
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -74,6 +75,7 @@ async def advance_wave(state: OrchestratorState, config: RunnableConfig) -> dict
         current_wave_len=len(current_wave),
         agg=agg,
     )
+    locale = (state.loaded_context or {}).get("language", "en")
 
     handlers = {
         "transfer": handle_transfer_task,
@@ -151,19 +153,45 @@ async def advance_wave(state: OrchestratorState, config: RunnableConfig) -> dict
                 amounts.append(amt)
                 if task.payload.get("recipient_ui_confirmed"):
                     continue
-                label = task.payload.get("recipient_name") or task.payload.get("recipient_resolved_name") or "recipient"
+                label = (
+                    task.payload.get("recipient_name")
+                    or task.payload.get("recipient_resolved_name")
+                    or render_message("orchestrator.finalize.recipient_fallback", locale)
+                )
                 resolved = task.payload.get("recipient_resolved_name") or task.payload.get("recipient_name") or ""
                 bank = task.payload.get("recipient_bank_name")
                 acc = task.payload.get("recipient_account")
                 if bank and acc and resolved:
-                    lines.append(f"✅ {label} resolved: {resolved} ({bank} • {acc})")
+                    lines.append(
+                        render_message(
+                            "orchestrator.execution.recipient_resolved_with_bank",
+                            locale,
+                            {"label": label, "resolved": resolved, "bank": bank, "account": acc},
+                        )
+                    )
                 elif resolved:
-                    lines.append(f"✅ {label} resolved: {resolved}")
+                    lines.append(
+                        render_message(
+                            "orchestrator.execution.recipient_resolved",
+                            locale,
+                            {"label": label, "resolved": resolved},
+                        )
+                    )
                 else:
-                    lines.append(f"✅ {label} resolved")
+                    lines.append(
+                        render_message(
+                            "orchestrator.execution.recipient_resolved_generic",
+                            locale,
+                            {"label": label},
+                        )
+                    )
 
             prompt_text = format_batch_transfer_source_prompt(
-                resolved_lines=lines, total_amount=total_amount, amounts=amounts, accounts=accounts
+                resolved_lines=lines,
+                total_amount=total_amount,
+                amounts=amounts,
+                accounts=accounts,
+                locale=locale,
             )
             for tid in transfer_tasks_only_source:
                 state.tasks[tid].payload["recipient_ui_confirmed"] = True
@@ -222,6 +250,7 @@ async def advance_wave(state: OrchestratorState, config: RunnableConfig) -> dict
                     just_resolved_name=just_resolved_name,
                     just_resolved_bank=just_resolved_bank,
                     found_names=found_names,
+                    locale=locale,
                 )
 
                 # Mark recipients we mentioned as announced (found_names + just_resolved)
@@ -280,13 +309,21 @@ async def advance_wave(state: OrchestratorState, config: RunnableConfig) -> dict
                     task = state.tasks.get(tid)
                     if not task or task.stage in (TaskStage.COMPLETED, TaskStage.FAILED, TaskStage.CANCELLED):
                         continue
-                    intents.append(format_intent_line(task.type, task.payload))
+                    intents.append(format_intent_line(task.type, task.payload, locale=locale))
 
                 accounts = state.loaded_context.get("accounts", [])
-                prompt_text = format_source_repair_prompt(intents=intents, failed_hint=repair_hint, accounts=accounts)
+                prompt_text = format_source_repair_prompt(
+                    intents=intents,
+                    failed_hint=repair_hint,
+                    accounts=accounts,
+                    locale=locale,
+                )
             else:
                 prompt_text = format_missing_details_prompt(
-                    found_names=found_names, missing_prompts=missing_prompts, feedback_messages=agg.feedback_messages
+                    found_names=found_names,
+                    missing_prompts=missing_prompts,
+                    feedback_messages=agg.feedback_messages,
+                    locale=locale,
                 )
 
             # Mark resolved tasks that were mentioned in the prompt
@@ -335,7 +372,11 @@ async def advance_wave(state: OrchestratorState, config: RunnableConfig) -> dict
                 acc = snap.get("sourceAccount") or snap.get("source_account")
                 if bank and acc:
                     last4 = str(acc)[-4:]
-                    source_account_info = f"From: {bank} (···{last4})"
+                    source_account_info = render_message(
+                        "orchestrator.execution.source_account_info",
+                        locale,
+                        {"bank": bank, "last4": last4},
+                    )
 
             if s := t_payload.get("summary"):
                 summaries.append(s)
@@ -352,6 +393,7 @@ async def advance_wave(state: OrchestratorState, config: RunnableConfig) -> dict
                 total_amount=total_amount,
                 source_account_info=source_account_info,
                 summaries=summaries,
+                locale=locale,
             )
         first_task_payload = state.tasks[agg.needs_confirm_tasks[0]].payload.get("confirmation", {})
         snap = first_task_payload.get("snapshot", {})
@@ -385,13 +427,16 @@ async def advance_wave(state: OrchestratorState, config: RunnableConfig) -> dict
 
     if agg.needs_auth_tasks:
         first_task = state.tasks[agg.needs_auth_tasks[0]]
-        summ = first_task.payload.get("confirmation", {}).get("summary", "Please enter your PIN.")
+        summ = first_task.payload.get("confirmation", {}).get(
+            "summary",
+            render_message("orchestrator.execution.pin_prompt_default", locale),
+        )
         snap = first_task.payload.get("confirmation", {}).get("snapshot", {})
 
         idem_key = first_task.payload.get("idempotency_key", "no-key")
 
         task_type = first_task.type
-        reason = format_auth_reason(task_type)
+        reason = format_auth_reason(task_type, locale=locale)
 
         interrupt = PendingInterrupt(kind="auth", task_ids=agg.needs_auth_tasks, auth_method="pin", prompt=summ)
         updates["outbox"] = [

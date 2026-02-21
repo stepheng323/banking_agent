@@ -6,6 +6,7 @@ from typing import Any, Generic, TypeVar
 from sqlalchemy.exc import IntegrityError
 
 from shared.cache.redis_client import Redis
+from shared.i18n import LocaleManager, render_message
 from shared.queue.redis_queue import RedisQueue
 from shared.repositories.unit_of_work import UnitOfWork
 from shared.services.auth import AuthorizationService
@@ -215,9 +216,10 @@ class AuthorizationBase(ABC, Generic[StateT]):
         """Handle authorization error."""
         from .responses import build_authorization_error_response
 
+        locale = LocaleManager.normalize(state.get("language")).value
         return await build_authorization_error_response(
             state,
-            "Failed to process authorization. Please try again.",
+            render_message("authorization.error.processing_failed", locale),
             self.get_error_intent(),
         )
 

@@ -34,6 +34,7 @@ class DataContext(BaseModel):
     """Context for Data Graph execution."""
 
     phone_number: str
+    language: str = "en"
     beneficiaries: list[dict[str, Any]] = Field(default_factory=list)
     accounts: list[dict[str, Any]] = Field(default_factory=list)
     user_id: str | None = None

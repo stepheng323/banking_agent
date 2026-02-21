@@ -10,6 +10,7 @@ from apps.core.src.agent.graphs.query.models import (
 )
 from apps.core.src.agent.graphs.query.services.fetch import fetch_and_filter, parse_date
 from shared.clients.abstractions.banking import BankingDataProvider
+from shared.i18n import render_message
 
 
 async def handle_transaction_list(
@@ -21,9 +22,18 @@ async def handle_transaction_list(
     current_page: int = 0,
     page_size: int = 5,
     user_id: str | None = None,
+    language: str = "en",
 ) -> QueryResult:
     """Handle transaction list queries."""
-    transactions = await fetch_and_filter(provider, query, account_id, account_ids, accounts_info, user_id=user_id)
+    transactions = await fetch_and_filter(
+        provider,
+        query,
+        account_id,
+        account_ids,
+        accounts_info,
+        user_id=user_id,
+        language=language,
+    )
 
     # Apply result_limit if specified (e.g., "last transaction" → 1)
     if query.result_limit:
@@ -35,7 +45,7 @@ async def handle_transaction_list(
     items = [
         QueryResultItem(
             id=t.get("id", "")[:8] if t.get("id") else str(i),
-            description=t.get("narration", "Transaction"),
+            description=t.get("narration", render_message("query.format.narration.transaction", language)),
             amount=abs(t.get("amount", 0)),  # Provider already returns Naira
             date=parse_date(t.get("date", "")),
             metadata={
@@ -101,6 +111,7 @@ async def handle_transaction_search(
     current_page: int = 0,
     page_size: int = 5,
     user_id: str | None = None,
+    language: str = "en",
 ) -> QueryResult:
     """Handle transaction search (same as list but with merchant filter)."""
     return await handle_transaction_list(
@@ -112,4 +123,5 @@ async def handle_transaction_search(
         current_page,
         page_size,
         user_id=user_id,
+        language=language,
     )

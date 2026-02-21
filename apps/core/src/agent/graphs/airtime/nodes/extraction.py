@@ -10,6 +10,7 @@ from apps.core.src.agent.graphs.airtime.models.types import (
 )
 from apps.core.src.agent.graphs.airtime.pipeline.base import AirtimeStep
 from apps.core.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
+from shared.i18n import render_message
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -28,6 +29,7 @@ class ExtractionStep(AirtimeStep):
         gates: AirtimeGates,
         worker_context: Any,
     ) -> TransactionResult:
+        locale = context.language
         if not self.user_message:
             return TransactionResult(outcome=TransactionOutcome.OK)
 
@@ -97,7 +99,11 @@ class ExtractionStep(AirtimeStep):
                     feature_name = unsupported[0].lower().replace("_", " ")
                     return TransactionResult(
                         outcome=TransactionOutcome.NEEDS_INPUT,
-                        prompt=f"Sorry, I can't do {feature_name} airtime transfers yet. I can only do instant transfers defined right now.",
+                        prompt=render_message(
+                            "airtime.extraction.unsupported_feature",
+                            locale,
+                            {"feature_name": feature_name},
+                        ),
                         details={"limitation": f"{unsupported[0]}_UNSUPPORTED"},
                     )
 

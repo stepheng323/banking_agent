@@ -95,7 +95,7 @@ def _should_escalate(context: SupportContext, intent: SupportIntent) -> tuple[Es
     return None, False
 
 
-def _build_negotiation(missing: list[SupportAction]) -> NegotiationResult:
+def _build_negotiation(missing: list[SupportAction], *, locale: str = "en") -> NegotiationResult:
     """Build structured negotiation result with alternatives."""
     alternatives = []
     for action in missing:
@@ -113,7 +113,7 @@ def _build_negotiation(missing: list[SupportAction]) -> NegotiationResult:
         missing_actions=missing,
         suggested_action=suggested,
         alternatives=alternatives,
-        message=generate_limitation_message(missing),
+        message=generate_limitation_message(missing, locale=locale),
     )
 
 
@@ -121,6 +121,7 @@ def resolve(
     extraction: SupportExtractionResult,
     context: SupportContext | None = None,
     has_quoted_message: bool = False,
+    language: str = "en",
 ) -> ResolverDecision:
     """Main micro-resolver entry point."""
     if context is None:
@@ -160,7 +161,7 @@ def resolve(
     missing = check_actions(requested)
 
     if missing:
-        negotiation = _build_negotiation(missing)
+        negotiation = _build_negotiation(missing, locale=language)
         next_step = (
             NextStep.CREATE_TICKET
             if negotiation.suggested_action == SupportAction.ESCALATE

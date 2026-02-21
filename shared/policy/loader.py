@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import json
-import re
 from pathlib import Path
+from typing import Any, cast
 
+from shared.config.settings import settings
 from shared.policy.models import SoulPolicy
 from shared.utils.logging import get_logger
 
@@ -13,39 +14,50 @@ logger = get_logger(__name__)
 
 _POLICY_CACHE: SoulPolicy | None = None
 
-_JSON_BLOCK_RE = re.compile(
-    r"<!--\s*SOUL_POLICY_JSON_START\s*-->\s*```json\s*(\{.*?\})\s*```\s*<!--\s*SOUL_POLICY_JSON_END\s*-->",
-    flags=re.DOTALL,
-)
+
+def _resolve_policy_path(path: str | None) -> str:
+    """Resolve effective policy path."""
+    return path or settings.soul_policy_path
 
 
-def _extract_payload(text: str) -> dict:
-    """Extract policy payload from soul.md content."""
-    match = _JSON_BLOCK_RE.search(text)
-    if not match:
-        raise ValueError("Missing SOUL_POLICY_JSON block in soul.md")
-    return json.loads(match.group(1))
-
-
-def load_soul_policy(path: str = "soul.md") -> SoulPolicy:
-    """Load and validate Soul policy from file."""
+def _load_json_payload(path: str) -> dict[str, Any]:
+    """Load and validate that policy payload is a JSON object."""
     raw = Path(path).read_text(encoding="utf-8")
-    payload = _extract_payload(raw)
-    return SoulPolicy.model_validate(payload)
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"Invalid JSON in policy file '{path}': {exc}") from exc
+
+    if not isinstance(payload, dict):
+        raise ValueError(f"Policy file '{path}' must contain a top-level JSON object.")
+    return payload
 
 
-def get_cached_policy(path: str = "soul.md", force_reload: bool = False) -> SoulPolicy:
-    """Get cached policy and fail fast when policy is invalid/missing."""
+def load_policy(path: str | None = None) -> SoulPolicy:
+    """Load and validate policy from canonical JSON file."""
+    effective_path = _resolve_policy_path(path)
+    payload = _load_json_payload(effective_path)
+    return cast(SoulPolicy, SoulPolicy.model_validate(payload))
+
+
+def load_soul_policy(path: str | None = None) -> SoulPolicy:
+    """Backward-compatible alias that loads JSON policy only."""
+    return load_policy(path=path)
+
+
+def get_cached_policy(path: str | None = None, force_reload: bool = False) -> SoulPolicy:
+    """Get cached policy and fail fast when policy JSON is invalid/missing."""
     global _POLICY_CACHE
+    effective_path = _resolve_policy_path(path)
 
     if _POLICY_CACHE is not None and not force_reload:
         return _POLICY_CACHE
 
     try:
-        _POLICY_CACHE = load_soul_policy(path=path)
-        logger.info("policy_loaded", path=path, version=_POLICY_CACHE.version)
+        _POLICY_CACHE = load_policy(path=effective_path)
+        logger.info("policy_loaded", path=effective_path, version=_POLICY_CACHE.version)
     except Exception as exc:
-        logger.error("policy_load_failed", path=path, error=str(exc))
+        logger.error("policy_load_failed", path=effective_path, error=str(exc))
         raise
 
     return _POLICY_CACHE

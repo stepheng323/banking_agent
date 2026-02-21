@@ -2,10 +2,11 @@
 
 from shared.formatters.accounts import format_accounts_list
 from shared.formatters.transaction_summary import format_amount
+from shared.i18n import MessageKey, render_message
 
 
 def format_batch_transfer_source_prompt(
-    resolved_lines: list[str], total_amount: float, amounts: list[float], accounts: list[dict]
+    resolved_lines: list[str], total_amount: float, amounts: list[float], accounts: list[dict], locale: str = "en"
 ) -> str:
     """Format the prompt for selecting a source account for a batch transfer."""
     prompt_parts = []
@@ -16,45 +17,82 @@ def format_batch_transfer_source_prompt(
     if total_amount > 0:
         if len(set(amounts)) == 1 and amounts:
             prompt_parts.append(
-                f"You're sending {format_amount(amounts[0])} each (total {format_amount(total_amount)})."
+                render_message(
+                    "orchestrator.execution.batch_each_total",
+                    locale,
+                    {"amount_each": format_amount(amounts[0]), "total_amount": format_amount(total_amount)},
+                )
             )
         else:
-            prompt_parts.append(f"Total: {format_amount(total_amount)}.")
+            prompt_parts.append(
+                render_message(
+                    "orchestrator.execution.batch_total_only",
+                    locale,
+                    {"total_amount": format_amount(total_amount)},
+                )
+            )
 
     prompt_parts.append("")
 
     if accounts:
-        prompt_parts.append(format_accounts_list(accounts))
+        prompt_parts.append(format_accounts_list(accounts, locale=locale))
     else:
-        prompt_parts.append("*Which account would you like to use?*")
+        prompt_parts.append(render_message("orchestrator.execution.choose_account_fallback", locale))
 
     return "\n".join(prompt_parts)
 
 
 def format_single_transfer_recipient_prompt(
-    focused_name: str, just_resolved_name: str | None, just_resolved_bank: str | None, found_names: list[str]
+    focused_name: str,
+    just_resolved_name: str | None,
+    just_resolved_bank: str | None,
+    found_names: list[str],
+    locale: str = "en",
 ) -> str:
     """Format the prompt for requesting account details for a single transfer in focus."""
     if just_resolved_name is not None:
         if just_resolved_bank:
-            return (
-                f"I found {just_resolved_name} ({just_resolved_bank}). I now need account details for {focused_name}."
+            return render_message(
+                "orchestrator.execution.single_found_with_bank_need_details",
+                locale,
+                {
+                    "resolved_name": just_resolved_name,
+                    "resolved_bank": just_resolved_bank,
+                    "focused_name": focused_name,
+                },
             )
         elif just_resolved_name:
-            return f"I found {just_resolved_name}. I now need account details for {focused_name}."
+            return render_message(
+                "orchestrator.execution.single_found_need_details",
+                locale,
+                {"resolved_name": just_resolved_name, "focused_name": focused_name},
+            )
         else:
-            return f"I need account details for {focused_name}."
+            return render_message(
+                "orchestrator.execution.need_account_details_for",
+                locale,
+                {"focused_name": focused_name},
+            )
     else:
         if found_names:
-            return f"I found {', '.join(found_names)}. I need account details for {focused_name}."
+            return render_message(
+                "orchestrator.execution.found_many_need_details",
+                locale,
+                {"found_names": ", ".join(found_names), "focused_name": focused_name},
+            )
         else:
-            return f"I need account details for {focused_name}."
+            return render_message(
+                "orchestrator.execution.need_account_details_for",
+                locale,
+                {"focused_name": focused_name},
+            )
 
 
 def format_missing_details_prompt(
     found_names: list[str],
     missing_prompts: list[str],
     feedback_messages: list[str] | None = None,
+    locale: str = "en",
 ) -> str:
     """Format a prompt for multiple missing details."""
     parts = []
@@ -69,7 +107,13 @@ def format_missing_details_prompt(
 
     # 2. Confirmation (e.g. "I found Tolu")
     if found_names:
-        parts.append(f"I found {', '.join(found_names)}.")
+        parts.append(
+            render_message(
+                "orchestrator.execution.found_names",
+                locale,
+                {"found_names": ", ".join(found_names)},
+            )
+        )
 
     if missing_prompts:
         unique_missing = []
@@ -83,40 +127,55 @@ def format_missing_details_prompt(
         joined_missing = "\n".join(unique_missing)
         parts.append(joined_missing)
 
-    return "\n\n".join(parts) if parts else "I need some details."
+    if parts:
+        return "\n\n".join(parts)
+    return render_message("orchestrator.execution.need_some_details", locale)
 
 
-def format_auth_reason(task_type: str) -> str:
+def format_auth_reason(task_type: str, locale: str = "en") -> str:
     """Format the authorization reason based on task type."""
-    reasons = {
-        "transfer": "Transfer Authorization",
-        "airtime": "Airtime Purchase",
-        "data": "Data Purchase",
+    key_by_task: dict[str, MessageKey] = {
+        "transfer": "orchestrator.execution.auth_reason_transfer",
+        "airtime": "orchestrator.execution.auth_reason_airtime",
+        "data": "orchestrator.execution.auth_reason_data",
     }
-    return reasons.get(task_type, "Authorize Transaction")
+    key = key_by_task.get(task_type, "orchestrator.execution.auth_reason_default")
+    return render_message(key, locale)
 
 
 def format_source_repair_prompt(
     intents: list[str],
     failed_hint: str,
     accounts: list[dict],
+    locale: str = "en",
 ) -> str:
     """Format a specialized repair prompt when a requested bank is missing."""
     parts = []
 
     # 1. Action Summary
     count = len(intents)
-    header = f"Got it — {count} action{'s' if count > 1 else ''}:"
-    parts.append(header)
+    parts.append(
+        render_message(
+            "orchestrator.execution.source_repair_header",
+            locale,
+            {"count": count, "plural_suffix": "s" if count > 1 else ""},
+        )
+    )
     for intent in intents:
-        parts.append(f"• {intent}")
+        parts.append(render_message("orchestrator.execution.source_repair_bullet", locale, {"intent": intent}))
 
     # 2. The Discrepancy
     parts.append("")
-    parts.append(f"You said from your **{failed_hint}**, but I can't see an **{failed_hint}** account linked.")
+    parts.append(
+        render_message(
+            "orchestrator.execution.source_repair_discrepancy",
+            locale,
+            {"failed_hint": failed_hint},
+        )
+    )
 
     # 3. Fallback Choices
-    parts.append("Do you want to:")
+    parts.append(render_message("orchestrator.execution.source_repair_question", locale))
 
     # Identify unique banks from linked accounts
     linked_banks = []
@@ -129,15 +188,25 @@ def format_source_repair_prompt(
 
     # Offer top 2 banks as one-click alternatives
     for i, bank in enumerate(linked_banks[:2]):
-        choice_text = f"Use **{bank}**"
+        choice_text = render_message("orchestrator.execution.source_repair_use_bank", locale, {"bank": bank})
         if count > 1:
-            choice_text += " for both"
+            choice_text = render_message(
+                "orchestrator.execution.source_repair_use_bank_for_both",
+                locale,
+                {"bank": bank},
+            )
         parts.append(f"{i + 1}. {choice_text}")
 
     # Final utility choice
-    parts.append(f"{len(linked_banks[:2]) + 1}. Use different accounts for each")
+    parts.append(
+        f"{len(linked_banks[:2]) + 1}. "
+        f"{render_message('orchestrator.execution.source_repair_use_different_accounts', locale)}"
+    )
 
     parts.append("")
-    parts.append("_Reply with 1, 2, or 3._")
+    choices = ", ".join(str(i + 1) for i in range(len(linked_banks[:2]) + 1))
+    if len(linked_banks[:2]) + 1 > 1:
+        choices = f"{choices.rsplit(', ', 1)[0]}, or {choices.rsplit(', ', 1)[1]}"
+    parts.append(render_message("orchestrator.execution.source_repair_reply_hint", locale, {"choices": choices}))
 
     return "\n".join(parts)

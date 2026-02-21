@@ -2,7 +2,8 @@
 
 from enum import Enum
 
-from shared.policy import resolve_capability_alternative, resolve_capability_message, resolve_capability_rule
+from shared.i18n import render_capability_limitation
+from shared.policy import resolve_capability_alternative, resolve_capability_rule
 
 
 class AccountCapability(str, Enum):
@@ -61,17 +62,17 @@ def derive_requirements(user_message: str) -> list[AccountCapability]:
     return list(set(requires))
 
 
-def generate_limitation_message(missing: list[AccountCapability]) -> str:
+def generate_limitation_message(missing: list[AccountCapability], *, locale: str = "en") -> str:
     """Generate user-friendly limitation message."""
     if not missing:
         return ""
 
     first = missing[0]
-    if policy_message := resolve_capability_message(domain="account", action=first.value):
-        return policy_message
+    alt = resolve_capability_alternative(domain="account", action=first.value)
+    alt_label = alt.replace("_", " ") if alt else None
 
-    if alt := resolve_capability_alternative(domain="account", action=first.value):
-        return f"*{CAPABILITY_LABELS.get(first, first.value).title()}* isn't available yet. I can help with *{alt}*."
-
-    missing_labels = [CAPABILITY_LABELS.get(cap, cap.value) for cap in missing]
-    return f"*{missing_labels[0].title()}* isn't available yet."
+    return render_capability_limitation(
+        locale=locale,
+        action_label=CAPABILITY_LABELS.get(first, first.value),
+        alternative_labels=[alt_label] if alt_label else [],
+    )

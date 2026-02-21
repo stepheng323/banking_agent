@@ -9,18 +9,19 @@ Users will ask:
 
 from apps.core.src.agent.graphs.support.models import SupportResponse
 from shared.database.enums import SupportTicketStatusEnum
+from shared.i18n import render_message
 from shared.services.ticket_service import TicketService
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
 
 
-# Human-readable status messages
-STATUS_MESSAGES = {
-    SupportTicketStatusEnum.OPEN.value: "Your case is open and queued for review.",
-    SupportTicketStatusEnum.IN_PROGRESS.value: "Our team is actively working on this.",
-    SupportTicketStatusEnum.RESOLVED.value: "This case has been resolved.",
-    SupportTicketStatusEnum.CLOSED.value: "This case has been closed.",
+# Human-readable status message keys
+STATUS_MESSAGE_KEYS = {
+    SupportTicketStatusEnum.OPEN.value: "support.ticket.status_open",
+    SupportTicketStatusEnum.IN_PROGRESS.value: "support.ticket.status_in_progress",
+    SupportTicketStatusEnum.RESOLVED.value: "support.ticket.status_resolved",
+    SupportTicketStatusEnum.CLOSED.value: "support.ticket.status_closed",
 }
 
 
@@ -29,6 +30,7 @@ async def handle_ticket_status(
     ticket_service: TicketService,
     ticket_code: str | None = None,
     last_ticket_id: str | None = None,
+    locale: str = "en",
 ) -> SupportResponse:
     """
     Handle ticket status queries.
@@ -54,8 +56,11 @@ async def handle_ticket_status(
         ticket = ticket_service.get_ticket(ticket_code)
         if not ticket:
             return SupportResponse(
-                message=f"I couldn't find a ticket with code {ticket_code}.\n\n"
-                        "Please check the code and try again.",
+                message=render_message(
+                    "support.ticket.not_found",
+                    locale,
+                    {"ticket_code": ticket_code},
+                ),
             )
 
     # Priority 2: Last ticket from context
@@ -68,29 +73,37 @@ async def handle_ticket_status(
 
     if not ticket:
         return SupportResponse(
-            message="I don't see any open support tickets for you.\n\n"
-                    "Is there something I can help you with?",
+            message=render_message("support.ticket.none_open", locale),
         )
 
     # Build status response
-    status_text = STATUS_MESSAGES.get(ticket.status, "Status unknown")
+    status_text = render_message(
+        STATUS_MESSAGE_KEYS.get(ticket.status, "support.ticket.status_unknown"),
+        locale,
+    )
 
     # Format created_at
-    created_str = ticket.created_at.strftime("%b %d at %I:%M %p") if ticket.created_at else "recently"
+    created_str = (
+        ticket.created_at.strftime("%b %d at %I:%M %p")
+        if ticket.created_at
+        else render_message("support.ticket.created_recently", locale)
+    )
 
-    message = f"**Ticket:** {ticket.ticket_code}\n"
-    message += f"**Status:** {status_text}\n"
-    message += f"**Created:** {created_str}\n\n"
+    message = render_message(
+        "support.ticket.summary",
+        locale,
+        {"ticket_code": ticket.ticket_code, "status_text": status_text, "created": created_str},
+    )
 
     # Add context based on status
     if ticket.status == SupportTicketStatusEnum.OPEN.value:
-        message += "Our team typically responds within 24 hours."
+        message = f"{message}{render_message('support.ticket.open_hint', locale)}"
     elif ticket.status == SupportTicketStatusEnum.IN_PROGRESS.value:
-        message += "You'll receive an update once we have more information."
+        message = f"{message}{render_message('support.ticket.in_progress_hint', locale)}"
     elif ticket.status == SupportTicketStatusEnum.RESOLVED.value:
         if ticket.resolved_at:
             resolved_str = ticket.resolved_at.strftime("%b %d at %I:%M %p")
-            message += f"Resolved on {resolved_str}."
+            message = f"{message}{render_message('support.ticket.resolved_on', locale, {'resolved': resolved_str})}"
 
     logger.info(
         "ticket_status_queried",
@@ -110,6 +123,7 @@ async def handle_any_update(
     ticket_service: TicketService,
     last_ticket_id: str | None = None,
     last_transaction_ref: str | None = None,
+    locale: str = "en",
 ) -> SupportResponse:
     """
     Handle "any update?" queries.
@@ -123,6 +137,7 @@ async def handle_any_update(
             user_id=user_id,
             ticket_service=ticket_service,
             last_ticket_id=last_ticket_id,
+            locale=locale,
         )
 
     # Check for recent open tickets
@@ -134,10 +149,10 @@ async def handle_any_update(
             user_id=user_id,
             ticket_service=ticket_service,
             ticket_code=ticket.ticket_code,
+            locale=locale,
         )
 
     # No tickets found
     return SupportResponse(
-        message="I don't have any pending updates for you.\n\n"
-                "Is there something specific I can help with?",
+        message=render_message("support.ticket.no_updates", locale),
     )

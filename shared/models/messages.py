@@ -4,7 +4,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class MessageType(str, Enum):
@@ -46,10 +46,7 @@ class WhatsAppMessage(BaseModel):
     priority: MessagePriority = Field(default=MessagePriority.NORMAL)
     retry_count: int = Field(default=0, description="Number of processing attempts")
 
-    class Config:
-        """Pydantic config."""
-
-        json_encoders = {datetime: lambda v: v.isoformat()}
+    model_config = ConfigDict()
 
 
 class ProcessedMessage(BaseModel):
@@ -65,7 +62,4 @@ class ProcessedMessage(BaseModel):
     success: bool = True
     error: str | None = None
 
-    class Config:
-        """Pydantic config."""
-
-        json_encoders = {datetime: lambda v: v.isoformat()}
+    model_config = ConfigDict()

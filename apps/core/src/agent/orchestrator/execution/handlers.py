@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
 
 from langchain_core.runnables import RunnableConfig
 
@@ -14,9 +14,12 @@ from apps.core.src.agent.orchestrator.models.domain import (
 )
 from apps.core.src.agent.orchestrator.models.state import OrchestratorState
 from apps.core.src.agent.orchestrator.services.context_manager import OrchestratorContextManager
+from shared.i18n import LocaleManager, render_message
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
+
+SessionState = Literal["WAITING_FOR_INPUT", "WAITING_FOR_AUTH", "RUNNING"]
 
 
 class ExecutionAggregation:
@@ -61,6 +64,10 @@ class ExecutionContext:
     services: dict[str, Any]
     current_wave_len: int
     agg: ExecutionAggregation
+
+
+def _state_locale(state: OrchestratorState) -> str:
+    return LocaleManager.normalize(state.loaded_context.get("language")).value
 
 
 def _maybe_user_message(task: Any, state: OrchestratorState) -> str | None:
@@ -163,7 +170,7 @@ async def handle_transfer_task(task: Any, task_id: str, ctx: ExecutionContext) -
         "transfer",
         task,
         log_key="transfer_worker_missing",
-        error_message="System error: Transfer worker unavailable",
+        error_message=render_message("orchestrator.error.transfer_worker_unavailable", _state_locale(ctx.state)),
     )
     if not worker:
         return
@@ -186,6 +193,7 @@ async def handle_transfer_task(task: Any, task_id: str, ctx: ExecutionContext) -
         "user_id": ctx.state.loaded_context.get("user_id"),
         "accounts": ctx.state.loaded_context.get("accounts", []),
         "beneficiaries": ctx.state.loaded_context.get("beneficiaries", []),
+        "language": _state_locale(ctx.state),
     }
 
     logger.info("transfer_worker_start", payload=task.payload, task_id=task_id)
@@ -224,19 +232,20 @@ async def handle_transfer_task(task: Any, task_id: str, ctx: ExecutionContext) -
         TransactionOutcome.NEEDS_AUTH,
         TransactionOutcome.NEEDS_CONFIRMATION,
     ):
-        state_map = {
+        state_map: dict[TransactionOutcome, SessionState] = {
             TransactionOutcome.NEEDS_INPUT: "WAITING_FOR_INPUT",
             TransactionOutcome.NEEDS_AUTH: "WAITING_FOR_AUTH",
             TransactionOutcome.NEEDS_CONFIRMATION: "WAITING_FOR_INPUT",
         }
+        current_state: SessionState = state_map[result.outcome]
 
         if stack and stack[-1].domain == "transfer":
-            stack[-1].state = state_map.get(result.outcome, "RUNNING")
+            stack[-1].state = current_state
         else:
             stack.append(
                 ActiveSession(
                     domain="transfer",
-                    state=state_map.get(result.outcome, "RUNNING"),
+                    state=current_state,
                     interrupt_policy="BLOCK" if result.outcome == TransactionOutcome.NEEDS_AUTH else "CONFIRM",
                     resume_hint={"task_id": task_id},
                 )
@@ -255,7 +264,7 @@ async def handle_account_task(task: Any, task_id: str, ctx: ExecutionContext) ->
         "account",
         task,
         log_key="account_worker_missing",
-        error_message="System error: Account worker unavailable",
+        error_message=render_message("orchestrator.error.account_worker_unavailable", _state_locale(ctx.state)),
     )
     if not worker:
         return
@@ -266,7 +275,7 @@ async def handle_account_task(task: Any, task_id: str, ctx: ExecutionContext) ->
         "user_id": ctx.state.loaded_context.get("user_id"),
         "profile": ctx.state.loaded_context.get("profile", {}),
         "accounts": ctx.state.loaded_context.get("accounts", []),
-        "language": ctx.state.loaded_context.get("language"),
+        "language": _state_locale(ctx.state),
     }
 
     result = await worker.run(
@@ -291,7 +300,7 @@ async def handle_account_task(task: Any, task_id: str, ctx: ExecutionContext) ->
 
     elif result.outcome == AccountOutcome.FAILED:
         task.stage = TaskStage.FAILED
-        task.payload["error"] = result.error or "Account action failed."
+        task.payload["error"] = result.error or render_message("orchestrator.error.account_action_failed", _state_locale(ctx.state))
         ctx.agg.say(result.response)
 
 
@@ -321,6 +330,7 @@ async def handle_beneficiary_task(task: Any, task_id: str, ctx: ExecutionContext
             "user_id": ctx.state.loaded_context.get("user_id"),
             "phone_number": ctx.state.phone_number,
             "banking_provider": provider,
+            "language": _state_locale(ctx.state),
         }
 
         result = await worker.run(task.payload, context_data)
@@ -365,7 +375,7 @@ async def handle_beneficiary_task(task: Any, task_id: str, ctx: ExecutionContext
                 ctx.agg.say(result.response)
         elif result.outcome == TransactionOutcome.FAILED:
             task.stage = TaskStage.FAILED
-            err = result.error or "Beneficiary operation failed."
+            err = result.error or render_message("orchestrator.error.beneficiary_operation_failed", _state_locale(ctx.state))
             task.payload["error"] = err
             ctx.agg.say(err)
         return
@@ -375,12 +385,16 @@ async def handle_beneficiary_task(task: Any, task_id: str, ctx: ExecutionContext
     if not suggestion_service:
         logger.error("suggestion_service_missing")
         task.stage = TaskStage.FAILED
-        task.payload["error"] = "System error: Suggestion service unavailable"
+        task.payload["error"] = render_message("orchestrator.error.suggestion_service_unavailable", _state_locale(ctx.state))
         return
 
     alias = task.payload.get("alias")
     try:
-        msg = await suggestion_service.save_beneficiary(ctx.state.phone_number, alias=alias)
+        msg = await suggestion_service.save_beneficiary(
+            ctx.state.phone_number,
+            alias=alias,
+            locale=_state_locale(ctx.state),
+        )
         task.stage = TaskStage.COMPLETED
         task.payload["result"] = msg
 
@@ -390,18 +404,19 @@ async def handle_beneficiary_task(task: Any, task_id: str, ctx: ExecutionContext
     except Exception as exc:
         logger.error("save_beneficiary_exec_error", error=str(exc))
         task.stage = TaskStage.FAILED
-        task.payload["error"] = "Failed to save beneficiary."
+        task.payload["error"] = render_message("orchestrator.error.save_beneficiary_failed", _state_locale(ctx.state))
 
 
 async def handle_airtime_task(task: Any, task_id: str, ctx: ExecutionContext) -> None:
+    locale = _state_locale(ctx.state)
     await _handle_purchase_task(
         task,
         task_id,
         ctx,
         worker_name="airtime",
         worker_missing_log_key="airtime_worker_missing",
-        worker_missing_error_message="System error: Airtime worker unavailable",
-        default_error="Airtime purchase failed",
+        worker_missing_error_message=render_message("orchestrator.error.airtime_worker_unavailable", locale),
+        default_error=render_message("orchestrator.error.airtime_purchase_failed", locale),
         include_channel=True,
     )
 
@@ -433,6 +448,7 @@ async def _handle_purchase_task(
         "user_id": ctx.state.loaded_context.get("user_id"),
         "accounts": ctx.state.loaded_context.get("accounts", []),
         "beneficiaries": ctx.state.loaded_context.get("beneficiaries", []),
+        "language": _state_locale(ctx.state),
     }
     if include_channel:
         context_data["channel"] = ctx.state.channel
@@ -462,7 +478,7 @@ async def handle_query_task(task: Any, task_id: str, ctx: ExecutionContext) -> N
         "query",
         task,
         log_key="query_worker_missing",
-        error_message="System error: Query worker unavailable",
+        error_message=render_message("orchestrator.error.query_worker_unavailable", _state_locale(ctx.state)),
     )
     if not worker:
         return
@@ -472,6 +488,7 @@ async def handle_query_task(task: Any, task_id: str, ctx: ExecutionContext) -> N
         "user_id": ctx.state.loaded_context.get("user_id"),
         "profile": ctx.state.loaded_context.get("profile", {}),
         "accounts": ctx.state.loaded_context.get("accounts", []),
+        "language": _state_locale(ctx.state),
     }
 
     result = await worker.run(
@@ -495,8 +512,8 @@ async def handle_query_task(task: Any, task_id: str, ctx: ExecutionContext) -> N
 
     elif result.outcome == TransactionOutcome.FAILED:
         task.stage = TaskStage.FAILED
-        task.payload["error"] = result.error or "Query processing failed."
-        ctx.agg.say(result.response)
+        task.payload["error"] = result.error or render_message("orchestrator.error.query_processing_failed", _state_locale(ctx.state))
+        ctx.agg.say(result.response or render_message("query.error.general", _state_locale(ctx.state)))
 
     if result.outcome in (TransactionOutcome.OK, TransactionOutcome.NEEDS_INPUT):
         stack = list(ctx.state.session_stack)
@@ -515,14 +532,15 @@ async def handle_query_task(task: Any, task_id: str, ctx: ExecutionContext) -> N
 
 
 async def handle_data_task(task: Any, task_id: str, ctx: ExecutionContext) -> None:
+    locale = _state_locale(ctx.state)
     await _handle_purchase_task(
         task,
         task_id,
         ctx,
         worker_name="data",
         worker_missing_log_key="data_worker_missing",
-        worker_missing_error_message="System error: Data worker unavailable",
-        default_error="Data purchase failed",
+        worker_missing_error_message=render_message("orchestrator.error.data_worker_unavailable", locale),
+        default_error=render_message("orchestrator.error.data_purchase_failed", locale),
         include_channel=False,
     )
 
@@ -533,13 +551,16 @@ async def handle_faq_task(task: Any, task_id: str, ctx: ExecutionContext) -> Non
         "faq",
         task,
         log_key="faq_worker_missing",
-        error_message="System error: FAQ worker unavailable",
+        error_message=render_message("orchestrator.error.faq_worker_unavailable", _state_locale(ctx.state)),
     )
     if not worker:
         return
 
     user_msg = ctx.state.last_message_text
-    context_data = {"phone_number": ctx.state.phone_number}
+    context_data = {
+        "phone_number": ctx.state.phone_number,
+        "language": _state_locale(ctx.state),
+    }
 
     result = await worker.run(
         payload=task.payload,
@@ -552,8 +573,8 @@ async def handle_faq_task(task: Any, task_id: str, ctx: ExecutionContext) -> Non
         ctx.agg.say(result.response)
     elif result.outcome == FAQOutcome.FAILED:
         task.stage = TaskStage.FAILED
-        task.payload["error"] = result.error or "FAQ failed"
-        ctx.agg.say("I'm having trouble retrieving that information.")
+        task.payload["error"] = result.error or render_message("orchestrator.error.faq_failed", _state_locale(ctx.state))
+        ctx.agg.say(render_message("faq.info_trouble", _state_locale(ctx.state)))
 
 
 async def handle_support_task(task: Any, task_id: str, ctx: ExecutionContext) -> None:
@@ -562,7 +583,7 @@ async def handle_support_task(task: Any, task_id: str, ctx: ExecutionContext) ->
         "support",
         task,
         log_key="support_worker_missing",
-        error_message="System error: Support worker unavailable",
+        error_message=render_message("orchestrator.error.support_worker_unavailable", _state_locale(ctx.state)),
     )
     if not worker:
         return
@@ -572,6 +593,7 @@ async def handle_support_task(task: Any, task_id: str, ctx: ExecutionContext) ->
         "phone_number": ctx.state.phone_number,
         "user_id": ctx.state.loaded_context.get("user_id"),
         "email": ctx.state.loaded_context.get("profile", {}).get("email"),
+        "language": _state_locale(ctx.state),
     }
 
     result = await worker.run(
@@ -590,8 +612,8 @@ async def handle_support_task(task: Any, task_id: str, ctx: ExecutionContext) ->
             ctx.agg.add_missing_fields(task_id, ["clarification"])
     elif result.outcome == SupportOutcome.FAILED:
         task.stage = TaskStage.FAILED
-        task.payload["error"] = result.error or "Support flow failed"
-        ctx.agg.say("I can't access support right now.")
+        task.payload["error"] = result.error or render_message("orchestrator.error.support_flow_failed", _state_locale(ctx.state))
+        ctx.agg.say(render_message("support.unavailable", _state_locale(ctx.state)))
 
     stack = list(ctx.state.session_stack)
     if result.outcome == SupportOutcome.NEEDS_INPUT:
@@ -616,18 +638,19 @@ async def handle_support_task(task: Any, task_id: str, ctx: ExecutionContext) ->
 async def handle_orchestrator_task(task: Any, task_id: str, ctx: ExecutionContext) -> None:
     """Handle orchestrator tasks (e.g. resumption)."""
     action = task.payload.get("action")
+    locale = _state_locale(ctx.state)
     if action == "resume_session":
         if not ctx.state.stashed_sessions:
-            ctx.agg.say("No session to resume.")
+            ctx.agg.say(render_message("orchestrator.session.no_stashed", locale))
             task.stage = TaskStage.FAILED
-            task.payload["error"] = "No stashed session"
+            task.payload["error"] = render_message("orchestrator.session.no_stashed", locale)
             return
 
         # Pop last session
         last_session = ctx.state.stashed_sessions[-1]
         remaining_stash = ctx.state.stashed_sessions[:-1]
 
-        intent = last_session.get("intent", "transaction")
+        intent = last_session.get("intent", render_message("orchestrator.session.default_intent", locale))
         p_interrupt = last_session.get("pending_interrupt")
         logger.info("resuming_session", intent=intent, has_interrupt=bool(p_interrupt))
 
@@ -638,4 +661,4 @@ async def handle_orchestrator_task(task: Any, task_id: str, ctx: ExecutionContex
         ctx.agg.updates["pending_interrupt"] = p_interrupt
         ctx.agg.updates["stashed_sessions"] = remaining_stash
 
-        ctx.agg.say(f"Resuming {intent}...")
+        ctx.agg.say(render_message("orchestrator.session.resuming", locale, {"intent": intent}))

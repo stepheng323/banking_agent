@@ -4,6 +4,7 @@ from datetime import date
 
 from apps.core.src.agent.graphs.query.models import NormalizedQuery, QueryResult, QueryResultItem
 from shared.clients.abstractions.banking import BankingDataProvider
+from shared.i18n import render_message
 
 
 async def handle_balance(
@@ -15,6 +16,7 @@ async def handle_balance(
     current_page: int = 0,
     page_size: int = 5,
     user_id: str | None = None,
+    language: str = "en",
 ) -> QueryResult:
     """Handle balance queries."""
     if query.accounts_scope == "all" and len(account_ids) > 1:
@@ -36,7 +38,11 @@ async def handle_balance(
                         None,
                     )
 
-                bank_name = account_info.get("bank_name", "Account") if account_info else "Account"
+                bank_name = (
+                    account_info.get("bank_name", render_message("query.balance.account_fallback", language))
+                    if account_info
+                    else render_message("query.balance.account_fallback", language)
+                )
                 account_number = account_info.get("account_number", "") if account_info else ""
 
                 items.append(
@@ -55,7 +61,7 @@ async def handle_balance(
     else:
         balance = await provider.get_balance(account_id, real_time=True)
         if not balance:
-            return QueryResult(summary_text="Could not retrieve balance.")
+            return QueryResult(summary_text=render_message("query.balance.unavailable", language))
 
         account_info = None
         if accounts_info:
@@ -68,10 +74,21 @@ async def handle_balance(
                 None,
             )
 
-        bank_name = account_info.get("bank_name", "Account") if account_info else "Account"
+        bank_name = (
+            account_info.get("bank_name", render_message("query.balance.account_fallback", language))
+            if account_info
+            else render_message("query.balance.account_fallback", language)
+        )
 
         return QueryResult(
-            summary_text=f"Your {bank_name} balance: ₦{balance.available_balance:,.2f}",
+            summary_text=render_message(
+                "query.balance.single_account",
+                language,
+                {
+                    "bank_name": bank_name,
+                    "balance": f"{balance.available_balance:,.2f}",
+                },
+            ),
             items=[
                 QueryResultItem(
                     id=account_id[:8],

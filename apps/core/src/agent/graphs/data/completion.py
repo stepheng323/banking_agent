@@ -5,6 +5,7 @@ from typing import Any
 
 from apps.core.src.agent.graphs.__shared__.beneficiary.suggestion_service import BeneficiarySuggestionService
 from shared.cache.redis_client import RedisClient
+from shared.i18n import render_message
 from shared.repositories.actionable_message_repository import ActionableMessageRepository
 from shared.repositories.beneficiary_repository import BeneficiaryRepository
 from shared.utils.logging import get_logger
@@ -57,6 +58,7 @@ class DataCompletionService:
         data_purchase: dict[str, Any],
         purchase_result: dict[str, Any],
         transaction_id: str | None = None,
+        locale: str = "en",
     ) -> None:
         """Send success notification for data purchase."""
         try:
@@ -64,18 +66,22 @@ class DataCompletionService:
             recipient = data_purchase.get("recipient", {})
             recipient_phone = recipient.get("phone", "")
             network = recipient.get("network", "")
-            plan_name = data_purchase.get("plan_name", "Data Plan")
+            plan_name = data_purchase.get("plan_name", render_message("data.format.summary.plan_name_fallback", locale))
             recipient_name = recipient.get("name") or recipient_phone
 
-            provider_txn_id = purchase_result.get("transaction_id", "N/A")
+            provider_txn_id = purchase_result.get("transaction_id", render_message("orchestrator.finalize.na", locale))
 
-            message = (
-                f"✓ Data purchase successful!\n\n"
-                f"Plan: {plan_name}\n"
-                f"Amount: ₦{amount:,.0f}\n"
-                f"Recipient: {recipient_name} ({network})\n"
-                f"Phone: {recipient_phone}\n"
-                f"Transaction ID: {provider_txn_id}"
+            message = render_message(
+                "data.completion.success_message",
+                locale,
+                {
+                    "plan_name": plan_name,
+                    "amount": f"{amount:,.0f}",
+                    "recipient_name": recipient_name,
+                    "network": network,
+                    "recipient_phone": recipient_phone,
+                    "transaction_id": provider_txn_id,
+                },
             )
 
             # Removed direct send_text.
@@ -126,6 +132,7 @@ class DataCompletionService:
         data_purchase: dict[str, Any],
         purchase_result: dict[str, Any],
         transaction_id: str | None = None,
+        locale: str = "en",
     ) -> None:
         """Send notification for pending data purchase."""
         await asyncio.sleep(2.5)
@@ -134,11 +141,16 @@ class DataCompletionService:
             amount = float(data_purchase.get("amount", 0))
             recipient = data_purchase.get("recipient", {})
             recipient_phone = recipient.get("phone", "")
-            plan_name = data_purchase.get("plan_name", "Data Plan")
+            plan_name = data_purchase.get("plan_name", render_message("data.format.summary.plan_name_fallback", locale))
 
-            message = (
-                f"⏳ Your {plan_name} purchase (₦{amount:,.0f}) for {recipient_phone} is processing.\n\n"
-                "You'll receive confirmation shortly. If you don't receive it within 5 minutes, please contact support."
+            message = render_message(
+                "data.completion.pending_message",
+                locale,
+                {
+                    "plan_name": plan_name,
+                    "amount": f"{amount:,.0f}",
+                    "recipient_phone": recipient_phone,
+                },
             )
 
             # Removed direct send_text.
@@ -146,10 +158,19 @@ class DataCompletionService:
         except Exception as e:
             logger.error("data_pending_notification_error", phone=phone_number, error=str(e))
 
-    async def send_failure_notification(self, phone_number: str, error_message: str) -> None:
+    async def send_failure_notification(
+        self,
+        phone_number: str,
+        error_message: str,
+        locale: str = "en",
+    ) -> None:
         """Send failure notification for data purchase."""
         try:
-            message = f"Data purchase failed: {error_message}. Please try again."
+            message = render_message(
+                "data.completion.failed_message",
+                locale,
+                {"error_message": error_message},
+            )
             # Removed direct send_text.
             logger.info("data_failure_notification_log", phone=phone_number, error=error_message)
         except Exception as e:

@@ -7,6 +7,7 @@ from apps.core.src.agent.graphs.query.executor import QueryExecutor
 from apps.core.src.agent.graphs.query.pipeline import QueryStep
 from apps.core.src.agent.graphs.query.services.formatter import QueryFormatter
 from apps.core.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
+from shared.i18n import LocaleManager, render_message
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -15,7 +16,7 @@ logger = get_logger(__name__)
 class ExecutionStep(QueryStep):
     """Executes the query and formats the response."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         pass
 
     async def run(self, state: dict[str, Any], worker_context: Any = None) -> TransactionResult:
@@ -23,6 +24,7 @@ class ExecutionStep(QueryStep):
         flow_state = state.get("flow_state")
         if flow_state != "executing":
             return TransactionResult(outcome=TransactionOutcome.OK, patch={})
+        locale = LocaleManager.normalize(state.get("language")).value
 
         query = state.get("query")
         if isinstance(query, dict):
@@ -31,8 +33,12 @@ class ExecutionStep(QueryStep):
             query = NormalizedQuery.model_validate(query)
 
         account_id = state.get("account_id")
-        account_ids = state.get("account_ids")
-        accounts_info = state.get("accounts")
+        account_ids_raw = state.get("account_ids")
+        account_ids: list[str] = [str(acc_id) for acc_id in account_ids_raw] if isinstance(account_ids_raw, list) else []
+        accounts_raw = state.get("accounts")
+        accounts_info: list[dict[str, Any]] = (
+            [acc for acc in accounts_raw if isinstance(acc, dict)] if isinstance(accounts_raw, list) else []
+        )
         current_page = state.get("current_page", 0)
         page_size = state.get("page_size", 5)
         if not account_id and accounts_info:
@@ -42,36 +48,45 @@ class ExecutionStep(QueryStep):
 
         if not account_ids and accounts_info:
             # Default to all accounts if not specified
-            account_ids = [
-                acc.get("account_id") or acc.get("mono_account_id")
-                for acc in accounts_info
-                if acc.get("account_id") or acc.get("mono_account_id")
-            ]
+            resolved_account_ids: list[str] = []
+            for acc in accounts_info:
+                account_value = acc.get("account_id") or acc.get("mono_account_id")
+                if account_value:
+                    resolved_account_ids.append(str(account_value))
+            account_ids = resolved_account_ids
+        account_ids = [str(acc_id) for acc_id in account_ids]
 
         user_id = worker_context.user_id if worker_context else None
 
         if "selected_item_index" in state and state.get("query_session"):
             return await handle_drill_down(state)
 
-        if not query:
+        if not query or not account_id:
             return TransactionResult(
-                outcome=TransactionOutcome.FAILED, error="Internal error: Missing query parameters."
+                outcome=TransactionOutcome.FAILED,
+                error=render_message("query.error.missing_params", locale),
             )
 
         executor = QueryExecutor(worker_context.banking_provider)
+        resolved_account_id = str(account_id)
 
         result = await executor.execute(
             query=query,
-            account_id=account_id,
+            account_id=resolved_account_id,
             account_ids=account_ids,
             accounts_info=accounts_info,
             current_page=current_page,
             page_size=page_size,
             user_id=user_id,
+            language=locale,
         )
 
         formatted_response = QueryFormatter.format(
-            result, current_page=current_page, show_expanded=state.get("show_expanded", False), has_more=result.has_more
+            result,
+            current_page=current_page,
+            show_expanded=state.get("show_expanded", False),
+            has_more=result.has_more,
+            locale=locale,
         )
 
         if state.get("resolver_message"):

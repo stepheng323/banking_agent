@@ -124,6 +124,6 @@ class SmartContext(BaseModel):
             },
             recent_transactions=user_context.get("recent_transactions", [])[:3],
             saved_beneficiaries=user_context.get("beneficiaries", [])[:5],
-            user_language=user_context.get("detected_language", "en"),
+            user_language=user_context.get("language") or user_context.get("detected_language", "en"),
             previous_system_message=user_context.get("last_response", ""),
         )

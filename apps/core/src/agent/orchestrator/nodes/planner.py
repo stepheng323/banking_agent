@@ -1,15 +1,26 @@
 import re
-from typing import Any
+from typing import Any, cast
 
 from langchain_core.runnables import RunnableConfig
 
-from apps.core.src.agent.orchestrator.meta_reply import generate_meta_reply
 from apps.core.src.agent.orchestrator.models.state import OrchestratorState
 from apps.core.src.agent.orchestrator.utils.task_payload import build_task_spec_from_plan_item
+from shared.i18n import (
+    LanguageDetectionSignal,
+    LocaleManager,
+    MessageKey,
+    render_locale_switched,
+    render_message,
+    render_policy_notice,
+    render_safe_capability_fallback,
+    render_text,
+)
 from shared.policy import get_cached_policy
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
+
+SAFE_CAPABILITY_FALLBACK = render_safe_capability_fallback("en")
 
 
 SUPPORTED_EXECUTOR_LABELS = {
@@ -22,11 +33,6 @@ SUPPORTED_EXECUTOR_LABELS = {
     "faq": "banking help",
     "beneficiary": "beneficiary management",
 }
-
-SAFE_CAPABILITY_FALLBACK = (
-    "I can't handle that yet. I can help with transfers, airtime/data purchase, "
-    "balances, and transaction queries."
-)
 
 
 def _detect_unsupported_capabilities(message_text: str) -> list[str]:
@@ -68,27 +74,23 @@ def _resolve_unsupported_alternatives(unsupported: list[str]) -> list[str]:
     return alternatives
 
 
-def _looks_like_request(text: str) -> bool:
-    """Conservative heuristic for open-world fallback."""
-    tokens = set(re.findall(r"[a-z0-9']+", text.lower()))
-    request_markers = {
-        "want",
-        "need",
-        "please",
-        "can",
-        "help",
-        "transfer",
-        "buy",
-        "send",
-        "invest",
-        "schedule",
-        "statement",
-        "history",
-    }
-    return bool(tokens & request_markers)
+def _build_locale_update(state: OrchestratorState, locale: str) -> dict[str, Any]:
+    """Prepare loaded_context patch with updated locale."""
+    loaded_context = dict(state.loaded_context or {})
+    loaded_context["language"] = locale
+    loaded_context["detected_language"] = locale
+    return {"loaded_context": loaded_context}
 
 
-def _build_policy_notice(message_text: str, planner_output: Any) -> str | None:
+def _detected_locale_value(planner_output: Any) -> str | None:
+    """Resolve detected locale value from planner output when present."""
+    detected_language = getattr(planner_output, "detected_language", None)
+    if not isinstance(detected_language, str) or not detected_language:
+        return None
+    return cast(str, LocaleManager.from_detection(detected_language).value)
+
+
+def _build_policy_notice(message_text: str, planner_output: Any, locale: str = "en") -> str | None:
     if not planner_output or not planner_output.tasks:
         return None
 
@@ -106,15 +108,16 @@ def _build_policy_notice(message_text: str, planner_output: Any) -> str | None:
 
     supported_text = ", ".join(sorted(supported_labels))
     unsupported_text = ", ".join(unsupported)
-    verb = "isn't" if len(unsupported) == 1 else "aren't"
     alternatives = _resolve_unsupported_alternatives(unsupported)
-    if alternatives:
-        alt_text = alternatives[0] if len(alternatives) == 1 else f"{alternatives[0]} or {alternatives[1]}"
-        return (
-            f"I can proceed with {supported_text}. {unsupported_text} {verb} available yet. "
-            f"I can help with {alt_text} instead."
-        )
-    return f"I can proceed with {supported_text}. {unsupported_text} {verb} available yet."
+    return cast(
+        str,
+        render_policy_notice(
+            locale=locale,
+            supported_text=supported_text,
+            unsupported_text=unsupported_text,
+            alternatives=alternatives,
+        ),
+    )
 
 
 async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[str, Any]:
@@ -128,8 +131,24 @@ async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[s
 
     task_planner = config["configurable"].get("task_planner")
     text = state.last_message_text or ""
-
+    current_locale = LocaleManager.normalize(state.loaded_context.get("language")).value
     redis_client = config["configurable"].get("redis_client")
+    if task_planner is None:
+        logger.error("task_planner_missing")
+        return {"final_response": render_safe_capability_fallback(current_locale)}
+
+    explicit_locale = LocaleManager.parse_explicit_switch_command(text)
+    if explicit_locale:
+        if redis_client:
+            resolved = await LocaleManager.set_locale(state.phone_number, explicit_locale, source="user_command")
+            next_locale = resolved.value
+        else:
+            next_locale = explicit_locale.value
+        locale_updates = _build_locale_update(state, next_locale)
+        return {
+            "final_response": render_locale_switched(next_locale),
+            **locale_updates,
+        }
     planner_context_parts: list[str] = []
 
     if redis_client:
@@ -174,9 +193,11 @@ async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[s
                 planner_context_parts.append(
                     "Active Query Session: The user recently viewed transaction results."
                     f"{summary_snippet}\n"
-                    "- If the user asks to continue (e.g., 'more', 'next', 'show transactions', 'details', 'receipt', 'issue')"
-                    " or adjusts time/filters, create a query task (executor='query') so the continuation handler can process it.\n"
-                    "- If the user asks a fresh query (e.g., 'show my recent transactions'), still create a query task as a new query."
+                    "- If the user asks to continue (e.g., 'more', 'next', 'show transactions',"
+                    " 'details', 'receipt', 'issue') or adjusts time/filters, create a query task"
+                    " (executor='query') so the continuation handler can process it.\n"
+                    "- If the user asks a fresh query (e.g., 'show my recent transactions'),"
+                    " still create a query task as a new query."
                 )
                 logger.info("planner_context_injected", context="query_session")
             elif is_transactional:
@@ -203,7 +224,8 @@ async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[s
                         f"Current Task Data: {payload_view}\n"
                         "Review Rule 9 (CONTEXT OVERRIDE):"
                         f"- If input is slot-filling or update (e.g. 'Mum', '5k'), KEEP intent='{active_intent}'.\n"
-                        "- If input is CLEARLY unrelated (e.g. 'Show beneficiaries', 'Balance'), CHANGE intent to new one."
+                        "- If input is CLEARLY unrelated (e.g. 'Show beneficiaries', 'Balance'),"
+                        " CHANGE intent to new one."
                     )
                     logger.info("planner_context_active_flow_injected", intent=active_intent)
         except Exception as e:
@@ -226,6 +248,20 @@ async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[s
         planner_output = await task_planner.plan_tasks(state.phone_number, text, context=planner_context)
         logger.info("planner_tasks_generated", output=planner_output)
 
+        detected_language = getattr(planner_output, "detected_language", None)
+        if detected_language:
+            if redis_client:
+                signal = LanguageDetectionSignal(
+                    locale=LocaleManager.from_detection(detected_language),
+                    confidence=float(getattr(planner_output, "confidence", 1.0) or 0.0),
+                    source="planner",
+                    explicit=False,
+                )
+                resolved_locale = await LocaleManager.update_locale(state.phone_number, signal)
+                current_locale = resolved_locale.value
+            else:
+                current_locale = LocaleManager.from_detection(detected_language).value
+
         if redis_client and planner_context != "None" and planner_output and planner_output.tasks:
             is_saving = any(
                 t.executor == "beneficiary" and t.action == "save_beneficiary" for t in planner_output.tasks
@@ -239,13 +275,63 @@ async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[s
         logger.error("planner_failed", error=str(e))
         return {}
 
+    locale_updates = _build_locale_update(state, current_locale)
+    detected_locale = _detected_locale_value(planner_output)
+
+    def _localized_planner_response(raw_response: str | None) -> str:
+        if not raw_response:
+            return ""
+        return cast(str, render_text(raw_response, current_locale))
+
     # [NEW] Handle Cancellation Explicitly
     if getattr(planner_output, "is_cancellation", False) or planner_output.primary_intent == "cancel":
         logger.info("planner_cancellation_detected", intent=planner_output.primary_intent)
-        return {"waves": [], "final_response": planner_output.response or "Cancelled."}
+        cancel_locale = detected_locale or current_locale
+        cancel_locale_updates = (
+            locale_updates
+            if cancel_locale == current_locale
+            else _build_locale_update(state, cancel_locale)
+        )
+        if planner_output.response_key == "planner.cancelled":
+            logger.info("planner_response_key_used", key=planner_output.response_key, locale=cancel_locale)
+            cancel_message = render_message(planner_output.response_key, cancel_locale)
+        else:
+            cancel_message = _localized_planner_response(planner_output.response) or render_message(
+                "planner.cancelled", cancel_locale
+            )
+        return {
+            "waves": [],
+            "final_response": cancel_message,
+            **cancel_locale_updates,
+        }
 
     if not planner_output or not planner_output.tasks:
-        unsupported = _detect_unsupported_capabilities(text)
+        if planner_output and planner_output.primary_intent == "conversational":
+            conversational_locale = detected_locale or current_locale
+            conversational_locale_updates = (
+                locale_updates
+                if conversational_locale == current_locale
+                else _build_locale_update(state, conversational_locale)
+            )
+            response_key = planner_output.response_key
+            if response_key:
+                logger.info("planner_response_key_used", key=response_key, locale=conversational_locale)
+                return {
+                    "final_response": render_message(response_key, conversational_locale),
+                    **conversational_locale_updates,
+                }
+
+            logger.info(
+                "planner_response_key_missing",
+                intent=planner_output.primary_intent,
+                detected_language=getattr(planner_output, "detected_language", None),
+            )
+            fallback_key: MessageKey = "conversational.clarify"
+            logger.info("conversational_fallback_deterministic_used", key=fallback_key, locale=conversational_locale)
+            return {
+                "final_response": render_message(fallback_key, conversational_locale),
+                **conversational_locale_updates,
+            }
 
         # If no tasks, verify if we should switch context or pass-through
         # E.g. "Hi" -> conversational -> no tasks
@@ -254,23 +340,15 @@ async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[s
             # If intent differs from active, we probably want to clear waves
             if planner_output.primary_intent != active_intent:
                 logger.info("planner_switch_empty_tasks", old=active_intent, new=planner_output.primary_intent)
-                return {"waves": [], "final_response": planner_output.response}
+                return {
+                    "waves": [],
+                    "final_response": _localized_planner_response(planner_output.response),
+                    **locale_updates,
+                }
 
-        if planner_output and not unsupported and _looks_like_request(text):
-            return {"final_response": SAFE_CAPABILITY_FALLBACK}
-
-        if planner_output and planner_output.primary_intent == "conversational":
-            message, handoff = await generate_meta_reply(
-                task_planner.planner_llm if task_planner else None,
-                user_message=text,
-                user_language_hint=state.loaded_context.get("language"),
-                active_session=None,
-            )
-            if handoff == "meta" and message:
-                return {"final_response": message}
         if planner_output and planner_output.response:
-            return {"final_response": planner_output.response}
-        return {}
+            return {"final_response": _localized_planner_response(planner_output.response), **locale_updates}
+        return {"final_response": render_safe_capability_fallback(current_locale), **locale_updates}
 
     # [NEW] Decision: Switch vs Pass-through
     if state.waves and active_intent:
@@ -278,7 +356,7 @@ async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[s
         # UNLESS it's a "mixed" intent (which might add tasks)
         if planner_output.primary_intent == active_intent and planner_output.primary_intent != "mixed":
             logger.info("planner_intent_match_active", intent=active_intent, action="pass_through")
-            return {}
+            return locale_updates
 
         # If intent differs (e.g. Transfer -> Beneficiary), we Switch.
         logger.info("planner_intent_switch", old=active_intent, new=planner_output.primary_intent)
@@ -299,7 +377,7 @@ async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[s
         new_tasks[spec.id] = spec
         wave_tasks.append(spec.id)
 
-    policy_notice = _build_policy_notice(text, planner_output)
+    policy_notice = _build_policy_notice(text, planner_output, current_locale)
     if policy_notice:
         logger.info("policy_notice_created")
 
@@ -310,4 +388,5 @@ async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[s
         "normalized_instruction": text,
         "planner_output": planner_output,
         "policy_notice": policy_notice,
+        **locale_updates,
     }

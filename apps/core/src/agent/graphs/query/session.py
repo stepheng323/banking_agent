@@ -27,7 +27,11 @@ class QuerySessionManager:
             if not data:
                 return None
 
-            session = json.loads(data)
+            loaded = json.loads(data)
+            if not isinstance(loaded, dict):
+                logger.warning("invalid_session_payload_type", payload_type=type(loaded).__name__)
+                return None
+            session: dict[str, Any] = loaded
 
             if session.get("query") and isinstance(session["query"], dict):
                 try:

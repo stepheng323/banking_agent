@@ -1,5 +1,6 @@
 """Self-transfer validation component."""
 
+from shared.i18n import render_message
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -14,6 +15,7 @@ class SelfTransferValidator:
         recipient_bank_code: str | None,
         recipient_bank_name: str | None,
         source_account: dict | None,
+        locale: str = "en",
     ) -> tuple[bool, str | None]:
         """
         Check if recipient matches source account.
@@ -48,10 +50,17 @@ class SelfTransferValidator:
             bank_matches = recipient_bank == source_bank
 
         if account_matches and bank_matches:
-            bank_identifier = recipient_bank_name or recipient_bank_code or "the same bank"
-            error_message = (
-                f"The recipient account ({recipient_account}) at {bank_identifier} "
-                f"cannot be the same as your source account. Please provide a different recipient account."
+            bank_identifier = recipient_bank_name or recipient_bank_code or render_message(
+                "transfer.validation.same_bank_fallback",
+                locale,
+            )
+            error_message = render_message(
+                "transfer.validation.self_transfer_same_account",
+                locale,
+                {
+                    "recipient_account": recipient_account,
+                    "bank_identifier": bank_identifier,
+                },
             )
             logger.warning(
                 "self_transfer_detected",

@@ -6,7 +6,8 @@ LLM outputs requested_capabilities, resolver checks and negotiates.
 
 from enum import Enum
 
-from shared.policy import resolve_capability_alternative, resolve_capability_message, resolve_capability_rule
+from shared.i18n import render_capability_limitation
+from shared.policy import resolve_capability_alternative, resolve_capability_rule
 
 
 class QueryCapability(str, Enum):
@@ -89,22 +90,19 @@ def get_alternative(cap: QueryCapability) -> QueryCapability | None:
         return None
 
 
-def generate_limitation_message(missing: list[QueryCapability]) -> str:
+def generate_limitation_message(missing: list[QueryCapability], *, locale: str = "en") -> str:
     """Generate conversational negotiation message."""
     if not missing:
         return ""
 
     cap = missing[0]
-    if policy_message := resolve_capability_message(domain="query", action=cap.value):
-        return policy_message
 
     alt = get_alternative(cap)
-
     label = CAPABILITY_LABELS.get(cap, cap.value)
-    msg = f"*{label.title()}* isn't available yet."
+    alt_label = CAPABILITY_LABELS.get(alt, alt.value) if alt else None
 
-    if alt:
-        alt_label = CAPABILITY_LABELS.get(alt, alt.value)
-        msg += f" I can do *{alt_label}* instead.\n\nWant me to proceed?"
-
-    return msg
+    return render_capability_limitation(
+        locale=locale,
+        action_label=label,
+        alternative_labels=[alt_label] if alt_label else [],
+    )

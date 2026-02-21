@@ -11,6 +11,7 @@ from apps.core.src.agent.graphs.transfer.models.types import (
 from apps.core.src.agent.graphs.transfer.pipeline.base import TransferStep
 from apps.core.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
 from shared.clients.abstractions.direct_debit import DirectDebitProvider
+from shared.i18n import render_message
 from shared.services.funding.planner import FundingPlanner
 from shared.utils.logging import get_logger
 
@@ -54,6 +55,7 @@ async def plan_transaction_funding(
     dd_provider: DirectDebitProvider,
 ) -> TransactionResult:
     """Plan funding using shared FundingPlanner."""
+    locale = ctx.language
     if payload.funding_plan:
         return TransactionResult(outcome=TransactionOutcome.OK)
 
@@ -66,16 +68,22 @@ async def plan_transaction_funding(
 
     try:
         plan = await planner.plan_funding(
-            accounts=adapted_accounts, transfer_amount=amount, preferred_account_id=preferred_id
+            accounts=adapted_accounts,
+            transfer_amount=amount,
+            preferred_account_id=preferred_id,
+            locale=locale,
         )
     except Exception as e:
         logger.error("funding_planning_failed", error=str(e))
-        return TransactionResult(outcome=TransactionOutcome.FAILED, error="Failed to plan funding.")
+        return TransactionResult(
+            outcome=TransactionOutcome.FAILED,
+            error=render_message("transfer.funding.plan_failed", locale),
+        )
 
     if not plan.is_sufficient:
         return TransactionResult(
             outcome=TransactionOutcome.FAILED,
-            error=plan.error or "Insufficient funds.",
+            error=plan.error or render_message("transfer.funding.insufficient_funds", locale),
         )
 
     plan_dict = {

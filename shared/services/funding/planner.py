@@ -19,6 +19,7 @@ from shared.formatters.funding import (
 from shared.formatters.funding import (
     format_insufficient_funds,
 )
+from shared.i18n import render_message
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -92,6 +93,7 @@ class FundingPlanner:
         accounts: list[Any],
         transfer_amount: float,
         preferred_account_id: UUID | None = None,
+        locale: str = "en",
     ) -> FundingPlan:
         """
         Create a funding plan with lazy balance fetching.
@@ -118,21 +120,22 @@ class FundingPlanner:
                 transfer_amount=transfer_amount,
                 total_funded=0,
                 is_sufficient=False,
-                error="No accounts with active mandates.",
+                error=render_message("funding.planner.no_active_mandates", locale),
             )
 
         # Case 1: User specified a source account
         if preferred_account_id:
-            return await self._plan_with_preferred_account(eligible, transfer_amount, preferred_account_id)
+            return await self._plan_with_preferred_account(eligible, transfer_amount, preferred_account_id, locale)
 
         # Case 2: Normal flow - try default first, then add if needed
-        return await self._plan_with_lazy_fetching(eligible, transfer_amount)
+        return await self._plan_with_lazy_fetching(eligible, transfer_amount, locale)
 
     async def _plan_with_preferred_account(
         self,
         eligible: list[Any],
         transfer_amount: float,
         preferred_account_id: UUID,
+        locale: str,
     ) -> FundingPlan:
         """Plan using only the user-specified account."""
         account = next((a for a in eligible if a.id == preferred_account_id), None)
@@ -142,7 +145,7 @@ class FundingPlanner:
                 transfer_amount=transfer_amount,
                 total_funded=0,
                 is_sufficient=False,
-                error="Specified account not found or not eligible for direct debit.",
+                error=render_message("funding.planner.preferred_account_not_eligible", locale),
             )
 
         balance = await self._fetch_balance(account)
@@ -163,13 +166,18 @@ class FundingPlanner:
                 shortfall=shortfall,
                 is_sufficient=False,
                 balance_checks=1,
-                error=f"Your {account.bank_name} has ₦{balance:,.2f}. Need ₦{shortfall:,.2f} more.",
+                error=render_message(
+                    "funding.planner.preferred_insufficient",
+                    locale,
+                    {"bank_name": account.bank_name, "balance": f"{balance:,.2f}", "shortfall": f"{shortfall:,.2f}"},
+                ),
             )
 
     async def _plan_with_lazy_fetching(
         self,
         eligible: list[Any],
         transfer_amount: float,
+        locale: str,
     ) -> FundingPlan:
         """Plan with lazy balance fetching - default first, then largest."""
         steps: list[FundingStepPlan] = []
@@ -229,6 +237,7 @@ class FundingPlanner:
                     bank_name=primary.bank_name,
                     available_balance=primary.amount,
                     max_available=total_available,
+                    locale=locale,
                 )
 
         logger.info(
@@ -265,13 +274,14 @@ class FundingPlanner:
         return account.mandate_status == "ready" and account.mandate_id is not None
 
 
-def format_funding_plan_message(plan: FundingPlan) -> str:
+def format_funding_plan_message(plan: FundingPlan, locale: str = "en") -> str:
     """Format funding plan for user display."""
     if not plan.is_sufficient:
-        return plan.error or "Unable to create funding plan."
+        return plan.error or render_message("funding.planner.unable_to_create", locale)
 
     steps = [{"bank_name": s.bank_name, "amount": s.amount} for s in plan.steps]
     return _format_funding_plan_message(
         transfer_amount=plan.transfer_amount,
         steps=steps,
+        locale=locale,
     )

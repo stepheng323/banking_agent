@@ -7,6 +7,7 @@ from apps.core.src.agent.graphs.faq.prompts import (
     SYNTHESIS_USER_PROMPT,
 )
 from apps.core.src.agent.graphs.faq.state import FAQState
+from shared.i18n import LocaleManager, render_message
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -24,6 +25,7 @@ def create_synthesize_node(llm: Runnable):
         # If response already set (e.g., by confidence gate), skip
         if state.get("response"):
             return state
+        locale = LocaleManager.normalize(state.get("language")).value
 
         retrieved = state.get("retrieved_entries", [])
         message = state.get("message", "")
@@ -63,7 +65,7 @@ def create_synthesize_node(llm: Runnable):
             return {
                 **state,
                 "error": str(e),
-                "response": "I'm having trouble generating a response right now. Please try again.",
+                "response": render_message("faq.synthesis_failed", locale),
             }
 
     return synthesize_answer_node

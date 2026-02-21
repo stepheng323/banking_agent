@@ -1,8 +1,19 @@
 """Beneficiary fuzzy matcher service."""
 
 import difflib
+import re
+import unicodedata
 
 from shared.database import Beneficiary
+
+
+def _normalize_text(value: str | None) -> str:
+    """Normalize names for robust matching across casing/punctuation/diacritics."""
+    if not value:
+        return ""
+    decomposed = unicodedata.normalize("NFKD", value)
+    without_marks = "".join(ch for ch in decomposed if not unicodedata.combining(ch))
+    return re.sub(r"[^a-z0-9]+", " ", without_marks.lower()).strip()
 
 
 class BeneficiaryMatcher:
@@ -28,25 +39,25 @@ class BeneficiaryMatcher:
         if not name or not beneficiaries:
             return "ask_details", None, []
 
-        name_lower = name.lower().strip()
+        normalized_query = _normalize_text(name)
 
         # First, check for exact alias match (case-insensitive) - highest priority
         for b in beneficiaries:
-            alias = str(b.alias or "").lower().strip() if b.alias else ""
-            account_name = str(b.account_name or "").lower().strip() if b.account_name else ""
+            alias = _normalize_text(str(b.alias or ""))
+            account_name = _normalize_text(str(b.account_name or ""))
 
             # Exact alias match takes priority
-            if alias and alias == name_lower:
+            if alias and alias == normalized_query:
                 return "single", b, []
 
             # Exact account_name match (secondary priority)
-            if account_name and account_name == name_lower:
+            if account_name and account_name == normalized_query:
                 return "single", b, []
 
         startswith_matches = []
         for b in beneficiaries:
-            b_name = (b.account_name or "").lower().strip()
-            if b_name and len(name_lower) > 2 and b_name.startswith(name_lower):
+            b_name = _normalize_text(str(b.account_name or ""))
+            if b_name and len(normalized_query) > 2 and b_name.startswith(normalized_query):
                 startswith_matches.append(b)
 
         if len(startswith_matches) == 1:
@@ -54,11 +65,25 @@ class BeneficiaryMatcher:
         elif len(startswith_matches) > 1:
             return "clarify", None, startswith_matches[: self.max_candidates]
 
+        contains_matches = []
+        if len(normalized_query) >= 3:
+            for b in beneficiaries:
+                alias = _normalize_text(str(b.alias or ""))
+                account_name = _normalize_text(str(b.account_name or ""))
+                if normalized_query and (
+                    (alias and normalized_query in alias) or (account_name and normalized_query in account_name)
+                ):
+                    contains_matches.append(b)
+
+        if len(contains_matches) == 1:
+            return "single", contains_matches[0], []
+        elif len(contains_matches) > 1:
+            return "clarify", None, contains_matches[: self.max_candidates]
 
         # If no exact match, fall back to fuzzy matching
-        names = [str(b.account_name or b.alias or "") for b in beneficiaries]
+        names = [_normalize_text(str(b.account_name or b.alias or "")) for b in beneficiaries]
         ratios = [
-            (i, difflib.SequenceMatcher(a=name_lower, b=n.lower()).ratio())
+            (i, difflib.SequenceMatcher(a=normalized_query, b=n).ratio())
             for i, n in enumerate(names)
         ]
         ratios.sort(key=lambda x: x[1], reverse=True)

@@ -26,18 +26,6 @@ Relevant FAQ content:
 
 Provide a helpful, natural response based on the FAQ content above."""
 
-# Uncertainty response when no good matches found
-UNCERTAINTY_RESPONSE = (
-    "I'm not sure I have the right information to answer that question confidently. "
-    "Could you try rephrasing, or would you like me to connect you with our support team?"
-)
-
-# Support handoff message
-SUPPORT_HANDOFF_RESPONSE = (
-    "Let me connect you with our support team to look into your specific situation. "
-    "They'll be able to help you with this directly."
-)
-
 # Forbidden scope patterns and responses
 FORBIDDEN_PATTERNS = {
     "user_specific": {

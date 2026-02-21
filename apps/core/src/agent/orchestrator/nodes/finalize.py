@@ -1,4 +1,6 @@
-from typing import TYPE_CHECKING
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any, cast
 
 import redis.asyncio as redis
 from langchain_core.runnables import RunnableConfig
@@ -6,24 +8,28 @@ from langchain_core.runnables import RunnableConfig
 if TYPE_CHECKING:
     from apps.core.src.agent.graphs.__shared__.beneficiary.suggestion_service import BeneficiarySuggestionService
 
-from apps.core.src.agent.orchestrator.models.domain import TaskStage
+from apps.core.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
 from apps.core.src.agent.orchestrator.models.state import OrchestratorState
 from shared.formatters import format_multi_action_summary
+from shared.i18n import LocaleManager, render_cancelled_prompt, render_generic_capability_blocked, render_message
 from shared.queue.redis_queue import RedisQueue
+from shared.queue.models import ReceiptJobPayload, ReceiptTransferData
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
 
 
-async def finalize(state: OrchestratorState, config: RunnableConfig) -> dict:
+async def finalize(state: OrchestratorState, config: RunnableConfig) -> dict[str, Any]:
     """Final Step. Generate response and queue receipts."""
     outbox = list(state.outbox)
+    locale = LocaleManager.normalize((state.loaded_context or {}).get("language")).value
 
-    beneficiary_service: BeneficiarySuggestionService | None = config["configurable"].get(
+    configurable = cast(dict[str, Any], config.get("configurable", {}))
+    beneficiary_service: BeneficiarySuggestionService | None = configurable.get(
         "beneficiary_suggestion_service"
     )
-    redis_client: redis.Redis | None = config["configurable"].get("redis_client")
-    queue: RedisQueue | None = config["configurable"].get("queue")
+    redis_client: redis.Redis | None = configurable.get("redis_client")
+    queue: RedisQueue | None = configurable.get("queue")
 
     completed_tasks = [task for task in state.tasks.values() if task.stage == TaskStage.COMPLETED]
     failed_tasks = [task for task in state.tasks.values() if task.stage == TaskStage.FAILED]
@@ -41,26 +47,32 @@ async def finalize(state: OrchestratorState, config: RunnableConfig) -> dict:
 
     for task in failed_tasks:
         if task.payload.get("capability_blocked"):
-            message = task.payload.get("error") or "That action isn't available yet."
+            message = task.payload.get("error") or render_generic_capability_blocked(locale)
             outbox.append({"type": "say", "text": message})
         else:
-            outbox.append({"type": "say", "text": f"Failed: {task.payload.get('error')}"})
+            error_text = task.payload.get("error") or render_message("orchestrator.finalize.failed_unknown", locale)
+            outbox.append(
+                {
+                    "type": "say",
+                    "text": render_message("orchestrator.finalize.failed_prefix", locale, {"error": error_text}),
+                }
+            )
 
     for _ in cancelled_tasks:
-        outbox.append({"type": "say", "text": "Transaction cancelled, how else can I help you today?"})
+        outbox.append({"type": "say", "text": render_cancelled_prompt(locale)})
 
     # Check for stashed sessions and prompt
     context_updates = {}
     if state.stashed_sessions:
         last_session = state.stashed_sessions[-1]
-        intent = last_session.get("intent", "transaction")
-        prompt = f"\n\nWould you like to resume your {intent}?"
+        intent = last_session.get("intent", render_message("orchestrator.session.default_intent", locale))
+        resume_prompt = render_message("orchestrator.finalize.resume_prompt", locale, {"intent": intent})
 
         # Add prompt to outbox
         if outbox and outbox[-1].get("type") == "say":
-            outbox[-1]["text"] += prompt
+            outbox[-1]["text"] += f"\n\n{resume_prompt}"
         else:
-            outbox.append({"type": "say", "text": prompt.strip()})
+            outbox.append({"type": "say", "text": resume_prompt})
 
         # Add Context Frame to signal active prompt
         import time
@@ -103,14 +115,15 @@ async def finalize(state: OrchestratorState, config: RunnableConfig) -> dict:
 
 
 async def _handle_completed_tasks(
-    completed_tasks: list,
+    completed_tasks: list[TaskSpec],
     state: OrchestratorState,
-    queue: RedisQueue,
-    redis_client: redis.Redis,
-    beneficiary_service: "BeneficiarySuggestionService",
-    outbox: list,
+    queue: RedisQueue | None,
+    redis_client: redis.Redis | None,
+    beneficiary_service: "BeneficiarySuggestionService" | None,
+    outbox: list[dict[str, Any]],
 ) -> None:
     """Handle completed tasks and generate receipts or summaries."""
+    locale = LocaleManager.normalize((state.loaded_context or {}).get("language")).value
     logger.info("handling_completed_tasks", count=len(completed_tasks), tasks=[t.type for t in completed_tasks])
     for t in completed_tasks:
         logger.info(
@@ -142,9 +155,22 @@ async def _handle_completed_tasks(
         )
 
         # Immediate success feedback (receipt follows asynchronously)
-        display_name = task.payload.get("recipient_resolved_name") or task.payload.get("recipient_name") or "recipient"
+        display_name = (
+            task.payload.get("recipient_resolved_name")
+            or task.payload.get("recipient_name")
+            or render_message("orchestrator.finalize.recipient_fallback", locale)
+        )
         amount = task.payload.get("amount", "")
-        outbox.append({"type": "say", "text": f"✅ Transfer of ₦{amount:,.2f} to {display_name} is being processed."})
+        outbox.append(
+            {
+                "type": "say",
+                "text": render_message(
+                    "orchestrator.finalize.transfer_processing",
+                    locale,
+                    {"amount": f"{amount:,.2f}", "display_name": display_name},
+                ),
+            }
+        )
 
         if beneficiary_service:
             await _handle_beneficiary_suggestion(
@@ -152,28 +178,38 @@ async def _handle_completed_tasks(
                 beneficiary_service=beneficiary_service,
                 phone_number=state.phone_number,
                 outbox=outbox,
+                locale=locale,
             )
 
     elif is_async_transaction:
         task = completed_tasks[0]
         receipt = task.payload.get("receipt", {})
         status = receipt.get("status", "").title()
-        message = receipt.get("message", "Transaction completed")
+        message = receipt.get("message", render_message("orchestrator.finalize.transaction_completed", locale))
 
         logger.info("generating_async_receipt", task_type=task.type, status=status, message=message)
 
         # Simple text confirmation for async tasks
-        outbox.append({"type": "say", "text": f"✅ *{status}*: {message}"})
+        outbox.append(
+            {
+                "type": "say",
+                "text": render_message(
+                    "orchestrator.finalize.async_status_message",
+                    locale,
+                    {"status": status, "message": message},
+                ),
+            }
+        )
 
     elif all_read_only:
         pass
     else:
-        summary_text = format_multi_action_summary(completed_tasks)
+        summary_text = format_multi_action_summary(completed_tasks, locale=locale)
         outbox.append({"type": "say", "text": summary_text})
 
 
 async def _queue_single_transfer_receipt(
-    task,
+    task: TaskSpec,
     state: OrchestratorState,
     queue: RedisQueue | None,
     redis_client: redis.Redis | None,
@@ -188,24 +224,29 @@ async def _queue_single_transfer_receipt(
 
     signal_key = f"receipt:signal:{uuid.uuid4()}"
 
-    payload = {
-        "phone_number": state.phone_number,
-        "transaction_reference": task.payload.get("transaction_id") or task.payload.get("idempotency_key") or "N/A",
+    locale = LocaleManager.normalize((state.loaded_context or {}).get("language")).value
+    transfer_data: ReceiptTransferData = {
         "amount": task.payload.get("amount"),
         "source": {
-            "name": task.payload.get("source_bank_name"),
-            "account_name": task.payload.get("source_account_name"),
+            "name": cast(str | None, task.payload.get("source_bank_name")),
+            "account_name": cast(str | None, task.payload.get("source_account_name")),
         },
         "recipient": {
-            "name": task.payload.get("recipient_resolved_name") or task.payload.get("recipient_name"),
-            "account_number": task.payload.get("recipient_account"),
-            "bank_name": task.payload.get("recipient_bank_name"),
+            "name": cast(str | None, task.payload.get("recipient_resolved_name") or task.payload.get("recipient_name")),
+            "account_number": cast(str | None, task.payload.get("recipient_account")),
+            "bank_name": cast(str | None, task.payload.get("recipient_bank_name")),
         },
-        "narration": task.payload.get("narration"),
+        "narration": cast(str | None, task.payload.get("narration")),
     }
-
-    job_payload = {
-        "payload": payload,
+    job_payload: ReceiptJobPayload = {
+        "phone_number": state.phone_number,
+        "transfer_data": transfer_data,
+        "transaction_reference": cast(
+            str | None,
+            task.payload.get("transaction_id")
+            or task.payload.get("idempotency_key")
+            or render_message("orchestrator.finalize.na", locale),
+        ),
         "signal_key": signal_key,
     }
 
@@ -216,10 +257,11 @@ async def _queue_single_transfer_receipt(
 
 
 async def _handle_beneficiary_suggestion(
-    task,
+    task: TaskSpec,
     beneficiary_service: "BeneficiarySuggestionService",
     phone_number: str,
-    outbox: list,
+    outbox: list[dict[str, Any]],
+    locale: str = "en",
 ) -> None:
     """Handle beneficiary suggestion after transfer."""
     suggestion_msg = await beneficiary_service.check_and_suggest_beneficiary(
@@ -234,6 +276,7 @@ async def _handle_beneficiary_suggestion(
         },
         transaction_id=task.payload.get("transaction_id") or task.payload.get("idempotency_key"),
         send_message=False,
+        locale=locale,
     )
 
     if suggestion_msg:

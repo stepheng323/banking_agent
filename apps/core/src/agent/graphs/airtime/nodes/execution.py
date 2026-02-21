@@ -9,6 +9,7 @@ from apps.core.src.agent.graphs.airtime.models.types import (
 )
 from apps.core.src.agent.graphs.airtime.pipeline.base import AirtimeStep
 from apps.core.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
+from shared.i18n import render_message
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -24,7 +25,7 @@ class ExecutionStep(AirtimeStep):
         gates: AirtimeGates,
         worker_context: Any,
     ) -> TransactionResult:
-
+        locale = context.language
 
         try:
             transaction_id = None
@@ -47,7 +48,8 @@ class ExecutionStep(AirtimeStep):
                             amount=data.amount,
                             recipient_account_number=data.recipient_phone,
                             recipient_bank_code=data.network,  # Using bank_code field for network
-                            recipient_name=data.recipient_name or "Airtime Beneficiary",
+                            recipient_name=data.recipient_name
+                            or render_message("airtime.execution.recipient_fallback", locale),
                             recipient_bank_name=data.network,
                             source_account_id=data.source_account_id,
                             source_account_number=data.source_account_number or "",
@@ -93,8 +95,16 @@ class ExecutionStep(AirtimeStep):
                     "amount": data.amount,
                     "recipient_phone": data.recipient_phone,
                     "network": data.network,
-                    "date": "Now",
-                    "message": f"Your purchase of ₦{data.amount:,.2f} airtime for {data.recipient_phone} ({data.network}) has been queued.",
+                    "date": render_message("airtime.execution.date_now", locale),
+                    "message": render_message(
+                        "airtime.execution.message_queued",
+                        locale,
+                        {
+                            "amount": f"{data.amount:,.2f}",
+                            "recipient_phone": data.recipient_phone,
+                            "network": data.network,
+                        },
+                    ),
                 },
                 patch={"transaction_id": transaction_id} if transaction_id else {},
             )
@@ -102,5 +112,7 @@ class ExecutionStep(AirtimeStep):
         except Exception as e:
             logger.error("airtime_execution_error", error=str(e), exc_info=True)
             return TransactionResult(
-                outcome=TransactionOutcome.FAILED, error="System error during execution.", retryable=True
+                outcome=TransactionOutcome.FAILED,
+                error=render_message("airtime.execution.system_error", locale),
+                retryable=True,
             )

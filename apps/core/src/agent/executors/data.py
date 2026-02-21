@@ -7,6 +7,7 @@ from typing import Any
 
 from shared.clients.abstractions.bill import BillPaymentProvider
 from shared.database.enums import TransactionStatusEnum
+from shared.i18n import render_message
 from shared.repositories.transaction_repository import TransactionRepository
 from shared.utils.logging import get_logger
 
@@ -28,9 +29,10 @@ class DataExecutor:
         """Handle execution of a data transaction."""
         transaction_id = data.get("transaction_id")
         data_details = data.get("data_details", {})
+        locale = data.get("language", "en")
 
         if not transaction_id:
-            logger.error("data_execution_error", error="Missing transaction_id")
+            logger.error("data_execution_error", error="missing_transaction_id")
             return
 
         logger.info("executing_data", transaction_id=transaction_id)
@@ -51,7 +53,7 @@ class DataExecutor:
                 await self.transaction_repo.update_status(transaction_id, TransactionStatusEnum.SUCCESSFUL.value)
                 logger.info("data_success", transaction_id=transaction_id, ref=result.get("reference"))
             else:
-                error_msg = result.get("message", "Data purchase failed at provider")
+                error_msg = result.get("message") or render_message("data.error.provider_failed", locale)
                 await self.transaction_repo.update_status(
                     transaction_id, TransactionStatusEnum.FAILED.value, error_message=error_msg
                 )

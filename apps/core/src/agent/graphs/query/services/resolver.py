@@ -115,7 +115,7 @@ def clamp_time_range(extraction: QueryExtractionResult) -> tuple[QueryExtraction
     return extraction, None
 
 
-def resolve(extraction: QueryExtractionResult) -> ResolverDecision:
+def resolve(extraction: QueryExtractionResult, *, language: str = "en") -> ResolverDecision:
     """Main resolver entry point."""
 
     if extraction.ambiguities:
@@ -153,7 +153,7 @@ def resolve(extraction: QueryExtractionResult) -> ResolverDecision:
                 negotiation=Negotiation(
                     original_capability=RequestedCapability.TIME_ALL,
                     alternative=QueryCapability.TIME_RELATIVE,
-                    message=generate_limitation_message([cap]),
+                    message=generate_limitation_message([cap], locale=language),
                     auto_apply=False,  # Ask user first
                 ),
                 clamped=ClampedValues(days_back=clamped_days),
@@ -166,7 +166,7 @@ def resolve(extraction: QueryExtractionResult) -> ResolverDecision:
                 negotiation=Negotiation(
                     original_capability=RequestedCapability.SEARCH_NARRATION_FUZZY,
                     alternative=QueryCapability.SEARCH_NARRATION_KEYWORD,
-                    message=generate_limitation_message([cap]),
+                    message=generate_limitation_message([cap], locale=language),
                     auto_apply=False,
                 ),
             )
@@ -183,7 +183,7 @@ def resolve(extraction: QueryExtractionResult) -> ResolverDecision:
                         else RequestedCapability.EXPORT_CSV
                     ),
                     alternative=None,
-                    message=generate_limitation_message([cap]),
+                    message=generate_limitation_message([cap], locale=language),
                     auto_apply=False,
                 ),
             )

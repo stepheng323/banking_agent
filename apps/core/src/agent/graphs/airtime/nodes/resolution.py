@@ -10,6 +10,7 @@ from apps.core.src.agent.graphs.airtime.models.types import (
 )
 from apps.core.src.agent.graphs.airtime.pipeline.base import AirtimeStep
 from apps.core.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
+from shared.i18n import render_message
 from shared.database.models import Beneficiary
 from shared.utils.logging import get_logger
 from shared.utils.network_utils import normalize_phone, resolve_network_from_phone
@@ -27,6 +28,7 @@ class ResolutionStep(AirtimeStep):
         gates: AirtimeGates,
         worker_context: Any,
     ) -> TransactionResult:
+        locale = context.language
         patch = {}
 
         if data.is_self:
@@ -53,7 +55,7 @@ class ResolutionStep(AirtimeStep):
                 return TransactionResult(
                     outcome=TransactionOutcome.NEEDS_INPUT,
                     required_fields=["beneficiary_id"],
-                    prompt="Which contact did you mean?",
+                    prompt=render_message("beneficiary.prompt.which_contact", locale),
                     details={
                         "ambiguity": "MULTIPLE_BENEFICIARIES",
                         "candidates": candidate_list,

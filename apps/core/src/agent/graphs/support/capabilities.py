@@ -2,7 +2,8 @@
 
 from enum import Enum
 
-from shared.policy import resolve_capability_alternative, resolve_capability_message, resolve_capability_rule
+from shared.i18n import render_capability_limitation
+from shared.policy import resolve_capability_alternative, resolve_capability_rule
 
 
 class SupportAction(str, Enum):
@@ -59,20 +60,19 @@ def get_alternative(action: SupportAction) -> SupportAction | None:
     return None
 
 
-def generate_limitation_message(missing: list[SupportAction]) -> str:
+def generate_limitation_message(missing: list[SupportAction], *, locale: str = "en") -> str:
     """Generate negotiation message for unavailable actions."""
     if not missing:
         return ""
 
     action = missing[0]
-    if policy_message := resolve_capability_message(domain="support", action=action.value):
-        return policy_message
 
     alt = get_alternative(action)
     label = ACTION_LABELS.get(action, action.value)
 
-    if alt:
-        alt_label = ACTION_LABELS.get(alt, alt.value)
-        return f"I can't *{label}* yet, but I can *{alt_label}*. Want me to proceed?"
-
-    return f"*{label.title()}* isn't available yet. I'll escalate this to support."
+    alt_label = ACTION_LABELS.get(alt, alt.value) if alt else None
+    return render_capability_limitation(
+        locale=locale,
+        action_label=label,
+        alternative_labels=[alt_label] if alt_label else [],
+    )

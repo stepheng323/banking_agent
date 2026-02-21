@@ -1,117 +1,43 @@
 """Session Gate Node (Fast Path).
 
 Determines whether to skip the Planner LLM based on active session context.
-Implements the Deterministic Routing Logic + Cached Meta.
+Implements deterministic routing for active sessions and query continuation.
 """
 
-import re
 from typing import Any
 
 from langchain_core.runnables import RunnableConfig
 
-from apps.core.src.agent.orchestrator.meta_reply import generate_meta_reply
-from apps.core.src.agent.orchestrator.models.domain import MetaIntent, TaskSpec, TaskStage
+from apps.core.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
 from apps.core.src.agent.orchestrator.models.state import OrchestratorState
 from apps.core.src.agent.orchestrator.utils.task_state import reset_tasks_to_extracted
+from shared.i18n import LocaleManager, render_message
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
 
 
-META_INTENT_MAP = {
-    "who are you": MetaIntent.IDENTITY,
-    "what are you": MetaIntent.IDENTITY,
-    "your name": MetaIntent.IDENTITY,
-    "who created you": MetaIntent.BRAND_ORIGIN,
-    "who made you": MetaIntent.BRAND_ORIGIN,
-    "who built you": MetaIntent.BRAND_ORIGIN,
-    "who owns you": MetaIntent.BRAND_ORIGIN,
-    "what can you do": MetaIntent.CAPABILITIES,
-    "capabilities": MetaIntent.CAPABILITIES,
-    "features": MetaIntent.CAPABILITIES,
-    "help": MetaIntent.CAPABILITIES,
-    "assist": MetaIntent.CAPABILITIES,
-    "menu": MetaIntent.CAPABILITIES,
-    "limitations": MetaIntent.LIMITS,
-    "limits": MetaIntent.LIMITS,
-    "what cant you do": MetaIntent.LIMITS,
-    "what can't you do": MetaIntent.LIMITS,
-    "hi": MetaIntent.GREETING,
-    "hello": MetaIntent.GREETING,
-    "hey": MetaIntent.GREETING,
-    "thanks": MetaIntent.THANKS,
-    "thank you": MetaIntent.THANKS,
-}
-
-DOMAIN_KEYWORDS = {
-    "transfer",
-    "send",
-    "pay",
-    "airtime",
-    "data",
-    "balance",
-    "transaction",
-    "transactions",
-    "statement",
-    "history",
-    "receipt",
-    "receipts",
-    "support",
-    "ticket",
-    "issue",
-    "failed",
-    "debit",
-    "credit",
-    "account",
-    "accounts",
-    "beneficiary",
-    "save",
-    "add",
-    "delete",
-    "buy",
-    "recharge",
-    "topup",
-    "pin",
-    "otp",
-    "bank",
-    "card",
-}
-
-
-def _tokenize(text: str) -> list[str]:
-    return re.findall(r"[a-z0-9']+", text)
-
-
-def detect_meta_intent(message_text: str) -> MetaIntent | None:
-    """Deterministically detect meta intent from message."""
-    if not message_text:
-        return None
-
-    text = message_text.strip().lower()
-    if not text:
-        return None
-
-    # 1. Check for domain keywords (Block meta if domain is present)
-    tokens = set(_tokenize(text))
-    if tokens & DOMAIN_KEYWORDS:
-        return None
-
-    # 2. Exact Match / Phrase Match
-    for phrase, intent in META_INTENT_MAP.items():
-        if phrase in text:
-            return intent
-
-    return None
+def _interrupt_router_context(state: OrchestratorState, session_domain: str) -> str:
+    """Build compact context for pending-input routing."""
+    interrupt = state.pending_interrupt
+    if not interrupt:
+        return f"active_domain={session_domain}"
+    return (
+        f"active_domain={session_domain}\n"
+        f"interrupt_kind={interrupt.kind}\n"
+        f"task_ids={interrupt.task_ids}\n"
+        f"required_fields={interrupt.fields_by_task}\n"
+        f"prompt={interrupt.prompt or ''}"
+    )
 
 
 async def session_gate_fastpath(state: OrchestratorState, config: RunnableConfig) -> dict[str, Any]:
     """
-    Fast Path Gate with Cached Meta Support.
+    Fast Path Gate.
 
     1. Check for Active Sessions (Input Interrupt).
-    2. Check for Meta Intent (Cached).
-    3. Check for Query Continuation (Regex).
-    4. Fallback to Planner.
+    2. Check for Query Continuation.
+    3. Fallback to Planner (LLM-first for conversational/meta routing).
     """
 
     session = state.session_stack[-1] if state.session_stack else None
@@ -131,13 +57,52 @@ async def session_gate_fastpath(state: OrchestratorState, config: RunnableConfig
                     msg_lower = state.last_message_text.strip().lower()
                     if msg_lower in cancel_words:
                         logger.info("fast_path_cancel_detected", domain=session.domain, input=msg_lower)
+                        locale = LocaleManager.normalize((state.loaded_context or {}).get("language")).value
                         return {
                             "pending_interrupt": None,
                             "tasks": {},
                             "waves": [],
                             "fast_path_triggered": True,
-                            "final_response": "Cancelled.",
+                            "final_response": render_message("planner.cancelled", locale),
                         }
+
+                    task_planner = config["configurable"].get("task_planner")
+                    if not task_planner or not hasattr(task_planner, "route_pending_input"):
+                        logger.info(
+                            "interrupt_router_fallback_planner",
+                            domain=session.domain,
+                            reason="router_unavailable",
+                        )
+                        return {}
+
+                    try:
+                        route_context = _interrupt_router_context(state, session.domain)
+                        logger.info("interrupt_router_called", active_domain=session.domain)
+                        route = await task_planner.route_pending_input(
+                            state.phone_number,
+                            state.last_message_text,
+                            context=route_context,
+                        )
+                        logger.info(
+                            "interrupt_router_decision",
+                            decision=route.decision,
+                            confidence=route.confidence,
+                            active_domain=session.domain,
+                            detected_language=route.detected_language,
+                            target_intent=route.target_intent,
+                        )
+                    except Exception as e:
+                        logger.warning(
+                            "interrupt_router_fallback_planner",
+                            domain=session.domain,
+                            reason="router_failed",
+                            error=str(e),
+                        )
+                        return {}
+
+                    if route.decision != "continue_flow":
+                        logger.info("fast_path_defer_to_planner", domain=session.domain, reason=route.decision)
+                        return {}
 
                     new_tasks = state.tasks.copy()
                     updates = {
@@ -159,41 +124,6 @@ async def session_gate_fastpath(state: OrchestratorState, config: RunnableConfig
                     return updates
 
     message_text = (state.last_message_text or "").strip()
-
-    # --- 2. Cached Meta Reply (Zero/One Shot) ---
-    allow_meta = state.pending_interrupt is None and not state.tasks and not state.waves
-    meta_intent = detect_meta_intent(message_text) if allow_meta else None
-
-    if meta_intent:
-        logger.info("gate_meta_intent_detected", intent=meta_intent.value)
-
-        task_planner = config["configurable"].get("task_planner")
-        redis_client = config["configurable"].get("redis_client")
-        llm = task_planner.planner_llm if task_planner and hasattr(task_planner, "planner_llm") else None
-
-        active_session = {"domain": session.domain, "state": session.state} if session else None
-
-        message, handoff = await generate_meta_reply(
-            llm,
-            user_message=message_text,
-            user_language_hint=state.loaded_context.get("language"),
-            meta_intent=meta_intent,
-            redis_client=redis_client,
-            active_session=active_session,
-        )
-
-        if handoff == "meta":
-            return {
-                "tasks": {},
-                "waves": [],
-                "current_wave_index": 0,
-                "planner_output": None,
-                "fast_path_triggered": True,
-                "outbox": [{"type": "say", "text": message}],
-                "final_response": message,
-            }
-
-        logger.info("gate_meta_handoff_domain", input=message_text[:40])
 
     if not state.pending_interrupt and session:
         message_lowered = message_text.lower()

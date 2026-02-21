@@ -9,7 +9,7 @@ Uses LLM for multilingual continuation classification.
 """
 
 from datetime import date
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 from langchain_core.runnables import Runnable
 from pydantic import BaseModel, Field
@@ -23,6 +23,7 @@ from apps.core.src.agent.graphs.query.models import (
     TimeRange,
 )
 from apps.core.src.agent.graphs.query.prompts import CONTINUATION_CLASSIFIER_PROMPT
+from shared.i18n import render_message
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -107,7 +108,7 @@ class ContinuationClassifier:
 
     def __init__(self, llm: Runnable):
         self.llm = llm
-        self.structured_llm = llm.with_structured_output(ContinuationClassification)
+        self.structured_llm = cast(Any, llm).with_structured_output(ContinuationClassification)
 
     async def classify(
         self,
@@ -116,6 +117,7 @@ class ContinuationClassifier:
         today: str,
         items: list[QueryResultItem] | None = None,
         surface: ResultSurface | None = None,
+        language: str = "en",
     ) -> tuple[str, dict[str, Any]]:
         """
         Classify a user message as a continuation type.
@@ -140,7 +142,7 @@ class ContinuationClassifier:
                     f"{i}: {item.description} - ₦{item.amount:,.2f} ({item.date})" for i, item in enumerate(items)
                 )
                 items_section = (
-                    f"\nAvailable items (for drill_down, set drill_down_index to item number):\n{items_list}\n"
+                    f"\n{render_message('query.continuity.prompt_items_header', language)}\n{items_list}\n"
                 )
 
             # Format surface context
@@ -150,9 +152,17 @@ class ContinuationClassifier:
                 surface_type = surface.type.value
                 if surface.type == SurfaceType.BREAKDOWN:
                     keys = [item.get("key", "") for item in surface.items[:5]]
-                    surface_context = f"Top keys: {', '.join(keys)}"
+                    surface_context = render_message(
+                        "query.continuity.prompt_surface_top_keys",
+                        language,
+                        {"keys": ", ".join(keys)},
+                    )
                 elif surface.type == SurfaceType.LIST:
-                    surface_context = f"Showing {len(surface.items)} items"
+                    surface_context = render_message(
+                        "query.continuity.prompt_surface_showing_items",
+                        language,
+                        {"count": len(surface.items)},
+                    )
 
             prompt = CONTINUATION_CLASSIFIER_PROMPT.format(
                 today=today,
@@ -199,7 +209,10 @@ class ContinuationClassifier:
                 data["drill_down_action"] = result.drill_down_action or "view_details"
 
             elif result.continuation_type == "end_session":
-                data["end_session_response"] = result.end_session_response or "You're welcome! 😊"
+                data["end_session_response"] = (
+                    result.end_session_response
+                    or render_message("query.session.you_are_welcome", language)
+                )
 
             logger.info("continuation_classified", type=result.continuation_type)
             return result.continuation_type, data
@@ -256,7 +269,7 @@ def apply_time_delta(
     return NormalizedQuery.model_validate(query_dict)
 
 
-def build_soft_clarification(items: list[QueryResultItem], context: str = "") -> str:
+def build_soft_clarification(items: list[QueryResultItem], context: str = "", locale: str = "en") -> str:
     """Build a graceful clarification message without resetting context.
 
     Args:
@@ -267,31 +280,36 @@ def build_soft_clarification(items: list[QueryResultItem], context: str = "") ->
         Formatted clarification message with numbered options
     """
     if not items:
-        return "I'm not sure what you're referring to. Could you rephrase?"
+        return render_message("query.clarify.unsure_rephrase", locale)
 
-    lines = [f"I'm not sure which one you mean{' (' + context + ')' if context else ''}."]
+    context_suffix = (
+        render_message("query.clarify.context_suffix", locale, {"context": context})
+        if context
+        else ""
+    )
+    lines = [render_message("query.clarify.which_one", locale, {"context_suffix": context_suffix})]
     lines.append("")
-    lines.append("Are you referring to:")
+    lines.append(render_message("query.clarify.are_you_referring", locale))
 
     for i, item in enumerate(items[:5], 1):  # Max 5 options
         amount = f"₦{abs(item.amount):,.0f}" if item.amount else ""
-        lines.append(f"{i}️⃣ {amount} — {item.description[:30]}")
+        lines.append(
+            render_message(
+                "query.clarify.option_line",
+                locale,
+                {"index": i, "amount": amount, "description": item.description[:30]},
+            )
+        )
 
     lines.append("")
-    lines.append("Reply with the number or rephrase.")
+    lines.append(render_message("query.clarify.reply_number_or_rephrase", locale))
 
     return "\n".join(lines)
 
 
-def get_recovery_message() -> str:
+def get_recovery_message(locale: str = "en") -> str:
     """Get the recovery message for total failure scenario (3+ clarification attempts)."""
-    return (
-        "I'm having trouble understanding, and I don't want to waste your time.\n\n"
-        "You can:\n"
-        "• Rephrase what you want to do\n"
-        "• Start a new request\n"
-        "• Talk to support"
-    )
+    return render_message("query.clarify.recovery_options", locale)
 
 
 def should_offer_recovery(clarification_attempts: int, max_attempts: int = 3) -> bool:

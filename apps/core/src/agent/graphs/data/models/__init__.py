@@ -3,7 +3,7 @@
 from datetime import UTC, datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class DataPlan(BaseModel):
@@ -18,8 +18,7 @@ class DataPlan(BaseModel):
     size_gb: float | None = Field(None, description="Data size in GB")
     validity_days: int | None = Field(None, description="Validity period in days")
 
-    class Config:
-        frozen = True
+    model_config = ConfigDict(frozen=True)
 
 
 def _utc_now() -> datetime:

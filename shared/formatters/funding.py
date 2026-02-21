@@ -2,6 +2,8 @@
 
 from typing import Any
 
+from shared.i18n import render_message
+
 
 def _format_currency_naira(amount: float) -> str:
     """Format amount as Naira currency."""
@@ -20,6 +22,7 @@ def format_insufficient_funds(
     recipient_name: str = "",
     recipient_bank: str = "",
     recipient_account: str = "",
+    locale: str = "en",
 ) -> str:
     """Format insufficient funds message.
 
@@ -41,23 +44,40 @@ def format_insufficient_funds(
     # We'll drop the transaction summary header (lines 45-53) and integrate it into the text as per Option B design.
     # Logic:
 
-    lines.append("*Insufficient Funds*")
+    lines.append(render_message("funding.format.insufficient.header", locale))
     lines.append("")
 
-    recipient_display = recipient_name.title() if recipient_name else "Recipient"
+    recipient_display = recipient_name.title() if recipient_name else render_message(
+        "funding.format.insufficient.recipient_fallback",
+        locale,
+    )
     transfer_amount_str = _format_currency_naira(transfer_amount)
     balance_str = _format_currency_naira(available_balance)
 
     lines.append(
-        f"You're trying to send *{transfer_amount_str}* to {recipient_display}, "
-        f"but your *{bank_name}* balance is only *{balance_str}*."
+        render_message(
+            "funding.format.insufficient.body",
+            locale,
+            {
+                "transfer_amount": transfer_amount_str,
+                "recipient_display": recipient_display,
+                "bank_name": bank_name,
+                "balance": balance_str,
+            },
+        )
     )
     lines.append("")
 
-    lines.append("*Options:*")
-    lines.append(f"• Send *{_format_currency_naira(max_available)}* instead")
-    lines.append("• Add funds & retry")
-    lines.append("• Cancel transaction")
+    lines.append(render_message("funding.format.insufficient.options_header", locale))
+    lines.append(
+        render_message(
+            "funding.format.insufficient.option_send_instead",
+            locale,
+            {"amount": _format_currency_naira(max_available)},
+        )
+    )
+    lines.append(render_message("funding.format.insufficient.option_add_funds_retry", locale))
+    lines.append(render_message("funding.format.insufficient.option_cancel", locale))
 
     return "\n".join(lines)
 
@@ -65,6 +85,7 @@ def format_insufficient_funds(
 def format_funding_plan_message(
     transfer_amount: float,
     steps: list[dict[str, Any]],
+    locale: str = "en",
 ) -> str:
     """Format a funding plan message showing how transfer will be funded.
 
@@ -78,13 +99,29 @@ def format_funding_plan_message(
     if len(steps) == 1:
         step = steps[0]
         amount_str = _format_currency_naira(transfer_amount)
-        bank = step.get("bank_name", "account")
-        return f"{amount_str} will be debited from your {bank} account."
+        bank = step.get("bank_name", render_message("funding.format.plan.bank_fallback_lower", locale))
+        return render_message(
+            "funding.format.plan.single_source_debit",
+            locale,
+            {"amount": amount_str, "bank": bank},
+        )
 
-    lines = [f"To send {_format_currency_naira(transfer_amount)}, I'll combine:"]
+    lines = [
+        render_message(
+            "funding.format.plan.multi_source_header",
+            locale,
+            {"amount": _format_currency_naira(transfer_amount)},
+        )
+    ]
     for step in steps:
-        bank = step.get("bank_name", "Account")
+        bank = step.get("bank_name", render_message("funding.format.plan.bank_fallback", locale))
         amount = float(step.get("amount", 0))
-        lines.append(f"• {_format_currency_naira(amount)} from {bank}")
+        lines.append(
+            render_message(
+                "funding.format.plan.multi_source_item",
+                locale,
+                {"amount": _format_currency_naira(amount), "bank": bank},
+            )
+        )
 
     return "\n".join(lines)

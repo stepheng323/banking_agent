@@ -3,6 +3,7 @@
 from datetime import date, datetime
 
 from apps.core.src.agent.graphs.query.models import QueryIntent, QueryResult, QueryResultItem, SurfaceType
+from shared.i18n import render_message
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -12,34 +13,67 @@ class QueryFormatter:
     """Formatter for query execution results."""
 
     @staticmethod
+    def _parse_summary_parts(summary_text: str | None) -> dict[str, str]:
+        """Parse pipe-delimited summary parts into a dictionary."""
+        if not summary_text or "|" not in summary_text:
+            return {}
+
+        parts: dict[str, str] = {}
+        for part in summary_text.split("|"):
+            if ":" not in part:
+                continue
+            key, value = part.split(":", 1)
+            key = key.strip()
+            value = value.strip()
+            if key:
+                parts[key] = value
+        return parts
+
+    @staticmethod
+    def _has_balance_item(result: QueryResult) -> bool:
+        """Check whether any result item is a balance entry."""
+        if not result.items:
+            return False
+        return any(item.metadata and item.metadata.get("type") == "balance" for item in result.items)
+
+    @staticmethod
+    def _has_rank_metadata(result: QueryResult) -> bool:
+        """Check if ranking metadata exists on any item."""
+        if not result.items:
+            return False
+        return any(item.metadata and item.metadata.get("rank") for item in result.items)
+
+    @staticmethod
     def format(
         result: QueryResult,
         current_page: int = 0,
         show_expanded: bool = False,
         has_more: bool = False,
+        locale: str = "en",
     ) -> str:
         """Format QueryResult into user-facing response."""
         if not result:
-            return "No results to display."
+            return render_message("query.format.no_results_display", locale)
 
-        response = QueryFormatter._format_query_result(result, has_more, show_expanded, current_page)
+        response = QueryFormatter._format_query_result(result, has_more, show_expanded, current_page, locale)
         return response
 
     @staticmethod
-    def _format_date(d: date | str) -> str:
+    def _format_date(d: date | str, locale: str = "en") -> str:
         """Format date to 'Dec 28' style."""
         if isinstance(d, str):
+            raw_date = d
             try:
                 d = datetime.strptime(d[:10], "%Y-%m-%d").date()
             except (ValueError, TypeError):
-                return d[:10] if d else "Unknown"
+                return raw_date[:10] if raw_date else render_message("query.format.unknown", locale)
         return d.strftime("%b %d").replace(" 0", " ")
 
     @staticmethod
-    def _humanize_narration(narration: str) -> str:
+    def _humanize_narration(narration: str, locale: str = "en") -> str:
         """Clean up narration for display."""
         if not narration:
-            return "Transaction"
+            return render_message("query.format.narration.transaction", locale)
 
         narration = narration.strip()
 
@@ -49,19 +83,27 @@ class QueryFormatter:
                 if part.upper() in ("TO", "FROM") and i + 1 < len(parts):
                     name_parts = parts[i + 1 :]
                     name = " ".join(name_parts).title()
-                    prefix = "Transfer to" if part.upper() == "TO" else "Transfer from"
+                    prefix = (
+                        render_message("query.format.narration.transfer_to", locale)
+                        if part.upper() == "TO"
+                        else render_message("query.format.narration.transfer_from", locale)
+                    )
                     return f"{prefix} {name[:25]}"
-            return "Bank Transfer"
+            return render_message("query.format.narration.bank_transfer", locale)
 
         if narration.upper().startswith("POS PURCHASE"):
             merchant = narration[14:].strip(" -")
-            return merchant.title()[:30] if merchant else "POS Purchase"
+            return (
+                merchant.title()[:30]
+                if merchant
+                else render_message("query.format.narration.pos_purchase", locale)
+            )
 
         replacements = [
-            ("TRANSFER TO ", "Transfer to "),
-            ("TRANSFER FROM ", "Transfer from "),
-            ("ATM WITHDRAWAL", "ATM Withdrawal"),
-            ("AIRTIME PURCHASE", "Airtime"),
+            ("TRANSFER TO ", render_message("query.format.narration.transfer_to", locale) + " "),
+            ("TRANSFER FROM ", render_message("query.format.narration.transfer_from", locale) + " "),
+            ("ATM WITHDRAWAL", render_message("query.format.narration.atm_withdrawal", locale)),
+            ("AIRTIME PURCHASE", render_message("query.format.narration.airtime", locale)),
         ]
         result = narration
         for old, new in replacements:
@@ -88,54 +130,57 @@ class QueryFormatter:
         has_more: bool,
         show_expanded: bool = False,
         current_page: int = 0,
+        locale: str = "en",
     ) -> str:
         """Format QueryResult to response string."""
-        if not show_expanded and result.summary_text and "|" not in result.summary_text:
-            if (
-                "Balance:" in result.summary_text
-                or "balance" in result.summary_text.lower()
-                or (result.items and result.items[0].metadata and result.items[0].metadata.get("type") == "balance")
-            ):
+        summary_parts = QueryFormatter._parse_summary_parts(result.summary_text)
+
+        if not show_expanded and result.summary_text and not summary_parts:
+            if not result.items:
                 return result.summary_text
 
             if (
-                result.summary_text.startswith("💸")
-                or "You spent" in result.summary_text
-                or "Total:" in result.summary_text
-                or "Your average" in result.summary_text
-                or "You made" in result.summary_text
-                or "Top Recipients" in result.summary_text
+                result.query_snapshot
+                and result.query_snapshot.intent in {QueryIntent.AFFORDABILITY, QueryIntent.TIME_COMPARISON}
             ):
-                pass
+                return result.summary_text
 
-        if (
-            result.summary_text
-            and result.summary_text.startswith("accounts:")
-            and "showing:" not in result.summary_text
-        ):
-            parts = dict(p.split(":") for p in result.summary_text.split("|") if ":" in p)
+            if result.surface and result.surface.type == SurfaceType.SUMMARY:
+                return result.summary_text
+
+            if QueryFormatter._has_balance_item(result):
+                return result.summary_text
+
+        if summary_parts and "accounts" in summary_parts and "showing" not in summary_parts:
+            parts = summary_parts
             account_count = int(parts.get("accounts", 0))
             total = parts.get("total", "₦0")
 
-            lines = ["💰 *Your Accounts*", ""]
+            lines = [render_message("query.format.accounts_header", locale), ""]
 
             if result.items:
                 for item in result.items:
                     bank_name = item.description
                     amount = QueryFormatter._format_amount(item.amount)
-                    lines.append(f"{amount} — {bank_name}")
+                    lines.append(
+                        render_message(
+                            "query.format.accounts_item",
+                            locale,
+                            {"amount": amount, "bank_name": bank_name},
+                        )
+                    )
 
             lines.append("")
-            lines.append(f"*Total: {total}*")
+            lines.append(render_message("query.format.total_line", locale, {"total": total}))
 
             return "\n".join(lines)
 
-        if result.summary_text and result.summary_text.startswith("Breakdown by"):
-            lines = [f"📊 *{result.summary_text}*", ""]
+        if result.summary_text and result.surface and result.surface.type == SurfaceType.BREAKDOWN:
+            lines = [render_message("query.format.breakdown_heading", locale, {"summary": result.summary_text}), ""]
 
-            total_abs = 0
+            total_abs = 0.0
             if result.items:
-                total_abs = sum(abs(item.amount) for item in result.items)
+                total_abs = float(sum((abs(item.amount) for item in result.items), 0.0))
 
                 for item in result.items:
                     name = item.description.replace("_", " ").title()
@@ -147,30 +192,51 @@ class QueryFormatter:
                         pct = (abs(item.amount) / total_abs) * 100
                         percentage_str = "<1%" if 0 < pct < 1 else f"{int(pct)}%"
 
-                    lines.append(f"{amount} — {name} ({percentage_str}, {count} txns)")
+                    lines.append(
+                        render_message(
+                            "query.format.breakdown_item",
+                            locale,
+                            {
+                                "amount": amount,
+                                "name": name,
+                                "percentage": percentage_str,
+                                "count": count,
+                            },
+                        )
+                    )
 
             lines.append("")
-            lines.append(f"Total spent this month: ₦{total_abs:,.0f}")
+            lines.append(render_message("query.format.total_spent_month", locale, {"amount": f"{total_abs:,.0f}"}))
             return "\n".join(lines)
 
-        # Trigger ranked list view if title matches or if items have explicit rank metadata
-        is_ranked_title = "Top" in result.summary_text and (
-            "Largest" in result.summary_text or "Smallest" in result.summary_text
+        # Trigger ranked list view via structured surface or explicit rank metadata.
+        is_ranked_surface = (
+            result.surface
+            and result.surface.type == SurfaceType.LIST
+            and isinstance(result.surface.context, dict)
+            and result.surface.context.get("type") in ("largest", "smallest")
         )
-        is_ranked_continuation = "Other" in result.summary_text and "Rank" in result.summary_text
-        has_rank_metadata = result.items and result.items[0].metadata and result.items[0].metadata.get("rank")
+        has_rank_metadata = QueryFormatter._has_rank_metadata(result)
 
-        if result.summary_text and (is_ranked_title or is_ranked_continuation or has_rank_metadata):
+        if result.summary_text and (is_ranked_surface or has_rank_metadata):
             # Bypass list rendering if surface is explicitly SINGLE_ITEM (e.g. "Highest expense")
             if result.surface and result.surface.type == SurfaceType.SINGLE_ITEM:
                 pass
             else:
-                heading = f"🏆 *{result.summary_text}*" if "🏆" not in result.summary_text else result.summary_text
+                heading = (
+                    result.summary_text
+                    if result.summary_text.startswith("🏆")
+                    else render_message(
+                        "query.format.ranked_heading",
+                        locale,
+                        {"summary": result.summary_text},
+                    )
+                )
                 lines = [heading, ""]
 
-                for i, item in enumerate(result.items):
+                for i, item in enumerate(result.items or []):
                     amount = QueryFormatter._format_amount(item.amount)
-                    date_str = QueryFormatter._format_date(item.date)
+                    date_str = QueryFormatter._format_date(item.date, locale)
                     name = item.description
 
                     # Use absolute rank if available (from backend pagination), else relative
@@ -183,7 +249,19 @@ class QueryFormatter:
                     if item.metadata and item.metadata.get("bank_name"):
                         bank_suffix = f" _({item.metadata['bank_name']})_"
 
-                    lines.append(f"{rank}. *{amount}* — {name} {date_str}{bank_suffix}")
+                    lines.append(
+                        render_message(
+                            "query.format.ranked_item",
+                            locale,
+                            {
+                                "rank": rank,
+                                "amount": amount,
+                                "name": name,
+                                "date": date_str,
+                                "bank_suffix": bank_suffix,
+                            },
+                        )
+                    )
 
                 return "\n".join(lines)
 
@@ -196,56 +274,80 @@ class QueryFormatter:
 
         # Handle no results case for transaction lists
         if not result.items:
-            return "No matching transactions found for your search."
+            return render_message("query.format.no_matching_transactions", locale)
 
         # Special handling for single transaction - show detailed view
         if len(result.items) == 1:
             item = result.items[0]
-            title = "Transaction Details"
+            title = render_message("query.format.transaction_details_title", locale)
             if result.query_snapshot and result.query_snapshot.result_reference == "latest":
-                title = "Your last transaction was:"
+                title = render_message("query.format.last_transaction_title", locale)
                 tx_filters = result.query_snapshot.filters
                 if tx_filters and tx_filters.transaction_type in ("debit", "credit"):
-                    title = f"Your last {tx_filters.transaction_type} transaction was:"
+                    title = render_message(
+                        "query.format.last_transaction_type_title",
+                        locale,
+                        {"transaction_type": tx_filters.transaction_type},
+                    )
 
             lines = [f"*{title}*", ""]
 
             amount_str = f"₦{item.amount:,.2f}"
-            lines.append(f"*Amount:* {amount_str}")
-            lines.append(f"*Description:* {item.description}")
-            lines.append(f"*Date:* {item.date.strftime('%B %d, %Y') if item.date else 'Unknown'}")
+            lines.append(render_message("query.format.field_amount", locale, {"amount": amount_str}))
+            lines.append(render_message("query.format.field_description", locale, {"description": item.description}))
+            lines.append(
+                render_message(
+                    "query.format.field_date",
+                    locale,
+                    {
+                        "date": item.date.strftime("%B %d, %Y")
+                        if item.date
+                        else render_message("query.format.unknown", locale),
+                    },
+                )
+            )
 
             if item.metadata:
                 tx_type = item.metadata.get("type", "")
                 if tx_type:
-                    direction = "Outgoing (Debit)" if tx_type == "debit" else "Incoming (Credit)"
-                    lines.append(f"*Type:* {direction}")
+                    direction = (
+                        render_message("query.format.type_outgoing_debit", locale)
+                        if tx_type == "debit"
+                        else render_message("query.format.type_incoming_credit", locale)
+                    )
+                    lines.append(render_message("query.format.field_type", locale, {"type": direction}))
 
                 bank_name = item.metadata.get("bank_name", "")
                 if bank_name:
-                    lines.append(f"*Bank:* {bank_name}")
+                    lines.append(render_message("query.format.field_bank", locale, {"bank_name": bank_name}))
 
                 transaction_type = item.metadata.get("transaction_type", "")
                 if transaction_type:
-                    lines.append(f"*Category:* {transaction_type.title()}")
+                    lines.append(
+                        render_message(
+                            "query.format.field_category",
+                            locale,
+                            {"category": transaction_type.title()},
+                        )
+                    )
 
                 status = item.metadata.get("status", "")
                 if status:
                     status_display = (
-                        "✅ Successful"
+                        render_message("query.format.status_success", locale)
                         if status.lower() in ("success", "completed", "successful")
-                        else f"⏳ {status.title()}"
+                        else render_message("query.format.status_pending_generic", locale, {"status": status.title()})
                     )
-                    lines.append(f"*Status:* {status_display}")
+                    lines.append(render_message("query.format.field_status", locale, {"status": status_display}))
 
             if item.id:
-                lines.append(f"*Ref:* {item.id}")
+                lines.append(render_message("query.format.field_ref", locale, {"reference": item.id}))
 
             lines.append("")
 
             transaction_type = item.metadata.get("transaction_type", "") if item.metadata else ""
             if transaction_type == "transfer":
-                lines.append("_Reply: 'receipt' for proof | 'issue' to report a problem_")
+                lines.append(render_message("query.format.transfer_reply_hint", locale))
 
             return "\n".join(lines)
 
@@ -253,24 +355,32 @@ class QueryFormatter:
 
         account_count = 1
         pagination = ""
-        heading = "*Transactions*"
+        heading = render_message("query.format.transactions_heading", locale)
 
         # Check for dynamic heading from recipient drill-down or analytics
         if result.summary_text:
             # If summary contains recipient name pattern (*Name* — ₦X), use it as heading
             if "—" in result.summary_text and result.summary_text.startswith("*"):
                 heading = result.summary_text.split(chr(10))[0]  # First line only
-            elif "|" in result.summary_text:
+            elif summary_parts:
                 # Standard pagination info
-                parts = dict(p.split(":") for p in result.summary_text.split("|") if ":" in p)
+                parts = summary_parts
                 account_count = int(parts.get("accounts", 1))
                 showing = parts.get("showing", "")
                 total = parts.get("total", "")
                 if showing and total:
-                    pagination = f"Showing {showing} of {total}"
+                    pagination = render_message(
+                        "query.format.pagination_showing",
+                        locale,
+                        {"showing": showing, "total": total},
+                    )
 
         if account_count > 1:
-            heading = f"*Transactions* _(across {account_count} accounts)_"
+            heading = render_message(
+                "query.format.transactions_across_accounts",
+                locale,
+                {"account_count": account_count},
+            )
 
         lines.append(heading)
         lines.append("")
@@ -295,9 +405,13 @@ class QueryFormatter:
             if show_expanded:
                 total_items = len(result.items)
                 current_showing = f"{start_idx + 1}-{min(end_idx, total_items)}"
-                pagination = f"Showing {current_showing} of {total_items}"
+                pagination = render_message(
+                    "query.format.pagination_showing",
+                    locale,
+                    {"showing": current_showing, "total": total_items},
+                )
 
-            grouped = QueryFormatter._group_items_by_date(display_items)
+            grouped = QueryFormatter._group_items_by_date(display_items, locale)
             for date_str, items in grouped.items():
                 lines.append(f"*{date_str}*")
                 for item in items:
@@ -315,27 +429,60 @@ class QueryFormatter:
                             import re
 
                             phone_match = re.search(r"(\d{10,11})", item.description or "")
-                            recipient = phone_match.group(1) if phone_match else "recipient"
-                        narration = f"{real_type.title()} for {recipient}"
+                            recipient = (
+                                phone_match.group(1)
+                                if phone_match
+                                else render_message("query.format.recipient_fallback", locale)
+                            )
+                        narration = render_message(
+                            "query.format.narration.type_for_recipient",
+                            locale,
+                            {"type": real_type.title(), "recipient": recipient},
+                        )
                     elif counterparty:
                         if "transfer" in item.description.lower():
-                            prefix = "Transfer from" if tx_type == "credit" else "Transfer to"
+                            prefix = (
+                                render_message("query.format.narration.transfer_from", locale)
+                                if tx_type == "credit"
+                                else render_message("query.format.narration.transfer_to", locale)
+                            )
                             narration = f"{prefix} {counterparty}"
                         else:
                             narration = counterparty
                     else:
-                        narration = QueryFormatter._humanize_narration(item.description)
-                    label = "Received" if tx_type == "credit" else "Sent"
+                        narration = QueryFormatter._humanize_narration(item.description, locale)
+                    label = (
+                        render_message("query.format.label_received", locale)
+                        if tx_type == "credit"
+                        else render_message("query.format.label_sent", locale)
+                    )
                     bank_name = item.metadata.get("bank_name", "") if item.metadata else ""
 
                     if bank_name:
-                        lines.append(f"{amount} • {label} — {narration} _({bank_name})_")
+                        lines.append(
+                            render_message(
+                                "query.format.transaction_item_with_bank",
+                                locale,
+                                {
+                                    "amount": amount,
+                                    "label": label,
+                                    "narration": narration,
+                                    "bank_name": bank_name,
+                                },
+                            )
+                        )
                     else:
-                        lines.append(f"{amount} • {label} — {narration}")
+                        lines.append(
+                            render_message(
+                                "query.format.transaction_item",
+                                locale,
+                                {"amount": amount, "label": label, "narration": narration},
+                            )
+                        )
                 lines.append("")
 
             if remaining_count > 0:
-                lines.append(f"_{remaining_count} more transactions. Reply **Next** to continue._")
+                lines.append(render_message("query.format.remaining_transactions", locale, {"count": remaining_count}))
                 lines.append("")
 
             if lines and lines[-1] == "":
@@ -346,20 +493,21 @@ class QueryFormatter:
             lines.append(f"_{pagination}_")
 
         if has_more:
-            lines.append("_*more* for next page_")
+            lines.append(render_message("query.format.more_for_next_page", locale))
 
-        return "\n".join(lines) if lines else "Query completed."
+        return "\n".join(lines) if lines else render_message("query.session.completed", locale)
 
     @staticmethod
     def _group_items_by_date(
         items: list[QueryResultItem],
+        locale: str = "en",
     ) -> dict[str, list[QueryResultItem]]:
         """Group items by date for display."""
         from collections import OrderedDict
 
         grouped: dict[str, list[QueryResultItem]] = OrderedDict()
         for item in items:
-            date_key = QueryFormatter._format_date(item.date)
+            date_key = QueryFormatter._format_date(item.date, locale)
             if date_key not in grouped:
                 grouped[date_key] = []
             grouped[date_key].append(item)

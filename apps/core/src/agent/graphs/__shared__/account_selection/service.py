@@ -1,6 +1,7 @@
 """Standalone account selection module for transfer/airtime/data flows."""
 
 from shared.formatters.accounts import format_accounts_list
+from shared.i18n import render_message
 from shared.utils.bank_aliases import find_matching_bank_name
 from shared.utils.logging import get_logger
 
@@ -75,6 +76,7 @@ def select_source_account(
     profile: dict,
     source_bank_name: str | None = None,
     llm_reply: str | None = None,
+    locale: str = "en",
 ) -> tuple[dict | None, str | None]:
     """
     Select a source account from available accounts.
@@ -94,7 +96,7 @@ def select_source_account(
         return (
             None,
             llm_reply
-            or "I couldn't find any account on your profile. Please add an account first.",
+            or render_message("source_account.profile_no_accounts", locale),
         )
 
     selected = _pick_source_account(
@@ -105,7 +107,7 @@ def select_source_account(
         return selected, None
 
     # If no account selected, return formatted list for user to choose
-    account_list = format_accounts_list(accounts)
+    account_list = format_accounts_list(accounts, locale=locale)
     logger.debug("debug_accounts")
 
     if llm_reply:

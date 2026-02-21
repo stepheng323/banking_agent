@@ -43,7 +43,8 @@ class ConfirmationStep(AirtimeStep):
                 "recipientName": data.recipient_name,
                 "sourceBank": data.source_bank_name,
                 "sourceAccount": data.source_account_number,
-            }
+            },
+            locale=context.language,
         )
 
         try:

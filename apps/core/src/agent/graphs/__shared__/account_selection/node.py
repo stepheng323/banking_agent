@@ -5,6 +5,7 @@ from collections.abc import Callable, Coroutine
 from typing import TYPE_CHECKING, Any, TypeVar, cast
 
 from apps.core.src.agent.graphs.__shared__.account_selection.service import select_source_account
+from shared.i18n import LocaleManager, render_message
 
 if TYPE_CHECKING:
     pass
@@ -34,12 +35,14 @@ async def select_source_account_shared(
     profile = state.get("user_profile", {})
     source_bank_name = state.get("source_bank_name")
     llm_reply = state.get("llm_reply")
+    locale = LocaleManager.normalize(state.get("language")).value
 
     selected, response = select_source_account(
         accounts=accounts,
         profile=profile or {},
         source_bank_name=source_bank_name,
         llm_reply=llm_reply,
+        locale=locale,
     )
 
     if selected is not None:
@@ -63,7 +66,7 @@ async def select_source_account_shared(
         )
 
     if not accounts:
-        error_message = "I couldn't find any account on your profile. Please add an account first to proceed with this transaction."
+        error_message = render_message("source_account.profile_no_accounts_proceed", locale)
         return cast(
             StateType,
             {
@@ -78,6 +81,6 @@ async def select_source_account_shared(
         {
             **state,
             "flow_state": "selecting_account",
-            "response": response or "Please select an account.",
+            "response": response or render_message("source_account.select_account_prompt", locale),
         },
     )

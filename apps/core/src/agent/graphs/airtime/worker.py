@@ -19,7 +19,8 @@ from apps.core.src.agent.graphs.airtime.nodes.selection import SourceSelectionSt
 from apps.core.src.agent.graphs.airtime.nodes.validation import ValidationStep
 from apps.core.src.agent.graphs.airtime.pipeline.base import AirtimePipeline
 from apps.core.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
-from shared.policy import resolve_capability_alternative, resolve_capability_message, resolve_capability_rule
+from shared.i18n import LocaleManager, render_capability_limitation, render_message
+from shared.policy import resolve_capability_alternative, resolve_capability_rule
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -39,11 +40,11 @@ class AirtimeWorker:
 
     def __init__(
         self,
-        extractor,
-        bill_provider,
-        transaction_repo,
-        queue,
-    ):
+        extractor: Any,
+        bill_provider: Any,
+        transaction_repo: Any,
+        queue: Any,
+    ) -> None:
         self.extractor = extractor
         self.bill_provider = bill_provider
         self.transaction_repo = transaction_repo
@@ -58,6 +59,7 @@ class AirtimeWorker:
     def _build_context(context: dict[str, Any]) -> AirtimeContext:
         return AirtimeContext(
             phone_number=context.get("phone_number", ""),
+            language=LocaleManager.normalize(context.get("language")).value,
             channel=context.get("channel", "whatsapp"),
             beneficiaries=context.get("beneficiaries", []),
             accounts=context.get("accounts", []),
@@ -80,21 +82,17 @@ class AirtimeWorker:
         )
 
     @staticmethod
-    def _policy_gate_message(action: str) -> str | None:
+    def _policy_gate_message(action: str, *, locale: str = "en") -> str | None:
         rule = resolve_capability_rule(domain="airtime", action=action)
         if rule is not None and rule.supported:
             return None
 
-        if policy_message := resolve_capability_message(domain="airtime", action=action):
-            return policy_message
-
-        if alt := resolve_capability_alternative(domain="airtime", action=action):
-            alt_text = alt.replace("_", " ")
-            action_text = action.replace("_", " ")
-            return f"{action_text} isn't available yet. I can help with {alt_text} instead."
-
-        action_text = action.replace("_", " ")
-        return f"{action_text} isn't available yet."
+        alt = resolve_capability_alternative(domain="airtime", action=action)
+        return render_capability_limitation(
+            locale=locale,
+            action_label=action.replace("_", " "),
+            alternative_labels=[alt.replace("_", " ")] if alt else [],
+        )
 
     @staticmethod
     def _build_pipeline(user_message: str | None) -> AirtimePipeline:
@@ -121,7 +119,8 @@ class AirtimeWorker:
         start_time = time.perf_counter()
 
         action = str(payload.get("action") or "buy_airtime")
-        if limitation := self._policy_gate_message(action):
+        locale = LocaleManager.normalize(context.get("language")).value
+        if limitation := self._policy_gate_message(action, locale=locale):
             logger.info("capability_blocked", domain="airtime", action=action)
             return TransactionResult(
                 outcome=TransactionOutcome.FAILED,
@@ -149,7 +148,7 @@ class AirtimeWorker:
             logger.error("airtime_pipeline_failed", error=str(e), exc_info=True)
             return TransactionResult(
                 outcome=TransactionOutcome.FAILED,
-                error=f"Pipeline failed: {str(e)}",
+                error=render_message("airtime.error.pipeline_failed", locale, {"error": str(e)}),
                 retryable=True,
                 patch={"idempotency_key": data.idempotency_key},
             )

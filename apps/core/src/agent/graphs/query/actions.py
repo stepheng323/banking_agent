@@ -1,17 +1,19 @@
 """Continuity actions for query flow (drill-down, receipts, etc)."""
 
 import json
-from typing import Any
+from typing import Any, Awaitable, cast
 
 from apps.core.src.agent.graphs.query.models import QueryResult
 from apps.core.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
 from shared.cache.redis_client import RedisClient
+from shared.i18n import LocaleManager, render_message
 
 QUEUE_NAME = "banking:receipt_jobs"
 
 
 async def handle_drill_down(state: dict[str, Any]) -> TransactionResult:
     """Handle drill-down using index and action from classifier."""
+    locale = LocaleManager.normalize(state.get("language")).value
 
     # Note: State here is the working state (with session merged)
     query_result = state.get("query_result")
@@ -25,18 +27,28 @@ async def handle_drill_down(state: dict[str, Any]) -> TransactionResult:
     drill_down_action = state.get("drill_down_action", "view_details")
 
     if not query_result or not query_result.items:
-        return TransactionResult(outcome=TransactionOutcome.FAILED, response="No items to drill down into.")
+        return TransactionResult(
+            outcome=TransactionOutcome.FAILED,
+            response=render_message("query.drill_down.no_items", locale),
+        )
 
     index = max(0, min(drill_down_index, len(query_result.items) - 1))
     item = query_result.items[index]
 
     if drill_down_action == "get_receipt":
         transaction_type = item.metadata.get("transaction_type", "") if item.metadata else ""
+        transaction_type_display = (
+            transaction_type.title() if transaction_type else render_message("query.common.transaction", locale)
+        )
         if transaction_type != "transfer":
-             return TransactionResult(
+            return TransactionResult(
                 outcome=TransactionOutcome.OK,
-                response=f"Receipts are only available for bank transfers. This is a {transaction_type.title() if transaction_type else 'transaction'}.",
-                patch={"session_active": True}
+                response=render_message(
+                    "query.receipt.only_transfer",
+                    locale,
+                    {"transaction_type": transaction_type_display},
+                ),
+                patch={"session_active": True},
             )
 
         try:
@@ -46,10 +58,18 @@ async def handle_drill_down(state: dict[str, Any]) -> TransactionResult:
                 "narration": item.description,
                 "recipient": {
                     "name": item.metadata.get("recipient_name") or item.description,
-                    "bank_name": item.metadata.get("bank_name", "Unknown Bank"),
-                    "account_number": item.metadata.get("recipient_account", "N/A"),
+                    "bank_name": item.metadata.get(
+                        "bank_name",
+                        render_message("query.receipt.bank_unknown", locale),
+                    ),
+                    "account_number": item.metadata.get(
+                        "recipient_account",
+                        render_message("query.receipt.na", locale),
+                    ),
                 },
-                "source": {"account_name": "User Account"},
+                "source": {
+                    "account_name": render_message("query.receipt.user_account", locale)
+                },
             }
 
             if item.metadata.get("recipient_name"):
@@ -57,36 +77,36 @@ async def handle_drill_down(state: dict[str, Any]) -> TransactionResult:
 
             payload = {
                 "phone_number": state.get("phone_number"),
-                "transaction_reference": item.id or "N/A",
+                "transaction_reference": item.id or render_message("query.receipt.na", locale),
                 **transfer_data,
             }
 
             job = {"payload": payload, "signal_key": None}
 
-            await redis_client.rpush(QUEUE_NAME, json.dumps(job))
+            push_result = redis_client.rpush(QUEUE_NAME, json.dumps(job))
+            if not isinstance(push_result, int):
+                await cast(Awaitable[int], push_result)
 
             return TransactionResult(
                 outcome=TransactionOutcome.OK,
-                response="I'm generating your receipt now. I'll send it to you as an image shortly.",
+                response=render_message("query.receipt.generating", locale),
                 patch={"session_active": True},
             )
         except Exception:
-             return TransactionResult(
+            return TransactionResult(
                 outcome=TransactionOutcome.FAILED,
-                response="Sorry, I couldn't generate the receipt at this moment. Please try again later.",
-                patch={"session_active": True}
+                response=render_message("query.receipt.failed", locale),
+                patch={"session_active": True},
             )
 
     if drill_down_action == "report_issue":
-        response = (
-            f"I understand you have an issue with this transaction:\n\n"
-            f"*{item.description}* - ₦{item.amount:,.2f}\n\n"
-            f"Please describe the issue:\n"
-            f"1️⃣ Transaction failed but I was debited\n"
-            f"2️⃣ I don't recognize this transaction\n"
-            f"3️⃣ Wrong amount was charged\n"
-            f"4️⃣ Other issue\n\n"
-            f"_Reply with the number or describe your issue._"
+        response = render_message(
+            "query.report_issue.template",
+            locale,
+            {
+                "description": item.description,
+                "amount": f"{item.amount:,.2f}",
+            },
         )
         return TransactionResult(
             outcome=TransactionOutcome.OK,
@@ -105,7 +125,7 @@ async def handle_drill_down(state: dict[str, Any]) -> TransactionResult:
         items=[item],
         context_key=query_result.context_key
     )
-    formatted = QueryFormatter.format(detail_result, show_expanded=True)
+    formatted = QueryFormatter.format(detail_result, show_expanded=True, locale=locale)
 
     return TransactionResult(
         outcome=TransactionOutcome.OK,
