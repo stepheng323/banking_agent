@@ -68,6 +68,11 @@ make check-all        # Run all checks (lint + type-check + format)
 make clean            # Clean Python caches
 ```
 
+### Soul Policy
+
+- Runtime policy source: `config/soul_policy.json`
+- Authoring/validation guide: `docs/soul_policy.md`
+
 ### Running Services
 
 ```bash

@@ -8,7 +8,7 @@ from shared.policy.adapters import (
     resolve_capability_message,
     resolve_capability_rule,
 )
-from shared.policy.loader import get_cached_policy, load_soul_policy
+from shared.policy.loader import get_cached_policy, load_policy, load_soul_policy
 from shared.policy.models import CapabilityRule, DomainCapabilityPolicy, SoulIdentity, SoulPolicy, SoulTone
 from shared.policy.validation import validate_policy_coverage
 
@@ -18,6 +18,7 @@ __all__ = [
     "SoulTone",
     "CapabilityRule",
     "DomainCapabilityPolicy",
+    "load_policy",
     "load_soul_policy",
     "get_cached_policy",
     "build_system_profile",

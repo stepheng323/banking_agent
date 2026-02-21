@@ -12,7 +12,7 @@ load_dotenv(dotenv_path=_env_path, override=True)
 class Settings:
     """Application settings loaded from environment variables and .env file."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.meta_verify_token: str = os.getenv("META_VERIFY_TOKEN", "development_token")
         self.meta_access_token: str = os.getenv("META_ACCESS_TOKEN", "development_access_token")
         self.meta_phone_number_id: str = os.getenv("META_PHONE_NUMBER_ID", "development_phone_id")
@@ -50,6 +50,7 @@ class Settings:
         self.s3_receipt_prefix: str = "receipts"
 
         self.default_channel: str = os.getenv("DEFAULT_CHANNEL", "whatsapp")
+        self.soul_policy_path: str = os.getenv("SOUL_POLICY_PATH", "config/soul_policy.json")
 
         self._validate_whatsapp_config()
 
