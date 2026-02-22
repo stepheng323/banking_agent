@@ -1,5 +1,7 @@
 """Prompts formatting utilities for the orchestrator."""
 
+from typing import cast
+
 from shared.formatters.accounts import format_accounts_list
 from shared.formatters.transaction_summary import format_amount
 from shared.i18n import MessageKey, render_message
@@ -44,48 +46,112 @@ def format_batch_transfer_source_prompt(
 
 def format_single_transfer_recipient_prompt(
     focused_name: str,
+    focused_missing_fields: list[str],
     just_resolved_name: str | None,
     just_resolved_bank: str | None,
     found_names: list[str],
     locale: str = "en",
 ) -> str:
     """Format the prompt for requesting account details for a single transfer in focus."""
+    normalized_missing = set(focused_missing_fields)
+    needs_account = normalized_missing == {"recipient_account"}
+    needs_bank = normalized_missing == {"recipient_bank_name"}
+    needs_account_and_bank = normalized_missing == {"recipient_account", "recipient_bank_name"}
+
+    ask_lines: list[str] = []
+    if needs_account_and_bank:
+        ask_lines = [
+            render_message("response.templates.ask_account_number_and_bank", locale, {"recipient_name": focused_name}),
+        ]
+    elif needs_account:
+        ask_lines = [render_message("response.templates.ask_account_number", locale, {"recipient_name": focused_name})]
+    elif needs_bank:
+        ask_lines = [render_message("response.templates.ask_bank", locale)]
+    else:
+        ask_lines = []
+
+    if ask_lines:
+        prefix = ""
+        if needs_account_and_bank:
+            if just_resolved_name:
+                prefix = render_message(
+                    "orchestrator.execution.found_names",
+                    locale,
+                    {"found_names": just_resolved_name},
+                )
+            elif found_names:
+                prefix = render_message(
+                    "orchestrator.execution.found_names",
+                    locale,
+                    {"found_names": ", ".join(found_names)},
+                )
+
+        elif just_resolved_name:
+            prefix = render_message(
+                "orchestrator.execution.found_names",
+                locale,
+                {"found_names": just_resolved_name},
+            )
+        elif found_names:
+            prefix = render_message(
+                "orchestrator.execution.found_names",
+                locale,
+                {"found_names": ", ".join(found_names)},
+            )
+
+        if prefix:
+            return f"{prefix}\n\n" + "\n".join(ask_lines)
+        return "\n".join(ask_lines)
+
     if just_resolved_name is not None:
         if just_resolved_bank:
-            return render_message(
-                "orchestrator.execution.single_found_with_bank_need_details",
-                locale,
-                {
-                    "resolved_name": just_resolved_name,
-                    "resolved_bank": just_resolved_bank,
-                    "focused_name": focused_name,
-                },
+            return cast(
+                str,
+                render_message(
+                    "orchestrator.execution.single_found_with_bank_need_details",
+                    locale,
+                    {
+                        "resolved_name": just_resolved_name,
+                        "resolved_bank": just_resolved_bank,
+                        "focused_name": focused_name,
+                    },
+                ),
             )
-        elif just_resolved_name:
-            return render_message(
-                "orchestrator.execution.single_found_need_details",
-                locale,
-                {"resolved_name": just_resolved_name, "focused_name": focused_name},
+        if just_resolved_name:
+            return cast(
+                str,
+                render_message(
+                    "orchestrator.execution.single_found_need_details",
+                    locale,
+                    {"resolved_name": just_resolved_name, "focused_name": focused_name},
+                ),
             )
-        else:
-            return render_message(
+        return cast(
+            str,
+            render_message(
                 "orchestrator.execution.need_account_details_for",
                 locale,
                 {"focused_name": focused_name},
-            )
-    else:
-        if found_names:
-            return render_message(
+            ),
+        )
+
+    if found_names:
+        return cast(
+            str,
+            render_message(
                 "orchestrator.execution.found_many_need_details",
                 locale,
                 {"found_names": ", ".join(found_names), "focused_name": focused_name},
-            )
-        else:
-            return render_message(
-                "orchestrator.execution.need_account_details_for",
-                locale,
-                {"focused_name": focused_name},
-            )
+            ),
+        )
+    return cast(
+        str,
+        render_message(
+            "orchestrator.execution.need_account_details_for",
+            locale,
+            {"focused_name": focused_name},
+        ),
+    )
 
 
 def format_missing_details_prompt(
@@ -129,7 +195,7 @@ def format_missing_details_prompt(
 
     if parts:
         return "\n\n".join(parts)
-    return render_message("orchestrator.execution.need_some_details", locale)
+    return cast(str, render_message("orchestrator.execution.need_some_details", locale))
 
 
 def format_auth_reason(task_type: str, locale: str = "en") -> str:
@@ -140,7 +206,7 @@ def format_auth_reason(task_type: str, locale: str = "en") -> str:
         "data": "orchestrator.execution.auth_reason_data",
     }
     key = key_by_task.get(task_type, "orchestrator.execution.auth_reason_default")
-    return render_message(key, locale)
+    return cast(str, render_message(key, locale))
 
 
 def format_source_repair_prompt(

@@ -11,12 +11,12 @@ DO NOT generate reply or decide missing fields — resolver handles that.
 | amount | Transfer amount | k=×1000, h=×100 (25k→25000, 5h→500) |
 | recipient_account | 10-digit account number | — |
 | bank_name | Destination bank (recipient's bank) | Standardize: gtb→GTBank, zenith→Zenith Bank |
-| source_bank_name | Source bank (sender's account) | Use for: "from my access", "use zenith", "X bank instead", before → or -> |
+| source_bank_name | Source bank (sender's account) | Use for: "from my access", "use zenith", "X bank instead" |
 | source_account_index | Selection from numbered list | 1 for "first"/"1"/"one", 2 for "second"/"2"/"two" |
 | recipient_name | Name/alias | "to mum", "john's gtb" |
 | is_self | Transfer to own account | true for "to my [bank]", "to myself" |
 | narration | Optional memo | — |
-| transfer_all | User wants to send entire available balance | true when user indicates they want full balance, max amount, or whatever they have |
+| transfer_all | User wants to send entire available balance | true for "send all", "max amount", "whatever I have" |
 | transfer_percentage | Percentage of balance | 50 for "half", 10 for "tithe" |
 | source_accounts | Dual-account pooling | List of bank names |
 
@@ -48,6 +48,12 @@ Detect but don't process:
 ## CORRECTIONS
 When user corrects mid-flow ("I meant 50k"):
 - Set correction.field="amount", correction.new_value=50000
+
+## CONTEXT-AWARE SLOT FILL
+- Context may include `RequiredFields` and `LastMsg`.
+- If `RequiredFields` contains `recipient_bank_name` and user replies with only a bank, map it to `bank_name`.
+- If `RequiredFields` contains `recipient_account` and user replies with only digits, map it to `recipient_account`.
+- Do not infer unrelated fields when reply is a direct slot-fill response.
 
 ## EXAMPLES
 | Input | Key Extractions |
