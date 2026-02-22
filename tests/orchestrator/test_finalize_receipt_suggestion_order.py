@@ -60,7 +60,7 @@ async def test_finalize_defers_beneficiary_prompt_to_receipt_job() -> None:
 
 
 @pytest.mark.asyncio
-async def test_finalize_keeps_beneficiary_suggestion_when_stashed_session_exists() -> None:
+async def test_finalize_keeps_beneficiary_suggestion_when_stashed_session_exists_without_resume_prompt() -> None:
     queue = AsyncMock()
     state = OrchestratorState(
         user_id="u_receipt_defer_2",
@@ -108,4 +108,4 @@ async def test_finalize_keeps_beneficiary_suggestion_when_stashed_session_exists
     args = cast(tuple[Any, ...], queue.enqueue.await_args.args)
     payload = cast(dict[str, Any], args[1])
     assert payload.get("beneficiary_suggestion_message") == "Would you like to save Mercy Johnson?"
-    assert "Would you like to resume your transfer?" in updates["outbox"][-1]["text"]
+    assert "Would you like to resume your transfer?" not in updates["outbox"][-1]["text"]
