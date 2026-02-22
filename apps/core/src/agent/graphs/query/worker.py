@@ -7,7 +7,7 @@ Manages session persistence via Redis.
 
 from datetime import date
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 
 from langchain_core.runnables import Runnable
 
@@ -70,6 +70,7 @@ class QueryWorker:
         # 2. Build Initial State
         state = {
             "message": payload.get("message", ""),
+            "force_new_query": bool(payload.get("force_new_query")),
             "phone_number": phone_number,
             "account_id": payload.get("account_id"),  # Might come from previous context or current
             "account_ids": payload.get("account_ids"),
@@ -95,7 +96,7 @@ class QueryWorker:
 
         # 4. Run Pipeline
         try:
-            result = await self.pipeline.run(state, worker_context)
+            result = cast(TransactionResult, await self.pipeline.run(state, worker_context))
 
             # 5. Handle Session Persistence
             if result.outcome == TransactionOutcome.OK and result.patch:
@@ -118,8 +119,6 @@ class QueryWorker:
         except Exception as e:
             logger.error("query_worker_error", error=str(e), exc_info=True)
             return TransactionResult(
-                outcome=__import__(
-                    "apps.core.src.agent.orchestrator.models.domain", fromlist=["TransactionOutcome"]
-                ).TransactionOutcome.FAILED,
+                outcome=TransactionOutcome.FAILED,
                 error=render_message("query.error.general", locale),
             )

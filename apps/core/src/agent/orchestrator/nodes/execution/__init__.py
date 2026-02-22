@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, cast
 
 from langchain_core.runnables import RunnableConfig
 
@@ -20,7 +20,10 @@ from apps.core.src.agent.orchestrator.models.domain import (
     TaskStage,
 )
 from apps.core.src.agent.orchestrator.models.state import OrchestratorState
-from shared.formatters.accounts import format_accounts_list
+from shared.formatters.accounts import (
+    format_accounts_list,
+)
+from shared.formatters.confirmation import build_confirmation_summary, build_source_account_info
 from shared.formatters.prompts import (
     format_auth_reason,
     format_batch_transfer_source_prompt,
@@ -34,6 +37,9 @@ from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
 
+TERMINAL_STAGES = {TaskStage.COMPLETED, TaskStage.FAILED, TaskStage.CANCELLED}
+BLOCKING_DEPENDENCY_STAGES = {TaskStage.FAILED, TaskStage.CANCELLED}
+
 
 def _with_policy_notice(state: OrchestratorState, outbox: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Prepend policy notice once per turn when present."""
@@ -41,6 +47,20 @@ def _with_policy_notice(state: OrchestratorState, outbox: list[dict[str, Any]]) 
         return outbox
     logger.info("policy_notice_injected")
     return [{"type": "say", "text": state.policy_notice}, *outbox]
+
+
+def _dependency_resolution(task: Any, all_tasks: dict[str, Any]) -> tuple[str, str | None]:
+    """Resolve whether task dependencies are ready, waiting, or failed."""
+    depends_on = task.depends_on if hasattr(task, "depends_on") else []
+    for dep_id in depends_on:
+        dep_task = all_tasks.get(dep_id)
+        if not dep_task:
+            continue
+        if dep_task.stage in BLOCKING_DEPENDENCY_STAGES:
+            return "cancel", dep_id
+        if dep_task.stage != TaskStage.COMPLETED:
+            return "wait", dep_id
+    return "ready", None
 
 
 async def advance_wave(state: OrchestratorState, config: RunnableConfig) -> dict[str, Any]:
@@ -89,12 +109,24 @@ async def advance_wave(state: OrchestratorState, config: RunnableConfig) -> dict
         "orchestrator": handle_orchestrator_task,
     }
 
+    progressed = False
     for task_id in current_wave:
         task = state.tasks.get(task_id)
         if not task:
             continue
 
-        if task.stage in (TaskStage.COMPLETED, TaskStage.FAILED, TaskStage.CANCELLED):
+        if task.stage in TERMINAL_STAGES:
+            continue
+
+        dep_status, dep_id = _dependency_resolution(task, state.tasks)
+        if dep_status == "cancel":
+            task.stage = TaskStage.CANCELLED
+            task.payload["error"] = f"dependency {dep_id} not successful"
+            logger.info("task_cancelled_by_dependency", task_id=task_id, dependency=dep_id)
+            progressed = True
+            continue
+        if dep_status == "wait":
+            logger.info("task_waiting_for_dependency", task_id=task_id, dependency=dep_id)
             continue
 
         handler = handlers.get(task.type)
@@ -102,6 +134,20 @@ async def advance_wave(state: OrchestratorState, config: RunnableConfig) -> dict
             continue
 
         await handler(task, task_id, ctx)
+        progressed = True
+
+    if not progressed:
+        pending = []
+        for task_id in current_wave:
+            task = state.tasks.get(task_id)
+            if task and task.stage not in TERMINAL_STAGES:
+                pending.append(task_id)
+        if pending:
+            logger.warning("dependency_deadlock_wave_cancelled", wave=current_wave, pending_tasks=pending)
+            for task_id in pending:
+                task = state.tasks[task_id]
+                task.stage = TaskStage.CANCELLED
+                task.payload["error"] = "unresolved dependency deadlock"
 
     if agg.missing_fields_by_task:
         # [Prioritized Prompting]
@@ -236,7 +282,7 @@ async def advance_wave(state: OrchestratorState, config: RunnableConfig) -> dict
                 if just_resolved_tid is None:
                     for tid in current_wave:
                         task = state.tasks.get(tid)
-                        if not task or task.stage in (TaskStage.COMPLETED, TaskStage.FAILED, TaskStage.CANCELLED):
+                        if not task or task.stage in TERMINAL_STAGES:
                             continue
                         if tid not in agg.missing_fields_by_task:
                             if name := task.payload.get("recipient_resolved_name") or task.payload.get(
@@ -247,6 +293,7 @@ async def advance_wave(state: OrchestratorState, config: RunnableConfig) -> dict
 
                 prompt_text = format_single_transfer_recipient_prompt(
                     focused_name=focused_name,
+                    focused_missing_fields=agg.missing_fields_by_task[focused_tid],
                     just_resolved_name=just_resolved_name,
                     just_resolved_bank=just_resolved_bank,
                     found_names=found_names,
@@ -282,7 +329,7 @@ async def advance_wave(state: OrchestratorState, config: RunnableConfig) -> dict
 
             for tid in current_wave:
                 task = state.tasks.get(tid)
-                if not task or task.stage in (TaskStage.COMPLETED, TaskStage.FAILED, TaskStage.CANCELLED):
+                if not task or task.stage in TERMINAL_STAGES:
                     continue
 
                 # Collect names for "I found X" (only if hasn't been announced to UI yet)
@@ -307,7 +354,7 @@ async def advance_wave(state: OrchestratorState, config: RunnableConfig) -> dict
                 intents = []
                 for tid in current_wave:
                     task = state.tasks.get(tid)
-                    if not task or task.stage in (TaskStage.COMPLETED, TaskStage.FAILED, TaskStage.CANCELLED):
+                    if not task or task.stage in TERMINAL_STAGES:
                         continue
                     intents.append(format_intent_line(task.type, task.payload, locale=locale))
 
@@ -359,6 +406,8 @@ async def advance_wave(state: OrchestratorState, config: RunnableConfig) -> dict
         total_amount = 0.0
         source_account_info = None
         summaries = []
+        accounts_raw = state.loaded_context.get("accounts") or []
+        accounts = [account for account in accounts_raw if isinstance(account, dict)]
 
         for tid in agg.needs_confirm_tasks:
             task = state.tasks[tid]
@@ -368,25 +417,24 @@ async def advance_wave(state: OrchestratorState, config: RunnableConfig) -> dict
 
             # Extract source info from the first task (assume batch shares source)
             if source_account_info is None:
-                bank = snap.get("sourceBank") or snap.get("source_bank")
-                acc = snap.get("sourceAccount") or snap.get("source_account")
-                if bank and acc:
-                    last4 = str(acc)[-4:]
-                    source_account_info = render_message(
-                        "orchestrator.execution.source_account_info",
-                        locale,
-                        {"bank": bank, "last4": last4},
-                    )
+                source_account_info = build_source_account_info(
+                    task_payload=task.payload,
+                    snapshot=snap if isinstance(snap, dict) else {},
+                    accounts=accounts,
+                    locale=locale,
+                )
 
             if s := t_payload.get("summary"):
                 summaries.append(s)
 
         if len(agg.needs_confirm_tasks) == 1:
-            parts = [summaries[0]]
-            if source_account_info:
-                parts.append("")
-                parts.append(source_account_info)
-            summ = "\n".join(parts)
+            single_task = state.tasks[agg.needs_confirm_tasks[0]]
+            canonical_summary = build_confirmation_summary(
+                task_payload=single_task.payload,
+                locale=locale,
+                accounts=accounts,
+            )
+            summ = canonical_summary or (summaries[0] if summaries else "")
         else:
             summ = format_batch_transfer_summary(
                 num_transfers=len(agg.needs_confirm_tasks),
@@ -395,6 +443,7 @@ async def advance_wave(state: OrchestratorState, config: RunnableConfig) -> dict
                 summaries=summaries,
                 locale=locale,
             )
+
         first_task_payload = state.tasks[agg.needs_confirm_tasks[0]].payload.get("confirmation", {})
         snap = first_task_payload.get("snapshot", {})
         update_msg = first_task_payload.get("update_message")
@@ -402,6 +451,7 @@ async def advance_wave(state: OrchestratorState, config: RunnableConfig) -> dict
         interrupt = PendingInterrupt(
             kind="confirmation",
             task_ids=agg.needs_confirm_tasks,
+            prompt=summ,
         )
 
         outbox = []
@@ -423,7 +473,7 @@ async def advance_wave(state: OrchestratorState, config: RunnableConfig) -> dict
 
         updates["outbox"] = outbox
         updates["pending_interrupt"] = interrupt
-        return updates
+        return cast(dict[str, Any], updates)
 
     if agg.needs_auth_tasks:
         first_task = state.tasks[agg.needs_auth_tasks[0]]
@@ -450,18 +500,18 @@ async def advance_wave(state: OrchestratorState, config: RunnableConfig) -> dict
             }
         ]
         updates["pending_interrupt"] = interrupt
-        return updates
+        return cast(dict[str, Any], updates)
 
     all_terminal = True
     for task_id in current_wave:
         task = state.tasks.get(task_id)
         if not task:
             continue
-        if task.stage not in (TaskStage.COMPLETED, TaskStage.FAILED, TaskStage.CANCELLED):
+        if task.stage not in TERMINAL_STAGES:
             all_terminal = False
             break
 
-    if all_terminal:
+    if all_terminal and "current_wave_index" not in updates:
         updates["current_wave_index"] = state.current_wave_index + 1
 
-    return updates
+    return cast(dict[str, Any], updates)

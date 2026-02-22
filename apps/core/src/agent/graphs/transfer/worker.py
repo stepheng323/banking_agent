@@ -10,7 +10,7 @@ Returns a standardized TransactionResult.
 import time
 import uuid
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
 from apps.core.src.agent.graphs.transfer.models.types import (
     TransferContext,
@@ -51,6 +51,8 @@ class TransferWorkerContext:
     dd_provider: Any | None
     user_id: str | None
     validation_service: Any
+    required_fields: list[str]
+    previous_response: str | None
 
 
 class TransferWorker:
@@ -58,14 +60,14 @@ class TransferWorker:
 
     def __init__(
         self,
-        validation_service,
-        queue,
-        extractor,
-        banking_provider,
-        bank_cache,
+        validation_service: Any,
+        queue: Any,
+        extractor: Any,
+        banking_provider: Any,
+        bank_cache: Any,
         transaction_repo: TransactionRepository,
         dd_provider: Any | None = None,
-    ):
+    ) -> None:
         self.validation_service = validation_service or ValidationService()
         self.queue = queue
         self.extractor = extractor
@@ -96,6 +98,8 @@ class TransferWorker:
         )
 
     def _build_worker_context(self, context: dict[str, Any]) -> TransferWorkerContext:
+        required_fields = context.get("required_fields")
+        previous_response = context.get("previous_response")
         return TransferWorkerContext(
             extractor=self.extractor,
             banking_provider=self.banking_provider,
@@ -105,6 +109,8 @@ class TransferWorker:
             dd_provider=self.dd_provider,
             user_id=context.get("user_id"),
             validation_service=self.validation_service,
+            required_fields=required_fields if isinstance(required_fields, list) else [],
+            previous_response=previous_response if isinstance(previous_response, str) else None,
         )
 
     @staticmethod
@@ -114,10 +120,13 @@ class TransferWorker:
             return None
 
         alt = resolve_capability_alternative(domain="transfer", action=action)
-        return render_capability_limitation(
-            locale=locale,
-            action_label=action.replace("_", " "),
-            alternative_labels=[alt.replace("_", " ")] if alt else [],
+        return cast(
+            str,
+            render_capability_limitation(
+                locale=locale,
+                action_label=action.replace("_", " "),
+                alternative_labels=[alt.replace("_", " ")] if alt else [],
+            ),
         )
 
     @staticmethod

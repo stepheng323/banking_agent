@@ -12,11 +12,12 @@ from apps.core.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
 from apps.core.src.agent.orchestrator.models.state import OrchestratorState
 from shared.formatters import format_multi_action_summary
 from shared.i18n import LocaleManager, render_cancelled_prompt, render_generic_capability_blocked, render_message
-from shared.queue.redis_queue import RedisQueue
 from shared.queue.models import ReceiptJobPayload, ReceiptTransferData
+from shared.queue.redis_queue import RedisQueue
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
+TRANSACTION_TASK_TYPES = {"transfer", "airtime", "data"}
 
 
 async def finalize(state: OrchestratorState, config: RunnableConfig) -> dict[str, Any]:
@@ -63,7 +64,8 @@ async def finalize(state: OrchestratorState, config: RunnableConfig) -> dict[str
 
     # Check for stashed sessions and prompt
     context_updates = {}
-    if state.stashed_sessions:
+    has_completed_non_transaction = any(task.type not in TRANSACTION_TASK_TYPES for task in completed_tasks)
+    if state.stashed_sessions and has_completed_non_transaction:
         last_session = state.stashed_sessions[-1]
         intent = last_session.get("intent", render_message("orchestrator.session.default_intent", locale))
         resume_prompt = render_message("orchestrator.finalize.resume_prompt", locale, {"intent": intent})
@@ -119,7 +121,7 @@ async def _handle_completed_tasks(
     state: OrchestratorState,
     queue: RedisQueue | None,
     redis_client: redis.Redis | None,
-    beneficiary_service: "BeneficiarySuggestionService" | None,
+    beneficiary_service: BeneficiarySuggestionService | None,
     outbox: list[dict[str, Any]],
 ) -> None:
     """Handle completed tasks and generate receipts or summaries."""
@@ -147,11 +149,21 @@ async def _handle_completed_tasks(
 
     if is_single_transfer:
         task = completed_tasks[0]
+        beneficiary_suggestion_message: str | None = None
+        if beneficiary_service:
+            beneficiary_suggestion_message = await _build_beneficiary_suggestion(
+                task=task,
+                beneficiary_service=beneficiary_service,
+                phone_number=state.phone_number,
+                locale=locale,
+            )
+
         await _queue_single_transfer_receipt(
             task=task,
             state=state,
             queue=queue,
             redis_client=redis_client,
+            beneficiary_suggestion_message=beneficiary_suggestion_message,
         )
 
         # Immediate success feedback (receipt follows asynchronously)
@@ -171,15 +183,6 @@ async def _handle_completed_tasks(
                 ),
             }
         )
-
-        if beneficiary_service:
-            await _handle_beneficiary_suggestion(
-                task=task,
-                beneficiary_service=beneficiary_service,
-                phone_number=state.phone_number,
-                outbox=outbox,
-                locale=locale,
-            )
 
     elif is_async_transaction:
         task = completed_tasks[0]
@@ -213,6 +216,7 @@ async def _queue_single_transfer_receipt(
     state: OrchestratorState,
     queue: RedisQueue | None,
     redis_client: redis.Redis | None,
+    beneficiary_suggestion_message: str | None = None,
 ) -> None:
     """Queue receipt for a single transfer."""
     receipt_data = task.payload.get("receipt")
@@ -249,6 +253,8 @@ async def _queue_single_transfer_receipt(
         ),
         "signal_key": signal_key,
     }
+    if beneficiary_suggestion_message:
+        job_payload["beneficiary_suggestion_message"] = beneficiary_suggestion_message
 
     if queue:
         await queue.enqueue("banking:receipt_jobs", job_payload)
@@ -256,14 +262,13 @@ async def _queue_single_transfer_receipt(
         logger.warning("queue_not_available", message="Cannot queue receipt, RedisQueue is None")
 
 
-async def _handle_beneficiary_suggestion(
+async def _build_beneficiary_suggestion(
     task: TaskSpec,
-    beneficiary_service: "BeneficiarySuggestionService",
+    beneficiary_service: BeneficiarySuggestionService,
     phone_number: str,
-    outbox: list[dict[str, Any]],
     locale: str = "en",
-) -> None:
-    """Handle beneficiary suggestion after transfer."""
+) -> str | None:
+    """Build beneficiary suggestion text for deferred delivery after receipt."""
     suggestion_msg = await beneficiary_service.check_and_suggest_beneficiary(
         phone_number=phone_number,
         beneficiary_type="transfer",
@@ -278,6 +283,4 @@ async def _handle_beneficiary_suggestion(
         send_message=False,
         locale=locale,
     )
-
-    if suggestion_msg:
-        outbox.append({"type": "say", "text": suggestion_msg})
+    return cast(str | None, suggestion_msg)

@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 from langchain_core.runnables import RunnableConfig
 
@@ -67,7 +67,17 @@ class ExecutionContext:
 
 
 def _state_locale(state: OrchestratorState) -> str:
-    return LocaleManager.normalize(state.loaded_context.get("language")).value
+    return cast(str, LocaleManager.normalize(state.loaded_context.get("language")).value)
+
+
+def _is_resume_prompt_frame(frame: ContextFrame) -> bool:
+    """Return True if a context frame represents a resume prompt."""
+    return any(item.data.get("resume_prompt") is True for item in frame.items)
+
+
+def _clear_resume_prompt_frames(frames: list[ContextFrame]) -> list[ContextFrame]:
+    """Remove stale resume prompt frames after accept/decline."""
+    return [frame for frame in frames if not _is_resume_prompt_frame(frame)]
 
 
 def _maybe_user_message(task: Any, state: OrchestratorState) -> str | None:
@@ -82,7 +92,7 @@ def _maybe_user_message(task: Any, state: OrchestratorState) -> str | None:
         # This prevents background/suppressed tasks from consuming input meant for the active task.
         if state.last_interrupt and task.id not in state.last_interrupt.task_ids:
             return None
-        return state.last_message_text
+        return cast(str | None, state.last_message_text)
     return None
 
 
@@ -188,12 +198,21 @@ async def handle_transfer_task(task: Any, task_id: str, ctx: ExecutionContext) -
             user_msg = f"Send {amt} to {r_name}"
             logger.info("user_msg_synthesized", msg=user_msg)
 
+    required_fields: list[str] = []
+    previous_response: str | None = None
+    if ctx.state.last_interrupt and task_id in ctx.state.last_interrupt.task_ids:
+        raw_required_fields = ctx.state.last_interrupt.fields_by_task.get(task_id, [])
+        required_fields = [field for field in raw_required_fields if isinstance(field, str)]
+        previous_response = ctx.state.last_interrupt.prompt
+
     context_data = {
         "phone_number": ctx.state.phone_number,
         "user_id": ctx.state.loaded_context.get("user_id"),
         "accounts": ctx.state.loaded_context.get("accounts", []),
         "beneficiaries": ctx.state.loaded_context.get("beneficiaries", []),
         "language": _state_locale(ctx.state),
+        "required_fields": required_fields,
+        "previous_response": previous_response,
     }
 
     logger.info("transfer_worker_start", payload=task.payload, task_id=task_id)
@@ -270,6 +289,9 @@ async def handle_account_task(task: Any, task_id: str, ctx: ExecutionContext) ->
         return
 
     user_msg = _maybe_user_message(task, ctx.state)
+    if not user_msg:
+        message_from_payload = task.payload.get("message") or task.payload.get("instruction")
+        user_msg = message_from_payload if isinstance(message_from_payload, str) else None
     context_data = {
         "phone_number": ctx.state.phone_number,
         "user_id": ctx.state.loaded_context.get("user_id"),
@@ -300,7 +322,10 @@ async def handle_account_task(task: Any, task_id: str, ctx: ExecutionContext) ->
 
     elif result.outcome == AccountOutcome.FAILED:
         task.stage = TaskStage.FAILED
-        task.payload["error"] = result.error or render_message("orchestrator.error.account_action_failed", _state_locale(ctx.state))
+        task.payload["error"] = result.error or render_message(
+            "orchestrator.error.account_action_failed",
+            _state_locale(ctx.state),
+        )
         ctx.agg.say(result.response)
 
 
@@ -375,7 +400,10 @@ async def handle_beneficiary_task(task: Any, task_id: str, ctx: ExecutionContext
                 ctx.agg.say(result.response)
         elif result.outcome == TransactionOutcome.FAILED:
             task.stage = TaskStage.FAILED
-            err = result.error or render_message("orchestrator.error.beneficiary_operation_failed", _state_locale(ctx.state))
+            err = result.error or render_message(
+                "orchestrator.error.beneficiary_operation_failed",
+                _state_locale(ctx.state),
+            )
             task.payload["error"] = err
             ctx.agg.say(err)
         return
@@ -385,7 +413,10 @@ async def handle_beneficiary_task(task: Any, task_id: str, ctx: ExecutionContext
     if not suggestion_service:
         logger.error("suggestion_service_missing")
         task.stage = TaskStage.FAILED
-        task.payload["error"] = render_message("orchestrator.error.suggestion_service_unavailable", _state_locale(ctx.state))
+        task.payload["error"] = render_message(
+            "orchestrator.error.suggestion_service_unavailable",
+            _state_locale(ctx.state),
+        )
         return
 
     alias = task.payload.get("alias")
@@ -512,7 +543,10 @@ async def handle_query_task(task: Any, task_id: str, ctx: ExecutionContext) -> N
 
     elif result.outcome == TransactionOutcome.FAILED:
         task.stage = TaskStage.FAILED
-        task.payload["error"] = result.error or render_message("orchestrator.error.query_processing_failed", _state_locale(ctx.state))
+        task.payload["error"] = result.error or render_message(
+            "orchestrator.error.query_processing_failed",
+            _state_locale(ctx.state),
+        )
         ctx.agg.say(result.response or render_message("query.error.general", _state_locale(ctx.state)))
 
     if result.outcome in (TransactionOutcome.OK, TransactionOutcome.NEEDS_INPUT):
@@ -573,7 +607,10 @@ async def handle_faq_task(task: Any, task_id: str, ctx: ExecutionContext) -> Non
         ctx.agg.say(result.response)
     elif result.outcome == FAQOutcome.FAILED:
         task.stage = TaskStage.FAILED
-        task.payload["error"] = result.error or render_message("orchestrator.error.faq_failed", _state_locale(ctx.state))
+        task.payload["error"] = result.error or render_message(
+            "orchestrator.error.faq_failed",
+            _state_locale(ctx.state),
+        )
         ctx.agg.say(render_message("faq.info_trouble", _state_locale(ctx.state)))
 
 
@@ -612,7 +649,10 @@ async def handle_support_task(task: Any, task_id: str, ctx: ExecutionContext) ->
             ctx.agg.add_missing_fields(task_id, ["clarification"])
     elif result.outcome == SupportOutcome.FAILED:
         task.stage = TaskStage.FAILED
-        task.payload["error"] = result.error or render_message("orchestrator.error.support_flow_failed", _state_locale(ctx.state))
+        task.payload["error"] = result.error or render_message(
+            "orchestrator.error.support_flow_failed",
+            _state_locale(ctx.state),
+        )
         ctx.agg.say(render_message("support.unavailable", _state_locale(ctx.state)))
 
     stack = list(ctx.state.session_stack)
@@ -637,28 +677,42 @@ async def handle_support_task(task: Any, task_id: str, ctx: ExecutionContext) ->
 
 async def handle_orchestrator_task(task: Any, task_id: str, ctx: ExecutionContext) -> None:
     """Handle orchestrator tasks (e.g. resumption)."""
+    del task_id
     action = task.payload.get("action")
     locale = _state_locale(ctx.state)
+    if action not in {"resume_session", "dismiss_resume_session"}:
+        return
+
+    if not ctx.state.stashed_sessions:
+        no_stash_message = render_message("orchestrator.session.no_stashed", locale)
+        ctx.agg.say(no_stash_message)
+        task.stage = TaskStage.FAILED
+        task.payload["error"] = no_stash_message
+        return
+
+    # Pop last stashed session for both accept/decline actions.
+    last_session = ctx.state.stashed_sessions[-1]
+    remaining_stash = ctx.state.stashed_sessions[:-1]
+    intent = str(last_session.get("intent", render_message("orchestrator.session.default_intent", locale)))
+    ctx.agg.updates["stashed_sessions"] = remaining_stash
+    ctx.agg.updates["context_frames"] = _clear_resume_prompt_frames(ctx.state.context_frames)
+
     if action == "resume_session":
-        if not ctx.state.stashed_sessions:
-            ctx.agg.say(render_message("orchestrator.session.no_stashed", locale))
-            task.stage = TaskStage.FAILED
-            task.payload["error"] = render_message("orchestrator.session.no_stashed", locale)
-            return
-
-        # Pop last session
-        last_session = ctx.state.stashed_sessions[-1]
-        remaining_stash = ctx.state.stashed_sessions[:-1]
-
-        intent = last_session.get("intent", render_message("orchestrator.session.default_intent", locale))
         p_interrupt = last_session.get("pending_interrupt")
         logger.info("resuming_session", intent=intent, has_interrupt=bool(p_interrupt))
+        restored_tasks = cast(dict[str, Any], last_session["tasks"])
 
-        # Restore State
-        ctx.agg.updates["tasks"] = last_session["tasks"]
+        # Restore stashed state.
+        ctx.agg.updates["tasks"] = restored_tasks
         ctx.agg.updates["waves"] = last_session["waves"]
         ctx.agg.updates["current_wave_index"] = last_session["current_wave_index"]
-        ctx.agg.updates["pending_interrupt"] = p_interrupt
-        ctx.agg.updates["stashed_sessions"] = remaining_stash
+        ctx.agg.updates["pending_interrupt"] = None
+        ctx.agg.updates["last_interrupt"] = p_interrupt
+        # Drop resume acceptance text so resumed workers don't treat it as slot input.
+        ctx.agg.updates["last_message_text"] = None
+        task.stage = TaskStage.COMPLETED
+        return
 
-        ctx.agg.say(render_message("orchestrator.session.resuming", locale, {"intent": intent}))
+    logger.info("resume_session_declined", intent=intent)
+    ctx.agg.say(render_message("orchestrator.session.resume_declined", locale))
+    task.stage = TaskStage.COMPLETED

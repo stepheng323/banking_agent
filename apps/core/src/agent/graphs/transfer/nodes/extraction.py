@@ -54,7 +54,20 @@ class ExtractionStep(TransferStep):
             data,
             worker_context.extractor,
             self.user_message,
-            {"phone_number": context.phone_number},
+            {
+                "phone_number": context.phone_number,
+                "language": context.language,
+                "beneficiaries": context.beneficiaries,
+                "accounts": context.accounts,
+                "required_fields": worker_context.required_fields,
+                "previousResponse": worker_context.previous_response,
+                "known_recipient": {
+                    "recipient_name": data.recipient_name,
+                    "recipient_resolved_name": data.recipient_resolved_name,
+                    "recipient_account": data.recipient_account,
+                    "recipient_bank_name": data.recipient_bank_name,
+                },
+            },
         )
 
         return res

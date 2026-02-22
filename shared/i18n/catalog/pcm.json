@@ -250,10 +250,10 @@
       "no_aggregation": "No aggregation specified.",
       "no_transactions": "No transactions found.",
       "target_merchant": " on {merchant}",
-      "summary_spent": "💸 You spent *₦{total}*{target_description}{timeframe} ({count} transaction(s)).",
+      "summary_spent": "You spent *₦{total}*{target_description}{timeframe} ({count} transaction(s)).",
       "summary_average": "Your average transaction is *₦{average}*{timeframe} ({count} transaction(s)).\\n\\n_'show transactions' to see details_",
       "summary_count": "You made *{count}* transaction(s){timeframe}.",
-      "single_expense": "💸 Your {adjective} expense{timeframe}",
+      "single_expense": "Your {adjective} expense{timeframe}",
       "label_expenses": "Expenses",
       "label_transactions": "Transactions",
       "title_largest": "Largest",
@@ -370,10 +370,12 @@
     "session": {
       "no_stashed": "No session to resume.",
       "default_intent": "transaction",
+      "resume_declined": "Okay, I no go resume that request.",
       "resuming": "Resuming {intent}..."
     },
     "execution": {
-      "source_account_info": "From: {bank} (···{last4})",
+      "source_account_info": "Comot from: {bank} (···{last4})",
+      "source_account_info_with_balance": "Comot from: {bank} (···{last4}) • Balance: ₦{balance}",
       "recipient_resolved_with_bank": "✅ {label} resolved: {resolved} ({bank} • {account})",
       "recipient_resolved": "✅ {label} resolved: {resolved}",
       "recipient_resolved_generic": "✅ {label} resolved",
@@ -405,9 +407,9 @@
       "failed_prefix": "Failed: {error}",
       "resume_prompt": "Would you like to resume your {intent}?",
       "recipient_fallback": "recipient",
-      "transfer_processing": "✅ Transfer of ₦{amount} to {display_name} is being processed.",
+      "transfer_processing": "Transfer of ₦{amount} to {display_name} is being processed.",
       "transaction_completed": "Transaction completed",
-      "async_status_message": "✅ *{status}*: {message}",
+      "async_status_message": "• *{status}*: {message}",
       "na": "N/A"
     }
   },
@@ -750,6 +752,7 @@
       "ask_recipient_no_name": "Who would you like to send money to? You can provide their name, account number, or both.",
       "ask_bank": "Which bank is that for?",
       "ask_account_number": "What's the account number for {recipient_name}?",
+      "ask_account_number_and_bank": "Wetin be account number and bank for {recipient_name}?",
       "ask_phone_number": "What phone number should I send to?",
       "ask_network": "Which network is {phone_masked}?",
       "ask_data_plan": "Which data plan would you like?",

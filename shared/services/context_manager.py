@@ -1,7 +1,7 @@
 """Context and state management service."""
 
 import json
-from typing import Any
+from typing import Any, cast
 
 from shared.cache.redis_client import RedisClient
 from shared.cache.user_data import UserDataCache
@@ -93,7 +93,7 @@ class ContextManager:
         Returns list of account dicts with mandate_status for validation.
         """
         context = await self.load_user_context(phone_number)
-        return context.get("accounts", [])
+        return cast(list[dict[str, Any]], context.get("accounts", []))
 
     async def get_recent_transactions(self, phone_number: str, limit: int = 5) -> list[dict[str, Any]]:
         """
@@ -134,7 +134,7 @@ class ContextManager:
             key = f"user:{phone_number}:conversation_state"
             data = await redis_client.get(key)
             if data:
-                return json.loads(data)
+                return cast(dict[str, Any], json.loads(data))
         except Exception as e:
             logger.warning("get_conversation_state_error", phone=phone_number, error=str(e))
         return None
@@ -153,7 +153,7 @@ class ContextManager:
         try:
             redis_client = RedisClient.get_client()
             key = f"user:{phone_number}:last_response"
-            return await redis_client.get(key)
+            return cast(str | None, await redis_client.get(key))
         except Exception as e:
             logger.warning("get_last_response_error", phone=phone_number, error=str(e))
         return None
@@ -176,12 +176,41 @@ class ContextManager:
         except Exception as e:
             logger.warning("save_message_id_error", phone=phone_number, error=str(e))
 
+    async def claim_inbound_message(
+        self,
+        phone_number: str,
+        message_id: str,
+        ttl_seconds: int = 86400,
+    ) -> bool:
+        """Claim an inbound message id once to suppress duplicate deliveries."""
+        if not message_id or message_id == "unknown":
+            return True
+        try:
+            redis_client = RedisClient.get_client()
+            key = f"user:{phone_number}:inbound_message:{message_id}"
+            claimed = await redis_client.set(key, "1", ex=ttl_seconds, nx=True)
+            return bool(claimed)
+        except Exception as e:
+            logger.warning("claim_inbound_message_error", phone=phone_number, message_id=message_id, error=str(e))
+            return True
+
+    async def release_inbound_message_claim(self, phone_number: str, message_id: str) -> None:
+        """Release a previously-claimed inbound message id on failure."""
+        if not message_id or message_id == "unknown":
+            return
+        try:
+            redis_client = RedisClient.get_client()
+            key = f"user:{phone_number}:inbound_message:{message_id}"
+            await redis_client.delete(key)
+        except Exception as e:
+            logger.warning("release_inbound_message_error", phone=phone_number, message_id=message_id, error=str(e))
+
     async def get_message_id(self, phone_number: str) -> str | None:
         """Get current message_id from Redis for typing indicator."""
         try:
             redis_client = RedisClient.get_client()
             key = f"user:{phone_number}:current_message_id"
-            return await redis_client.get(key)
+            return cast(str | None, await redis_client.get(key))
         except Exception as e:
             logger.warning("get_message_id_error", phone=phone_number, error=str(e))
             return None
@@ -213,7 +242,7 @@ class ContextManager:
         """Get user's preferred language."""
         try:
             locale = await LocaleManager.get_locale(phone_number)
-            return locale.value if locale else None
+            return cast(str | None, (locale.value if locale else None))
         except Exception as e:
             logger.warning("get_user_language_error", phone=phone_number, error=str(e))
             return None
@@ -228,17 +257,17 @@ class ContextManager:
     async def update_user_locale(self, phone_number: str, signal: LanguageDetectionSignal) -> str:
         """Update persisted locale using detection/explicit signals."""
         locale = await LocaleManager.update_locale(phone_number, signal)
-        return locale.value
+        return cast(str, locale.value)
 
     async def set_user_locale_explicit(self, phone_number: str, locale: str) -> str:
         """Set locale immediately from explicit user command."""
         resolved = await LocaleManager.set_locale(phone_number, locale, source="user_command")
-        return resolved.value
+        return cast(str, resolved.value)
 
     async def get_effective_locale(self, phone_number: str, detected_language: str | None = None) -> str:
         """Resolve effective locale from persisted preference and hint."""
         locale = await LocaleManager.get_effective_locale(phone_number, detected_language)
-        return locale.value
+        return cast(str, locale.value)
 
     async def load_context_parallel(
         self, phone_number: str
@@ -343,7 +372,7 @@ class ContextManager:
             key = f"user:{phone_number}:mandate_warning_count"
             count = await redis_client.incr(key)
             await redis_client.expire(key, ttl)
-            return count
+            return cast(int, count)
         except Exception as e:
             logger.error("increment_mandate_warning_count_error", error=str(e))
             return 1
