@@ -14,11 +14,6 @@ class AuthorizationStep(PipelineStep):
         if gates.pin_verified:
             return None
 
-        # Determine summary for auth screen (same as confirmation)
-        summary = f"Buy {payload.network} data for {payload.target_phone}?"
-        if payload.plan_name:
-            summary = f"Buy {payload.plan_name} for {payload.target_phone}?"
-
         return TransactionResult(
             outcome=TransactionOutcome.NEEDS_AUTH,
             patch=payload.model_dump(exclude_none=True),
