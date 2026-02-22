@@ -16,8 +16,8 @@ from apps.core.src.agent.orchestrator.graph import build_orchestrator_graph
 from apps.core.src.agent.orchestrator.models.message_context import MessageContext
 from apps.core.src.agent.orchestrator.presentation.intents import map_outbox_to_intents
 from shared.clients.abstractions.banking import BankingDataProvider
-from shared.i18n import LocaleManager
 from shared.clients.whatsapp.client import WhatsAppClient
+from shared.i18n import LocaleManager
 from shared.protocols.worker import WorkerProtocol
 from shared.queue.redis_queue import RedisQueue
 from shared.repositories.account_repository import AccountRepository
@@ -126,6 +126,7 @@ class OrchestratorGraphHandler:
             "phone_number": phone_number,
             "last_message_text": context.text,
             "last_message_id": context.message_id,
+            "last_callback": None,
             "channel": context.channel,
         }
 

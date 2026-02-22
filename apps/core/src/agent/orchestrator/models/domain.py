@@ -85,7 +85,8 @@ class TaskSpec(BaseModel):
     """
 
     id: str
-    type: Literal["transfer", "query", "airtime", "data", "account", "support", "faq", "beneficiary"]
+    type: Literal["transfer", "query", "airtime", "data", "account", "support", "faq", "beneficiary", "orchestrator"]
+    depends_on: list[str] = Field(default_factory=list)
     stage: TaskStage = TaskStage.DRAFT
     payload: dict[str, Any] = Field(default_factory=dict)
 

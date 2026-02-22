@@ -1,5 +1,7 @@
 """Orchestrator Graph Construction (V3)."""
 
+from typing import Any, Literal, cast
+
 from langgraph.graph import END, StateGraph
 
 from apps.core.src.agent.orchestrator.models.state import OrchestratorState
@@ -13,7 +15,7 @@ from apps.core.src.agent.orchestrator.nodes import (
 )
 
 
-def build_orchestrator_graph(checkpointer=None):
+def build_orchestrator_graph(checkpointer: Any = None) -> Any:
     """Build the top-level Orchestrator Graph (V3)."""
     builder = StateGraph(OrchestratorState)
 
@@ -27,9 +29,18 @@ def build_orchestrator_graph(checkpointer=None):
     builder.set_entry_point("ingest")
 
     builder.add_edge("ingest", "gate")
-    builder.add_edge("handle_interrupt", "plan")
+    def route_interrupt(state: OrchestratorState) -> Literal["advance", "plan"] | str:
+        if state.final_response:
+            return cast(str, END)
+        if state.pending_interrupt:
+            return cast(str, END)
+        if state.current_wave_index < len(state.waves):
+            return "advance"
+        return "plan"
 
-    def route_gate(state: OrchestratorState):
+    builder.add_conditional_edges("handle_interrupt", route_interrupt, {"advance": "advance", "plan": "plan", END: END})
+
+    def route_gate(state: OrchestratorState) -> Literal["advance", "handle_interrupt", "plan"]:
         if state.fast_path_triggered:
             return "advance"
         if state.pending_interrupt:
@@ -44,17 +55,17 @@ def build_orchestrator_graph(checkpointer=None):
 
     logger = get_logger(__name__)
 
-    def route_plan(state: OrchestratorState):
+    def route_plan(state: OrchestratorState) -> str:
         logger.info("route_plan_check", final_response=state.final_response)
         if state.final_response:
-            return END
+            return cast(str, END)
         return "advance"
 
     builder.add_conditional_edges("plan", route_plan, {"advance": "advance", END: END})
 
-    def route_advance(state: OrchestratorState):
+    def route_advance(state: OrchestratorState) -> str:
         if state.pending_interrupt:
-            return END
+            return cast(str, END)
         if state.current_wave_index >= len(state.waves):
             return "finalize"
         return "advance"

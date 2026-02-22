@@ -8,6 +8,7 @@ from langchain_core.runnables import RunnableConfig
 from apps.core.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
 from apps.core.src.agent.orchestrator.models.state import OrchestratorState
 from apps.core.src.agent.orchestrator.nodes.execution import advance_wave
+from apps.core.src.agent.orchestrator.nodes.finalize import finalize
 from apps.core.src.agent.orchestrator.nodes.ingest import ingest_message
 from apps.core.src.agent.orchestrator.nodes.planner import SAFE_CAPABILITY_FALLBACK, plan_tasks
 from shared.types.planner import PlannedTask, PlannerOutput, TaskParameters
@@ -43,6 +44,42 @@ class _MockTransferWorker:
             required_fields=["recipient_account"],
             prompt="Provide recipient account details.",
         )
+
+
+class _MockTransferCompleteWorker:
+    async def run(
+        self,
+        payload: Any,
+        context: Any,
+        user_message: str | None = None,
+        pin_verified: bool = False,
+    ) -> TransactionResult:
+        del context, user_message, pin_verified
+        raw_amount = payload.get("amount", 0)
+        amount = float(raw_amount) if isinstance(raw_amount, (int, float, str)) else 0.0
+        return TransactionResult(
+            outcome=TransactionOutcome.OK,
+            patch={
+                "amount": amount,
+                "recipient_name": payload.get("recipient_name", "Recipient"),
+            },
+            receipt={"status": "success", "message": "processed"},
+            response="Transfer completed",
+        )
+
+
+class _MockAccountWorker:
+    async def run(
+        self,
+        payload: Any,
+        context: Any,
+        user_message: str | None = None,
+        pin_verified: bool = False,
+    ) -> Any:
+        del payload, context, user_message, pin_verified
+        from apps.core.src.agent.orchestrator.models.domain import AccountOutcome, AccountResult
+
+        return AccountResult(outcome=AccountOutcome.OK, response="Balance is available.")
 
 
 class _FakeRedis:
@@ -116,7 +153,7 @@ async def test_mixed_intent_outbox_contains_notice_then_transfer_prompt() -> Non
     assert "Investments" in outbox[0]["text"]
     assert "I can proceed with money transfer" in outbox[0]["text"]
     assert "I can help with send money or review recent transactions instead." in outbox[0]["text"]
-    assert "I need account details for tolu." in outbox[1]["text"]
+    assert "account number for tolu" in outbox[1]["text"].lower()
     assert state.policy_notice is None
 
 
@@ -392,3 +429,73 @@ async def test_conversational_response_uses_detected_language_even_with_cached_p
 
     assert state.final_response == "Hey. I'm Fusepay. What money move should we handle?"
     assert (state.loaded_context or {}).get("language") == "en"
+
+
+@pytest.mark.asyncio
+async def test_mixed_request_runs_in_order_without_resume_prompt() -> None:
+    planner_output = PlannerOutput(
+        primary_intent="mixed",
+        response="",
+        confidence=0.9,
+        is_complex=True,
+        detected_language="English",
+        normalized_instruction="send 10k to mum and dad then show my balance",
+        tasks=[
+            PlannedTask(
+                task_id="t1",
+                action="send_money",
+                executor="transfer",
+                instruction="Send 10k to Mum",
+                parameters=TaskParameters(amount="10000", recipient="Mum"),
+                risk="MONEY_MOVE",
+            ),
+            PlannedTask(
+                task_id="t2",
+                action="send_money",
+                executor="transfer",
+                instruction="Send 10k to Dad",
+                parameters=TaskParameters(amount="10000", recipient="Dad"),
+                risk="MONEY_MOVE",
+            ),
+            PlannedTask(
+                task_id="t3",
+                action="check_balance",
+                executor="account",
+                instruction="Show my balance",
+                parameters=TaskParameters(),
+                depends_on=["t1", "t2"],
+                risk="READ_ONLY",
+            ),
+        ],
+    )
+
+    state = OrchestratorState(
+        user_id="u_9",
+        phone_number="2348888888888",
+        channel="whatsapp",
+        last_message_text="send 10k to mum and dad then show my balance",
+    )
+    config: RunnableConfig = {
+        "configurable": {
+            "task_planner": _MockPlanner(planner_output),
+            "services": {"transfer": _MockTransferCompleteWorker(), "account": _MockAccountWorker()},
+            "redis_client": None,
+            "queue": None,
+            "beneficiary_suggestion_service": None,
+        },
+        "recursion_limit": 50,
+    }
+
+    state = _apply(state, await ingest_message(state))
+    state = _apply(state, await plan_tasks(state, config))
+    assert state.waves == [["t1", "t2"], ["t3"]]
+
+    state = _apply(state, await advance_wave(state, config))
+    assert state.current_wave_index == 1
+
+    state = _apply(state, await advance_wave(state, config))
+    assert state.current_wave_index == 2
+
+    final_updates = await finalize(state, config)
+    outbox = final_updates["outbox"]
+    assert all("resume your transfer" not in item.get("text", "").lower() for item in outbox)

@@ -35,9 +35,12 @@ class ExtractionStep(QueryStep):
         locale = LocaleManager.normalize(state.get("language")).value
 
         updates: dict[str, Any] = {}
+        force_new_query = bool(state.get("force_new_query"))
 
         # If we have an active session, check for continuity
-        if query_session and query_session.get("session_active"):
+        if force_new_query:
+            updates = await self._parse_new_query(state)
+        elif query_session and query_session.get("session_active"):
             updates = await self._handle_continuation(state, query_session)
         else:
             updates = await self._parse_new_query(state)
@@ -145,10 +148,11 @@ class ExtractionStep(QueryStep):
                 allow_limit = delta_type in (None, "limit", "reference")
                 allow_reference = delta_type in (None, "reference", "limit")
 
-                if "filters" in data:
-                    new_query = apply_filter_delta(original_query, data["filters"])
-                else:
-                    new_query = original_query
+                new_query = (
+                    apply_filter_delta(original_query, data["filters"])
+                    if "filters" in data
+                    else original_query
+                )
 
                 if "result_limit" in data and allow_limit:
                     new_query.result_limit = data["result_limit"]

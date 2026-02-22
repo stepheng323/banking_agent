@@ -38,12 +38,19 @@ class OrchestratorContextManager:
             return ""
 
         summary_parts = ["Active Context (Most recent last):"]
-        
+
         # Prune expired on read (lazy cleanup)
         now = int(time.time())
         valid_frames = [f for f in state.context_frames if (f.created_at_ts + f.ttl_seconds) > now]
-        
-        for i, frame in enumerate(valid_frames):
+
+        for frame in valid_frames:
+            resume_item = next((item for item in frame.items if item.data.get("resume_prompt") is True), None)
+            if resume_item:
+                intent_raw = resume_item.data.get("intent", "transaction")
+                intent = intent_raw if isinstance(intent_raw, str) and intent_raw else "transaction"
+                summary_parts.append(f"- resumption: Asked to resume {intent}")
+                continue
+
             items_str = ""
             if frame.frame_type == ContextFrameType.BENEFICIARY_LIST:
                 # [1] Mum (GTB) [2] Dad (Access)
@@ -52,14 +59,14 @@ class OrchestratorContextManager:
                     details = item.data.get("bank", "") or item.data.get("account", "")
                     items.append(f"[{idx}] {item.label} ({details})")
                 items_str = ", ".join(items)
-            
+
             elif frame.frame_type == ContextFrameType.TRANSACTION_LIST:
                 items = []
                 for idx, item in enumerate(frame.items, 1):
                     amt = item.data.get("amount", "")
                     items.append(f"[{idx}] {item.label} ({amt})")
                 items_str = ", ".join(items)
-                
+
             elif frame.frame_type == ContextFrameType.RECEIPT:
                 item = frame.items[0] if frame.items else None
                 if item:
@@ -77,16 +84,16 @@ class OrchestratorContextManager:
         """Resolve a reference dictionary to a specific entity."""
         if not state.context_frames:
             return None
-            
+
         selector = ref.get("selector")
-        
+
         # Get last valid list frame for index lookups
         last_list_frame = None
         for f in reversed(state.context_frames):
             if f.items and len(f.items) > 0:
                 last_list_frame = f
                 break
-                
+
         if selector == "index" and last_list_frame:
             try:
                 idx = int(ref.get("index", 1)) - 1  # 1-based to 0-based
@@ -94,10 +101,10 @@ class OrchestratorContextManager:
                     return last_list_frame.items[idx]
             except ValueError:
                 pass
-                
+
         elif selector == "previous":
             # Just return the very last entity shown
             if last_list_frame and last_list_frame.items:
-                return last_list_frame.items[-1] # or focus index if tracked
+                return last_list_frame.items[-1]  # or focus index if tracked
 
         return None
