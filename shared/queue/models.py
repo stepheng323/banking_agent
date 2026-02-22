@@ -1,6 +1,6 @@
 """Models for Redis Queue payloads."""
 
-from typing import Any, Literal, TypedDict
+from typing import Any, Literal, NotRequired, TypedDict
 
 
 class ReceiptTransferDataRecipient(TypedDict):
@@ -26,6 +26,7 @@ class ReceiptJobPayload(TypedDict):
     transfer_data: ReceiptTransferData
     transaction_reference: str | None
     signal_key: str
+    beneficiary_suggestion_message: NotRequired[str]
 
 
 class RefundJobPayload(TypedDict):
@@ -113,4 +114,3 @@ class OutboxJobPayload(TypedDict):
     channel: str
     intents: list[dict[str, Any]]
     metadata: dict[str, Any] | None
-
