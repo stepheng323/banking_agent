@@ -39,6 +39,19 @@ class UserRepository(BaseRepository[User]):
         result = await self.db.execute(stmt)
         return result.scalars().first()
 
+    async def get_channel_identity_by_phone(self, phone_number: str, channel: str) -> str | None:
+        """Get the channel_user_id for a given phone number and channel."""
+        stmt = (
+            select(UserChannelIdentity.channel_user_id)
+            .join(User, User.id == UserChannelIdentity.user_id)
+            .where(
+                User.phone_number == phone_number,
+                UserChannelIdentity.channel == channel,
+            )
+        )
+        result = await self.db.execute(stmt)
+        return result.scalar_one_or_none()
+
     async def link_channel_identity(self, user_id: str, channel: str, channel_user_id: str) -> UserChannelIdentity:
         """Link a new channel identity to an existing user."""
         identity = UserChannelIdentity(
@@ -108,8 +121,7 @@ class UserRepository(BaseRepository[User]):
     async def get_accounts_by_phone(self, phone_number: str) -> list:
         """Get user accounts by phone number."""
         user = await self.get_by_phone(phone_number)
-        if user:
-            # Need to deal with lazy loading of accounts!
+        if user: # Need to deal with lazy loading of accounts!
             # AsyncSession requires explicit handling for lazy relationships or eager loading.
             # Assuming joinedload or selectinload should be used if accessed.
             # But simple access `user.accounts` might fail if session is async and relation is lazy.

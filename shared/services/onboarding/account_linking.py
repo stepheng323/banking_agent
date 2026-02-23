@@ -51,6 +51,7 @@ class AccountLinkingService:
         pin: str | None,
         email: str | None,
         address: str | None,
+        channel: str = "whatsapp",
     ) -> dict:
         """Complete onboarding by creating customer and linking account."""
         if not pin or not is_valid_pin_format(pin):
@@ -103,9 +104,8 @@ class AccountLinkingService:
                 if not user:
                     # Brand new user (e.g. Telegram onboarding) — register them now
                     from shared.repositories.user_repository import UserCreate
-                    user = await uow.users.register_user(
-                        UserCreate(phone_number=phone_number)
-                    )
+
+                    user = await uow.users.register_user(UserCreate(phone_number=phone_number))
 
                 await uow.users.update_user(
                     str(user.id),
@@ -153,6 +153,7 @@ class AccountLinkingService:
                     account_number=selected_account.get("account_number", ""),
                     bank_code=bank_code,
                     bank_name=selected_account.get("bank_name", ""),
+                    channel=channel,
                 )
             )
 
@@ -181,6 +182,7 @@ class AccountLinkingService:
         account_number: str,
         bank_code: str,
         bank_name: str,
+        channel: str = "whatsapp",
     ) -> None:
         """Background task: Create Mono customer and mandate, then notify user."""
         try:
@@ -218,6 +220,7 @@ class AccountLinkingService:
                     account_number=account_number,
                     bank_name=bank_name,
                     transfer_destinations=transfer_destinations,
+                    channel=channel,
                 )
 
         except Exception as e:
@@ -234,6 +237,6 @@ class AccountLinkingService:
                     "⚠️ We encountered an issue setting up your account. "
                     "Our team has been notified. Please try again later or contact support."
                 )
-                await self.mandate.enqueue_outbox_say(phone_number, error_msg)
+                await self.mandate.enqueue_outbox_say(phone_number, error_msg, channel)
             except Exception:
                 pass

@@ -132,12 +132,23 @@ async def advance_wave(state: OrchestratorState, config: RunnableConfig) -> dict
     # Workers should only see accounts eligible for transactions.
     # Pending/expired accounts are hidden from source selection, balance, etc.
     if state.loaded_context and "accounts" in state.loaded_context:
+        raw_accounts = state.loaded_context["accounts"]
+        logger.info(
+            "mandate_gate_pre_filter",
+            account_statuses=[
+                {"bank": a.get("bank_name"), "mandate_status": a.get("mandate_status")}
+                for a in raw_accounts
+                if isinstance(a, dict)
+            ],
+        )
         state.loaded_context["accounts"] = [
-            a for a in state.loaded_context["accounts"]
-            if isinstance(a, dict) and a.get("mandate_status") == "ready"
+            a for a in raw_accounts if isinstance(a, dict) and a.get("mandate_status") == "ready"
         ]
+        logger.info(
+            "mandate_gate_post_filter",
+            ready_count=len(state.loaded_context["accounts"]),
+        )
     # ─────────────────────────────────────────────────────────────────
-
 
     handlers = {
         "transfer": handle_transfer_task,
@@ -175,23 +186,17 @@ async def advance_wave(state: OrchestratorState, config: RunnableConfig) -> dict
         if not handler:
             continue
 
-        # ── Mandate readiness gate ───────────────────────────────────────
-        # Block account-dependent tasks unless at least one linked account
-        # has mandate_status == "ready". No exceptions.
-        ACCOUNT_DEPENDENT_TASKS = {"transfer", "airtime", "data", "account", "query"}
-        if task.type in ACCOUNT_DEPENDENT_TASKS:
+
+        account_dependent_tasks = {"transfer", "airtime", "data", "account", "query"}
+        if task.type in account_dependent_tasks:
             accounts = (state.loaded_context or {}).get("accounts") or []
-            has_ready = any(
-                isinstance(a, dict) and a.get("mandate_status") == "ready"
-                for a in accounts
-            )
+            has_ready = any(isinstance(a, dict) and a.get("mandate_status") == "ready" for a in accounts)
             if not has_ready:
                 task.stage = TaskStage.FAILED
                 task.payload["is_pending_mandate"] = True
                 task.payload["error"] = _build_mandate_gate_error(accounts, locale)
                 progressed = True
                 continue
-        # ─────────────────────────────────────────────────────────────────
 
         await handler(task, task_id, ctx)
         progressed = True
