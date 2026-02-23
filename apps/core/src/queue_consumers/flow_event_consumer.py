@@ -46,6 +46,7 @@ class FlowEventConsumer:
                     phone_number=phone_number,
                     success=success,
                     channel=event_data.get("channel", "whatsapp"),
+                    extra_data=event_data.get("extra_data"),
                 )
             elif event_type == FlowEventType.PIN_FAILED.value:
                 logger.info(
@@ -74,6 +75,7 @@ class FlowEventConsumer:
         phone_number: str,
         success: bool,
         channel: str,
+        extra_data: dict[str, Any] | None = None,
     ) -> None:
         """Handle PIN verified event by resuming the appropriate service."""
         if not success:
@@ -81,9 +83,9 @@ class FlowEventConsumer:
             return
 
         try:
-            logger.info("resuming_via_orchestrator", phone=phone_number, flow=flow_type)
+            logger.info("resuming_via_orchestrator", phone=phone_number, flow=flow_type, channel=channel)
             response = await self.orchestrator.resume_transaction(
-                phone_number=phone_number, flow_type=flow_type, pin_verified=True
+                phone_number=phone_number, flow_type=flow_type, pin_verified=True, channel=channel
             )
 
             if response:
@@ -99,16 +101,21 @@ class FlowEventConsumer:
                         intents_to_send.extend(outbox)
 
                     if intents_to_send:
+                        # Use chat_id from extra_data if available (e.g., Telegram where chat_id != phone_number)
+                        outbox_phone = phone_number
+                        if extra_data and "chat_id" in extra_data:
+                            outbox_phone = extra_data["chat_id"]
+
                         await self.queue.enqueue(
                             queue_name=OUTBOX_QUEUE,
                             message={
-                                "phone_number": phone_number,
+                                "phone_number": outbox_phone,
                                 "channel": channel,
                                 "intents": intents_to_send,
-                                "metadata": {"source": "flow_event_consumer", "flow_type": flow_type}
-                            }
+                                "metadata": {"source": "flow_event_consumer", "flow_type": flow_type},
+                            },
                         )
-                        logger.info("pin_response_enqueued_outbox", phone=phone_number, count=len(intents_to_send))
+                        logger.info("pin_response_enqueued_outbox", outbox_phone=outbox_phone, mapped_from=phone_number, count=len(intents_to_send))
 
         except Exception as e:
             logger.error(
