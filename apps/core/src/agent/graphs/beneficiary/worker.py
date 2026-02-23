@@ -64,7 +64,6 @@ class BeneficiaryWorker:
                 error=render_message("beneficiary.error.process_failed", locale),
             )
 
-
     async def _list_beneficiaries(self, user_id: str, context: dict[str, Any]) -> TransactionResult:
         locale = LocaleManager.normalize(context.get("language")).value
         async with UnitOfWork() as uow:
@@ -72,12 +71,7 @@ class BeneficiaryWorker:
 
             # Format for context
             simple_list = [
-                {
-                    "name": b.account_name,
-                    "alias": b.alias,
-                    "bank": b.bank_name,
-                    "account": b.account_number
-                }
+                {"name": b.account_name, "alias": b.alias, "bank": b.bank_name, "account": b.account_number}
                 for b in beneficiaries
             ]
 
@@ -111,9 +105,7 @@ class BeneficiaryWorker:
                 lines.append("")
 
             return TransactionResult(
-                outcome=TransactionOutcome.OK,
-                response="\n".join(lines),
-                details={"viewed_beneficiaries": simple_list}
+                outcome=TransactionOutcome.OK, response="\n".join(lines), details={"viewed_beneficiaries": simple_list}
             )
 
     async def _add_beneficiary(self, user_id: str, payload: dict, context: dict) -> TransactionResult:

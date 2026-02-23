@@ -13,9 +13,7 @@ if TYPE_CHECKING:
 StateType = TypeVar("StateType")
 
 # Validator can be sync or async
-ValidatorFunc = Callable[
-    [StateType, dict], StateType | None | Coroutine[Any, Any, StateType | None]
-]
+ValidatorFunc = Callable[[StateType, dict], StateType | None | Coroutine[Any, Any, StateType | None]]
 
 
 async def select_source_account_shared(

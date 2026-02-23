@@ -71,11 +71,8 @@ class AirtimeExecutor:
                             "phone_number": phone_number,
                             "channel": data.get("channel", "whatsapp"),
                             "intents": [{"type": "say", "text": message}],
-                            "metadata": {
-                                "source": "airtime_executor",
-                                "transaction_id": transaction_id
-                            },
-                        }
+                            "metadata": {"source": "airtime_executor", "transaction_id": transaction_id},
+                        },
                     )
             else:
                 error_msg = result.get("message") or render_message("airtime.error.provider_failed", locale)

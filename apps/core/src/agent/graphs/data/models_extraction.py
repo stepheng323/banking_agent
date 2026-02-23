@@ -96,9 +96,7 @@ class DataExtractionResult(BaseModel):
         description="Extracted data purchase entities",
     )
 
-    correction: DataCorrection | None = Field(
-        default=None, description="Correction if user updated a value"
-    )
+    correction: DataCorrection | None = Field(default=None, description="Correction if user updated a value")
 
     ambiguities: list[Ambiguity] = Field(
         default_factory=list,

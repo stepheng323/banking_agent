@@ -17,9 +17,9 @@ from apps.core.src.agent.orchestrator.models.domain import (
     AccountOutcome,
     AccountResult,
 )
-from shared.i18n import LocaleManager, render_message
 from shared.clients.abstractions.banking import BankingDataProvider
 from shared.clients.abstractions.direct_debit import DirectDebitProvider
+from shared.i18n import LocaleManager, render_message
 from shared.repositories.account_repository import AccountRepository
 from shared.repositories.user_repository import UserRepository
 from shared.services.onboarding import SessionManager

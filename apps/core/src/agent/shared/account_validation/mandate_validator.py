@@ -73,23 +73,16 @@ def _get_pending_mandate_info(account: dict, locale: str = "en") -> tuple[str, d
     time_elapsed = now - created_at
 
     if time_elapsed <= timedelta(hours=MANDATE_EXPIRY_HOURS):
-        minutes_left = int(
-            (timedelta(hours=MANDATE_EXPIRY_HOURS) - time_elapsed).total_seconds() / 60
-        )
+        minutes_left = int((timedelta(hours=MANDATE_EXPIRY_HOURS) - time_elapsed).total_seconds() / 60)
 
         if transfer_destinations:
             dest_lines = "\n".join(
-                [
-                    f"• *{d.get('bank_name')}*: {d.get('account_number')}"
-                    for d in transfer_destinations
-                ]
+                [f"• *{d.get('bank_name')}*: {d.get('account_number')}" for d in transfer_destinations]
             )
-            message = (
-                render_message(
-                    "mandate.pending_with_destinations",
-                    locale,
-                    {"destinations": dest_lines, "minutes_left": minutes_left},
-                )
+            message = render_message(
+                "mandate.pending_with_destinations",
+                locale,
+                {"destinations": dest_lines, "minutes_left": minutes_left},
             )
         else:
             message = render_message("mandate.pending_complete_transfer", locale)
