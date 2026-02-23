@@ -289,6 +289,9 @@ class BeneficiarySuggestionService:
             # Clear the suggestion
             await self.redis_client.delete(suggestion_key)
 
+            from shared.cache.user_data import UserDataCache
+            await UserDataCache(redis_client=self.redis_client).invalidate_beneficiaries(phone_number)
+
             return render_message(
                 "beneficiary.suggestion.saved",
                 locale,

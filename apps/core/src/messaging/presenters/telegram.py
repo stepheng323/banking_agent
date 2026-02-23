@@ -13,6 +13,7 @@ from apps.core.src.agent.orchestrator.models.intents import (
 )
 from apps.core.src.messaging.presenters.base import PresentationContext, Presenter
 from shared.clients.abstractions.messaging import MessagingClient
+from shared.repositories.unit_of_work import UnitOfWork
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -26,6 +27,13 @@ class TelegramPresenter(Presenter):
 
     async def present(self, intents: list[UiIntent], context: PresentationContext) -> None:
         """Render intents to Telegram."""
+        # Resolve chat_id from phone_number
+        async with UnitOfWork() as uow:
+            if uow.users:
+                identity = await uow.users.get_channel_identity_by_phone(context.phone_number, "telegram")
+                if identity:
+                    context.phone_number = identity  # override context for downstream calls
+
         # Fire typing indicator immediately so the user sees activity
         await self.client.send_typing_indicator(context.phone_number)
 
@@ -84,12 +92,12 @@ class TelegramPresenter(Presenter):
 
         flow_token = f"{prefix}-pin-{intent.correlation_id}-{context.phone_number}"
 
-        
         import re
+
         html_summary = intent.summary or "Please enter your PIN to proceed."
         html_summary = html.escape(html_summary)
         # Convert simple markdown bold (*) to html (<b>)
-        html_summary = re.sub(r'\*(.*?)\*', r'<b>\1</b>', html_summary)
+        html_summary = re.sub(r"\*(.*?)\*", r"<b>\1</b>", html_summary)
 
         # Use Mini App for secure PIN entry
         await self.client.send_flow(
@@ -118,10 +126,11 @@ class TelegramPresenter(Presenter):
         flow_token = f"{prefix}-pin-{intent.correlation_id}-{context.phone_number}"
 
         import re
+
         html_summary = intent.summary or ""
         html_summary = html.escape(html_summary)
         # Convert simple markdown bold (*) to html (<b>)
-        html_summary = re.sub(r'\*(.*?)\*', r'<b>\1</b>', html_summary)
+        html_summary = re.sub(r"\*(.*?)\*", r"<b>\1</b>", html_summary)
 
         # Use Mini App for PIN-based confirmation
         await self.client.send_flow(
@@ -163,7 +172,7 @@ class TelegramPresenter(Presenter):
             for k, v in receipt_data.items():
                 if v:
                     # Clean up keys for display
-                    display_key = k.replace('_', ' ').title()
+                    display_key = k.replace("_", " ").title()
                     lines.append(f"<b>{display_key}:</b> <code>{html.escape(str(v))}</code>")
             lines.append("────────────────")
             await self.client.send_text(

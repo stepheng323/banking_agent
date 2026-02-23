@@ -128,7 +128,7 @@ async def test_dependent_task_runs_after_dependencies_completed() -> None:
                 payload={"action": "check_balance"},
             ),
         },
-        loaded_context={"profile": {}, "accounts": []},
+        loaded_context={"profile": {}, "accounts": [{"id": "acct-1", "bank_name": "Test Bank", "account_number": "0000000001", "mandate_status": "ready", "mandate_id": "m1"}]},
     )
     config: RunnableConfig = {
         "configurable": {"services": {"account": _AccountWorker()}},

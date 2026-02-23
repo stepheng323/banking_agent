@@ -65,6 +65,7 @@ class FundingPlan:
     shortfall: float = 0.0
     error: str | None = None
     balance_checks: int = 0
+    is_pending_mandate: bool = False
 
     @property
     def num_sources(self) -> int:
@@ -116,11 +117,21 @@ class FundingPlanner:
         eligible = [a for a in accounts if self._is_eligible(a)]
 
         if not eligible:
+            # Distinguish between "pending mandate" and "no mandate at all"
+            pending_accounts = [
+                a for a in accounts
+                if getattr(a, "mandate_status", None) not in (None, "ready")
+            ]
+            if pending_accounts:
+                error_msg = self._build_pending_mandate_message(pending_accounts[0], locale)
+            else:
+                error_msg = render_message("funding.planner.no_active_mandates", locale)
             return FundingPlan(
                 transfer_amount=transfer_amount,
                 total_funded=0,
                 is_sufficient=False,
-                error=render_message("funding.planner.no_active_mandates", locale),
+                error=error_msg,
+                is_pending_mandate=True if pending_accounts else False,
             )
 
         # Case 1: User specified a source account
@@ -272,6 +283,28 @@ class FundingPlanner:
     def _is_eligible(self, account: Any) -> bool:
         """Check if account is eligible for debiting."""
         return account.mandate_status == "ready" and account.mandate_id is not None
+
+    def _build_pending_mandate_message(self, account: Any, locale: str) -> str:
+        """Build contextual message for accounts with pending mandates.
+
+        Delegates to MandateService.build_mandate_auth_message() to avoid duplication.
+        """
+        from shared.services.onboarding.mandate import MandateService
+
+        extra_data: dict = getattr(account, "extra_data", None) or {}
+        destinations: list[dict] = extra_data.get("transfer_destinations", [])
+        account_number: str = getattr(account, "account_number", "") or ""
+        bank_name: str = getattr(account, "bank_name", "") or ""
+
+        if destinations:
+            svc = MandateService(queue=None)  # type: ignore[arg-type]
+            return svc.build_mandate_auth_message(
+                account_number=account_number,
+                bank_name=bank_name,
+                transfer_destinations=destinations,
+            )
+
+        return render_message("mandate.pending_complete_transfer", locale)
 
 
 def format_funding_plan_message(plan: FundingPlan, locale: str = "en") -> str:

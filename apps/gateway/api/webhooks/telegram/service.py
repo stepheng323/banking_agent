@@ -1,15 +1,18 @@
 """Telegram webhook service — business logic for handling incoming Telegram updates."""
 
 import json
-from datetime import datetime
-from typing import Any
+from datetime import UTC, datetime
+from typing import Any, cast
 
 from apps.gateway.adapters.telegram import ParsedTelegramMessage, parse_update
 from shared.clients.telegram.client import TelegramClient
+from shared.config.settings import settings
 from shared.models.messages import ChannelMessage, MessagePriority, MessageType
-from shared.queue.messages import FLOW_EVENTS_QUEUE, FlowEvent, FlowEventType
+from shared.queue.messages import FlowEvent, FlowEventType
+from shared.queue.models import FlowEventPayload
 from shared.queue.redis_queue import RedisQueue
 from shared.repositories.user_repository import UserRepository
+from shared.services.onboarding import session_manager
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -55,9 +58,43 @@ class TelegramWebhookService:
 
         user = await self.user_repository.get_by_channel_identity("telegram", msg.chat_id)
         if not user:
+            # Check if they are currently in the middle of onboarding
+            from shared.services.onboarding import session_manager
+
+            session = await session_manager.get_session(f"onboarding-{msg.chat_id}")
+            if session and session.get("phone_number") and session.get("step") != "complete":
+                # They already shared their contact, they just need to finish the Mini App
+                logger.info("telegram_unlinked_user_onboarding", chat_id=msg.chat_id)
+                import time
+
+                from shared.config.settings import settings
+
+                app_url = (
+                    f"{settings.telegram_mini_app_base_url}/static/telegram/onboarding.html"
+                    f"?flow_token=onboarding-{msg.chat_id}&v={int(time.time())}"
+                )
+                cta_result = await self.telegram_client._call(
+                    "sendMessage",
+                    {
+                        "chat_id": msg.chat_id,
+                        "text": "Please tap the button below to finish creating your account! 🚀",
+                        "reply_markup": {
+                            "inline_keyboard": [[{"text": "🛠 Continue Setup", "web_app": {"url": app_url}}]]
+                        },
+                    },
+                )
+                # Store the CTA message_id so we can disable the button after completion
+                cta_msg_id = (cta_result or {}).get("result", {}).get("message_id")
+                if cta_msg_id:
+                    await session_manager.update_session(
+                        f"onboarding-{msg.chat_id}",
+                        {"cta_message_id": str(cta_msg_id), "cta_chat_id": msg.chat_id},
+                    )
+                return True
+
             logger.info("telegram_unlinked_user_blocked", chat_id=msg.chat_id)
             await self._request_contact(msg.chat_id)
-            return True # Handled (by blocking)
+            return True  # Handled (by blocking)
 
         if msg.text and msg.text.strip() == "/start":
             msg.text = "hi"
@@ -86,12 +123,12 @@ class TelegramWebhookService:
             )
             return True
 
-        phone = msg.contact_phone_number.replace("+", "")
+        phone = str(msg.contact_phone_number).replace("+", "")
         user = await self.user_repository.get_by_phone(phone)
 
         if user:
             logger.info("linking_telegram_identity", user_id=user.id, chat_id=msg.chat_id)
-            await self.user_repository.link_channel_identity(user.id, "telegram", msg.chat_id)
+            await self.user_repository.link_channel_identity(str(user.id), "telegram", msg.chat_id)
             await self.telegram_client._call(
                 "sendMessage",
                 {
@@ -101,11 +138,47 @@ class TelegramWebhookService:
                 },
             )
         else:
-            # We don't have a profile for this phone.
-            # We will pass the contact to the queue so the OnboardingExecutor can catch it.
-            message = self._build_message(msg)
-            message.channel_metadata["onboarding_phone"] = phone
-            await self._enqueue(message, msg.chat_id, msg.type)
+            # We don't have a profile for this phone. They are a brand new user.
+            # Pre-seed the onboarding session with the real phone number so
+            # downstream services (bvn_verification, account_linking) can find it.
+
+            flow_token = f"onboarding-{msg.chat_id}"
+            await session_manager.update_session(flow_token, {"phone_number": phone})
+
+            import time
+
+            app_url = (
+                f"{settings.telegram_mini_app_base_url}/static/telegram/onboarding.html"
+                f"?flow_token={flow_token}&v={int(time.time())}"
+            )
+
+            cta_result = await self.telegram_client._call(
+                "sendMessage",
+                {
+                    "chat_id": msg.chat_id,
+                    "text": (
+                        "Welcome to Fusepay! 🚀\n\n"
+                        "We couldn't find an existing account matching your phone number.\n"
+                        "Please click the button below to securely create your new account."
+                    ),
+                    "reply_markup": {
+                        "inline_keyboard": [
+                            [
+                                {
+                                    "text": "🛠 Start Setup",
+                                    "web_app": {"url": app_url},
+                                }
+                            ]
+                        ]
+                    },
+                },
+            )
+            cta_msg_id = (cta_result or {}).get("result", {}).get("message_id")
+            if cta_msg_id:
+                await session_manager.update_session(
+                    flow_token,
+                    {"cta_message_id": str(cta_msg_id), "cta_chat_id": msg.chat_id},
+                )
 
         return True
 
@@ -117,8 +190,8 @@ class TelegramWebhookService:
                 "chat_id": chat_id,
                 "text": (
                     "Welcome to your Banking Agent! 🏦\n\n"
-                    "To link your Telegram account to your banking profile or create a new account, "
-                    "please tap the button below to share your phone number."
+                    "To access your account, we first need to verify your phone number. "
+                    "Please tap the button below to share your contact securely."
                 ),
                 "reply_markup": {
                     "keyboard": [[{"text": "📱 Share Contact", "request_contact": True}]],
@@ -161,10 +234,10 @@ class TelegramWebhookService:
         except json.JSONDecodeError:
             logger.warning("telegram_invalid_web_app_data", chat_id=msg.chat_id)
             return False
-            
+
         action = data.get("action")
         if action == "onboarding_success":
-            # The onboarding flow finished successfully via REST API calls. 
+            # The onboarding flow finished successfully via REST API calls.
             # Acknowledge gently.
             await self.telegram_client.send_text(
                 to=msg.chat_id,
@@ -201,8 +274,8 @@ class TelegramWebhookService:
 
         try:
             await self.queue.enqueue(
-                queue_name=FLOW_EVENTS_QUEUE,
-                message=event.to_dict(),
+                queue_name="banking:flow_events",
+                message=cast(FlowEventPayload, event.to_dict()),
             )
             logger.info("telegram_pin_event_published", chat_id=msg.chat_id, flow_type=flow_type)
             return True
@@ -235,9 +308,12 @@ class TelegramWebhookService:
             channel_user_id=msg.chat_id,
             message_type=enum_type,
             text=msg.text or "",
+            flow_data=None,
             media_id=msg.photo_file_id or msg.audio_file_id,
+            mime_type=None,
+            quoted_message_id=None,
             channel_metadata=metadata,
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(tz=UTC),
             channel="telegram",
             priority=MessagePriority.NORMAL,
         )

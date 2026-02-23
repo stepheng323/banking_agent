@@ -186,6 +186,12 @@ class BeneficiaryWorker:
             )
             uow.commit()
 
+        phone_number = context.get("phone_number")
+        if phone_number:
+            from shared.cache.redis_client import RedisClient
+            from shared.cache.user_data import UserDataCache
+            await UserDataCache(redis_client=RedisClient.get_client()).invalidate_beneficiaries(phone_number)
+
         display_name = alias or final_account_name or render_message("beneficiary.common.default_name", locale)
         return TransactionResult(
             outcome=TransactionOutcome.OK,
@@ -231,6 +237,12 @@ class BeneficiaryWorker:
 
             uow.beneficiaries.delete(match.id)
             uow.commit()
+
+        phone_number = context.get("phone_number")
+        if phone_number:
+            from shared.cache.redis_client import RedisClient
+            from shared.cache.user_data import UserDataCache
+            await UserDataCache(redis_client=RedisClient.get_client()).invalidate_beneficiaries(phone_number)
 
         return TransactionResult(
             outcome=TransactionOutcome.OK,

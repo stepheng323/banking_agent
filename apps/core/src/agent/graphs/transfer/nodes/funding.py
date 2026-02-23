@@ -46,6 +46,15 @@ class AccountAdapter:
         self.mandate_id = data.get("mandate_id")
         self.mandate_status = data.get("mandate_status", "pending")
         self.is_default = data.get("is_default", False)
+        raw_extra = data.get("extra_data") or {}
+        if isinstance(raw_extra, str):
+            import json
+            try:
+                raw_extra = json.loads(raw_extra)
+            except Exception:
+                raw_extra = {}
+        self.extra_data = raw_extra if isinstance(raw_extra, dict) else {}
+
 
 
 async def plan_transaction_funding(
@@ -83,6 +92,7 @@ async def plan_transaction_funding(
         return TransactionResult(
             outcome=TransactionOutcome.FAILED,
             error=plan.error or render_message("transfer.funding.insufficient_funds", locale),
+            patch={"is_pending_mandate": plan.is_pending_mandate} if plan.is_pending_mandate else {},
         )
 
     plan_dict = {

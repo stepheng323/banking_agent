@@ -19,12 +19,12 @@ class MandateService:
     def __init__(self, queue: RedisQueue | None = None) -> None:
         self.queue = queue or RedisQueue()
 
-    async def enqueue_outbox_say(self, phone_number: str, text: str) -> None:
+    async def enqueue_outbox_say(self, phone_number: str, text: str, channel: str = "whatsapp") -> None:
         await self.queue.enqueue(
             queue_name=OUTBOX_QUEUE,
             message={
                 "phone_number": phone_number,
-                "channel": "whatsapp",
+                "channel": channel,
                 "intents": [{"type": "say", "text": text}],
                 "metadata": {"source": "mandate_service"},
             },
@@ -100,9 +100,9 @@ class MandateService:
             )
             logger.info("mandate_created", mandate_id=mandate.id, phone=phone_number)
 
-            with UnitOfWork() as uow:
+            async with UnitOfWork() as uow:
                 if uow.accounts:
-                    db_account = uow.accounts.get_by_account_id(account_id)
+                    db_account = await uow.accounts.get_by_account_id(account_id)
                     if db_account:
                         db_account.mandate_id = mandate.id
                         db_account.mandate_status = "pending"
@@ -129,22 +129,22 @@ class MandateService:
             logger.error("mandate_creation_failed", error=str(e), phone=phone_number)
             return {"success": False, "error": str(e)}
 
-    async def reinitiate_mandate(self, phone_number: str, account_id: str) -> dict:
+    async def reinitiate_mandate(self, phone_number: str, account_id: str, channel: str = "whatsapp") -> dict:
         """
         Reinitiate mandate for an existing account.
 
         Used when mandate has expired (>1 hour) or was cancelled.
         """
         try:
-            with UnitOfWork() as uow:
+            async with UnitOfWork() as uow:
                 if not uow.users or not uow.accounts:
                     return {"success": False, "error": "Database not available"}
 
-                user = uow.users.get_by_phone(phone_number)
+                user = await uow.users.get_by_phone(phone_number)
                 if not user:
                     return {"success": False, "error": "User not found"}
 
-                account = uow.accounts.get_by_account_id(account_id)
+                account = await uow.accounts.get_by_account_id(account_id)
                 if not account:
                     return {"success": False, "error": "Account not found"}
 
@@ -180,9 +180,9 @@ class MandateService:
             )
 
             # Update account with new mandate info
-            with UnitOfWork() as uow:
+            async with UnitOfWork() as uow:
                 if uow.accounts:
-                    db_account = uow.accounts.get_by_account_id(account_id)
+                    db_account = await uow.accounts.get_by_account_id(account_id)
                     if db_account:
                         db_account.mandate_id = mandate.id
                         db_account.mandate_status = "pending"
@@ -210,7 +210,7 @@ class MandateService:
                 transfer_destinations=transfer_destinations,
                 is_reinitiation=True,
             )
-            await self.enqueue_outbox_say(phone_number, auth_message)
+            await self.enqueue_outbox_say(phone_number, auth_message, channel)
 
             return {
                 "success": True,
@@ -230,11 +230,12 @@ class MandateService:
         account_number: str,
         bank_name: str,
         transfer_destinations: list,
+        channel: str = "whatsapp",
     ) -> None:
-        """Send mandate authorization instructions via WhatsApp."""
+        """Send mandate authorization instructions via WhatsApp or Telegram."""
         auth_message = self.build_mandate_auth_message(
             account_number=account_number,
             bank_name=bank_name,
             transfer_destinations=transfer_destinations,
         )
-        await self.enqueue_outbox_say(phone_number, auth_message)
+        await self.enqueue_outbox_say(phone_number, auth_message, channel)

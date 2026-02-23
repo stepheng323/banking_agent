@@ -2,7 +2,7 @@
 
 import json
 from datetime import datetime
-from typing import Any, Literal, overload
+from typing import Any, Literal, cast, overload
 
 import redis.asyncio as redis
 
@@ -57,7 +57,10 @@ class RedisQueue:
     @overload
     async def enqueue(self, queue_name: Literal["banking:messages"], message: dict[str, Any]) -> None: ...
 
-    async def enqueue(self, queue_name: str, message: Any) -> None:  # type: ignore[misc]
+    @overload
+    async def enqueue(self, queue_name: Literal["banking:outbox"], message: dict[str, Any]) -> None: ...
+
+    async def enqueue(self, queue_name: str, message: Any) -> None:
         """Enqueue a message to the specified queue.
 
         Uses a List-based queue implementation (LPUSH).
@@ -92,7 +95,7 @@ class RedisQueue:
             "enqueued_at": datetime.utcnow().isoformat(),
         }
 
-        await self._redis.zadd(queue_name, {json.dumps(enriched_message): priority})  # type: ignore[misc]
+        await self._redis.zadd(queue_name, {json.dumps(enriched_message): priority})
 
         print(f"📤 Enqueued message to {queue_name} (priority: {priority})")
 
@@ -100,11 +103,11 @@ class RedisQueue:
         if not self._redis:
             raise RuntimeError("Redis client not connected")
 
-        result = await self._redis.zpopmax(queue_name, count=1)  # type: ignore[misc]
+        result = await self._redis.zpopmax(queue_name, count=1)
 
         if result:
             message_json, priority = result[0]
-            message = json.loads(message_json)
+            message = cast(dict[str, Any], json.loads(message_json))  # type: ignore[no-any-return]
             return message
 
         return None
@@ -115,11 +118,11 @@ class RedisQueue:
             raise RuntimeError("Redis client not connected")
 
         list_name = f"{queue_name}:list"
-        result = await self._redis.brpop(list_name, timeout=timeout)  # type: ignore[misc]
+        result = cast(Any, await self._redis.brpop([list_name], timeout=timeout))  # type: ignore[misc]
 
         if result:
             _, message_json = result
-            message = json.loads(message_json)
+            message = cast(dict[str, Any], json.loads(message_json))  # type: ignore[no-any-return]
             return message
 
         return None

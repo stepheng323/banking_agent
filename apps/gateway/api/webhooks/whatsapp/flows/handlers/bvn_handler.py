@@ -6,7 +6,12 @@ from apps.gateway.api.webhooks.whatsapp.flows.response_helpers import (
     format_error_response,
     format_success_response,
 )
+from shared.database.enums import UserOnboardingStatusEnum
+from shared.repositories.unit_of_work import UnitOfWork
 from shared.services.onboarding import ServiceResult, bvn_service
+from shared.utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 
 async def handle_bvn_entry(
@@ -35,6 +40,34 @@ async def handle_bvn_entry(
             aes_key_bytes,
             iv_bytes,
         )
+
+    try:
+        session = await bvn_service.get_session_data(flow_token)
+        phone_number = (session or {}).get("phone_number", "")
+        if phone_number:
+            async with UnitOfWork() as uow:
+                if uow.users:
+                    user = await uow.users.get_by_phone(phone_number)
+                    if (
+                        user
+                        and getattr(user, "onboarding_status", None)
+                        == UserOnboardingStatusEnum.ONBOARDING_COMPLETED.value
+                    ):
+                        logger.info(
+                            "onboarding_already_completed",
+                            phone=phone_number,
+                        )
+                        return format_error_response(
+                            "BVN_ENTRY",
+                            "You have already completed onboarding. "
+                            "Please continue using the bot to make transactions.",
+                            request_was_encrypted,
+                            aes_key_bytes,
+                            iv_bytes,
+                        )
+    except Exception as e:
+        logger.warning("onboarding_guard_check_failed", error=str(e))
+    # ─────────────────────────────────────────────────────────────────
 
     result = ServiceResult(**await bvn_service.initiate_bvn_verification(flow_token, bvn))
 

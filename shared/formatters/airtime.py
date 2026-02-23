@@ -32,7 +32,6 @@ def format_airtime_summary(data: dict, locale: str = "en") -> str:
     source_bank = str(data.get("sourceBank") or render_message("airtime.format.summary.source_bank_fallback", locale))
     source_account = str(data.get("sourceAccount") or "")
 
-    # Build recipient lines
     if recipient_name and recipient_name != recipient_phone:
         recipient_display = render_message(
             "airtime.format.summary.recipient_with_phone",

@@ -55,7 +55,7 @@ def _build_state(
         },
         waves=[["t1"]],
         current_wave_index=0,
-        loaded_context={"language": "en"},
+        loaded_context={"language": "en", "accounts": [{"id": "acct-1", "bank_name": "Test Bank", "account_number": "0000000001", "mandate_status": "ready", "mandate_id": "m1"}]},
         last_interrupt=last_interrupt,
         last_message_text=last_message_text,
     )

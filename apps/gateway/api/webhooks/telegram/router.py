@@ -1,18 +1,22 @@
 """Telegram webhook router — FastAPI endpoint for Telegram Bot updates."""
 
+from typing import cast
+
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from apps.gateway.api.webhooks.telegram.auth import verify_telegram_init_data
 from apps.gateway.api.webhooks.telegram.service import TelegramWebhookService
-from pydantic import BaseModel
-from shared.services.onboarding import bvn_service, account_service
 from shared.clients.telegram.client import TelegramClient
 from shared.config.settings import settings
 from shared.database.connection import get_db
+from shared.queue.messages import FlowEvent, FlowEventType
+from shared.queue.models import FlowEventPayload
 from shared.queue.redis_queue import RedisQueue
 from shared.repositories.user_repository import UserRepository
+from shared.services.onboarding import account_service, bvn_service
 from shared.utils.logging import get_logger
-from shared.queue.messages import FLOW_EVENTS_QUEUE, FlowEvent, FlowEventType
 
 router = APIRouter(prefix="/webhook", tags=["telegram"])
 logger = get_logger(__name__)
@@ -26,6 +30,7 @@ def _get_queue() -> RedisQueue:
     if _queue_instance is None:
         _queue_instance = RedisQueue(redis_url=settings.redis_url)
     return _queue_instance
+
 
 @router.post("/telegram")
 async def telegram_webhook(
@@ -48,9 +53,7 @@ async def telegram_webhook(
         update = await request.json()
         user_repo = UserRepository(db)
         service = TelegramWebhookService(
-            queue=_get_queue(),
-            user_repository=user_repo,
-            telegram_client=TelegramClient()
+            queue=_get_queue(), user_repository=user_repo, telegram_client=TelegramClient()
         )
         await service.process_update(update)
         # Commit manually if any inserts (like linking child accounts) happened inside process_update
@@ -61,45 +64,78 @@ async def telegram_webhook(
         logger.error("telegram_webhook_error", error=str(e), exc_info=True)
         return Response(status_code=200)
 
+
 class BvnInput(BaseModel):
     flow_token: str
     bvn: str
 
+
 @router.post("/telegram/onboarding/bvn")
-async def telegram_onboarding_bvn(data: BvnInput) -> dict:
+async def telegram_onboarding_bvn(data: BvnInput, user_data: dict = Depends(verify_telegram_init_data)) -> dict:
     """Handle BVN verification for Telegram Onboarding."""
+    try:
+        session = await bvn_service.get_session_data(data.flow_token)
+        phone_number = (session or {}).get("phone_number", "")
+        if phone_number:
+            from shared.database.enums import UserOnboardingStatusEnum
+            from shared.repositories.unit_of_work import UnitOfWork
+
+            async with UnitOfWork() as uow:
+                if uow.users:
+                    user = await uow.users.get_by_phone(phone_number)
+                    if (
+                        user
+                        and getattr(user, "onboarding_status", None)
+                        == UserOnboardingStatusEnum.ONBOARDING_COMPLETED.value
+                    ):
+                        logger.info("onboarding_already_completed", phone=phone_number)
+                        return {
+                            "success": False,
+                            "error": "You have already completed onboarding. "
+                            "Please continue using the bot to make transactions.",
+                        }
+    except Exception as e:
+        logger.warning("onboarding_guard_check_failed", error=str(e))
+
     result = await bvn_service.initiate_bvn_verification(data.flow_token, data.bvn)
     return result
+
 
 class MethodInput(BaseModel):
     flow_token: str
     method: str
 
+
 @router.post("/telegram/onboarding/send_otp")
-async def telegram_send_otp(data: MethodInput) -> dict:
+async def telegram_send_otp(data: MethodInput, user_data: dict = Depends(verify_telegram_init_data)) -> dict:
     """Send OTP for Telegram Onboarding."""
     result = await bvn_service.send_otp(data.flow_token, data.method)
     return result
+
 
 class OtpInput(BaseModel):
     flow_token: str
     otp: str
 
+
 @router.post("/telegram/onboarding/otp")
-async def telegram_onboarding_otp(data: OtpInput) -> dict:
+async def telegram_onboarding_otp(data: OtpInput, user_data: dict = Depends(verify_telegram_init_data)) -> dict:
     """Handle OTP verification for Telegram Onboarding."""
     result = await bvn_service.verify_otp(data.flow_token, data.otp)
     return result
+
 
 class AccountInput(BaseModel):
     flow_token: str
     account_id: str
 
+
 @router.post("/telegram/onboarding/account")
-async def telegram_onboarding_account(data: AccountInput) -> dict:
+async def telegram_onboarding_account(data: AccountInput, user_data: dict = Depends(verify_telegram_init_data)) -> dict:
     """Handle Account selection for Telegram Onboarding."""
     result = await account_service.select_account(data.flow_token, data.account_id)
     return result
+
 
 class CompleteInput(BaseModel):
     flow_token: str
@@ -107,16 +143,43 @@ class CompleteInput(BaseModel):
     email: str
     address: str
 
+
 @router.post("/telegram/onboarding/complete")
-async def telegram_onboarding_complete(data: CompleteInput) -> dict:
+async def telegram_onboarding_complete(
+    data: CompleteInput, user_data: dict = Depends(verify_telegram_init_data)
+) -> dict:
     """Handle Onboarding completion for Telegram Onboarding."""
     result = await account_service.complete_onboarding(
         data.flow_token,
         pin=data.pin,
         email=data.email,
-        address=data.address
+        address=data.address,
+        channel="telegram",
     )
+
+    if result.get("success"):
+        try:
+            from shared.services.onboarding import session_manager
+
+            session = await session_manager.get_session(data.flow_token)
+            cta_message_id = (session or {}).get("cta_message_id")
+            cta_chat_id = (session or {}).get("cta_chat_id")
+
+            if cta_message_id and cta_chat_id:
+                telegram_client = TelegramClient()
+                await telegram_client._call(
+                    "editMessageReplyMarkup",
+                    {
+                        "chat_id": cta_chat_id,
+                        "message_id": int(cta_message_id),
+                        "reply_markup": {"inline_keyboard": [[{"text": "✅ Setup Complete", "callback_data": "noop"}]]},
+                    },
+                )
+        except Exception as e:
+            logger.warning("cta_disable_failed", error=str(e))
+
     return result
+
 
 class PinSubmitInput(BaseModel):
     flow_token: str
@@ -124,10 +187,10 @@ class PinSubmitInput(BaseModel):
     chat_id: str = ""
     message_id: str = ""
 
+
 @router.post("/telegram/pin_submit")
 async def telegram_pin_submit(
-    data: PinSubmitInput,
-    db: AsyncSession = Depends(get_db)
+    data: PinSubmitInput, user_data: dict = Depends(verify_telegram_init_data), db: AsyncSession = Depends(get_db)
 ) -> dict:
     """Handle direct PIN submission from pin_entry.html Mini App.
 
@@ -176,15 +239,17 @@ async def telegram_pin_submit(
         # but on Telegram it's the chat_id. Try to look up user by channel identity.
         user_repo = UserRepository(db)
         user = await user_repo.get_by_channel_identity("telegram", data.chat_id)
-        if user:
-            phone_number = user.phone_number
+        if user and user.phone_number:
+            phone_number = str(user.phone_number)
         else:
             return {"success": False, "error": "Session expired. Please start a new transaction."}
+
+    safe_phone_number = str(phone_number)
 
     # --- Verify PIN ---
     auth_service = AuthorizationService(redis_client=redis_client)
     auth_result = await auth_service.verify_pin(
-        phone_number=phone_number,
+        phone_number=safe_phone_number,
         pin=str(data.pin),
         idempotency_key=idem_key or token_remainder,
         transaction_type=flow_type if flow_type != "unknown" else None,
@@ -209,7 +274,7 @@ async def telegram_pin_submit(
 
     event = FlowEvent(
         event_type=FlowEventType.PIN_VERIFIED,
-        phone_number=phone_number,  # Real phone number for orchestrator thread lookup
+        phone_number=safe_phone_number,  # Real phone number for orchestrator thread lookup
         flow_type=resolved_flow_type,
         idempotency_key=token_remainder,
         success=True,
@@ -220,8 +285,8 @@ async def telegram_pin_submit(
     try:
         queue = _get_queue()
         await queue.enqueue(
-            queue_name=FLOW_EVENTS_QUEUE,
-            message=event.to_dict(),
+            queue_name="banking:flow_events",
+            message=cast(FlowEventPayload, event.to_dict()),
         )
         logger.info("telegram_pin_rest_published", chat_id=data.chat_id, flow_type=resolved_flow_type)
 
@@ -232,7 +297,9 @@ async def telegram_pin_submit(
                 if stored_msg_id:
                     _telegram = TelegramClient()
                     await _telegram.mark_as_authorized(data.chat_id, stored_msg_id)
-                    logger.info("telegram_pin_keyboard_marked_authorized", chat_id=data.chat_id, message_id=stored_msg_id)
+                    logger.info(
+                        "telegram_pin_keyboard_marked_authorized", chat_id=data.chat_id, message_id=stored_msg_id
+                    )
             except Exception as kb_err:
                 logger.warning("telegram_pin_keyboard_removal_failed", error=str(kb_err))
 
