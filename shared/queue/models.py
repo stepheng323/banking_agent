@@ -23,6 +23,8 @@ class ReceiptTransferData(TypedDict):
 
 class ReceiptJobPayload(TypedDict):
     phone_number: str
+    channel: str
+    channel_identity: str | None
     transfer_data: ReceiptTransferData
     transaction_reference: str | None
     signal_key: str
@@ -97,9 +99,9 @@ class FlowEventPayload(TypedDict):
     flow_type: str
     idempotency_key: str
     success: bool
-    error: str | None
-    extra_data: dict[str, Any] | None
-    channel: str
+    error: NotRequired[str]
+    extra_data: NotRequired[dict[str, Any]] | None
+    channel: NotRequired[str]
 
 
 class NotificationJobPayload(TypedDict):

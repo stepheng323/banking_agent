@@ -50,7 +50,11 @@ class SupportContextManager:
             key = self._key(user_id)
             data = context.model_dump()
             if data.get("last_issue_intent"):
-                data["last_issue_intent"] = data["last_issue_intent"].value if hasattr(data["last_issue_intent"], "value") else str(data["last_issue_intent"])
+                data["last_issue_intent"] = (
+                    data["last_issue_intent"].value
+                    if hasattr(data["last_issue_intent"], "value")
+                    else str(data["last_issue_intent"])
+                )
 
             await self.redis.setex(key, CONTEXT_TTL_SECONDS, json.dumps(data))
         except Exception as e:

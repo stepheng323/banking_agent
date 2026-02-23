@@ -37,11 +37,7 @@ def get_bank_label(account: Any, locale: str = "en") -> str:
     fallback = cast(str, render_message("source_account.list.bank_label_fallback", locale))
     if isinstance(account, dict):
         return str(
-            account.get("bank_name")
-            or account.get("bank")
-            or account.get("name")
-            or account.get("type")
-            or fallback
+            account.get("bank_name") or account.get("bank") or account.get("name") or account.get("type") or fallback
         )
     else:
         return str(

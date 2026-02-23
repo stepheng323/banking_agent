@@ -24,16 +24,34 @@ class OutboxConsumer:
     def __init__(
         self,
         redis_queue: RedisQueue,
-        messaging_client: MessagingClient,
+        messaging_clients: dict[str, MessagingClient],
+        default_channel: str = "whatsapp",
     ):
         self.queue = redis_queue
-        self.messaging_client = messaging_client
+        self.messaging_clients = messaging_clients
+        self.default_channel = default_channel
         self.running = False
+
+    def _get_client(self, channel: str) -> MessagingClient:
+        """Select the messaging client for a given channel."""
+        client = self.messaging_clients.get(channel)
+        if client:
+            return client
+        # Fall back to default channel
+        default_client = self.messaging_clients.get(self.default_channel)
+        if default_client:
+            logger.warning("outbox_channel_fallback", requested=channel, using=self.default_channel)
+            return default_client
+        # Last resort: use first available client
+        first_client = next(iter(self.messaging_clients.values()), None)
+        if not first_client:
+            raise RuntimeError("No messaging clients configured")
+        return first_client
 
     async def process_job(self, payload: dict[str, Any]) -> None:
         """Process a single outbox job."""
         phone_number = payload.get("phone_number")
-        channel = payload.get("channel", "whatsapp")
+        channel = payload.get("channel", self.default_channel)
         intents_data = payload.get("intents", [])
 
         if not phone_number:
@@ -54,14 +72,17 @@ class OutboxConsumer:
                 logger.warning("outbox_no_valid_intents", payload=payload)
                 return
 
-            # Select Presenter
-            presenter = PresenterFactory.create(channel=channel, client=self.messaging_client)
+            # Select client and Presenter for this channel
+            client = self._get_client(channel)
+            presenter = PresenterFactory.create(channel=channel, client=client)
 
             # Context
+            supports_flows = getattr(client, "supports_flows", True)
             context = PresentationContext(
                 channel=channel,
                 phone_number=phone_number,
-                capabilities={"flows": True} # Dynamic logic possible here
+                capabilities={"flows": supports_flows},
+                metadata=payload.get("metadata", {}),
             )
 
             # Present
@@ -69,12 +90,7 @@ class OutboxConsumer:
             logger.info("outbox_sent", phone=phone_number, count=len(intents), channel=channel)
 
         except Exception as e:
-            logger.error(
-                "outbox_processing_failed",
-                phone=phone_number,
-                error=str(e),
-                exc_info=True
-            )
+            logger.error("outbox_processing_failed", phone=phone_number, error=str(e), exc_info=True)
 
     async def start(self, queue_name: str = OUTBOX_QUEUE):
         """Start consuming outbox queue."""

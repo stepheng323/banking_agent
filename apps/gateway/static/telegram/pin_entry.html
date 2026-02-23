@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Enter Transaction Pin</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background-color: var(--tg-theme-bg-color, #1a1a1a);
+            color: var(--tg-theme-text-color, #ffffff);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            padding: 24px 20px;
+        }
+
+        .header {
+            font-size: 22px;
+            font-weight: 700;
+            margin-bottom: 10px;
+            line-height: 1.3;
+        }
+
+        .subtitle {
+            font-size: 15px;
+            color: var(--tg-theme-hint-color, #999999);
+            margin-bottom: 32px;
+            line-height: 1.5;
+        }
+
+        .input-group {
+            position: relative;
+            margin-bottom: 8px;
+        }
+
+        .input-group label {
+            position: absolute;
+            top: -9px;
+            left: 14px;
+            background-color: var(--tg-theme-bg-color, #1a1a1a);
+            padding: 0 6px;
+            font-size: 12px;
+            color: var(--tg-theme-button-color, #00c853);
+            font-weight: 500;
+            z-index: 1;
+        }
+
+        .pin-input {
+            width: 100%;
+            padding: 16px;
+            font-size: 20px;
+            letter-spacing: 12px;
+            font-weight: 600;
+            border: 2px solid var(--tg-theme-button-color, #00c853);
+            border-radius: 8px;
+            background: transparent;
+            color: var(--tg-theme-text-color, #ffffff);
+            outline: none;
+            -webkit-text-security: disc;
+            text-align: left;
+            caret-color: var(--tg-theme-button-color, #00c853);
+        }
+
+        .pin-input::placeholder {
+            letter-spacing: normal;
+            font-size: 14px;
+            font-weight: 400;
+            color: var(--tg-theme-hint-color, #666666);
+        }
+
+        .pin-input:focus {
+            border-color: var(--tg-theme-button-color, #00c853);
+            box-shadow: 0 0 0 1px var(--tg-theme-button-color, #00c853);
+        }
+
+        .input-hint {
+            font-size: 12px;
+            color: var(--tg-theme-hint-color, #888888);
+            margin-top: 8px;
+            padding-left: 4px;
+        }
+
+        .error-msg {
+            color: #e53935;
+            font-size: 13px;
+            margin-top: 8px;
+            min-height: 18px;
+            padding-left: 4px;
+        }
+
+        .spacer {
+            flex: 1;
+            min-height: 32px;
+        }
+
+        button.btn-submit {
+            width: 100%;
+            height: 52px;
+            border-radius: 12px;
+            background: var(--tg-theme-button-color, #00c853);
+            color: var(--tg-theme-button-text-color, #ffffff);
+            border: none;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: opacity 0.15s, background 0.15s;
+        }
+
+        button.btn-submit:disabled {
+            opacity: 0.35;
+            cursor: not-allowed;
+        }
+
+        button.btn-submit:active:not(:disabled) {
+            opacity: 0.85;
+        }
+
+        .success-state .pin-input {
+            border-color: var(--tg-theme-button-color, #00c853);
+        }
+
+        .success-state button.btn-submit {
+            background: #2e7d32;
+        }
+
+        .locked-state .pin-input {
+            border-color: #e53935;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="header">Transaction Pin Required</div>
+    <p class="subtitle">Please enter your 4-digit transaction pin to authorize your transaction</p>
+
+    <div class="input-group">
+        <label for="pinInput">Enter Pin</label>
+        <input type="password" id="pinInput" class="pin-input" inputmode="numeric" pattern="[0-9]*" maxlength="4"
+            placeholder="" autocomplete="off">
+    </div>
+    <div class="input-hint" id="inputHint">Enter Your transaction pin</div>
+    <div class="error-msg" id="errorMsg"></div>
+
+    <div class="spacer"></div>
+
+    <button class="btn-submit" id="btnSubmit" onclick="submitPin()" disabled>
+        Submit
+    </button>
+
+    <script>
+        const tg = window.Telegram.WebApp;
+        tg.ready();
+        tg.expand();
+
+        const params = new URLSearchParams(window.location.search);
+        const flowToken = params.get('flow_token') || '';
+        const chatId = params.get('chat_id') || '';
+
+        const PIN_LENGTH = 4;
+        const MAX_ATTEMPTS = 3;
+        let attempts = 0;
+        let locked = false;
+        let verified = false;
+
+        const pinInput = document.getElementById('pinInput');
+        const btnSubmit = document.getElementById('btnSubmit');
+        const errorMsg = document.getElementById('errorMsg');
+        const inputHint = document.getElementById('inputHint');
+
+        // Focus the input immediately
+        setTimeout(() => pinInput.focus(), 300);
+
+        pinInput.addEventListener('input', () => {
+            // Only allow digits
+            pinInput.value = pinInput.value.replace(/\D/g, '').slice(0, PIN_LENGTH);
+            btnSubmit.disabled = locked || verified || pinInput.value.length !== PIN_LENGTH;
+        });
+
+        // Allow Enter key to submit
+        pinInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && pinInput.value.length === PIN_LENGTH && !locked && !verified) {
+                submitPin();
+            }
+        });
+
+        function showError(msg) {
+            errorMsg.textContent = msg;
+        }
+
+        function lockUI(msg) {
+            locked = true;
+            showError(msg);
+            pinInput.disabled = true;
+            document.body.classList.add('locked-state');
+            btnSubmit.textContent = 'Close';
+            btnSubmit.disabled = false;
+            btnSubmit.onclick = () => tg.close();
+        }
+
+        async function submitPin() {
+            if (locked || verified) return;
+            const pin = pinInput.value;
+            if (pin.length !== PIN_LENGTH) {
+                showError('Please enter all 4 digits');
+                return;
+            }
+
+            locked = true;
+            btnSubmit.disabled = true;
+            btnSubmit.textContent = 'Verifying...';
+            pinInput.disabled = true;
+            showError('');
+
+            const data = {
+                pin: pin,
+                flow_token: flowToken,
+                chat_id: chatId,
+            };
+
+            try {
+                const proto = window.location.protocol;
+                const host = window.location.host;
+                const url = `${proto}//${host}/webhook/telegram/pin_submit`;
+
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+                const res = await response.json();
+
+                if (res.success) {
+                    verified = true;
+                    document.body.classList.add('success-state');
+                    btnSubmit.textContent = '✓ Authorized';
+                    inputHint.textContent = 'Transaction authorized successfully';
+                    inputHint.style.color = '#00c853';
+                    setTimeout(() => tg.close(), 1500);
+                    return;
+                }
+
+                // PIN failed — unlock for retry
+                locked = false;
+                pinInput.disabled = false;
+                attempts++;
+                const serverMsg = res.error || 'PIN verification failed';
+
+                if (res.locked || attempts >= MAX_ATTEMPTS) {
+                    lockUI(serverMsg);
+                    return;
+                }
+
+                pinInput.value = '';
+                btnSubmit.disabled = true;
+                pinInput.focus();
+                showError(serverMsg);
+                btnSubmit.textContent = 'Submit';
+
+            } catch (e) {
+                locked = false;
+                pinInput.disabled = false;
+                pinInput.value = '';
+                btnSubmit.disabled = true;
+                pinInput.focus();
+                showError(e.message || 'Network error. Please try again.');
+                btnSubmit.textContent = 'Submit';
+            }
+        }
+    </script>
+</body>
+
+</html>

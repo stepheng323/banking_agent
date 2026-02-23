@@ -101,10 +101,7 @@ class CircuitBreaker:
                 )
                 if fallback is not None:
                     return fallback
-                raise CircuitOpenError(
-                    f"Circuit breaker '{self.name}' is open. "
-                    f"Retry in {self._get_retry_seconds()}s"
-                )
+                raise CircuitOpenError(f"Circuit breaker '{self.name}' is open. Retry in {self._get_retry_seconds()}s")
 
             if self._state.state == CircuitState.HALF_OPEN:
                 if self._state.half_open_calls >= self.config.half_open_max_calls:

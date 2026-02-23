@@ -227,10 +227,7 @@ async def test_conversational_response_key_renders_deterministically() -> None:
     state = _apply(state, await ingest_message(state))
     state = _apply(state, await plan_tasks(state, config))
 
-    assert (
-        state.final_response
-        == "I handle transfers, airtime/data, balance checks, and transaction queries."
-    )
+    assert state.final_response == "I handle transfers, airtime/data, balance checks, and transaction queries."
 
 
 @pytest.mark.asyncio
@@ -345,8 +342,7 @@ async def test_conversational_missing_response_key_uses_deterministic_clarify() 
 
 
 @pytest.mark.asyncio
-async def test_conversational_missing_response_key_falls_back_deterministically(
-) -> None:
+async def test_conversational_missing_response_key_falls_back_deterministically() -> None:
     """Missing key fallback should stay localized and deterministic."""
     planner_output = PlannerOutput(
         primary_intent="conversational",

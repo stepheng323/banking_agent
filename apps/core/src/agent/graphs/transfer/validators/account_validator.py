@@ -77,9 +77,7 @@ class AccountValidator:
             source_account_id=str(source_account_id),
         )
 
-        is_success = (
-            resolved and isinstance(resolved, dict) and resolved.get("success", False)
-        )
+        is_success = resolved and isinstance(resolved, dict) and resolved.get("success", False)
         if is_success:
             logger.info(
                 "account_validation_success",

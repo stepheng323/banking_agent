@@ -119,22 +119,21 @@ def resolve(extraction: QueryExtractionResult, *, language: str = "en") -> Resol
     """Main resolver entry point."""
 
     if extraction.ambiguities:
-        time_vague = next(
-            (a for a in extraction.ambiguities if a.code == AmbiguityCode.TIME_VAGUE),
-            None
-        )
+        time_vague = next((a for a in extraction.ambiguities if a.code == AmbiguityCode.TIME_VAGUE), None)
         if time_vague:
             return ResolverDecision(
                 decision=Decision.ASK_CLARIFY,
                 extraction=extraction,
                 ambiguity_to_resolve=time_vague,
-                prompts=[Prompt(
-                    key="query.time_vague",
-                    vars={
-                        "context": time_vague.context,
-                        "suggestion": f"last {QUERY_LIMITS['default_lookback_days']} days",
-                    },
-                )],
+                prompts=[
+                    Prompt(
+                        key="query.time_vague",
+                        vars={
+                            "context": time_vague.context,
+                            "suggestion": f"last {QUERY_LIMITS['default_lookback_days']} days",
+                        },
+                    )
+                ],
             )
 
     # Check capabilities

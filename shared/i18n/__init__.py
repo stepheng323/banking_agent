@@ -2,8 +2,8 @@
 
 from shared.i18n.bridge import (
     normalize_locale,
-    render_capability_limitation,
     render_cancelled_prompt,
+    render_capability_limitation,
     render_generic_capability_blocked,
     render_locale_switched,
     render_policy_notice,

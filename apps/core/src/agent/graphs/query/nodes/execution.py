@@ -34,7 +34,9 @@ class ExecutionStep(QueryStep):
 
         account_id = state.get("account_id")
         account_ids_raw = state.get("account_ids")
-        account_ids: list[str] = [str(acc_id) for acc_id in account_ids_raw] if isinstance(account_ids_raw, list) else []
+        account_ids: list[str] = (
+            [str(acc_id) for acc_id in account_ids_raw] if isinstance(account_ids_raw, list) else []
+        )
         accounts_raw = state.get("accounts")
         accounts_info: list[dict[str, Any]] = (
             [acc for acc in accounts_raw if isinstance(acc, dict)] if isinstance(accounts_raw, list) else []

@@ -9,14 +9,14 @@ from shared.models.conversation_state import (
     GraphStateSnapshot,
     GraphType,
 )
-from shared.models.messages import MessagePriority, MessageType, WhatsAppMessage
+from shared.models.messages import ChannelMessage, MessagePriority, MessageType
 from shared.models.user import UserCreate, UserUpdate
 
 __all__ = [
     "UserCreate",
     "UserUpdate",
     "CreateAccount",
-    "WhatsAppMessage",
+    "ChannelMessage",
     "MessageType",
     "MessagePriority",
     "Account",

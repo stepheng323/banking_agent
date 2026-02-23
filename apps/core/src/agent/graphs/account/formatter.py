@@ -1,7 +1,7 @@
 from typing import Any
 
-from shared.i18n import render_message
 from shared.formatters.accounts import get_bank_label, get_last4
+from shared.i18n import render_message
 
 STATUS_ICONS = {
     "ready": "✓",

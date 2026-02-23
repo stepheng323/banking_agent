@@ -26,6 +26,7 @@ from shared.utils.logging import configure_logger, get_logger
 configure_logger()
 logger = get_logger(__name__)
 
+
 async def handle_transaction_pin(
     data: dict[str, Any],
     flow_token: str,
@@ -129,9 +130,14 @@ async def handle_transaction_pin(
                     message={
                         "phone_number": phone_number,
                         "channel": whatsapp_client.channel_name,
-                        "intents": [{"type": "say", "text": "Your transaction session has expired. Please start a new transaction."}],
-                        "metadata": {"source": "transaction_pin_handler", "status": "expired"}
-                    }
+                        "intents": [
+                            {
+                                "type": "say",
+                                "text": "Your transaction session has expired. Please start a new transaction.",
+                            }
+                        ],
+                        "metadata": {"source": "transaction_pin_handler", "status": "expired"},
+                    },
                 )
             )
 

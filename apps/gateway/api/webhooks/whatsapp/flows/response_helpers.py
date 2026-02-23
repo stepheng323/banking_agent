@@ -7,9 +7,7 @@ from fastapi.responses import JSONResponse, Response
 from shared.utils import encrypt_flow_response
 
 
-def format_encrypted_response(
-    response_data: dict[str, Any], aes_key_bytes: bytes, iv_bytes: bytes
-) -> Response:
+def format_encrypted_response(response_data: dict[str, Any], aes_key_bytes: bytes, iv_bytes: bytes) -> Response:
     """Format and encrypt a response."""
     if aes_key_bytes is None or iv_bytes is None:
         return JSONResponse(content={"error": "Encryption keys missing"}, status_code=500)

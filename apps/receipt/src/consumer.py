@@ -107,6 +107,8 @@ class ReceiptJobConsumer:
         payload = self._extract_payload(job)
         signal_key = self._extract_signal_key(job, payload)
         phone_number = payload.get("phone_number")
+        channel_identity = payload.get("channel_identity")
+        outbox_phone = channel_identity or phone_number
         reference = payload.get("transaction_reference") or "N/A"
 
         last_error = None
@@ -135,6 +137,7 @@ class ReceiptJobConsumer:
                         )
 
                         image_b64 = base64.b64encode(image_bytes).decode("ascii")
+                        channel = payload.get("channel", "whatsapp")
                         intents: list[dict[str, Any]] = [
                             {
                                 "type": "show_receipt",
@@ -153,8 +156,8 @@ class ReceiptJobConsumer:
                         await cast(Any, self.queue).enqueue(
                             queue_name=OUTBOX_QUEUE,
                             message={
-                                "phone_number": phone_number,
-                                "channel": "whatsapp",
+                                "phone_number": outbox_phone,
+                                "channel": channel,
                                 "intents": intents,
                                 "metadata": {"source": "receipt_consumer"},
                             },
@@ -180,11 +183,12 @@ class ReceiptJobConsumer:
             )
 
             try:
+                channel = payload.get("channel", "whatsapp")
                 await cast(Any, self.queue).enqueue(
                     queue_name=OUTBOX_QUEUE,
                     message={
-                        "phone_number": phone_number,
-                        "channel": "whatsapp",
+                        "phone_number": outbox_phone,
+                        "channel": channel,
                         "intents": [
                             {
                                 "type": "say",

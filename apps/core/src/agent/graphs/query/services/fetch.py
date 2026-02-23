@@ -35,30 +35,18 @@ def extract_counterparty(narration: str, locale: str = "en") -> str:
             if direction in narration:
                 idx = narration.index(direction) + len(direction)
                 name = narration[idx:].strip()
-                return (
-                    name.title()[:25]
-                    if name
-                    else render_message("query.fetch.counterparty.bank_transfer", locale)
-                )
+                return name.title()[:25] if name else render_message("query.fetch.counterparty.bank_transfer", locale)
         return render_message("query.fetch.counterparty.bank_transfer", locale)
 
     for prefix in ("TRANSFER TO ", "TRANSFER FROM ", "PAYMENT TO ", "FROM ", "TO "):
         if narration.startswith(prefix):
             name = narration[len(prefix) :].strip()
             parts = name.split(" - ")
-            return (
-                parts[0].title()[:25]
-                if parts[0]
-                else render_message("query.fetch.counterparty.transfer", locale)
-            )
+            return parts[0].title()[:25] if parts[0] else render_message("query.fetch.counterparty.transfer", locale)
 
     if narration.startswith("POS PURCHASE"):
         merchant = narration[14:].strip(" -")
-        return (
-            merchant.title()[:25]
-            if merchant
-            else render_message("query.fetch.counterparty.pos_purchase", locale)
-        )
+        return merchant.title()[:25] if merchant else render_message("query.fetch.counterparty.pos_purchase", locale)
 
     known = {
         "UBER": "Uber",
@@ -202,8 +190,7 @@ async def fetch_and_filter(
                             "date": raw_date.isoformat(),
                             "currency": l_txn.currency,
                             "status": l_txn.status,
-                            "bank_name": l_txn.source_bank_name
-                            or render_message("query.fetch.local.wallet", language),
+                            "bank_name": l_txn.source_bank_name or render_message("query.fetch.local.wallet", language),
                         }
 
                         is_duplicate = False

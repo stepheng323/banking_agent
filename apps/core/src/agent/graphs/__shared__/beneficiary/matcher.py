@@ -25,16 +25,12 @@ class BeneficiaryMatcher:
       - candidates: top-N candidates when status == "clarify"
     """
 
-    def __init__(
-        self, max_candidates: int = 3, threshold_single: float = 0.9, threshold_min: float = 0.6
-    ) -> None:
+    def __init__(self, max_candidates: int = 3, threshold_single: float = 0.9, threshold_min: float = 0.6) -> None:
         self.max_candidates = max_candidates
         self.threshold_single = threshold_single
         self.threshold_min = threshold_min
 
-    def match(
-        self, name: str, beneficiaries: list[Beneficiary]
-    ) -> tuple[str, Beneficiary | None, list[Beneficiary]]:
+    def match(self, name: str, beneficiaries: list[Beneficiary]) -> tuple[str, Beneficiary | None, list[Beneficiary]]:
         """Match a beneficiary name to a list of beneficiaries."""
         if not name or not beneficiaries:
             return "ask_details", None, []
@@ -82,17 +78,10 @@ class BeneficiaryMatcher:
 
         # If no exact match, fall back to fuzzy matching
         names = [_normalize_text(str(b.account_name or b.alias or "")) for b in beneficiaries]
-        ratios = [
-            (i, difflib.SequenceMatcher(a=normalized_query, b=n).ratio())
-            for i, n in enumerate(names)
-        ]
+        ratios = [(i, difflib.SequenceMatcher(a=normalized_query, b=n).ratio()) for i, n in enumerate(names)]
         ratios.sort(key=lambda x: x[1], reverse=True)
 
-        top = [
-            (beneficiaries[i], score)
-            for i, score in ratios[: self.max_candidates]
-            if score >= self.threshold_min
-        ]
+        top = [(beneficiaries[i], score) for i, score in ratios[: self.max_candidates] if score >= self.threshold_min]
 
         if not top:
             return "ask_details", None, []

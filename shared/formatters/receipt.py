@@ -28,8 +28,6 @@ async def generate_receipt_image(
     image_bytes = await receipt_generator.generate_receipt_image(transaction, account_name)
 
     transaction_id = str(transaction.id)
-    s3_url = await s3_client.upload_receipt_image(
-        image_bytes, transaction_id, transaction.created_at
-    )
+    s3_url = await s3_client.upload_receipt_image(image_bytes, transaction_id, transaction.created_at)
 
     return s3_url

@@ -82,10 +82,7 @@ class TaskQueueService:
                 continue
             # Only return pending tasks with satisfied dependencies
             if task.status == TaskStatus.PENDING:
-                if all(
-                    dep_id in completed_tasks or dep_id in collection_complete_tasks
-                    for dep_id in task.depends_on
-                ):
+                if all(dep_id in completed_tasks or dep_id in collection_complete_tasks for dep_id in task.depends_on):
                     return task
 
         return None
@@ -97,11 +94,7 @@ class TaskQueueService:
         if not data:
             return []
         results = json.loads(data)
-        return [
-            task_id
-            for task_id, result in results.items()
-            if result.get("status") == TaskStatus.COMPLETED
-        ]
+        return [task_id for task_id, result in results.items() if result.get("status") == TaskStatus.COMPLETED]
 
     async def get_task_results(self, phone_number: str) -> dict[str, Any]:
         """

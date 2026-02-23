@@ -116,8 +116,7 @@ class ResponseSynthesizer:
                             "name": c.get("name")
                             or c.get("account_name")
                             or render_message("response.common.unknown", context.language),
-                            "bank_name": c.get("bank_name")
-                            or render_message("response.common.na", context.language),
+                            "bank_name": c.get("bank_name") or render_message("response.common.na", context.language),
                             "last4": str(c.get("account_number", ""))[-4:],
                         },
                     )

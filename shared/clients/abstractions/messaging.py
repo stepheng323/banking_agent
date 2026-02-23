@@ -159,3 +159,17 @@ class MessagingClient(ABC):
             success=False,
             error=f"send_flow not supported on {self.channel_name}",
         )
+
+    @abstractmethod
+    async def get_media_url(self, media_id: str) -> str:
+        """
+        Get the download URL for a piece of media identified by media_id.
+        """
+        ...
+
+    @abstractmethod
+    async def download_media(self, media_url: str) -> bytes:
+        """
+        Download the actual bytes of media from the given URL.
+        """
+        ...

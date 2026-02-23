@@ -3,22 +3,32 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import ARRAY, JSON, Boolean, Column, DateTime, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import (
+    ARRAY,
+    JSON,
+    Boolean,
+    Column,
+    DateTime,
+    Float,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import declarative_base, relationship
 from sqlalchemy.sql import text
 
 from shared.database.enums import (
-    UserOnboardingStatusEnum,
-    MandateStatusEnum,
-    TransactionTypeEnum,
-    TransactionStatusEnum,
+    BeneficiaryTypeEnum,
     FundedTransferStatusEnum,
     FundingStepStatusEnum,
-    BeneficiaryTypeEnum,
-    ActionableMessageTypeEnum,
-    SupportTicketStatusEnum,
+    MandateStatusEnum,
     SupportTicketPriorityEnum,
+    SupportTicketStatusEnum,
+    TransactionTypeEnum,
+    UserOnboardingStatusEnum,
 )
 
 Base = declarative_base()
@@ -50,9 +60,35 @@ class User(Base):
     accounts = relationship("Account", back_populates="user")
     beneficiaries = relationship("Beneficiary", back_populates="user")
     transactions = relationship("Transaction", back_populates="user")
+    channel_identities = relationship("UserChannelIdentity", back_populates="user", cascade="all, delete-orphan")
 
     def __repr__(self):
         return f"<User(id={self.id}, phone={self.phone_number}, name={self.full_name})>"
+
+
+class UserChannelIdentity(Base):
+    """Maps a user to a specific messaging channel (WhatsApp, Telegram, etc)."""
+
+    __tablename__ = "user_channel_identities"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    user_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", name="fk_channel_identities_user_id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    channel = Column(String, nullable=False)  # e.g., "whatsapp", "telegram"
+    channel_user_id = Column(String, nullable=False, index=True)  # e.g., "+234...", "1234567"
+
+    created_at = Column(DateTime, server_default=text("now()"), nullable=False)
+
+    __table_args__ = (UniqueConstraint("channel", "channel_user_id", name="uq_user_channel_identity"),)
+
+    user = relationship("User", back_populates="channel_identities")
+
+    def __repr__(self):
+        return f"<UserChannelIdentity(user_id={self.user_id}, channel={self.channel}, id={self.channel_user_id})>"
 
 
 class Account(Base):
@@ -319,7 +355,7 @@ class FAQEntry(Base):
 
 class SupportTicket(Base):
     """Support ticket for tracking user issues.
-    
+
     Created by the support graph when:
     - User reports fraud
     - Issue requires manual follow-up
@@ -341,16 +377,16 @@ class SupportTicket(Base):
     intent = Column(String(50), nullable=False, index=True)
     status = Column(String(20), default=SupportTicketStatusEnum.OPEN.value, nullable=False, index=True)
     priority = Column(String(10), default=SupportTicketPriorityEnum.MEDIUM.value, nullable=False, index=True)
-    
+
     transaction_ref = Column(String(100), nullable=True, index=True)
-    
+
     summary = Column(Text, nullable=False)
     details = Column(JSON, default={}, nullable=False)
-    
+
     created_at = Column(DateTime, server_default=text("now()"), nullable=False, index=True)
     updated_at = Column(DateTime, server_default=text("now()"), onupdate=datetime.utcnow, nullable=False)
     resolved_at = Column(DateTime, nullable=True)
-    
+
     user = relationship("User")
 
     def __repr__(self):

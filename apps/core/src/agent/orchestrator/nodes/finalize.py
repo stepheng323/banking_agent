@@ -26,9 +26,7 @@ async def finalize(state: OrchestratorState, config: RunnableConfig) -> dict[str
     locale = LocaleManager.normalize((state.loaded_context or {}).get("language")).value
 
     configurable = cast(dict[str, Any], config.get("configurable", {}))
-    beneficiary_service: BeneficiarySuggestionService | None = configurable.get(
-        "beneficiary_suggestion_service"
-    )
+    beneficiary_service: BeneficiarySuggestionService | None = configurable.get("beneficiary_suggestion_service")
     redis_client: redis.Redis | None = configurable.get("redis_client")
     queue: RedisQueue | None = configurable.get("queue")
 
@@ -244,6 +242,8 @@ async def _queue_single_transfer_receipt(
     }
     job_payload: ReceiptJobPayload = {
         "phone_number": state.phone_number,
+        "channel": state.channel,
+        "channel_identity": state.channel_identity,
         "transfer_data": transfer_data,
         "transaction_reference": cast(
             str | None,

@@ -76,13 +76,7 @@ async def process_flow_request(req: Request) -> tuple[ProcessedRequest | None, R
 
         if not result:
             error_response = {
-                "errors": [
-                    {
-                        "message": (
-                            "Failed to decrypt request. Please check your encryption configuration."
-                        )
-                    }
-                ]
+                "errors": [{"message": ("Failed to decrypt request. Please check your encryption configuration.")}]
             }
             return (
                 None,

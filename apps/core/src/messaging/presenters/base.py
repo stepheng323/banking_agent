@@ -1,18 +1,19 @@
 """Presenter Protocol and Context definitions."""
 
-from dataclasses import dataclass, field
-from typing import Protocol
+from typing import Any, Protocol
+
+from pydantic import BaseModel, Field
 
 from apps.core.src.agent.orchestrator.models.intents import UiIntent
 
 
-@dataclass
-class PresentationContext:
-    """Context for the presentation layer."""
+class PresentationContext(BaseModel):
+    """Context passed to presenters."""
 
     channel: str
     phone_number: str
-    capabilities: dict[str, bool] = field(default_factory=dict)
+    capabilities: dict[str, bool] = Field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
     # Allows Presenters to know if they can use Flows, rich media, etc.
 
 

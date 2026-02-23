@@ -83,8 +83,16 @@ class SupportWorker:
 
         try:
             # 1. Classification
-            intent = payload.get("intent")
+            intent_str = payload.get("intent")
+            intent = None
             classification = None
+
+            if intent_str:
+                try:
+                    intent = SupportIntent(intent_str)
+                except ValueError:
+                    logger.info("support_intent_invalid", provided=intent_str)
+
             if not intent:
                 result = await self.classifier.classify(message)
                 intent = result.intent
@@ -188,11 +196,7 @@ class SupportWorker:
                 if response and response.next_step == "NEEDS_INFO":
                     await self.context_manager.increment_attempts(user_id)
 
-                final_msg = (
-                    response.message
-                    if response
-                    else render_message("support.unable_to_process", locale)
-                )
+                final_msg = response.message if response else render_message("support.unable_to_process", locale)
                 return SupportResult(
                     outcome=SupportOutcome.OK,
                     response=final_msg,

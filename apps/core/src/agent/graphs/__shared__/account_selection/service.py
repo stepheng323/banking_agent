@@ -95,13 +95,10 @@ def select_source_account(
     if not accounts:
         return (
             None,
-            llm_reply
-            or render_message("source_account.profile_no_accounts", locale),
+            llm_reply or render_message("source_account.profile_no_accounts", locale),
         )
 
-    selected = _pick_source_account(
-        accounts, profile or {}, source_bank_name
-    )
+    selected = _pick_source_account(accounts, profile or {}, source_bank_name)
 
     if selected is not None:
         return selected, None

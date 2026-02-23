@@ -25,4 +25,3 @@ __all__ = [
     "handle_ticket_status",
     "handle_any_update",
 ]
-

@@ -39,9 +39,7 @@ class Settings:
         self.openai_api_key: str = os.getenv("OPENAI_API_KEY", "")
 
         self.flutterwave_secret_key: str = os.getenv("FLUTTERWAVE_SECRET_KEY", "")
-        self.flutterwave_use_sandbox: bool = (
-            os.getenv("FLUTTERWAVE_USE_SANDBOX", "false").lower() == "true"
-        )
+        self.flutterwave_use_sandbox: bool = os.getenv("FLUTTERWAVE_USE_SANDBOX", "false").lower() == "true"
 
         self.mono_api_key: str = os.getenv("MONO_API_KEY", "")
 
@@ -50,6 +48,11 @@ class Settings:
         self.s3_receipt_prefix: str = "receipts"
 
         self.default_channel: str = os.getenv("DEFAULT_CHANNEL", "whatsapp")
+
+        self.telegram_bot_token: str = os.getenv("TELEGRAM_BOT_TOKEN", "")
+        self.telegram_mini_app_base_url: str = os.getenv("TELEGRAM_MINI_APP_BASE_URL", "")
+        self.telegram_webhook_secret_token: str = os.getenv("TELEGRAM_WEBHOOK_SECRET_TOKEN", "")
+
         self.soul_policy_path: str = os.getenv("SOUL_POLICY_PATH", "config/soul_policy.json")
 
         self._validate_whatsapp_config()

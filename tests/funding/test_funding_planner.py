@@ -94,9 +94,7 @@ class TestFundingPlannerSingleSource:
         assert plan.steps[0].amount == 40000.0
         assert plan.steps[0].bank_name == "GTBank"
 
-    @pytest.mark.skip(
-        reason="Preferred account matching uses internal UUID which varies at runtime"
-    )
+    @pytest.mark.skip(reason="Preferred account matching uses internal UUID which varies at runtime")
     @pytest.mark.asyncio
     async def test_preferred_account_used(self, mock_provider, sample_accounts):
         """Preferred account is used when specified and has balance."""

@@ -62,7 +62,7 @@ def _build_file(keys: list[str]) -> str:
             "def as_message_key(value: str) -> MessageKey:",
             '    """Assert and cast a runtime string to MessageKey."""',
             "    if not is_message_key(value):",
-            '        raise ValueError(f\"Unknown i18n message key: {value}\")',
+            '        raise ValueError(f"Unknown i18n message key: {value}")',
             "    return cast(MessageKey, value)",
             "",
         ]

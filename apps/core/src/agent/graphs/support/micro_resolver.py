@@ -177,8 +177,12 @@ def resolve(
             prompts=[Prompt(key="support.negotiate", vars={"message": negotiation.message})],
         )
 
-    if extraction.intent in (SupportIntent.FAILED_TRANSFER, SupportIntent.PENDING_TRANSFER,
-                             SupportIntent.GENERAL_TX_ISSUE, SupportIntent.TRANSFER_STATUS):
+    if extraction.intent in (
+        SupportIntent.FAILED_TRANSFER,
+        SupportIntent.PENDING_TRANSFER,
+        SupportIntent.GENERAL_TX_ISSUE,
+        SupportIntent.TRANSFER_STATUS,
+    ):
         context.last_support_step = "looking_up"
         return ResolverDecision(
             decision=Decision.PROCEED,

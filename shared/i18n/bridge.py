@@ -6,10 +6,8 @@ from shared.i18n.locale import LocaleManager
 from shared.i18n.renderer import render_message
 
 
-
 def normalize_locale(locale: str | None) -> str:
     return LocaleManager.normalize(locale).value
-
 
 
 def _join_two(items: list[str]) -> str:
@@ -18,7 +16,6 @@ def _join_two(items: list[str]) -> str:
     if len(items) == 1:
         return items[0]
     return f"{items[0]} or {items[1]}"
-
 
 
 def render_capability_limitation(
@@ -51,7 +48,6 @@ def render_capability_limitation(
     )
 
 
-
 def render_policy_notice(
     *,
     locale: str | None,
@@ -81,20 +77,16 @@ def render_policy_notice(
     )
 
 
-
 def render_safe_capability_fallback(locale: str | None) -> str:
     return render_message("common.safe_capability_fallback", normalize_locale(locale))
-
 
 
 def render_cancelled_prompt(locale: str | None) -> str:
     return render_message("common.cancelled_prompt", normalize_locale(locale))
 
 
-
 def render_generic_capability_blocked(locale: str | None) -> str:
     return render_message("capability.generic_blocked", normalize_locale(locale))
-
 
 
 def render_locale_switched(locale: str | None) -> str:

@@ -27,9 +27,7 @@ class AuthorizationService:
         """Initialize authorization service."""
         self.redis_client = redis_client or RedisClient.get_client()
 
-    async def get_transaction_type_from_pending(
-        self, idempotency_key: str, phone_number: str
-    ) -> str | None:
+    async def get_transaction_type_from_pending(self, idempotency_key: str, phone_number: str) -> str | None:
         """
         Extract transaction type from pending transaction in Redis.
 
@@ -78,9 +76,7 @@ class AuthorizationService:
             )
 
         if not transaction_type:
-            transaction_type = await self.get_transaction_type_from_pending(
-                idempotency_key, phone_number
-            )
+            transaction_type = await self.get_transaction_type_from_pending(idempotency_key, phone_number)
 
         if not transaction_type:
             return AuthorizationResult(
@@ -103,9 +99,7 @@ class AuthorizationService:
 
         async with UnitOfWork() as uow:
             if not uow.users:
-                return AuthorizationResult(
-                    verified=False, error="Database error", retry_count=retry_count
-                )
+                return AuthorizationResult(verified=False, error="Database error", retry_count=retry_count)
 
             user = await uow.users.get_by_phone(phone_number)
             if not user:
@@ -133,9 +127,7 @@ class AuthorizationService:
             attempts_remaining = 3 - retry_count
             error_msg = f"Invalid PIN. {attempts_remaining} attempt(s) remaining."
             if attempts_remaining == 0:
-                error_msg = (
-                    "Invalid PIN. Maximum attempts exceeded. Please start a new transaction."
-                )
+                error_msg = "Invalid PIN. Maximum attempts exceeded. Please start a new transaction."
 
             return AuthorizationResult(
                 verified=False,
@@ -153,9 +145,7 @@ class AuthorizationService:
             attempts_remaining=3 - retry_count,
         )
 
-    async def store_pin_verification_result(
-        self, idempotency_key: str, result: AuthorizationResult
-    ) -> None:
+    async def store_pin_verification_result(self, idempotency_key: str, result: AuthorizationResult) -> None:
         """
         Store PIN verification result in Redis.
 

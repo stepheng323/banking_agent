@@ -23,6 +23,7 @@ class FlowEvent:
     flow_type: str  # "transfer", "airtime", "batch"
     idempotency_key: str
     success: bool
+    channel: str = "whatsapp"
     error: str | None = None
     extra_data: dict[str, Any] | None = None
 
@@ -34,6 +35,7 @@ class FlowEvent:
             "flow_type": self.flow_type,
             "idempotency_key": self.idempotency_key,
             "success": self.success,
+            "channel": self.channel,
         }
         if self.error:
             result["error"] = self.error

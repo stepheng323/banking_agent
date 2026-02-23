@@ -82,5 +82,15 @@ async def session_gate_fastpath(state: OrchestratorState, config: RunnableConfig
                     "fast_path_triggered": True,
                 }
 
+    # --- PIN callback with no active session (checkpoint was cleaned) ---
+    if state.pin_verified and not state.pending_interrupt:
+        locale = LocaleManager.normalize((state.loaded_context or {}).get("language")).value
+        logger.warning("gate_pin_verified_no_session", reason="checkpoint_cleaned")
+        return {
+            "fast_path_triggered": True,
+            "final_response": render_message("orchestrator.session.expired_pin", locale,
+                                              fallback_en="Your transaction session has expired. Please start a new transaction."),
+        }
+
     logger.info("gate_fallback_to_planner", reason="no_fast_path_match")
     return {}  # Fallback to planner logic

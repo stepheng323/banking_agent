@@ -201,9 +201,13 @@ def format_intent_line(task_type: str, payload: dict[str, Any], locale: str = "e
     """Generate a precise intent string for a task."""
     if task_type == "transfer":
         amount = payload.get("amount", 0)
-        recipient = payload.get("recipient_resolved_name") or payload.get("recipient_name") or render_message(
-            "transaction_summary.intent.transfer_recipient_fallback",
-            locale,
+        recipient = (
+            payload.get("recipient_resolved_name")
+            or payload.get("recipient_name")
+            or render_message(
+                "transaction_summary.intent.transfer_recipient_fallback",
+                locale,
+            )
         )
         return render_message(
             "transaction_summary.intent.transfer",

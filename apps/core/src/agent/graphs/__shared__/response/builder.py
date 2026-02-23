@@ -6,9 +6,7 @@ from .context import ResponseContext
 from .intent import ResponseIntent
 
 
-def build_response_context(
-    intent: ResponseIntent, state: dict[str, Any], **overrides
-) -> ResponseContext:
+def build_response_context(intent: ResponseIntent, state: dict[str, Any], **overrides) -> ResponseContext:
     """Build ResponseContext from subgraph state.
 
     Extracts common fields from state and allows overrides.
@@ -36,9 +34,7 @@ def build_response_context(
     matched_beneficiary = state.get("matched_beneficiary")
     if matched_beneficiary and isinstance(matched_beneficiary, dict):
         if not recipient_name:
-            recipient_name = matched_beneficiary.get("account_name") or matched_beneficiary.get(
-                "alias"
-            )
+            recipient_name = matched_beneficiary.get("account_name") or matched_beneficiary.get("alias")
         if not bank_name:
             bank_name = matched_beneficiary.get("bank_name")
 
@@ -63,11 +59,7 @@ def build_response_context(
     error_message = None
     validation_errors = state.get("validation_errors") or []
     if validation_errors:
-        error_message = (
-            validation_errors[0]
-            if isinstance(validation_errors[0], str)
-            else str(validation_errors[0])
-        )
+        error_message = validation_errors[0] if isinstance(validation_errors[0], str) else str(validation_errors[0])
     elif state.get("error"):
         error_message = state.get("error")
     elif state.get("pin_verification_error"):

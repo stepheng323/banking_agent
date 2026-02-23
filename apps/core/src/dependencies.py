@@ -25,9 +25,11 @@ from apps.core.src.queue_consumers.flow_event_consumer import FlowEventConsumer
 from shared.cache.bank_cache import BankCacheService
 from shared.cache.redis_client import RedisClient
 from shared.cache.user_data import UserDataCache
+from shared.clients.abstractions.messaging import MessagingClient
 from shared.clients.factories.payment import PaymentProviderFactory
 from shared.clients.providers.mono.banking import MonoBankingProvider
 from shared.clients.providers.mono.direct_debit import MonoDirectDebitProvider
+from shared.clients.telegram.client import TelegramClient
 from shared.clients.whatsapp.client import WhatsAppClient
 from shared.config import settings
 from shared.database.connection import get_db_session
@@ -52,6 +54,13 @@ def setup_dependencies() -> tuple[MessageConsumer, TransactionConsumer, FlowEven
     refresh_planner_system_prompt()
 
     whatsapp_client = WhatsAppClient()
+    telegram_client = TelegramClient()
+
+    messaging_clients: dict[str, MessagingClient] = {
+        "whatsapp": whatsapp_client,
+        "telegram": telegram_client,
+    }
+
     redis_queue = RedisQueue(redis_url=settings.redis_url)
     user_repository = UserRepository(db=get_db_session())
 
@@ -132,7 +141,7 @@ def setup_dependencies() -> tuple[MessageConsumer, TransactionConsumer, FlowEven
         transaction_repo=transaction_repository,
     )
 
-    media_service = MediaService(whatsapp_client)
+    media_service = MediaService(messaging_clients)
 
     orchestrator_deps = OrchestratorDependencies(
         llm=llm,
@@ -195,7 +204,7 @@ def setup_dependencies() -> tuple[MessageConsumer, TransactionConsumer, FlowEven
 
     outbox_consumer = OutboxConsumer(
         redis_queue=redis_queue,
-        messaging_client=whatsapp_client,
+        messaging_clients=messaging_clients,
     )
 
     return message_consumer, transaction_consumer, flow_event_consumer, outbox_consumer

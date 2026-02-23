@@ -35,10 +35,7 @@ META_SYSTEM_PROMPT = (
     'Return ONLY JSON: {"message":"...", "language":"en|yo|pcm|ha|ig"}'
 )
 
-META_STRICT_LANGUAGE_PROMPT = (
-    "CRITICAL: Return language exactly '{language}'."
-    " If you cannot, return handoff='domain'."
-)
+META_STRICT_LANGUAGE_PROMPT = "CRITICAL: Return language exactly '{language}'. If you cannot, return handoff='domain'."
 
 
 def normalize_language_hint(language: str | None) -> str:
@@ -50,13 +47,12 @@ def fallback_meta_message(profile: SystemProfile, *, locale: str = "en") -> str:
     return cast(
         str,
         render_message(
-        "meta.fallback",
-        locale,
-        {"name": profile.name, "description": profile.description, "supported": supported},
-        fallback_en=(
-            f"I'm {profile.name}. {profile.description}\n"
-            f"I can help with: {supported}.\nWhat would you like to do?"
-        ),
+            "meta.fallback",
+            locale,
+            {"name": profile.name, "description": profile.description, "supported": supported},
+            fallback_en=(
+                f"I'm {profile.name}. {profile.description}\nI can help with: {supported}.\nWhat would you like to do?"
+            ),
         ),
     )
 

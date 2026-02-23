@@ -1,4 +1,5 @@
 """Query parsing service - extracts NormalizedQuery from natural language."""
+
 from datetime import date, timedelta
 from typing import Any, Literal, cast
 
@@ -27,6 +28,7 @@ logger = get_logger(__name__)
 
 class QueryParser:
     """Parse natural language financial questions into NormalizedQuery."""
+
     def __init__(self, llm: Runnable):
         self.llm = llm
 

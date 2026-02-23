@@ -44,16 +44,22 @@ async def handle_receipt_request(transaction: dict[str, Any], *, locale: str = "
     receipt += f"{render_message('support.receipt.divider', locale)}\n"
     receipt += render_message("support.receipt.amount", locale, {"amount": f"{amount:,.2f}"}) + "\n"
     receipt += render_message("support.receipt.to", locale, {"recipient": recipient}) + "\n"
-    receipt += render_message(
-        "support.receipt.bank",
-        locale,
-        {"bank": transaction.get("recipient_bank_name", "")},
-    ) + "\n"
-    receipt += render_message(
-        "support.receipt.account",
-        locale,
-        {"account": transaction.get("recipient_account_number", "")},
-    ) + "\n"
+    receipt += (
+        render_message(
+            "support.receipt.bank",
+            locale,
+            {"bank": transaction.get("recipient_bank_name", "")},
+        )
+        + "\n"
+    )
+    receipt += (
+        render_message(
+            "support.receipt.account",
+            locale,
+            {"account": transaction.get("recipient_account_number", "")},
+        )
+        + "\n"
+    )
     if tx_id:
         receipt += render_message("support.receipt.ref", locale, {"reference": tx_id}) + "\n"
     if time_str:

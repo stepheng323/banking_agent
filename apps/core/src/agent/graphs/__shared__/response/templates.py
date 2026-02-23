@@ -49,9 +49,7 @@ TEMPLATE_KEYS: dict[ResponseIntent, dict[str, str]] = {
 }
 
 
-def get_template(
-    intent: ResponseIntent, language: str = "en", recipient_name: str | None = None
-) -> str | None:
+def get_template(intent: ResponseIntent, language: str = "en", recipient_name: str | None = None) -> str | None:
     """Get template key for intent.
 
     The `language` argument is retained for compatibility with existing callsites.

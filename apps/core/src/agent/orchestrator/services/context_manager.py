@@ -17,9 +17,7 @@ class OrchestratorContextManager:
         """Push a new context frame to the state."""
         # 1. Prune expired
         now = int(time.time())
-        active_frames = [
-            f for f in state.context_frames if (f.created_at_ts + f.ttl_seconds) > now
-        ]
+        active_frames = [f for f in state.context_frames if (f.created_at_ts + f.ttl_seconds) > now]
 
         # 2. Append new frame
         active_frames.append(frame)
@@ -50,7 +48,6 @@ class OrchestratorContextManager:
                 intent = intent_raw if isinstance(intent_raw, str) and intent_raw else "transaction"
                 summary_parts.append(f"- resumption: Asked to resume {intent}")
                 continue
-
             items_str = ""
             if frame.frame_type == ContextFrameType.BENEFICIARY_LIST:
                 # [1] Mum (GTB) [2] Dad (Access)
@@ -70,7 +67,7 @@ class OrchestratorContextManager:
             elif frame.frame_type == ContextFrameType.RECEIPT:
                 item = frame.items[0] if frame.items else None
                 if item:
-                    items_str = f"{item.label} - {item.data.get('amount','')}"
+                    items_str = f"{item.label} - {item.data.get('amount', '')}"
 
             else:
                 items = [f"[{idx}] {item.label}" for idx, item in enumerate(frame.items, 1)]
