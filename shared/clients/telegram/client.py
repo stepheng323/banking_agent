@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import re
 from typing import Any
 
 import httpx
@@ -112,9 +113,10 @@ class TelegramClient(MessagingClient):
         if message_id:
             await self.send_typing_indicator(to)
 
+        html_text = re.sub(r"\*(.*?)\*", r"<b>\1</b>", text)
         payload: dict[str, Any] = {
             "chat_id": to,
-            "text": text,
+            "text": html_text,
             "parse_mode": "HTML",
         }
         if message_id:
@@ -154,9 +156,12 @@ class TelegramClient(MessagingClient):
             [{"text": opt.get("title", opt.get("id", "Option")), "callback_data": opt.get("id", "")}] for opt in options
         ]
 
+        combined_text = "\n\n".join(parts)
+        html_text = re.sub(r"\*(.*?)\*", r"<b>\1</b>", combined_text)
+
         payload: dict[str, Any] = {
             "chat_id": to,
-            "text": "\n\n".join(parts),
+            "text": html_text,
             "parse_mode": "HTML",
             "reply_markup": json.dumps({"inline_keyboard": keyboard_rows}),
         }
@@ -315,7 +320,11 @@ class TelegramClient(MessagingClient):
 
         endpoint = "onboarding.html" if "onboarding" in flow_token else "pin_entry.html"
         import time
-        mini_app_url = f"{self.mini_app_base_url}/{endpoint}?flow_token={flow_token}&chat_id={to}&v={int(time.time())}"
+
+        mini_app_url = (
+            f"{self.mini_app_base_url}/static/telegram/{endpoint}"
+            f"?flow_token={flow_token}&chat_id={to}&v={int(time.time())}"
+        )
 
         parts: list[str] = []
         if header:
@@ -341,6 +350,7 @@ class TelegramClient(MessagingClient):
             if sent_id and flow_token:
                 try:
                     from shared.cache.redis_client import RedisClient
+
                     rc = RedisClient.get_client()
                     await rc.setex(f"tg:pin_msg:{flow_token}", 1800, sent_id)
                 except Exception as e:
@@ -404,11 +414,7 @@ class TelegramClient(MessagingClient):
                 {
                     "chat_id": chat_id,
                     "message_id": message_id,
-                    "reply_markup": {
-                        "inline_keyboard": [
-                            [{"text": "✅ Authorized", "callback_data": "auth:done"}]
-                        ]
-                    },
+                    "reply_markup": {"inline_keyboard": [[{"text": "✅ Authorized", "callback_data": "auth:done"}]]},
                 },
                 max_retries=1,
             )
