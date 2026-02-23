@@ -4,6 +4,7 @@ from langchain_core.runnables import RunnableConfig
 
 from apps.core.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
 from apps.core.src.agent.orchestrator.models.state import OrchestratorState
+from apps.core.src.agent.orchestrator.nodes.planner import _build_user_state_summary
 from apps.core.src.agent.orchestrator.utils.task_payload import build_task_spec_from_plan_item
 from apps.core.src.agent.orchestrator.utils.task_state import reset_tasks_to_extracted, set_tasks_cancelled
 from apps.core.src.agent.orchestrator.utils.waves import build_dependency_waves
@@ -95,18 +96,23 @@ def _is_transaction_replacement(
 
 def _build_interrupt_context(
     *,
+    state: OrchestratorState,
     kind: str,
     task_ids: list[str],
     current_task_types: set[str],
     fields_by_task: dict[str, list[str]],
     prompt: str | None,
 ) -> str:
-    return (
+    parts = [
         f"Active Flow: {kind} required for tasks {task_ids} "
         f"(types: {', '.join(sorted(current_task_types))}).\n"
         f"required_fields={fields_by_task}\n"
         f"prompt={prompt or ''}"
-    )
+    ]
+    user_state = _build_user_state_summary(state)
+    if user_state:
+        parts.append(user_state)
+    return "\n\n".join(parts)
 
 
 def _route_fallback(reason: str) -> InterruptRouteDecision:
@@ -138,6 +144,7 @@ async def _route_interrupt(
 
     try:
         route_context = _build_interrupt_context(
+            state=state,
             kind=kind,
             task_ids=task_ids,
             current_task_types=current_task_types,
@@ -545,6 +552,7 @@ async def _switch_via_planner(
     current_task_types: set[str],
 ) -> dict[str, Any]:
     context_summary = _build_interrupt_context(
+        state=state,
         kind=interrupt.kind,
         task_ids=interrupt.task_ids,
         current_task_types=current_task_types,

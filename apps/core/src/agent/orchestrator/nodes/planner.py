@@ -121,6 +121,72 @@ def _build_policy_notice(message_text: str, planner_output: Any, locale: str = "
     )
 
 
+def _build_user_state_summary(state: OrchestratorState) -> str | None:
+    """Build a compact, human-readable summary of the user's persistent state."""
+    ctx = state.loaded_context or {}
+    profile = ctx.get("profile") or {}
+    accounts = ctx.get("accounts") or []
+    beneficiaries = ctx.get("beneficiaries") or []
+    history = ctx.get("history") or []
+
+    if not profile and not accounts and not beneficiaries and not history:
+        return None
+
+    parts = ["User State:"]
+
+    if profile.get("first_name"):
+        name = f"{profile.get('first_name')} {profile.get('last_name') or ''}".strip()
+        parts.append(f"- Name: {name}")
+
+    if accounts:
+        parts.append("- Accounts:")
+        for acc in accounts:
+            bank = acc.get("bank_name", "Unknown Bank")
+            num = acc.get("account_number", "")
+            masked = f"...{num[-4:]}" if len(num) >= 4 else num
+            status = acc.get("mandate_status")
+            default_tag = " (default)" if acc.get("is_default") else ""
+
+            if status == "pending":
+                extra = acc.get("extra_data", {})
+                dests = extra.get("transfer_destinations", [])
+                dest_str = " or ".join([f"{d.get('bank_name')} ({d.get('account_number')})" for d in dests])
+                parts.append(f"  • {bank} ({masked}) — mandate: pending ⚠️")
+                if dest_str:
+                    parts.append(f"    Activate: ₦50 to {dest_str}")
+            elif status == "ready":
+                parts.append(f"  • {bank} ({masked}) — mandate: ready ✓{default_tag}")
+            else:
+                parts.append(f"  • {bank} ({masked}) — mandate: {status}{default_tag}")
+
+    if beneficiaries:
+        ben_strs = []
+        for b in beneficiaries:
+            alias = b.get("alias") or b.get("account_name") or "Unknown"
+            bank = b.get("bank_name", "")
+            num = b.get("account_number", "")
+            masked = f"...{num[-4:]}" if len(num) >= 4 else num
+            if bank and masked:
+                ben_strs.append(f"{alias} ({bank} {masked})")
+            else:
+                ben_strs.append(alias)
+
+        if len(ben_strs) > 10:
+            ben_strs = ben_strs[:10] + ["..."]
+        parts.append(f"- Beneficiaries: {', '.join(ben_strs)}")
+
+    if history:
+        parts.append("\nRecent Chat:")
+        for msg in history[-5:]:
+            role = "User" if msg.get("role") == "user" else "Agent"
+            content = msg.get("content", "").replace("\n", "  ")
+            if len(content) > 150:
+                content = content[:147] + "..."
+            parts.append(f'- {role}: "{content}"')
+
+    return "\n".join(parts)
+
+
 async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[str, Any]:
     """Planner Node.
 
@@ -159,12 +225,9 @@ async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[s
             suggestion_key = f"user:{state.phone_number}:beneficiary_suggestion"
             query_session_key = f"query:session:{state.phone_number}"
 
-            # Pre-check transactional keywords to skip query session processing
             transactional_keywords = {"send", "transfer", "pay", "airtime", "data", "buy", "recharge", "topup"}
             message_tokens = set(re.findall(r"[a-z0-9']+", text.lower()))
             is_transactional = bool(message_tokens & transactional_keywords)
-
-            # Parallel Redis fetch
             suggestion_data, query_session_data = await asyncio.gather(
                 redis_client.get(suggestion_key),
                 redis_client.get(query_session_key) if not is_transactional else asyncio.sleep(0),
@@ -235,8 +298,6 @@ async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[s
         except Exception as e:
             logger.warning("active_flow_context_failed", error=str(e))
 
-    # [NEW] Context Manager Integration (Pattern A)
-    # Inject short-term memory (transactions, beneficiaries, etc.)
     from apps.core.src.agent.orchestrator.services.context_manager import OrchestratorContextManager
 
     ctx_manager = OrchestratorContextManager()
@@ -245,6 +306,11 @@ async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[s
     if short_term_context:
         planner_context_parts.append(short_term_context)
         logger.info("planner_context_injected", context="short_term_memory")
+
+    user_state_summary = _build_user_state_summary(state)
+    if user_state_summary:
+        planner_context_parts.append(user_state_summary)
+        logger.info("planner_context_injected", context="user_state_history")
 
     planner_context = "\n\n".join(planner_context_parts) if planner_context_parts else "None"
 
@@ -287,7 +353,6 @@ async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[s
             return ""
         return cast(str, render_text(raw_response, current_locale))
 
-    # [NEW] Handle Cancellation Explicitly
     if getattr(planner_output, "is_cancellation", False) or planner_output.primary_intent == "cancel":
         logger.info("planner_cancellation_detected", intent=planner_output.primary_intent)
         cancel_locale = detected_locale or current_locale
@@ -315,6 +380,13 @@ async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[s
                 if conversational_locale == current_locale
                 else _build_locale_update(state, conversational_locale)
             )
+            if planner_output.response:
+                logger.info("planner_direct_response_used", locale=conversational_locale)
+                return {
+                    "final_response": _localized_planner_response(planner_output.response),
+                    **conversational_locale_updates,
+                }
+
             response_key = planner_output.response_key
             if response_key:
                 logger.info("planner_response_key_used", key=response_key, locale=conversational_locale)
@@ -324,7 +396,7 @@ async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[s
                 }
 
             logger.info(
-                "planner_response_key_missing",
+                "planner_response_key_missing_and_no_response",
                 intent=planner_output.primary_intent,
                 detected_language=getattr(planner_output, "detected_language", None),
             )
@@ -335,11 +407,7 @@ async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[s
                 **conversational_locale_updates,
             }
 
-        # If no tasks, verify if we should switch context or pass-through
-        # E.g. "Hi" -> conversational -> no tasks
         if state.waves and planner_output and planner_output.primary_intent != "conversational":
-            # If planner sees a structured intent but 0 tasks, it might be a cancellation or error
-            # If intent differs from active, we probably want to clear waves
             if planner_output.primary_intent != active_intent:
                 logger.info("planner_switch_empty_tasks", old=active_intent, new=planner_output.primary_intent)
                 return {
@@ -352,17 +420,11 @@ async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[s
             return {"final_response": _localized_planner_response(planner_output.response), **locale_updates}
         return {"final_response": render_safe_capability_fallback(current_locale), **locale_updates}
 
-    # [NEW] Decision: Switch vs Pass-through
     if state.waves and active_intent:
-        # If intent matches, assume slot-filling/update and let Extractor handle it
-        # UNLESS it's a "mixed" intent (which might add tasks)
         if planner_output.primary_intent == active_intent and planner_output.primary_intent != "mixed":
             logger.info("planner_intent_match_active", intent=active_intent, action="pass_through")
             return locale_updates
-
-        # If intent differs (e.g. Transfer -> Beneficiary), we Switch.
         logger.info("planner_intent_switch", old=active_intent, new=planner_output.primary_intent)
-        # Proceed to generate new tasks (which will overwrite active waves)
 
     new_tasks = {}
     task_ids: list[str] = []
