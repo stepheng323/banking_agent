@@ -16,22 +16,20 @@ def sqlalchemy_to_dict(model: Any) -> dict[str, Any]:
         for column in mapper.column_attrs:
             key = column.key
             value = getattr(model, key)
-            # Convert non-JSON-native scalar types to strings
             if isinstance(value, (bytes, bytearray)):
                 data[key] = value.decode("utf-8", errors="ignore")
             else:
                 try:
-                    # Let JSON encoder handle primitives; fallback to str
-                    _ = value is None or isinstance(value, (str, int, float, bool))
+                    # Let JSON encoder handle primitives, dicts and lists; fallback to str
+                    _ = value is None or isinstance(value, (str, int, float, bool, dict, list))
                     data[key] = value if _ else str(value)
                 except Exception:
                     data[key] = None
         return data
     except Exception:
-        # Fallback: best-effort safe dict without private fields
         raw = getattr(model, "__dict__", {})
         return {
-            k: (v if (v is None or isinstance(v, (str, int, float, bool))) else str(v))
+            k: (v if (v is None or isinstance(v, (str, int, float, bool, dict, list))) else str(v))
             for k, v in raw.items()
             if not k.startswith("_")
         }
