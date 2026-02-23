@@ -139,6 +139,7 @@ def setup_dependencies() -> tuple[MessageConsumer, TransactionConsumer, FlowEven
         banking_provider=banking_provider,
         bank_cache=bank_cache_service,
         transaction_repo=transaction_repository,
+        dd_provider=direct_debit_provider,
     )
 
     media_service = MediaService(messaging_clients)

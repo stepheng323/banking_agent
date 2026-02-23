@@ -314,7 +314,8 @@ class TelegramClient(MessagingClient):
             await self.send_typing_indicator(to)
 
         endpoint = "onboarding.html" if "onboarding" in flow_token else "pin_entry.html"
-        mini_app_url = f"{self.mini_app_base_url}/{endpoint}?flow_token={flow_token}&chat_id={to}"
+        import time
+        mini_app_url = f"{self.mini_app_base_url}/{endpoint}?flow_token={flow_token}&chat_id={to}&v={int(time.time())}"
 
         parts: list[str] = []
         if header:

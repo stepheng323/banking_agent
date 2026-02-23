@@ -55,6 +55,26 @@ class TelegramWebhookService:
 
         user = await self.user_repository.get_by_channel_identity("telegram", msg.chat_id)
         if not user:
+            # Check if they are currently in the middle of onboarding
+            from shared.services.onboarding import session_manager
+            
+            session = await session_manager.get_session(f"onboarding-{msg.chat_id}")
+            if session and session.get("phone_number"):
+                # They already shared their contact, they just need to finish the Mini App
+                logger.info("telegram_unlinked_user_onboarding", chat_id=msg.chat_id)
+                from shared.config.settings import settings
+                import time
+                app_url = f"{settings.telegram_mini_app_base_url}/onboarding.html?flow_token=onboarding-{msg.chat_id}&v={int(time.time())}"
+                await self.telegram_client._call(
+                    "sendMessage",
+                    {
+                        "chat_id": msg.chat_id,
+                        "text": "Please tap the button below to finish creating your account! 🚀",
+                        "reply_markup": {"inline_keyboard": [[{"text": "🛠 Continue Setup", "web_app": {"url": app_url}}]]},
+                    },
+                )
+                return True
+            
             logger.info("telegram_unlinked_user_blocked", chat_id=msg.chat_id)
             await self._request_contact(msg.chat_id)
             return True # Handled (by blocking)
@@ -101,13 +121,43 @@ class TelegramWebhookService:
                 },
             )
         else:
-            # We don't have a profile for this phone.
-            # We will pass the contact to the queue so the OnboardingExecutor can catch it.
-            message = self._build_message(msg)
-            message.channel_metadata["onboarding_phone"] = phone
-            await self._enqueue(message, msg.chat_id, msg.type)
+            # We don't have a profile for this phone. They are a brand new user.
+            # Pre-seed the onboarding session with the real phone number so
+            # downstream services (bvn_verification, account_linking) can find it.
+            from shared.config.settings import settings
+            from shared.services.onboarding import session_manager
+
+            flow_token = f"onboarding-{msg.chat_id}"
+            await session_manager.update_session(flow_token, {"phone_number": phone})
+
+            import time
+            app_url = f"{settings.telegram_mini_app_base_url}/onboarding.html?flow_token={flow_token}&v={int(time.time())}"
+            
+            await self.telegram_client._call(
+                "sendMessage",
+                {
+                    "chat_id": msg.chat_id,
+                    "text": (
+                        "Welcome to Fusepay! 🚀\n\n"
+                        "We couldn't find an existing account matching your phone number.\n"
+                        "Please click the button below to securely create your new account."
+                    ),
+                    "reply_markup": {
+                        "inline_keyboard": [
+                            [
+                                {
+                                    "text": "🛠 Start Setup",
+                                    "web_app": {"url": app_url},
+                                }
+                            ]
+                        ]
+                    },
+                },
+            )
 
         return True
+
+
 
     async def _request_contact(self, chat_id: str) -> None:
         """Send the 'Share Contact' button keyboard."""
@@ -117,8 +167,8 @@ class TelegramWebhookService:
                 "chat_id": chat_id,
                 "text": (
                     "Welcome to your Banking Agent! 🏦\n\n"
-                    "To link your Telegram account to your banking profile or create a new account, "
-                    "please tap the button below to share your phone number."
+                    "To access your account, we first need to verify your phone number. "
+                    "Please tap the button below to share your contact securely."
                 ),
                 "reply_markup": {
                     "keyboard": [[{"text": "📱 Share Contact", "request_contact": True}]],

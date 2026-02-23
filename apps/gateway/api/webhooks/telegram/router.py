@@ -68,7 +68,10 @@ class BvnInput(BaseModel):
 @router.post("/telegram/onboarding/bvn")
 async def telegram_onboarding_bvn(data: BvnInput) -> dict:
     """Handle BVN verification for Telegram Onboarding."""
-    result = await bvn_service.initiate_bvn_verification(data.flow_token, data.bvn)
+    result = await bvn_service.initiate_bvn_verification(
+        data.flow_token, 
+        data.bvn 
+    )
     return result
 
 class MethodInput(BaseModel):
