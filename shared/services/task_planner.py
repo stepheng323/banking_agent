@@ -44,6 +44,7 @@ Your job: Classify intent, detect language, and break request into executable ta
 | account | "my balance", "show my accounts", "link account", "set default", "check balance", "overall balance", "balance" |
 | support | "my transfer failed", "I was debited twice", "support", "help" |
 | faq | "how do transfers work?", "what are the fees?", "faq" |
+| orchestrator | "yes/no/not now" when asked to resume a stashed session |
 | conversational | greetings (hi, bawo, kedu, how far, wetin dey), thanks, jokes |
 | cancel | "cancel", "stop", "abort", "nevermind" |
 | mixed | multiple intents: "send 5k and show balance" |
@@ -59,6 +60,7 @@ Your job: Classify intent, detect language, and break request into executable ta
   - beneficiary: save_beneficiary, list_beneficiaries, add_beneficiary, delete_beneficiary
   - support: report_issue
   - faq: answer_faq
+  - orchestrator: resume_session, dismiss_resume_session
 - executor: "transfer" | "query" | "airtime" | "data" | "account" | "support" | "faq" | "beneficiary" | "orchestrator"
 - instruction: natural language description
 -   parameters: {amount, recipient, narration, phone, alias, name, intent, list_intent, reference,
@@ -104,9 +106,12 @@ Your job: Classify intent, detect language, and break request into executable ta
 9b. ACTION/EXECUTOR MATCHING: Choose an action that matches the executor.
     Do NOT use account actions (e.g. check_balance) for query tasks.
 10. BENEFICIARY SAVING (Reactive): If Context mentions "asked to save beneficiary"
-    and user affirms ("Yes", "Okay"), create a task:
+    and user explicitly affirms save intent ("Yes", "Okay", "Save it"), create a task:
     - executor="beneficiary", action="save_beneficiary"
-    - If user provides alias ("Yes, call him Bob"), include parameters={alias: "Bob"}
+    - If user provides alias with clear save intent ("Yes, call him Bob", "save as Bob"),
+      include parameters={alias: "Bob"}.
+    - Treat greetings/check-ins/thanks or unrelated chatter as conversational,
+      even when beneficiary-save context exists.
 11. BENEFICIARY MANAGEMENT (Manual):
     - "Who are my beneficiaries", "List beneficiaries" -> action="list_beneficiaries", parameters={list_intent: true}
     - "Add John as beneficiary" -> action="add_beneficiary", parameters={intent: "add_beneficiary", name: "John"}
@@ -122,6 +127,9 @@ Your job: Classify intent, detect language, and break request into executable ta
 14. RESUMPTION: If Context says 'Asked to resume [Intent]' and user says
     'Yes', 'Okay', 'Proceed', create a task with executor='orchestrator',
     action='resume_session'.
+14b. RESUMPTION DECLINE: If Context says 'Asked to resume [Intent]' and user says
+    'No', 'Not now', 'Later', create a task with executor='orchestrator',
+    action='dismiss_resume_session'.
 15. LANGUAGE DETECTION (STRICT):
     - Set `detected_language` to the language the user actually wrote, not default English.
     - Nigerian Pidgin cues MUST map to `Pidgin` (not English), especially for greetings and short turns.
@@ -177,8 +185,14 @@ Your job: Classify intent, detect language, and break request into executable ta
 - "Who are my beneficiaries?" -> intent=beneficiary, task: t1 beneficiary list_beneficiaries list_intent=true READ_ONLY
 - "Add Mum 0123456789 GTBank" -> intent=beneficiary, task: t1 beneficiary
   add_beneficiary alias="Mum" account_number="0123456789" bank_name="GTBank" MUTATION
-- Context="Asked to save beneficiary", User="Gaines" -> intent=beneficiary,
+- Context="Asked to save beneficiary", User="save as Gaines" -> intent=beneficiary,
   task: t1 beneficiary save_beneficiary alias="Gaines" MUTATION
+- Context="Asked to save beneficiary", User="Hi" -> intent=conversational,
+  tasks=[], response_key=conversational.greeting
+- Context="Asked to resume transfer", User="Yes" -> intent=orchestrator,
+  task: t1 orchestrator resume_session READ_ONLY
+- Context="Asked to resume transfer", User="Not now" -> intent=orchestrator,
+  task: t1 orchestrator dismiss_resume_session READ_ONLY
 
 Return ONLY JSON matching the schema.
 """
@@ -206,20 +220,40 @@ Message: \"\"\"{user_message}\"\"\"
 
 INTERRUPT_ROUTER_SYSTEM_PROMPT = """You classify pending-input turns for an active banking flow.
 Return ONLY JSON for this schema:
-- decision: continue_flow | switch_intent | cancel | unclear
+- decision: continue_flow | switch_intent | cancel | unclear | approve_flow | reject_flow
 - confidence: 0.0-1.0
 - detected_language: English | Pidgin | Yoruba | Hausa | Igbo | French | null
 - target_intent: transfer | airtime | data | query | account | support | faq |
   beneficiary | conversational | cancel | mixed | null
+- target_mode: new | continuation | null
 - reason: short reason
 
 Rules:
 1) decision=continue_flow when message is slot-filling/correction for active flow.
-2) decision=switch_intent when message clearly asks a different intent.
-3) decision=cancel only for explicit cancellation.
-4) decision=unclear if not enough signal.
-5) Be language-agnostic across English, Nigerian Pidgin, Yoruba, Hausa, Igbo, and mixed input.
-6) If decision != switch_intent, set target_intent=null.
+2) decision=switch_intent when message clearly starts a NEW request that should replace
+   the current flow. This includes:
+   - a different intent (e.g., transfer -> beneficiary),
+   - OR a fresh transaction command even in the SAME transaction domain
+     (e.g., active transfer waiting for input, user says "Send 5k to Tolu").
+3) For same-domain transaction replacement, set target_intent to that same domain
+   (e.g., target_intent="transfer").
+4) decision=cancel only for explicit cancellation.
+5) For confirmation/auth contexts:
+   - decision=approve_flow only when user explicitly approves current flow.
+   - decision=reject_flow only when user explicitly declines current flow.
+6) decision=unclear if not enough signal.
+7) Be language-agnostic across English, Nigerian Pidgin, Yoruba, Hausa, Igbo, and mixed input.
+8) If decision != switch_intent, set target_intent=null.
+9) Use target_mode only when target_intent=query:
+   - new: user started a fresh query request.
+   - continuation: user is continuing an existing query thread.
+   - otherwise null.
+10) Balance/account-status asks should map to target_intent=account.
+    Examples: "what's my balance", "check account balance", "how much is in my account".
+11) Spending/history/analytics asks should map to target_intent=query.
+    Examples: "how much did I spend", "show my transactions", "expense summary".
+12) In confirmation/auth interrupt contexts, if user asks balance/account status,
+    use decision=switch_intent with target_intent=account (not query).
 """
 
 INTERRUPT_ROUTER_USER_PROMPT_TEMPLATE = """User phone: {phone_number}

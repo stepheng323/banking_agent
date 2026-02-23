@@ -1,5 +1,8 @@
 """Transfer summary formatting utilities."""
 
+from typing import cast
+
+from shared.formatters.accounts import format_source_account_info_from_account_number
 from shared.i18n import render_message
 
 
@@ -43,9 +46,6 @@ def format_transfer_summary(data: dict, include_source: bool = True, locale: str
     source_bank = str(data.get("sourceBank") or "")
     source_account = str(data.get("sourceAccount") or "")
     user_note: str | None = data.get("user_note")
-
-    last4 = source_account[-4:] if source_account else render_message("transfer.format.summary.last4_fallback", locale)
-
     lines = [
         render_message(
             "transfer.format.summary.title",
@@ -71,10 +71,10 @@ def format_transfer_summary(data: dict, include_source: bool = True, locale: str
     if include_source:
         lines.append("")
         lines.append(
-            render_message(
-                "transfer.format.summary.source_line",
-                locale,
-                {"source_bank": source_bank, "last4": last4},
+            format_source_account_info_from_account_number(
+                bank=source_bank,
+                account_number=source_account,
+                locale=locale,
             )
         )
 
@@ -393,14 +393,17 @@ def format_transfer_success_message(
     Returns:
         WhatsApp-formatted success message
     """
-    return render_message(
-        "transfer.format.notifications.success",
-        locale,
-        {
-            "amount": _format_currency_naira(amount),
-            "recipient_name": recipient_name,
-            "transaction_id": transaction_id,
-        },
+    return cast(
+        str,
+        render_message(
+            "transfer.format.notifications.success",
+            locale,
+            {
+                "amount": _format_currency_naira(amount),
+                "recipient_name": recipient_name,
+                "transaction_id": transaction_id,
+            },
+        ),
     )
 
 
@@ -418,13 +421,16 @@ def format_transfer_pending_message(
     Returns:
         WhatsApp-formatted pending message
     """
-    return render_message(
-        "transfer.format.notifications.pending",
-        locale,
-        {
-            "amount": _format_currency_naira(amount),
-            "recipient_name": recipient_name,
-        },
+    return cast(
+        str,
+        render_message(
+            "transfer.format.notifications.pending",
+            locale,
+            {
+                "amount": _format_currency_naira(amount),
+                "recipient_name": recipient_name,
+            },
+        ),
     )
 
 
@@ -443,8 +449,11 @@ def format_transfer_queued_message(
     Returns:
         WhatsApp-formatted acknowledgment message
     """
-    return render_message(
-        "transfer.format.notifications.queued",
-        locale,
-        {"amount": _format_currency_naira(amount), "recipient_name": recipient_name},
+    return cast(
+        str,
+        render_message(
+            "transfer.format.notifications.queued",
+            locale,
+            {"amount": _format_currency_naira(amount), "recipient_name": recipient_name},
+        ),
     )

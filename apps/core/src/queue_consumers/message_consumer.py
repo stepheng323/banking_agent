@@ -2,7 +2,7 @@
 
 import asyncio
 import time
-from typing import Any
+from typing import Any, cast
 
 from apps.core.src.agent.graphs.onboarding.executor import OnboardingExecutor
 from apps.core.src.agent.orchestrator import OrchestratorAgent
@@ -97,42 +97,57 @@ class MessageConsumer:
         )
 
         if user is None or getattr(user, "onboarding_status", None) != UserOnboardingStatusEnum.ONBOARDING_COMPLETED:
-            return await self.onboarding_executor.handle_onboarding(message)
+            return cast(dict[str, Any] | None, await self.onboarding_executor.handle_onboarding(message))
 
         # Use the real phone number from the database for the orchestrator.
         # For WhatsApp, channel_user_id == phone_number, but for Telegram
         # channel_user_id is a chat ID which would break account lookups.
         phone_number = user.phone_number
 
-        await self.orchestrator.context_manager.save_message_id(phone_number, message.message_id)
-
-        orchestrator_output = await self.orchestrator.invoke(
+        claimed_message = await self.orchestrator.context_manager.claim_inbound_message(
             phone_number,
-            sanitized_text,
             message.message_id,
-            message_type=message.message_type.value,
-            media_id=message.media_id,
-            quoted_message_id=message.quoted_message_id,
-            channel=message.channel,
-            channel_identity=channel_user_id,
         )
+        if not claimed_message:
+            logger.info("duplicate_inbound_message_ignored", phone_number=phone_number, message_id=message.message_id)
+            return {"status": "duplicate_ignored", "message_id": message.message_id}
 
-        intents: list[UiIntent] = orchestrator_output.get("intents", [])
+        response_text: str | None = None
+        try:
+            await self.orchestrator.context_manager.save_message_id(phone_number, message.message_id)
 
-        response_text = orchestrator_output.get("text")
-        has_primary_interaction = any(isinstance(i, (RequestAuth, RequestConfirmation, ShowReceipt)) for i in intents)
-        if response_text and not has_primary_interaction and not any(isinstance(i, Say) for i in intents):
-            intents.append(Say(text=response_text))
-
-        if intents:
-            await enqueue_outbox_intents(
-                self.queue,
-                channel_user_id,
-                message.channel,
-                intents,
-                metadata={"source": "message_consumer", "message_id": message.message_id},
+            orchestrator_output = await self.orchestrator.invoke(
+                phone_number,
+                sanitized_text,
+                message.message_id,
+                message_type=message.message_type.value,
+                media_id=message.media_id,
+                quoted_message_id=message.quoted_message_id,
+                channel=message.channel,
+                channel_identity=channel_user_id,
             )
-            logger.info("message_consumer_enqueued_outbox", count=len(intents))
+
+            intents: list[UiIntent] = orchestrator_output.get("intents", [])
+
+            response_text = orchestrator_output.get("text")
+            has_primary_interaction = any(
+                isinstance(i, (RequestAuth, RequestConfirmation, ShowReceipt)) for i in intents
+            )
+            if response_text and not has_primary_interaction and not any(isinstance(i, Say) for i in intents):
+                intents.append(Say(text=response_text))
+
+            if intents:
+                await enqueue_outbox_intents(
+                    self.queue,
+                    channel_user_id,
+                    message.channel,
+                    cast(list[UiIntent | dict[str, Any]], intents),
+                    metadata={"source": "message_consumer", "message_id": message.message_id},
+                )
+                logger.info("message_consumer_enqueued_outbox", count=len(intents))
+        except Exception:
+            await self.orchestrator.context_manager.release_inbound_message_claim(phone_number, message.message_id)
+            raise
 
         duration = (time.perf_counter() - start_time) * 1000
         logger.info(
@@ -144,7 +159,7 @@ class MessageConsumer:
 
         return {"status": "success", "response": response_text}
 
-    async def start(self, queue_name: str = "banking:messages"):
+    async def start(self, queue_name: str = "banking:messages") -> None:
         """Start the message consumer."""
         self.running = True
         logger.info("message_consumer_starting", queue=queue_name)
@@ -166,6 +181,6 @@ class MessageConsumer:
         await self.queue.close()
         logger.info("message_consumer_stopped")
 
-    def stop(self):
+    def stop(self) -> None:
         """Stop the message consumer."""
         self.running = False

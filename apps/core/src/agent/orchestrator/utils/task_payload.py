@@ -82,6 +82,7 @@ def build_task_spec_from_plan_item(
     return TaskSpec(
         id=plan_item.task_id,
         type=plan_item.executor,
+        depends_on=list(plan_item.depends_on or []),
         stage=TaskStage.DRAFT,
         payload=payload,
     )

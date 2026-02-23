@@ -2,7 +2,8 @@
 
 import asyncio
 import base64
-from typing import Any
+from collections.abc import Awaitable
+from typing import Any, cast
 
 from apps.receipt.src.renderer import ReceiptRenderer
 from shared.queue.messages import OUTBOX_QUEUE
@@ -24,6 +25,51 @@ class ReceiptJobConsumer:
         self.renderer = ReceiptRenderer()
         self.queue = RedisQueue()
 
+    @staticmethod
+    def _extract_payload(job: dict[str, Any]) -> dict[str, Any]:
+        """Support both legacy wrapped payload and direct payload job formats."""
+        payload = job.get("payload")
+        if isinstance(payload, dict):
+            return payload
+        return job
+
+    @staticmethod
+    def _extract_transfer_data(payload: dict[str, Any]) -> dict[str, Any]:
+        """Extract transfer data for renderer."""
+        nested = payload.get("transfer_data")
+        if isinstance(nested, dict):
+            return nested
+        raise ValueError("receipt_job_missing_transfer_data")
+
+    @staticmethod
+    def _extract_signal_key(job: dict[str, Any], payload: dict[str, Any]) -> str | None:
+        direct = job.get("signal_key")
+        if isinstance(direct, str) and direct:
+            return direct
+        nested = payload.get("signal_key")
+        if isinstance(nested, str) and nested:
+            return nested
+        return None
+
+    @staticmethod
+    def _extract_beneficiary_suggestion(payload: dict[str, Any]) -> str | None:
+        suggestion = payload.get("beneficiary_suggestion_message")
+        if isinstance(suggestion, str) and suggestion.strip():
+            return suggestion
+        return None
+
+    async def _signal_completion(self, signal_key: str | None) -> None:
+        """Best-effort completion signal to unblock waiters."""
+        if not signal_key or not self.queue._redis:
+            return
+        try:
+            push_result = self.queue._redis.rpush(signal_key, "DONE")
+            if not isinstance(push_result, int):
+                await cast(Awaitable[int], push_result)
+            await self.queue._redis.expire(signal_key, 60)  # Cleanup key quickly
+        except Exception as e:
+            logger.warning("receipt_signal_failed", error=str(e))
+
     async def start(self) -> None:
         """Start consuming jobs from the queue."""
         self.running = True
@@ -34,7 +80,7 @@ class ReceiptJobConsumer:
                 if job is None:
                     continue
 
-                payload = job
+                payload = self._extract_payload(job)
                 logger.info(
                     "receipt_job_received",
                     phone=payload.get("phone_number"),
@@ -58,34 +104,41 @@ class ReceiptJobConsumer:
 
     async def _process_job(self, job: dict[str, Any]) -> None:
         """Process a single receipt job with retry logic."""
-        payload = job
+        payload = self._extract_payload(job)
+        signal_key = self._extract_signal_key(job, payload)
         phone_number = payload.get("phone_number")
-        outbox_phone = payload.get("channel_identity") or phone_number
-        reference = payload.get("transaction_reference", "N/A")
+        channel_identity = payload.get("channel_identity")
+        outbox_phone = channel_identity or phone_number
+        reference = payload.get("transaction_reference") or "N/A"
 
         last_error = None
+        try:
+            if not phone_number:
+                logger.error("receipt_job_missing_phone_number", job=job)
+                return
 
-        for attempt in range(1, MAX_RETRIES + 1):
             try:
-                logger.info(
-                    "receipt_generation_attempt",
-                    phone=phone_number,
-                    attempt=attempt,
-                )
+                transfer_data = self._extract_transfer_data(payload)
+            except ValueError as e:
+                last_error = str(e)
+                logger.error("receipt_job_invalid_payload", phone=phone_number, error=last_error)
+            else:
+                for attempt in range(1, MAX_RETRIES + 1):
+                    try:
+                        logger.info(
+                            "receipt_generation_attempt",
+                            phone=phone_number,
+                            attempt=attempt,
+                        )
 
-                image_bytes = await self.renderer.render_receipt(
-                    transfer_data=payload.get("transfer_data", {}),
-                    transaction_reference=reference,
-                )
+                        image_bytes = await self.renderer.render_receipt(
+                            transfer_data=transfer_data,
+                            transaction_reference=reference,
+                        )
 
-                image_b64 = base64.b64encode(image_bytes).decode("ascii")
-                channel = payload.get("channel", "whatsapp")
-                await self.queue.enqueue(
-                    queue_name=OUTBOX_QUEUE,
-                    message={
-                        "phone_number": outbox_phone,
-                        "channel": channel,
-                        "intents": [
+                        image_b64 = base64.b64encode(image_bytes).decode("ascii")
+                        channel = payload.get("channel", "whatsapp")
+                        intents: list[dict[str, Any]] = [
                             {
                                 "type": "show_receipt",
                                 "task_id": reference,
@@ -95,62 +148,65 @@ class ReceiptJobConsumer:
                                 },
                                 "caption": f"Transfer Receipt: {reference}",
                             }
+                        ]
+                        beneficiary_suggestion = self._extract_beneficiary_suggestion(payload)
+                        if beneficiary_suggestion:
+                            intents.append({"type": "say", "text": beneficiary_suggestion})
+
+                        await cast(Any, self.queue).enqueue(
+                            queue_name=OUTBOX_QUEUE,
+                            message={
+                                "phone_number": outbox_phone,
+                                "channel": channel,
+                                "intents": intents,
+                                "metadata": {"source": "receipt_consumer"},
+                            },
+                        )
+                        return
+
+                    except Exception as e:
+                        last_error = str(e)
+                        logger.warning(
+                            "receipt_generation_failed",
+                            phone=phone_number,
+                            attempt=attempt,
+                            error=last_error,
+                        )
+
+                        if attempt < MAX_RETRIES:
+                            await asyncio.sleep(RETRY_DELAY_SECONDS * attempt)
+
+            logger.error(
+                "receipt_generation_all_retries_failed",
+                phone=phone_number,
+                error=last_error,
+            )
+
+            try:
+                channel = payload.get("channel", "whatsapp")
+                await cast(Any, self.queue).enqueue(
+                    queue_name=OUTBOX_QUEUE,
+                    message={
+                        "phone_number": outbox_phone,
+                        "channel": channel,
+                        "intents": [
+                            {
+                                "type": "say",
+                                "text": (
+                                    "We couldn't generate your receipt image at this time. "
+                                    "Don't worry - your transfer was successful! "
+                                    f"Reference: {reference}"
+                                ),
+                            }
                         ],
-                        "metadata": {"source": "receipt_consumer"},
+                        "metadata": {"source": "receipt_consumer", "reason": "generation_failed"},
                     },
                 )
-                return
-
-            except Exception as e:
-                last_error = str(e)
-                logger.warning(
-                    "receipt_generation_failed",
+            except Exception as notify_error:
+                logger.error(
+                    "receipt_failure_notification_error",
                     phone=phone_number,
-                    attempt=attempt,
-                    error=last_error,
+                    error=str(notify_error),
                 )
-
-                if attempt < MAX_RETRIES:
-                    await asyncio.sleep(RETRY_DELAY_SECONDS * attempt)
-
-        logger.error(
-            "receipt_generation_all_retries_failed",
-            phone=phone_number,
-            error=last_error,
-        )
-
-        try:
-            channel = payload.get("channel", "whatsapp")
-            await self.queue.enqueue(
-                queue_name=OUTBOX_QUEUE,
-                message={
-                    "phone_number": outbox_phone,
-                    "channel": channel,
-                    "intents": [
-                        {
-                            "type": "say",
-                            "text": (
-                                "We couldn't generate your receipt image at this time. "
-                                "Don't worry - your transfer was successful! "
-                                f"Reference: {reference}"
-                            ),
-                        }
-                    ],
-                    "metadata": {"source": "receipt_consumer", "reason": "generation_failed"},
-                },
-            )
-        except Exception as notify_error:
-            logger.error(
-                "receipt_failure_notification_error",
-                phone=phone_number,
-                error=str(notify_error),
-            )
         finally:
-            # Signal completion to core service
-            signal_key = job.get("signal_key")
-            if signal_key:
-                try:
-                    await self.queue._redis.rpush(signal_key, "DONE")
-                    await self.queue._redis.expire(signal_key, 60)  # Cleanup key quickly
-                except Exception as e:
-                    logger.warning("receipt_signal_failed", error=str(e))
+            await self._signal_completion(signal_key)

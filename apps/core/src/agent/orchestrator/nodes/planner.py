@@ -5,6 +5,7 @@ from langchain_core.runnables import RunnableConfig
 
 from apps.core.src.agent.orchestrator.models.state import OrchestratorState
 from apps.core.src.agent.orchestrator.utils.task_payload import build_task_spec_from_plan_item
+from apps.core.src.agent.orchestrator.utils.waves import build_dependency_waves
 from shared.i18n import (
     LanguageDetectionSignal,
     LocaleManager,
@@ -176,8 +177,11 @@ async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[s
                 name = data.get("recipient_name") or data.get("alias_suggested") or "Unknown"
                 planner_context_parts.append(
                     f"Active Context: User was asked to save beneficiary '{name}'.\n"
-                    f"- Reply 'yes' -> Save with name '{name}'\n"
-                    f"- Reply 'Bob' (or any name) -> Save with alias 'Bob'"
+                    f"- Reply 'yes'/'save' -> Save with name '{name}'.\n"
+                    "- Reply with an explicit alias intent (e.g., 'save as Mum')"
+                    " or a clear contact-style alias -> Save with that alias.\n"
+                    "- Greetings/check-ins/thanks (e.g., 'hi', 'how far')"
+                    " are NOT save intent."
                 )
                 logger.info("planner_context_injected", context="beneficiary_suggestion")
 
@@ -361,7 +365,8 @@ async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[s
         # Proceed to generate new tasks (which will overwrite active waves)
 
     new_tasks = {}
-    wave_tasks = []
+    task_ids: list[str] = []
+    depends_on_by_task: dict[str, list[str]] = {}
 
     for plan_item in planner_output.tasks:
         spec = build_task_spec_from_plan_item(
@@ -373,7 +378,10 @@ async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[s
             format_narration_requires_recipient_field=False,
         )
         new_tasks[spec.id] = spec
-        wave_tasks.append(spec.id)
+        task_ids.append(spec.id)
+        depends_on_by_task[spec.id] = list(spec.depends_on)
+
+    waves = build_dependency_waves(task_ids, depends_on_by_task)
 
     policy_notice = _build_policy_notice(text, planner_output, current_locale)
     if policy_notice:
@@ -381,7 +389,7 @@ async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[s
 
     return {
         "tasks": new_tasks,
-        "waves": [wave_tasks],
+        "waves": waves,
         "current_wave_index": 0,
         "normalized_instruction": text,
         "planner_output": planner_output,

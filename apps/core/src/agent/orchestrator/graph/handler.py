@@ -127,6 +127,7 @@ class OrchestratorGraphHandler:
             "phone_number": phone_number,
             "last_message_text": context.text,
             "last_message_id": context.message_id,
+            "last_callback": None,
             "channel": context.channel,
             "channel_identity": context.channel_identity,
         }

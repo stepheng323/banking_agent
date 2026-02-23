@@ -43,7 +43,17 @@ class PlannedTask(BaseModel):
 
     task_id: str = Field(..., description="Stable ID referenced by depends_on")
     action: str
-    executor: Literal["transfer", "query", "airtime", "data", "account", "support", "faq", "beneficiary"]
+    executor: Literal[
+        "transfer",
+        "query",
+        "airtime",
+        "data",
+        "account",
+        "support",
+        "faq",
+        "beneficiary",
+        "orchestrator",
+    ]
     instruction: str
     description: str | None = None
     parameters: TaskParameters = Field(default_factory=TaskParameters)
@@ -66,7 +76,14 @@ PlannerResponseKey: TypeAlias = Literal[
 ]
 
 
-InterruptRoutingDecision: TypeAlias = Literal["continue_flow", "switch_intent", "cancel", "unclear"]
+InterruptRoutingDecision: TypeAlias = Literal[
+    "continue_flow",
+    "switch_intent",
+    "cancel",
+    "unclear",
+    "approve_flow",
+    "reject_flow",
+]
 
 
 class InterruptRouteDecision(BaseModel):
@@ -83,6 +100,10 @@ class InterruptRouteDecision(BaseModel):
     target_intent: str | None = Field(
         default=None,
         description="Intent to switch to when decision=switch_intent",
+    )
+    target_mode: Literal["new", "continuation"] | None = Field(
+        default=None,
+        description="Optional routing mode hint (for example query new-vs-continuation)",
     )
     reason: str | None = Field(default=None, description="Short explanation for observability/debugging")
 

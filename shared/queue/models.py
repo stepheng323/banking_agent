@@ -28,6 +28,7 @@ class ReceiptJobPayload(TypedDict):
     transfer_data: ReceiptTransferData
     transaction_reference: str | None
     signal_key: str
+    beneficiary_suggestion_message: NotRequired[str]
 
 
 class RefundJobPayload(TypedDict):

@@ -1,5 +1,6 @@
 """Airtime summary formatting utilities."""
 
+from shared.formatters.accounts import format_source_account_info_from_account_number
 from shared.i18n import render_message
 
 
@@ -52,15 +53,10 @@ def format_airtime_summary(data: dict, locale: str = "en") -> str:
 
     lines.append("")
     lines.append(
-        render_message(
-            "airtime.format.summary.source_line",
-            locale,
-            {
-                "source_bank": source_bank,
-                "last4": source_account[-4:]
-                if source_account
-                else render_message("airtime.format.summary.last4_fallback", locale),
-            },
+        format_source_account_info_from_account_number(
+            bank=source_bank,
+            account_number=source_account,
+            locale=locale,
         )
     )
 

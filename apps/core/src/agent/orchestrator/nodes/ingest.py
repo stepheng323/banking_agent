@@ -19,6 +19,8 @@ async def ingest_message(state: OrchestratorState) -> dict[str, Any]:
 
     if state.last_callback:
         logger.info("processing_callback", payload=state.last_callback)
+        updates["last_message_text"] = None
+        updates["last_message_id"] = None
         if state.last_callback.get("pin_verified"):
             updates["pin_verified"] = True
 

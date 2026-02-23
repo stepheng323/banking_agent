@@ -41,7 +41,13 @@ class OrchestratorContextManager:
         now = int(time.time())
         valid_frames = [f for f in state.context_frames if (f.created_at_ts + f.ttl_seconds) > now]
 
-        for i, frame in enumerate(valid_frames):
+        for frame in valid_frames:
+            resume_item = next((item for item in frame.items if item.data.get("resume_prompt") is True), None)
+            if resume_item:
+                intent_raw = resume_item.data.get("intent", "transaction")
+                intent = intent_raw if isinstance(intent_raw, str) and intent_raw else "transaction"
+                summary_parts.append(f"- resumption: Asked to resume {intent}")
+                continue
             items_str = ""
             if frame.frame_type == ContextFrameType.BENEFICIARY_LIST:
                 # [1] Mum (GTB) [2] Dad (Access)

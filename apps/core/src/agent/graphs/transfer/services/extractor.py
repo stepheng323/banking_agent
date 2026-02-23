@@ -1,6 +1,6 @@
 """LLM-based transfer entity extractor (multilingual) with enhanced prompt."""
 
-from typing import Any
+from typing import Any, cast
 
 from langchain_openai import ChatOpenAI
 
@@ -24,12 +24,31 @@ class TransferEntityExtractor:
             return ""
 
         if isinstance(smart_context, SmartContext):
-            return smart_context.to_compact_string()
+            return cast(str, smart_context.to_compact_string())
 
         parts = []
 
         if smart_context.get("previousResponse"):
             parts.append(f"LastMsg: {smart_context['previousResponse'][:150]}")
+        elif smart_context.get("previous_response"):
+            parts.append(f"LastMsg: {str(smart_context['previous_response'])[:150]}")
+
+        required_fields = smart_context.get("required_fields", [])
+        if isinstance(required_fields, list) and required_fields:
+            required = ", ".join(str(field) for field in required_fields)
+            parts.append(f"RequiredFields: {required}")
+
+        known_recipient = smart_context.get("known_recipient")
+        if isinstance(known_recipient, dict):
+            if known_recipient.get("recipient_name"):
+                parts.append(f"KnownRecipientName: {known_recipient['recipient_name']}")
+            if known_recipient.get("recipient_resolved_name"):
+                parts.append(f"KnownResolvedName: {known_recipient['recipient_resolved_name']}")
+            if known_recipient.get("recipient_account"):
+                parts.append(f"KnownRecipientAccount: {known_recipient['recipient_account']}")
+            if known_recipient.get("recipient_bank_name"):
+                parts.append(f"KnownRecipientBank: {known_recipient['recipient_bank_name']}")
+
         beneficiaries = smart_context.get("beneficiaries", [])
         if beneficiaries:
             aliases = []
@@ -100,4 +119,4 @@ class TransferEntityExtractor:
         text = state.get("message", "")
         # Pass the whole state as context so beneficiaries/history can be used
         result = await self.extract(text, smart_context=state)
-        return result.model_dump()
+        return cast(dict[str, Any], result.model_dump())
