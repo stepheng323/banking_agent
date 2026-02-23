@@ -40,10 +40,12 @@ class OrchestratorAgent:
             beneficiary_suggestion_service=self.deps.beneficiary_suggestion_service,
         )
 
-    async def resume_transaction(self, phone_number: str, flow_type: str, pin_verified: bool) -> dict[str, Any]:
+    async def resume_transaction(
+        self, phone_number: str, flow_type: str, pin_verified: bool, channel: str = "whatsapp"
+    ) -> dict[str, Any]:
         """Resume a transaction after an external event (like PIN verification)."""
         payload = {"pin_verified": pin_verified, "flow_type": flow_type}
-        return await self.orchestrator_handler.resume_flow(phone_number=phone_number, payload=payload)
+        return await self.orchestrator_handler.resume_flow(phone_number=phone_number, payload=payload, channel=channel)
 
     async def invoke(
         self,
@@ -54,19 +56,20 @@ class OrchestratorAgent:
         media_id: str | None = None,
         quoted_message_id: str | None = None,
         channel: str = "whatsapp",
+        channel_identity: str | None = None,
     ) -> dict[str, Any]:
         """Invoke the orchestrator with a user message."""
         self.message_type = message_type
         fallback_locale = (await LocaleManager.get_effective_locale(phone_number)).value
 
         if self.message_type == "audio" and media_id:
-            raw_text = await self.deps.media_service.process_audio(media_id, locale=fallback_locale)
+            raw_text = await self.deps.media_service.process_audio(media_id, channel=channel, locale=fallback_locale)
             if raw_text:
                 text = raw_text
 
         image_data = None
         if self.message_type == "image" and media_id:
-            image_data = await self.deps.media_service.get_image_data(media_id)
+            image_data = await self.deps.media_service.get_image_data(media_id, channel=channel)
 
         context = MessageContext(
             phone_number=phone_number,
@@ -75,6 +78,7 @@ class OrchestratorAgent:
             image_data=image_data,
             quoted_message_id=quoted_message_id,
             channel=channel,
+            channel_identity=channel_identity,
         )
 
         result = await self.orchestrator_handler.invoke(context)

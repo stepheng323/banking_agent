@@ -5,7 +5,7 @@ from datetime import datetime
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from shared.database.models import User
+from shared.database.models import User, UserChannelIdentity
 from shared.models.user import UserCreate, UserUpdate
 from shared.repositories.base import BaseRepository
 
@@ -25,6 +25,30 @@ class UserRepository(BaseRepository[User]):
         """Get user by email."""
         result = await self.db.execute(select(User).filter(User.email == email))
         return result.scalars().first()
+
+    async def get_by_channel_identity(self, channel: str, channel_user_id: str) -> User | None:
+        """Get user by their channel-specific identity (e.g., Telegram chat_id)."""
+        stmt = (
+            select(User)
+            .join(UserChannelIdentity, User.id == UserChannelIdentity.user_id)
+            .where(
+                UserChannelIdentity.channel == channel,
+                UserChannelIdentity.channel_user_id == channel_user_id,
+            )
+        )
+        result = await self.db.execute(stmt)
+        return result.scalars().first()
+
+    async def link_channel_identity(self, user_id: str, channel: str, channel_user_id: str) -> UserChannelIdentity:
+        """Link a new channel identity to an existing user."""
+        identity = UserChannelIdentity(
+            user_id=user_id,
+            channel=channel,
+            channel_user_id=channel_user_id,
+        )
+        self.db.add(identity)
+        await self.db.flush()
+        return identity
 
     async def get_by_whatsapp_id(self, whatsapp_id: str) -> User | None:
         """Get user by WhatsApp ID."""

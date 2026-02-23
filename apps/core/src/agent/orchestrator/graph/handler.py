@@ -16,8 +16,8 @@ from apps.core.src.agent.orchestrator.graph import build_orchestrator_graph
 from apps.core.src.agent.orchestrator.models.message_context import MessageContext
 from apps.core.src.agent.orchestrator.presentation.intents import map_outbox_to_intents
 from shared.clients.abstractions.banking import BankingDataProvider
-from shared.i18n import LocaleManager
 from shared.clients.whatsapp.client import WhatsAppClient
+from shared.i18n import LocaleManager
 from shared.protocols.worker import WorkerProtocol
 from shared.queue.redis_queue import RedisQueue
 from shared.repositories.account_repository import AccountRepository
@@ -90,11 +90,12 @@ class OrchestratorGraphHandler:
             await self.checkpointer.asetup()
             self._checkpointer_setup = True
 
-    def _get_config(self, phone_number: str) -> RunnableConfig:
+    def _get_config(self, phone_number: str, channel: str) -> RunnableConfig:
         """Create LangGraph configuration."""
+        thread_id = f"{channel}:{phone_number}"
         return {
             "configurable": {
-                "thread_id": phone_number,
+                "thread_id": thread_id,
                 "task_planner": self.task_planner,
                 "services": self.services,
                 "user_repo": self.user_repo,
@@ -127,6 +128,7 @@ class OrchestratorGraphHandler:
             "last_message_text": context.text,
             "last_message_id": context.message_id,
             "channel": context.channel,
+            "channel_identity": context.channel_identity,
         }
 
         # Hydrate via ContextManager (Parallel Fetch)
@@ -151,7 +153,7 @@ class OrchestratorGraphHandler:
 
         inputs["loaded_context"] = loaded_context
 
-        config = self._get_config(phone_number)
+        config = self._get_config(phone_number, channel=context.channel)
 
         logger.info("orchestrator_graph_invoke", user=phone_number)
 
@@ -172,6 +174,11 @@ class OrchestratorGraphHandler:
 
         intents = map_outbox_to_intents(outbox, response_text)
 
+        # Apply cleanup policy
+        thread_id = config["configurable"]["thread_id"]
+        await self._cleanup_if_idle(thread_id, final_state)
+        await self._apply_session_ttl(thread_id)
+
         return {
             "text": response_text,
             "intents": intents,
@@ -179,23 +186,76 @@ class OrchestratorGraphHandler:
             "locale": resolved_locale,
         }
 
-    async def resume_flow(self, phone_number: str, payload: dict[str, Any]) -> dict[str, Any]:
+    async def _apply_session_ttl(self, thread_id: str, ttl: int = 86400) -> None:
+        """Apply TTL to all Redis keys associated with a thread to prevent bloat."""
+        try:
+            # Patterns for LangGraph Redis Saver keys
+            patterns = [
+                f"checkpoint:{thread_id}:*",
+                f"checkpoint_write:{thread_id}:*",
+                f"write_keys_zset:{thread_id}:*",
+                f"checkpoint_latest:{thread_id}:*",
+            ]
+
+            for pattern in patterns:
+                async for key in self.redis_client.scan_iter(match=pattern):
+                    await self.redis_client.expire(key, ttl)
+
+            # Also expire the chat history key overseen by ContextManager
+            await self.redis_client.expire(f"user:{thread_id.split(':')[-1]}:chat_history", ttl)
+        except Exception as e:
+            logger.warning("apply_session_ttl_error", thread_id=thread_id, error=str(e))
+
+    async def _cleanup_if_idle(self, thread_id: str, state: dict[str, Any]) -> None:
+        """Explicitly delete thread if no active tasks, waves, or interruptions remain."""
+        # Check if the state is truly "idle" (nothing pending)
+        tasks = state.get("tasks", {})
+        waves = state.get("waves", [])
+        pending_interrupt = state.get("pending_interrupt")
+        stashed_sessions = state.get("stashed_sessions", [])
+
+        logger.info(
+            "cleanup_check",
+            thread_id=thread_id,
+            has_tasks=bool(tasks),
+            has_waves=bool(waves),
+            has_interrupt=bool(pending_interrupt),
+            has_stashed=bool(stashed_sessions),
+            task_count=len(tasks) if tasks else 0,
+            wave_count=len(waves) if waves else 0,
+        )
+
+        if not tasks and not waves and not pending_interrupt and not stashed_sessions:
+            try:
+                # adelete_thread is the proper way to wipe a thread in LangGraph
+                await self.checkpointer.adelete_thread(thread_id)
+                logger.info("orchestrator_thread_cleaned", thread_id=thread_id)
+            except Exception as e:
+                logger.warning("cleanup_thread_error", thread_id=thread_id, error=str(e))
+
+    async def resume_flow(self, phone_number: str, payload: dict[str, Any], channel: str) -> dict[str, Any]:
         """Resume flow externally (e.g. from auth callback)."""
 
         await self._ensure_checkpointer()
         inputs = {
             "user_id": phone_number,
-            "phone_number": phone_number,
+            "phone_number": phone_number,       
             "last_callback": payload,
         }
 
-        config = self._get_config(phone_number)
+        config = self._get_config(phone_number, channel=channel)
 
         logger.info("orchestrator_graph_resume", user=phone_number, payload=payload)
 
         try:
             final_state = await self.graph.ainvoke(inputs, config=config)
             resolved_locale = LocaleManager.normalize((final_state.get("loaded_context") or {}).get("language")).value
+
+            # Apply cleanup policy
+            thread_id = config["configurable"]["thread_id"]
+            await self._cleanup_if_idle(thread_id, final_state)
+            await self._apply_session_ttl(thread_id)
+
             return {
                 "text": final_state.get("final_response"),
                 "outbox": final_state.get("outbox", []),

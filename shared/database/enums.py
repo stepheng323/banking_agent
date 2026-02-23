@@ -9,6 +9,7 @@ class UserOnboardingStatusEnum(str, Enum):
     ONBOARDING_STARTED = "onboarding_started"
     ONBOARDING_COMPLETED = "onboarding_completed"
 
+
 class MandateStatusEnum(str, Enum):
     """Account mandate status enum."""
 
@@ -16,6 +17,7 @@ class MandateStatusEnum(str, Enum):
     ACTIVE = "active"
     SUSPENDED = "suspended"
     REVOKED = "revoked"
+
 
 class TransactionTypeEnum(str, Enum):
     """Transaction type enum."""
@@ -67,6 +69,7 @@ class BeneficiaryTypeEnum(str, Enum):
     AIRTIME = "airtime"
     DATA = "data"
 
+
 class ActionableMessageTypeEnum(str, Enum):
     """Type of actionable message stored for quote-based interactions."""
 
@@ -74,6 +77,7 @@ class ActionableMessageTypeEnum(str, Enum):
     AIRTIME_RECEIPT = "airtime_receipt"
     DATA_RECEIPT = "data_receipt"
     CONFIRMATION_REQUEST = "confirmation_request"
+
 
 class SupportTicketStatusEnum(str, Enum):
     """Support ticket status enum."""

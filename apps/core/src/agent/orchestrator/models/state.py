@@ -29,6 +29,7 @@ class OrchestratorState(BaseModel):
     user_id: str
     phone_number: str
     channel: str = "whatsapp"
+    channel_identity: str | None = None
 
     last_message_text: str | None = None
     last_message_id: str | None = None

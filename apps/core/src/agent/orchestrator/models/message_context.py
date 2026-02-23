@@ -22,6 +22,7 @@ class MessageContext:
     quoted_message_id: str | None = None
     quoted_message_data: dict[str, Any] | None = None
     channel: str = "whatsapp"
+    channel_identity: str | None = None
 
     user_context: dict[str, Any] = field(default_factory=dict)
     conversation_state: dict[str, Any] | None = None
