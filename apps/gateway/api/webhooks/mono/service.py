@@ -1,6 +1,9 @@
 """Mono webhook service - business logic for handling Mono events."""
 
+from typing import Any
+
 from shared.cache.user_data import UserDataCache
+from shared.database.models import FundedTransfer
 from shared.queue.messages import OUTBOX_QUEUE
 from shared.queue.redis_queue import RedisQueue
 from shared.repositories.unit_of_work import UnitOfWork
@@ -34,7 +37,7 @@ class MonoWebhookService:
         self.queue = queue
         self.cache = UserDataCache()
 
-    async def handle_mandate_event(self, event: str, data: dict) -> bool:
+    async def handle_mandate_event(self, event: str, data: dict[str, Any]) -> bool:
         """
         Handle mandate lifecycle events.
 
@@ -50,11 +53,11 @@ class MonoWebhookService:
             logger.warning("mono_webhook_no_mandate_id", event=event)
             return False
 
-        with UnitOfWork() as uow:
+        async with UnitOfWork() as uow:
             if not uow.accounts:
                 return False
 
-            account = uow.accounts.update_mandate_status(mandate_id, new_status)
+            account = await uow.accounts.update_mandate_status(mandate_id, new_status)
             if not account:
                 logger.warning("mandate_not_found", mandate_id=mandate_id)
                 return False
@@ -66,20 +69,34 @@ class MonoWebhookService:
                 account_id=str(account.id),
             )
 
-            user = uow.users.get_by_id(str(account.user_id)) if uow.users else None
+            user = await uow.users.get_by_id(str(account.user_id)) if uow.users else None
             if user and user.phone_number:
                 await self._invalidate_cache(user.phone_number)
 
                 if new_status == "ready":
+                    # Determine user's active channel (default to whatsapp if none found)
+                    from sqlalchemy import select
+
+                    from shared.database.models import UserChannelIdentity
+
+                    channel = "whatsapp"
+                    result = await uow.db.execute(
+                        select(UserChannelIdentity.channel).where(UserChannelIdentity.user_id == user.id).limit(1)
+                    )
+                    first_channel = result.scalar_one_or_none()
+                    if first_channel:
+                        channel = first_channel
+
                     await self._notify_mandate_ready(
                         user.phone_number,
                         account.bank_name,
                         account.account_number,
+                        channel=channel,
                     )
 
         return True
 
-    async def handle_debit_event(self, event: str, data: dict) -> bool:
+    async def handle_debit_event(self, event: str, data: dict[str, Any]) -> bool:
         """
         Handle direct debit transaction events.
 
@@ -95,21 +112,21 @@ class MonoWebhookService:
             logger.warning("mono_webhook_no_reference", event=event)
             return False
 
-        with UnitOfWork() as uow:
+        async with UnitOfWork() as uow:
             if not uow.funding_steps:
                 return False
 
-            step = uow.funding_steps.get_by_provider_reference(reference)
+            step = await uow.funding_steps.get_by_provider_reference(reference)
             if not step:
                 logger.warning("funding_step_not_found", reference=reference)
                 return False
 
-            uow.funding_steps.update_status(
+            await uow.funding_steps.update_status(
                 step_id=str(step.id),
                 status=new_status,
                 provider_response=data,
             )
-            uow.commit()
+            await uow.commit()
 
             logger.info(
                 "funding_step_updated",
@@ -118,7 +135,9 @@ class MonoWebhookService:
                 status=new_status,
             )
 
-            transfer = uow.funded_transfers.get_by_id(str(step.funded_transfer_id)) if uow.funded_transfers else None
+            transfer = (
+                await uow.funded_transfers.get_by_id(str(step.funded_transfer_id)) if uow.funded_transfers else None
+            )
 
             if transfer:
                 await self._check_transfer_completion(uow, transfer, new_status)
@@ -137,6 +156,7 @@ class MonoWebhookService:
         phone_number: str,
         bank_name: str,
         account_number: str,
+        channel: str = "whatsapp",
     ) -> None:
         """Send notification when mandate is ready."""
         try:
@@ -144,7 +164,7 @@ class MonoWebhookService:
                 queue_name=OUTBOX_QUEUE,
                 message={
                     "phone_number": phone_number,
-                    "channel": "whatsapp",
+                    "channel": channel,
                     "intents": [
                         {
                             "type": "say",
@@ -159,8 +179,8 @@ class MonoWebhookService:
 
     async def _check_transfer_completion(
         self,
-        uow,
-        transfer,
+        uow: UnitOfWork,
+        transfer: FundedTransfer,
         latest_status: str,
     ) -> None:
         """Check if all debits are complete and trigger payout if so."""
@@ -168,26 +188,26 @@ class MonoWebhookService:
             return
 
         if latest_status == "failed":
-            uow.funded_transfers.update_status(str(transfer.id), "refunding")
-            uow.commit()
+            await uow.funded_transfers.update_status(str(transfer.id), "refunding")
+            await uow.commit()
             logger.warning("transfer_failed_initiating_refund", transfer_id=str(transfer.id))
             await self._queue_refunds(uow, transfer)
             return
 
-        if uow.funding_steps.are_all_confirmed(str(transfer.id)):
-            uow.funded_transfers.update_status(str(transfer.id), "funded")
-            uow.commit()
+        if await uow.funding_steps.are_all_confirmed(str(transfer.id)):
+            await uow.funded_transfers.update_status(str(transfer.id), "funded")
+            await uow.commit()
             logger.info("all_debits_complete", transfer_id=str(transfer.id))
             await self._queue_payout(transfer)
 
-    async def _queue_refunds(self, uow, transfer) -> None:
+    async def _queue_refunds(self, uow: UnitOfWork, transfer: FundedTransfer) -> None:
         """Queue refund jobs for any successful funding steps."""
-        successful_steps = uow.funding_steps.get_confirmed_for_transfer(str(transfer.id))
+        successful_steps = await uow.funding_steps.get_confirmed_for_transfer(str(transfer.id))
 
         if not successful_steps:
             logger.info("no_refunds_needed", transfer_id=str(transfer.id))
-            uow.funded_transfers.update_status(str(transfer.id), "failed")
-            uow.commit()
+            await uow.funded_transfers.update_status(str(transfer.id), "failed")
+            await uow.commit()
             return
 
         for step in successful_steps:
@@ -202,14 +222,14 @@ class MonoWebhookService:
                         "original_reference": step.provider_reference,
                     },
                 )
-                uow.funding_steps.update_status(str(step.id), "refund_pending")
+                await uow.funding_steps.update_status(str(step.id), "refund_pending")
                 logger.info("refund_queued", step_id=str(step.id), amount=step.amount)
             except Exception as e:
                 logger.error("refund_queue_failed", step_id=str(step.id), error=str(e))
 
-        uow.commit()
+        await uow.commit()
 
-    async def _queue_payout(self, transfer) -> None:
+    async def _queue_payout(self, transfer: FundedTransfer) -> None:
         """Queue payout job after all debits complete."""
         try:
             await self.queue.enqueue(

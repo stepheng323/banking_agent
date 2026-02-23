@@ -19,12 +19,12 @@ class MandateService:
     def __init__(self, queue: RedisQueue | None = None) -> None:
         self.queue = queue or RedisQueue()
 
-    async def enqueue_outbox_say(self, phone_number: str, text: str) -> None:
+    async def enqueue_outbox_say(self, phone_number: str, text: str, channel: str = "whatsapp") -> None:
         await self.queue.enqueue(
             queue_name=OUTBOX_QUEUE,
             message={
                 "phone_number": phone_number,
-                "channel": "whatsapp",
+                "channel": channel,
                 "intents": [{"type": "say", "text": text}],
                 "metadata": {"source": "mandate_service"},
             },
@@ -129,7 +129,7 @@ class MandateService:
             logger.error("mandate_creation_failed", error=str(e), phone=phone_number)
             return {"success": False, "error": str(e)}
 
-    async def reinitiate_mandate(self, phone_number: str, account_id: str) -> dict:
+    async def reinitiate_mandate(self, phone_number: str, account_id: str, channel: str = "whatsapp") -> dict:
         """
         Reinitiate mandate for an existing account.
 
@@ -210,7 +210,7 @@ class MandateService:
                 transfer_destinations=transfer_destinations,
                 is_reinitiation=True,
             )
-            await self.enqueue_outbox_say(phone_number, auth_message)
+            await self.enqueue_outbox_say(phone_number, auth_message, channel)
 
             return {
                 "success": True,
@@ -230,11 +230,12 @@ class MandateService:
         account_number: str,
         bank_name: str,
         transfer_destinations: list,
+        channel: str = "whatsapp",
     ) -> None:
-        """Send mandate authorization instructions via WhatsApp."""
+        """Send mandate authorization instructions via WhatsApp or Telegram."""
         auth_message = self.build_mandate_auth_message(
             account_number=account_number,
             bank_name=bank_name,
             transfer_destinations=transfer_destinations,
         )
-        await self.enqueue_outbox_say(phone_number, auth_message)
+        await self.enqueue_outbox_say(phone_number, auth_message, channel)
