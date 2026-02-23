@@ -41,6 +41,37 @@ TERMINAL_STAGES = {TaskStage.COMPLETED, TaskStage.FAILED, TaskStage.CANCELLED}
 BLOCKING_DEPENDENCY_STAGES = {TaskStage.FAILED, TaskStage.CANCELLED}
 
 
+def _build_mandate_gate_error(accounts: list[dict], locale: str) -> str:
+    """Build a rich error message when no account has a ready mandate.
+
+    Reuses MandateService.build_mandate_auth_message() to show transfer
+    destinations for the first pending-mandate account.
+    """
+    import json
+
+    from shared.services.onboarding.mandate import MandateService
+
+    for acct in accounts:
+        status = acct.get("mandate_status")
+        if status and status != "ready":
+            raw_extra = acct.get("extra_data") or {}
+            if isinstance(raw_extra, str):
+                try:
+                    raw_extra = json.loads(raw_extra)
+                except Exception:
+                    raw_extra = {}
+            destinations = raw_extra.get("transfer_destinations", []) if isinstance(raw_extra, dict) else []
+            if destinations:
+                svc = MandateService(queue=None)  # type: ignore[arg-type]
+                return svc.build_mandate_auth_message(
+                    account_number=acct.get("account_number", ""),
+                    bank_name=acct.get("bank_name", ""),
+                    transfer_destinations=destinations,
+                )
+
+    return render_message("mandate.pending_complete_transfer", locale)
+
+
 def _with_policy_notice(state: OrchestratorState, outbox: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Prepend policy notice once per turn when present."""
     if not state.policy_notice:
@@ -97,6 +128,17 @@ async def advance_wave(state: OrchestratorState, config: RunnableConfig) -> dict
     )
     locale = (state.loaded_context or {}).get("language", "en")
 
+    # ── Filter accounts to mandate-ready only ────────────────────────
+    # Workers should only see accounts eligible for transactions.
+    # Pending/expired accounts are hidden from source selection, balance, etc.
+    if state.loaded_context and "accounts" in state.loaded_context:
+        state.loaded_context["accounts"] = [
+            a for a in state.loaded_context["accounts"]
+            if isinstance(a, dict) and a.get("mandate_status") == "ready"
+        ]
+    # ─────────────────────────────────────────────────────────────────
+
+
     handlers = {
         "transfer": handle_transfer_task,
         "account": handle_account_task,
@@ -132,6 +174,24 @@ async def advance_wave(state: OrchestratorState, config: RunnableConfig) -> dict
         handler = handlers.get(task.type)
         if not handler:
             continue
+
+        # ── Mandate readiness gate ───────────────────────────────────────
+        # Block account-dependent tasks unless at least one linked account
+        # has mandate_status == "ready". No exceptions.
+        ACCOUNT_DEPENDENT_TASKS = {"transfer", "airtime", "data", "account", "query"}
+        if task.type in ACCOUNT_DEPENDENT_TASKS:
+            accounts = (state.loaded_context or {}).get("accounts") or []
+            has_ready = any(
+                isinstance(a, dict) and a.get("mandate_status") == "ready"
+                for a in accounts
+            )
+            if not has_ready:
+                task.stage = TaskStage.FAILED
+                task.payload["is_pending_mandate"] = True
+                task.payload["error"] = _build_mandate_gate_error(accounts, locale)
+                progressed = True
+                continue
+        # ─────────────────────────────────────────────────────────────────
 
         await handler(task, task_id, ctx)
         progressed = True

@@ -100,9 +100,9 @@ class MandateService:
             )
             logger.info("mandate_created", mandate_id=mandate.id, phone=phone_number)
 
-            with UnitOfWork() as uow:
+            async with UnitOfWork() as uow:
                 if uow.accounts:
-                    db_account = uow.accounts.get_by_account_id(account_id)
+                    db_account = await uow.accounts.get_by_account_id(account_id)
                     if db_account:
                         db_account.mandate_id = mandate.id
                         db_account.mandate_status = "pending"
@@ -136,15 +136,15 @@ class MandateService:
         Used when mandate has expired (>1 hour) or was cancelled.
         """
         try:
-            with UnitOfWork() as uow:
+            async with UnitOfWork() as uow:
                 if not uow.users or not uow.accounts:
                     return {"success": False, "error": "Database not available"}
 
-                user = uow.users.get_by_phone(phone_number)
+                user = await uow.users.get_by_phone(phone_number)
                 if not user:
                     return {"success": False, "error": "User not found"}
 
-                account = uow.accounts.get_by_account_id(account_id)
+                account = await uow.accounts.get_by_account_id(account_id)
                 if not account:
                     return {"success": False, "error": "Account not found"}
 
@@ -180,9 +180,9 @@ class MandateService:
             )
 
             # Update account with new mandate info
-            with UnitOfWork() as uow:
+            async with UnitOfWork() as uow:
                 if uow.accounts:
-                    db_account = uow.accounts.get_by_account_id(account_id)
+                    db_account = await uow.accounts.get_by_account_id(account_id)
                     if db_account:
                         db_account.mandate_id = mandate.id
                         db_account.mandate_status = "pending"

@@ -48,6 +48,10 @@ async def finalize(state: OrchestratorState, config: RunnableConfig) -> dict[str
         if task.payload.get("capability_blocked"):
             message = task.payload.get("error") or render_generic_capability_blocked(locale)
             outbox.append({"type": "say", "text": message})
+        elif task.payload.get("is_pending_mandate"):
+            # Pending mandate messages are contextual and include clear instructions — no "Failed:" prefix
+            error_text = task.payload.get("error") or render_message("orchestrator.finalize.failed_unknown", locale)
+            outbox.append({"type": "say", "text": error_text})
         else:
             error_text = task.payload.get("error") or render_message("orchestrator.finalize.failed_unknown", locale)
             outbox.append(
