@@ -147,6 +147,7 @@ class OrchestratorGraphHandler:
             "profile": user_ctx.get("profile"),
             "accounts": user_ctx.get("accounts"),
             "beneficiaries": user_ctx.get("beneficiaries"),
+            "history": user_ctx.get("history", []),
             "language": LocaleManager.normalize(user_ctx.get("language")).value,
             "detected_language": LocaleManager.normalize(user_ctx.get("language")).value,
             "user_id": user_ctx.get("profile", {}).get("id") if user_ctx.get("profile") else None,
@@ -240,7 +241,7 @@ class OrchestratorGraphHandler:
         await self._ensure_checkpointer()
         inputs = {
             "user_id": phone_number,
-            "phone_number": phone_number,       
+            "phone_number": phone_number,
             "last_callback": payload,
         }
 
