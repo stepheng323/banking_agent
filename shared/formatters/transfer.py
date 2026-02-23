@@ -36,8 +36,7 @@ def format_transfer_summary(data: dict, include_source: bool = True, locale: str
     """
     amount = float(data.get("amount", 0))
     recipient_name = str(
-        data.get("recipientName")
-        or render_message("transfer.format.summary.recipient_fallback", locale)
+        data.get("recipientName") or render_message("transfer.format.summary.recipient_fallback", locale)
     )
     recipient_bank = str(data.get("recipientBank") or "")
     recipient_account = str(data.get("recipientAccount") or "")
@@ -45,11 +44,7 @@ def format_transfer_summary(data: dict, include_source: bool = True, locale: str
     source_account = str(data.get("sourceAccount") or "")
     user_note: str | None = data.get("user_note")
 
-    last4 = (
-        source_account[-4:]
-        if source_account
-        else render_message("transfer.format.summary.last4_fallback", locale)
-    )
+    last4 = source_account[-4:] if source_account else render_message("transfer.format.summary.last4_fallback", locale)
 
     lines = [
         render_message(
@@ -99,8 +94,7 @@ def format_multi_source_transfer_summary(data: dict, locale: str = "en") -> str:
     """
     amount = float(data.get("amount", 0))
     recipient_name = str(
-        data.get("recipientName")
-        or render_message("transfer.format.summary.recipient_fallback", locale)
+        data.get("recipientName") or render_message("transfer.format.summary.recipient_fallback", locale)
     )
     recipient_bank = str(data.get("recipientBank") or "")
     recipient_account = str(data.get("recipientAccount") or "")
@@ -152,11 +146,7 @@ def format_multi_source_transfer_summary(data: dict, locale: str = "en") -> str:
         )
         account = source.get("account_number", "")
         source_amount = float(source.get("amount", 0))
-        last4 = (
-            account[-4:]
-            if account
-            else render_message("transfer.format.summary.last4_fallback", locale)
-        )
+        last4 = account[-4:] if account else render_message("transfer.format.summary.last4_fallback", locale)
         lines.append(
             render_message(
                 "transfer.format.multi_source_summary.funding_item",
@@ -200,8 +190,7 @@ def format_multi_source_receipt(data: dict, locale: str = "en") -> str:
     """
     amount = float(data.get("amount", 0))
     recipient_name = str(
-        data.get("recipientName")
-        or render_message("transfer.format.summary.recipient_fallback", locale)
+        data.get("recipientName") or render_message("transfer.format.summary.recipient_fallback", locale)
     )
     recipient_bank = str(data.get("recipientBank") or "")
     recipient_account = str(data.get("recipientAccount") or "")
@@ -234,11 +223,7 @@ def format_multi_source_receipt(data: dict, locale: str = "en") -> str:
             )
             account = source.get("account_number", "")
             source_amount = float(source.get("amount", 0))
-            last4 = (
-                account[-4:]
-                if account
-                else render_message("transfer.format.summary.last4_fallback", locale)
-            )
+            last4 = account[-4:] if account else render_message("transfer.format.summary.last4_fallback", locale)
             lines.append(
                 render_message(
                     "transfer.format.multi_source_summary.funding_item",
@@ -254,11 +239,7 @@ def format_multi_source_receipt(data: dict, locale: str = "en") -> str:
             render_message("transfer.format.multi_source_summary.bank_fallback", locale),
         )
         account = source.get("account_number", "")
-        last4 = (
-            account[-4:]
-            if account
-            else render_message("transfer.format.summary.last4_fallback", locale)
-        )
+        last4 = account[-4:] if account else render_message("transfer.format.summary.last4_fallback", locale)
         lines.append(
             render_message(
                 "transfer.format.multi_source_receipt.from_line",

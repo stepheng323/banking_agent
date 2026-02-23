@@ -47,9 +47,13 @@ def format_insufficient_funds(
     lines.append(render_message("funding.format.insufficient.header", locale))
     lines.append("")
 
-    recipient_display = recipient_name.title() if recipient_name else render_message(
-        "funding.format.insufficient.recipient_fallback",
-        locale,
+    recipient_display = (
+        recipient_name.title()
+        if recipient_name
+        else render_message(
+            "funding.format.insufficient.recipient_fallback",
+            locale,
+        )
     )
     transfer_amount_str = _format_currency_naira(transfer_amount)
     balance_str = _format_currency_naira(available_balance)

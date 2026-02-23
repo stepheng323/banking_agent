@@ -73,7 +73,7 @@ class LocaleManager:
             if candidate:
                 return candidate
 
-        # Support direct single-word language names (avoid short codes like "yo"). 
+        # Support direct single-word language names (avoid short codes like "yo").
         direct_token = normalized.lower()
         if direct_token in {"english", "pidgin", "yoruba", "hausa", "igbo", "ibo", "nigerian pidgin"}:
             direct = cls._ALIASES.get(direct_token)

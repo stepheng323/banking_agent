@@ -57,7 +57,9 @@ def format_airtime_summary(data: dict, locale: str = "en") -> str:
             locale,
             {
                 "source_bank": source_bank,
-                "last4": source_account[-4:] if source_account else render_message("airtime.format.summary.last4_fallback", locale),
+                "last4": source_account[-4:]
+                if source_account
+                else render_message("airtime.format.summary.last4_fallback", locale),
             },
         )
     )

@@ -26,11 +26,7 @@ def format_data_plan_suggestion(
     Returns:
         Formatted suggestion message
     """
-    validity = (
-        render_message("data.format.validity_days", locale, {"days": validity_days})
-        if validity_days
-        else ""
-    )
+    validity = render_message("data.format.validity_days", locale, {"days": validity_days}) if validity_days else ""
     size = f"{size_gb}GB" if size_gb else plan_name
 
     if reason == "repeat":
@@ -118,11 +114,7 @@ def format_data_summary(data: dict, locale: str = "en") -> str:
     source_account = str(data.get("sourceAccount") or "")
     is_self = data.get("isSelf", False)
 
-    target_display = (
-        render_message("data.format.summary.target_self", locale)
-        if is_self
-        else recipient_phone
-    )
+    target_display = render_message("data.format.summary.target_self", locale) if is_self else recipient_phone
 
     lines = [
         render_message(
