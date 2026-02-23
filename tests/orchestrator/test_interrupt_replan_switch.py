@@ -435,6 +435,8 @@ async def test_confirmation_continue_flow_keeps_pending_and_reissues_confirmatio
                     "id": "acc-1",
                     "bank_name": "First Bank",
                     "account_number": "1234567890",
+                    "mandate_status": "ready",
+                    "mandate_id": "m1",
                 }
             ],
         },
@@ -580,7 +582,7 @@ async def test_confirmation_switch_to_account_uses_user_message_for_balance_exec
         channel="whatsapp",
         last_message_text="what's my balance",
         pending_interrupt=PendingInterrupt(kind="confirmation", task_ids=["t1"]),
-        loaded_context={"language": "en", "accounts": [{"bank_name": "First Bank", "account_number": "1234567890"}]},
+        loaded_context={"language": "en", "accounts": [{"bank_name": "First Bank", "account_number": "1234567890", "mandate_status": "ready", "mandate_id": "m1"}]},
         tasks={
             "t1": TaskSpec(
                 id="t1",

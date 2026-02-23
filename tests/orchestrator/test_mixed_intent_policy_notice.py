@@ -133,6 +133,7 @@ async def test_mixed_intent_outbox_contains_notice_then_transfer_prompt() -> Non
         phone_number="2348000000000",
         channel="whatsapp",
         last_message_text="send 10k to tolu and invest 10k",
+        loaded_context={"accounts": [{"id": "acct-1", "bank_name": "Test Bank", "account_number": "0000000001", "mandate_status": "ready", "mandate_id": "m1"}]},
     )
 
     config: RunnableConfig = {
@@ -470,6 +471,7 @@ async def test_mixed_request_runs_in_order_without_resume_prompt() -> None:
         phone_number="2348888888888",
         channel="whatsapp",
         last_message_text="send 10k to mum and dad then show my balance",
+        loaded_context={"accounts": [{"id": "acct-1", "bank_name": "Test Bank", "account_number": "0000000001", "mandate_status": "ready", "mandate_id": "m1"}]},
     )
     config: RunnableConfig = {
         "configurable": {
