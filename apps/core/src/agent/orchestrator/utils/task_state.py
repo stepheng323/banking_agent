@@ -1,4 +1,5 @@
-from typing import Any, Iterable
+from collections.abc import Iterable
+from typing import Any
 
 from apps.core.src.agent.orchestrator.models.domain import TaskStage
 
@@ -35,4 +36,3 @@ def reset_tasks_to_extracted(
         if clear_idempotency:
             task.payload.pop("idempotency_key", None)
         tasks[task_id] = task
-

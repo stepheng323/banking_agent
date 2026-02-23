@@ -55,7 +55,9 @@ class FAQWorker:
             if state.get("is_forbidden_scope"):
                 return FAQResult(
                     outcome=FAQOutcome.OK,
-                    response=render_message("faq.support_handoff", LocaleManager.normalize(state.get("language")).value),
+                    response=render_message(
+                        "faq.support_handoff", LocaleManager.normalize(state.get("language")).value
+                    ),
                     should_route_to_support=True,
                 )
 

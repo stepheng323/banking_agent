@@ -50,9 +50,7 @@ class QueryPipeline:
         if last_result:
             return self._finalize(last_result, state)
 
-        return self._finalize(
-            TransactionResult(outcome=TransactionOutcome.OK, patch={}), state
-        )
+        return self._finalize(TransactionResult(outcome=TransactionOutcome.OK, patch={}), state)
 
     def _finalize(self, result: TransactionResult, state: dict[str, Any]) -> TransactionResult:
         """Finalize result with accumulated state."""

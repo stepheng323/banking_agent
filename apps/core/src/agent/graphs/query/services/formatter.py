@@ -93,11 +93,7 @@ class QueryFormatter:
 
         if narration.upper().startswith("POS PURCHASE"):
             merchant = narration[14:].strip(" -")
-            return (
-                merchant.title()[:30]
-                if merchant
-                else render_message("query.format.narration.pos_purchase", locale)
-            )
+            return merchant.title()[:30] if merchant else render_message("query.format.narration.pos_purchase", locale)
 
         replacements = [
             ("TRANSFER TO ", render_message("query.format.narration.transfer_to", locale) + " "),
@@ -139,10 +135,10 @@ class QueryFormatter:
             if not result.items:
                 return result.summary_text
 
-            if (
-                result.query_snapshot
-                and result.query_snapshot.intent in {QueryIntent.AFFORDABILITY, QueryIntent.TIME_COMPARISON}
-            ):
+            if result.query_snapshot and result.query_snapshot.intent in {
+                QueryIntent.AFFORDABILITY,
+                QueryIntent.TIME_COMPARISON,
+            }:
                 return result.summary_text
 
             if result.surface and result.surface.type == SurfaceType.SUMMARY:

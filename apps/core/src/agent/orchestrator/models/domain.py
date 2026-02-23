@@ -38,7 +38,6 @@ class MetaIntent(str, Enum):
     THANKS = "thanks"
 
 
-
 class TransferConfirmation(BaseModel):
     """Confirmation state within a transfer payload."""
 

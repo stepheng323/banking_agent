@@ -141,9 +141,7 @@ class ContinuationClassifier:
                 items_list = "\n".join(
                     f"{i}: {item.description} - ₦{item.amount:,.2f} ({item.date})" for i, item in enumerate(items)
                 )
-                items_section = (
-                    f"\n{render_message('query.continuity.prompt_items_header', language)}\n{items_list}\n"
-                )
+                items_section = f"\n{render_message('query.continuity.prompt_items_header', language)}\n{items_list}\n"
 
             # Format surface context
             surface_type = "unknown"
@@ -209,9 +207,8 @@ class ContinuationClassifier:
                 data["drill_down_action"] = result.drill_down_action or "view_details"
 
             elif result.continuation_type == "end_session":
-                data["end_session_response"] = (
-                    result.end_session_response
-                    or render_message("query.session.you_are_welcome", language)
+                data["end_session_response"] = result.end_session_response or render_message(
+                    "query.session.you_are_welcome", language
                 )
 
             logger.info("continuation_classified", type=result.continuation_type)
@@ -282,11 +279,7 @@ def build_soft_clarification(items: list[QueryResultItem], context: str = "", lo
     if not items:
         return render_message("query.clarify.unsure_rephrase", locale)
 
-    context_suffix = (
-        render_message("query.clarify.context_suffix", locale, {"context": context})
-        if context
-        else ""
-    )
+    context_suffix = render_message("query.clarify.context_suffix", locale, {"context": context}) if context else ""
     lines = [render_message("query.clarify.which_one", locale, {"context_suffix": context_suffix})]
     lines.append("")
     lines.append(render_message("query.clarify.are_you_referring", locale))

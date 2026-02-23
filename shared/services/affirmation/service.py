@@ -22,8 +22,7 @@ class AffirmationOutput(BaseModel):
 
     intent: Literal["approve", "reject", "unclear", "custom"] = Field(
         description=(
-            "User's intent: approve (agrees), reject (declines), "
-            "unclear (ambiguous), custom (wants modification)"
+            "User's intent: approve (agrees), reject (declines), unclear (ambiguous), custom (wants modification)"
         )
     )
     confidence: float = Field(ge=0.0, le=1.0, description="Confidence score between 0 and 1")
@@ -242,9 +241,7 @@ class AffirmationService:
         if use_llm_fallback and llm is not None:
             try:
                 result = await cls._llm_classify(text, context, llm)
-                logger.info(
-                    "affirmation_llm_fallback", intent=result.intent, confidence=result.confidence
-                )
+                logger.info("affirmation_llm_fallback", intent=result.intent, confidence=result.confidence)
                 return result
             except Exception as e:
                 logger.warning("affirmation_llm_fallback_failed", error=str(e))

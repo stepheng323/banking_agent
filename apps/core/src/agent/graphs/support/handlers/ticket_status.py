@@ -6,7 +6,6 @@ Users will ask:
 - "Status of my ticket"
 """
 
-
 from apps.core.src.agent.graphs.support.models import SupportResponse
 from shared.database.enums import SupportTicketStatusEnum
 from shared.i18n import render_message
@@ -34,18 +33,18 @@ async def handle_ticket_status(
 ) -> SupportResponse:
     """
     Handle ticket status queries.
-    
+
     Resolution priority:
     1. Explicit ticket_code if provided
     2. last_ticket_id from context
     3. Most recent open ticket for user
-    
+
     Args:
         user_id: User's UUID
         ticket_service: TicketService instance
         ticket_code: Explicit ticket code mentioned by user
         last_ticket_id: Last ticket from SupportContext
-    
+
     Returns:
         SupportResponse with ticket status
     """
@@ -127,7 +126,7 @@ async def handle_any_update(
 ) -> SupportResponse:
     """
     Handle "any update?" queries.
-    
+
     This is a common follow-up after ticket creation.
     Falls back to showing the most recent ticket.
     """

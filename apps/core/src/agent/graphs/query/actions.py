@@ -1,7 +1,8 @@
 """Continuity actions for query flow (drill-down, receipts, etc)."""
 
 import json
-from typing import Any, Awaitable, cast
+from collections.abc import Awaitable
+from typing import Any, cast
 
 from apps.core.src.agent.graphs.query.models import QueryResult
 from apps.core.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
@@ -67,9 +68,7 @@ async def handle_drill_down(state: dict[str, Any]) -> TransactionResult:
                         render_message("query.receipt.na", locale),
                     ),
                 },
-                "source": {
-                    "account_name": render_message("query.receipt.user_account", locale)
-                },
+                "source": {"account_name": render_message("query.receipt.user_account", locale)},
             }
 
             if item.metadata.get("recipient_name"):
@@ -119,12 +118,9 @@ async def handle_drill_down(state: dict[str, Any]) -> TransactionResult:
 
     # VIEW DETAILS (Default)
     from apps.core.src.agent.graphs.query.services.formatter import QueryFormatter
+
     # Create single-item result for formatter to pick up "Detailed View" logic
-    detail_result = QueryResult(
-        summary_text="",
-        items=[item],
-        context_key=query_result.context_key
-    )
+    detail_result = QueryResult(summary_text="", items=[item], context_key=query_result.context_key)
     formatted = QueryFormatter.format(detail_result, show_expanded=True, locale=locale)
 
     return TransactionResult(

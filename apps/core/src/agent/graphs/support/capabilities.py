@@ -36,6 +36,7 @@ ACTION_LABELS: dict[SupportAction, str] = {
     SupportAction.ESCALATE: "escalate to human support",
 }
 
+
 def check_actions(requested: list[SupportAction]) -> list[SupportAction]:
     """Check which requested actions are not supported.
 

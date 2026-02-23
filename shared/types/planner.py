@@ -96,8 +96,7 @@ class PlannerOutput(BaseModel):
     # Classification fields
     primary_intent: str = Field(
         description=(
-            "Primary intent: transfer, airtime, data, query, account, support, "
-            "faq, conversational, cancel, mixed"
+            "Primary intent: transfer, airtime, data, query, account, support, faq, conversational, cancel, mixed"
         )
     )
     response: str = Field(default="", description="Transitional acknowledgment text for non-keyed cases")

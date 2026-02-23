@@ -20,15 +20,15 @@ RULES:
 3. Extract any transaction reference (amount, recipient, date) if mentioned
 
 Return JSON:
-{
+{{
   "intent": "<intent_name or null>",
   "confidence": <0.0-1.0>,
-  "transaction_ref": {
+  "transaction_ref": {{
     "amount": <number or null>,
     "recipient_name": "<string or null>",
     "date_hint": "<string or null>"
-  }
-}
+  }}
+}}
 
 User message: {message}
 """

@@ -300,7 +300,9 @@ async def handle_account_task(task: Any, task_id: str, ctx: ExecutionContext) ->
 
     elif result.outcome == AccountOutcome.FAILED:
         task.stage = TaskStage.FAILED
-        task.payload["error"] = result.error or render_message("orchestrator.error.account_action_failed", _state_locale(ctx.state))
+        task.payload["error"] = result.error or render_message(
+            "orchestrator.error.account_action_failed", _state_locale(ctx.state)
+        )
         ctx.agg.say(result.response)
 
 
@@ -375,7 +377,9 @@ async def handle_beneficiary_task(task: Any, task_id: str, ctx: ExecutionContext
                 ctx.agg.say(result.response)
         elif result.outcome == TransactionOutcome.FAILED:
             task.stage = TaskStage.FAILED
-            err = result.error or render_message("orchestrator.error.beneficiary_operation_failed", _state_locale(ctx.state))
+            err = result.error or render_message(
+                "orchestrator.error.beneficiary_operation_failed", _state_locale(ctx.state)
+            )
             task.payload["error"] = err
             ctx.agg.say(err)
         return
@@ -385,7 +389,9 @@ async def handle_beneficiary_task(task: Any, task_id: str, ctx: ExecutionContext
     if not suggestion_service:
         logger.error("suggestion_service_missing")
         task.stage = TaskStage.FAILED
-        task.payload["error"] = render_message("orchestrator.error.suggestion_service_unavailable", _state_locale(ctx.state))
+        task.payload["error"] = render_message(
+            "orchestrator.error.suggestion_service_unavailable", _state_locale(ctx.state)
+        )
         return
 
     alias = task.payload.get("alias")
@@ -512,7 +518,9 @@ async def handle_query_task(task: Any, task_id: str, ctx: ExecutionContext) -> N
 
     elif result.outcome == TransactionOutcome.FAILED:
         task.stage = TaskStage.FAILED
-        task.payload["error"] = result.error or render_message("orchestrator.error.query_processing_failed", _state_locale(ctx.state))
+        task.payload["error"] = result.error or render_message(
+            "orchestrator.error.query_processing_failed", _state_locale(ctx.state)
+        )
         ctx.agg.say(result.response or render_message("query.error.general", _state_locale(ctx.state)))
 
     if result.outcome in (TransactionOutcome.OK, TransactionOutcome.NEEDS_INPUT):
@@ -573,7 +581,9 @@ async def handle_faq_task(task: Any, task_id: str, ctx: ExecutionContext) -> Non
         ctx.agg.say(result.response)
     elif result.outcome == FAQOutcome.FAILED:
         task.stage = TaskStage.FAILED
-        task.payload["error"] = result.error or render_message("orchestrator.error.faq_failed", _state_locale(ctx.state))
+        task.payload["error"] = result.error or render_message(
+            "orchestrator.error.faq_failed", _state_locale(ctx.state)
+        )
         ctx.agg.say(render_message("faq.info_trouble", _state_locale(ctx.state)))
 
 
@@ -612,7 +622,9 @@ async def handle_support_task(task: Any, task_id: str, ctx: ExecutionContext) ->
             ctx.agg.add_missing_fields(task_id, ["clarification"])
     elif result.outcome == SupportOutcome.FAILED:
         task.stage = TaskStage.FAILED
-        task.payload["error"] = result.error or render_message("orchestrator.error.support_flow_failed", _state_locale(ctx.state))
+        task.payload["error"] = result.error or render_message(
+            "orchestrator.error.support_flow_failed", _state_locale(ctx.state)
+        )
         ctx.agg.say(render_message("support.unavailable", _state_locale(ctx.state)))
 
     stack = list(ctx.state.session_stack)

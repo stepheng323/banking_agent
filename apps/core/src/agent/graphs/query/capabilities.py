@@ -22,11 +22,11 @@ class QueryCapability(str, Enum):
 
     # Search - split for clarity
     SEARCH_NARRATION_KEYWORD = "search_narration_keyword"  # Exact/contains match
-    SEARCH_NARRATION_FUZZY = "search_narration_fuzzy"      # Semantic/embeddings
+    SEARCH_NARRATION_FUZZY = "search_narration_fuzzy"  # Semantic/embeddings
 
     # Time ranges
     TIME_RELATIVE = "time_relative"  # Within limits
-    TIME_ALL = "time_all"            # Beyond max_lookback_days
+    TIME_ALL = "time_all"  # Beyond max_lookback_days
 
     # Aggregations
     AGGREGATE_SUM = "aggregate_sum"

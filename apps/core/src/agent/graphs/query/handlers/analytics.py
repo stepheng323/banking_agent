@@ -218,7 +218,8 @@ async def handle_analytics(
             )
 
         label = render_message(
-            "query.analytics.label_expenses" if query.filters and query.filters.transaction_type == "debit"
+            "query.analytics.label_expenses"
+            if query.filters and query.filters.transaction_type == "debit"
             else "query.analytics.label_transactions",
             language,
         )

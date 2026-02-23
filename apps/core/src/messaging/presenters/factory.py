@@ -1,6 +1,7 @@
 """Presenter Factory for creating channel-specific presenters."""
 
 from apps.core.src.messaging.presenters.base import Presenter
+from apps.core.src.messaging.presenters.telegram import TelegramPresenter
 from apps.core.src.messaging.presenters.whatsapp import WhatsAppPresenter
 from shared.clients.abstractions.messaging import MessagingClient
 from shared.config import settings
@@ -11,6 +12,7 @@ class PresenterFactory:
 
     _registry: dict[str, type[Presenter]] = {
         "whatsapp": WhatsAppPresenter,
+        "telegram": TelegramPresenter,
     }
 
     @classmethod

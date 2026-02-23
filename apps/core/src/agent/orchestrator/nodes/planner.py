@@ -288,9 +288,7 @@ async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[s
         logger.info("planner_cancellation_detected", intent=planner_output.primary_intent)
         cancel_locale = detected_locale or current_locale
         cancel_locale_updates = (
-            locale_updates
-            if cancel_locale == current_locale
-            else _build_locale_update(state, cancel_locale)
+            locale_updates if cancel_locale == current_locale else _build_locale_update(state, cancel_locale)
         )
         if planner_output.response_key == "planner.cancelled":
             logger.info("planner_response_key_used", key=planner_output.response_key, locale=cancel_locale)

@@ -1,6 +1,7 @@
 """Query executor - thin dispatch layer for normalized queries."""
 
-from typing import Awaitable, Callable, cast
+from collections.abc import Awaitable, Callable
+from typing import cast
 
 from apps.core.src.agent.graphs.__shared__.account_selection.service import find_account_by_bank_name
 from apps.core.src.agent.graphs.query.handlers import HANDLER_REGISTRY

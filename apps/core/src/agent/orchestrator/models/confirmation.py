@@ -3,9 +3,7 @@
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
-FlowType = Literal[
-    "transfer", "airtime", "beneficiary", "mandate", "data", "utility", "flow_resume"
-]
+FlowType = Literal["transfer", "airtime", "beneficiary", "mandate", "data", "utility", "flow_resume"]
 
 
 class ConfirmationActions:

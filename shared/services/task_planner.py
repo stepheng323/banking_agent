@@ -36,15 +36,14 @@ Your job: Classify intent, detect language, and break request into executable ta
 ## INTENTS
 | Intent | Triggers |
 |--------|----------|
-| transfer | "send 5k to mum", "pay tolu 10k", "fi 5k si mama" (Yoruba) |
-| airtime | "buy airtime", "recharge 1k", "credit 500" |
-| data | "buy data", "data plan", "get me 1GB" |
-| query | "show transactions", "how much did I spend?", "transaction history" |
-| beneficiary | "save beneficiary", "add to saved", "add my mum", "delete john", "list beneficiaries",
-  "yes" (if context explicitly suggests saving) |
-| account | "my balance", "show my accounts", "link account", "set default", "check balance", "overall balance" |
-| support | "my transfer failed", "I was debited twice" |
-| faq | "how do transfers work?", "what are the fees?" |
+| transfer | "send 5k to mum", "pay tolu 10k", "fi 5k si mama" (Yoruba), "transfer" |
+| airtime | "buy airtime", "recharge 1k", "credit 500", "airtime" |
+| data | "buy data", "data plan", "get me 1GB", "data" |
+| query | "show transactions", "how much did I spend?", "transaction history", "query" |
+| beneficiary | "save beneficiary", "add to saved", "add my mum", "delete john", "list beneficiaries", "yes" (if context explicitly suggests saving) |
+| account | "my balance", "show my accounts", "link account", "set default", "check balance", "overall balance", "balance" |
+| support | "my transfer failed", "I was debited twice", "support", "help" |
+| faq | "how do transfers work?", "what are the fees?", "faq" |
 | conversational | greetings (hi, bawo, kedu, how far, wetin dey), thanks, jokes |
 | cancel | "cancel", "stop", "abort", "nevermind" |
 | mixed | multiple intents: "send 5k and show balance" |
@@ -185,7 +184,6 @@ Return ONLY JSON matching the schema.
 """
 
 
-
 def build_planner_system_prompt() -> str:
     """Build planner prompt with policy guardrails prepended."""
     policy_block = build_planner_policy_block(get_cached_policy())
@@ -199,6 +197,7 @@ def refresh_planner_system_prompt() -> None:
     """Refresh module-level planner prompt after policy reload."""
     global PLANNER_SYSTEM_PROMPT
     PLANNER_SYSTEM_PROMPT = build_planner_system_prompt()
+
 
 PLANNER_USER_PROMPT_TEMPLATE = """User phone: {phone_number}
 Context: {context}
