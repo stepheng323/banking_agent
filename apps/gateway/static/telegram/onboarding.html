@@ -1,0 +1,526 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Account Setup</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background-color: var(--tg-theme-bg-color, #ffffff);
+            color: var(--tg-theme-text-color, #000000);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            padding: 24px 16px;
+        }
+
+        .step {
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            width: 100%;
+            animation: fadeIn 0.3s ease-in-out;
+        }
+
+        .step.active {
+            display: flex;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .icon {
+            width: 64px;
+            height: 64px;
+            border-radius: 50%;
+            background: var(--tg-theme-button-color, #3390ec);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 16px;
+            font-size: 28px;
+        }
+
+        h1 {
+            font-size: 20px;
+            font-weight: 600;
+            margin-bottom: 8px;
+            text-align: center;
+        }
+
+        .subtitle {
+            font-size: 14px;
+            color: var(--tg-theme-hint-color, #999999);
+            text-align: center;
+            margin-bottom: 32px;
+            line-height: 1.4;
+        }
+
+        .input-group {
+            width: 100%;
+            margin-bottom: 16px;
+        }
+
+        .input-group label {
+            display: block;
+            font-size: 13px;
+            margin-bottom: 8px;
+            color: var(--tg-theme-hint-color, #999999);
+        }
+
+        input,
+        select {
+            width: 100%;
+            height: 48px;
+            padding: 0 16px;
+            border-radius: 12px;
+            border: 1px solid var(--tg-theme-hint-color, #cccccc);
+            background: var(--tg-theme-bg-color, #ffffff);
+            color: var(--tg-theme-text-color, #000000);
+            font-size: 16px;
+            transition: border-color 0.2s;
+        }
+
+        input:focus,
+        select:focus {
+            outline: none;
+            border-color: var(--tg-theme-button-color, #3390ec);
+        }
+
+        button.btn-primary {
+            width: 100%;
+            height: 48px;
+            border-radius: 12px;
+            background: var(--tg-theme-button-color, #3390ec);
+            color: var(--tg-theme-button-text-color, #ffffff);
+            border: none;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            margin-top: 16px;
+            transition: opacity 0.2s;
+        }
+
+        button.btn-primary:active {
+            opacity: 0.8;
+        }
+
+        button.btn-primary:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .error-msg {
+            color: #e53935;
+            font-size: 13px;
+            margin-top: 12px;
+            min-height: 18px;
+            text-align: center;
+            width: 100%;
+        }
+
+        .account-card {
+            width: 100%;
+            padding: 16px;
+            border-radius: 12px;
+            border: 1px solid var(--tg-theme-hint-color, #cccccc);
+            margin-bottom: 12px;
+            cursor: pointer;
+            transition: border-color 0.2s, background 0.2s;
+            text-align: left;
+        }
+
+        .account-card:hover {
+            background: var(--tg-theme-secondary-bg-color, #f0f0f0);
+        }
+
+        .account-card.selected {
+            border-color: var(--tg-theme-button-color, #3390ec);
+            background: var(--tg-theme-secondary-bg-color, #f0f0f0);
+            border-width: 2px;
+        }
+
+        .acc-name {
+            font-weight: 600;
+            font-size: 16px;
+            margin-bottom: 4px;
+        }
+
+        .acc-details {
+            font-size: 13px;
+            color: var(--tg-theme-hint-color, #999999);
+        }
+
+        .loader {
+            display: none;
+            width: 20px;
+            height: 20px;
+            border: 3px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            border-top-color: #fff;
+            animation: spin 1s ease-in-out infinite;
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+    <!-- STEP 1: BVN -->
+    <div id="step-bvn" class="step active">
+        <div class="icon">👤</div>
+        <h1>Enter BVN</h1>
+        <p class="subtitle">Please enter your 11-digit Bank Verification Number to securely link your accounts.</p>
+
+        <div class="input-group">
+            <input type="tel" id="bvnInput" placeholder="11-digit BVN" maxlength="11">
+        </div>
+
+        <div class="error-msg" id="bvnError"></div>
+        <button class="btn-primary" id="btnBvn" onclick="submitBvn()">
+            <span class="btn-text">Continue</span>
+            <div class="loader"></div>
+        </button>
+    </div>
+
+    <!-- STEP 2: OTP -->
+    <div id="step-otp" class="step">
+        <div class="icon">✉️</div>
+        <h1>Verify Identity</h1>
+        <p class="subtitle">We've found methods associated with your BVN. Select one to receive a verification code.</p>
+
+        <div class="input-group" style="margin-bottom: 24px;">
+            <label>Delivery Method</label>
+            <select id="otpMethod">
+            </select>
+        </div>
+
+        <div id="otpInputArea" style="display:none; width: 100%;">
+            <div class="input-group">
+                <label>Verification Code</label>
+                <input type="text" id="otpInput" placeholder="123456" maxlength="6">
+            </div>
+            <div class="error-msg" id="otpError"></div>
+            <button class="btn-primary" id="btnOtp" onclick="submitOtp()">
+                <span class="btn-text">Verify Code</span>
+                <div class="loader"></div>
+            </button>
+        </div>
+
+        <div id="otpMethodArea" style="width: 100%;">
+            <button class="btn-primary" id="btnRequestOtp" onclick="requestOtp()">
+                <span class="btn-text">Send Code</span>
+                <div class="loader"></div>
+            </button>
+        </div>
+    </div>
+
+    <!-- STEP 3: ACCOUNTS -->
+    <div id="step-account" class="step">
+        <div class="icon">🏦</div>
+        <h1>Select Account</h1>
+        <p class="subtitle">Select the bank account you want to link for future transactions.</p>
+
+        <div id="accountsList" style="width: 100%; margin-bottom: 16px;">
+            <!-- Rendered dynamically -->
+        </div>
+
+        <div class="error-msg" id="accountError"></div>
+        <button class="btn-primary" id="btnAccount" onclick="submitAccount()">
+            <span class="btn-text">Link Account</span>
+            <div class="loader"></div>
+        </button>
+    </div>
+
+    <!-- STEP 4: COMPLETE -->
+    <div id="step-complete" class="step">
+        <div class="icon">✅</div>
+        <h1>Final Polish</h1>
+        <p class="subtitle">Just a few more details to set up your profile and transaction PIN.</p>
+
+        <div class="input-group">
+            <label>Email Address</label>
+            <input type="email" id="emailInput" placeholder="your@email.com">
+        </div>
+
+        <div class="input-group">
+            <label>Home Address</label>
+            <input type="text" id="addressInput" placeholder="123 Main St">
+        </div>
+
+        <div class="input-group">
+            <label>Set 4-Digit PIN</label>
+            <input type="password" id="pinInput" placeholder="••••" maxlength="4" pattern="[0-9]*" inputmode="numeric">
+        </div>
+
+        <div class="error-msg" id="completeError"></div>
+        <button class="btn-primary" id="btnComplete" onclick="submitComplete()">
+            <span class="btn-text">Finish Setup</span>
+            <div class="loader"></div>
+        </button>
+    </div>
+
+    <!-- STEP 5: SUCCESS -->
+    <div id="step-success" class="step">
+        <div class="icon">🎉</div>
+        <h1>Setup Complete!</h1>
+        <p class="subtitle">Your profile is ready. You can now close this window and start using the bot.</p>
+
+        <button class="btn-primary" onclick="closeApp()">
+            Close Window
+        </button>
+    </div>
+
+    <script>
+        const tg = window.Telegram.WebApp;
+        tg.ready();
+        tg.expand();
+
+        const params = new URLSearchParams(window.location.search);
+        const flowToken = params.get('flow_token') || '';
+
+        let pendingBvn = '';
+        let pendingMethod = '';
+        let selectedAccountId = '';
+
+        function showStep(stepId) {
+            document.querySelectorAll('.step').forEach(el => el.classList.remove('active'));
+            document.getElementById(stepId).classList.add('active');
+            tg.MainButton.hide();
+        }
+
+        function setLoading(btnId, isLoading) {
+            const btn = document.getElementById(btnId);
+            const text = btn.querySelector('.btn-text');
+            const loader = btn.querySelector('.loader');
+
+            btn.disabled = isLoading;
+            if (isLoading) {
+                text.style.display = 'none';
+                loader.style.display = 'block';
+            } else {
+                text.style.display = 'inline-block';
+                loader.style.display = 'none';
+            }
+        }
+
+        async function makeApiCall(endpoint, data) {
+            const proto = window.location.protocol;
+            const host = window.location.host;
+            const url = `${proto}//${host}/webhook/telegram/onboarding/${endpoint}`;
+
+            try {
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+                return await response.json();
+            } catch (err) {
+                return { success: false, error: "Network error. Please try again." };
+            }
+        }
+
+        async function submitBvn() {
+            const bvn = document.getElementById('bvnInput').value.trim();
+            const errorEl = document.getElementById('bvnError');
+            errorEl.textContent = '';
+
+            if (bvn.length !== 11) {
+                errorEl.textContent = 'BVN must be 11 digits';
+                return;
+            }
+
+            setLoading('btnBvn', true);
+            const res = await makeApiCall('bvn', { flow_token: flowToken, bvn });
+            setLoading('btnBvn', false);
+
+            if (!res.success) {
+                errorEl.textContent = res.error || 'Verification failed';
+                return;
+            }
+
+            pendingBvn = bvn;
+
+            const methods = res.data.methods || [];
+            if (methods.length > 0) {
+                const select = document.getElementById('otpMethod');
+                select.innerHTML = '';
+                methods.forEach(m => {
+                    const opt = document.createElement('option');
+                    opt.value = m.method;
+                    opt.textContent = m.hint ? `${m.method.replace('_', ' ').toUpperCase()} - ${m.hint}` : m.method.replace('_', ' ').toUpperCase();
+                    select.appendChild(opt);
+                });
+                showStep('step-otp');
+            } else {
+                errorEl.textContent = 'No verification methods found';
+            }
+        }
+
+        async function requestOtp() {
+            setLoading('btnRequestOtp', true);
+            const method = document.getElementById('otpMethod').value;
+            pendingMethod = method;
+
+            const res = await makeApiCall('send_otp', { flow_token: flowToken, method });
+            setLoading('btnRequestOtp', false);
+
+            if (!res.success) {
+                document.getElementById('otpError').textContent = res.error || 'Failed to send OTP';
+                return;
+            }
+
+            document.getElementById('otpMethodArea').style.display = 'none';
+            document.getElementById('otpMethod').disabled = true;
+            document.getElementById('otpInputArea').style.display = 'block';
+        }
+
+        async function submitOtp() {
+            const otp = document.getElementById('otpInput').value.trim();
+            const errorEl = document.getElementById('otpError');
+            errorEl.textContent = '';
+
+            if (!otp) {
+                errorEl.textContent = 'Please enter OTP';
+                return;
+            }
+
+            setLoading('btnOtp', true);
+            let res = await makeApiCall('otp', { flow_token: flowToken, otp });
+            setLoading('btnOtp', false);
+
+            if (!res.success) {
+                errorEl.textContent = res.error || 'Verification failed';
+                return;
+            }
+
+            const accounts = res.data.accounts || [];
+            if (accounts.length > 0) {
+                renderAccounts(accounts);
+                showStep('step-account');
+            } else {
+                errorEl.textContent = 'No accounts found attached to this BVN.';
+            }
+        }
+
+        function renderAccounts(accounts) {
+            const container = document.getElementById('accountsList');
+            container.innerHTML = '';
+
+            accounts.forEach(acc => {
+                const card = document.createElement('div');
+                card.className = 'account-card';
+                card.onclick = () => selectAccountCard(card, acc.id);
+
+                const name = document.createElement('div');
+                name.className = 'acc-name';
+                name.textContent = acc.bank_name || (acc.institution ? acc.institution.name : 'Unknown Bank');
+
+                const details = document.createElement('div');
+                details.className = 'acc-details';
+                const num = acc.account_number || '****';
+                details.textContent = `${acc.account_name} • ${num}`;
+
+                card.appendChild(name);
+                card.appendChild(details);
+                container.appendChild(card);
+            });
+        }
+
+        function selectAccountCard(cardElement, accId) {
+            document.querySelectorAll('.account-card').forEach(c => c.classList.remove('selected'));
+            cardElement.classList.add('selected');
+            selectedAccountId = accId;
+            document.getElementById('accountError').textContent = '';
+        }
+
+        async function submitAccount() {
+            const errorEl = document.getElementById('accountError');
+            if (!selectedAccountId) {
+                errorEl.textContent = 'Please select an account';
+                return;
+            }
+
+            setLoading('btnAccount', true);
+            const res = await makeApiCall('account', { flow_token: flowToken, account_id: selectedAccountId });
+            setLoading('btnAccount', false);
+
+            if (!res.success) {
+                errorEl.textContent = res.error || 'Selection failed';
+                return;
+            }
+
+            showStep('step-complete');
+        }
+
+        async function submitComplete() {
+            const email = document.getElementById('emailInput').value.trim();
+            const address = document.getElementById('addressInput').value.trim();
+            const pin = document.getElementById('pinInput').value.trim();
+            const errorEl = document.getElementById('completeError');
+            errorEl.textContent = '';
+
+            if (!email || !address || !pin) {
+                errorEl.textContent = 'All fields are required';
+                return;
+            }
+            if (pin.length !== 4) {
+                errorEl.textContent = 'PIN must be 4 digits';
+                return;
+            }
+
+            setLoading('btnComplete', true);
+            const res = await makeApiCall('complete', {
+                flow_token: flowToken,
+                email,
+                address,
+                pin
+            });
+            setLoading('btnComplete', false);
+
+            if (!res.success) {
+                errorEl.textContent = res.error || 'Setup failed';
+                return;
+            }
+
+            try {
+                tg.sendData(JSON.stringify({
+                    action: 'onboarding_success',
+                    flow_token: flowToken,
+                }));
+            } catch (e) { /* ignore */ }
+
+            showStep('step-success');
+        }
+
+        function closeApp() {
+            tg.close();
+        }
+    </script>
+</body>
+
+</html>
