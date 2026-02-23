@@ -30,9 +30,7 @@ class FundingStepRepository(BaseRepository[FundingStep]):
 
     def get_by_provider_reference(self, reference: str) -> FundingStep | None:
         """Get a funding step by provider reference (for webhook handling)."""
-        return (
-            self.db.query(FundingStep).filter(FundingStep.provider_reference == reference).first()
-        )
+        return self.db.query(FundingStep).filter(FundingStep.provider_reference == reference).first()
 
     def get_by_provider_debit_id(self, debit_id: str) -> FundingStep | None:
         """Get a funding step by provider debit ID."""
@@ -49,9 +47,7 @@ class FundingStepRepository(BaseRepository[FundingStep]):
             self.db.query(FundingStep)
             .filter(
                 FundingStep.funded_transfer_id == funded_transfer_id,
-                FundingStep.status.in_(
-                    [FundingStepStatusEnum.PENDING.value, FundingStepStatusEnum.PROCESSING.value]
-                ),
+                FundingStep.status.in_([FundingStepStatusEnum.PENDING.value, FundingStepStatusEnum.PROCESSING.value]),
             )
             .order_by(FundingStep.sequence.asc())
             .all()

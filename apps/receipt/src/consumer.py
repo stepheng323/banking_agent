@@ -34,7 +34,7 @@ class ReceiptJobConsumer:
                 if job is None:
                     continue
 
-                payload = job.get("payload", {})
+                payload = job
                 logger.info(
                     "receipt_job_received",
                     phone=payload.get("phone_number"),
@@ -58,8 +58,9 @@ class ReceiptJobConsumer:
 
     async def _process_job(self, job: dict[str, Any]) -> None:
         """Process a single receipt job with retry logic."""
-        payload = job.get("payload", {})
+        payload = job
         phone_number = payload.get("phone_number")
+        outbox_phone = payload.get("channel_identity") or phone_number
         reference = payload.get("transaction_reference", "N/A")
 
         last_error = None
@@ -73,16 +74,17 @@ class ReceiptJobConsumer:
                 )
 
                 image_bytes = await self.renderer.render_receipt(
-                    transfer_data=payload,
+                    transfer_data=payload.get("transfer_data", {}),
                     transaction_reference=reference,
                 )
 
                 image_b64 = base64.b64encode(image_bytes).decode("ascii")
+                channel = payload.get("channel", "whatsapp")
                 await self.queue.enqueue(
                     queue_name=OUTBOX_QUEUE,
                     message={
-                        "phone_number": phone_number,
-                        "channel": "whatsapp",
+                        "phone_number": outbox_phone,
+                        "channel": channel,
                         "intents": [
                             {
                                 "type": "show_receipt",
@@ -118,11 +120,12 @@ class ReceiptJobConsumer:
         )
 
         try:
+            channel = payload.get("channel", "whatsapp")
             await self.queue.enqueue(
                 queue_name=OUTBOX_QUEUE,
                 message={
-                    "phone_number": phone_number,
-                    "channel": "whatsapp",
+                    "phone_number": outbox_phone,
+                    "channel": channel,
                     "intents": [
                         {
                             "type": "say",

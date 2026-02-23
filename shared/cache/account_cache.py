@@ -42,7 +42,7 @@ class AccountCacheService:
                     "account_cache_hit",
                     account_number=account_number,
                     bank_code=bank_code,
-                    account_name=account.get("account_name")
+                    account_name=account.get("account_name"),
                 )
                 return account
 
@@ -52,12 +52,7 @@ class AccountCacheService:
             logger.error("account_cache_get_error", error=str(e), exc_info=True)
             return None
 
-    async def set_account(
-        self,
-        account_number: str,
-        bank_code: str,
-        data: dict[str, Any]
-    ) -> bool:
+    async def set_account(self, account_number: str, bank_code: str, data: dict[str, Any]) -> bool:
         """Cache account details."""
         try:
             if not data.get("success"):
@@ -74,10 +69,7 @@ class AccountCacheService:
             return False
 
     async def get_or_fetch(
-        self,
-        account_number: str,
-        bank_code: str,
-        fetch_func: Callable[[], Awaitable[dict[str, Any]]]
+        self, account_number: str, bank_code: str, fetch_func: Callable[[], Awaitable[dict[str, Any]]]
     ) -> dict[str, Any]:
         """
         Get account from cache or fetch from provider if missing.
@@ -100,9 +92,4 @@ class AccountCacheService:
         except Exception as e:
             logger.error("account_fetch_error", error=str(e), exc_info=True)
             # Return a minimal error structure rather than crashing
-            return {
-                "success": False,
-                "error": str(e),
-                "account_number": account_number,
-                "bank_code": bank_code
-            }
+            return {"success": False, "error": str(e), "account_number": account_number, "bank_code": bank_code}

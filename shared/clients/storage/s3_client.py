@@ -68,9 +68,7 @@ class S3Client:
             print(f"❌ Unexpected error uploading receipt to S3: {e}")
             raise
 
-    async def get_receipt_url(
-        self, transaction_id: str, timestamp: datetime | None = None
-    ) -> str | None:
+    async def get_receipt_url(self, transaction_id: str, timestamp: datetime | None = None) -> str | None:
         """
         Get S3 URL for a receipt (if it exists).
 

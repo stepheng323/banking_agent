@@ -47,10 +47,7 @@ def sanitize_message(text: str | None, max_length: int = MAX_MESSAGE_LENGTH) -> 
     # 4. Strip control characters except common whitespace
     # Keep: newline, carriage return, tab
     # Remove: other control chars (0x00-0x1F except 0x09, 0x0A, 0x0D)
-    text = "".join(
-        c for c in text
-        if c.isprintable() or c in "\n\r\t"
-    )
+    text = "".join(c for c in text if c.isprintable() or c in "\n\r\t")
 
     # 5. Collapse excessive whitespace (but preserve single newlines for readability)
     text = re.sub(r"[ \t]+", " ", text)  # Collapse spaces/tabs
@@ -108,9 +105,6 @@ def sanitize_account_number(account_number: str | None) -> str:
 
     # Limit length (Nigerian accounts are 10 digits, but allow some buffer)
     return digits[:20]
-
-
-
 
 
 def is_suspicious_input(text: str) -> bool:

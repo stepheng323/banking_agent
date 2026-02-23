@@ -50,9 +50,13 @@ class SelfTransferValidator:
             bank_matches = recipient_bank == source_bank
 
         if account_matches and bank_matches:
-            bank_identifier = recipient_bank_name or recipient_bank_code or render_message(
-                "transfer.validation.same_bank_fallback",
-                locale,
+            bank_identifier = (
+                recipient_bank_name
+                or recipient_bank_code
+                or render_message(
+                    "transfer.validation.same_bank_fallback",
+                    locale,
+                )
             )
             error_message = render_message(
                 "transfer.validation.self_transfer_same_account",

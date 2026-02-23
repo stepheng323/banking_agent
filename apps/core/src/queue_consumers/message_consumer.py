@@ -16,7 +16,7 @@ from apps.core.src.agent.orchestrator.models.intents import (
 from apps.core.src.messaging.outbox import enqueue_outbox_intents, enqueue_outbox_say
 from shared.cache.rate_limiter import message_rate_limiter
 from shared.database.models import UserOnboardingStatusEnum
-from shared.models.messages import WhatsAppMessage
+from shared.models.messages import ChannelMessage
 from shared.queue.redis_queue import RedisQueue
 from shared.repositories.user_repository import UserRepository
 from shared.utils.logging import get_logger
@@ -43,29 +43,35 @@ class MessageConsumer:
 
     async def process_message(self, message_data: dict) -> None:
         """Process a message from the queue."""
+        # Refresh the database session state so we don't read stale cached data
+        await self.user_repository.db.rollback()
+
         try:
-            msg = WhatsAppMessage(**message_data)
+            msg = ChannelMessage(**message_data)
             await self._handle_message(msg)
+            # Commit any changes pushed by the orchestrator into the session
+            await self.user_repository.db.commit()
 
         except Exception as e:
+            await self.user_repository.db.rollback()
             logger.error("message_processing_failed", error=str(e), exc_info=True)
             raise e
 
-    async def _handle_message(self, message: WhatsAppMessage) -> dict[str, Any] | None:
-        """Handle a WhatsApp message."""
+    async def _handle_message(self, message: ChannelMessage) -> dict[str, Any] | None:
+        """Handle a Channel message."""
         start_time = time.perf_counter()
-        phone_number = message.from_number
+        channel_user_id = message.channel_user_id
 
-        rate_result = await message_rate_limiter.check(phone_number)
+        rate_result = await message_rate_limiter.check(channel_user_id)
         if not rate_result.allowed:
             logger.warning(
                 "rate_limit_blocked",
-                phone_number=phone_number,
+                channel_user_id=channel_user_id,
                 reset_in=rate_result.reset_in_seconds,
             )
             await enqueue_outbox_say(
                 self.queue,
-                phone_number,
+                channel_user_id,
                 message.channel,
                 f"⏳ Too many messages. Please wait {rate_result.reset_in_seconds} seconds.",
                 metadata={"source": "message_consumer", "reason": "rate_limit"},
@@ -78,17 +84,25 @@ class MessageConsumer:
         if is_suspicious_input(sanitized_text):
             logger.warning(
                 "suspicious_input_detected",
-                phone_number=phone_number,
+                channel_user_id=channel_user_id,
                 text_preview=sanitized_text[:100],
             )
 
         if message.message_type.value == "flow":
             return {"status": "skipped", "reason": "Flow messages handled by flow webhook"}
 
-        user = await self.user_repository.get_by_phone(phone_number)
-        logger.info("user_found", user=user, phone_number=phone_number)
+        user = await self.user_repository.get_by_channel_identity(message.channel, channel_user_id)
+        logger.info(
+            "channel_identity_lookup", user=user, channel=message.channel, channel_user_id=channel_user_id
+        )
+
         if user is None or getattr(user, "onboarding_status", None) != UserOnboardingStatusEnum.ONBOARDING_COMPLETED:
             return await self.onboarding_executor.handle_onboarding(message)
+
+        # Use the real phone number from the database for the orchestrator.
+        # For WhatsApp, channel_user_id == phone_number, but for Telegram
+        # channel_user_id is a chat ID which would break account lookups.
+        phone_number = user.phone_number
 
         await self.orchestrator.context_manager.save_message_id(phone_number, message.message_id)
 
@@ -100,6 +114,7 @@ class MessageConsumer:
             media_id=message.media_id,
             quoted_message_id=message.quoted_message_id,
             channel=message.channel,
+            channel_identity=channel_user_id,
         )
 
         intents: list[UiIntent] = orchestrator_output.get("intents", [])
@@ -112,7 +127,7 @@ class MessageConsumer:
         if intents:
             await enqueue_outbox_intents(
                 self.queue,
-                phone_number,
+                channel_user_id,
                 message.channel,
                 intents,
                 metadata={"source": "message_consumer", "message_id": message.message_id},
@@ -124,7 +139,7 @@ class MessageConsumer:
             "perf_timer_latency",
             gate="message_consumer_handle",
             duration_ms=round(duration, 2),
-            phone_number=phone_number,
+            channel_user_id=channel_user_id,
         )
 
         return {"status": "success", "response": response_text}

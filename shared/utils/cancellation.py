@@ -106,7 +106,9 @@ def get_cancellation_message(
 
     elif transaction_type == "data":
         if amount and phone_number:
-            return f"Data purchase cancelled. The purchase of ₦{amount:,.0f} data for {phone_number} has been cancelled."
+            return (
+                f"Data purchase cancelled. The purchase of ₦{amount:,.0f} data for {phone_number} has been cancelled."
+            )
         elif amount:
             return f"Data purchase cancelled. The purchase of ₦{amount:,.0f} data has been cancelled."
         else:

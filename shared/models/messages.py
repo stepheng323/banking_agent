@@ -29,11 +29,11 @@ class MessagePriority(int, Enum):
     URGENT = 20
 
 
-class WhatsAppMessage(BaseModel):
-    """WhatsApp message to be processed."""
+class ChannelMessage(BaseModel):
+    """Channel-agnostic message to be processed."""
 
-    message_id: str = Field(..., description="WhatsApp message ID")
-    from_number: str = Field(..., description="Sender's phone number")
+    message_id: str = Field(..., description="Message ID from the source channel")
+    channel_user_id: str = Field(..., description="Sender's channel-specific identifier (phone, chat_id, etc.)")
     message_type: MessageType = Field(..., description="Type of message")
     text: str | None = Field(None, description="Text content")
     flow_data: dict[str, Any] | None = Field(None, description="Flow response data")
@@ -41,6 +41,11 @@ class WhatsAppMessage(BaseModel):
     mime_type: str | None = Field(None, description="MIME type of media")
     quoted_message_id: str | None = Field(None, description="ID of quoted/replied message")
     timestamp: datetime = Field(default_factory=datetime.utcnow)
+
+    channel_metadata: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Channel-specific metadata (e.g., contact phone number)",
+    )
 
     channel: str = "whatsapp"
     priority: MessagePriority = Field(default=MessagePriority.NORMAL)
@@ -53,7 +58,7 @@ class ProcessedMessage(BaseModel):
     """Result of message processing."""
 
     message_id: str
-    from_number: str
+    channel_user_id: str
     intent: str | None = None
     entities: dict[str, Any] = Field(default_factory=dict)
     response: str | None = None

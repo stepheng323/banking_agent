@@ -29,14 +29,10 @@ def get_private_key_from_env() -> str:
     Returns:
         Private key as string, or None if not found
     """
-    key_path = os.getenv("WHATSAPP_FLOW_PRIVATE_KEY_PATH") or os.getenv(
-        "whatsapp_flow_private_key_path"
-    )
+    key_path = os.getenv("WHATSAPP_FLOW_PRIVATE_KEY_PATH") or os.getenv("whatsapp_flow_private_key_path")
 
     if not key_path:
-        raise FileNotFoundError(
-            "Environment variable WHATSAPP_FLOW_PRIVATE_KEY_PATH not set or empty"
-        )
+        raise FileNotFoundError("Environment variable WHATSAPP_FLOW_PRIVATE_KEY_PATH not set or empty")
 
     if not os.path.exists(key_path):
         raise FileNotFoundError(f"Private key file not found at: {key_path}")

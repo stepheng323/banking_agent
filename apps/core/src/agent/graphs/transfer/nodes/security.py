@@ -21,7 +21,6 @@ class AuthorizationStep(TransferStep):
         gates: TransferGates,
         worker_context: Any,
     ) -> TransactionResult:
-
         if gates.confirmation_confirmed:
             return TransactionResult(outcome=TransactionOutcome.OK, patch={})
 

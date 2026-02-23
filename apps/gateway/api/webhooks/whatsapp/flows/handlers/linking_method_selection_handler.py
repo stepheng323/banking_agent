@@ -50,9 +50,7 @@ async def handle_linking_method_selection(
         if session_data:
             methods = session_data.get("methods", [])
             bvn = session_data.get("bvn", "")
-            logger.info(
-                "linking_returning_methods", methods_count=len(methods), bvn_present=bool(bvn)
-            )
+            logger.info("linking_returning_methods", methods_count=len(methods), bvn_present=bool(bvn))
             return format_success_response(
                 "METHOD_SELECTION",
                 request_was_encrypted,

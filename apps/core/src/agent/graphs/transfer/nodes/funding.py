@@ -32,7 +32,6 @@ class FundingStep(TransferStep):
         return TransactionResult(outcome=TransactionOutcome.OK, patch={})
 
 
-
 logger = get_logger(__name__)
 
 

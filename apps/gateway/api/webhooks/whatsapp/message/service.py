@@ -5,7 +5,7 @@ from datetime import datetime
 from apps.gateway.adapters.meta_whatsapp import ParsedMessage, parse_payload
 from apps.gateway.adapters.sender import send_text
 from shared.clients.whatsapp.client import WhatsAppClient
-from shared.models.messages import MessagePriority, MessageType, WhatsAppMessage
+from shared.models.messages import ChannelMessage, MessagePriority, MessageType
 from shared.queue.redis_queue import RedisQueue
 from shared.utils.logging import get_logger
 
@@ -66,8 +66,8 @@ class WhatsAppWebhookService:
         await self._enqueue_message(whatsapp_msg, from_id, msg_type)
         return True
 
-    def _build_message(self, msg: ParsedMessage) -> WhatsAppMessage:
-        """Build WhatsAppMessage from ParsedMessage."""
+    def _build_message(self, msg: ParsedMessage) -> ChannelMessage:
+        """Build ChannelMessage from ParsedMessage."""
         msg_type = msg.type or "text"
 
         try:
@@ -77,9 +77,9 @@ class WhatsAppWebhookService:
 
         priority = MessagePriority.HIGH if msg_type == "interactive" else MessagePriority.NORMAL
 
-        return WhatsAppMessage(
-            message_id=msg.id or "unknown",
-            from_number=msg.from_number or "",
+        return ChannelMessage(
+            message_id=msg.id or "",
+            channel_user_id=msg.from_number or "",
             message_type=enum_type,
             text=msg.text or "",
             flow_data=msg.flow_data,
@@ -92,7 +92,7 @@ class WhatsAppWebhookService:
 
     async def _enqueue_message(
         self,
-        message: WhatsAppMessage,
+        message: ChannelMessage,
         from_id: str,
         msg_type: str,
     ) -> bool:

@@ -31,11 +31,7 @@ class FundedTransferRepository(BaseRepository[FundedTransfer]):
 
     def get_by_idempotency_key(self, idempotency_key: str) -> FundedTransfer | None:
         """Get a funded transfer by idempotency key."""
-        return (
-            self.db.query(FundedTransfer)
-            .filter(FundedTransfer.idempotency_key == idempotency_key)
-            .first()
-        )
+        return self.db.query(FundedTransfer).filter(FundedTransfer.idempotency_key == idempotency_key).first()
 
     def get_by_status(self, status: str) -> list[FundedTransfer]:
         """Get funded transfers by status (for background processing)."""

@@ -42,10 +42,7 @@ class BeneficiaryMatcher:
             logger.debug("beneficiary_missing_fields")
             return False, None
 
-        if (
-            str(current_account) != beneficiary_account
-            or str(current_bank_code) != beneficiary_bank_code
-        ):
+        if str(current_account) != beneficiary_account or str(current_bank_code) != beneficiary_bank_code:
             logger.debug(
                 "beneficiary_stale",
                 beneficiary_account=beneficiary_account,

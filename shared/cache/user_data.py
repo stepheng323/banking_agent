@@ -19,14 +19,12 @@ class UserDataCache:
     Uses cache-aside pattern with TTL.
     """
 
-
     PROFILE_TTL = int(timedelta(minutes=10).total_seconds())
     ACCOUNTS_TTL = int(timedelta(minutes=5).total_seconds())
     BENEFICIARIES_TTL = int(timedelta(minutes=5).total_seconds())
 
     def __init__(self, redis_client: Redis | None = None):
         self.redis = redis_client or RedisClient.get_client()
-
 
     async def get_user_profile(self, phone_number: str) -> dict[str, Any] | None:
         """Get cached user profile."""
@@ -47,7 +45,6 @@ class UserDataCache:
         key = f"cache:user:profile:{phone_number}"
         await self.redis.delete(key)
 
-
     async def get_accounts(self, phone_number: str) -> list[dict[str, Any]] | None:
         """Get cached user accounts."""
         key = f"cache:user:accounts:{phone_number}"
@@ -67,7 +64,6 @@ class UserDataCache:
         key = f"cache:user:accounts:{phone_number}"
         await self.redis.delete(key)
 
-
     async def get_beneficiaries(self, phone_number: str) -> list[dict[str, Any]] | None:
         """Get cached beneficiaries."""
         key = f"cache:user:beneficiaries:{phone_number}"
@@ -77,9 +73,7 @@ class UserDataCache:
             return json.loads(data)
         return None
 
-    async def set_beneficiaries(
-        self, phone_number: str, beneficiaries: list[dict[str, Any]]
-    ) -> None:
+    async def set_beneficiaries(self, phone_number: str, beneficiaries: list[dict[str, Any]]) -> None:
         """Cache beneficiaries and build alias lookup map."""
         key = f"cache:user:beneficiaries:{phone_number}"
         await self.redis.set(key, json.dumps(beneficiaries), ex=self.BENEFICIARIES_TTL)
@@ -96,9 +90,7 @@ class UserDataCache:
             alias_key = f"cache:user:beneficiary_aliases:{phone_number}"
             await self.redis.set(alias_key, json.dumps(alias_map), ex=self.BENEFICIARIES_TTL)
 
-    async def get_beneficiary_by_alias(
-        self, phone_number: str, alias: str
-    ) -> dict[str, Any] | None:
+    async def get_beneficiary_by_alias(self, phone_number: str, alias: str) -> dict[str, Any] | None:
         """
         O(1) beneficiary lookup by name or alias.
 
@@ -200,7 +192,6 @@ class UserDataCache:
             await self.set_beneficiaries(phone_number, beneficiaries)
 
         return beneficiaries or []
-
 
     async def get_cache_stats(self, phone_number: str) -> dict[str, bool]:
         """Check which data is currently cached for a user."""

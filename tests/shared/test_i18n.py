@@ -6,8 +6,7 @@ import pytest
 
 from shared.i18n import LanguageDetectionSignal, LocaleCode, LocaleManager, render_message, render_text
 from shared.i18n.message_keys import ALL_MESSAGE_KEYS
-from shared.i18n.renderer import validate_catalog_completeness
-from shared.i18n.renderer import _flatten_string_leaves, _read_catalog
+from shared.i18n.renderer import _flatten_string_leaves, _read_catalog, validate_catalog_completeness
 
 
 class _FakeRedis:
@@ -23,7 +22,6 @@ class _FakeRedis:
 
     async def delete(self, key: str):
         self._store.pop(key, None)
-
 
 
 def test_locale_normalize_aliases():

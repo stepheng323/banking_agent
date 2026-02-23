@@ -96,9 +96,7 @@ async def test_gate_pending_input_defers_intent_switch_to_planner() -> None:
                 interrupt_policy="BLOCK",
             )
         ],
-        tasks={
-            "t1": TaskSpec(id="t1", type="transfer", stage=TaskStage.EXTRACTED, payload={"recipient_name": "Tolu"})
-        },
+        tasks={"t1": TaskSpec(id="t1", type="transfer", stage=TaskStage.EXTRACTED, payload={"recipient_name": "Tolu"})},
     )
     config: RunnableConfig = {
         "configurable": {
@@ -133,9 +131,7 @@ async def test_gate_pending_input_keeps_fast_path_for_slot_filling() -> None:
                 interrupt_policy="BLOCK",
             )
         ],
-        tasks={
-            "t1": TaskSpec(id="t1", type="transfer", stage=TaskStage.EXTRACTED, payload={"recipient_name": "Tolu"})
-        },
+        tasks={"t1": TaskSpec(id="t1", type="transfer", stage=TaskStage.EXTRACTED, payload={"recipient_name": "Tolu"})},
     )
     config: RunnableConfig = {
         "configurable": {

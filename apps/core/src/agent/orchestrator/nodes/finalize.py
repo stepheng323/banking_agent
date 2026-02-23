@@ -12,8 +12,8 @@ from apps.core.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
 from apps.core.src.agent.orchestrator.models.state import OrchestratorState
 from shared.formatters import format_multi_action_summary
 from shared.i18n import LocaleManager, render_cancelled_prompt, render_generic_capability_blocked, render_message
-from shared.queue.redis_queue import RedisQueue
 from shared.queue.models import ReceiptJobPayload, ReceiptTransferData
+from shared.queue.redis_queue import RedisQueue
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -25,9 +25,7 @@ async def finalize(state: OrchestratorState, config: RunnableConfig) -> dict[str
     locale = LocaleManager.normalize((state.loaded_context or {}).get("language")).value
 
     configurable = cast(dict[str, Any], config.get("configurable", {}))
-    beneficiary_service: BeneficiarySuggestionService | None = configurable.get(
-        "beneficiary_suggestion_service"
-    )
+    beneficiary_service: BeneficiarySuggestionService | None = configurable.get("beneficiary_suggestion_service")
     redis_client: redis.Redis | None = configurable.get("redis_client")
     queue: RedisQueue | None = configurable.get("queue")
 
@@ -119,7 +117,7 @@ async def _handle_completed_tasks(
     state: OrchestratorState,
     queue: RedisQueue | None,
     redis_client: redis.Redis | None,
-    beneficiary_service: "BeneficiarySuggestionService" | None,
+    beneficiary_service: BeneficiarySuggestionService | None,
     outbox: list[dict[str, Any]],
 ) -> None:
     """Handle completed tasks and generate receipts or summaries."""
@@ -240,6 +238,8 @@ async def _queue_single_transfer_receipt(
     }
     job_payload: ReceiptJobPayload = {
         "phone_number": state.phone_number,
+        "channel": state.channel,
+        "channel_identity": state.channel_identity,
         "transfer_data": transfer_data,
         "transaction_reference": cast(
             str | None,
@@ -258,7 +258,7 @@ async def _queue_single_transfer_receipt(
 
 async def _handle_beneficiary_suggestion(
     task: TaskSpec,
-    beneficiary_service: "BeneficiarySuggestionService",
+    beneficiary_service: BeneficiarySuggestionService,
     phone_number: str,
     outbox: list[dict[str, Any]],
     locale: str = "en",
