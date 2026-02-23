@@ -380,19 +380,18 @@ async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[s
                 if conversational_locale == current_locale
                 else _build_locale_update(state, conversational_locale)
             )
+            if planner_output.response:
+                logger.info("planner_direct_response_used", locale=conversational_locale)
+                return {
+                    "final_response": _localized_planner_response(planner_output.response),
+                    **conversational_locale_updates,
+                }
+
             response_key = planner_output.response_key
             if response_key:
                 logger.info("planner_response_key_used", key=response_key, locale=conversational_locale)
                 return {
                     "final_response": render_message(response_key, conversational_locale),
-                    **conversational_locale_updates,
-                }
-
-            # Allow LLM to answer directly without a predefined key (Rule 18)
-            if planner_output.response:
-                logger.info("planner_direct_response_used", locale=conversational_locale)
-                return {
-                    "final_response": _localized_planner_response(planner_output.response),
                     **conversational_locale_updates,
                 }
 

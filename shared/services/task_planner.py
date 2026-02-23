@@ -87,8 +87,9 @@ Your job: Classify intent, detect language, and break request into executable ta
 6. is_confirmation=true ONLY if user agrees without new data (e.g. "Yes", "Proceed", "Bẹ́ẹ̀ ni", "Go ahead").
    Updates ("change to 5k", "use X bank") or new info ("Add 500") -> is_confirmation=false.
 7. For amounts: normalize "5k" → 5000, "50k" → 50000
-8. OUT OF SCOPE: If request is not in INTENTS (e.g. flights, loans, movies),
-   classify as "conversational" and reply that you prioritize banking services.
+8. OUT OF SCOPE: If a request is entirely UNRELATED to banking (e.g. flights, sports, movies),
+   classify as "conversational", set `response_key="conversational.out_of_scope"`, and decline.
+   Do NOT use this for banking-related chatter or complaints.
 9. CONTEXT OVERRIDE (Active Flow):
    - In an active flow, assume inputs are slot-filling. Force primary_intent = active flow intent.
    - EXCEPTION: If input matches a DIFFERENT intent trigger (e.g. "Show beneficiaries") or is
@@ -113,9 +114,9 @@ Your job: Classify intent, detect language, and break request into executable ta
     and user says 'him', 'her', 'send to the first one', YOU SHOULD RESOLVE IT
     to the name (e.g. 'Mum') in the 'recipient' field.
     Do NOT use 'reference' pointer if you are confident.
-14. RESUMPTION: If Context says 'Asked to resume [Intent]' and user says
-    'Yes', 'Okay', 'Proceed', create a task with executor='orchestrator',
-    action='resume_session'.
+14. RESUMPTION: If and ONLY IF Context explicitly says 'Asked to resume [Intent]'
+    and user says 'Yes', 'Okay', 'Proceed', create a task with executor='orchestrator',
+    action='resume_session'. If that context is missing, NEVER create a resume_session task.
 14b. RESUMPTION DECLINE: If Context says 'Asked to resume [Intent]' and user says
     'No', 'Not now', 'Later', create a task with executor='orchestrator',
     action='dismiss_resume_session'.
@@ -133,9 +134,10 @@ Your job: Classify intent, detect language, and break request into executable ta
 17. RESPONSE KEY CONTRACT: If conversational+tasks=[], set response_key:
     greeting|appreciation|checkin|identity|brand_origin|capability_question|out_of_scope|clarify.
     Cancellations: planner.cancelled.
-18. CONTEXT-AWARE REPLIES: If "User State" in context fully answers a read-only question
-    (account list, mandate status, beneficiary names), answer directly as intent=conversational
-    with a natural response AND OMIT `response_key` entirely. ALWAYS ROUTE to subgraph for:
+18. CONTEXT-AWARE REPLIES: If "User State" or "Recent Chat" heavily informs the user's message
+    (e.g., answering about mandate status, or banking-related complaints like "I haven't sent it yet"),
+    answer directly as intent=conversational with a natural, empathetic response AND
+    OMIT `response_key` entirely. ALWAYS ROUTE to subgraph for:
     balance checks (account), transactions (query), money movements (transfer/airtime/data),
     state mutations (link/unlink/save/delete).
 
