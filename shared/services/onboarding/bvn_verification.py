@@ -28,9 +28,9 @@ class BvnVerificationService:
         """
         bvn = None
         try:
-            with UnitOfWork() as uow:
+            async with UnitOfWork() as uow:
                 if uow.users:
-                    user = uow.users.get_by_phone(phone_number)
+                    user = await uow.users.get_by_phone(phone_number)
                     if user and user.extra_data:
                         bvn = user.extra_data.get("bvn")
         except Exception as e:
@@ -83,11 +83,18 @@ class BvnVerificationService:
             methods = [{"id": m.method, "title": m.hint} for m in bvn_data.methods]
 
             is_linking = flow_token.startswith("link-")
-            if is_linking:
-                parts = flow_token.split("-")
-                phone_number = parts[1] if len(parts) >= 2 else ""
-            else:
-                phone_number = flow_token.split("-")[-1] if flow_token else ""
+
+            # Check if the session already has a phone_number (pre-seeded from contact share)
+            existing_session = await self.session.get_session(flow_token)
+            phone_number = existing_session.get("phone_number") if existing_session else ""
+
+            if not phone_number:
+                # Fallback: extract from flow_token
+                if is_linking:
+                    parts = flow_token.split("-")
+                    phone_number = parts[1] if len(parts) >= 2 else ""
+                else:
+                    phone_number = flow_token.split("-")[-1] if flow_token else ""
 
             await self.session.update_session(
                 flow_token,

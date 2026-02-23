@@ -95,15 +95,19 @@ class AccountLinkingService:
             bank_code = institution.get("bank_code", "")
 
         try:
-            with UnitOfWork() as uow:
+            async with UnitOfWork() as uow:
                 if not uow.users or not uow.accounts:
                     return {"success": False, "error": "Database error."}
 
-                user = uow.users.get_by_phone(phone_number)
+                user = await uow.users.get_by_phone(phone_number)
                 if not user:
-                    return {"success": False, "error": "User not found. Please start over."}
+                    # Brand new user (e.g. Telegram onboarding) — register them now
+                    from shared.repositories.user_repository import UserCreate
+                    user = await uow.users.register_user(
+                        UserCreate(phone_number=phone_number)
+                    )
 
-                uow.users.update_user(
+                await uow.users.update_user(
                     str(user.id),
                     UserUpdate(
                         full_name=account_name,
@@ -115,9 +119,9 @@ class AccountLinkingService:
                     ),
                 )
 
-                existing_account = uow.accounts.get_by_account_id(selected_account["id"])
+                existing_account = await uow.accounts.get_by_account_id(selected_account["id"])
                 if not existing_account or getattr(existing_account, "user_id", None) != str(user.id):
-                    uow.accounts.create_account(
+                    await uow.accounts.create_account(
                         CreateAccount(
                             user_id=str(user.id),
                             account_id=selected_account["id"],
@@ -129,6 +133,11 @@ class AccountLinkingService:
                             extra_data=selected_account,
                         )
                     )
+
+                # If this is a Telegram onboarding, link the chat_id identity
+                if flow_token.startswith("onboarding-"):
+                    chat_id = flow_token.split("-", 1)[1]
+                    await uow.users.link_channel_identity(str(user.id), "telegram", chat_id)
 
             await self.session.update_session(flow_token, {"step": OnboardingStep.COMPLETE.value})
 
@@ -186,11 +195,11 @@ class AccountLinkingService:
             )
             logger.info("mono_customer_created_async", phone=phone_number, customer_id=customer.id)
 
-            with UnitOfWork() as uow:
+            async with UnitOfWork() as uow:
                 if uow.users:
-                    user = uow.users.get_by_phone(phone_number)
+                    user = await uow.users.get_by_phone(phone_number)
                     if user:
-                        uow.users.update_user(str(user.id), UserUpdate(mono_customer_id=customer.id))
+                        await uow.users.update_user(str(user.id), UserUpdate(mono_customer_id=customer.id))
 
             result = await self.mandate.create_mandate(
                 phone_number=phone_number,
