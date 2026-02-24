@@ -11,7 +11,7 @@ from apps.core.src.agent.orchestrator.models.intents import UiIntent, reconstruc
 from apps.core.src.messaging.presenters.base import PresentationContext
 from apps.core.src.messaging.presenters.factory import PresenterFactory
 from shared.clients.abstractions.messaging import MessagingClient
-from shared.queue.messages import OUTBOX_QUEUE
+from shared.queue.messages import ACTIONABLE_MESSAGES_QUEUE, OUTBOX_QUEUE
 from shared.queue.redis_queue import RedisQueue
 from shared.utils.logging import get_logger
 
@@ -37,12 +37,10 @@ class OutboxConsumer:
         client = self.messaging_clients.get(channel)
         if client:
             return client
-        # Fall back to default channel
         default_client = self.messaging_clients.get(self.default_channel)
         if default_client:
             logger.warning("outbox_channel_fallback", requested=channel, using=self.default_channel)
             return default_client
-        # Last resort: use first available client
         first_client = next(iter(self.messaging_clients.values()), None)
         if not first_client:
             raise RuntimeError("No messaging clients configured")
@@ -59,7 +57,6 @@ class OutboxConsumer:
             return
 
         try:
-            # Reconstruct Intents
             intents: list[UiIntent] = []
             for item in intents_data:
                 intent = reconstruct_intent(item)
@@ -72,11 +69,9 @@ class OutboxConsumer:
                 logger.warning("outbox_no_valid_intents", payload=payload)
                 return
 
-            # Select client and Presenter for this channel
             client = self._get_client(channel)
             presenter = PresenterFactory.create(channel=channel, client=client)
 
-            # Context
             supports_flows = getattr(client, "supports_flows", True)
             context = PresentationContext(
                 channel=channel,
@@ -85,9 +80,23 @@ class OutboxConsumer:
                 metadata=payload.get("metadata", {}),
             )
 
-            # Present
-            await presenter.present(intents, context)
-            logger.info("outbox_sent", phone=phone_number, count=len(intents), channel=channel)
+            result = await presenter.present(intents, context)
+            logger.info("outbox_sent", phone=phone_number, count=len(intents), channel=channel, success=result.success)
+
+            actionable_payload = next((i.actionable_payload for i in intents if i.actionable_payload), None)
+
+            if result.success and result.message_ids and actionable_payload:
+                for msg_id in result.message_ids:
+                    await self.queue.enqueue(
+                        queue_name=ACTIONABLE_MESSAGES_QUEUE,
+                        message={
+                            "channel": channel,
+                            "message_id": msg_id,
+                            "phone_number": phone_number,
+                            "payload": actionable_payload,
+                        },
+                    )
+                    logger.info("enqueued_actionable_message", msg_id=msg_id)
 
         except Exception as e:
             logger.error("outbox_processing_failed", phone=phone_number, error=str(e), exc_info=True)
