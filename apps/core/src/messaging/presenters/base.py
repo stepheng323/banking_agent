@@ -17,15 +17,26 @@ class PresentationContext(BaseModel):
     # Allows Presenters to know if they can use Flows, rich media, etc.
 
 
+class PresentationResult(BaseModel):
+    """Result of attempting to present intents to a channel."""
+
+    success: bool = True
+    message_ids: list[str] = Field(default_factory=list)
+    errors: list[str] = Field(default_factory=list)
+
+
 class Presenter(Protocol):
     """Protocol for Channel Presenters."""
 
-    async def present(self, intents: list[UiIntent], context: PresentationContext) -> None:
+    async def present(self, intents: list[UiIntent], context: PresentationContext) -> PresentationResult:
         """
         Render a list of UI intents to the user via the specific channel.
 
         Args:
             intents: List of abstract UI intents from the Orchestrator.
             context: Channel capability context.
+
+        Returns:
+            PresentationResult containing success status and generated message IDs.
         """
         ...
