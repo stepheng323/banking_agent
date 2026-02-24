@@ -12,7 +12,7 @@ from typing import Any, Literal
 class UiIntent:
     """Base class for all UI intents."""
 
-    pass
+    actionable_payload: dict[str, Any] | None = None
 
 
 @dataclass
@@ -22,7 +22,7 @@ class Say(UiIntent):
     text: str
 
     def to_dict(self) -> dict[str, Any]:
-        return {"type": "say", "text": self.text}
+        return {"type": "say", "text": self.text, "actionable_payload": self.actionable_payload}
 
 
 @dataclass
@@ -58,6 +58,7 @@ class RequestConfirmation(UiIntent):
             "task_ids": self.task_ids,
             "summary": self.summary,
             "idempotency_key": self.correlation_id,
+            "actionable_payload": self.actionable_payload,
         }
 
 
@@ -79,6 +80,7 @@ class RequestAuth(UiIntent):
             "idempotency_key": self.correlation_id,
             "header": self.reason,
             "summary": self.summary,
+            "actionable_payload": self.actionable_payload,
         }
 
 
@@ -96,6 +98,7 @@ class ShowReceipt(UiIntent):
             "task_id": self.task_id,
             "receipt": self.receipt,
             "caption": self.caption,
+            "actionable_payload": self.actionable_payload,
         }
 
 
@@ -113,6 +116,7 @@ class ShowFlow(UiIntent):
             "flow_id": self.flow_id,
             "flow_config": self.flow_config,
             "fallback_text": self.fallback_text,
+            "actionable_payload": self.actionable_payload,
         }
 
 
@@ -121,41 +125,53 @@ def reconstruct_intent(data: dict[str, Any]) -> UiIntent | None:
     msg_type = data.get("type")
 
     if msg_type == "say":
-        return Say(text=data["text"])
+        intent = Say(text=data["text"])
+        intent.actionable_payload = data.get("actionable_payload")
+        return intent
 
     elif msg_type == "auth_request":
-        return RequestAuth(
+        intent = RequestAuth(
             method=data.get("method", "pin"),
             task_ids=data.get("task_ids", []),
             correlation_id=data.get("idempotency_key", "unknown"),
             reason=data.get("header"),
             summary=data.get("summary"),
         )
+        intent.actionable_payload = data.get("actionable_payload")
+        return intent
 
     elif msg_type == "request_confirmation":
-        return RequestConfirmation(
+        intent = RequestConfirmation(
             task_ids=data.get("task_ids", []),
             summary=data.get("summary", ""),
             correlation_id=data.get("idempotency_key", "unknown"),
             token=data.get("idempotency_key", "unknown"),
         )
+        intent.actionable_payload = data.get("actionable_payload")
+        return intent
 
     elif msg_type == "show_receipt":
-        return ShowReceipt(
+        intent = ShowReceipt(
             task_id=data.get("task_id", "unknown"),
             receipt=data.get("receipt", {}),
             caption=data.get("caption", ""),
         )
+        intent.actionable_payload = data.get("actionable_payload")
+        return intent
 
     elif msg_type == "image" and "receipt" in data.get("caption", "").lower():
         # Legacy/Image based receipt
-        return ShowReceipt(task_id="unknown", receipt={"url": data["url"]}, caption=data.get("caption", ""))
+        intent = ShowReceipt(task_id="unknown", receipt={"url": data["url"]}, caption=data.get("caption", ""))
+        intent.actionable_payload = data.get("actionable_payload")
+        return intent
 
     elif msg_type == "flow":
-        return ShowFlow(
+        intent = ShowFlow(
             flow_id=data.get("flow_id", ""),
             flow_config=data.get("flow_config", {}),
             fallback_text=data.get("fallback_text", ""),
         )
+        intent.actionable_payload = data.get("actionable_payload")
+        return intent
 
     return None

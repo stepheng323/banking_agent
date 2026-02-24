@@ -27,9 +27,9 @@ class FlowEvent:
     error: str | None = None
     extra_data: dict[str, Any] | None = None
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
-        result = {
+        result: dict[str, Any] = {
             "event_type": self.event_type.value,
             "phone_number": self.phone_number,
             "flow_type": self.flow_type,
@@ -44,6 +44,6 @@ class FlowEvent:
         return result
 
 
-# Queue name constants
 FLOW_EVENTS_QUEUE = "banking:flow_events"
 OUTBOX_QUEUE = "banking:outbox"
+ACTIONABLE_MESSAGES_QUEUE = "banking:actionable_messages"

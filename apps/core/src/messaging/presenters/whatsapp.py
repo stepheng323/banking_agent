@@ -10,7 +10,7 @@ from apps.core.src.agent.orchestrator.models.intents import (
     ShowReceipt,
     UiIntent,
 )
-from apps.core.src.messaging.presenters.base import PresentationContext, Presenter
+from apps.core.src.messaging.presenters.base import PresentationContext, PresentationResult, Presenter
 from shared.clients.abstractions.messaging import MessagingClient
 from shared.config.settings import settings
 from shared.utils.logging import get_logger
@@ -24,33 +24,44 @@ class WhatsAppPresenter(Presenter):
     def __init__(self, messaging_client: MessagingClient):
         self.client = messaging_client
 
-    async def present(self, intents: list[UiIntent], context: PresentationContext) -> None:
+    async def present(self, intents: list[UiIntent], context: PresentationContext) -> PresentationResult:
         """Render intents to WhatsApp."""
+        result = PresentationResult()
+
         for intent in intents:
             try:
+                msg_id = None
                 if isinstance(intent, Say):
-                    await self._present_say(intent, context)
+                    msg_id = await self._present_say(intent, context)
                 elif isinstance(intent, RequestAuth):
-                    await self._present_auth(intent, context)
+                    msg_id = await self._present_auth(intent, context)
                 elif isinstance(intent, RequestConfirmation):
-                    await self._present_confirmation(intent, context)
+                    msg_id = await self._present_confirmation(intent, context)
                 elif isinstance(intent, ShowReceipt):
-                    await self._present_receipt(intent, context)
+                    msg_id = await self._present_receipt(intent, context)
                 elif isinstance(intent, ShowFlow):
-                    await self._present_flow(intent, context)
+                    msg_id = await self._present_flow(intent, context)
                 # Future: Handle other intents (Ask, ShowOptions, etc.)
                 else:
                     logger.warning("unsupported_intent", type=type(intent).__name__)
+
+                if msg_id:
+                    result.message_ids.append(msg_id)
             except Exception as e:
                 logger.error("presenter_error", intent=type(intent), error=str(e))
+                result.errors.append(str(e))
+                result.success = False
 
-    async def _present_say(self, intent: Say, context: PresentationContext) -> None:
-        await self.client.send_text(
+        return result
+
+    async def _present_say(self, intent: Say, context: PresentationContext) -> str | None:
+        resp = await self.client.send_text(
             to=context.phone_number,
             text=intent.text,
         )
+        return resp.get("messages", [{}])[0].get("id") if isinstance(resp, dict) else None
 
-    async def _present_auth(self, intent: RequestAuth, context: PresentationContext) -> None:
+    async def _present_auth(self, intent: RequestAuth, context: PresentationContext) -> str | None:
         supports_flows = context.capabilities.get("flows", False)
 
         if intent.method == "pin" and supports_flows:
@@ -66,7 +77,7 @@ class WhatsAppPresenter(Presenter):
             if "Transfer" in header:
                 cta = "Authorize Transfer"
 
-            await self.client.send_flow(
+            resp = await self.client.send_flow(
                 to=context.phone_number,
                 flow_id=settings.pin_confirmation_flow_id,
                 flow_config={
@@ -80,14 +91,16 @@ class WhatsAppPresenter(Presenter):
                     },
                 },
             )
+            return resp.message_id
         else:
             logger.warning("auth_flow_unsupported", phone=context.phone_number)
-            await self.client.send_text(
+            resp = await self.client.send_text(
                 to=context.phone_number,
                 text="Secure transaction requires WhatsApp Flows support. Please update your WhatsApp version.",
             )
+            return resp.get("messages", [{}])[0].get("id") if isinstance(resp, dict) else None
 
-    async def _present_confirmation(self, intent: RequestConfirmation, context: PresentationContext) -> None:
+    async def _present_confirmation(self, intent: RequestConfirmation, context: PresentationContext) -> str | None:
         supports_flows = context.capabilities.get("flows", False)
 
         if supports_flows:
@@ -98,7 +111,7 @@ class WhatsAppPresenter(Presenter):
             elif "Data" in (intent.summary or ""):
                 prefix = "data"
 
-            await self.client.send_flow(
+            resp = await self.client.send_flow(
                 to=context.phone_number,
                 flow_id=settings.pin_confirmation_flow_id,
                 flow_config={
@@ -112,14 +125,16 @@ class WhatsAppPresenter(Presenter):
                     },
                 },
             )
+            return resp.message_id
         else:
             logger.warning("confirmation_flow_unsupported", phone=context.phone_number)
-            await self.client.send_text(
+            resp = await self.client.send_text(
                 to=context.phone_number,
                 text="Confirmation requires WhatsApp Flows support. Please update your WhatsApp version.",
             )
+            return resp.get("messages", [{}])[0].get("id") if isinstance(resp, dict) else None
 
-    async def _present_receipt(self, intent: ShowReceipt, context: PresentationContext) -> None:
+    async def _present_receipt(self, intent: ShowReceipt, context: PresentationContext) -> str | None:
         # Decide: Image vs Text
         # For now, let's assume if we have a receipt dict, we want to try generic text or specialized renderer.
         # Since I don't have access to the PDF renderer here directly, I might rely on pre-generated URLs or just text.
@@ -133,39 +148,43 @@ class WhatsAppPresenter(Presenter):
         if "image_base64" in receipt_data:
             mime_type = receipt_data.get("mime_type", "image/png")
             image_bytes = base64.b64decode(receipt_data["image_base64"])
-            await self.client.send_image_data(
+            resp = await self.client.send_image_data(
                 to=context.phone_number,
                 data=image_bytes,
                 caption=intent.caption or "Transaction Receipt",
                 mime_type=mime_type,
             )
-            return
+            return resp.get("messages", [{}])[0].get("id") if isinstance(resp, dict) else None
 
         if "url" in receipt_data:
-            await self.client.send_image(
+            resp = await self.client.send_image(
                 to=context.phone_number,
                 image_url=receipt_data["url"],
                 caption=intent.caption or "Transaction Receipt",
             )
+            return resp.get("messages", [{}])[0].get("id") if isinstance(resp, dict) else None
         else:
             # Fallback text summary
             lines = [f"🧾 *{intent.caption or 'Receipt'}*"]
             for k, v in receipt_data.items():
                 if v:
                     lines.append(f"*{k}:* {v}")
-            await self.client.send_text(
+            resp = await self.client.send_text(
                 to=context.phone_number,
                 text="\n".join(lines),
             )
+            return resp.get("messages", [{}])[0].get("id") if isinstance(resp, dict) else None
 
-    async def _present_flow(self, intent: ShowFlow, context: PresentationContext) -> None:
+    async def _present_flow(self, intent: ShowFlow, context: PresentationContext) -> str | None:
         supports_flows = context.capabilities.get("flows", False)
         if supports_flows and intent.flow_id:
-            await self.client.send_flow(
+            resp = await self.client.send_flow(
                 to=context.phone_number,
                 flow_id=intent.flow_id,
                 flow_config=intent.flow_config,
             )
+            return resp.message_id
         else:
             fallback = intent.fallback_text or "This action requires flow support on your channel."
-            await self.client.send_text(to=context.phone_number, text=fallback)
+            resp = await self.client.send_text(to=context.phone_number, text=fallback)
+            return resp.get("messages", [{}])[0].get("id") if isinstance(resp, dict) else None

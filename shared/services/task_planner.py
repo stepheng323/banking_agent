@@ -40,8 +40,8 @@ Your job: Classify intent, detect language, and break request into executable ta
 | airtime | "buy airtime", "recharge 1k", "credit 500", "airtime" |
 | data | "buy data", "data plan", "get me 1GB", "data" |
 | query | "show transactions", "how much did I spend?", "transaction history", "query" |
-| beneficiary | "save beneficiary", "add to saved", "add my mum", "delete john", "list beneficiaries", "yes" (if context explicitly suggests saving) |
-| account | "my balance", "show my accounts", "link account", "set default", "check balance", "overall balance", "balance" |
+| beneficiary | "save beneficiary", "add to saved", "add my mum", "delete john", "list beneficiaries", "yes" |
+| account | "my balance", "show my accounts", "link account", "set default", "check balance", "balance" |
 | support | "my transfer failed", "I was debited twice", "support", "help" |
 | faq | "how do transfers work?", "what are the fees?", "faq" |
 | orchestrator | "yes/no/not now" when asked to resume a stashed session |
@@ -147,7 +147,7 @@ Your job: Classify intent, detect language, and break request into executable ta
 - "Send 10k to Mum" -> transfer, t1 send_money amount=10000 recipient="Mum" MONEY_MOVE
 - "Send 10k to Tolu for food" -> transfer, t1 send_money amount=10000 recipient="Tolu" narration="for food"
 - "Send 5k from First Bank" -> transfer, t1 send_money amount=5000 source_bank_name="First Bank"
-- "Send 50k to Mum and 30k to Dad" -> transfer, is_complex=true, t1 amount=50000 recipient="Mum" | t2 amount=30000 recipient="Dad"
+- "Send 50k to Mum and 30k to Dad" -> transfer, is_complex=true, t1 amount=50000 | t2 amount=30000
 - "Send 5k to Mum and check balance" -> mixed, t1 transfer MONEY_MOVE | t2 account check_balance READ_ONLY
 - "Buy 1k airtime" -> airtime, t1 buy_airtime amount=1000 MONEY_MOVE
 - "Get 2GB data" -> data, t1 buy_data plan="2GB" MONEY_MOVE

@@ -69,7 +69,7 @@ class TransactionResolver:
         Security: Only resolves if message is owned by user.
         """
         try:
-            am = self.am_repo.get_by_wa_message_id_for_user(quoted_message_id, user_id)
+            am = self.am_repo.get_by_channel_message_id_for_user(quoted_message_id, user_id)
             if not am:
                 return None
 

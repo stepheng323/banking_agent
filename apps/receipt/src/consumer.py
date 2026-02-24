@@ -147,6 +147,7 @@ class ReceiptJobConsumer:
                                     "mime_type": "image/png",
                                 },
                                 "caption": f"Transfer Receipt: {reference}",
+                                "actionable_payload": {"transaction_id": reference},
                             }
                         ]
                         beneficiary_suggestion = self._extract_beneficiary_suggestion(payload)

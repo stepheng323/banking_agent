@@ -21,6 +21,8 @@ class ParsedTelegramMessage(BaseModel):
 
     web_app_data: str | None = None
 
+    quoted_message_id: str | None = None
+
     contact_phone_number: str | None = None
 
     from_user_id: str | None = None
@@ -67,6 +69,9 @@ def parse_update(update: dict[str, Any]) -> ParsedTelegramMessage | None:
     from_user = msg.get("from", {})
     chat_id = str(chat.get("id", ""))
 
+    reply_to = msg.get("reply_to_message")
+    quoted_message_id = str(reply_to.get("message_id")) if reply_to and reply_to.get("message_id") else None
+
     web_app: dict[str, Any] | None = msg.get("web_app_data")
     if web_app:
         return ParsedTelegramMessage(
@@ -75,6 +80,7 @@ def parse_update(update: dict[str, Any]) -> ParsedTelegramMessage | None:
             text="",
             type="web_app_data",
             web_app_data=web_app.get("data"),
+            quoted_message_id=quoted_message_id,
             from_user_id=str(from_user.get("id", "")),
             from_username=from_user.get("username"),
             from_first_name=from_user.get("first_name"),
@@ -90,6 +96,7 @@ def parse_update(update: dict[str, Any]) -> ParsedTelegramMessage | None:
             text=msg.get("caption", ""),
             type="photo",
             photo_file_id=best_photo.get("file_id"),
+            quoted_message_id=quoted_message_id,
             from_user_id=str(from_user.get("id", "")),
             from_username=from_user.get("username"),
             from_first_name=from_user.get("first_name"),
@@ -104,6 +111,7 @@ def parse_update(update: dict[str, Any]) -> ParsedTelegramMessage | None:
             text="",
             type="audio",
             audio_file_id=audio.get("file_id"),
+            quoted_message_id=quoted_message_id,
             from_user_id=str(from_user.get("id", "")),
             from_username=from_user.get("username"),
             from_first_name=from_user.get("first_name"),
@@ -118,6 +126,7 @@ def parse_update(update: dict[str, Any]) -> ParsedTelegramMessage | None:
             text="",
             type="contact",
             contact_phone_number=contact_obj.get("phone_number"),
+            quoted_message_id=quoted_message_id,
             from_user_id=str(from_user.get("id", "")),
             from_username=from_user.get("username"),
             from_first_name=from_user.get("first_name"),
@@ -131,6 +140,7 @@ def parse_update(update: dict[str, Any]) -> ParsedTelegramMessage | None:
             chat_id=chat_id,
             text=text_content,
             type="text",
+            quoted_message_id=quoted_message_id,
             from_user_id=str(from_user.get("id", "")),
             from_username=from_user.get("username"),
             from_first_name=from_user.get("first_name"),
