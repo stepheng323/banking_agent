@@ -311,7 +311,7 @@ class TelegramWebhookService:
             flow_data=None,
             media_id=msg.photo_file_id or msg.audio_file_id,
             mime_type=None,
-            quoted_message_id=None,
+            quoted_message_id=msg.quoted_message_id,
             channel_metadata=metadata,
             timestamp=datetime.now(tz=UTC),
             channel="telegram",
