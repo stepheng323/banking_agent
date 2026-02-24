@@ -21,6 +21,7 @@ from apps.core.src.agent.orchestrator import OrchestratorAgent
 from apps.core.src.agent.orchestrator.config import OrchestratorDependencies
 from apps.core.src.agent.orchestrator.services.media_service import MediaService
 from apps.core.src.queue_consumers import MessageConsumer, OutboxConsumer, TransactionConsumer
+from apps.core.src.queue_consumers.actionable_consumer import ActionableMessageConsumer
 from apps.core.src.queue_consumers.flow_event_consumer import FlowEventConsumer
 from shared.cache.bank_cache import BankCacheService
 from shared.cache.redis_client import RedisClient
@@ -46,7 +47,9 @@ from shared.services.task_planner import refresh_planner_system_prompt
 from shared.services.task_queue import TaskQueueService
 
 
-def setup_dependencies() -> tuple[MessageConsumer, TransactionConsumer, FlowEventConsumer, OutboxConsumer]:
+def setup_dependencies() -> tuple[
+    MessageConsumer, TransactionConsumer, FlowEventConsumer, OutboxConsumer, ActionableMessageConsumer
+]:
     """Setup deps"""
     validate_catalog_completeness()
     policy = get_cached_policy(force_reload=True)
@@ -208,4 +211,6 @@ def setup_dependencies() -> tuple[MessageConsumer, TransactionConsumer, FlowEven
         messaging_clients=messaging_clients,
     )
 
-    return message_consumer, transaction_consumer, flow_event_consumer, outbox_consumer
+    actionable_consumer = ActionableMessageConsumer(redis_queue=redis_queue)
+
+    return message_consumer, transaction_consumer, flow_event_consumer, outbox_consumer, actionable_consumer
