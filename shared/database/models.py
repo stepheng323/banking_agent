@@ -316,7 +316,7 @@ class ActionableMessage(Base):
         nullable=False,
         index=True,
     )
-    wa_message_id = Column(String, unique=True, nullable=False, index=True)
+    channel_message_id = Column(String, unique=True, nullable=False, index=True)
     message_type = Column(String, nullable=False, index=True)  # Uses ActionableMessageTypeEnum
     message_data = Column(JSON, nullable=False)
     created_at = Column(DateTime, server_default=text("now()"), nullable=False)
@@ -325,7 +325,7 @@ class ActionableMessage(Base):
     user = relationship("User")
 
     def __repr__(self):
-        return f"<ActionableMessage(id={self.id}, wa_msg_id={self.wa_message_id}, type={self.message_type})>"
+        return f"<ActionableMessage(id={self.id}, channel_msg_id={self.channel_message_id}, type={self.message_type})>"
 
 
 class FAQEntry(Base):

@@ -1,8 +1,10 @@
 """Repository for ActionableMessage operations."""
 
 from datetime import datetime
+from typing import Any, cast
 
 from sqlalchemy import delete, select
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.database.models import ActionableMessage
@@ -25,7 +27,9 @@ class ActionableMessageRepository(BaseRepository[ActionableMessage]):
         )
         return list(result.scalars().all())
 
-    async def get_by_wa_message_id_for_user(self, wa_message_id: str, user_id: str) -> ActionableMessage | None:
+    async def get_by_channel_message_id_for_user(
+        self, channel_message_id: str, user_id: str
+    ) -> ActionableMessage | None:
         """Get actionable message only if owned by user.
 
         Security: Prevents cross-user quote hydration where User A
@@ -33,7 +37,7 @@ class ActionableMessageRepository(BaseRepository[ActionableMessage]):
         """
         result = await self.db.execute(
             select(ActionableMessage).filter(
-                ActionableMessage.wa_message_id == wa_message_id,
+                ActionableMessage.channel_message_id == channel_message_id,
                 ActionableMessage.user_id == user_id,
                 ActionableMessage.expires_at > datetime.utcnow(),
             )
@@ -42,9 +46,11 @@ class ActionableMessageRepository(BaseRepository[ActionableMessage]):
 
     async def cleanup_expired(self) -> int:
         """Delete expired messages. Returns count deleted."""
-        # Note: delete() with execution.
+
         result = await self.db.execute(
             delete(ActionableMessage).where(ActionableMessage.expires_at <= datetime.utcnow())
         )
         await self.db.commit()
-        return result.rowcount
+
+        cursor_result = cast(CursorResult[Any], result)
+        return cursor_result.rowcount
