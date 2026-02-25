@@ -1,3 +1,4 @@
+import re
 from typing import Any, cast
 
 from langchain_core.runnables import RunnableConfig
@@ -92,6 +93,70 @@ def _dependency_resolution(task: Any, all_tasks: dict[str, Any]) -> tuple[str, s
         if dep_task.stage != TaskStage.COMPLETED:
             return "wait", dep_id
     return "ready", None
+
+
+def _build_show_options_entry(
+    *,
+    details: dict[str, Any] | None,
+    prompt_text: str,
+    task_id: str,
+    focused_missing_fields: list[str],
+) -> dict[str, Any] | None:
+    if not isinstance(details, dict):
+        return None
+
+    options: list[dict[str, str]] = []
+    raw_options = details.get("options")
+    if isinstance(raw_options, list):
+        for idx, option in enumerate(raw_options, start=1):
+            if not isinstance(option, dict):
+                continue
+            option_id = str(option.get("id", "")).strip() or str(idx)
+            title = option.get("title") or option.get("label") or f"Option {idx}"
+            options.append({"id": option_id, "title": str(title)})
+
+    if not options and "beneficiary_id" in focused_missing_fields:
+        raw_candidates = details.get("candidates")
+        if isinstance(raw_candidates, list):
+            for idx, candidate in enumerate(raw_candidates, start=1):
+                if not isinstance(candidate, dict):
+                    continue
+                option_id = (
+                    str(candidate.get("option_id", "")).strip()
+                    or str(candidate.get("beneficiary_id", "")).strip()
+                    or str(candidate.get("id", "")).strip()
+                    or str(idx)
+                )
+                label = candidate.get("label") or candidate.get("title") or f"Option {idx}"
+                options.append({"id": option_id, "title": str(label)})
+
+    if not options:
+        return None
+
+    logger.info("option_prompt_emitted", task_id=task_id, option_count=len(options))
+    return {
+        "type": "show_options",
+        "title": prompt_text,
+        "task_ids": [task_id],
+        "options": options,
+    }
+
+
+def _compact_prompt_for_options(prompt_text: str) -> str:
+    """Strip duplicated numbered option lines when native option UI is available."""
+    lines = prompt_text.splitlines()
+    compact_lines = [line for line in lines if not re.match(r"^\s*\d+[\).\s-]+", line)]
+    deduped_lines: list[str] = []
+    last_normalized = ""
+    for line in compact_lines:
+        normalized = re.sub(r"\s+", " ", line).strip().lower()
+        if normalized and normalized == last_normalized:
+            continue
+        deduped_lines.append(line)
+        if normalized:
+            last_normalized = normalized
+    compact = "\n".join(deduped_lines).strip()
+    return compact or prompt_text
 
 
 async def advance_wave(state: OrchestratorState, config: RunnableConfig) -> dict[str, Any]:
@@ -215,6 +280,23 @@ async def advance_wave(state: OrchestratorState, config: RunnableConfig) -> dict
                 task.payload["error"] = "unresolved dependency deadlock"
 
     if agg.missing_fields_by_task:
+        beneficiary_blockers = [
+            tid for tid, fields in agg.missing_fields_by_task.items() if "beneficiary_id" in set(fields)
+        ]
+        if beneficiary_blockers:
+            focused_beneficiary_tid = next((tid for tid in current_wave if tid in beneficiary_blockers), beneficiary_blockers[0])
+            for tid in list(agg.missing_fields_by_task):
+                if tid != focused_beneficiary_tid:
+                    agg.missing_fields_by_task.pop(tid, None)
+                    agg.prompts_by_task.pop(tid, None)
+                    agg.details_by_task.pop(tid, None)
+            agg.missing_fields_by_task[focused_beneficiary_tid] = ["beneficiary_id"]
+            logger.info(
+                "beneficiary_ambiguity_blocking_mode",
+                focused_task_id=focused_beneficiary_tid,
+                suppressed_count=max(len(beneficiary_blockers) - 1, 0),
+            )
+
         # [Prioritized Prompting]
         # If ANY task needs basic details (beneficiary, amount, etc.), suppress "Execution" prompts (Source/PIN)
         # for ALL tasks. This prevents confusing parallel prompts like "Select Account" + "Who is Dad?".
@@ -358,8 +440,12 @@ async def advance_wave(state: OrchestratorState, config: RunnableConfig) -> dict
 
                 focused_missing_fields = agg.missing_fields_by_task[focused_tid]
                 focused_worker_prompt = agg.prompts_by_task.get(focused_tid)
-                if "beneficiary_id" in focused_missing_fields and focused_worker_prompt:
-                    prompt_text = focused_worker_prompt
+                focused_details = agg.details_by_task.get(focused_tid)
+                has_structured_options = isinstance(focused_details, dict) and isinstance(
+                    focused_details.get("options"), list
+                )
+                if focused_worker_prompt and ("beneficiary_id" in focused_missing_fields or has_structured_options):
+                    prompt_text = _compact_prompt_for_options(focused_worker_prompt)
                 else:
                     prompt_text = format_single_transfer_recipient_prompt(
                         focused_name=focused_name,
@@ -386,26 +472,18 @@ async def advance_wave(state: OrchestratorState, config: RunnableConfig) -> dict
                     fields_by_task={focused_tid: agg.missing_fields_by_task[focused_tid]},
                     prompt=prompt_text,
                 )
-                outbox_entries: list[dict[str, Any]] = [{"type": "say", "text": prompt_text}]
-                if "beneficiary_id" in focused_missing_fields:
-                    details = agg.details_by_task.get(focused_tid, {})
-                    raw_candidates = details.get("candidates") if isinstance(details, dict) else None
-                    options: list[dict[str, str]] = []
-                    if isinstance(raw_candidates, list):
-                        for idx, candidate in enumerate(raw_candidates, start=1):
-                            if not isinstance(candidate, dict):
-                                continue
-                            label = candidate.get("label") or candidate.get("title") or f"Option {idx}"
-                            options.append({"id": str(idx), "title": str(label)})
-                    if options:
-                        outbox_entries.append(
-                            {
-                                "type": "show_options",
-                                "title": prompt_text,
-                                "task_ids": [focused_tid],
-                                "options": options,
-                            }
-                        )
+                details = focused_details
+                options_entry = _build_show_options_entry(
+                    details=details,
+                    prompt_text=prompt_text,
+                    task_id=focused_tid,
+                    focused_missing_fields=focused_missing_fields,
+                )
+                outbox_entries: list[dict[str, Any]]
+                if options_entry:
+                    outbox_entries = [options_entry]
+                else:
+                    outbox_entries = [{"type": "say", "text": prompt_text}]
                 return {
                     "pending_interrupt": interrupt,
                     "tasks": state.tasks,
@@ -472,16 +550,34 @@ async def advance_wave(state: OrchestratorState, config: RunnableConfig) -> dict
                 if name and name in found_names:
                     task.payload["recipient_ui_confirmed"] = True
 
+        options_entry: dict[str, Any] | None = None
+        if len(agg.missing_fields_by_task) == 1:
+            task_id = next(iter(agg.missing_fields_by_task.keys()))
+            details = agg.details_by_task.get(task_id)
+            focused_missing_fields = agg.missing_fields_by_task.get(task_id, [])
+            options_entry = _build_show_options_entry(
+                details=details,
+                prompt_text=prompt_text,
+                task_id=task_id,
+                focused_missing_fields=focused_missing_fields,
+            )
+            if options_entry:
+                prompt_text = _compact_prompt_for_options(prompt_text)
+                options_entry["title"] = prompt_text
+
         interrupt = PendingInterrupt(
             kind="input",
             task_ids=list(agg.missing_fields_by_task.keys()),
             fields_by_task=agg.missing_fields_by_task,
             prompt=prompt_text,
         )
+        outbox_entries: list[dict[str, Any]] = [{"type": "say", "text": prompt_text}]
+        if options_entry:
+            outbox_entries = [options_entry]
         return {
             "pending_interrupt": interrupt,
             "tasks": state.tasks,
-            "outbox": _with_policy_notice(state, [{"type": "say", "text": prompt_text}]),
+            "outbox": _with_policy_notice(state, outbox_entries),
             "policy_notice": None,
         }
 

@@ -21,6 +21,15 @@ from shared.utils.logging import get_logger
 logger = get_logger(__name__)
 
 
+def _canonical_beneficiary_id(value: str | None) -> str | None:
+    if not value:
+        return None
+    text = value.strip()
+    if text.startswith("bene:"):
+        return text.split(":", 1)[1].strip() or None
+    return text
+
+
 def _normalize_name(value: str | None) -> str:
     if not value:
         return ""
@@ -111,7 +120,8 @@ async def resolve_beneficiary(
     """Resolve recipient name to bank details using BeneficiaryMatcher."""
     locale = ctx.language
     if payload.beneficiary_id:
-        selected = next((b for b in ctx.beneficiaries if str(b.get("id")) == payload.beneficiary_id), None)
+        selected_id = _canonical_beneficiary_id(payload.beneficiary_id)
+        selected = next((b for b in ctx.beneficiaries if str(b.get("id")) == selected_id), None)
         if selected:
             return TransactionResult(
                 outcome=TransactionOutcome.OK,
@@ -125,6 +135,7 @@ async def resolve_beneficiary(
                     "name_mismatch": False,
                     "name_match_score": None,
                     "name_mismatch_warning": None,
+                    "beneficiary_candidates": [],
                 },
             )
 
@@ -318,14 +329,27 @@ async def resolve_beneficiary(
                 "name_mismatch": False,
                 "name_match_score": None,
                 "name_mismatch_warning": None,
+                "beneficiary_candidates": [],
             },
         )
     elif status == "clarify" and candidates:
-        candidate_list = [
-            {"id": str(b.id), "label": f"{b.account_name or b.alias} • {b.bank_name} • ****{str(b.account_number)[-4:]}"}
-            for b in candidates
-        ]
-        numbered_lines = [f"{idx}. {candidate['label']}" for idx, candidate in enumerate(candidate_list, start=1)]
+        candidate_list = []
+        options = []
+        for idx, candidate in enumerate(candidates, start=1):
+            beneficiary_id = str(candidate.id)
+            option_id = f"bene:{beneficiary_id}"
+            label = f"{candidate.account_name or candidate.alias} • {candidate.bank_name} • ****{str(candidate.account_number)[-4:]}"
+            candidate_list.append(
+                {
+                    "index": idx,
+                    "beneficiary_id": beneficiary_id,
+                    "option_id": option_id,
+                    "label": label,
+                }
+            )
+            options.append({"id": option_id, "title": label})
+
+        numbered_lines = [f"{candidate['index']}. {candidate['label']}" for candidate in candidate_list]
         candidates_list = "\n".join(numbered_lines)
         prompt = render_message(
             "response.templates.clarify_beneficiary",
@@ -335,14 +359,21 @@ async def resolve_beneficiary(
                 "candidates_list": candidates_list,
             },
         )
-        reply_hint = render_message("query.disambiguation.reply_number_or_rephrase", locale)
+        reply_hint = render_message("query.clarify.reply_number_or_rephrase", locale)
+        logger.info(
+            "beneficiary_ambiguity_prompted",
+            recipient_name=payload.recipient_name,
+            candidate_count=len(candidate_list),
+        )
         return TransactionResult(
             outcome=TransactionOutcome.NEEDS_INPUT,
             required_fields=["beneficiary_id"],
             prompt=f"{prompt}\n{reply_hint}",
+            patch={"beneficiary_candidates": candidate_list},
             details={
                 "ambiguity": "MULTIPLE_BENEFICIARIES",
                 "candidates": candidate_list,
+                "options": options,
             },
         )
 

@@ -53,6 +53,13 @@ class ValidationStep(TransferStep):
                                 },
                             ),
                             patch={"suggested_amount": suggested_amount},
+                            details={
+                                "option_context": "TRANSFER_AMOUNT_SUGGESTION",
+                                "options": [
+                                    {"id": "1", "title": f"Use ₦{suggested_amount:,.0f}"},
+                                    {"id": "2", "title": "Enter a new amount"},
+                                ],
+                            },
                         )
                 except Exception as exc:
                     logger.warning("suggested_amount_lookup_failed", error=str(exc))

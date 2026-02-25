@@ -480,12 +480,21 @@ async def _handle_purchase_task(
         return
 
     user_msg = _maybe_user_message(task, ctx.state)
+    required_fields: list[str] = []
+    previous_response: str | None = None
+    if ctx.state.last_interrupt and task_id in ctx.state.last_interrupt.task_ids:
+        raw_required_fields = ctx.state.last_interrupt.fields_by_task.get(task_id, [])
+        required_fields = [field for field in raw_required_fields if isinstance(field, str)]
+        previous_response = ctx.state.last_interrupt.prompt
+
     context_data = {
         "phone_number": ctx.state.phone_number,
         "user_id": ctx.state.loaded_context.get("user_id"),
         "accounts": ctx.state.loaded_context.get("accounts", []),
         "beneficiaries": ctx.state.loaded_context.get("beneficiaries", []),
         "language": _state_locale(ctx.state),
+        "required_fields": required_fields,
+        "previous_response": previous_response,
     }
     if include_channel:
         context_data["channel"] = ctx.state.channel

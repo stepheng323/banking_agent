@@ -7,12 +7,14 @@ logger = get_logger(__name__)
 
 def try_extract_numeric_index(user_message: str, domain: str) -> dict[str, Any] | None:
     """
-    Attempts to extract a numeric index (1-9) from a user message.
+    Attempts to extract a numeric index from a user message.
     Used as a deterministic fallback for account selection.
     """
     clean_msg = user_message.strip()
-    if clean_msg.isdigit() and len(clean_msg) == 1:
+    if clean_msg.isdigit():
         index = int(clean_msg)
+        if index < 1:
+            return None
         logger.info(f"{domain}_extraction_numeric_fallback", index=index)
         return {
             "source_account_index": index,

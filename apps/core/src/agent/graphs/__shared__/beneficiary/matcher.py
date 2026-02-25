@@ -36,19 +36,38 @@ class BeneficiaryMatcher:
             return "ask_details", None, []
 
         normalized_query = _normalize_text(name)
+        query_tokens = normalized_query.split()
 
-        # First, check for exact alias match (case-insensitive) - highest priority
+        # First, collect exact matches (case-insensitive).
+        # For short single-token queries (e.g. "tolu"), one exact alias can still be ambiguous
+        # if multiple beneficiaries contain the same token.
+        exact_matches: list[Beneficiary] = []
         for b in beneficiaries:
             alias = _normalize_text(str(b.alias or ""))
             account_name = _normalize_text(str(b.account_name or ""))
 
-            # Exact alias match takes priority
-            if alias and alias == normalized_query:
-                return "single", b, []
+            if (alias and alias == normalized_query) or (account_name and account_name == normalized_query):
+                exact_matches.append(b)
 
-            # Exact account_name match (secondary priority)
-            if account_name and account_name == normalized_query:
-                return "single", b, []
+        if len(exact_matches) > 1:
+            return "clarify", None, exact_matches[: self.max_candidates]
+
+        if len(exact_matches) == 1:
+            exact = exact_matches[0]
+            if len(query_tokens) == 1:
+                related_matches: list[Beneficiary] = [exact]
+                for b in beneficiaries:
+                    if b is exact:
+                        continue
+                    alias = _normalize_text(str(b.alias or ""))
+                    account_name = _normalize_text(str(b.account_name or ""))
+                    if normalized_query and (
+                        (alias and normalized_query in alias) or (account_name and normalized_query in account_name)
+                    ):
+                        related_matches.append(b)
+                if len(related_matches) > 1:
+                    return "clarify", None, related_matches[: self.max_candidates]
+            return "single", exact, []
 
         startswith_matches = []
         for b in beneficiaries:

@@ -38,8 +38,11 @@ class ExtractionStep(AirtimeStep):
             return TransactionResult(outcome=TransactionOutcome.OK, patch={"skip_extraction": False})
 
         # [DETERMINISTIC FALLBACK] Numeric index selection
-        # If user replies with "1" or "2" to an account selection prompt, map it directly.
-        numeric_patch = try_extract_numeric_index(self.user_message, "airtime")
+        # If user replies with "1" or "2" while selecting source account, map it directly.
+        raw_required_fields = getattr(worker_context, "required_fields", [])
+        required_fields = raw_required_fields if isinstance(raw_required_fields, list) else []
+        waiting_for_source_account = "source_account_id" in required_fields
+        numeric_patch = try_extract_numeric_index(self.user_message, "airtime") if waiting_for_source_account else None
         if numeric_patch:
             return TransactionResult(
                 outcome=TransactionOutcome.OK,

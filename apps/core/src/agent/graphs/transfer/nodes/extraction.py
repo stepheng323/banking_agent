@@ -12,39 +12,103 @@ from apps.core.src.agent.graphs.transfer.models.types import (
 from apps.core.src.agent.graphs.transfer.pipeline.base import TransferStep
 from apps.core.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
 from shared.database.models import Beneficiary
+from shared.i18n import render_message
 from shared.services.affirmation.service import AffirmationService
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
 
 
-def _resolve_beneficiary_selection_from_index(
+def _canonical_beneficiary_id(value: str) -> str:
+    text = value.strip()
+    if text.startswith("bene:"):
+        return text.split(":", 1)[1].strip()
+    return text
+
+
+def _render_beneficiary_retry_prompt(
+    *,
+    recipient_name: str | None,
+    candidates: list[dict[str, Any]],
+    locale: str,
+) -> str:
+    numbered_lines = [f"{idx}. {str(candidate.get('label') or f'Option {idx}')}" for idx, candidate in enumerate(candidates, start=1)]
+    candidates_list = "\n".join(numbered_lines)
+    prompt = render_message(
+        "response.templates.clarify_beneficiary",
+        locale,
+        {
+            "recipient_name": recipient_name or "",
+            "candidates_list": candidates_list,
+        },
+    )
+    reply_hint = render_message("query.clarify.reply_number_or_rephrase", locale)
+    return f"{prompt}\n{reply_hint}"
+
+
+def _resolve_beneficiary_selection_from_input(
     user_message: str,
+    existing_candidates: list[dict[str, Any]],
     recipient_name: str | None,
     beneficiaries_raw: list[dict[str, Any]],
-) -> dict[str, Any] | None:
+) -> tuple[dict[str, Any] | None, list[dict[str, Any]] | None]:
     clean_msg = user_message.strip()
-    if not (clean_msg.isdigit() and len(clean_msg) == 1):
-        return None
-    if not recipient_name or not beneficiaries_raw:
-        return None
+    if not clean_msg:
+        return None, None
 
-    index = int(clean_msg)
-    beneficiaries = [Beneficiary(**b) for b in beneficiaries_raw]
-    status, _single, candidates = BeneficiaryMatcher().match(recipient_name, beneficiaries)
-    if status != "clarify" or not candidates:
-        return None
+    candidates = existing_candidates
+    if not candidates and recipient_name and beneficiaries_raw:
+        beneficiaries = [Beneficiary(**b) for b in beneficiaries_raw]
+        status, _single, matched_candidates = BeneficiaryMatcher().match(recipient_name, beneficiaries)
+        if status == "clarify" and matched_candidates:
+            candidates = [
+                {
+                    "index": idx,
+                    "beneficiary_id": str(candidate.id),
+                    "option_id": f"bene:{candidate.id}",
+                    "label": f"{candidate.account_name or candidate.alias} • {candidate.bank_name} • ****{str(candidate.account_number)[-4:]}",
+                }
+                for idx, candidate in enumerate(matched_candidates, start=1)
+            ]
 
-    selected_index = index - 1
-    if selected_index < 0 or selected_index >= len(candidates):
-        return None
+    if not candidates:
+        return None, None
 
-    selected = candidates[selected_index]
-    logger.info("transfer_extraction_beneficiary_numeric_fallback", index=index, beneficiary_id=str(selected.id))
-    return {
-        "beneficiary_id": str(selected.id),
-        "confirmation": {"confirmed": False},
-    }
+    selected_beneficiary_id: str | None = None
+    if clean_msg.isdigit():
+        selected_index = int(clean_msg)
+        for candidate in candidates:
+            if int(candidate.get("index", 0)) == selected_index:
+                selected_beneficiary_id = str(candidate.get("beneficiary_id", "")).strip() or None
+                break
+        if not selected_beneficiary_id:
+            return None, candidates
+    else:
+        normalized_input = clean_msg.lower()
+        canonical_input = _canonical_beneficiary_id(clean_msg)
+        for candidate in candidates:
+            option_id = str(candidate.get("option_id", "")).strip()
+            beneficiary_id = str(candidate.get("beneficiary_id", "")).strip()
+            if not beneficiary_id:
+                continue
+            if option_id and normalized_input == option_id.lower():
+                selected_beneficiary_id = beneficiary_id
+                break
+            if canonical_input and canonical_input == beneficiary_id:
+                selected_beneficiary_id = beneficiary_id
+                break
+        if not selected_beneficiary_id:
+            return None, None
+
+    logger.info("transfer_extraction_beneficiary_selection", beneficiary_id=selected_beneficiary_id)
+    return (
+        {
+            "beneficiary_id": selected_beneficiary_id,
+            "beneficiary_candidates": [],
+            "confirmation": {"confirmed": False},
+        },
+        None,
+    )
 
 
 class ExtractionStep(TransferStep):
@@ -63,14 +127,42 @@ class ExtractionStep(TransferStep):
         if not self.user_message:
             return TransactionResult(outcome=TransactionOutcome.OK, patch={})
 
-        awaiting_amount = isinstance(worker_context.required_fields, list) and "amount" in worker_context.required_fields
+        raw_required_fields = getattr(worker_context, "required_fields", [])
+        required_fields = raw_required_fields if isinstance(raw_required_fields, list) else []
+        awaiting_amount = "amount" in required_fields
         if awaiting_amount and data.suggested_amount:
+            reply = self.user_message.strip()
+            if reply == "1":
+                return TransactionResult(
+                    outcome=TransactionOutcome.OK,
+                    patch={
+                        "amount": float(data.suggested_amount),
+                        "suggested_amount": None,
+                        "confirmation": {"confirmed": False},
+                    },
+                )
+            if reply == "2":
+                return TransactionResult(
+                    outcome=TransactionOutcome.OK,
+                    patch={
+                        "suggested_amount": None,
+                        "confirmation": {"confirmed": False},
+                    },
+                )
             affirmation = AffirmationService.classify_sync(self.user_message)
             if affirmation.is_approval:
                 return TransactionResult(
                     outcome=TransactionOutcome.OK,
                     patch={
                         "amount": float(data.suggested_amount),
+                        "suggested_amount": None,
+                        "confirmation": {"confirmed": False},
+                    },
+                )
+            if affirmation.is_rejection:
+                return TransactionResult(
+                    outcome=TransactionOutcome.OK,
+                    patch={
                         "suggested_amount": None,
                         "confirmation": {"confirmed": False},
                     },
@@ -82,12 +174,12 @@ class ExtractionStep(TransferStep):
             logger.info("skip_redundant_extraction", task="transfer")
             return TransactionResult(outcome=TransactionOutcome.OK, patch={"skip_extraction": False})
 
-        waiting_for_beneficiary = (
-            isinstance(worker_context.required_fields, list) and "beneficiary_id" in worker_context.required_fields
-        )
+        waiting_for_beneficiary = "beneficiary_id" in required_fields
+        waiting_for_source_account = "source_account_id" in required_fields
         if waiting_for_beneficiary:
-            beneficiary_patch = _resolve_beneficiary_selection_from_index(
+            beneficiary_patch, invalid_candidates = _resolve_beneficiary_selection_from_input(
                 self.user_message,
+                data.beneficiary_candidates,
                 data.recipient_name,
                 context.beneficiaries,
             )
@@ -96,10 +188,31 @@ class ExtractionStep(TransferStep):
                     outcome=TransactionOutcome.OK,
                     patch=beneficiary_patch,
                 )
+            if invalid_candidates:
+                retry_prompt = _render_beneficiary_retry_prompt(
+                    recipient_name=data.recipient_name,
+                    candidates=invalid_candidates,
+                    locale=context.language,
+                )
+                return TransactionResult(
+                    outcome=TransactionOutcome.NEEDS_INPUT,
+                    required_fields=["beneficiary_id"],
+                    prompt=retry_prompt,
+                    patch={"beneficiary_candidates": invalid_candidates},
+                    details={
+                        "ambiguity": "MULTIPLE_BENEFICIARIES",
+                        "candidates": invalid_candidates,
+                        "options": [
+                            {"id": str(candidate.get("option_id", "")).strip(), "title": str(candidate.get("label", ""))}
+                            for candidate in invalid_candidates
+                            if str(candidate.get("option_id", "")).strip()
+                        ],
+                    },
+                )
 
         # [DETERMINISTIC FALLBACK] Numeric index selection
-        # If user replies with "1" or "2" to an account selection prompt, map it directly.
-        numeric_patch = None if waiting_for_beneficiary else try_extract_numeric_index(self.user_message, "transfer")
+        # If user replies with "1" or "2" while selecting source account, map directly.
+        numeric_patch = try_extract_numeric_index(self.user_message, "transfer") if waiting_for_source_account else None
         if numeric_patch:
             return TransactionResult(
                 outcome=TransactionOutcome.OK,

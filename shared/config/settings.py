@@ -54,6 +54,7 @@ class Settings:
         self.telegram_webhook_secret_token: str = os.getenv("TELEGRAM_WEBHOOK_SECRET_TOKEN", "")
 
         self.soul_policy_path: str = os.getenv("SOUL_POLICY_PATH", "config/soul_policy.json")
+        self.enable_channel_option_ux_v2: bool = os.getenv("ENABLE_CHANNEL_OPTION_UX_V2", "false").lower() == "true"
 
         self._validate_whatsapp_config()
 

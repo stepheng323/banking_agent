@@ -37,6 +37,7 @@ class TransferPayload(BaseModel):
     recipient_bank_name: str | None = None
     recipient_resolved_name: str | None = None
     beneficiary_id: str | None = None
+    beneficiary_candidates: list[dict[str, Any]] = Field(default_factory=list)
     is_self: bool = False
     resolved_from_saved_beneficiary: bool = False
     name_mismatch: bool = False

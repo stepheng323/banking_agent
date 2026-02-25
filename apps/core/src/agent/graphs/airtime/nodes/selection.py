@@ -16,6 +16,17 @@ from shared.utils.logging import get_logger
 logger = get_logger(__name__)
 
 
+def _build_account_options(accounts: list[dict[str, Any]]) -> list[dict[str, str]]:
+    options: list[dict[str, str]] = []
+    for idx, account in enumerate(accounts, start=1):
+        bank = account.get("bank_name") or "Account"
+        number = str(account.get("account_number") or "")
+        suffix = number[-4:] if len(number) >= 4 else number
+        title = f"{bank} (···{suffix})" if suffix else str(bank)
+        options.append({"id": str(idx), "title": title})
+    return options
+
+
 class SourceSelectionStep(AirtimeStep):
     """Selects source account."""
 
@@ -101,6 +112,7 @@ class SourceSelectionStep(AirtimeStep):
                     prompt=render_message("source_account.choose_prompt", locale, {"accounts_list": accounts_list}),
                     update_message=update_msg,
                     patch={"source_bank_name": data.source_bank_name},
+                    details={"options": _build_account_options(accounts)},
                 )
 
         if data.source_account_index is not None:
@@ -123,4 +135,5 @@ class SourceSelectionStep(AirtimeStep):
             outcome=TransactionOutcome.NEEDS_INPUT,
             required_fields=["source_account_id"],
             prompt=render_message("source_account.choose_prompt", locale, {"accounts_list": accounts_list}),
+            details={"options": _build_account_options(accounts)},
         )

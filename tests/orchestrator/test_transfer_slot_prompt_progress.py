@@ -11,6 +11,7 @@ from apps.core.src.agent.orchestrator.models.domain import (
 )
 from apps.core.src.agent.orchestrator.models.state import OrchestratorState
 from apps.core.src.agent.orchestrator.nodes.execution import advance_wave
+from shared.config.settings import settings
 
 
 class _MockTransferNeedsInputWorker:
@@ -152,14 +153,61 @@ async def test_beneficiary_ambiguity_prompt_is_preserved() -> None:
     config: RunnableConfig = {"configurable": {"services": {"transfer": worker}}, "recursion_limit": 50}
 
     updates = await advance_wave(state, config)
-    say_intent = updates["outbox"][0]
-    options_intent = updates["outbox"][1]
-
-    assert say_intent["type"] == "say"
-    assert say_intent["text"] == ambiguity_prompt
-    assert "account number and bank" not in say_intent["text"]
+    options_intent = updates["outbox"][0]
 
     assert options_intent["type"] == "show_options"
+    assert "I found multiple matches for 'Tolu'. Which one did you mean?" in options_intent["title"]
+    assert "Reply with the number or rephrase." in options_intent["title"]
+    assert "1. Tolu A" not in options_intent["title"]
+    assert "account number and bank" not in options_intent["title"]
     assert options_intent["task_ids"] == ["t1"]
-    assert [opt["id"] for opt in options_intent["options"]] == ["1", "2"]
+    assert [opt["id"] for opt in options_intent["options"]] == ["bene-1", "bene-2"]
     assert options_intent["options"][0]["title"] == "Tolu A • Access Bank • ****1234"
+
+
+async def test_amount_suggestion_prompt_emits_options_when_flag_enabled(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "enable_channel_option_ux_v2", True)
+    suggestion_prompt = "How much should I send to Tolu? I can use your last amount (₦5,000)."
+    worker = _MockTransferNeedsInputWorker(
+        ["amount"],
+        prompt=suggestion_prompt,
+        details={
+            "option_context": "TRANSFER_AMOUNT_SUGGESTION",
+            "options": [
+                {"id": "1", "title": "Use ₦5,000"},
+                {"id": "2", "title": "Enter a new amount"},
+            ],
+        },
+    )
+    state = _build_state()
+    config: RunnableConfig = {"configurable": {"services": {"transfer": worker}}, "recursion_limit": 50}
+
+    updates = await advance_wave(state, config)
+
+    assert updates["outbox"][0]["type"] == "show_options"
+    assert updates["outbox"][0]["title"] == suggestion_prompt
+    assert [opt["id"] for opt in updates["outbox"][0]["options"]] == ["1", "2"]
+
+
+async def test_source_account_prompt_emits_options_when_flag_enabled(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "enable_channel_option_ux_v2", True)
+    source_prompt = "*Which account would you like to use?*\n\n1. Access (···1234)\n2. GTBank (···5678)"
+    worker = _MockTransferNeedsInputWorker(
+        ["source_account_id"],
+        prompt=source_prompt,
+        details={
+            "options": [
+                {"id": "1", "title": "Access Bank (···1234)"},
+                {"id": "2", "title": "GTBank (···5678)"},
+            ],
+        },
+    )
+    state = _build_state()
+    config: RunnableConfig = {"configurable": {"services": {"transfer": worker}}, "recursion_limit": 50}
+
+    updates = await advance_wave(state, config)
+
+    assert updates["outbox"][0]["type"] == "show_options"
+    assert "*Which account would you like to use?*" in updates["outbox"][0]["title"]
+    assert "1. Access" not in updates["outbox"][0]["title"]
+    assert [opt["id"] for opt in updates["outbox"][0]["options"]] == ["1", "2"]
