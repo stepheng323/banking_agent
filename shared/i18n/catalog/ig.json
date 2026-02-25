@@ -22,11 +22,11 @@
     "fallback": "Abụ m {name}. {description}\nEnwere m ike inyere gị aka na: {supported}.\nKedu ihe ịchọrọ ime?"
   },
   "conversational": {
-    "greeting": "Ndeewo. Kedu ka m ga-esi nyere gị aka na ego gị taa?",
-    "appreciation": "Nnoo. Kedu ọrụ ego ọzọ ịchọrọ ka m nyere gị aka na ya?",
-    "checkin": "Anọ m ebe a. Kedu ka m ga-esi nyere gị aka na ego gị taa?",
-    "identity": "Abụ m Fusepay, onye enyemaka banking gị.",
-    "brand_origin": "Ọ bụ ndị otu Fusepay wuru m ka m nyere gị aka na ọrụ banking.",
+    "greeting": "Ndeewo. Abụ m Narya AI. Kedu ihe ịchọrọ ka m mee taa?",
+    "appreciation": "Nnoo. Kedu ọrụ ọzọ ka anyị ga-eme ugbu a?",
+    "checkin": "Anọ m ebe a. Kedu mmegharị ego ka anyị ga-eme?",
+    "identity": "Abụ m Narya AI. Ana m arụ ọrụ banking nke ọma, ngwa ngwa, ma nlezianya.",
+    "brand_origin": "Aha Narya AI sitere na mmụọ kindler. Ndị otu Fusepay wuru m maka banking execution dị jụụ ma bụrụ nke a pụrụ ịdabere na ya.",
     "capability_question": "Enwere m ike inyere gị aka na transfer, ịzụta airtime/data, ilele balance, na ajụjụ transaction.",
     "out_of_scope": "Ana m elekwasị anya na ọrụ banking. Enwere m ike inyere gị aka na transfer, airtime/data, balance, na ajụjụ transaction.",
     "clarify": "Biko kọwaa nke ọma ihe ịchọrọ ka m nyere gị aka na ya."
@@ -472,12 +472,17 @@
     }
   },
   "transfer": {
+    "confirmation": {
+      "name_mismatch_warning": "Ị sịrị ka m zipu na {requested_name}, mana account ahụ pụtara {resolved_name}.",
+      "high_risk_unsaved_warning": "⚠️ Nke a bụ transfer dị ize ndụ: {amount} gaa na onye a na-echekwabeghị. Biko nyochaa nkọwa tupu ikwenye."
+    },
     "funding": {
       "plan_failed": "Failed to plan funding.",
       "insufficient_funds": "Insufficient funds."
     },
     "validation": {
       "ask_amount": "How much would you like to send?",
+      "ask_amount_with_suggestion": "Ego ole ka m ga-eziga na {recipient_name}? Enwere m ike iji ego ikpeazụ gị ({amount}). Zaghachi 'yes' ka m jiri ya, ma ọ bụ dee ego ọhụrụ.",
       "same_bank_fallback": "the same bank",
       "self_transfer_same_account": "The recipient account ({recipient_account}) at {bank_identifier} cannot be the same as your source account. Please provide a different recipient account.",
       "same_source_destination_fallback": "Source and destination accounts are the same. Please specify different accounts.",
@@ -650,7 +655,7 @@
   "transaction_summary": {
     "batch": {
       "confirm_title": "*Confirm Transfers ({count})*",
-      "total": "Total: {amount}"
+      "total": "Ngụkọta ga-apụ: {amount}"
     },
     "multi": {
       "header": "✓ *Transaction Summary*",

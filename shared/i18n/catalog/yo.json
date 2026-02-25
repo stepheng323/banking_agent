@@ -22,11 +22,11 @@
     "fallback": "Emi ni {name}. {description}\nMo le ran ọ lọwọ pẹlu: {supported}.\nKini o fẹ ṣe?"
   },
   "conversational": {
-    "greeting": "Pẹlẹ o. Bawo ni mo ṣe le ran ọ lọwọ pẹlu owo rẹ loni?",
-    "appreciation": "Ko to nnkan. Iṣẹ owo wo ni o fẹ ki n ran ọ lọwọ pẹlu lẹ́yìn eyi?",
-    "checkin": "Mo wa nibi. Bawo ni mo ṣe le ran ọ lọwọ pẹlu owo rẹ loni?",
-    "identity": "Emi ni Fusepay, oluranlọwọ banking rẹ.",
-    "brand_origin": "Ẹgbẹ Fusepay ni wọn kọ mi lati ran ọ lọwọ pẹlu iṣẹ banking.",
+    "greeting": "Pẹlẹ o. Emi ni Narya AI. Kini o fẹ ki n ṣe fun ọ loni?",
+    "appreciation": "Ko to nnkan. Iṣẹ wo ni a o ṣe lẹ́yìn eyi?",
+    "checkin": "Mo wa nibi. Iṣẹ owo wo ni o fẹ ki a ṣe?",
+    "identity": "Emi ni Narya AI. Mo n ṣiṣẹ awọn iṣẹ banking gidi ni kiakia ati pẹkipẹki.",
+    "brand_origin": "Orukọ Narya AI wa lati ìmísí kindler. Ẹgbẹ Fusepay ni wọn kọ mi fun iṣẹ banking to dakẹ, to dájú.",
     "capability_question": "Mo le ran ọ lọwọ pẹlu gbigbe owo, rira airtime/data, ayẹwo balance, ati ibeere transaction.",
     "out_of_scope": "Mo n dojukọ iṣẹ banking. Mo le ran ọ lọwọ pẹlu gbigbe owo, airtime/data, balance, ati ibeere transaction.",
     "clarify": "Jọwọ ṣalaye ohun ti o fẹ ki n ran ọ lọwọ pẹlu."
@@ -472,12 +472,17 @@
     }
   },
   "transfer": {
+    "confirmation": {
+      "name_mismatch_warning": "O sọ pe ki n fi ranṣẹ si {requested_name}, ṣugbọn account naa fihan {resolved_name}.",
+      "high_risk_unsaved_warning": "⚠️ Eyi jẹ transfer ewu-giga: {amount} si olugba ti a ko fipamọ. Jọwọ jẹrisi alaye naa dáadáa."
+    },
     "funding": {
       "plan_failed": "Failed to plan funding.",
       "insufficient_funds": "Insufficient funds."
     },
     "validation": {
       "ask_amount": "How much would you like to send?",
+      "ask_amount_with_suggestion": "Elo ni ki n fi ranṣẹ si {recipient_name}? Mo le lo iye to kẹhin ({amount}). Dahun 'yes' lati lo o, tabi tẹ iye tuntun.",
       "same_bank_fallback": "the same bank",
       "self_transfer_same_account": "The recipient account ({recipient_account}) at {bank_identifier} cannot be the same as your source account. Please provide a different recipient account.",
       "same_source_destination_fallback": "Source and destination accounts are the same. Please specify different accounts.",
@@ -650,7 +655,7 @@
   "transaction_summary": {
     "batch": {
       "confirm_title": "*Confirm Transfers ({count})*",
-      "total": "Total: {amount}"
+      "total": "Lapapọ ti yoo jade: {amount}"
     },
     "multi": {
       "header": "✓ *Transaction Summary*",

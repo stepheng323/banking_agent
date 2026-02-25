@@ -74,7 +74,7 @@ async def test_account_action_level_capability_gate() -> None:
 def test_policy_loads_from_json_file() -> None:
     """Canonical JSON policy should load into a validated policy model."""
     policy = load_policy(POLICY_PATH)
-    assert policy.identity.name == "Fusepay"
+    assert policy.identity.name == "Narya AI"
     assert "Send money" in policy.supported_domains
     validate_policy_coverage(policy)
 

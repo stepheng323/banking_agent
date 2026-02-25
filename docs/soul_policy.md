@@ -24,6 +24,14 @@ This guide explains how to write a valid runtime policy for the banking agent.
 - `safety_rules`: string array
 - `capability_matrix`: object mapping domain name to domain capability policy
 
+Optional:
+- `transfer_guardrails`: object containing transfer safety/consistency controls
+  - `relational_aliases`: string array for expected colloquial names ("dad", "mum")
+  - `name_match.min_similarity`: float threshold for mismatch warning
+  - `dynamic_risk.floor_amount`: numeric floor for high-risk warning
+  - `dynamic_risk.lookback_days`: integer lookback window
+  - `dynamic_risk.percentile`: float percentile used for per-user threshold
+
 ## Identity and Tone
 
 - `identity.name`: product/assistant name
