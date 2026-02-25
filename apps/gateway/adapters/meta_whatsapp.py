@@ -6,7 +6,7 @@ import json
 from typing import Any
 
 from fastapi import Request
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class QuotedMessage(BaseModel):
@@ -29,8 +29,7 @@ class ParsedMessage(BaseModel):
     quoted: QuotedMessage | None = None
     raw: dict[str, Any] = Field(default_factory=dict)
 
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(populate_by_name=True)
 
 
 def parse_payload(payload: dict[str, Any]) -> list[ParsedMessage]:
