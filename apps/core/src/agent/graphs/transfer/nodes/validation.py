@@ -9,6 +9,7 @@ from apps.core.src.agent.graphs.transfer.models.types import (
 )
 from apps.core.src.agent.graphs.transfer.pipeline.base import TransferStep
 from apps.core.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
+from shared.i18n import render_message
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -24,6 +25,38 @@ class ValidationStep(TransferStep):
         gates: TransferGates,
         worker_context: Any,
     ) -> TransactionResult:
+        if (
+            data.amount is None
+            and not data.transfer_all
+            and (data.recipient_resolved_name or data.recipient_name)
+            and getattr(worker_context, "transaction_repo", None) is not None
+            and getattr(worker_context, "user_id", None)
+        ):
+            recipient_hint = (data.recipient_resolved_name or data.recipient_name or "").strip()
+            if recipient_hint:
+                try:
+                    recent = await worker_context.transaction_repo.get_recent_successful_transfer_by_recipient(
+                        str(worker_context.user_id),
+                        recipient_hint,
+                    )
+                    if recent and recent.amount:
+                        suggested_amount = float(recent.amount)
+                        return TransactionResult(
+                            outcome=TransactionOutcome.NEEDS_INPUT,
+                            required_fields=["amount"],
+                            prompt=render_message(
+                                "transfer.validation.ask_amount_with_suggestion",
+                                context.language,
+                                {
+                                    "amount": f"₦{suggested_amount:,.0f}",
+                                    "recipient_name": recipient_hint,
+                                },
+                            ),
+                            patch={"suggested_amount": suggested_amount},
+                        )
+                except Exception as exc:
+                    logger.warning("suggested_amount_lookup_failed", error=str(exc))
+
         service = worker_context.validation_service
 
         res_amount = service.validate_amount(data, context)

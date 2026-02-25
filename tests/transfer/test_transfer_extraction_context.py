@@ -1,6 +1,7 @@
 """Transfer extraction context propagation tests."""
 
 from types import SimpleNamespace
+from uuid import uuid4
 
 from apps.core.src.agent.graphs.transfer.models.extraction import TransferExtractionResult
 from apps.core.src.agent.graphs.transfer.models.types import TransferContext, TransferGates, TransferPayload
@@ -69,3 +70,46 @@ def test_extractor_context_string_includes_required_fields_and_known_recipient_h
     assert "RequiredFields: recipient_account, recipient_bank_name" in context_str
     assert "KnownRecipientName: Tolu" in context_str
     assert "KnownRecipientBank: Access Bank" in context_str
+
+
+async def test_extraction_step_numeric_reply_selects_beneficiary_when_awaiting_beneficiary_id() -> None:
+    first_id = str(uuid4())
+    second_id = str(uuid4())
+    step = ExtractionStep(user_message="2")
+    payload = TransferPayload(recipient_name="john")
+    context = TransferContext(
+        phone_number="2348000000999",
+        language="en",
+        beneficiaries=[
+            {
+                "id": first_id,
+                "user_id": str(uuid4()),
+                "account_name": "John Doe",
+                "alias": "John D",
+                "account_number": "0011223344",
+                "bank_code": "044",
+                "bank_name": "Access Bank",
+            },
+            {
+                "id": second_id,
+                "user_id": str(uuid4()),
+                "account_name": "John Smith",
+                "alias": "John S",
+                "account_number": "9988776655",
+                "bank_code": "058",
+                "bank_name": "GTBank",
+            },
+        ],
+        accounts=[],
+    )
+    worker_context = SimpleNamespace(
+        extractor=None,
+        required_fields=["beneficiary_id"],
+        previous_response="I found multiple matches.",
+    )
+
+    result = await step.execute(payload, context, TransferGates(), worker_context)
+
+    assert result.outcome == TransactionOutcome.OK
+    assert result.patch["beneficiary_id"] == second_id
+    assert "source_account_index" not in result.patch

@@ -2,6 +2,7 @@
 
 from typing import Any
 
+from apps.core.src.agent.graphs.__shared__.beneficiary.matcher import BeneficiaryMatcher
 from apps.core.src.agent.graphs.__shared__.extraction_utils import try_extract_numeric_index
 from apps.core.src.agent.graphs.transfer.models.types import (
     TransferContext,
@@ -10,9 +11,40 @@ from apps.core.src.agent.graphs.transfer.models.types import (
 )
 from apps.core.src.agent.graphs.transfer.pipeline.base import TransferStep
 from apps.core.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
+from shared.database.models import Beneficiary
+from shared.services.affirmation.service import AffirmationService
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
+
+
+def _resolve_beneficiary_selection_from_index(
+    user_message: str,
+    recipient_name: str | None,
+    beneficiaries_raw: list[dict[str, Any]],
+) -> dict[str, Any] | None:
+    clean_msg = user_message.strip()
+    if not (clean_msg.isdigit() and len(clean_msg) == 1):
+        return None
+    if not recipient_name or not beneficiaries_raw:
+        return None
+
+    index = int(clean_msg)
+    beneficiaries = [Beneficiary(**b) for b in beneficiaries_raw]
+    status, _single, candidates = BeneficiaryMatcher().match(recipient_name, beneficiaries)
+    if status != "clarify" or not candidates:
+        return None
+
+    selected_index = index - 1
+    if selected_index < 0 or selected_index >= len(candidates):
+        return None
+
+    selected = candidates[selected_index]
+    logger.info("transfer_extraction_beneficiary_numeric_fallback", index=index, beneficiary_id=str(selected.id))
+    return {
+        "beneficiary_id": str(selected.id),
+        "confirmation": {"confirmed": False},
+    }
 
 
 class ExtractionStep(TransferStep):
@@ -31,15 +63,43 @@ class ExtractionStep(TransferStep):
         if not self.user_message:
             return TransactionResult(outcome=TransactionOutcome.OK, patch={})
 
+        awaiting_amount = isinstance(worker_context.required_fields, list) and "amount" in worker_context.required_fields
+        if awaiting_amount and data.suggested_amount:
+            affirmation = AffirmationService.classify_sync(self.user_message)
+            if affirmation.is_approval:
+                return TransactionResult(
+                    outcome=TransactionOutcome.OK,
+                    patch={
+                        "amount": float(data.suggested_amount),
+                        "suggested_amount": None,
+                        "confirmation": {"confirmed": False},
+                    },
+                )
+
         # Optimization: Phase 4 (Planner-as-Extractor)
         # Skip extraction if Planner already did it (signaled by flag)
         if data.skip_extraction:
             logger.info("skip_redundant_extraction", task="transfer")
             return TransactionResult(outcome=TransactionOutcome.OK, patch={"skip_extraction": False})
 
+        waiting_for_beneficiary = (
+            isinstance(worker_context.required_fields, list) and "beneficiary_id" in worker_context.required_fields
+        )
+        if waiting_for_beneficiary:
+            beneficiary_patch = _resolve_beneficiary_selection_from_index(
+                self.user_message,
+                data.recipient_name,
+                context.beneficiaries,
+            )
+            if beneficiary_patch:
+                return TransactionResult(
+                    outcome=TransactionOutcome.OK,
+                    patch=beneficiary_patch,
+                )
+
         # [DETERMINISTIC FALLBACK] Numeric index selection
         # If user replies with "1" or "2" to an account selection prompt, map it directly.
-        numeric_patch = try_extract_numeric_index(self.user_message, "transfer")
+        numeric_patch = None if waiting_for_beneficiary else try_extract_numeric_index(self.user_message, "transfer")
         if numeric_patch:
             return TransactionResult(
                 outcome=TransactionOutcome.OK,
@@ -102,6 +162,8 @@ async def _extract_transfer_update(
 
         if extracted_data:
             extracted_data["confirmation"] = {"confirmed": False}
+            if "amount" in extracted_data:
+                extracted_data["suggested_amount"] = None
 
         # [UX] Narration vs Description Split
         # Default description to "Transfer to {name}"
@@ -139,6 +201,9 @@ async def _extract_transfer_update(
         if "recipient_bank_name" in extracted_data:
             extracted_data["recipient_bank_code"] = None
             extracted_data["recipient_resolved_name"] = None
+            extracted_data["name_mismatch"] = False
+            extracted_data["name_match_score"] = None
+            extracted_data["name_mismatch_warning"] = None
 
         if "source_bank_name" in extracted_data:
             extracted_data["source_account_id"] = None
@@ -153,6 +218,9 @@ async def _extract_transfer_update(
 
         if "recipient_account" in extracted_data:
             extracted_data["recipient_resolved_name"] = None
+            extracted_data["name_mismatch"] = False
+            extracted_data["name_match_score"] = None
+            extracted_data["name_mismatch_warning"] = None
 
         if "recipient_name" in extracted_data and "recipient_account" not in extracted_data:
             # [FIX] Only clear account details if the name actually changed.
@@ -169,6 +237,13 @@ async def _extract_transfer_update(
                 extracted_data["recipient_bank_name"] = None
                 extracted_data["recipient_resolved_name"] = None
                 extracted_data["beneficiary_id"] = None
+                extracted_data["resolved_from_saved_beneficiary"] = False
+                extracted_data["name_mismatch"] = False
+                extracted_data["name_match_score"] = None
+                extracted_data["name_mismatch_warning"] = None
+                extracted_data["is_high_risk_transfer"] = False
+                extracted_data["dynamic_risk_threshold"] = None
+                extracted_data["high_risk_warning"] = None
 
         return TransactionResult(outcome=TransactionOutcome.OK, patch=extracted_data)
 

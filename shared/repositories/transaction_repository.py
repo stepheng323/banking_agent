@@ -1,11 +1,13 @@
 """Repository for Transaction model."""
 
+from datetime import datetime
 from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.database.models import Transaction
+from shared.database.enums import TransactionTypeEnum
 from shared.repositories.base import BaseRepository
 
 
@@ -83,6 +85,61 @@ class TransactionRepository(BaseRepository[Transaction]):
             .limit(limit)
         )
         return list(result.scalars().all())
+
+    async def get_successful_transfers_since(
+        self,
+        user_id: str,
+        since: datetime,
+        limit: int = 500,
+    ) -> list[Transaction]:
+        """Get successful transfer transactions since a timestamp."""
+        lookup_id: UUID | str = user_id
+        try:
+            lookup_id = UUID(user_id)
+        except ValueError:
+            pass
+
+        result = await self.db.execute(
+            select(Transaction)
+            .filter(
+                Transaction.user_id == lookup_id,
+                Transaction.transaction_type == TransactionTypeEnum.TRANSFER.value,
+                Transaction.status == "successful",
+                Transaction.created_at >= since,
+            )
+            .order_by(Transaction.created_at.desc())
+            .limit(limit)
+        )
+        return list(result.scalars().all())
+
+    async def get_recent_successful_transfer_by_recipient(
+        self,
+        user_id: str,
+        recipient_name: str,
+    ) -> Transaction | None:
+        """Get most recent successful transfer where recipient name matches loosely."""
+        if not recipient_name:
+            return None
+
+        lookup_id: UUID | str = user_id
+        try:
+            lookup_id = UUID(user_id)
+        except ValueError:
+            pass
+
+        pattern = f"%{recipient_name.strip()}%"
+        result = await self.db.execute(
+            select(Transaction)
+            .filter(
+                Transaction.user_id == lookup_id,
+                Transaction.transaction_type == TransactionTypeEnum.TRANSFER.value,
+                Transaction.status == "successful",
+                Transaction.recipient_name.ilike(pattern),
+            )
+            .order_by(Transaction.created_at.desc())
+            .limit(1)
+        )
+        return result.scalars().first()
 
     async def update_status(
         self, transaction_id: str, status: str, error_message: str | None = None
