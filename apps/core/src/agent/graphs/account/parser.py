@@ -13,8 +13,10 @@ logger = get_logger(__name__)
 class AccountIntent(BaseModel):
     """Structured output for account intent."""
 
-    action: Literal["list", "check_balance", "set_default", "unlink", "link", "unknown"] = Field(
-        description=("The action to perform: 'list', 'check_balance', 'set_default', 'unlink', 'link', or 'unknown'")
+    action: Literal["list", "count", "check_balance", "set_default", "unlink", "link", "unknown"] = Field(
+        description=(
+            "The action to perform: 'list', 'count', 'check_balance', 'set_default', 'unlink', 'link', or 'unknown'"
+        )
     )
     identifier: str | None = Field(
         default=None,
@@ -45,7 +47,9 @@ class AccountParser:
             "Support English, Pidgin, Hausa, Yoruba, Igbo, and French.\n\n"
             "**ACTIONS:**\n"
             "1. 'list': User wants to see their linked accounts.\n"
-            "   - Examples: 'Show my accounts', 'List accounts', 'Jer kalli asusu na'\n"
+            "   - Examples: 'Show my accounts', 'List accounts', 'How many accounts do I have?', 'Jer kalli asusu na'\n"
+            "1b. 'count': User wants only the number of linked accounts.\n"
+            "   - Examples: 'How many accounts do I have?', 'Number of my linked accounts'\n"
             "2. 'check_balance': User wants to see the balance of one or all linked accounts.\n"
             "   - Examples: 'What's my balance', 'overall balance', 'Wetin be my balance', 'Nawa ne balance?'\n"
             "3. 'set_default': User wants to set a specific account as their primary/default account.\n"

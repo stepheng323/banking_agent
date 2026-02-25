@@ -225,6 +225,54 @@ async def test_interrupt_input_same_executor_keeps_slot_filling_flow() -> None:
 
 
 @pytest.mark.asyncio
+async def test_interrupt_input_with_pending_beneficiary_clarification_blocks_intent_switch() -> None:
+    state = OrchestratorState(
+        user_id="u_interrupt_beneficiary_lock",
+        phone_number="2348022222299",
+        channel="whatsapp",
+        last_message_text="what is my balance",
+        pending_interrupt=PendingInterrupt(
+            kind="input",
+            task_ids=["t1"],
+            fields_by_task={"t1": ["beneficiary_id"]},
+        ),
+        tasks={
+            "t1": TaskSpec(
+                id="t1",
+                type="transfer",
+                stage=TaskStage.RESOLVED,
+                payload={"recipient_name": "Tolu", "amount": 5000, "idempotency_key": "old-key"},
+            )
+        },
+    )
+    config: RunnableConfig = {
+        "configurable": {
+            "task_planner": _RouteOnlyPlanner(
+                InterruptRouteDecision(
+                    decision="switch_intent",
+                    confidence=0.94,
+                    detected_language="English",
+                    target_intent="account",
+                    target_mode="new",
+                    reason="explicit account request",
+                )
+            )
+        },
+        "recursion_limit": 50,
+    }
+
+    updates = await handle_pending_interrupt(state, config)
+
+    assert updates["pending_interrupt"] is not None
+    assert updates["pending_interrupt"].kind == "input"
+    assert updates["pending_interrupt"].task_ids == ["t1"]
+    assert updates["tasks"]["t1"].type == "transfer"
+    assert updates["tasks"]["t1"].stage == TaskStage.RESOLVED
+    assert updates["tasks"]["t1"].payload["idempotency_key"] == "old-key"
+    assert "stashed_sessions" not in updates
+
+
+@pytest.mark.asyncio
 async def test_interrupt_input_replaces_transfer_with_new_transfer_without_stash() -> None:
     state = OrchestratorState(
         user_id="u_interrupt_3",
@@ -819,3 +867,132 @@ async def test_text_abort_does_not_autoapprove_when_no_callback_payload() -> Non
 
     assert updates["pending_interrupt"] is None
     assert updates["tasks"]["t1"].stage == TaskStage.CANCELLED
+
+
+@pytest.mark.asyncio
+async def test_status_query_recap_preserves_pending_interrupt_without_task_reset() -> None:
+    state = OrchestratorState(
+        user_id="u_interrupt_status_1",
+        phone_number="2348010101091",
+        channel="whatsapp",
+        last_message_text="where did we stop",
+        pending_interrupt=PendingInterrupt(
+            kind="input",
+            task_ids=["t1"],
+            fields_by_task={"t1": ["beneficiary_id"]},
+        ),
+        tasks={
+            "t1": TaskSpec(
+                id="t1",
+                type="transfer",
+                stage=TaskStage.RESOLVED,
+                payload={"recipient_name": "Tolu", "amount": 5000, "idempotency_key": "idem-status-1"},
+            )
+        },
+    )
+    planner = _RouteOnlyPlanner(
+        InterruptRouteDecision(
+            decision="status_query",
+            status_query_type="recap",
+            confidence=0.91,
+            detected_language="English",
+            target_intent=None,
+            target_mode=None,
+            reason="flow recap request",
+        )
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await handle_pending_interrupt(state, config)
+
+    assert updates["pending_interrupt"] is not None
+    assert updates["pending_interrupt"].task_ids == ["t1"]
+    assert updates["tasks"]["t1"].stage == TaskStage.RESOLVED
+    assert updates["tasks"]["t1"].payload["idempotency_key"] == "idem-status-1"
+    assert updates["outbox"][0]["type"] == "say"
+    assert "transfer flow" in updates["outbox"][0]["text"]
+
+
+@pytest.mark.asyncio
+async def test_status_query_requirements_preserves_pending_interrupt() -> None:
+    state = OrchestratorState(
+        user_id="u_interrupt_status_2",
+        phone_number="2348010101092",
+        channel="whatsapp",
+        last_message_text="what do you need from me",
+        pending_interrupt=PendingInterrupt(
+            kind="input",
+            task_ids=["t1"],
+            fields_by_task={"t1": ["beneficiary_id"]},
+        ),
+        tasks={
+            "t1": TaskSpec(
+                id="t1",
+                type="transfer",
+                stage=TaskStage.EXTRACTED,
+                payload={"recipient_name": "Tolu"},
+            )
+        },
+    )
+    planner = _RouteOnlyPlanner(
+        InterruptRouteDecision(
+            decision="status_query",
+            status_query_type="requirements",
+            confidence=0.95,
+            detected_language="English",
+            target_intent=None,
+            target_mode=None,
+            reason="requirements request",
+        )
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await handle_pending_interrupt(state, config)
+
+    assert updates["pending_interrupt"] is not None
+    assert updates["tasks"]["t1"].stage == TaskStage.EXTRACTED
+    assert updates["outbox"][0]["type"] == "say"
+    assert "I still need: beneficiary selection." in updates["outbox"][0]["text"]
+    assert "replying with the number" in updates["outbox"][0]["text"]
+
+
+@pytest.mark.asyncio
+async def test_status_query_multilingual_route_keeps_interrupt_active() -> None:
+    state = OrchestratorState(
+        user_id="u_interrupt_status_3",
+        phone_number="2348010101093",
+        channel="whatsapp",
+        last_message_text="kini mo tun fi ranse",
+        pending_interrupt=PendingInterrupt(
+            kind="confirmation",
+            task_ids=["t1"],
+            prompt="Confirm transfer to Tolu",
+        ),
+        tasks={
+            "t1": TaskSpec(
+                id="t1",
+                type="transfer",
+                stage=TaskStage.AWAITING_CONFIRMATION,
+                payload={"confirmation": {"summary": "Confirm transfer to Tolu"}},
+            )
+        },
+    )
+    planner = _RouteOnlyPlanner(
+        InterruptRouteDecision(
+            decision="status_query",
+            status_query_type="requirements",
+            confidence=0.88,
+            detected_language="Yoruba",
+            target_intent=None,
+            target_mode=None,
+            reason="yoruba status query",
+        )
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await handle_pending_interrupt(state, config)
+
+    assert updates["pending_interrupt"] is not None
+    assert updates["pending_interrupt"].kind == "confirmation"
+    assert updates["tasks"]["t1"].stage == TaskStage.AWAITING_CONFIRMATION
+    assert updates["outbox"][0]["type"] == "say"

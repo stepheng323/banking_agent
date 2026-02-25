@@ -122,8 +122,21 @@ def _route_fallback(reason: str) -> InterruptRouteDecision:
         detected_language=None,
         target_intent=None,
         target_mode=None,
+        status_query_type=None,
         reason=reason,
     )
+
+
+def _is_beneficiary_clarification_interrupt(interrupt: Any) -> bool:
+    if not interrupt or getattr(interrupt, "kind", None) != "input":
+        return False
+    fields_by_task = getattr(interrupt, "fields_by_task", {}) or {}
+    if not isinstance(fields_by_task, dict):
+        return False
+    for fields in fields_by_task.values():
+        if isinstance(fields, list) and "beneficiary_id" in fields:
+            return True
+    return False
 
 
 async def _route_interrupt(
@@ -161,6 +174,7 @@ async def _route_interrupt(
             detected_language=route.detected_language,
             target_intent=route.target_intent,
             target_mode=route.target_mode,
+            status_query_type=route.status_query_type,
         )
         return route
     except Exception as exc:
@@ -500,6 +514,164 @@ def _reprompt_updates(state: OrchestratorState, interrupt: Any) -> dict[str, Any
     return updates
 
 
+def _format_task_details_for_status(task: TaskSpec, task_type: str) -> str:
+    payload = task.payload or {}
+    def _fmt_amount(value: Any) -> str | None:
+        try:
+            return f"₦{float(value):,.0f}"
+        except (TypeError, ValueError):
+            return None
+
+    if task_type == "transfer":
+        recipient = payload.get("recipient_resolved_name") or payload.get("recipient_name")
+        amount = payload.get("amount")
+        source_bank = payload.get("source_bank_name")
+        parts: list[str] = []
+        formatted_amount = _fmt_amount(amount)
+        if formatted_amount:
+            parts.append(f"amount {formatted_amount}")
+        if recipient:
+            parts.append(f"recipient {recipient}")
+        if source_bank:
+            parts.append(f"source {source_bank}")
+        if parts:
+            return "Known details: " + ", ".join(parts) + "."
+    if task_type == "airtime":
+        phone = payload.get("phone") or payload.get("recipient_phone")
+        amount = payload.get("amount")
+        parts = []
+        formatted_amount = _fmt_amount(amount)
+        if formatted_amount:
+            parts.append(f"amount {formatted_amount}")
+        if phone:
+            parts.append(f"line {phone}")
+        if parts:
+            return "Known details: " + ", ".join(parts) + "."
+    if task_type == "data":
+        phone = payload.get("phone") or payload.get("recipient_phone")
+        plan = payload.get("plan")
+        parts = []
+        if plan:
+            parts.append(f"plan {plan}")
+        if phone:
+            parts.append(f"line {phone}")
+        if parts:
+            return "Known details: " + ", ".join(parts) + "."
+    return ""
+
+
+def _friendly_required_field(field: str) -> str:
+    mapping = {
+        "recipient_name": "recipient name",
+        "recipient_account": "recipient account number",
+        "recipient_bank_name": "recipient bank name",
+        "beneficiary_id": "beneficiary selection",
+        "source_account_id": "source account selection",
+        "amount": "amount",
+        "pin": "PIN authorization",
+        "confirmation_summary": "confirmation",
+    }
+    return mapping.get(field, field.replace("_", " "))
+
+
+def _build_requirements_hint(required_fields: list[str], interrupt_kind: str) -> str:
+    hints: list[str] = []
+    if "beneficiary_id" in required_fields:
+        hints.append("Pick a beneficiary option by tapping it or replying with the number.")
+    if "source_account_id" in required_fields:
+        hints.append("Pick the source account by tapping it or replying with the number.")
+    if "amount" in required_fields:
+        hints.append("Reply with the amount (for example 5000).")
+    if interrupt_kind == "confirmation":
+        hints.append("Reply yes to continue or no to cancel.")
+    if interrupt_kind == "auth":
+        hints.append("Complete PIN authorization to continue.")
+    return " ".join(hints)
+
+
+def _build_status_query_response(
+    *,
+    state: OrchestratorState,
+    interrupt: Any,
+    task_types: set[str],
+    status_query_type: str | None,
+) -> str:
+    flow_type = next(iter(sorted(task_types))) if task_types else "transaction"
+    first_task = state.tasks.get(interrupt.task_ids[0]) if interrupt.task_ids else None
+    required_fields = list((interrupt.fields_by_task or {}).get(interrupt.task_ids[0], [])) if interrupt.task_ids else []
+    required_fields = [field for field in required_fields if isinstance(field, str)]
+    status_kind = status_query_type or "recap"
+
+    stage_text = {
+        "input": "waiting for your input",
+        "confirmation": "waiting for your confirmation",
+        "auth": "waiting for your authorization",
+    }.get(interrupt.kind, "in progress")
+
+    if status_kind == "requirements":
+        if required_fields:
+            needed = ", ".join(_friendly_required_field(field) for field in required_fields)
+            hint = _build_requirements_hint(required_fields, interrupt.kind)
+            if hint:
+                return f"I still need: {needed}. {hint}".strip()
+            return f"I still need: {needed}."
+        if interrupt.kind == "confirmation":
+            return "I need your confirmation to continue. Reply yes to proceed or no to cancel."
+        if interrupt.kind == "auth":
+            return "I need PIN authorization to continue."
+        return "I am waiting for your next input to continue."
+
+    lines = [f"We are in your {flow_type} flow and currently {stage_text}."]
+    if first_task:
+        detail_line = _format_task_details_for_status(first_task, flow_type)
+        if detail_line:
+            lines.append(detail_line)
+    if required_fields:
+        needed = ", ".join(_friendly_required_field(field) for field in required_fields)
+        lines.append(f"Next step: provide {needed}.")
+    elif interrupt.kind == "confirmation":
+        lines.append("Next step: confirm to continue.")
+    elif interrupt.kind == "auth":
+        lines.append("Next step: complete authorization.")
+    return " ".join(lines)
+
+
+def _status_query_updates(
+    *,
+    state: OrchestratorState,
+    interrupt: Any,
+    route: InterruptRouteDecision,
+    current_task_types: set[str],
+) -> dict[str, Any]:
+    if not current_task_types or not current_task_types.issubset(TRANSACTION_INTENTS):
+        logger.info(
+            "interrupt_status_query_no_active_flow",
+            kind=interrupt.kind,
+            status_query_type=route.status_query_type,
+            active_types=sorted(current_task_types),
+        )
+        return _reprompt_updates(state, interrupt)
+
+    response = _build_status_query_response(
+        state=state,
+        interrupt=interrupt,
+        task_types=current_task_types,
+        status_query_type=route.status_query_type,
+    )
+    logger.info(
+        "interrupt_status_query_hit",
+        kind=interrupt.kind,
+        status_query_type=route.status_query_type or "recap",
+        active_types=sorted(current_task_types),
+    )
+    return {
+        "pending_interrupt": interrupt,
+        "last_interrupt": interrupt,
+        "tasks": state.tasks,
+        "outbox": [{"type": "say", "text": response}],
+    }
+
+
 def _cancel_updates(state: OrchestratorState, interrupt: Any) -> dict[str, Any]:
     set_tasks_cancelled(state.tasks, interrupt.task_ids, copy_task=True)
     return {
@@ -637,6 +809,14 @@ async def handle_pending_interrupt(state: OrchestratorState, config: RunnableCon
         prompt=interrupt.prompt,
     )
 
+    if route.decision == "status_query":
+        return _status_query_updates(
+            state=state,
+            interrupt=interrupt,
+            route=route,
+            current_task_types=current_task_types,
+        )
+
     if route.decision == "cancel":
         return _cancel_updates(state, interrupt)
 
@@ -664,6 +844,15 @@ async def handle_pending_interrupt(state: OrchestratorState, config: RunnableCon
                 "last_interrupt": interrupt,
                 "tasks": state.tasks,
             }
+        return _reprompt_updates(state, interrupt)
+
+    if route.decision == "switch_intent" and _is_beneficiary_clarification_interrupt(interrupt):
+        logger.info(
+            "interrupt_switch_blocked",
+            reason="beneficiary_disambiguation_pending",
+            target_intent=route.target_intent,
+            tasks=interrupt.task_ids,
+        )
         return _reprompt_updates(state, interrupt)
 
     if route.decision == "switch_intent":
