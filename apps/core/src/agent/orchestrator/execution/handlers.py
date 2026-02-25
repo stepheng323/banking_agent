@@ -648,8 +648,11 @@ async def handle_support_task(task: Any, task_id: str, ctx: ExecutionContext) ->
         "language": _state_locale(ctx.state),
     }
 
+    support_payload = dict(task.payload)
+    support_payload["quoted_message_id"] = ctx.state.quoted_message_id
+
     result = await worker.run(
-        payload=task.payload,
+        payload=support_payload,
         context=context_data,
         user_message=user_msg,
     )

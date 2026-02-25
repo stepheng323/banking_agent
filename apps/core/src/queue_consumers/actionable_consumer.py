@@ -4,6 +4,8 @@ import asyncio
 from datetime import datetime, timedelta
 from typing import Any
 
+from sqlalchemy.exc import IntegrityError
+
 from shared.database.enums import ActionableMessageTypeEnum
 from shared.database.models import ActionableMessage
 from shared.queue.messages import ACTIONABLE_MESSAGES_QUEUE
@@ -12,6 +14,15 @@ from shared.repositories.unit_of_work import UnitOfWork
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
+
+
+def _is_duplicate_channel_message_error(error: IntegrityError) -> bool:
+    """Return True when integrity error corresponds to duplicate channel message id."""
+    message = str(getattr(error, "orig", error)).lower()
+    return (
+        ("duplicate key value" in message or "unique constraint" in message)
+        and ("channel_message_id" in message or "wa_message_id" in message)
+    )
 
 
 class ActionableMessageConsumer:
@@ -39,27 +50,34 @@ class ActionableMessageConsumer:
                     return
 
                 # Find the user by channel identity
-                user = await uow.users.get_by_channel_identity(phone_number, channel)
+                user = await uow.users.get_by_channel_identity(channel, phone_number)
                 if not user:
                     logger.warning("actionable_consumer_user_not_found", phone_number=phone_number, channel=channel)
                     return
 
-                # Assuming the actionable payload has the specific intent type or context we want
-                # Right now, it's mostly Receipts -> mapping to generic 'receipt' or similar.
-                # If we need a stricter enum matching, we might map dynamically. For now, default to 'general'.
-                # Actually, our ActionableMessageTypeEnum has values like "receipt" or "invoice".
-                # We can default to RECEIPT if transaction_id is present, which is the primary use case right now.
+                existing = await uow.actionable_messages.get_by_channel_message_id_for_user(
+                    channel_message_id=message_id,
+                    user_id=str(user.id),
+                )
+                if existing:
+                    logger.info(
+                        "actionable_message_duplicate_ignored",
+                        user_id=str(user.id),
+                        message_id=message_id,
+                    )
+                    return
+
                 msg_type = (
-                    ActionableMessageTypeEnum.RECEIPT
+                    ActionableMessageTypeEnum.TRANSFER_RECEIPT
                     if "transaction_id" in actionable_payload
-                    else ActionableMessageTypeEnum.GENERIC
+                    else ActionableMessageTypeEnum.CONFIRMATION_REQUEST
                 )
 
                 # Persist
                 new_msg = ActionableMessage(
                     user_id=user.id,
                     channel_message_id=message_id,  # Using this column for both WA and Telegram message IDs
-                    message_type=msg_type,
+                    message_type=msg_type.value,
                     message_data=actionable_payload,
                     expires_at=datetime.utcnow() + timedelta(days=7),  # Valid for 7 days
                 )
@@ -67,7 +85,14 @@ class ActionableMessageConsumer:
                 # Use the underlying DB session directly for insertion since repository lacks a generic `create`
                 uow.actionable_messages.db.add(new_msg)
 
-                await uow.commit()
+                try:
+                    await uow.commit()
+                except IntegrityError as e:
+                    await uow.rollback()
+                    if _is_duplicate_channel_message_error(e):
+                        logger.info("actionable_message_duplicate_ignored", message_id=message_id)
+                        return
+                    raise
                 logger.debug("actionable_message_persisted", user_id=user.id, message_id=message_id)
 
         except Exception as e:

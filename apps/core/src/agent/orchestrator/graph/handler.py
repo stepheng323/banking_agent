@@ -128,6 +128,8 @@ class OrchestratorGraphHandler:
             "last_message_text": context.text,
             "last_message_id": context.message_id,
             "last_callback": None,
+            "has_quote": bool(context.quoted_message_id),
+            "quoted_message_id": context.quoted_message_id,
             "channel": context.channel,
             "channel_identity": context.channel_identity,
         }
@@ -243,6 +245,8 @@ class OrchestratorGraphHandler:
             "user_id": phone_number,
             "phone_number": phone_number,
             "last_callback": payload,
+            "has_quote": False,
+            "quoted_message_id": None,
         }
 
         config = self._get_config(phone_number, channel=channel)

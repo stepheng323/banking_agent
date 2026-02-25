@@ -69,7 +69,7 @@ class TransactionResolver:
         Security: Only resolves if message is owned by user.
         """
         try:
-            am = self.am_repo.get_by_channel_message_id_for_user(quoted_message_id, user_id)
+            am = await self.am_repo.get_by_channel_message_id_for_user(quoted_message_id, user_id)
             if not am:
                 return None
 
@@ -77,7 +77,10 @@ class TransactionResolver:
             if not tx_id:
                 return None
 
-            return self.tx_repo.get_by_id(tx_id)
+            tx = await self.tx_repo.get_by_id(tx_id)
+            if tx:
+                return tx
+            return await self.tx_repo.get_by_idempotency_key(tx_id)
         except Exception as e:
             logger.warning("quoted_resolution_failed", error=str(e))
             return None
@@ -85,7 +88,7 @@ class TransactionResolver:
     async def _resolve_from_explicit(self, user_id: str, tx_ref: TransactionReference) -> Transaction | None:
         """Resolve transaction from explicit reference."""
         try:
-            transactions = self.tx_repo.get_by_user(user_id, limit=50)
+            transactions = await self.tx_repo.get_by_user(user_id, limit=50)
 
             candidates = []
             for tx in transactions:
@@ -113,14 +116,14 @@ class TransactionResolver:
     async def _resolve_from_recent(self, user_id: str) -> Transaction | None:
         """Get most recent unresolved (pending/failed) transaction."""
         try:
-            pending = self.tx_repo.get_by_status(user_id, "pending")
+            pending = await self.tx_repo.get_by_status(user_id, "pending")
             if pending:
                 return pending[0]
-            failed = self.tx_repo.get_by_status(user_id, "failed")
+            failed = await self.tx_repo.get_by_status(user_id, "failed")
             if failed:
                 return failed[0]
 
-            recent = self.tx_repo.get_by_user(user_id, limit=1)
+            recent = await self.tx_repo.get_by_user(user_id, limit=1)
             return recent[0] if recent else None
 
         except Exception as e:
