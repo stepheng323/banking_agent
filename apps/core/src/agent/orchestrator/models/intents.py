@@ -134,7 +134,7 @@ def reconstruct_intent(data: dict[str, Any]) -> UiIntent | None:
     msg_type = data.get("type")
 
     if msg_type == "say":
-        intent = Say(text=data["text"])
+        intent: UiIntent = Say(text=data["text"])
         intent.actionable_payload = data.get("actionable_payload")
         return intent
 
