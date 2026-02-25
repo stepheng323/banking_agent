@@ -356,14 +356,19 @@ async def advance_wave(state: OrchestratorState, config: RunnableConfig) -> dict
                                 if name not in found_names:
                                     found_names.append(name)
 
-                prompt_text = format_single_transfer_recipient_prompt(
-                    focused_name=focused_name,
-                    focused_missing_fields=agg.missing_fields_by_task[focused_tid],
-                    just_resolved_name=just_resolved_name,
-                    just_resolved_bank=just_resolved_bank,
-                    found_names=found_names,
-                    locale=locale,
-                )
+                focused_missing_fields = agg.missing_fields_by_task[focused_tid]
+                focused_worker_prompt = agg.prompts_by_task.get(focused_tid)
+                if "beneficiary_id" in focused_missing_fields and focused_worker_prompt:
+                    prompt_text = focused_worker_prompt
+                else:
+                    prompt_text = format_single_transfer_recipient_prompt(
+                        focused_name=focused_name,
+                        focused_missing_fields=focused_missing_fields,
+                        just_resolved_name=just_resolved_name,
+                        just_resolved_bank=just_resolved_bank,
+                        found_names=found_names,
+                        locale=locale,
+                    )
 
                 # Mark recipients we mentioned as announced (found_names + just_resolved)
                 for tid in current_wave:
@@ -381,10 +386,30 @@ async def advance_wave(state: OrchestratorState, config: RunnableConfig) -> dict
                     fields_by_task={focused_tid: agg.missing_fields_by_task[focused_tid]},
                     prompt=prompt_text,
                 )
+                outbox_entries: list[dict[str, Any]] = [{"type": "say", "text": prompt_text}]
+                if "beneficiary_id" in focused_missing_fields:
+                    details = agg.details_by_task.get(focused_tid, {})
+                    raw_candidates = details.get("candidates") if isinstance(details, dict) else None
+                    options: list[dict[str, str]] = []
+                    if isinstance(raw_candidates, list):
+                        for idx, candidate in enumerate(raw_candidates, start=1):
+                            if not isinstance(candidate, dict):
+                                continue
+                            label = candidate.get("label") or candidate.get("title") or f"Option {idx}"
+                            options.append({"id": str(idx), "title": str(label)})
+                    if options:
+                        outbox_entries.append(
+                            {
+                                "type": "show_options",
+                                "title": prompt_text,
+                                "task_ids": [focused_tid],
+                                "options": options,
+                            }
+                        )
                 return {
                     "pending_interrupt": interrupt,
                     "tasks": state.tasks,
-                    "outbox": _with_policy_notice(state, [{"type": "say", "text": prompt_text}]),
+                    "outbox": _with_policy_notice(state, outbox_entries),
                     "policy_notice": None,
                 }
 

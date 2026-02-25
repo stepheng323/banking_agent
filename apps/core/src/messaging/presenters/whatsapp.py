@@ -7,6 +7,7 @@ from apps.core.src.agent.orchestrator.models.intents import (
     RequestConfirmation,
     Say,
     ShowFlow,
+    ShowOptions,
     ShowReceipt,
     UiIntent,
 )
@@ -41,7 +42,8 @@ class WhatsAppPresenter(Presenter):
                     msg_id = await self._present_receipt(intent, context)
                 elif isinstance(intent, ShowFlow):
                     msg_id = await self._present_flow(intent, context)
-                # Future: Handle other intents (Ask, ShowOptions, etc.)
+                elif isinstance(intent, ShowOptions):
+                    msg_id = await self._present_options(intent, context)
                 else:
                     logger.warning("unsupported_intent", type=type(intent).__name__)
 
@@ -188,3 +190,32 @@ class WhatsAppPresenter(Presenter):
             fallback = intent.fallback_text or "This action requires flow support on your channel."
             resp = await self.client.send_text(to=context.phone_number, text=fallback)
             return resp.get("messages", [{}])[0].get("id") if isinstance(resp, dict) else None
+
+    async def _present_options(self, intent: ShowOptions, context: PresentationContext) -> str | None:
+        """Present options with channel-native interactive UI and text fallback."""
+        options = [
+            {
+                "id": str(option.get("id", "")).strip() or str(idx),
+                "title": str(option.get("title", option.get("label", f"Option {idx}"))),
+            }
+            for idx, option in enumerate(intent.options, start=1)
+            if isinstance(option, dict)
+        ]
+        if not options:
+            return await self._present_say(Say(text=intent.title), context)
+
+        # WhatsApp buttons support up to 3 options; fall back to numbered text if more.
+        if len(options) <= 3:
+            interactive_resp = await self.client.send_interactive(
+                to=context.phone_number,
+                body_text=intent.title,
+                options=options,
+            )
+            if interactive_resp.success:
+                return interactive_resp.message_id
+            logger.warning("whatsapp_show_options_interactive_failed", error=interactive_resp.error)
+
+        numbered = "\n".join(f"{idx}. {opt['title']}" for idx, opt in enumerate(options, start=1))
+        fallback_text = f"{intent.title}\n{numbered}"
+        text_resp = await self.client.send_text(to=context.phone_number, text=fallback_text)
+        return text_resp.get("messages", [{}])[0].get("id") if isinstance(text_resp, dict) else None

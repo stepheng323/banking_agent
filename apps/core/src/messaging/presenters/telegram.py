@@ -8,6 +8,7 @@ from apps.core.src.agent.orchestrator.models.intents import (
     RequestConfirmation,
     Say,
     ShowFlow,
+    ShowOptions,
     ShowReceipt,
     UiIntent,
 )
@@ -52,6 +53,8 @@ class TelegramPresenter(Presenter):
                     msg_id = await self._present_receipt(intent, context)
                 elif isinstance(intent, ShowFlow):
                     msg_id = await self._present_flow(intent, context)
+                elif isinstance(intent, ShowOptions):
+                    msg_id = await self._present_options(intent, context)
                 else:
                     logger.warning("unsupported_intent", type=type(intent).__name__)
 
@@ -209,3 +212,32 @@ class TelegramPresenter(Presenter):
             fallback = intent.fallback_text or "This action requires flow support."
             resp = await self.client.send_text(to=context.phone_number, text=fallback)
             return str(resp.get("message_id")) if isinstance(resp, dict) and "message_id" in resp else None
+
+    async def _present_options(self, intent: ShowOptions, context: PresentationContext) -> str | None:
+        """Present options with Telegram inline keyboard and text fallback."""
+        options = [
+            {
+                "id": str(option.get("id", "")).strip() or str(idx),
+                "title": str(option.get("title", option.get("label", f"Option {idx}"))),
+            }
+            for idx, option in enumerate(intent.options, start=1)
+            if isinstance(option, dict)
+        ]
+        if not options:
+            return await self._present_say(Say(text=intent.title), context)
+
+        resp = await self.client.send_interactive(
+            to=context.phone_number,
+            body_text=intent.title,
+            options=options,
+        )
+        if resp.success:
+            return resp.message_id
+
+        # Fallback: plain text while preserving numbered selection path.
+        numbered = "\n".join(f"{idx}. {opt['title']}" for idx, opt in enumerate(options, start=1))
+        fallback_text = f"{intent.title}\n{numbered}"
+        text_resp = await self.client.send_text(to=context.phone_number, text=fallback_text)
+        if hasattr(text_resp, "message_id"):
+            return text_resp.message_id
+        return str(text_resp.get("message_id")) if isinstance(text_resp, dict) and "message_id" in text_resp else None

@@ -12,7 +12,7 @@ from typing import Any, Literal
 class UiIntent:
     """Base class for all UI intents."""
 
-    actionable_payload: dict[str, Any] | None = None
+    actionable_payload: dict[str, Any] | None = field(default=None, kw_only=True)
 
 
 @dataclass
@@ -41,6 +41,15 @@ class ShowOptions(UiIntent):
     title: str
     options: list[dict[str, str]]
     task_ids: list[str] = field(default_factory=list)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "type": "show_options",
+            "title": self.title,
+            "options": self.options,
+            "task_ids": self.task_ids,
+            "actionable_payload": self.actionable_payload,
+        }
 
 
 @dataclass
@@ -170,6 +179,15 @@ def reconstruct_intent(data: dict[str, Any]) -> UiIntent | None:
             flow_id=data.get("flow_id", ""),
             flow_config=data.get("flow_config", {}),
             fallback_text=data.get("fallback_text", ""),
+        )
+        intent.actionable_payload = data.get("actionable_payload")
+        return intent
+
+    elif msg_type == "show_options":
+        intent = ShowOptions(
+            title=data.get("title", ""),
+            options=data.get("options", []),
+            task_ids=data.get("task_ids", []),
         )
         intent.actionable_payload = data.get("actionable_payload")
         return intent

@@ -10,6 +10,7 @@ from apps.core.src.agent.orchestrator.models.intents import (
     RequestAuth,
     RequestConfirmation,
     Say,
+    ShowOptions,
     ShowReceipt,
     UiIntent,
 )
@@ -131,7 +132,7 @@ class MessageConsumer:
 
             response_text = orchestrator_output.get("text")
             has_primary_interaction = any(
-                isinstance(i, (RequestAuth, RequestConfirmation, ShowReceipt)) for i in intents
+                isinstance(i, (RequestAuth, RequestConfirmation, ShowReceipt, ShowOptions)) for i in intents
             )
             if response_text and not has_primary_interaction and not any(isinstance(i, Say) for i in intents):
                 intents.append(Say(text=response_text))

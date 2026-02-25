@@ -14,8 +14,15 @@ from apps.core.src.agent.orchestrator.nodes.execution import advance_wave
 
 
 class _MockTransferNeedsInputWorker:
-    def __init__(self, required_fields: list[str]) -> None:
+    def __init__(
+        self,
+        required_fields: list[str],
+        prompt: str = "I need account details for this recipient.",
+        details: dict | None = None,
+    ) -> None:
         self.required_fields = required_fields
+        self.prompt = prompt
+        self.details = details or {}
         self.last_context: dict | None = None
         self.last_user_message: str | None = None
 
@@ -32,7 +39,8 @@ class _MockTransferNeedsInputWorker:
         return TransactionResult(
             outcome=TransactionOutcome.NEEDS_INPUT,
             required_fields=self.required_fields,
-            prompt="I need account details for this recipient.",
+            prompt=self.prompt,
+            details=self.details,
         )
 
 
@@ -120,3 +128,38 @@ async def test_bank_only_follow_up_prompts_for_account_number() -> None:
     assert worker.last_context["previous_response"] == previous_prompt
     assert "account number for Tolu" in text
     assert "Which bank is that for?" not in text
+
+
+async def test_beneficiary_ambiguity_prompt_is_preserved() -> None:
+    ambiguity_prompt = (
+        "I found multiple matches for 'Tolu'. Which one did you mean?\n"
+        "1. Tolu A • Access Bank • ****1234\n"
+        "2. Tolu B • GTBank • ****5678\n"
+        "Reply with the number or rephrase."
+    )
+    worker = _MockTransferNeedsInputWorker(
+        ["beneficiary_id"],
+        prompt=ambiguity_prompt,
+        details={
+            "ambiguity": "MULTIPLE_BENEFICIARIES",
+            "candidates": [
+                {"id": "bene-1", "label": "Tolu A • Access Bank • ****1234"},
+                {"id": "bene-2", "label": "Tolu B • GTBank • ****5678"},
+            ],
+        },
+    )
+    state = _build_state()
+    config: RunnableConfig = {"configurable": {"services": {"transfer": worker}}, "recursion_limit": 50}
+
+    updates = await advance_wave(state, config)
+    say_intent = updates["outbox"][0]
+    options_intent = updates["outbox"][1]
+
+    assert say_intent["type"] == "say"
+    assert say_intent["text"] == ambiguity_prompt
+    assert "account number and bank" not in say_intent["text"]
+
+    assert options_intent["type"] == "show_options"
+    assert options_intent["task_ids"] == ["t1"]
+    assert [opt["id"] for opt in options_intent["options"]] == ["1", "2"]
+    assert options_intent["options"][0]["title"] == "Tolu A • Access Bank • ****1234"

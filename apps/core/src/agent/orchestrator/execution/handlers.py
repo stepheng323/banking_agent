@@ -26,6 +26,7 @@ class ExecutionAggregation:
     def __init__(self, tasks: dict[str, Any]) -> None:
         self.updates: dict[str, Any] = {"tasks": tasks}
         self.missing_fields_by_task: dict[str, list[str]] = {}
+        self.details_by_task: dict[str, dict[str, Any]] = {}
         self.needs_confirm_tasks: list[str] = []
         self.needs_auth_tasks: list[str] = []
         self.prompts: list[str] = []
@@ -55,6 +56,10 @@ class ExecutionAggregation:
     def add_missing_fields(self, task_id: str, fields: list[str] | None) -> None:
         if fields:
             self.missing_fields_by_task[task_id] = fields
+
+    def add_details(self, task_id: str, details: dict[str, Any] | None) -> None:
+        if details:
+            self.details_by_task[task_id] = details
 
 
 @dataclass
@@ -149,6 +154,7 @@ def _handle_transaction_outcome(
     elif result.outcome == TransactionOutcome.NEEDS_INPUT:
         task.stage = TaskStage.EXTRACTED
         agg.add_missing_fields(task_id, result.required_fields)
+        agg.add_details(task_id, result.details)
         agg.add_prompt(result.prompt, task_id)
         if result.update_message:
             agg.feedback_messages.append(result.update_message)
