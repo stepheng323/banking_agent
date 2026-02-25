@@ -22,11 +22,11 @@
     "fallback": "I'm {name}. {description}\nI can help with: {supported}.\nWhat would you like to do?"
   },
   "conversational": {
-    "greeting": "Hey. I'm Fusepay. What money move should we handle?",
-    "appreciation": "Anytime. What's the next money move?",
-    "checkin": "I'm locked in. What money move are we doing?",
-    "identity": "I'm Fusepay. I handle real money tasks fast.",
-    "brand_origin": "Built by the Fusepay team for fast, reliable banking tasks.",
+    "greeting": "Hi. I'm Narya AI. What would you like to do?",
+    "appreciation": "Anytime. What should we handle next?",
+    "checkin": "I'm here. What money move are we handling?",
+    "identity": "I'm Narya AI. I execute real banking tasks fast and carefully.",
+    "brand_origin": "Narya AI is named after a kindler archetype, built by Fusepay for calm, reliable banking execution.",
     "capability_question": "I handle transfers, airtime/data, balance checks, and transaction queries.",
     "out_of_scope": "I stay on banking. I can help with transfers, airtime/data, balances, and transaction queries.",
     "clarify": "Say exactly what you want me to do with your money."
@@ -472,12 +472,17 @@
     }
   },
   "transfer": {
+    "confirmation": {
+      "name_mismatch_warning": "You asked to send to {requested_name}, but the account resolved as {resolved_name}.",
+      "high_risk_unsaved_warning": "⚠️ This is a high-risk transfer: {amount} to an unsaved recipient. Please confirm details carefully."
+    },
     "funding": {
       "plan_failed": "Failed to plan funding.",
       "insufficient_funds": "Insufficient funds."
     },
     "validation": {
       "ask_amount": "How much would you like to send?",
+      "ask_amount_with_suggestion": "How much should I send to {recipient_name}? I can use your last amount ({amount}). Reply 'yes' to use it, or enter a new amount.",
       "same_bank_fallback": "the same bank",
       "self_transfer_same_account": "The recipient account ({recipient_account}) at {bank_identifier} cannot be the same as your source account. Please provide a different recipient account.",
       "same_source_destination_fallback": "Source and destination accounts are the same. Please specify different accounts.",
@@ -676,7 +681,7 @@
   "transaction_summary": {
     "batch": {
       "confirm_title": "*Confirm Transfers ({count})*",
-      "total": "Total: {amount}"
+      "total": "Total out: {amount}"
     },
     "multi": {
       "header": "✅ *Transaction Summary*",

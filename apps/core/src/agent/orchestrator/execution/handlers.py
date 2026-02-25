@@ -26,6 +26,7 @@ class ExecutionAggregation:
     def __init__(self, tasks: dict[str, Any]) -> None:
         self.updates: dict[str, Any] = {"tasks": tasks}
         self.missing_fields_by_task: dict[str, list[str]] = {}
+        self.details_by_task: dict[str, dict[str, Any]] = {}
         self.needs_confirm_tasks: list[str] = []
         self.needs_auth_tasks: list[str] = []
         self.prompts: list[str] = []
@@ -55,6 +56,10 @@ class ExecutionAggregation:
     def add_missing_fields(self, task_id: str, fields: list[str] | None) -> None:
         if fields:
             self.missing_fields_by_task[task_id] = fields
+
+    def add_details(self, task_id: str, details: dict[str, Any] | None) -> None:
+        if details:
+            self.details_by_task[task_id] = details
 
 
 @dataclass
@@ -149,6 +154,7 @@ def _handle_transaction_outcome(
     elif result.outcome == TransactionOutcome.NEEDS_INPUT:
         task.stage = TaskStage.EXTRACTED
         agg.add_missing_fields(task_id, result.required_fields)
+        agg.add_details(task_id, result.details)
         agg.add_prompt(result.prompt, task_id)
         if result.update_message:
             agg.feedback_messages.append(result.update_message)
@@ -474,12 +480,21 @@ async def _handle_purchase_task(
         return
 
     user_msg = _maybe_user_message(task, ctx.state)
+    required_fields: list[str] = []
+    previous_response: str | None = None
+    if ctx.state.last_interrupt and task_id in ctx.state.last_interrupt.task_ids:
+        raw_required_fields = ctx.state.last_interrupt.fields_by_task.get(task_id, [])
+        required_fields = [field for field in raw_required_fields if isinstance(field, str)]
+        previous_response = ctx.state.last_interrupt.prompt
+
     context_data = {
         "phone_number": ctx.state.phone_number,
         "user_id": ctx.state.loaded_context.get("user_id"),
         "accounts": ctx.state.loaded_context.get("accounts", []),
         "beneficiaries": ctx.state.loaded_context.get("beneficiaries", []),
         "language": _state_locale(ctx.state),
+        "required_fields": required_fields,
+        "previous_response": previous_response,
     }
     if include_channel:
         context_data["channel"] = ctx.state.channel

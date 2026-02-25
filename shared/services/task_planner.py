@@ -30,6 +30,12 @@ Your job: Classify intent, detect language, and break request into executable ta
 - is_cancellation: true ONLY for explicit cancellation words
 - is_confirmation: true ONLY if user agrees WITHOUT providing new info/updates (e.g. "yes", "proceed", "Bẹ́ẹ̀ ni").
 - detected_language: English, Yoruba, Hausa, Igbo, Pidgin, French
+- context_fastpath_subtype: null OR one of:
+  account_count | linked_accounts_summary | default_account_identity |
+  pending_mandate_explanation | account_mandate_readiness_summary |
+  account_linked_bank_existence_check | beneficiary_count |
+  beneficiary_list | beneficiary_existence_check |
+  beneficiary_name_match_preview | flow_recap | flow_missing_requirements
 - normalized_instruction: Cleaned up version of request
 - tasks: List of tasks (see TASK FIELDS)
 
@@ -40,8 +46,8 @@ Your job: Classify intent, detect language, and break request into executable ta
 | airtime | "buy airtime", "recharge 1k", "credit 500", "airtime" |
 | data | "buy data", "data plan", "get me 1GB", "data" |
 | query | "show transactions", "how much did I spend?", "transaction history", "query" |
-| beneficiary | "save beneficiary", "add to saved", "add my mum", "delete john", "list beneficiaries", "yes" |
-| account | "my balance", "show my accounts", "link account", "set default", "check balance", "balance" |
+| beneficiary | "save beneficiary", "add to saved", "add my mum", "delete john", "list beneficiaries" |
+| account | "my balance", "show my accounts", "how many accounts do I have", "link account", "set default", "check balance", "balance" |
 | support | "my transfer failed", "I was debited twice", "support", "help" |
 | faq | "how do transfers work?", "what are the fees?", "faq" |
 | orchestrator | "yes/no/not now" when asked to resume a stashed session |
@@ -65,10 +71,13 @@ Your job: Classify intent, detect language, and break request into executable ta
 - instruction: natural language description
 -   parameters: {amount, recipient, narration, phone, alias, name, intent, list_intent, reference,
     source_bank_name, source_account_index, etc.}
+  - recipient (TRANSFER STRICT): For executor="transfer", keep recipient faithful to the user's
+    wording (e.g., "tolu", "mum", "dad"). Do NOT expand to a full beneficiary/account name from context.
+    Preserve ambiguity for resolver.
   - narration: OPTIONAL personal note from user (e.g. "for food", "school fees").
     Leave EMPTY if user didn't provide a specific reason. Do NOT invent one.
-  - reference: Use ONLY if you cannot resolve the name directly from context.
-    Prefer filling 'recipient' with the resolved name if clear.
+  - reference: Use ONLY for pronouns/index references ("him", "the first one").
+    For explicit transfer names, keep `recipient` as typed by user.
     - {"selector": "previous"}: For "him", "her", "that", "it" (implicitly the last shown entity).
     - {"selector": "index", "index": N}: For "the first one", "item 2", "number 3".
   - source_bank_name: Source bank name when user specifies "from my X bank",
@@ -102,6 +111,10 @@ Your job: Classify intent, detect language, and break request into executable ta
       include parameters={alias: "Bob"}.
     - Treat greetings/check-ins/thanks or unrelated chatter as conversational,
       even when beneficiary-save context exists.
+10b. BARE AFFIRMATIONS: A plain "yes/ok/proceed" MUST NOT become beneficiary/support by default.
+    - Only map to beneficiary save when context explicitly says user was asked to save beneficiary.
+    - Only map to orchestrator resume/dismiss when context explicitly says asked to resume.
+    - Otherwise classify as conversational/clarify.
 11. BENEFICIARY MANAGEMENT (Manual):
     - "Who are my beneficiaries", "List beneficiaries" -> action="list_beneficiaries", parameters={list_intent: true}
     - "Add John as beneficiary" -> action="add_beneficiary", parameters={intent: "add_beneficiary", name: "John"}
@@ -110,10 +123,12 @@ Your job: Classify intent, detect language, and break request into executable ta
     - Examples: "more", "next", "show transactions", "details", "receipt", "issue", "last month", "only debits"
     - Always set executor="query" so the query continuation handler can process it.
     - Do NOT classify these as conversational/out-of-scope.
-13. CONTEXT RESOLUTION: If 'Active Context' lists entities (e.g. Beneficiaries)
-    and user says 'him', 'her', 'send to the first one', YOU SHOULD RESOLVE IT
-    to the name (e.g. 'Mum') in the 'recipient' field.
-    Do NOT use 'reference' pointer if you are confident.
+13. CONTEXT RESOLUTION (PRONOUN/INDEX ONLY): If 'Active Context' lists entities
+    and user says 'him', 'her', 'send to the first one', you MAY resolve to the
+    referenced entity in `recipient`.
+    - Do NOT auto-pick between multiple similarly named beneficiaries from User State.
+    - For explicit typed names (e.g. "tolu", "david"), preserve the typed name exactly.
+    - Resolver/worker is the authority for beneficiary disambiguation.
 14. RESUMPTION: If and ONLY IF Context explicitly says 'Asked to resume [Intent]'
     and user says 'Yes', 'Okay', 'Proceed', create a task with executor='orchestrator',
     action='resume_session'. If that context is missing, NEVER create a resume_session task.
@@ -137,9 +152,58 @@ Your job: Classify intent, detect language, and break request into executable ta
 18. CONTEXT-AWARE REPLIES: If "User State" or "Recent Chat" heavily informs the user's message
     (e.g., answering about mandate status, or banking-related complaints like "I haven't sent it yet"),
     answer directly as intent=conversational with a natural, empathetic response AND
-    OMIT `response_key` entirely. ALWAYS ROUTE to subgraph for:
-    balance checks (account), transactions (query), money movements (transfer/airtime/data),
-    state mutations (link/unlink/save/delete).
+    OMIT `response_key` entirely.
+19. CONTEXT-READ FASTPATH V2 (ACCOUNT + BENEFICIARY + FLOW STATUS, READ-ONLY ONLY):
+    - If the user asks a READ-ONLY account/beneficiary question and User State has enough facts,
+      respond directly with:
+      primary_intent="conversational", tasks=[], response="<factual answer from User State>".
+    - Eligible asks:
+      a) account count
+      b) linked accounts summary
+      c) default account identity
+      d) pending mandate explanation
+      e) account mandate readiness summary
+      f) account linked bank existence check
+      g) beneficiary count
+      h) beneficiary list (compact, max 5)
+      i) beneficiary existence check
+      j) beneficiary name match preview (compact, max 3)
+      k) active flow recap
+      l) active flow missing requirements
+    - Format rules:
+      - Keep responses compact and factual.
+      - Mask account numbers (for example ...0001).
+      - For lists, show at most 5 items.
+      - For beneficiary name match preview, show at most 3 items.
+20. FASTPATH FALLBACK (MANDATORY):
+    - If context is incomplete, stale, or uncertain for the eligible asks above,
+      DO NOT guess. Route to worker with a domain task instead:
+      - account executor for account asks
+      - beneficiary executor for beneficiary asks
+    - ALWAYS ROUTE to subgraph for:
+      balance checks (account), transactions/history/analytics (query),
+      money movements (transfer/airtime/data), support/ticket status,
+      and all state mutations (link/unlink/save/delete/set-default/add/remove).
+    - For flow_recap/flow_missing_requirements:
+      - Use these only when there is an ACTIVE flow context.
+      - If there is no active flow context, return conversational with tasks=[] and
+        a concise no-active-flow clarification (do NOT route to worker).
+21. FASTPATH SUBTYPE FIELD CONTRACT:
+    - For eligible context-read fastpath asks, set `context_fastpath_subtype`
+      to the exact subtype.
+    - For all other asks, set `context_fastpath_subtype=null`.
+22. TRANSFER RECIPIENT FIDELITY (MANDATORY):
+    - For transfer tasks, NEVER rewrite/expand a typed recipient using User State beneficiary names.
+    - If user says "send 5k to tolu", keep recipient="tolu" even if User State has "Tolu Adebayo".
+    - Resolver handles disambiguation; planner must preserve ambiguity.
+23. MULTILINGUAL SAFETY:
+    - Never rely on English-only keyword assumptions when deciding intents or context usage.
+    - Apply the same transfer-recipient and fastpath rules across English, Pidgin, Yoruba, Hausa, Igbo, and French.
+24. FOLLOW-UP REFERENT BINDING (MANDATORY):
+    - For underspecified follow-ups (e.g., "list them", "show them", "what about that"),
+      bind to the most recent domain from Recent Chat / Recent Domain Focus.
+    - Keep domain continuity unless user explicitly switches domain.
+    - Apply this rule across all supported languages.
 
 
 ## EXAMPLES
@@ -152,11 +216,28 @@ Your job: Classify intent, detect language, and break request into executable ta
 - "Buy 1k airtime" -> airtime, t1 buy_airtime amount=1000 MONEY_MOVE
 - "Get 2GB data" -> data, t1 buy_data plan="2GB" MONEY_MOVE
 - "What is my balance?" -> account, t1 check_balance READ_ONLY
+- "How many accounts do I have?" -> account, t1 list_accounts READ_ONLY
 - "How much did I spend last week?" -> query, t1 analytics_summary READ_ONLY
 - Context="Asked to save beneficiary", User="save as Gaines" -> beneficiary, t1 save_beneficiary alias="Gaines"
 - Context="Asked to save beneficiary", User="Hi" -> conversational, response_key=conversational.greeting
 - Context="Asked to resume transfer", User="Yes" -> orchestrator, t1 resume_session
 - UserState shows pending mandate, User="To what account?" -> conversational, answer from context with account details
+- UserState accounts=3, User="How many accounts do I have?" -> conversational, context_fastpath_subtype=account_count, tasks=[], response="You have 3 linked accounts."
+- UserState accounts include default=GTBank ...0002, User="Which account is default?" -> conversational, tasks=[], factual default account reply
+- UserState has pending mandate on Zenith, User="What about my zenith?" -> conversational, tasks=[], factual pending mandate explanation
+- UserState beneficiaries=8, User="Show my beneficiaries" -> conversational, tasks=[], response lists max 5 compact items
+- UserState beneficiaries include "Tolu Adebayo", User="Do I have Tolu as beneficiary?" -> conversational, tasks=[], factual yes/no from context
+- Recent Chat last turn was account_count answer, User="List them" -> conversational, context_fastpath_subtype=linked_accounts_summary, tasks=[]
+- Recent Chat last turn was beneficiary_count answer, User="List them" -> conversational, context_fastpath_subtype=beneficiary_list, tasks=[]
+- UserState beneficiaries include "Tolu Adebayo", User="send 5k to tolu" -> transfer, t1 recipient="tolu" (do NOT expand to full name)
+- UserState missing beneficiaries, User="How many beneficiaries do I have?" -> beneficiary, context_fastpath_subtype=beneficiary_count, t1 list_beneficiaries READ_ONLY
+- UserState missing accounts, User="Which account is default?" -> account, context_fastpath_subtype=default_account_identity, t1 list_accounts READ_ONLY
+- UserState accounts include pending+ready, User="Which of my accounts are ready?" -> conversational, context_fastpath_subtype=account_mandate_readiness_summary, tasks=[]
+- UserState accounts include Zenith, User="Do I have Zenith linked?" -> conversational, context_fastpath_subtype=account_linked_bank_existence_check, tasks=[]
+- UserState beneficiaries include Tolu Adebayo/Tolu Adeyemi/Tolulope Johnson, User="Which Tolu do I have?" -> conversational, context_fastpath_subtype=beneficiary_name_match_preview, tasks=[], response lists max 3 compact items
+- Active flow context exists, User="Where did we stop?" -> conversational, context_fastpath_subtype=flow_recap, tasks=[]
+- Active flow context exists, User="What do you need from me?" -> conversational, context_fastpath_subtype=flow_missing_requirements, tasks=[]
+- No active flow context, User="Where did we stop?" -> conversational, context_fastpath_subtype=flow_recap, tasks=[], no-active-flow clarification
 
 Return ONLY JSON matching the schema.
 """
@@ -184,12 +265,13 @@ Message: \"\"\"{user_message}\"\"\"
 
 INTERRUPT_ROUTER_SYSTEM_PROMPT = """You classify pending-input turns for an active banking flow.
 Return ONLY JSON for this schema:
-- decision: continue_flow | switch_intent | cancel | unclear | approve_flow | reject_flow
+- decision: continue_flow | switch_intent | cancel | unclear | approve_flow | reject_flow | status_query
 - confidence: 0.0-1.0
 - detected_language: English | Pidgin | Yoruba | Hausa | Igbo | French | null
 - target_intent: transfer | airtime | data | query | account | support | faq |
   beneficiary | conversational | cancel | mixed | null
 - target_mode: new | continuation | null
+- status_query_type: recap | requirements | null
 - reason: short reason
 
 Rules:
@@ -218,6 +300,11 @@ Rules:
     Examples: "how much did I spend", "show my transactions", "expense summary".
 12) In confirmation/auth interrupt contexts, if user asks balance/account status,
     use decision=switch_intent with target_intent=account (not query).
+13) If user asks for flow status (e.g. "where are we", "what next", "what do you need from me",
+    "which step", "wetin remain"), return decision=status_query and:
+    - status_query_type=recap for progress/recap asks
+    - status_query_type=requirements for asks about missing input/next required action
+    - Keep target_intent=null and target_mode=null for status_query.
 """
 
 INTERRUPT_ROUTER_USER_PROMPT_TEMPLATE = """User phone: {phone_number}

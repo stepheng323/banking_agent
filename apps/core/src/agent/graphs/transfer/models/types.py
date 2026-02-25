@@ -37,7 +37,12 @@ class TransferPayload(BaseModel):
     recipient_bank_name: str | None = None
     recipient_resolved_name: str | None = None
     beneficiary_id: str | None = None
+    beneficiary_candidates: list[dict[str, Any]] = Field(default_factory=list)
     is_self: bool = False
+    resolved_from_saved_beneficiary: bool = False
+    name_mismatch: bool = False
+    name_match_score: float | None = None
+    name_mismatch_warning: str | None = None
 
     source_account_id: str | None = None
     source_bank_name: str | None = None
@@ -52,6 +57,10 @@ class TransferPayload(BaseModel):
     narration: str | None = None
     description: str | None = None
     user_note: str | None = None
+    suggested_amount: float | None = None
+    is_high_risk_transfer: bool = False
+    dynamic_risk_threshold: float | None = None
+    high_risk_warning: str | None = None
 
     confirmation: TransferConfirmation = Field(default_factory=TransferConfirmation)
     skip_extraction: bool = False

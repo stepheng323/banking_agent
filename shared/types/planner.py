@@ -75,6 +75,21 @@ PlannerResponseKey: TypeAlias = Literal[
     "planner.cancelled",
 ]
 
+ContextFastpathSubtype: TypeAlias = Literal[
+    "account_count",
+    "linked_accounts_summary",
+    "default_account_identity",
+    "pending_mandate_explanation",
+    "account_mandate_readiness_summary",
+    "account_linked_bank_existence_check",
+    "beneficiary_count",
+    "beneficiary_list",
+    "beneficiary_existence_check",
+    "beneficiary_name_match_preview",
+    "flow_recap",
+    "flow_missing_requirements",
+]
+
 
 InterruptRoutingDecision: TypeAlias = Literal[
     "continue_flow",
@@ -83,6 +98,7 @@ InterruptRoutingDecision: TypeAlias = Literal[
     "unclear",
     "approve_flow",
     "reject_flow",
+    "status_query",
 ]
 
 
@@ -104,6 +120,10 @@ class InterruptRouteDecision(BaseModel):
     target_mode: Literal["new", "continuation"] | None = Field(
         default=None,
         description="Optional routing mode hint (for example query new-vs-continuation)",
+    )
+    status_query_type: Literal["recap", "requirements"] | None = Field(
+        default=None,
+        description="Subtype when decision=status_query",
     )
     reason: str | None = Field(default=None, description="Short explanation for observability/debugging")
 
@@ -133,6 +153,13 @@ class PlannerOutput(BaseModel):
     is_confirmation: bool = Field(default=False, description="True if user explicitly confirms/agrees")
     detected_language: str | None = Field(
         default=None, description="Detected language: English, Yoruba, Hausa, Igbo, Pidgin, French"
+    )
+    context_fastpath_subtype: ContextFastpathSubtype | None = Field(
+        default=None,
+        description=(
+            "Set only for context-backed read-only account/beneficiary asks that are eligible for fastpath; "
+            "otherwise null"
+        ),
     )
 
     # Planning fields

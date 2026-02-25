@@ -49,6 +49,20 @@ def test_interrupt_route_decision_accepts_allowed_value() -> None:
     assert decision.decision == "switch_intent"
 
 
+def test_interrupt_route_decision_accepts_status_query_value() -> None:
+    decision = InterruptRouteDecision(
+        decision="status_query",
+        confidence=0.88,
+        detected_language="Yoruba",
+        target_intent=None,
+        target_mode=None,
+        status_query_type="requirements",
+        reason="user asked what is required next",
+    )
+    assert decision.decision == "status_query"
+    assert decision.status_query_type == "requirements"
+
+
 def test_interrupt_route_decision_rejects_unknown_value() -> None:
     with pytest.raises(ValidationError):
         InterruptRouteDecision.model_validate(

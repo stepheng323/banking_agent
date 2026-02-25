@@ -55,6 +55,12 @@ When user corrects mid-flow ("I meant 50k"):
 - If `RequiredFields` contains `recipient_account` and user replies with only digits, map it to `recipient_account`.
 - Do not infer unrelated fields when reply is a direct slot-fill response.
 
+## RECIPIENT NAME FIDELITY
+- Keep `recipient_name` faithful to what the user typed.
+- Do NOT expand short names to a full beneficiary from context.
+  - Example: user says "send 5k to tolu" -> `recipient_name="tolu"` (not "Tolu Adebayo").
+- Beneficiary disambiguation is handled downstream by resolver.
+
 ## EXAMPLES
 | Input | Key Extractions |
 |-------|-----------------|

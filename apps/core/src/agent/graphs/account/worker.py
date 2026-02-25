@@ -29,6 +29,8 @@ logger = get_logger(__name__)
 
 ACTION_CAPABILITY_MAP: dict[str, AccountCapability] = {
     "list": AccountCapability.LIST_ACCOUNTS,
+    "list_accounts": AccountCapability.LIST_ACCOUNTS,
+    "count": AccountCapability.LIST_ACCOUNTS,
     "check_balance": AccountCapability.LIST_ACCOUNTS,
     "show_balance": AccountCapability.LIST_ACCOUNTS,
     "balance": AccountCapability.LIST_ACCOUNTS,
@@ -104,6 +106,21 @@ class AccountWorker:
             parsed = await self.parser.parse(text)
             identifier = parsed.identifier or text
             patch["identifier"] = identifier
+        elif action in ("list", "list_accounts") and text:
+            # Let parser refine list-like intents into nuanced account intents (e.g. count).
+            parsed = await self.parser.parse(text)
+            if parsed.action and parsed.action != "unknown":
+                action = parsed.action
+                patch["action"] = action
+            if not identifier and parsed.identifier:
+                identifier = parsed.identifier
+                patch["identifier"] = identifier
+            if parsed.language:
+                patch["language"] = parsed.language
+
+        if action == "list_accounts":
+            action = "list"
+            patch["action"] = action
 
         if action == "unknown" or not action:
             action = "list"
@@ -134,6 +151,20 @@ class AccountWorker:
             response = render_message("account.user_not_found", locale)
             response = await self._translate_if_needed(response, user_ctx, payload)
             return AccountResult(outcome=AccountOutcome.OK, response=response, patch=patch)
+
+        if action == "count":
+            accounts = user_ctx.get("accounts") or []
+            if not accounts and user_id:
+                accounts = await self.account_repo.get_by_user(user_id)
+            count = len(accounts)
+            noun = "account" if count == 1 else "accounts"
+            response = f"You have {count} linked {noun}."
+            response = await self._translate_if_needed(response, user_ctx, payload)
+            return AccountResult(
+                outcome=AccountOutcome.OK,
+                response=response,
+                patch=patch,
+            )
 
         try:
             if action == "link":

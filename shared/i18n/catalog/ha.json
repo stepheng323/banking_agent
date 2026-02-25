@@ -22,11 +22,11 @@
     "fallback": "Ni ne {name}. {description}\nZan iya taimakawa da: {supported}.\nMe kake son yi?"
   },
   "conversational": {
-    "greeting": "Sannu. Ta yaya zan taimaka da harkar kudinka yau?",
-    "appreciation": "Babu komai. Wane aikin kudi kake so na taimaka da shi na gaba?",
-    "checkin": "Ina nan. Ta yaya zan taimaka da harkar kudinka yau?",
-    "identity": "Ni ne Fusepay, mataimakin banking naka.",
-    "brand_origin": "Kungiyar Fusepay ce ta gina ni don taimaka maka da ayyukan banking.",
+    "greeting": "Sannu. Ni ne Narya AI. Me kake so mu yi yau?",
+    "appreciation": "Babu komai. Wane aiki za mu yi na gaba?",
+    "checkin": "Ina nan. Wane aikin kudi za mu fara?",
+    "identity": "Ni ne Narya AI. Ina gudanar da ainihin ayyukan banking da sauri kuma cikin kulawa.",
+    "brand_origin": "Sunan Narya AI ya zo daga wahayin kindler. Kungiyar Fusepay ce ta gina ni domin nutsattsen kuma amintaccen banking execution.",
     "capability_question": "Zan iya taimakawa da tura kudi, sayen airtime/data, duba balance, da tambayoyin transaction.",
     "out_of_scope": "Ina mayar da hankali kan ayyukan banking. Zan iya taimakawa da transfer, airtime/data, balance, da tambayoyin transaction.",
     "clarify": "Don Allah ka kara bayyana abin da kake so na taimaka da shi."
@@ -472,12 +472,17 @@
     }
   },
   "transfer": {
+    "confirmation": {
+      "name_mismatch_warning": "Ka ce a tura zuwa {requested_name}, amma an warware account din a matsayin {resolved_name}.",
+      "high_risk_unsaved_warning": "⚠️ Wannan transfer mai hadari ne: {amount} zuwa wanda ba a ajiye ba. Don Allah ka tabbatar da cikakkun bayanai sosai."
+    },
     "funding": {
       "plan_failed": "Failed to plan funding.",
       "insufficient_funds": "Insufficient funds."
     },
     "validation": {
       "ask_amount": "How much would you like to send?",
+      "ask_amount_with_suggestion": "Nawa zan tura wa {recipient_name}? Zan iya amfani da adadinka na baya ({amount}). Ka amsa 'yes' idan haka, ko ka rubuta sabon adadi.",
       "same_bank_fallback": "the same bank",
       "self_transfer_same_account": "The recipient account ({recipient_account}) at {bank_identifier} cannot be the same as your source account. Please provide a different recipient account.",
       "same_source_destination_fallback": "Source and destination accounts are the same. Please specify different accounts.",
@@ -650,7 +655,7 @@
   "transaction_summary": {
     "batch": {
       "confirm_title": "*Confirm Transfers ({count})*",
-      "total": "Total: {amount}"
+      "total": "Jimillar da za ta fita: {amount}"
     },
     "multi": {
       "header": "✅ *Transaction Summary*",

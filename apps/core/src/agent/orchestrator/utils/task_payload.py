@@ -1,3 +1,4 @@
+import re
 from typing import Any
 
 from apps.core.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
@@ -13,9 +14,47 @@ def apply_source_account_fields(payload: dict[str, Any], plan_item: Any) -> None
         payload["source_account_index"] = plan_item.parameters.source_account_index
 
 
+def _normalize_text(value: str | None) -> str:
+    if not value:
+        return ""
+    return re.sub(r"[^a-z0-9]+", " ", value.lower()).strip()
+
+
+def _recipient_grounded_in_user_text(recipient: str | None, user_text: str) -> bool:
+    """Return True if planner recipient is clearly present in user's original message."""
+    norm_recipient = _normalize_text(recipient)
+    norm_text = _normalize_text(user_text)
+    if not norm_recipient or not norm_text:
+        return True
+    return norm_recipient in norm_text
+
+
+def _derive_recipient_from_user_text(planned_recipient: str | None, user_text: str) -> str | None:
+    """Derive a safe recipient token from user text when planner over-expands names."""
+    norm_planned = _normalize_text(planned_recipient)
+    norm_text = _normalize_text(user_text)
+    if not norm_text:
+        return None
+
+    planned_tokens = [token for token in norm_planned.split() if token]
+    text_tokens = {token for token in norm_text.split() if token}
+    overlap = [token for token in planned_tokens if token in text_tokens]
+    if overlap:
+        return overlap[0]
+
+    # Lightweight deterministic fallback: token after a transfer preposition.
+    match = re.search(r"\b(?:to|for|si|ga|zuwa)\s+([a-z0-9']+)", norm_text)
+    if match:
+        candidate = match.group(1).strip()
+        return candidate or None
+
+    return None
+
+
 def _apply_transfer_payload_fields(
     payload: dict[str, Any],
     plan_item: Any,
+    fallback_message: str,
     *,
     strip_recipient_suffix: bool,
     format_narration_requires_recipient_field: bool,
@@ -28,8 +67,26 @@ def _apply_transfer_payload_fields(
         recipient_val = payload.pop("recipient")
         if strip_recipient_suffix and isinstance(recipient_val, str) and recipient_val:
             recipient_val = recipient_val.rstrip("},. ")
+        recipient_val_str = str(recipient_val) if recipient_val is not None else None
         if not payload.get("recipient_name"):
-            payload["recipient_name"] = recipient_val
+            if _recipient_grounded_in_user_text(recipient_val_str, fallback_message):
+                payload["recipient_name"] = recipient_val
+            else:
+                derived = _derive_recipient_from_user_text(recipient_val_str, fallback_message)
+                if derived:
+                    payload["recipient_name"] = derived
+
+    # Guard against planner hallucinating a fully-resolved name not present in user text.
+    recipient_name = payload.get("recipient_name")
+    if isinstance(recipient_name, str) and recipient_name and not _recipient_grounded_in_user_text(
+        recipient_name,
+        fallback_message,
+    ):
+        derived = _derive_recipient_from_user_text(recipient_name, fallback_message)
+        if derived:
+            payload["recipient_name"] = derived
+        else:
+            payload.pop("recipient_name", None)
 
     if format_narration_requires_recipient_field and not has_recipient_field:
         return
@@ -74,6 +131,7 @@ def build_task_spec_from_plan_item(
     _apply_transfer_payload_fields(
         payload,
         plan_item,
+        fallback_message,
         strip_recipient_suffix=strip_transfer_recipient_suffix,
         format_narration_requires_recipient_field=format_narration_requires_recipient_field,
     )

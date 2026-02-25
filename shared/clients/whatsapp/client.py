@@ -255,6 +255,65 @@ class WhatsAppClient(MessagingClient):
             print(f"❌ Failed to send button message: {e}")
             raise
 
+    async def send_list(
+        self,
+        to: str,
+        body_text: str,
+        options: list[dict[str, str]],
+        header: str = "",
+        footer: str = "",
+        list_button_text: str = "View options",
+        message_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Send an interactive list message (up to 10 options)."""
+        if not options:
+            raise ValueError("List options cannot be empty")
+
+        url = self._get_url()
+        message_id = await self._ensure_message_id(to, message_id)
+        if message_id:
+            await self.send_typing_indicator(message_id)
+
+        rows: list[dict[str, str]] = []
+        for idx, option in enumerate(options[:10], start=1):
+            raw_id = str(option.get("id", "")).strip() or str(idx)
+            raw_title = str(option.get("title", f"Option {idx}")).strip() or f"Option {idx}"
+            row: dict[str, str] = {"id": raw_id, "title": raw_title[:24]}
+            description = str(option.get("description", "")).strip()
+            if description:
+                row["description"] = description[:72]
+            rows.append(row)
+
+        interactive_payload: dict[str, Any] = {
+            "type": "list",
+            "body": {"text": body_text},
+            "action": {
+                "button": list_button_text[:20],
+                "sections": [{"title": "Options", "rows": rows}],
+            },
+        }
+
+        if header and header.strip():
+            interactive_payload["header"] = {"type": "text", "text": header}
+        if footer and footer.strip():
+            interactive_payload["footer"] = {"text": footer}
+
+        payload = {
+            "messaging_product": "whatsapp",
+            "recipient_type": "individual",
+            "to": to,
+            "type": "interactive",
+            "interactive": interactive_payload,
+        }
+
+        try:
+            result = await self._send(url, payload)
+            print(f"✓ List message sent to {to}")
+            return result
+        except Exception as e:
+            print(f"❌ Failed to send list message: {e}")
+            raise
+
     async def send_flow(
         self,
         to: str,
@@ -604,16 +663,28 @@ class WhatsAppClient(MessagingClient):
         footer: str = "",
         message_id: str | None = None,
     ) -> MessageResult:
-        """Implement MessagingClient.send_interactive using WhatsApp buttons."""
+        """Implement MessagingClient.send_interactive using WhatsApp native buttons/lists."""
         try:
-            result = await self.send_button(
-                to=to,
-                body_text=body_text,
-                buttons=options,
-                header=header,
-                footer=footer,
-                message_id=message_id,
-            )
+            if len(options) <= 3:
+                result = await self.send_button(
+                    to=to,
+                    body_text=body_text,
+                    buttons=options,
+                    header=header,
+                    footer=footer,
+                    message_id=message_id,
+                )
+            elif len(options) <= 10:
+                result = await self.send_list(
+                    to=to,
+                    body_text=body_text,
+                    options=options,
+                    header=header,
+                    footer=footer,
+                    message_id=message_id,
+                )
+            else:
+                raise ValueError("WhatsApp interactive supports at most 10 options")
             msg_id = result.get("messages", [{}])[0].get("id")
             return MessageResult(success=True, message_id=msg_id, raw_response=result)
         except Exception as e:

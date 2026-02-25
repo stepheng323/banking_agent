@@ -22,11 +22,11 @@
     "fallback": "I be {name}. {description}\nI fit help with: {supported}.\nWetin you wan do?"
   },
   "conversational": {
-    "greeting": "How far. I dey ready. Which money move make we run?",
-    "appreciation": "No wahala. Which money move we dey do next?",
-    "checkin": "I dey here gidigba. Which money move make we run?",
-    "identity": "I be Fusepay. I dey handle real money tasks sharp-sharp.",
-    "brand_origin": "Na Fusepay team build me for fast, reliable banking tasks.",
+    "greeting": "How far. Na Narya AI here. Wetin you wan run?",
+    "appreciation": "No wahala. Wetin we go handle next?",
+    "checkin": "I dey here. Which money move we dey do?",
+    "identity": "I be Narya AI. I dey run real banking tasks fast and sharp.",
+    "brand_origin": "Narya AI name come from kindler inspiration. Na Fusepay team build me for calm, reliable banking execution.",
     "capability_question": "I fit handle transfer, airtime/data buy, balance check, and transaction query.",
     "out_of_scope": "Na banking I dey do. I fit help with transfer, airtime/data buy, balance check, and transaction query.",
     "clarify": "Talk am straight. Wetin exactly you want make I do with your money?"
@@ -472,12 +472,17 @@
     }
   },
   "transfer": {
+    "confirmation": {
+      "name_mismatch_warning": "You talk say make I send to {requested_name}, but account resolve as {resolved_name}.",
+      "high_risk_unsaved_warning": "⚠️ This transfer high risk: {amount} go unsaved recipient. Abeg check details well before you confirm."
+    },
     "funding": {
       "plan_failed": "Failed to plan funding.",
       "insufficient_funds": "Insufficient funds."
     },
     "validation": {
       "ask_amount": "How much would you like to send?",
+      "ask_amount_with_suggestion": "How much make I send to {recipient_name}? I fit use your last amount ({amount}). Reply 'yes' make I use am, or type new amount.",
       "same_bank_fallback": "the same bank",
       "self_transfer_same_account": "The recipient account ({recipient_account}) at {bank_identifier} cannot be the same as your source account. Please provide a different recipient account.",
       "same_source_destination_fallback": "Source and destination accounts are the same. Please specify different accounts.",
@@ -650,7 +655,7 @@
   "transaction_summary": {
     "batch": {
       "confirm_title": "*Confirm Transfers ({count})*",
-      "total": "Total: {amount}"
+      "total": "Total wey go out: {amount}"
     },
     "multi": {
       "header": "✅ *Transaction Summary*",

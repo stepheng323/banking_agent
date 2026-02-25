@@ -1,6 +1,7 @@
 """Telegram client for sending messages via the Telegram Bot API."""
 
 import asyncio
+import html
 import json
 import re
 from typing import Any
@@ -11,6 +12,21 @@ from shared.clients.abstractions.messaging import MessageResult, MessagingClient
 from shared.config.settings import settings
 
 TELEGRAM_API_BASE = "https://api.telegram.org"
+
+
+def _format_telegram_html(text: str) -> str:
+    """Convert lightweight markdown-like syntax to Telegram-safe HTML."""
+    escaped = html.escape(text or "")
+    escaped = re.sub(r"`([^`\n]+)`", r"<code>\1</code>", escaped)
+    escaped = re.sub(r"\*(.+?)\*", r"<b>\1</b>", escaped)
+
+    def _italic_repl(match: re.Match[str]) -> str:
+        prefix = match.group(1) or ""
+        content = match.group(2) or ""
+        return f"{prefix}<i>{content}</i>"
+
+    escaped = re.sub(r"(^|[\s(])_(.+?)_(?=[\s).,!?:;]|$)", _italic_repl, escaped)
+    return escaped
 
 
 class TelegramClient(MessagingClient):
@@ -113,7 +129,7 @@ class TelegramClient(MessagingClient):
         if message_id:
             await self.send_typing_indicator(to)
 
-        html_text = re.sub(r"\*(.*?)\*", r"<b>\1</b>", text)
+        html_text = _format_telegram_html(text)
         payload: dict[str, Any] = {
             "chat_id": to,
             "text": html_text,
@@ -146,10 +162,10 @@ class TelegramClient(MessagingClient):
 
         parts: list[str] = []
         if header:
-            parts.append(f"<b>{header}</b>")
+            parts.append(f"*{header}*")
         parts.append(body_text)
         if footer:
-            parts.append(f"<i>{footer}</i>")
+            parts.append(f"_{footer}_")
 
         # Build inline keyboard — one button per row
         keyboard_rows = [
@@ -157,7 +173,7 @@ class TelegramClient(MessagingClient):
         ]
 
         combined_text = "\n\n".join(parts)
-        html_text = re.sub(r"\*(.*?)\*", r"<b>\1</b>", combined_text)
+        html_text = _format_telegram_html(combined_text)
 
         payload: dict[str, Any] = {
             "chat_id": to,

@@ -40,6 +40,7 @@ class DataWorkerContext:
     queue: Any
     transaction_repo: Any
     user_id: str | None
+    required_fields: list[str]
 
 
 class DataWorker:
@@ -88,12 +89,14 @@ class DataWorker:
         )
 
     def _build_worker_context(self, context: dict[str, Any]) -> DataWorkerContext:
+        required_fields = context.get("required_fields")
         return DataWorkerContext(
             extractor=self.extractor,
             bill_provider=self.bill_provider,
             queue=self.queue,
             transaction_repo=self.transaction_repo,
             user_id=context.get("user_id"),
+            required_fields=required_fields if isinstance(required_fields, list) else [],
         )
 
     @staticmethod

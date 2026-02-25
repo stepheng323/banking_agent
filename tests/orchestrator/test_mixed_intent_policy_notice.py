@@ -11,6 +11,7 @@ from apps.core.src.agent.orchestrator.nodes.execution import advance_wave
 from apps.core.src.agent.orchestrator.nodes.finalize import finalize
 from apps.core.src.agent.orchestrator.nodes.ingest import ingest_message
 from apps.core.src.agent.orchestrator.nodes.planner import SAFE_CAPABILITY_FALLBACK, plan_tasks
+from shared.i18n import render_message
 from shared.types.planner import PlannedTask, PlannerOutput, TaskParameters
 
 
@@ -265,7 +266,7 @@ async def test_conversational_planner_response_localizes_for_pidgin() -> None:
     state = _apply(state, await ingest_message(state))
     state = _apply(state, await plan_tasks(state, config))
 
-    assert state.final_response == "I dey here gidigba. Which money move make we run?"
+    assert state.final_response == render_message("conversational.checkin", "pcm")
 
 
 @pytest.mark.asyncio
@@ -302,7 +303,7 @@ async def test_conversational_response_key_localizes_for_yoruba() -> None:
     state = _apply(state, await ingest_message(state))
     state = _apply(state, await plan_tasks(state, config))
 
-    assert state.final_response == "Pẹlẹ o. Bawo ni mo ṣe le ran ọ lọwọ pẹlu owo rẹ loni?"
+    assert state.final_response == render_message("conversational.greeting", "yo")
 
 
 @pytest.mark.asyncio
@@ -424,7 +425,7 @@ async def test_conversational_response_uses_detected_language_even_with_cached_p
     state = _apply(state, await ingest_message(state))
     state = _apply(state, await plan_tasks(state, config))
 
-    assert state.final_response == "Hey. I'm Fusepay. What money move should we handle?"
+    assert state.final_response == render_message("conversational.greeting", "en")
     assert (state.loaded_context or {}).get("language") == "en"
 
 
