@@ -1,3 +1,4 @@
+import json
 from typing import Any, cast
 
 from langchain_core.runnables import RunnableConfig
@@ -37,6 +38,16 @@ SUPPORTED_EXECUTOR_LABELS = {
 
 CONTEXT_READ_FASTPATH_LIST_LIMIT = 5
 CONTEXT_BENEFICIARY_PREVIEW_LIMIT = 5
+CONTEXT_ACCOUNT_PREVIEW_LIMIT = 5
+CONTEXT_HISTORY_PREVIEW_LIMIT = 5
+CONTEXT_HISTORY_ITEM_MAX_CHARS = 150
+CONTEXT_USER_STATE_MAX_CHARS = 1800
+PLANNER_CONTEXT_MAX_CHARS = 3500
+PLANNER_ACTIVE_TASK_DATA_MAX_CHARS = 900
+PLANNER_ACTIVE_TASK_MAX_KEYS = 12
+PLANNER_ACTIVE_TASK_MAX_ITEMS = 5
+PLANNER_ACTIVE_TASK_MAX_DEPTH = 2
+PLANNER_ACTIVE_TASK_STRING_MAX_CHARS = 120
 CONTEXT_FASTPATH_ACCOUNT_SUBTYPES = {
     "account_count",
     "linked_accounts_summary",
@@ -61,6 +72,55 @@ CONTEXT_FASTPATH_SUBTYPES = (
 TRANSACTION_EXECUTORS = {"transfer", "airtime", "data"}
 BENEFICIARY_MATCH_PREVIEW_LIMIT = 3
 NO_ACTIVE_FLOW_FASTPATH_MESSAGE = "There is no active transfer flow right now. Start a transfer and I will guide you."
+
+
+def _clip_text(value: str, max_chars: int) -> str:
+    if len(value) <= max_chars:
+        return value
+    if max_chars <= 16:
+        return value[:max_chars]
+    return value[: max_chars - 15].rstrip() + " ...[truncated]"
+
+
+def _compact_prompt_value(value: Any, depth: int = 0) -> Any:
+    if isinstance(value, str):
+        return _clip_text(value, PLANNER_ACTIVE_TASK_STRING_MAX_CHARS)
+
+    if depth >= PLANNER_ACTIVE_TASK_MAX_DEPTH and isinstance(value, (dict, list)):
+        return "...[truncated]"
+
+    if isinstance(value, dict):
+        compact_dict: dict[str, Any] = {}
+        for idx, (key, nested) in enumerate(value.items()):
+            if idx >= PLANNER_ACTIVE_TASK_MAX_ITEMS:
+                compact_dict["__more_keys__"] = f"+{len(value) - PLANNER_ACTIVE_TASK_MAX_ITEMS} more"
+                break
+            compact_dict[str(key)] = _compact_prompt_value(nested, depth + 1)
+        return compact_dict
+
+    if isinstance(value, list):
+        compact_list = [_compact_prompt_value(item, depth + 1) for item in value[:PLANNER_ACTIVE_TASK_MAX_ITEMS]]
+        overflow = len(value) - PLANNER_ACTIVE_TASK_MAX_ITEMS
+        if overflow > 0:
+            compact_list.append(f"... (+{overflow} more)")
+        return compact_list
+
+    return value
+
+
+def _compact_payload_for_prompt(payload: dict[str, Any]) -> str:
+    if not payload:
+        return "{}"
+
+    compact_payload: dict[str, Any] = {}
+    for idx, (key, value) in enumerate(payload.items()):
+        if idx >= PLANNER_ACTIVE_TASK_MAX_KEYS:
+            compact_payload["__more_keys__"] = f"+{len(payload) - PLANNER_ACTIVE_TASK_MAX_KEYS} more"
+            break
+        compact_payload[str(key)] = _compact_prompt_value(value)
+
+    serialized = json.dumps(compact_payload, ensure_ascii=True)
+    return _clip_text(serialized, PLANNER_ACTIVE_TASK_DATA_MAX_CHARS)
 
 
 def _infer_recent_domain_focus(state: OrchestratorState) -> str | None:
@@ -106,7 +166,6 @@ def _has_context_for_fastpath_subtype(state: OrchestratorState, subtype: str) ->
     accounts_raw = ctx.get("accounts")
     beneficiaries_raw = ctx.get("beneficiaries")
     accounts = accounts_raw if isinstance(accounts_raw, list) else []
-    beneficiaries = beneficiaries_raw if isinstance(beneficiaries_raw, list) else []
 
     if subtype in {"account_count", "linked_accounts_summary", "account_mandate_readiness_summary"}:
         return isinstance(accounts_raw, list)
@@ -116,7 +175,12 @@ def _has_context_for_fastpath_subtype(state: OrchestratorState, subtype: str) ->
         return isinstance(accounts_raw, list) and any(bool(acc.get("is_default")) for acc in accounts)
     if subtype == "pending_mandate_explanation":
         return isinstance(accounts_raw, list) and any(acc.get("mandate_status") == "pending" for acc in accounts)
-    if subtype in {"beneficiary_count", "beneficiary_list", "beneficiary_existence_check", "beneficiary_name_match_preview"}:
+    if subtype in {
+        "beneficiary_count",
+        "beneficiary_list",
+        "beneficiary_existence_check",
+        "beneficiary_name_match_preview",
+    }:
         return isinstance(beneficiaries_raw, list)
     if subtype in CONTEXT_FASTPATH_FLOW_SUBTYPES:
         pending_interrupt = state.pending_interrupt
@@ -278,8 +342,9 @@ def _build_user_state_summary(state: OrchestratorState) -> str | None:
         parts.append(f"- Name: {name}")
 
     if accounts:
+        total_accounts = len(accounts)
         parts.append("- Accounts:")
-        for acc in accounts:
+        for acc in accounts[:CONTEXT_ACCOUNT_PREVIEW_LIMIT]:
             bank = acc.get("bank_name", "Unknown Bank")
             num = acc.get("account_number", "")
             masked = f"...{num[-4:]}" if len(num) >= 4 else num
@@ -297,6 +362,9 @@ def _build_user_state_summary(state: OrchestratorState) -> str | None:
                 parts.append(f"  • {bank} ({masked}) — mandate: ready ✓{default_tag}")
             else:
                 parts.append(f"  • {bank} ({masked}) — mandate: {status}{default_tag}")
+        remaining_accounts = total_accounts - min(total_accounts, CONTEXT_ACCOUNT_PREVIEW_LIMIT)
+        if remaining_accounts > 0:
+            parts.append(f"  • +{remaining_accounts} more account(s)")
 
     if beneficiaries:
         total_beneficiaries = len(beneficiaries)
@@ -320,14 +388,14 @@ def _build_user_state_summary(state: OrchestratorState) -> str | None:
 
     if history:
         parts.append("\nRecent Chat:")
-        for msg in history[-5:]:
+        for msg in history[-CONTEXT_HISTORY_PREVIEW_LIMIT:]:
             role = "User" if msg.get("role") == "user" else "Agent"
             content = msg.get("content", "").replace("\n", "  ")
-            if len(content) > 150:
-                content = content[:147] + "..."
+            if len(content) > CONTEXT_HISTORY_ITEM_MAX_CHARS:
+                content = _clip_text(content, CONTEXT_HISTORY_ITEM_MAX_CHARS)
             parts.append(f'- {role}: "{content}"')
 
-    return "\n".join(parts)
+    return _clip_text("\n".join(parts), CONTEXT_USER_STATE_MAX_CHARS)
 
 
 def _filter_spurious_affirmation_tasks(
@@ -475,10 +543,11 @@ async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[s
                     payload_view = {
                         k: v for k, v in active_task.payload.items() if k not in ["result", "error", "confirmation"]
                     }
+                    payload_preview = _compact_payload_for_prompt(payload_view)
 
                     planner_context_parts.append(
                         f"Active Flow: {active_intent.upper()} (User is currently in this flow).\n"
-                        f"Current Task Data: {payload_view}\n"
+                        f"Current Task Data: {payload_preview}\n"
                         "Review Rule 9 (CONTEXT OVERRIDE):"
                         f"- If input is slot-filling or update (e.g. 'Mum', '5k'), KEEP intent='{active_intent}'.\n"
                         "- If input is CLEARLY unrelated (e.g. 'Show beneficiaries', 'Balance'),"
@@ -511,7 +580,14 @@ async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[s
         planner_context_parts.append(user_state_summary)
         logger.info("planner_context_injected", context="user_state_history")
 
-    planner_context = "\n\n".join(planner_context_parts) if planner_context_parts else "None"
+    planner_context_raw = "\n\n".join(planner_context_parts) if planner_context_parts else "None"
+    planner_context = _clip_text(planner_context_raw, PLANNER_CONTEXT_MAX_CHARS)
+    logger.info(
+        "planner_context_size",
+        chars=len(planner_context),
+        truncated=planner_context != planner_context_raw,
+        sections=len(planner_context_parts),
+    )
 
     try:
         planner_output = await task_planner.plan_tasks(state.phone_number, text, context=planner_context)
