@@ -6,6 +6,10 @@ from langchain_core.runnables import RunnableConfig
 from apps.core.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
 from apps.core.src.agent.orchestrator.models.state import OrchestratorState
 from apps.core.src.agent.orchestrator.nodes.planner import _build_user_state_summary
+from apps.core.src.agent.orchestrator.services.interrupt_shortcuts import (
+    resolve_interrupt_shortcut_with_reason,
+    resolve_shortcut_locale,
+)
 from apps.core.src.agent.orchestrator.utils.task_payload import build_task_spec_from_plan_item
 from apps.core.src.agent.orchestrator.utils.task_state import reset_tasks_to_extracted, set_tasks_cancelled
 from apps.core.src.agent.orchestrator.utils.waves import build_dependency_waves
@@ -817,16 +821,39 @@ async def handle_pending_interrupt(state: OrchestratorState, config: RunnableCon
             return _approve_confirmation_updates(state, interrupt)
         return _approve_auth_updates(state, interrupt)
 
-    route = await _route_interrupt(
-        task_planner=task_planner,
-        state=state,
+    shortcut_locale = resolve_shortcut_locale((state.loaded_context or {}).get("language"))
+    shortcut_route, miss_reason = resolve_interrupt_shortcut_with_reason(
         text=text,
-        kind=interrupt.kind,
-        task_ids=interrupt.task_ids,
-        current_task_types=current_task_types,
-        fields_by_task=interrupt.fields_by_task,
-        prompt=interrupt.prompt,
+        interrupt_kind=interrupt.kind,
+        locale=shortcut_locale,
     )
+
+    if shortcut_route is not None:
+        route = shortcut_route
+        logger.info(
+            "interrupt_shortcut_hit",
+            kind=interrupt.kind,
+            decision=route.decision,
+            status_query_type=route.status_query_type,
+            locale=shortcut_locale.value if shortcut_locale else None,
+        )
+    else:
+        logger.info(
+            "interrupt_shortcut_miss",
+            kind=interrupt.kind,
+            locale=shortcut_locale.value if shortcut_locale else None,
+            reason=miss_reason,
+        )
+        route = await _route_interrupt(
+            task_planner=task_planner,
+            state=state,
+            text=text,
+            kind=interrupt.kind,
+            task_ids=interrupt.task_ids,
+            current_task_types=current_task_types,
+            fields_by_task=interrupt.fields_by_task,
+            prompt=interrupt.prompt,
+        )
 
     if route.decision == "status_query":
         return _status_query_updates(

@@ -128,3 +128,123 @@ async def test_transaction_switch_target_invokes_planner_call() -> None:
     assert planner.plan_calls == 1
     assert list(updates["tasks"].keys()) == ["t2"]
     assert updates["tasks"]["t2"].type == "transfer"
+
+
+@pytest.mark.asyncio
+async def test_confirmation_shortcut_skips_router_and_planner_calls() -> None:
+    state = OrchestratorState(
+        user_id="u_budget_3",
+        phone_number="2348100000003",
+        channel="whatsapp",
+        last_message_text="proceed",
+        loaded_context={"language": "en"},
+        pending_interrupt=PendingInterrupt(kind="confirmation", task_ids=["t1"]),
+        tasks={
+            "t1": TaskSpec(
+                id="t1",
+                type="transfer",
+                stage=TaskStage.AWAITING_CONFIRMATION,
+                payload={"amount": 5000, "recipient_name": "Tolu"},
+            )
+        },
+    )
+    planner = _CountingPlanner(
+        route=InterruptRouteDecision(
+            decision="cancel",
+            confidence=0.4,
+            detected_language="English",
+            target_intent=None,
+            target_mode=None,
+            reason="should_not_run",
+        ),
+        output=PlannerOutput(primary_intent="transfer"),
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await handle_pending_interrupt(state, config)
+
+    assert planner.route_calls == 0
+    assert planner.plan_calls == 0
+    assert updates["pending_interrupt"] is None
+    assert updates["tasks"]["t1"].stage == TaskStage.AWAITING_AUTH
+
+
+@pytest.mark.asyncio
+async def test_status_shortcut_skips_router_and_planner_calls() -> None:
+    state = OrchestratorState(
+        user_id="u_budget_4",
+        phone_number="2348100000004",
+        channel="whatsapp",
+        last_message_text="where did we stop",
+        loaded_context={"language": "en"},
+        pending_interrupt=PendingInterrupt(
+            kind="input",
+            task_ids=["t1"],
+            fields_by_task={"t1": ["recipient_bank_name"]},
+        ),
+        tasks={
+            "t1": TaskSpec(
+                id="t1",
+                type="transfer",
+                stage=TaskStage.RESOLVED,
+                payload={"recipient_name": "Tolu", "amount": 5000},
+            )
+        },
+    )
+    planner = _CountingPlanner(
+        route=InterruptRouteDecision(
+            decision="switch_intent",
+            confidence=0.4,
+            detected_language="English",
+            target_intent="account",
+            target_mode="new",
+            reason="should_not_run",
+        ),
+        output=PlannerOutput(primary_intent="account"),
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await handle_pending_interrupt(state, config)
+
+    assert planner.route_calls == 0
+    assert planner.plan_calls == 0
+    assert updates["pending_interrupt"] is not None
+    assert updates["outbox"][0]["type"] == "say"
+
+
+@pytest.mark.asyncio
+async def test_auth_yes_text_still_uses_router_path() -> None:
+    state = OrchestratorState(
+        user_id="u_budget_5",
+        phone_number="2348100000005",
+        channel="whatsapp",
+        last_message_text="yes",
+        loaded_context={"language": "en"},
+        pending_interrupt=PendingInterrupt(kind="auth", task_ids=["t1"], auth_method="pin", prompt="Enter your PIN"),
+        tasks={
+            "t1": TaskSpec(
+                id="t1",
+                type="transfer",
+                stage=TaskStage.AWAITING_AUTH,
+                payload={"recipient_name": "Tolu", "amount": 5000},
+            )
+        },
+    )
+    planner = _CountingPlanner(
+        route=InterruptRouteDecision(
+            decision="unclear",
+            confidence=0.6,
+            detected_language="English",
+            target_intent=None,
+            target_mode=None,
+            reason="auth_router_path",
+        ),
+        output=PlannerOutput(primary_intent="transfer"),
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await handle_pending_interrupt(state, config)
+
+    assert planner.route_calls == 1
+    assert planner.plan_calls == 0
+    assert updates["pending_interrupt"] is not None
