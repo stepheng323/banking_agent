@@ -226,6 +226,7 @@ class TelegramPresenter(Presenter):
         if not options:
             return await self._present_say(Say(text=intent.title), context)
 
+        logger.info("option_render_mode", channel="telegram", mode="inline_keyboard", option_count=len(options))
         resp = await self.client.send_interactive(
             to=context.phone_number,
             body_text=intent.title,
@@ -236,6 +237,8 @@ class TelegramPresenter(Presenter):
 
         # Fallback: plain text while preserving numbered selection path.
         numbered = "\n".join(f"{idx}. {opt['title']}" for idx, opt in enumerate(options, start=1))
+        logger.info("option_render_mode", channel="telegram", mode="text", option_count=len(options))
+        logger.info("option_fallback_text_used", channel="telegram", option_count=len(options))
         fallback_text = f"{intent.title}\n{numbered}"
         text_resp = await self.client.send_text(to=context.phone_number, text=fallback_text)
         if hasattr(text_resp, "message_id"):

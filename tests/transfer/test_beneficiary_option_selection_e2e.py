@@ -90,6 +90,40 @@ async def test_whatsapp_button_tap_resolves_beneficiary_selection() -> None:
     assert patch["beneficiary_id"] == second_id
 
 
+async def test_whatsapp_list_tap_resolves_beneficiary_selection() -> None:
+    beneficiaries, first_id, second_id = _beneficiaries()
+    del first_id
+    webhook = {
+        "entry": [
+            {
+                "changes": [
+                    {
+                        "value": {
+                            "messages": [
+                                {
+                                    "id": "wamid-2",
+                                    "from": "2348000000999",
+                                    "type": "interactive",
+                                    "interactive": {
+                                        "type": "list_reply",
+                                        "list_reply": {"id": "2", "title": "John Smith"},
+                                    },
+                                }
+                            ]
+                        }
+                    }
+                ]
+            }
+        ]
+    }
+
+    parsed = parse_payload(webhook)
+    assert parsed and parsed[0].text == "2"
+
+    patch = await _resolve_selected_beneficiary(parsed[0].text, beneficiaries)
+    assert patch["beneficiary_id"] == second_id
+
+
 async def test_telegram_callback_tap_resolves_beneficiary_selection() -> None:
     beneficiaries, first_id, second_id = _beneficiaries()
     del second_id
@@ -127,6 +161,28 @@ async def test_typed_number_fallback_still_resolves_beneficiary_selection() -> N
     assert parsed is not None
     assert parsed.type == "text"
     assert parsed.text == "2"
+
+    patch = await _resolve_selected_beneficiary(parsed.text, beneficiaries)
+    assert patch["beneficiary_id"] == second_id
+
+
+async def test_typed_option_id_fallback_resolves_beneficiary_selection() -> None:
+    beneficiaries, first_id, second_id = _beneficiaries()
+    del first_id
+    option_id = f"bene:{second_id}"
+    update = {
+        "message": {
+            "message_id": 47,
+            "chat": {"id": 12345678},
+            "from": {"id": 111},
+            "text": option_id,
+        }
+    }
+
+    parsed = parse_update(update)
+    assert parsed is not None
+    assert parsed.type == "text"
+    assert parsed.text == option_id
 
     patch = await _resolve_selected_beneficiary(parsed.text, beneficiaries)
     assert patch["beneficiary_id"] == second_id

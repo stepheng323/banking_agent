@@ -204,8 +204,10 @@ class WhatsAppPresenter(Presenter):
         if not options:
             return await self._present_say(Say(text=intent.title), context)
 
-        # WhatsApp buttons support up to 3 options; fall back to numbered text if more.
-        if len(options) <= 3:
+        # WhatsApp supports buttons (<=3) and list menus (<=10) through send_interactive.
+        if len(options) <= 10:
+            mode = "button" if len(options) <= 3 else "list"
+            logger.info("option_render_mode", channel="whatsapp", mode=mode, option_count=len(options))
             interactive_resp = await self.client.send_interactive(
                 to=context.phone_number,
                 body_text=intent.title,
@@ -216,6 +218,8 @@ class WhatsAppPresenter(Presenter):
             logger.warning("whatsapp_show_options_interactive_failed", error=interactive_resp.error)
 
         numbered = "\n".join(f"{idx}. {opt['title']}" for idx, opt in enumerate(options, start=1))
+        logger.info("option_render_mode", channel="whatsapp", mode="text", option_count=len(options))
+        logger.info("option_fallback_text_used", channel="whatsapp", option_count=len(options))
         fallback_text = f"{intent.title}\n{numbered}"
         text_resp = await self.client.send_text(to=context.phone_number, text=fallback_text)
         return text_resp.get("messages", [{}])[0].get("id") if isinstance(text_resp, dict) else None
