@@ -57,6 +57,49 @@ def _active_intent(current_task_types: set[str]) -> str:
     return next(iter(current_task_types)) if current_task_types else "unknown"
 
 
+def _build_actionable_payload(task: TaskSpec | None) -> dict[str, Any] | None:
+    """Build actionable payload for quote-based follow-up messages."""
+    if not task:
+        return None
+    task_payload = task.payload if isinstance(task.payload, dict) else {}
+    idem_key = task_payload.get("idempotency_key")
+    tx_id = task_payload.get("transaction_id")
+    action = task_payload.get("action")
+    if not any([idem_key, tx_id, action]):
+        return None
+
+    payload: dict[str, Any] = {
+        "idempotency_key": idem_key,
+        "task_id": task.id,
+        "task_type": task.type,
+    }
+    for key in (
+        "transaction_id",
+        "action",
+        "amount",
+        "beneficiary_id",
+        "recipient_name",
+        "recipient_resolved_name",
+        "recipient_phone",
+        "target_phone",
+        "recipient_account",
+        "recipient_account_number",
+        "recipient_bank_code",
+        "recipient_bank_name",
+        "resolved_from_saved_beneficiary",
+        "source_bank_name",
+        "narration",
+        "network",
+        "plan_code",
+        "plan_name",
+    ):
+        value = task_payload.get(key)
+        if value is not None and value != "":
+            payload[key] = value
+
+    return payload
+
+
 def _callback_flow_type(state: OrchestratorState) -> str | None:
     callback = state.last_callback or {}
     raw_flow_type = callback.get("flow_type")
@@ -487,6 +530,7 @@ def _build_confirmation_reprompt_outbox(
             "summary": summary,
             "snapshot": snapshot,
             "idempotency_key": first_task.payload.get("idempotency_key", "unknown"),
+            "actionable_payload": _build_actionable_payload(first_task),
         }
     ]
 
@@ -511,6 +555,7 @@ def _build_auth_reprompt_outbox(state: OrchestratorState, interrupt: Any) -> lis
             "idempotency_key": first_task.payload.get("idempotency_key", "unknown"),
             "header": format_auth_reason(first_task.type, locale=locale),
             "summary": summary,
+            "actionable_payload": _build_actionable_payload(first_task),
         }
     ]
 

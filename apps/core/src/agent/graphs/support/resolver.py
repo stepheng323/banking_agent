@@ -73,7 +73,7 @@ class TransactionResolver:
             if not am:
                 return None
 
-            tx_id = am.message_data.get("transaction_id")
+            tx_id = am.message_data.get("transaction_id") or am.message_data.get("idempotency_key")
             if not tx_id:
                 return None
 
@@ -183,12 +183,14 @@ class TransactionResolver:
         """Convert transaction to dictionary for handlers."""
         return {
             "id": str(tx.id),
+            "transaction_type": tx.transaction_type,
             "transaction_id": tx.transaction_id,
             "status": tx.status,
             "amount": tx.amount,
             "currency": tx.currency,
             "recipient_name": tx.recipient_name,
             "recipient_account_number": tx.recipient_account_number,
+            "recipient_bank_code": tx.recipient_bank_code,
             "recipient_bank_name": tx.recipient_bank_name,
             "source_bank_name": tx.source_bank_name,
             "narration": tx.narration,
