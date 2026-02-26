@@ -69,6 +69,9 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
         flow_event_consumer,
         outbox_consumer,
         actionable_consumer,
+        funding_consumer,
+        payout_consumer,
+        refund_consumer,
     ) = setup_dependencies()
     asyncio.create_task(message_consumer.start())
     logger.info("Message consumer started in background")
@@ -80,6 +83,12 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
     logger.info("Outbox consumer started in background")
     asyncio.create_task(actionable_consumer.start())
     logger.info("Actionable message consumer started in background")
+    asyncio.create_task(funding_consumer.start())
+    logger.info("Funding consumer started in background")
+    asyncio.create_task(payout_consumer.start())
+    logger.info("Payout consumer started in background")
+    asyncio.create_task(refund_consumer.start())
+    logger.info("Refund consumer started in background")
 
     yield
 
@@ -90,6 +99,9 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
     flow_event_consumer.stop()
     outbox_consumer.stop()
     actionable_consumer.stop()
+    funding_consumer.stop()
+    payout_consumer.stop()
+    refund_consumer.stop()
     await asyncio.sleep(0.5)
     logger.info("Services stopped")
 

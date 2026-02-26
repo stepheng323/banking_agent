@@ -11,6 +11,7 @@ from shared.queue.models import (
     AirtimeJobPayload,
     DataJobPayload,
     FlowEventPayload,
+    FundingJobPayload,
     PayoutJobPayload,
     ReceiptJobPayload,
     RefundJobPayload,
@@ -42,6 +43,9 @@ class RedisQueue:
 
     @overload
     async def enqueue(self, queue_name: Literal["banking:payouts"], message: PayoutJobPayload) -> None: ...
+
+    @overload
+    async def enqueue(self, queue_name: Literal["banking:funding"], message: FundingJobPayload) -> None: ...
 
     @overload
     async def enqueue(

@@ -2,6 +2,7 @@ from langchain_openai import ChatOpenAI
 
 from apps.core.src.agent.executors.airtime import AirtimeExecutor
 from apps.core.src.agent.executors.data import DataExecutor
+from apps.core.src.agent.executors.payout import PayoutExecutor
 from apps.core.src.agent.executors.transfer import TransferExecutor
 from apps.core.src.agent.graphs.__shared__.beneficiary.suggestion_service import BeneficiarySuggestionService
 from apps.core.src.agent.graphs.account import AccountWorker
@@ -20,7 +21,14 @@ from apps.core.src.agent.graphs.transfer.services.extractor import TransferEntit
 from apps.core.src.agent.orchestrator import OrchestratorAgent
 from apps.core.src.agent.orchestrator.config import OrchestratorDependencies
 from apps.core.src.agent.orchestrator.services.media_service import MediaService
-from apps.core.src.queue_consumers import MessageConsumer, OutboxConsumer, TransactionConsumer
+from apps.core.src.queue_consumers import (
+    FundingConsumer,
+    MessageConsumer,
+    OutboxConsumer,
+    PayoutConsumer,
+    RefundConsumer,
+    TransactionConsumer,
+)
 from apps.core.src.queue_consumers.actionable_consumer import ActionableMessageConsumer
 from apps.core.src.queue_consumers.flow_event_consumer import FlowEventConsumer
 from shared.cache.bank_cache import BankCacheService
@@ -48,7 +56,14 @@ from shared.services.task_queue import TaskQueueService
 
 
 def setup_dependencies() -> tuple[
-    MessageConsumer, TransactionConsumer, FlowEventConsumer, OutboxConsumer, ActionableMessageConsumer
+    MessageConsumer,
+    TransactionConsumer,
+    FlowEventConsumer,
+    OutboxConsumer,
+    ActionableMessageConsumer,
+    FundingConsumer,
+    PayoutConsumer,
+    RefundConsumer,
 ]:
     """Setup deps"""
     validate_catalog_completeness()
@@ -85,6 +100,11 @@ def setup_dependencies() -> tuple[
 
     banking_provider = MonoBankingProvider()
     direct_debit_provider = MonoDirectDebitProvider()
+    payout_provider = PaymentProviderFactory.get_provider_by_name("flutterwave")
+    if payout_provider is None:
+        payout_provider = PaymentProviderFactory.create_provider("flutterwave")
+    if payout_provider is None:
+        raise RuntimeError("Flutterwave payout provider is not configured")
 
     account_worker = AccountWorker(
         account_repo=account_repository,
@@ -212,5 +232,20 @@ def setup_dependencies() -> tuple[
     )
 
     actionable_consumer = ActionableMessageConsumer(redis_queue=redis_queue)
+    funding_consumer = FundingConsumer(redis_queue=redis_queue, direct_debit_provider=direct_debit_provider)
+    payout_consumer = PayoutConsumer(
+        redis_queue=redis_queue,
+        payout_executor=PayoutExecutor(payment_provider=payout_provider),
+    )
+    refund_consumer = RefundConsumer(redis_queue=redis_queue, direct_debit_provider=direct_debit_provider)
 
-    return message_consumer, transaction_consumer, flow_event_consumer, outbox_consumer, actionable_consumer
+    return (
+        message_consumer,
+        transaction_consumer,
+        flow_event_consumer,
+        outbox_consumer,
+        actionable_consumer,
+        funding_consumer,
+        payout_consumer,
+        refund_consumer,
+    )

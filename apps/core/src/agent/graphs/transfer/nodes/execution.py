@@ -13,7 +13,7 @@ from apps.core.src.agent.orchestrator.models.domain import (
     TransactionOutcome,
     TransactionResult,
 )
-from shared.database.enums import TransactionStatusEnum
+from shared.database.enums import FundedTransferStatusEnum, FundingStepStatusEnum, TransactionStatusEnum
 from shared.i18n import render_message
 from shared.utils.logging import get_logger
 from shared.utils.narration import format_narration
@@ -54,6 +54,7 @@ class ExecutionStep(TransferStep):
         try:
             transaction_id = None
             key = data.idempotency_key
+            funded_transfer_id: str | None = None
 
             # Format narration with deterministic rules
             narration = format_narration(data.narration, data.recipient_resolved_name or data.recipient_name)
@@ -82,28 +83,61 @@ class ExecutionStep(TransferStep):
                             narration=narration,
                         )
                         transaction_id = str(tx.id)
-                        await uow.commit()
                         logger.info("transaction_persisted", id=transaction_id, key=key)
+
+                    if data.funding_plan and not data.funding_plan.get("is_single_source", True):
+                        funded = await uow.funded_transfers.get_by_idempotency_key(key)
+                        if not funded:
+                            funded = await uow.funded_transfers.create(
+                                user_id=getattr(worker_context, "user_id", None),
+                                amount=float(data.amount or 0.0),
+                                currency="NGN",
+                                recipient_account_number=data.recipient_account or "",
+                                recipient_bank_code=data.recipient_bank_code or "",
+                                recipient_bank_name=data.recipient_bank_name or "",
+                                recipient_name=data.recipient_resolved_name or data.recipient_name or "Recipient",
+                                narration=narration,
+                                status=FundedTransferStatusEnum.FUNDING_PENDING.value,
+                                idempotency_key=key,
+                            )
+                        funded_transfer_id = str(funded.id)
+
+                        existing_steps = await uow.funding_steps.get_by_transfer(funded_transfer_id)
+                        if not existing_steps:
+                            for step in data.funding_plan.get("steps", []):
+                                await uow.funding_steps.create(
+                                    funded_transfer_id=funded.id,
+                                    account_id=step.get("account_id"),
+                                    amount=float(step.get("amount", 0.0)),
+                                    sequence=int(step.get("sequence", 0)),
+                                    status=FundingStepStatusEnum.PENDING.value,
+                                    provider_name="mono",
+                                )
+                    await uow.commit()
                 except Exception as e:
                     logger.error("failed_to_persist_transaction", error=str(e))
 
             queue = worker_context.queue
             if data.funding_plan and not data.funding_plan.get("is_single_source", True):
+                if not funded_transfer_id:
+                    return TransactionResult(
+                        outcome=TransactionOutcome.FAILED,
+                        error=render_message("transfer.execution.failed", locale, {"error": "Funding setup failed"}),
+                        retryable=True,
+                    )
                 await queue.enqueue(
-                    queue_name="payouts",
+                    queue_name="banking:funding",
                     message={
-                        "type": "payout",
+                        "type": "initiate_funding",
+                        "funded_transfer_id": funded_transfer_id,
                         "idempotency_key": key,
                         "transaction_id": transaction_id,
-                        "funding_plan": data.funding_plan,
-                        "recipient_account": data.recipient_account,
-                        "recipient_bank_code": data.recipient_bank_code,
                         "narration": narration,
                     },
                 )
             else:
                 await queue.enqueue(
-                    queue_name="transfers",
+                    queue_name="banking:transactions",
                     message={
                         "type": "execute_transfer",
                         "idempotency_key": key,

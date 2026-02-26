@@ -61,6 +61,17 @@ class MockDirectDebitProvider(DirectDebitProvider):
         beneficiary_bank_code: str | None = None,
     ) -> DebitResult:
         """Simulate debit initiation."""
+        has_beneficiary_account = bool(beneficiary_account)
+        has_beneficiary_bank = bool(beneficiary_bank_code)
+        if has_beneficiary_account != has_beneficiary_bank:
+            return DebitResult(
+                success=False,
+                status=DebitStatus.FAILED,
+                reference=reference,
+                amount=amount,
+                error_message="Both beneficiary_account and beneficiary_bank_code must be provided together",
+            )
+
         debit_id = f"mock_debit_{uuid.uuid4().hex[:8]}"
 
         self._debits[reference] = {
@@ -71,7 +82,13 @@ class MockDirectDebitProvider(DirectDebitProvider):
             "status": DebitStatus.PROCESSING,
         }
 
-        logger.info("mock_initiate_debit", debit_id=debit_id, amount=amount, reference=reference)
+        logger.info(
+            "mock_initiate_debit",
+            debit_id=debit_id,
+            amount=amount,
+            reference=reference,
+            mode="direct_beneficiary" if has_beneficiary_account else "pooling",
+        )
 
         return DebitResult(
             success=True,

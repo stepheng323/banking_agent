@@ -3,6 +3,7 @@
 from typing import Any
 
 from shared.cache.user_data import UserDataCache
+from shared.database.enums import FundedTransferStatusEnum, FundingStepStatusEnum
 from shared.database.models import FundedTransfer
 from shared.queue.messages import OUTBOX_QUEUE
 from shared.queue.redis_queue import RedisQueue
@@ -25,9 +26,9 @@ class MonoWebhookService:
     }
 
     DEBIT_STATUS_MAP = {
-        "events.mandates.debit.processing": "processing",
-        "events.mandates.debit.successful": "successful",
-        "events.mandates.debit.failed": "failed",
+        "events.mandates.debit.processing": FundingStepStatusEnum.PROCESSING.value,
+        "events.mandates.debit.successful": FundingStepStatusEnum.CONFIRMED.value,
+        "events.mandates.debit.failed": FundingStepStatusEnum.FAILED.value,
     }
 
     def __init__(
@@ -187,15 +188,28 @@ class MonoWebhookService:
         if not uow.funding_steps:
             return
 
-        if latest_status == "failed":
-            await uow.funded_transfers.update_status(str(transfer.id), "refunding")
-            await uow.commit()
-            logger.warning("transfer_failed_initiating_refund", transfer_id=str(transfer.id))
+        has_failed_step = await uow.funding_steps.any_failed(str(transfer.id))
+        if has_failed_step:
+            if transfer.status not in (
+                FundedTransferStatusEnum.REFUNDING.value,
+                FundedTransferStatusEnum.REFUNDED.value,
+                FundedTransferStatusEnum.FAILED.value,
+            ):
+                await uow.funded_transfers.update_status(
+                    str(transfer.id),
+                    FundedTransferStatusEnum.REFUNDING.value,
+                )
+                await uow.commit()
+            logger.warning(
+                "transfer_failed_initiating_refund",
+                transfer_id=str(transfer.id),
+                latest_status=latest_status,
+            )
             await self._queue_refunds(uow, transfer)
             return
 
-        if await uow.funding_steps.are_all_confirmed(str(transfer.id)):
-            await uow.funded_transfers.update_status(str(transfer.id), "funded")
+        if await uow.funding_steps.all_confirmed(str(transfer.id)):
+            await uow.funded_transfers.update_status(str(transfer.id), FundedTransferStatusEnum.PAYOUT_PENDING.value)
             await uow.commit()
             logger.info("all_debits_complete", transfer_id=str(transfer.id))
             await self._queue_payout(transfer)
@@ -206,7 +220,7 @@ class MonoWebhookService:
 
         if not successful_steps:
             logger.info("no_refunds_needed", transfer_id=str(transfer.id))
-            await uow.funded_transfers.update_status(str(transfer.id), "failed")
+            await uow.funded_transfers.update_status(str(transfer.id), FundedTransferStatusEnum.FAILED.value)
             await uow.commit()
             return
 
@@ -218,11 +232,11 @@ class MonoWebhookService:
                         "funding_step_id": str(step.id),
                         "funded_transfer_id": str(transfer.id),
                         "amount": float(step.amount),
-                        "account_id": str(step.source_account_id),
+                        "account_id": str(step.account_id),
                         "original_reference": step.provider_reference,
                     },
                 )
-                await uow.funding_steps.update_status(str(step.id), "refund_pending")
+                await uow.funding_steps.update_status(str(step.id), FundingStepStatusEnum.REFUND_PENDING.value)
                 logger.info("refund_queued", step_id=str(step.id), amount=step.amount)
             except Exception as e:
                 logger.error("refund_queue_failed", step_id=str(step.id), error=str(e))
@@ -236,8 +250,8 @@ class MonoWebhookService:
                 queue_name="banking:payouts",
                 message={
                     "funded_transfer_id": str(transfer.id),
-                    "amount": float(transfer.transfer_amount),
-                    "recipient_account": transfer.recipient_account,
+                    "amount": float(transfer.amount),
+                    "recipient_account": transfer.recipient_account_number,
                     "recipient_bank_code": transfer.recipient_bank_code,
                     "idempotency_key": transfer.idempotency_key,
                 },

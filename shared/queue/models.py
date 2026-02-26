@@ -45,6 +45,15 @@ class PayoutJobPayload(TypedDict):
     recipient_account: str
     recipient_bank_code: str
     idempotency_key: str
+    narration: NotRequired[str] | None
+
+
+class FundingJobPayload(TypedDict):
+    type: Literal["initiate_funding"]
+    funded_transfer_id: str
+    idempotency_key: str
+    transaction_id: str | None
+    narration: str | None
 
 
 class AirtimeRecipient(TypedDict):

@@ -61,8 +61,20 @@ class MonoDirectDebitProvider(DirectDebitProvider):
         beneficiary_bank_code: str | None = None,
     ) -> DebitResult:
         """Initiate a one-time debit via Mono Direct Debit API."""
+        has_beneficiary_account = bool(beneficiary_account)
+        has_beneficiary_bank = bool(beneficiary_bank_code)
+        if has_beneficiary_account != has_beneficiary_bank:
+            return DebitResult(
+                success=False,
+                status=DebitStatus.FAILED,
+                reference=reference,
+                amount=amount,
+                error_message="Both beneficiary_account and beneficiary_bank_code must be provided together",
+            )
+
         try:
             amount_kobo = int(amount * 100)
+            mode = "direct_beneficiary" if has_beneficiary_account else "pooling"
 
             response = await self._client.initiate_debit(
                 mandate_id=mandate_id,
@@ -72,6 +84,7 @@ class MonoDirectDebitProvider(DirectDebitProvider):
                 beneficiary_account=beneficiary_account,
                 beneficiary_bank_code=beneficiary_bank_code,
             )
+            logger.info("mono_initiate_debit_mode", mode=mode, reference=reference)
 
             return DebitResult(
                 success=True,

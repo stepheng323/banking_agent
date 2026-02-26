@@ -111,6 +111,44 @@ class DirectDebitProvider(ABC):
         """
         pass
 
+    async def initiate_pooling_debit(
+        self,
+        mandate_id: str,
+        amount: float,
+        reference: str,
+        narration: str = "Transfer",
+    ) -> DebitResult:
+        """Initiate debit-only pull for pooled funding (no beneficiary transfer)."""
+        return await self.initiate_debit(
+            mandate_id=mandate_id,
+            amount=amount,
+            reference=reference,
+            narration=narration,
+            beneficiary_account=None,
+            beneficiary_bank_code=None,
+        )
+
+    async def initiate_direct_beneficiary_debit(
+        self,
+        mandate_id: str,
+        amount: float,
+        reference: str,
+        beneficiary_account: str,
+        beneficiary_bank_code: str,
+        narration: str = "Transfer",
+    ) -> DebitResult:
+        """Initiate direct-to-beneficiary debit transfer."""
+        if not beneficiary_account or not beneficiary_bank_code:
+            raise ValueError("beneficiary_account and beneficiary_bank_code are required")
+        return await self.initiate_debit(
+            mandate_id=mandate_id,
+            amount=amount,
+            reference=reference,
+            narration=narration,
+            beneficiary_account=beneficiary_account,
+            beneficiary_bank_code=beneficiary_bank_code,
+        )
+
     @abstractmethod
     async def get_debit_status(self, debit_id: str) -> DebitResult:
         """

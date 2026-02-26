@@ -1,123 +1,138 @@
 """Repository for FundingStep model."""
 
+from datetime import UTC, datetime
 from uuid import UUID
 
-from sqlalchemy.orm import Session
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from shared.database.models import FundingStep, FundingStepStatusEnum
+from shared.database.enums import FundingStepStatusEnum
+from shared.database.models import FundingStep
 from shared.repositories.base import BaseRepository
 
 
 class FundingStepRepository(BaseRepository[FundingStep]):
     """Repository for FundingStep operations."""
 
-    def __init__(self, db: Session):
+    def __init__(self, db: AsyncSession):
         super().__init__(db, FundingStep)
 
-    def get_by_transfer(self, funded_transfer_id: str) -> list[FundingStep]:
+    async def get_by_transfer(self, funded_transfer_id: str) -> list[FundingStep]:
         """Get all funding steps for a transfer, ordered by sequence."""
-        if isinstance(funded_transfer_id, str):
-            try:
-                funded_transfer_id = UUID(funded_transfer_id)
-            except ValueError:
-                pass
-        return (
-            self.db.query(FundingStep)
-            .filter(FundingStep.funded_transfer_id == funded_transfer_id)
+        lookup_id: UUID | str = funded_transfer_id
+        try:
+            lookup_id = UUID(funded_transfer_id)
+        except ValueError:
+            pass
+
+        result = await self.db.execute(
+            select(FundingStep)
+            .filter(FundingStep.funded_transfer_id == lookup_id)
             .order_by(FundingStep.sequence.asc())
-            .all()
         )
+        return list(result.scalars().all())
 
-    def get_by_provider_reference(self, reference: str) -> FundingStep | None:
+    async def get_by_provider_reference(self, reference: str) -> FundingStep | None:
         """Get a funding step by provider reference (for webhook handling)."""
-        return self.db.query(FundingStep).filter(FundingStep.provider_reference == reference).first()
+        result = await self.db.execute(select(FundingStep).filter(FundingStep.provider_reference == reference))
+        return result.scalars().first()
 
-    def get_by_provider_debit_id(self, debit_id: str) -> FundingStep | None:
+    async def get_by_provider_debit_id(self, debit_id: str) -> FundingStep | None:
         """Get a funding step by provider debit ID."""
-        return self.db.query(FundingStep).filter(FundingStep.provider_debit_id == debit_id).first()
+        result = await self.db.execute(select(FundingStep).filter(FundingStep.provider_debit_id == debit_id))
+        return result.scalars().first()
 
-    def get_pending_for_transfer(self, funded_transfer_id: str) -> list[FundingStep]:
+    async def get_pending_for_transfer(self, funded_transfer_id: str) -> list[FundingStep]:
         """Get pending funding steps for a transfer."""
-        if isinstance(funded_transfer_id, str):
-            try:
-                funded_transfer_id = UUID(funded_transfer_id)
-            except ValueError:
-                pass
-        return (
-            self.db.query(FundingStep)
+        lookup_id: UUID | str = funded_transfer_id
+        try:
+            lookup_id = UUID(funded_transfer_id)
+        except ValueError:
+            pass
+
+        result = await self.db.execute(
+            select(FundingStep)
             .filter(
-                FundingStep.funded_transfer_id == funded_transfer_id,
+                FundingStep.funded_transfer_id == lookup_id,
                 FundingStep.status.in_([FundingStepStatusEnum.PENDING.value, FundingStepStatusEnum.PROCESSING.value]),
             )
             .order_by(FundingStep.sequence.asc())
-            .all()
         )
+        return list(result.scalars().all())
 
-    def get_confirmed_for_transfer(self, funded_transfer_id: str) -> list[FundingStep]:
+    async def get_confirmed_for_transfer(self, funded_transfer_id: str) -> list[FundingStep]:
         """Get confirmed funding steps for a transfer."""
-        if isinstance(funded_transfer_id, str):
-            try:
-                funded_transfer_id = UUID(funded_transfer_id)
-            except ValueError:
-                pass
-        return (
-            self.db.query(FundingStep)
+        lookup_id: UUID | str = funded_transfer_id
+        try:
+            lookup_id = UUID(funded_transfer_id)
+        except ValueError:
+            pass
+
+        result = await self.db.execute(
+            select(FundingStep)
             .filter(
-                FundingStep.funded_transfer_id == funded_transfer_id,
+                FundingStep.funded_transfer_id == lookup_id,
                 FundingStep.status == FundingStepStatusEnum.CONFIRMED.value,
             )
-            .all()
         )
+        return list(result.scalars().all())
 
-    def all_confirmed(self, funded_transfer_id: str) -> bool:
+    async def all_confirmed(self, funded_transfer_id: str) -> bool:
         """Check if all funding steps for a transfer are confirmed."""
-        steps = self.get_by_transfer(funded_transfer_id)
+        steps = await self.get_by_transfer(funded_transfer_id)
         if not steps:
             return False
         return all(s.status == FundingStepStatusEnum.CONFIRMED.value for s in steps)
 
-    def any_failed(self, funded_transfer_id: str) -> bool:
+    async def any_failed(self, funded_transfer_id: str) -> bool:
         """Check if any funding step for a transfer has failed."""
-        if isinstance(funded_transfer_id, str):
-            try:
-                funded_transfer_id = UUID(funded_transfer_id)
-            except ValueError:
-                pass
-        return (
-            self.db.query(FundingStep)
-            .filter(
-                FundingStep.funded_transfer_id == funded_transfer_id,
+        lookup_id: UUID | str = funded_transfer_id
+        try:
+            lookup_id = UUID(funded_transfer_id)
+        except ValueError:
+            pass
+
+        result = await self.db.execute(
+            select(FundingStep).filter(
+                FundingStep.funded_transfer_id == lookup_id,
                 FundingStep.status == FundingStepStatusEnum.FAILED.value,
             )
-            .first()
-            is not None
         )
+        return result.scalars().first() is not None
 
-    def get_by_transfer_id(self, transfer_id: str) -> list[FundingStep]:
-        """Alias for get_by_transfer (used by webhook handler)."""
-        return self.get_by_transfer(transfer_id)
-
-    def are_all_confirmed(self, transfer_id: str) -> bool:
-        """Alias for all_confirmed (used by webhook handler)."""
-        return self.all_confirmed(transfer_id)
-
-    def update_status(
+    async def update_status(
         self,
         step_id: str,
         status: str,
         provider_response: dict | None = None,
+        provider_reference: str | None = None,
+        provider_debit_id: str | None = None,
+        error_message: str | None = None,
     ) -> FundingStep | None:
-        """Update funding step status and provider response."""
-        if isinstance(step_id, str):
-            try:
-                step_id = UUID(step_id)
-            except ValueError:
-                return None
-
-        step = self.db.query(FundingStep).filter(FundingStep.id == step_id).first()
+        """Update funding step status and provider details."""
+        step = await self.get_by_id(step_id)
         if step:
             step.status = status
-            if provider_response:
-                step.provider_response = provider_response
-            return step
-        return None
+            # FundingStep currently has no provider_response JSON column.
+            # We keep the argument for API compatibility, but only persist
+            # normalized metadata fields (status, references, debit_id, errors).
+            if provider_reference:
+                step.provider_reference = provider_reference
+            if provider_debit_id:
+                step.provider_debit_id = provider_debit_id
+            if error_message:
+                step.error_message = error_message
+
+            now = datetime.now(UTC).replace(tzinfo=None)
+            if status == FundingStepStatusEnum.PROCESSING.value and not step.initiated_at:
+                step.initiated_at = now
+            elif status == FundingStepStatusEnum.CONFIRMED.value:
+                step.confirmed_at = now
+            elif status == FundingStepStatusEnum.FAILED.value:
+                step.failed_at = now
+            elif status == FundingStepStatusEnum.REFUNDED.value:
+                step.refunded_at = now
+
+            self.db.add(step)
+            await self.db.flush()
+        return step
