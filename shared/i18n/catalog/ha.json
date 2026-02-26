@@ -693,6 +693,14 @@
       "preferred_insufficient": "Your {bank_name} has ₦{balance}. Need ₦{shortfall} more.",
       "unable_to_create": "Unable to create funding plan."
     },
+    "batch": {
+      "shortfall_header": "⚠️ Insufficient funds for this batch",
+      "shortfall_body": "This batch needs {demanded}, but only {available} is currently available.",
+      "task_covered": "✅ {task_id}: {amount} available from {bank}.",
+      "task_short": "❌ {task_id}: need {needed}, available {available} from {bank} ({deficit} short).",
+      "alternate_suggestion": "💡 {bank} has {available}. Should I use it instead?",
+      "total_infeasible": "Reply with updated source accounts/split, or reduce the transfer amounts."
+    },
     "format": {
       "insufficient": {
         "header": "*Insufficient Funds*",
