@@ -11,6 +11,7 @@ from apps.core.src.agent.graphs.transfer.models.types import (
 )
 from apps.core.src.agent.graphs.transfer.pipeline.base import TransferStep
 from apps.core.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
+from shared.formatters.transfer import format_funding_plan_summary
 from shared.formatters.transfer import format_transfer_summary
 from shared.i18n import render_message
 from shared.policy import get_cached_policy
@@ -159,6 +160,36 @@ def build_confirmation(
     if payload.high_risk_warning:
         warning_lines.append(payload.high_risk_warning)
     summary = "\n\n".join([*warning_lines, base_summary]) if warning_lines else base_summary
+
+    funding_plan = payload.funding_plan or {}
+    if isinstance(funding_plan, dict) and not funding_plan.get("is_single_source", True):
+        steps = funding_plan.get("steps", [])
+        if isinstance(steps, list) and steps:
+            primary_bank = (
+                funding_plan.get("primary_bank_name")
+                or steps[0].get("bank_name")
+                or render_message("transfer.format.funding_plan.bank_fallback", ctx.language)
+            )
+            primary_balance = float(
+                funding_plan.get("primary_available_balance")
+                if funding_plan.get("primary_available_balance") is not None
+                else steps[0].get("amount", 0.0)
+            )
+            funding_summary = format_funding_plan_summary(
+                steps=steps,
+                amount=float(payload.amount or funding_plan.get("transfer_amount", 0.0)),
+                primary_bank=str(primary_bank),
+                balance_available=primary_balance,
+                recipient_name=payload.recipient_resolved_name or payload.recipient_name or "",
+                recipient_bank=payload.recipient_bank_name or "",
+                recipient_account=payload.recipient_account or "",
+                locale=ctx.language,
+            )
+            summary = (
+                f"{funding_summary}\n\n"
+                "Recipient will be credited once after all funding debits succeed.\n\n"
+                f"{summary}"
+            )
 
     return TransactionResult(
         outcome=TransactionOutcome.NEEDS_CONFIRMATION,

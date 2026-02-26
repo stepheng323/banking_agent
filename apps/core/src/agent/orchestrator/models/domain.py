@@ -62,6 +62,9 @@ class TransferPayload(BaseModel):
     source_account_id: str | None = None
     source_bank_name: str | None = None
     source_account_number: str | None = None
+    use_dual_accounts: bool | None = None
+    source_accounts: list[str] | None = None
+    explicit_split: dict[str, float] | None = None
 
     narration: str | None = None
 

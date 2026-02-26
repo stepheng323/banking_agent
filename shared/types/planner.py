@@ -36,6 +36,9 @@ class TaskParameters(BaseModel):
     reference: ContextReference | None = None
     source_bank_name: str | None = None
     source_account_index: int | None = None
+    use_dual_accounts: bool | None = None
+    source_accounts: list[str] | None = None
+    explicit_split: dict[str, float] | None = None
 
 
 class PlannedTask(BaseModel):

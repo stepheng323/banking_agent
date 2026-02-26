@@ -19,6 +19,8 @@ DO NOT generate reply or decide missing fields — resolver handles that.
 | transfer_all | User wants to send entire available balance | true for "send all", "max amount", "whatever I have" |
 | transfer_percentage | Percentage of balance | 50 for "half", 10 for "tithe" |
 | source_accounts | Dual-account pooling | List of bank names |
+| use_dual_accounts | Explicitly requests pooling | true for "use both accounts", "split across my accounts" |
+| explicit_split | Exact split requested by user | {"Access Bank": 60000, "GTBank": 40000} |
 
 ## SOURCE vs DESTINATION DISAMBIGUATION
 - **source_bank_name**: Use ONLY when the user indicates WHERE to funds come FROM.
@@ -75,6 +77,8 @@ When user corrects mid-flow ("I meant 50k"):
 | "use zenith bank instead" | source_bank_name="Zenith Bank" |
 | "Send 2k using my kuda" | amount=2000, source_bank_name="Kuda" |
 | "send 100k using access and gtb" | amount=100000, source_accounts=["Access Bank","GTBank"] |
+| "use both accounts for this transfer" | use_dual_accounts=true |
+| "send 100k, 60k from access and 40k from gtb" | amount=100000, explicit_split={"Access Bank":60000,"GTBank":40000}, use_dual_accounts=true |
 | "same as last time" | references.use_recent_transfer=true |
 | "I meant 50k" | amount=50000, correction.field="amount", correction.new_value=50000 |
 | "send all" or "just send what I have" | transfer_all=true |
