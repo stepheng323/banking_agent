@@ -6,6 +6,19 @@ from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
 
+CONTEXT_FRAME_ITEM_PREVIEW_LIMIT = 5
+CONTEXT_FRAME_LABEL_MAX_CHARS = 64
+CONTEXT_FRAME_DETAILS_MAX_CHARS = 48
+CONTEXT_FRAME_SUMMARY_MAX_CHARS = 1200
+
+
+def _clip_text(value: str, max_chars: int) -> str:
+    if len(value) <= max_chars:
+        return value
+    if max_chars <= 16:
+        return value[:max_chars]
+    return value[: max_chars - 15].rstrip() + " ...[truncated]"
+
 
 class OrchestratorContextManager:
     """Manages short-term context frames for the Orchestrator."""
@@ -49,33 +62,48 @@ class OrchestratorContextManager:
                 summary_parts.append(f"- resumption: Asked to resume {intent}")
                 continue
             items_str = ""
+            preview_items = frame.items[:CONTEXT_FRAME_ITEM_PREVIEW_LIMIT]
+            overflow_count = len(frame.items) - len(preview_items)
             if frame.frame_type == ContextFrameType.BENEFICIARY_LIST:
                 # [1] Mum (GTB) [2] Dad (Access)
                 items = []
-                for idx, item in enumerate(frame.items, 1):
+                for idx, item in enumerate(preview_items, 1):
                     details = item.data.get("bank", "") or item.data.get("account", "")
-                    items.append(f"[{idx}] {item.label} ({details})")
+                    label = _clip_text(item.label or "Unknown", CONTEXT_FRAME_LABEL_MAX_CHARS)
+                    detail_text = _clip_text(str(details), CONTEXT_FRAME_DETAILS_MAX_CHARS)
+                    items.append(f"[{idx}] {label} ({detail_text})")
                 items_str = ", ".join(items)
 
             elif frame.frame_type == ContextFrameType.TRANSACTION_LIST:
                 items = []
-                for idx, item in enumerate(frame.items, 1):
+                for idx, item in enumerate(preview_items, 1):
                     amt = item.data.get("amount", "")
-                    items.append(f"[{idx}] {item.label} ({amt})")
+                    label = _clip_text(item.label or "Unknown", CONTEXT_FRAME_LABEL_MAX_CHARS)
+                    amount_text = _clip_text(str(amt), CONTEXT_FRAME_DETAILS_MAX_CHARS)
+                    items.append(f"[{idx}] {label} ({amount_text})")
                 items_str = ", ".join(items)
 
             elif frame.frame_type == ContextFrameType.RECEIPT:
                 item = frame.items[0] if frame.items else None
                 if item:
-                    items_str = f"{item.label} - {item.data.get('amount', '')}"
+                    label = _clip_text(item.label or "Receipt", CONTEXT_FRAME_LABEL_MAX_CHARS)
+                    amount_text = _clip_text(str(item.data.get("amount", "")), CONTEXT_FRAME_DETAILS_MAX_CHARS)
+                    items_str = f"{label} - {amount_text}"
 
             else:
-                items = [f"[{idx}] {item.label}" for idx, item in enumerate(frame.items, 1)]
+                items = [
+                    f"[{idx}] {_clip_text(item.label or 'Unknown', CONTEXT_FRAME_LABEL_MAX_CHARS)}"
+                    for idx, item in enumerate(preview_items, 1)
+                ]
                 items_str = ", ".join(items)
 
+            if overflow_count > 0:
+                items_str = (
+                    f"{items_str}, ... (+{overflow_count} more)" if items_str else f"... (+{overflow_count} more)"
+                )
             summary_parts.append(f"- {frame.frame_type.value}: {items_str}")
 
-        return "\n".join(summary_parts)
+        return _clip_text("\n".join(summary_parts), CONTEXT_FRAME_SUMMARY_MAX_CHARS)
 
     def resolve_reference(self, state: OrchestratorState, ref: dict) -> ContextEntity | None:
         """Resolve a reference dictionary to a specific entity."""

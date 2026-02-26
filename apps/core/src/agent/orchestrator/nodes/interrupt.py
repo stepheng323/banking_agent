@@ -1,3 +1,4 @@
+import json
 from typing import Any, cast
 
 from langchain_core.runnables import RunnableConfig
@@ -5,6 +6,10 @@ from langchain_core.runnables import RunnableConfig
 from apps.core.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
 from apps.core.src.agent.orchestrator.models.state import OrchestratorState
 from apps.core.src.agent.orchestrator.nodes.planner import _build_user_state_summary
+from apps.core.src.agent.orchestrator.services.interrupt_shortcuts import (
+    resolve_interrupt_shortcut_with_reason,
+    resolve_shortcut_locale,
+)
 from apps.core.src.agent.orchestrator.utils.task_payload import build_task_spec_from_plan_item
 from apps.core.src.agent.orchestrator.utils.task_state import reset_tasks_to_extracted, set_tasks_cancelled
 from apps.core.src.agent.orchestrator.utils.waves import build_dependency_waves
@@ -27,6 +32,17 @@ PLANNER_SWITCH_INTENTS = {
     "conversational",
     "cancel",
 }
+INTERRUPT_CONTEXT_MAX_CHARS = 1800
+INTERRUPT_REQUIRED_FIELDS_MAX_CHARS = 700
+INTERRUPT_PROMPT_MAX_CHARS = 300
+
+
+def _clip_text(value: str, max_chars: int) -> str:
+    if len(value) <= max_chars:
+        return value
+    if max_chars <= 16:
+        return value[:max_chars]
+    return value[: max_chars - 15].rstrip() + " ...[truncated]"
 
 
 def _state_locale(state: OrchestratorState) -> str:
@@ -103,16 +119,24 @@ def _build_interrupt_context(
     fields_by_task: dict[str, list[str]],
     prompt: str | None,
 ) -> str:
+    required_fields_text = _clip_text(
+        json.dumps(fields_by_task, ensure_ascii=True),
+        INTERRUPT_REQUIRED_FIELDS_MAX_CHARS,
+    )
+    prompt_text = _clip_text(prompt or "", INTERRUPT_PROMPT_MAX_CHARS)
     parts = [
         f"Active Flow: {kind} required for tasks {task_ids} "
         f"(types: {', '.join(sorted(current_task_types))}).\n"
-        f"required_fields={fields_by_task}\n"
-        f"prompt={prompt or ''}"
+        f"required_fields={required_fields_text}\n"
+        f"prompt={prompt_text}"
     ]
     user_state = _build_user_state_summary(state)
     if user_state:
         parts.append(user_state)
-    return "\n\n".join(parts)
+    context_raw = "\n\n".join(parts)
+    context = _clip_text(context_raw, INTERRUPT_CONTEXT_MAX_CHARS)
+    logger.info("interrupt_context_size", chars=len(context), truncated=context != context_raw)
+    return context
 
 
 def _route_fallback(reason: str) -> InterruptRouteDecision:
@@ -133,10 +157,7 @@ def _is_beneficiary_clarification_interrupt(interrupt: Any) -> bool:
     fields_by_task = getattr(interrupt, "fields_by_task", {}) or {}
     if not isinstance(fields_by_task, dict):
         return False
-    for fields in fields_by_task.values():
-        if isinstance(fields, list) and "beneficiary_id" in fields:
-            return True
-    return False
+    return any(isinstance(fields, list) and "beneficiary_id" in fields for fields in fields_by_task.values())
 
 
 async def _route_interrupt(
@@ -598,7 +619,9 @@ def _build_status_query_response(
 ) -> str:
     flow_type = next(iter(sorted(task_types))) if task_types else "transaction"
     first_task = state.tasks.get(interrupt.task_ids[0]) if interrupt.task_ids else None
-    required_fields = list((interrupt.fields_by_task or {}).get(interrupt.task_ids[0], [])) if interrupt.task_ids else []
+    required_fields = (
+        list((interrupt.fields_by_task or {}).get(interrupt.task_ids[0], [])) if interrupt.task_ids else []
+    )
     required_fields = [field for field in required_fields if isinstance(field, str)]
     status_kind = status_query_type or "recap"
 
@@ -798,16 +821,39 @@ async def handle_pending_interrupt(state: OrchestratorState, config: RunnableCon
             return _approve_confirmation_updates(state, interrupt)
         return _approve_auth_updates(state, interrupt)
 
-    route = await _route_interrupt(
-        task_planner=task_planner,
-        state=state,
+    shortcut_locale = resolve_shortcut_locale((state.loaded_context or {}).get("language"))
+    shortcut_route, miss_reason = resolve_interrupt_shortcut_with_reason(
         text=text,
-        kind=interrupt.kind,
-        task_ids=interrupt.task_ids,
-        current_task_types=current_task_types,
-        fields_by_task=interrupt.fields_by_task,
-        prompt=interrupt.prompt,
+        interrupt_kind=interrupt.kind,
+        locale=shortcut_locale,
     )
+
+    if shortcut_route is not None:
+        route = shortcut_route
+        logger.info(
+            "interrupt_shortcut_hit",
+            kind=interrupt.kind,
+            decision=route.decision,
+            status_query_type=route.status_query_type,
+            locale=shortcut_locale.value if shortcut_locale else None,
+        )
+    else:
+        logger.info(
+            "interrupt_shortcut_miss",
+            kind=interrupt.kind,
+            locale=shortcut_locale.value if shortcut_locale else None,
+            reason=miss_reason,
+        )
+        route = await _route_interrupt(
+            task_planner=task_planner,
+            state=state,
+            text=text,
+            kind=interrupt.kind,
+            task_ids=interrupt.task_ids,
+            current_task_types=current_task_types,
+            fields_by_task=interrupt.fields_by_task,
+            prompt=interrupt.prompt,
+        )
 
     if route.decision == "status_query":
         return _status_query_updates(

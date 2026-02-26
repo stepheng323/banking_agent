@@ -1,5 +1,6 @@
 """Task planner for breaking down user requests into executable tasks."""
 
+import time
 from typing import cast
 
 from langchain_openai import ChatOpenAI
@@ -339,11 +340,20 @@ class TaskPlanner:
             PlannerOutput with planned tasks
         """
         user_prompt = PLANNER_USER_PROMPT_TEMPLATE.format(phone_number=phone_number, user_message=text, context=context)
+        system_prompt = PLANNER_SYSTEM_PROMPT
+        start = time.perf_counter()
         result = await self.structured_planner.ainvoke(
             [
-                {"role": "system", "content": PLANNER_SYSTEM_PROMPT},
+                {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
             ]
+        )
+        duration_ms = (time.perf_counter() - start) * 1000
+        logger.info(
+            "planner_llm_call",
+            duration_ms=round(duration_ms, 2),
+            system_chars=len(system_prompt),
+            user_chars=len(user_prompt),
         )
 
         if isinstance(result, PlannerOutput):
@@ -357,11 +367,20 @@ class TaskPlanner:
             user_message=text,
             context=context,
         )
+        system_prompt = INTERRUPT_ROUTER_SYSTEM_PROMPT
+        start = time.perf_counter()
         result = await self.structured_interrupt_router.ainvoke(
             [
-                {"role": "system", "content": INTERRUPT_ROUTER_SYSTEM_PROMPT},
+                {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
             ]
+        )
+        duration_ms = (time.perf_counter() - start) * 1000
+        logger.info(
+            "interrupt_router_llm_call",
+            duration_ms=round(duration_ms, 2),
+            system_chars=len(system_prompt),
+            user_chars=len(user_prompt),
         )
         if isinstance(result, InterruptRouteDecision):
             return result
