@@ -38,7 +38,7 @@ META_SYSTEM_PROMPT = (
 )
 
 META_STRICT_LANGUAGE_PROMPT = "CRITICAL: Return language exactly '{language}'. If you cannot, return handoff='domain'."
-STRICT_BRAND_TERMS = ("lotr", "lord of the rings", "tolkien", "ring of fire", "character")
+STRICT_BRAND_TERMS = ("lotr", "lord of the rings", "tolkien", "ring of power", "ring of fire")
 
 
 def normalize_language_hint(language: str | None) -> str:
@@ -115,10 +115,7 @@ def _grounded_limits_message(profile: SystemProfile, *, locale: str) -> str:
             "meta.limits_fallback",
             locale,
             {"unsupported": unsupported, "supported": supported},
-            fallback_en=(
-                f"I can't help with {unsupported} here. "
-                f"I can help with {supported}."
-            ),
+            fallback_en=(f"I can't help with {unsupported} here. I can help with {supported}."),
         ),
     )
 
