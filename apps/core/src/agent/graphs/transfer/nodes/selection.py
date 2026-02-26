@@ -24,6 +24,16 @@ def _build_account_options(accounts: list[dict[str, Any]]) -> list[dict[str, str
     return options
 
 
+def _resolve_affinity_mode(
+    payload: TransferPayload,
+    *,
+    explicit_resolution: bool,
+) -> str:
+    if explicit_resolution or payload.source_affinity_mode == "explicit":
+        return "explicit"
+    return "auto"
+
+
 class SourceSelectionStep(TransferStep):
     """Selects source account."""
 
@@ -49,7 +59,11 @@ async def select_source_account(
             if acc:
                 return TransactionResult(
                     outcome=TransactionOutcome.OK,
-                    patch={"source_account_name": acc.get("account_name")},
+                    patch={
+                        "source_account_name": acc.get("account_name"),
+                        "source_affinity_mode": _resolve_affinity_mode(payload, explicit_resolution=False),
+                        "funding_plan": None,
+                    },
                 )
         return TransactionResult(outcome=TransactionOutcome.OK)
 
@@ -69,6 +83,8 @@ async def select_source_account(
                 "source_bank_name": acc.get("bank_name"),
                 "source_account_name": acc.get("account_name"),
                 "source_account_number": acc.get("account_number"),
+                "source_affinity_mode": _resolve_affinity_mode(payload, explicit_resolution=False),
+                "funding_plan": None,
             },
         )
 
@@ -81,6 +97,8 @@ async def select_source_account(
                 "source_bank_name": default.get("bank_name"),
                 "source_account_name": default.get("account_name"),
                 "source_account_number": default.get("account_number"),
+                "source_affinity_mode": _resolve_affinity_mode(payload, explicit_resolution=False),
+                "funding_plan": None,
             },
         )
 
@@ -95,7 +113,9 @@ async def select_source_account(
                     "source_bank_name": acc.get("bank_name"),
                     "source_account_name": acc.get("account_name"),
                     "source_account_number": acc.get("account_number"),
+                    "source_affinity_mode": _resolve_affinity_mode(payload, explicit_resolution=True),
                     "source_account_index": None,
+                    "funding_plan": None,
                 },
             )
 
@@ -117,6 +137,8 @@ async def select_source_account(
                     "source_bank_name": acc.get("bank_name"),
                     "source_account_name": acc.get("account_name"),
                     "source_account_number": acc.get("account_number"),
+                    "source_affinity_mode": _resolve_affinity_mode(payload, explicit_resolution=True),
+                    "funding_plan": None,
                 },
             )
         else:
@@ -150,6 +172,8 @@ async def select_source_account(
                         "source_bank_name": source_acc.get("bank_name"),
                         "source_account_name": source_acc.get("account_name"),
                         "source_account_number": source_acc.get("account_number"),
+                        "source_affinity_mode": _resolve_affinity_mode(payload, explicit_resolution=False),
+                        "funding_plan": None,
                     },
                 )
 

@@ -49,6 +49,10 @@ class TransferPayload(BaseModel):
     source_account_name: str | None = None
     source_account_number: str | None = None
     source_account_index: int | None = None
+    source_affinity_mode: Literal["explicit", "auto"] = "auto"
+    use_dual_accounts: bool | None = None
+    source_accounts: list[str] | None = None
+    explicit_split: dict[str, float] | None = None
 
     funding_plan: dict[str, Any] | None = None
 
@@ -110,6 +114,14 @@ class FundingPlanDict(TypedDict):
     is_sufficient: bool
     is_single_source: bool
     steps: list[FundingStepDict]
+    trigger_mode: Literal["auto", "explicit"]
+    requested_sources: list[str]
+    explicit_split_applied: bool
+    planned_for_amount: float
+    planned_for_source_account_id: str | None
+    planned_for_source_accounts: list[str]
+    planned_for_use_dual_accounts: bool
+    planned_for_explicit_split: dict[str, float]
 
 
 class TransferDataDict(TypedDict):

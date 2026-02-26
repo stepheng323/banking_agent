@@ -329,6 +329,22 @@ async def _extract_transfer_update(
             extracted_data["source_account_name"] = None
             extracted_data["source_account_number"] = None
 
+        if "source_accounts" in extracted_data or "use_dual_accounts" in extracted_data or "explicit_split" in extracted_data:
+            extracted_data["source_account_id"] = None
+            extracted_data["source_bank_name"] = None
+            extracted_data["source_account_name"] = None
+            extracted_data["source_account_number"] = None
+
+        explicit_source_fields = {
+            "source_bank_name",
+            "source_account_index",
+            "source_accounts",
+            "use_dual_accounts",
+            "explicit_split",
+        }
+        if any(field in extracted_data for field in explicit_source_fields):
+            extracted_data["source_affinity_mode"] = "explicit"
+
         if "recipient_account" in extracted_data:
             extracted_data["recipient_resolved_name"] = None
             extracted_data["name_mismatch"] = False
@@ -357,6 +373,18 @@ async def _extract_transfer_update(
                 extracted_data["is_high_risk_transfer"] = False
                 extracted_data["dynamic_risk_threshold"] = None
                 extracted_data["high_risk_warning"] = None
+
+        funding_invalidation_fields = {
+            "amount",
+            "source_bank_name",
+            "source_account_index",
+            "source_account_id",
+            "source_accounts",
+            "use_dual_accounts",
+            "explicit_split",
+        }
+        if any(field in extracted_data for field in funding_invalidation_fields):
+            extracted_data["funding_plan"] = None
 
         return TransactionResult(outcome=TransactionOutcome.OK, patch=extracted_data)
 
