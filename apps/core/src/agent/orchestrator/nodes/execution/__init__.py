@@ -81,6 +81,47 @@ def _with_policy_notice(state: OrchestratorState, outbox: list[dict[str, Any]]) 
     return [{"type": "say", "text": state.policy_notice}, *outbox]
 
 
+def _build_actionable_payload(task: Any) -> dict[str, Any] | None:
+    """Build actionable payload for quote-based follow-up messages."""
+    task_payload = task.payload if isinstance(task.payload, dict) else {}
+    idem_key = task_payload.get("idempotency_key")
+    tx_id = task_payload.get("transaction_id")
+    action = task_payload.get("action")
+    if not any([idem_key, tx_id, action]):
+        return None
+
+    payload: dict[str, Any] = {
+        "idempotency_key": idem_key,
+        "task_id": task.id,
+        "task_type": task.type,
+    }
+    for key in (
+        "transaction_id",
+        "action",
+        "amount",
+        "beneficiary_id",
+        "recipient_name",
+        "recipient_resolved_name",
+        "recipient_phone",
+        "target_phone",
+        "recipient_account",
+        "recipient_account_number",
+        "recipient_bank_code",
+        "recipient_bank_name",
+        "resolved_from_saved_beneficiary",
+        "source_bank_name",
+        "narration",
+        "network",
+        "plan_code",
+        "plan_name",
+    ):
+        value = task_payload.get(key)
+        if value is not None and value != "":
+            payload[key] = value
+
+    return payload
+
+
 def _dependency_resolution(task: Any, all_tasks: dict[str, Any]) -> tuple[str, str | None]:
     """Resolve whether task dependencies are ready, waiting, or failed."""
     depends_on = task.depends_on if hasattr(task, "depends_on") else []
@@ -654,6 +695,7 @@ async def advance_wave(state: OrchestratorState, config: RunnableConfig) -> dict
                     "idempotency_key",
                     "unknown",
                 ),
+                "actionable_payload": _build_actionable_payload(state.tasks[agg.needs_confirm_tasks[0]]),
             }
         )
 
@@ -683,6 +725,7 @@ async def advance_wave(state: OrchestratorState, config: RunnableConfig) -> dict
                 "idempotency_key": idem_key,
                 "header": reason,
                 "summary": summ,
+                "actionable_payload": _build_actionable_payload(first_task),
             }
         ]
         updates["pending_interrupt"] = interrupt

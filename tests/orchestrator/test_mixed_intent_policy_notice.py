@@ -12,6 +12,7 @@ from apps.core.src.agent.orchestrator.nodes.finalize import finalize
 from apps.core.src.agent.orchestrator.nodes.ingest import ingest_message
 from apps.core.src.agent.orchestrator.nodes.planner import SAFE_CAPABILITY_FALLBACK, plan_tasks
 from shared.i18n import render_message
+from shared.policy import get_cached_policy
 from shared.types.planner import PlannedTask, PlannerOutput, TaskParameters
 
 
@@ -100,9 +101,36 @@ class _FakeRedis:
         self._store.pop(key, None)
 
 
+class _FakeMetaLLM:
+    def __init__(self, response: dict[str, Any]) -> None:
+        self._response = response
+
+    def with_structured_output(self, _schema: Any) -> "_FakeMetaLLM":
+        return self
+
+    def with_config(self, _config: dict[str, Any]) -> "_FakeMetaLLM":
+        return self
+
+    async def ainvoke(self, _messages: list[dict[str, str]]) -> dict[str, Any]:
+        return self._response
+
+
 def _apply(state: OrchestratorState, updates: dict) -> OrchestratorState:
     """Apply node updates to state."""
     return state.model_copy(update=updates)
+
+
+def _expected_policy_greeting(locale: str) -> str:
+    policy = get_cached_policy()
+    return render_message(
+        "meta.fallback",
+        locale,
+        {
+            "name": policy.identity.name,
+            "description": policy.identity.description,
+            "supported": ", ".join(policy.supported_domains),
+        },
+    )
 
 
 @pytest.mark.asyncio
@@ -233,6 +261,172 @@ async def test_conversational_response_key_renders_deterministically() -> None:
 
 
 @pytest.mark.asyncio
+async def test_conversational_identity_uses_meta_llm_when_available() -> None:
+    planner_output = PlannerOutput(
+        primary_intent="conversational",
+        response="",
+        response_key="conversational.identity",
+        confidence=0.9,
+        is_complex=False,
+        is_cancellation=False,
+        is_confirmation=False,
+        detected_language="English",
+        normalized_instruction="who created you",
+        tasks=[],
+    )
+
+    state = OrchestratorState(
+        user_id="u_meta_1",
+        phone_number="2348999999991",
+        channel="whatsapp",
+        last_message_text="who created you",
+    )
+    config: RunnableConfig = {
+        "configurable": {
+            "task_planner": _MockPlanner(
+                planner_output,
+                planner_llm=_FakeMetaLLM(
+                    {"handoff": "meta", "language": "en", "message": "I am Narya AI, built by the Fuse team."}
+                ),
+            ),
+            "services": {},
+            "redis_client": None,
+        },
+        "recursion_limit": 50,
+    }
+
+    state = _apply(state, await ingest_message(state))
+    state = _apply(state, await plan_tasks(state, config))
+
+    assert state.final_response == "I am Narya AI, built by the Fuse team."
+
+
+@pytest.mark.asyncio
+async def test_conversational_identity_falls_back_to_key_without_llm() -> None:
+    planner_output = PlannerOutput(
+        primary_intent="conversational",
+        response="",
+        response_key="conversational.identity",
+        confidence=0.9,
+        is_complex=False,
+        is_cancellation=False,
+        is_confirmation=False,
+        detected_language="English",
+        normalized_instruction="who created you",
+        tasks=[],
+    )
+
+    state = OrchestratorState(
+        user_id="u_meta_2",
+        phone_number="2348999999992",
+        channel="whatsapp",
+        last_message_text="who created you",
+    )
+    config: RunnableConfig = {
+        "configurable": {
+            "task_planner": _MockPlanner(planner_output, planner_llm=object()),
+            "services": {},
+            "redis_client": None,
+        },
+        "recursion_limit": 50,
+    }
+
+    state = _apply(state, await ingest_message(state))
+    state = _apply(state, await plan_tasks(state, config))
+
+    assert state.final_response == render_message("conversational.identity", "en")
+
+
+@pytest.mark.asyncio
+async def test_conversational_capability_question_uses_meta_llm_when_available() -> None:
+    planner_output = PlannerOutput(
+        primary_intent="conversational",
+        response="",
+        response_key="conversational.capability_question",
+        confidence=0.9,
+        is_complex=False,
+        is_cancellation=False,
+        is_confirmation=False,
+        detected_language="English",
+        normalized_instruction="what can you do",
+        tasks=[],
+    )
+
+    state = OrchestratorState(
+        user_id="u_meta_3",
+        phone_number="2348999999993",
+        channel="whatsapp",
+        last_message_text="what can you do",
+    )
+    config: RunnableConfig = {
+        "configurable": {
+            "task_planner": _MockPlanner(
+                planner_output,
+                planner_llm=_FakeMetaLLM(
+                    {"handoff": "meta", "language": "en", "message": "I can help with transfers, airtime, data, and account checks."}
+                ),
+            ),
+            "services": {},
+            "redis_client": None,
+        },
+        "recursion_limit": 50,
+    }
+
+    state = _apply(state, await ingest_message(state))
+    state = _apply(state, await plan_tasks(state, config))
+
+    assert state.final_response == "I can help with transfers, airtime, data, and account checks."
+
+
+@pytest.mark.asyncio
+async def test_conversational_out_of_scope_uses_meta_llm_when_available() -> None:
+    planner_output = PlannerOutput(
+        primary_intent="conversational",
+        response="",
+        response_key="conversational.out_of_scope",
+        confidence=0.9,
+        is_complex=False,
+        is_cancellation=False,
+        is_confirmation=False,
+        detected_language="English",
+        normalized_instruction="book me a flight",
+        tasks=[],
+    )
+
+    state = OrchestratorState(
+        user_id="u_meta_4",
+        phone_number="2348999999994",
+        channel="whatsapp",
+        last_message_text="book me a flight",
+    )
+    config: RunnableConfig = {
+        "configurable": {
+            "task_planner": _MockPlanner(
+                planner_output,
+                planner_llm=_FakeMetaLLM(
+                    {
+                        "handoff": "meta",
+                        "language": "en",
+                        "message": "I can’t book flights yet. I can help with transfers, airtime, or checking your account.",
+                    }
+                ),
+            ),
+            "services": {},
+            "redis_client": None,
+        },
+        "recursion_limit": 50,
+    }
+
+    state = _apply(state, await ingest_message(state))
+    state = _apply(state, await plan_tasks(state, config))
+
+    assert (
+        state.final_response
+        == "I can’t book flights yet. I can help with transfers, airtime, or checking your account."
+    )
+
+
+@pytest.mark.asyncio
 async def test_conversational_planner_response_localizes_for_pidgin() -> None:
     """Conversational keyed response should localize for pidgin users."""
     planner_output = PlannerOutput(
@@ -303,7 +497,7 @@ async def test_conversational_response_key_localizes_for_yoruba() -> None:
     state = _apply(state, await ingest_message(state))
     state = _apply(state, await plan_tasks(state, config))
 
-    assert state.final_response == render_message("conversational.greeting", "yo")
+    assert state.final_response == _expected_policy_greeting("yo")
 
 
 @pytest.mark.asyncio
@@ -425,7 +619,7 @@ async def test_conversational_response_uses_detected_language_even_with_cached_p
     state = _apply(state, await ingest_message(state))
     state = _apply(state, await plan_tasks(state, config))
 
-    assert state.final_response == render_message("conversational.greeting", "en")
+    assert state.final_response == _expected_policy_greeting("en")
     assert (state.loaded_context or {}).get("language") == "en"
 
 

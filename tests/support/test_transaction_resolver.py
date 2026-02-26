@@ -105,6 +105,28 @@ async def test_resolver_falls_back_to_idempotency_key_when_transaction_id_is_not
 
 
 @pytest.mark.asyncio
+async def test_resolver_uses_idempotency_key_from_actionable_payload() -> None:
+    tx = SimpleNamespace(
+        id=uuid4(),
+        amount=5000.0,
+        recipient_name="Tolu",
+        created_at=datetime.utcnow(),
+    )
+    tx_repo = _TransactionRepoStub(by_id=None, by_idempotency_key=tx)
+    resolver = TransactionResolver(
+        transaction_repo=tx_repo,
+        actionable_message_repo=_ActionableRepoStub(actionable=SimpleNamespace(message_data={"idempotency_key": "idem-77"})),
+    )
+
+    resolved, method = await resolver.resolve(user_id="u1", tx_ref=None, quoted_message_id="wamid.confirm.77")
+
+    assert resolved == tx
+    assert method == "quoted"
+    assert tx_repo.get_by_id_calls == 1
+    assert tx_repo.get_by_idempotency_key_calls == 1
+
+
+@pytest.mark.asyncio
 async def test_resolver_explicit_path_uses_async_get_by_user() -> None:
     tx = SimpleNamespace(
         id=uuid4(),

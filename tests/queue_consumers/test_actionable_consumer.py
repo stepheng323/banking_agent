@@ -10,13 +10,19 @@ from shared.database.enums import ActionableMessageTypeEnum
 
 
 class _UsersRepoStub:
-    def __init__(self, user: object | None) -> None:
+    def __init__(self, user: object | None, phone_user: object | None = None) -> None:
         self._user = user
+        self._phone_user = phone_user
         self.calls: list[tuple[str, str]] = []
+        self.phone_calls: list[str] = []
 
     async def get_by_channel_identity(self, channel: str, channel_user_id: str) -> object | None:
         self.calls.append((channel, channel_user_id))
         return self._user
+
+    async def get_by_phone(self, phone_number: str) -> object | None:
+        self.phone_calls.append(phone_number)
+        return self._phone_user
 
 
 class _ActionableDbStub:
@@ -43,10 +49,11 @@ class _UowStub:
         self,
         *,
         user: object | None,
+        phone_user: object | None = None,
         existing_actionable: object | None = None,
         commit_error: Exception | None = None,
     ) -> None:
-        self.users = _UsersRepoStub(user)
+        self.users = _UsersRepoStub(user, phone_user=phone_user)
         self.actionable_messages = _ActionableRepoStub(existing_actionable)
         self._commit_error = commit_error
         self.rollback_called = False
@@ -155,3 +162,27 @@ async def test_actionable_consumer_skips_when_required_fields_or_user_missing(
 
     assert not uow.actionable_messages.db.added
     assert uow.commit_called is False
+
+
+@pytest.mark.asyncio
+async def test_actionable_consumer_does_not_fallback_to_phone_lookup_when_identity_misses(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user = SimpleNamespace(id=uuid4())
+    uow = _UowStub(user=None, phone_user=user)
+    consumer = ActionableMessageConsumer(redis_queue=SimpleNamespace())
+    monkeypatch.setattr("apps.core.src.queue_consumers.actionable_consumer.UnitOfWork", lambda: uow)
+
+    await consumer.process_job(
+        {
+            "channel": "whatsapp",
+            "message_id": "wamid.222",
+            "phone_number": "2348000000022",
+            "payload": {"idempotency_key": "idem-222"},
+        }
+    )
+
+    assert uow.users.calls == [("whatsapp", "2348000000022")]
+    assert uow.users.phone_calls == []
+    assert uow.commit_called is False
+    assert len(uow.actionable_messages.db.added) == 0

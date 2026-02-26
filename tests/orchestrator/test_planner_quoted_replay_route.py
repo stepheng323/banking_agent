@@ -1,0 +1,216 @@
+from typing import Any
+
+import pytest
+
+from apps.core.src.agent.orchestrator.models.state import OrchestratorState
+from apps.core.src.agent.orchestrator.nodes.planner import plan_tasks
+from shared.types.planner import PlannerOutput
+from shared.types.quoted_replay import QuotedReplayInterpretation
+
+
+class _QuotedPlannerStub:
+    def __init__(self, interpretation: QuotedReplayInterpretation) -> None:
+        self.interpretation = interpretation
+        self.quoted_called = False
+        self.plan_called = False
+
+    async def interpret_quoted_replay(self, phone_number: str, text: str, context: str = "None") -> Any:
+        del phone_number, text, context
+        self.quoted_called = True
+        return self.interpretation
+
+    async def plan_tasks(self, phone_number: str, text: str, context: str = "None") -> PlannerOutput:
+        del phone_number, text, context
+        self.plan_called = True
+        return PlannerOutput(
+            primary_intent="conversational",
+            response="hello",
+            tasks=[],
+        )
+
+
+class _ActionableRepoStub:
+    def __init__(self, payload: dict[str, Any] | None) -> None:
+        self.payload = payload
+
+    async def get_by_channel_message_id_for_user(self, channel_message_id: str, user_id: str) -> Any:
+        del channel_message_id, user_id
+        if self.payload is None:
+            return None
+        return type("Actionable", (), {"message_data": self.payload})()
+
+
+@pytest.mark.asyncio
+async def test_quoted_replay_hit_skips_main_planner_and_creates_transfer_task() -> None:
+    planner = _QuotedPlannerStub(
+        QuotedReplayInterpretation.model_validate(
+            {
+                "decision": "execute",
+                "confidence": 0.9,
+                "tasks": [
+                    {
+                        "task_type": "transfer",
+                        "payload": {
+                            "amount": 50000,
+                            "recipient_name": "Tolu",
+                            "recipient_account": "0123456789",
+                        },
+                    }
+                ],
+            }
+        )
+    )
+    state = OrchestratorState(
+        user_id="u1",
+        phone_number="2348000000001",
+        channel="whatsapp",
+        has_quote=True,
+        quoted_message_id="wamid.receipt.1",
+        last_message_text="again but 50k",
+        loaded_context={"language": "en", "user_id": "user-1"},
+    )
+    config = {
+        "configurable": {
+            "task_planner": planner,
+            "redis_client": None,
+            "actionable_message_repo": _ActionableRepoStub(
+                {
+                    "task_type": "transfer",
+                    "amount": 5000,
+                    "recipient_name": "Ada",
+                    "recipient_account": "0123456789",
+                }
+            ),
+        }
+    }
+
+    updates = await plan_tasks(state, config)
+
+    assert planner.quoted_called is True
+    assert planner.plan_called is False
+    task = updates["tasks"][next(iter(updates["tasks"]))]
+    assert task.type == "transfer"
+    assert task.payload["skip_extraction"] is True
+    assert task.payload["confirmation"]["confirmed"] is False
+    assert task.payload["idempotency_key"] is None
+    assert task.payload["transaction_id"] is None
+
+
+@pytest.mark.asyncio
+async def test_quoted_not_replay_falls_back_to_main_planner() -> None:
+    planner = _QuotedPlannerStub(
+        QuotedReplayInterpretation.model_validate(
+            {
+                "decision": "not_replay",
+                "confidence": 0.8,
+                "tasks": [],
+            }
+        )
+    )
+    state = OrchestratorState(
+        user_id="u2",
+        phone_number="2348000000002",
+        channel="whatsapp",
+        has_quote=True,
+        quoted_message_id="wamid.receipt.2",
+        last_message_text="what is my balance",
+        loaded_context={"language": "en", "user_id": "user-2"},
+    )
+    config = {
+        "configurable": {
+            "task_planner": planner,
+            "redis_client": None,
+            "actionable_message_repo": _ActionableRepoStub({"task_type": "transfer", "amount": 5000}),
+        }
+    }
+
+    updates = await plan_tasks(state, config)
+
+    assert planner.quoted_called is True
+    assert planner.plan_called is True
+    assert updates["final_response"] == "hello"
+
+
+@pytest.mark.asyncio
+async def test_quoted_replay_clarify_returns_final_response_without_support_task() -> None:
+    planner = _QuotedPlannerStub(
+        QuotedReplayInterpretation.model_validate(
+            {
+                "decision": "clarify",
+                "confidence": 0.8,
+                "tasks": [],
+                "clarify_message": "Do you want me to run it again?",
+                "reason": "ambiguous replay command",
+            }
+        )
+    )
+    state = OrchestratorState(
+        user_id="u3",
+        phone_number="2348000000003",
+        channel="whatsapp",
+        has_quote=True,
+        quoted_message_id="wamid.receipt.3",
+        last_message_text="again",
+        loaded_context={"language": "en", "user_id": "user-3"},
+    )
+    config = {
+        "configurable": {
+            "task_planner": planner,
+            "redis_client": None,
+            "actionable_message_repo": _ActionableRepoStub({"task_type": "transfer", "amount": 5000}),
+        }
+    }
+
+    updates = await plan_tasks(state, config)
+
+    assert planner.quoted_called is True
+    assert planner.plan_called is False
+    assert updates["final_response"] == "Do you want me to run it again?"
+    assert "tasks" not in updates
+    assert "pending_interrupt" not in updates
+
+
+@pytest.mark.asyncio
+async def test_quoted_replay_low_confidence_returns_clarify_response() -> None:
+    planner = _QuotedPlannerStub(
+        QuotedReplayInterpretation.model_validate(
+            {
+                "decision": "execute",
+                "confidence": 0.5,
+                "tasks": [
+                    {
+                        "task_type": "transfer",
+                        "payload": {
+                            "amount": 1000,
+                            "recipient_name": "Ada",
+                            "recipient_account": "0123456789",
+                        },
+                    }
+                ],
+                "reason": "possible replay but weak signal",
+            }
+        )
+    )
+    state = OrchestratorState(
+        user_id="u4",
+        phone_number="2348000000004",
+        channel="whatsapp",
+        has_quote=True,
+        quoted_message_id="wamid.receipt.4",
+        last_message_text="do that one",
+        loaded_context={"language": "en", "user_id": "user-4"},
+    )
+    config = {
+        "configurable": {
+            "task_planner": planner,
+            "redis_client": None,
+            "actionable_message_repo": _ActionableRepoStub({"task_type": "transfer", "amount": 5000}),
+        }
+    }
+
+    updates = await plan_tasks(state, config)
+
+    assert planner.quoted_called is True
+    assert planner.plan_called is False
+    assert "final_response" in updates
+    assert "tasks" not in updates
