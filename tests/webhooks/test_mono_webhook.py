@@ -1,5 +1,13 @@
 """Tests for Mono webhook handler - Unit tests with mocked dependencies."""
 
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
+
+import pytest
+
+from apps.gateway.api.webhooks.mono.service import MonoWebhookService
+from shared.database.enums import FundedTransferStatusEnum, FundingStepStatusEnum
+
 
 class TestWebhookServiceBasics:
     """Basic unit tests for webhook handling logic."""
@@ -120,3 +128,53 @@ class TestFundingStepStatus:
         assert FundedTransferStatusEnum.COMPLETED.value == "completed"
         assert FundedTransferStatusEnum.REFUNDING.value == "refunding"
         assert FundedTransferStatusEnum.REFUNDED.value == "refunded"
+
+
+class _FakeFundingSteps:
+    async def any_failed(self, transfer_id: str) -> bool:
+        return transfer_id == "tx-1"
+
+    async def all_confirmed(self, transfer_id: str) -> bool:
+        return False
+
+
+class _FakeFundedTransfers:
+    def __init__(self) -> None:
+        self.updated: list[tuple[str, str]] = []
+
+    async def update_status(self, transfer_id: str, status: str) -> None:
+        self.updated.append((transfer_id, status))
+
+
+class _FakeUow:
+    def __init__(self) -> None:
+        self.funding_steps = _FakeFundingSteps()
+        self.funded_transfers = _FakeFundedTransfers()
+        self.commit_calls = 0
+
+    async def commit(self) -> None:
+        self.commit_calls += 1
+
+
+class _NoopQueue:
+    async def enqueue(self, queue_name: str, message: dict) -> None:  # noqa: ARG002
+        return None
+
+
+class TestMonoWebhookRefundGate:
+    @pytest.mark.asyncio
+    async def test_any_failed_step_triggers_refund_even_if_latest_status_is_confirmed(self):
+        service = MonoWebhookService(queue=_NoopQueue())
+        service._queue_refunds = AsyncMock()  # type: ignore[method-assign]
+        uow = _FakeUow()
+        transfer = SimpleNamespace(id="tx-1", status=FundedTransferStatusEnum.FUNDING_PENDING.value)
+
+        await service._check_transfer_completion(
+            uow=uow,  # type: ignore[arg-type]
+            transfer=transfer,  # type: ignore[arg-type]
+            latest_status=FundingStepStatusEnum.CONFIRMED.value,
+        )
+
+        assert ("tx-1", FundedTransferStatusEnum.REFUNDING.value) in uow.funded_transfers.updated
+        assert uow.commit_calls == 1
+        service._queue_refunds.assert_awaited_once()
