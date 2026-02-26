@@ -3,6 +3,8 @@ from typing import Any, cast
 
 from langchain_core.runnables import RunnableConfig
 
+from apps.core.src.agent.orchestrator.meta_reply import generate_meta_reply
+from apps.core.src.agent.orchestrator.models.domain import MetaIntent, TaskSpec, TaskStage
 from apps.core.src.agent.orchestrator.models.state import OrchestratorState
 from apps.core.src.agent.orchestrator.utils.task_payload import build_task_spec_from_plan_item
 from apps.core.src.agent.orchestrator.utils.waves import build_dependency_waves
@@ -18,6 +20,7 @@ from shared.i18n import (
 )
 from shared.policy import get_cached_policy
 from shared.types.planner import PlannedTask, TaskParameters
+from shared.types.quoted_replay import QuotedReplayInterpretation
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -71,7 +74,14 @@ CONTEXT_FASTPATH_SUBTYPES = (
 )
 TRANSACTION_EXECUTORS = {"transfer", "airtime", "data"}
 BENEFICIARY_MATCH_PREVIEW_LIMIT = 3
+QUOTED_REPLAY_MIN_CONFIDENCE = 0.75
 NO_ACTIVE_FLOW_FASTPATH_MESSAGE = "There is no active transfer flow right now. Start a transfer and I will guide you."
+META_RESPONSE_KEY_TO_INTENT: dict[str, MetaIntent] = {
+    "conversational.identity": MetaIntent.IDENTITY,
+    "conversational.brand_origin": MetaIntent.BRAND_ORIGIN,
+    "conversational.capability_question": MetaIntent.CAPABILITIES,
+    "conversational.out_of_scope": MetaIntent.LIMITS,
+}
 
 
 def _clip_text(value: str, max_chars: int) -> str:
@@ -439,6 +449,182 @@ def _filter_spurious_affirmation_tasks(
     return planner_output
 
 
+def _build_quoted_replay_context(state: OrchestratorState) -> str:
+    return _clip_text(
+        (
+            f"Quoted message id: {state.quoted_message_id or 'unknown'}\n"
+            f"Has quote: {state.has_quote}\n"
+            "Quoted actionable payload: unavailable"
+        ),
+        1800,
+    )
+
+
+def _build_quoted_replay_context_with_payload(state: OrchestratorState, quoted_payload: dict[str, Any]) -> str:
+    user_state = _build_user_state_summary(state) or "User State: unavailable"
+    payload_preview = _compact_payload_for_prompt(quoted_payload)
+    return _clip_text(
+        (
+            f"Quoted message id: {state.quoted_message_id or 'unknown'}\n"
+            f"Has quote: {state.has_quote}\n"
+            f"Quoted actionable payload: {payload_preview}\n"
+            f"{user_state}"
+        ),
+        1800,
+    )
+
+
+def _next_quoted_replay_task_id(
+    state: OrchestratorState, task_type: str, existing_ids: set[str] | None = None
+) -> str:
+    seen = set(existing_ids or set())
+    seen.update(state.tasks.keys())
+    idx = 1
+    task_id = f"quoted_replay_{task_type}_{idx}"
+    while task_id in seen:
+        idx += 1
+        task_id = f"quoted_replay_{task_type}_{idx}"
+    return task_id
+
+
+async def _load_quoted_actionable_payload(state: OrchestratorState, config: RunnableConfig) -> dict[str, Any] | None:
+    repo = config["configurable"].get("actionable_message_repo")
+    if repo is None or not state.quoted_message_id:
+        return None
+
+    user_id = (state.loaded_context or {}).get("user_id") or state.user_id
+    if not user_id:
+        logger.info("quoted_replay_actionable_lookup_skipped", reason="missing_user_id")
+        return None
+
+    try:
+        row = await repo.get_by_channel_message_id_for_user(state.quoted_message_id, str(user_id))
+    except Exception as exc:
+        logger.warning("quoted_replay_actionable_lookup_failed", error=str(exc))
+        return None
+
+    if not row:
+        return None
+
+    message_data = None
+    if isinstance(row, dict):
+        message_data = row.get("message_data")
+    else:
+        message_data = getattr(row, "message_data", None)
+    if isinstance(message_data, dict):
+        return dict(message_data)
+    return None
+
+
+def _is_replay_payload_sufficient(task_type: str, payload: dict[str, Any]) -> bool:
+    if task_type == "airtime":
+        return bool(payload.get("amount") is not None and (payload.get("recipient_phone") or payload.get("target_phone")))
+    if task_type == "data":
+        return bool(
+            (payload.get("target_phone") or payload.get("recipient_phone"))
+            and (payload.get("amount") is not None or payload.get("plan_code") or payload.get("plan_name"))
+        )
+    return bool(
+        payload.get("amount") is not None
+        and (
+            payload.get("beneficiary_id")
+            or payload.get("recipient_account")
+            or payload.get("recipient_name")
+            or payload.get("recipient_phone")
+        )
+    )
+
+
+def _sanitize_replay_task_payload(*, task_type: str, payload: dict[str, Any], text: str) -> dict[str, Any] | None:
+    next_payload = dict(payload)
+    if "action" not in next_payload:
+        next_payload["action"] = {"transfer": "send_money", "airtime": "buy_airtime", "data": "buy_data"}[task_type]
+    next_payload.setdefault("instruction", text)
+    next_payload.setdefault("message", text)
+    next_payload["skip_extraction"] = True
+    confirmation = next_payload.get("confirmation")
+    if not isinstance(confirmation, dict):
+        confirmation = {}
+    confirmation["confirmed"] = False
+    next_payload["confirmation"] = confirmation
+    next_payload["idempotency_key"] = None
+    next_payload["transaction_id"] = None
+
+    if not _is_replay_payload_sufficient(task_type, next_payload):
+        return None
+    return next_payload
+
+
+def _build_quoted_replay_execution_updates(
+    *,
+    state: OrchestratorState,
+    text: str,
+    interpretation: QuotedReplayInterpretation,
+    locale_updates: dict[str, Any],
+) -> dict[str, Any] | None:
+    new_tasks: dict[str, TaskSpec] = {}
+    wave_ids: list[str] = []
+    allocated_ids: set[str] = set()
+    for item in interpretation.tasks:
+        task_type = item.task_type
+        payload = item.payload.model_dump(exclude_none=True)
+        sanitized_payload = _sanitize_replay_task_payload(task_type=task_type, payload=payload, text=text)
+        if sanitized_payload is None:
+            continue
+        task_id = _next_quoted_replay_task_id(state, task_type, allocated_ids)
+        allocated_ids.add(task_id)
+        new_tasks[task_id] = TaskSpec(
+            id=task_id,
+            type=cast(Any, task_type),
+            stage=TaskStage.DRAFT,
+            payload=sanitized_payload,
+        )
+        wave_ids.append(task_id)
+
+    if not wave_ids:
+        return None
+
+    logger.info(
+        "quoted_replay_shortcut_hit",
+        decision=interpretation.decision,
+        task_count=len(wave_ids),
+    )
+    return {
+        "tasks": new_tasks,
+        "waves": [wave_ids],
+        "current_wave_index": 0,
+        "normalized_instruction": text,
+        **locale_updates,
+    }
+
+
+def _quoted_replay_clarify_response(interpretation: QuotedReplayInterpretation, locale: str) -> str:
+    return interpretation.clarify_message or render_message("conversational.clarify", locale)
+
+
+def _build_policy_aware_greeting(locale: str) -> str:
+    policy = get_cached_policy()
+    supported = ", ".join(policy.supported_domains)
+    return cast(
+        str,
+        render_message(
+            "meta.fallback",
+            locale,
+            {
+                "name": policy.identity.name,
+                "description": policy.identity.description,
+                "supported": supported,
+            },
+        ),
+    )
+
+
+def _meta_intent_from_response_key(response_key: str | None) -> MetaIntent | None:
+    if not response_key:
+        return None
+    return META_RESPONSE_KEY_TO_INTENT.get(response_key)
+
+
 async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[str, Any]:
     """Planner Node.
 
@@ -468,6 +654,69 @@ async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[s
             "final_response": render_locale_switched(next_locale),
             **locale_updates,
         }
+    locale_updates = _build_locale_update(state, current_locale)
+
+    if state.has_quote and state.quoted_message_id and hasattr(task_planner, "interpret_quoted_replay"):
+        quoted_payload = await _load_quoted_actionable_payload(state, config)
+        quoted_context = (
+            _build_quoted_replay_context_with_payload(state, quoted_payload)
+            if quoted_payload is not None
+            else _build_quoted_replay_context(state)
+        )
+        try:
+            interpretation = cast(
+                QuotedReplayInterpretation,
+                await task_planner.interpret_quoted_replay(state.phone_number, text, context=quoted_context),
+            )
+            if interpretation.decision == "clarify":
+                logger.info("quoted_replay_shortcut_clarify", reason=interpretation.reason)
+                return {
+                    "final_response": _quoted_replay_clarify_response(interpretation, current_locale),
+                    "normalized_instruction": text,
+                    **locale_updates,
+                }
+            if interpretation.decision == "execute":
+                if interpretation.confidence < QUOTED_REPLAY_MIN_CONFIDENCE:
+                    logger.info(
+                        "quoted_replay_confidence_low",
+                        decision=interpretation.decision,
+                        confidence=interpretation.confidence,
+                        min_confidence=QUOTED_REPLAY_MIN_CONFIDENCE,
+                    )
+                    return {
+                        "final_response": _quoted_replay_clarify_response(interpretation, current_locale),
+                        "normalized_instruction": text,
+                        **locale_updates,
+                    }
+                if quoted_payload is None:
+                    logger.info("quoted_replay_actionable_payload_missing", quoted_message_id=state.quoted_message_id)
+                    return {
+                        "final_response": render_message("conversational.clarify", current_locale),
+                        "normalized_instruction": text,
+                        **locale_updates,
+                    }
+                replay_updates = _build_quoted_replay_execution_updates(
+                    state=state,
+                    text=text,
+                    interpretation=interpretation,
+                    locale_updates=locale_updates,
+                )
+                if replay_updates is not None:
+                    return replay_updates
+                logger.info(
+                    "quoted_replay_insufficient_payload",
+                    decision=interpretation.decision,
+                    reason=interpretation.reason,
+                )
+                return {
+                    "final_response": _quoted_replay_clarify_response(interpretation, current_locale),
+                    "normalized_instruction": text,
+                    **locale_updates,
+                }
+            logger.info("quoted_replay_shortcut_miss", decision=interpretation.decision, reason=interpretation.reason)
+        except Exception as exc:
+            logger.warning("quoted_replay_shortcut_failed", error=str(exc))
+
     planner_context_parts: list[str] = []
 
     if redis_client:
@@ -685,7 +934,6 @@ async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[s
         logger.error("planner_failed", error=str(e))
         return {}
 
-    locale_updates = _build_locale_update(state, current_locale)
     detected_locale = _detected_locale_value(planner_output)
 
     def _localized_planner_response(raw_response: str | None) -> str:
@@ -730,6 +978,39 @@ async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[s
             response_key = planner_output.response_key
             if response_key:
                 logger.info("planner_response_key_used", key=response_key, locale=conversational_locale)
+                if response_key == "conversational.greeting":
+                    return {
+                        "final_response": _build_policy_aware_greeting(conversational_locale),
+                        **conversational_locale_updates,
+                    }
+
+                meta_intent = _meta_intent_from_response_key(response_key)
+                llm = getattr(task_planner, "planner_llm", None)
+                if meta_intent and llm is not None and hasattr(llm, "with_structured_output"):
+                    meta_message, handoff = await generate_meta_reply(
+                        llm,
+                        user_message=text,
+                        user_language_hint=conversational_locale,
+                        meta_intent=meta_intent,
+                        redis_client=redis_client,
+                    )
+                    if handoff == "meta" and meta_message:
+                        logger.info(
+                            "planner_meta_reply_used",
+                            response_key=response_key,
+                            locale=conversational_locale,
+                            intent=meta_intent.value,
+                        )
+                        return {
+                            "final_response": meta_message,
+                            **conversational_locale_updates,
+                        }
+                    logger.info(
+                        "planner_meta_reply_fallback",
+                        response_key=response_key,
+                        locale=conversational_locale,
+                        handoff=handoff,
+                    )
                 return {
                     "final_response": render_message(response_key, conversational_locale),
                     **conversational_locale_updates,
