@@ -34,6 +34,7 @@ from shared.formatters.prompts import (
 )
 from shared.formatters.transaction_summary import format_batch_transfer_summary, format_intent_line
 from shared.i18n import render_message
+from shared.services.funding.coordinator import BatchFundingCoordinator, SourceAffinity, TransferDemand
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -200,6 +201,155 @@ def _compact_prompt_for_options(prompt_text: str) -> str:
     return compact or prompt_text
 
 
+def _build_planning_signature(task_payload: dict[str, Any]) -> dict[str, Any]:
+    explicit_split_raw = task_payload.get("explicit_split")
+    explicit_split = explicit_split_raw if isinstance(explicit_split_raw, dict) else {}
+    normalized_split = {
+        str(k): float(v)
+        for k, v in sorted(explicit_split.items(), key=lambda item: str(item[0]))
+        if isinstance(v, (int, float))
+    }
+    source_accounts_raw = task_payload.get("source_accounts")
+    source_accounts = source_accounts_raw if isinstance(source_accounts_raw, list) else []
+    return {
+        "planned_for_amount": float(task_payload.get("amount") or 0.0),
+        "planned_for_source_account_id": task_payload.get("source_account_id"),
+        "planned_for_source_accounts": sorted([str(bank) for bank in source_accounts if str(bank).strip()]),
+        "planned_for_use_dual_accounts": bool(task_payload.get("use_dual_accounts")),
+        "planned_for_explicit_split": normalized_split,
+    }
+
+
+def _funding_plan_to_payload_dict(plan: Any, task_payload: dict[str, Any]) -> dict[str, Any]:
+    signature = _build_planning_signature(task_payload)
+    return {
+        "transfer_amount": float(plan.transfer_amount),
+        "total_funded": float(plan.total_funded),
+        "is_sufficient": bool(plan.is_sufficient),
+        "is_single_source": len(plan.steps) == 1,
+        "trigger_mode": plan.trigger_mode,
+        "requested_sources": list(plan.requested_sources),
+        "explicit_split_applied": bool(plan.explicit_split_applied),
+        "primary_account_id": str(plan.primary_account_id) if plan.primary_account_id else None,
+        "primary_bank_name": plan.primary_bank_name,
+        "primary_available_balance": plan.primary_available_balance,
+        "planned_for_amount": signature["planned_for_amount"],
+        "planned_for_source_account_id": signature["planned_for_source_account_id"],
+        "planned_for_source_accounts": signature["planned_for_source_accounts"],
+        "planned_for_use_dual_accounts": signature["planned_for_use_dual_accounts"],
+        "planned_for_explicit_split": signature["planned_for_explicit_split"],
+        "steps": [
+            {
+                "account_id": str(step.account_id),
+                "amount": float(step.amount),
+                "bank_name": step.bank_name,
+                "sequence": int(step.sequence),
+            }
+            for step in plan.steps
+        ],
+    }
+
+
+def _build_transfer_demand(task_id: str, task_payload: dict[str, Any]) -> TransferDemand:
+    mode = "explicit" if task_payload.get("source_affinity_mode") == "explicit" else "auto"
+    source_accounts_raw = task_payload.get("source_accounts")
+    source_accounts = source_accounts_raw if isinstance(source_accounts_raw, list) else []
+    explicit_sources = [str(bank) for bank in source_accounts if str(bank).strip()]
+    source_bank_name = task_payload.get("source_bank_name")
+    if mode == "explicit" and not explicit_sources and isinstance(source_bank_name, str) and source_bank_name.strip():
+        explicit_sources = [source_bank_name.strip()]
+
+    explicit_split_raw = task_payload.get("explicit_split")
+    explicit_split = explicit_split_raw if isinstance(explicit_split_raw, dict) else None
+    preferred_account_id = task_payload.get("source_account_id")
+    return TransferDemand(
+        task_id=task_id,
+        amount=float(task_payload.get("amount") or 0.0),
+        source_affinity=SourceAffinity(mode=cast(Any, mode)),
+        explicit_sources=explicit_sources,
+        explicit_split=cast(dict[str, float] | None, explicit_split),
+        use_dual_accounts=bool(task_payload.get("use_dual_accounts")),
+        preferred_account_id=str(preferred_account_id) if preferred_account_id else None,
+    )
+
+
+def _is_plannable_transfer_task(task: Any) -> bool:
+    if not task or task.type != "transfer" or task.stage in TERMINAL_STAGES:
+        return False
+    payload = task.payload if isinstance(task.payload, dict) else {}
+    amount = payload.get("amount")
+    return (
+        bool(payload.get("source_account_id"))
+        and not payload.get("funding_plan")
+        and isinstance(amount, (int, float))
+        and float(amount) > 0
+    )
+
+
+async def _maybe_coordinate_batch_funding(
+    *,
+    state: OrchestratorState,
+    current_wave: list[str],
+    services: dict[str, Any],
+    locale: str,
+) -> dict[str, Any] | None:
+    transfer_task_ids = [task_id for task_id in current_wave if _is_plannable_transfer_task(state.tasks.get(task_id))]
+    if len(transfer_task_ids) < 2:
+        return None
+
+    transfer_worker = services.get("transfer")
+    dd_provider = getattr(transfer_worker, "dd_provider", None) if transfer_worker else None
+    if dd_provider is None:
+        logger.info("batch_funding_coordinator_skipped", reason="dd_provider_missing", task_ids=transfer_task_ids)
+        return None
+
+    accounts_raw = (state.loaded_context or {}).get("accounts") or []
+    accounts = [account for account in accounts_raw if isinstance(account, dict)]
+    demands = [
+        _build_transfer_demand(task_id, cast(dict[str, Any], state.tasks[task_id].payload))
+        for task_id in transfer_task_ids
+    ]
+    coordinator = BatchFundingCoordinator(dd_provider=dd_provider)
+    result = await coordinator.coordinate(demands=demands, accounts=accounts, locale=locale)
+    if result.is_feasible:
+        for task_id in transfer_task_ids:
+            plan = result.plans_by_task.get(task_id)
+            if plan is None:
+                continue
+            payload = state.tasks[task_id].payload
+            if not isinstance(payload, dict):
+                continue
+            payload["funding_plan"] = _funding_plan_to_payload_dict(plan, payload)
+        logger.info(
+            "batch_funding_coordinator_applied",
+            task_count=len(result.plans_by_task),
+            total_demanded=result.total_demanded,
+            total_available=result.total_available,
+        )
+        return None
+
+    prompt = result.suggestion or render_message("funding.batch.total_infeasible", locale)
+    interrupt = PendingInterrupt(
+        kind="input",
+        task_ids=transfer_task_ids,
+        fields_by_task={task_id: ["funding_plan"] for task_id in transfer_task_ids},
+        prompt=prompt,
+    )
+    logger.info(
+        "batch_funding_coordinator_blocked",
+        task_count=len(transfer_task_ids),
+        shortfall_count=len(result.shortfalls or []),
+        total_demanded=result.total_demanded,
+        total_available=result.total_available,
+    )
+    return {
+        "pending_interrupt": interrupt,
+        "tasks": state.tasks,
+        "outbox": _with_policy_notice(state, [{"type": "say", "text": prompt}]),
+        "policy_notice": None,
+    }
+
+
 async def advance_wave(state: OrchestratorState, config: RunnableConfig) -> dict[str, Any]:
     """Execution Node.
 
@@ -255,6 +405,15 @@ async def advance_wave(state: OrchestratorState, config: RunnableConfig) -> dict
             ready_count=len(state.loaded_context["accounts"]),
         )
     # ─────────────────────────────────────────────────────────────────
+
+    batch_block = await _maybe_coordinate_batch_funding(
+        state=state,
+        current_wave=current_wave,
+        services=services,
+        locale=locale,
+    )
+    if batch_block:
+        return batch_block
 
     handlers = {
         "transfer": handle_transfer_task,
