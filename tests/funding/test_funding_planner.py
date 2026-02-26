@@ -207,3 +207,87 @@ class TestFundingPlannerEdgeCases:
 
         for i, step in enumerate(plan.steps):
             assert step.sequence == i + 1
+
+
+class TestFundingPlannerExplicitPooling:
+    """Tests for explicit pooling and split behavior."""
+
+    @pytest.mark.asyncio
+    async def test_use_dual_accounts_respected_even_if_primary_can_cover(self, sample_accounts):
+        provider = MockDirectDebitProvider({"acc1": 200000.0, "acc2": 10000.0, "acc3": 1000.0})
+        planner = FundingPlanner(provider)
+
+        plan = await planner.plan_funding(
+            accounts=sample_accounts,
+            transfer_amount=50000.0,
+            use_dual_accounts=True,
+        )
+
+        assert plan.is_sufficient
+        assert plan.trigger_mode == "explicit"
+        assert plan.num_sources == 2
+
+    @pytest.mark.asyncio
+    async def test_requested_sources_are_respected(self, sample_accounts):
+        provider = MockDirectDebitProvider({"acc1": 50000.0, "acc2": 30000.0, "acc3": 20000.0})
+        planner = FundingPlanner(provider)
+
+        plan = await planner.plan_funding(
+            accounts=sample_accounts,
+            transfer_amount=50000.0,
+            requested_source_banks=["UBA", "Access Bank"],
+            use_dual_accounts=True,
+        )
+
+        assert plan.is_sufficient
+        assert plan.trigger_mode == "explicit"
+        banks = {step.bank_name for step in plan.steps}
+        assert banks == {"UBA", "Access Bank"}
+
+    @pytest.mark.asyncio
+    async def test_explicit_split_feasible_applies_exact_values(self, sample_accounts):
+        provider = MockDirectDebitProvider({"acc1": 70000.0, "acc2": 50000.0, "acc3": 20000.0})
+        planner = FundingPlanner(provider)
+
+        plan = await planner.plan_funding(
+            accounts=sample_accounts,
+            transfer_amount=100000.0,
+            explicit_split={"GTBank": 60000.0, "UBA": 40000.0},
+        )
+
+        assert plan.is_sufficient
+        assert plan.trigger_mode == "explicit"
+        assert plan.explicit_split_applied
+        assert {(step.bank_name, step.amount) for step in plan.steps} == {("GTBank", 60000.0), ("UBA", 40000.0)}
+
+    @pytest.mark.asyncio
+    async def test_explicit_split_infeasible_requires_revision(self, sample_accounts):
+        provider = MockDirectDebitProvider({"acc1": 70000.0, "acc2": 20000.0, "acc3": 20000.0})
+        planner = FundingPlanner(provider)
+
+        plan = await planner.plan_funding(
+            accounts=sample_accounts,
+            transfer_amount=100000.0,
+            explicit_split={"GTBank": 60000.0, "UBA": 40000.0},
+        )
+
+        assert not plan.is_sufficient
+        assert plan.trigger_mode == "explicit"
+        assert plan.explicit_split_applied
+        assert plan.error is not None
+
+    @pytest.mark.asyncio
+    async def test_explicit_split_more_than_two_sources_is_rejected(self, sample_accounts):
+        provider = MockDirectDebitProvider({"acc1": 70000.0, "acc2": 50000.0, "acc3": 40000.0})
+        planner = FundingPlanner(provider)
+
+        plan = await planner.plan_funding(
+            accounts=sample_accounts,
+            transfer_amount=140000.0,
+            explicit_split={"GTBank": 60000.0, "UBA": 40000.0, "Access Bank": 40000.0},
+        )
+
+        assert not plan.is_sufficient
+        assert plan.trigger_mode == "explicit"
+        assert plan.explicit_split_applied
+        assert plan.error is not None
