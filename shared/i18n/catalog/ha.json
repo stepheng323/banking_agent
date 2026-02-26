@@ -19,7 +19,12 @@
     "invalid": "Zan iya saita yare zuwa English, Pidgin, Yoruba, Hausa, ko Igbo."
   },
   "meta": {
-    "fallback": "Ni ne {name}. {description}\nZan iya taimakawa da: {supported}.\nMe kake son yi?"
+    "fallback": "Ni ne {name}. {description}\nZan iya taimakawa da: {supported}.\nMe kake son yi?",
+    "unknown_self_lore_refusal": "Zan iya raba bayanan hukuma kawai game da ni da abin da zan iya yi.",
+    "creator_fallback": "{creator} ne ya gina {name}.",
+    "brand_origin_fallback": "{brand_origin}",
+    "capabilities_fallback": "Zan iya taimakawa da: {supported}.",
+    "limits_fallback": "Ba zan iya yin {unsupported} a nan ba. Zan iya taimakawa da {supported}."
   },
   "conversational": {
     "greeting": "Sannu. Ni ne Narya AI. Me kake so mu yi yau?",

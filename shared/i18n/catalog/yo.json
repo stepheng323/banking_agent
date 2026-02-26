@@ -19,7 +19,12 @@
     "invalid": "Mo le ṣeto ede si English, Pidgin, Yoruba, Hausa, tabi Igbo."
   },
   "meta": {
-    "fallback": "Emi ni {name}. {description}\nMo le ran ọ lọwọ pẹlu: {supported}.\nKini o fẹ ṣe?"
+    "fallback": "Emi ni {name}. {description}\nMo le ran ọ lọwọ pẹlu: {supported}.\nKini o fẹ ṣe?",
+    "unknown_self_lore_refusal": "Mo le pin alaye osise nipa idanimọ mi ati ohun ti mo le ṣe nikan.",
+    "creator_fallback": "{creator} ni o kọ {name}.",
+    "brand_origin_fallback": "{brand_origin}",
+    "capabilities_fallback": "Mo le ran ọ lọwọ pẹlu: {supported}.",
+    "limits_fallback": "Mi o le ṣe {unsupported} nibi. Mo le ran ọ lọwọ pẹlu {supported}."
   },
   "conversational": {
     "greeting": "Pẹlẹ o. Emi ni Narya AI. Kini o fẹ ki n ṣe fun ọ loni?",

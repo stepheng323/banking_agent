@@ -14,6 +14,8 @@ def build_system_profile(policy: SoulPolicy) -> dict[str, Any]:
         "name": policy.identity.name,
         "description": policy.identity.description,
         "positioning": policy.identity.positioning,
+        "creator": policy.identity.creator,
+        "brand_origin": policy.identity.brand_origin,
         "supported_domains": policy.supported_domains,
         "unsupported_capabilities": policy.unsupported_capabilities,
         "tone": policy.tone.style,

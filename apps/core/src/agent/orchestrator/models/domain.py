@@ -31,6 +31,7 @@ class MetaIntent(str, Enum):
     """Deterministic intents for meta interactions."""
 
     IDENTITY = "identity"
+    CREATOR = "creator"
     CAPABILITIES = "capabilities"
     LIMITS = "limits"
     BRAND_ORIGIN = "brand_origin"

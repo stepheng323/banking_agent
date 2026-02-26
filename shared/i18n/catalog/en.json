@@ -19,7 +19,12 @@
     "invalid": "I can set language to English, Pidgin, Yoruba, Hausa, or Igbo."
   },
   "meta": {
-    "fallback": "I'm {name}. {description}\nI can help with: {supported}.\nWhat would you like to do?"
+    "fallback": "I'm {name}. {description}\nI can help with: {supported}.\nWhat would you like to do?",
+    "unknown_self_lore_refusal": "I can only share official information about my identity and capabilities.",
+    "creator_fallback": "{name} was built by {creator}.",
+    "brand_origin_fallback": "{brand_origin}",
+    "capabilities_fallback": "I can help with: {supported}.",
+    "limits_fallback": "I can't help with {unsupported} here. I can help with {supported}."
   },
   "conversational": {
     "greeting": "Hi. I'm Narya AI. What would you like to do?",

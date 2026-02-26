@@ -128,6 +128,36 @@ class InterruptRouteDecision(BaseModel):
     reason: str | None = Field(default=None, description="Short explanation for observability/debugging")
 
 
+MetaQueryKind: TypeAlias = Literal[
+    "identity",
+    "creator",
+    "brand_origin",
+    "capabilities",
+    "limits",
+    "unknown_self_lore",
+    "not_meta",
+]
+
+
+class MetaQueryDecision(BaseModel):
+    """Structured decision for broad self-identity/capability meta query detection."""
+
+    is_meta_query: bool = Field(
+        default=False,
+        description="Whether this turn is primarily about assistant identity/capability/lore",
+    )
+    meta_kind: MetaQueryKind = Field(
+        default="not_meta",
+        description="Detected meta-query kind",
+    )
+    confidence: float = Field(default=0.0, description="Confidence in meta query decision (0.0-1.0)")
+    detected_language: str | None = Field(
+        default=None,
+        description="Detected language for the turn",
+    )
+    reason: str | None = Field(default=None, description="Short explanation for observability/debugging")
+
+
 class PlannerOutput(BaseModel):
     """Structured output returned by the planner LLM.
 

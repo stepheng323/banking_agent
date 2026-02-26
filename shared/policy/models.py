@@ -9,6 +9,8 @@ class SoulIdentity(BaseModel):
     name: str
     description: str
     positioning: str
+    creator: str | None = None
+    brand_origin: str | None = None
 
 
 class SoulTone(BaseModel):

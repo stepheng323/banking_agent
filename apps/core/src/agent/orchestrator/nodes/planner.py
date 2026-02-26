@@ -75,12 +75,20 @@ CONTEXT_FASTPATH_SUBTYPES = (
 TRANSACTION_EXECUTORS = {"transfer", "airtime", "data"}
 BENEFICIARY_MATCH_PREVIEW_LIMIT = 3
 QUOTED_REPLAY_MIN_CONFIDENCE = 0.75
+META_QUERY_MIN_CONFIDENCE = 0.75
 NO_ACTIVE_FLOW_FASTPATH_MESSAGE = "There is no active transfer flow right now. Start a transfer and I will guide you."
 META_RESPONSE_KEY_TO_INTENT: dict[str, MetaIntent] = {
     "conversational.identity": MetaIntent.IDENTITY,
     "conversational.brand_origin": MetaIntent.BRAND_ORIGIN,
     "conversational.capability_question": MetaIntent.CAPABILITIES,
     "conversational.out_of_scope": MetaIntent.LIMITS,
+}
+META_KIND_TO_INTENT: dict[str, MetaIntent] = {
+    "identity": MetaIntent.IDENTITY,
+    "creator": MetaIntent.CREATOR,
+    "brand_origin": MetaIntent.BRAND_ORIGIN,
+    "capabilities": MetaIntent.CAPABILITIES,
+    "limits": MetaIntent.LIMITS,
 }
 
 
@@ -625,6 +633,12 @@ def _meta_intent_from_response_key(response_key: str | None) -> MetaIntent | Non
     return META_RESPONSE_KEY_TO_INTENT.get(response_key)
 
 
+def _meta_intent_from_meta_kind(meta_kind: str | None) -> MetaIntent | None:
+    if not meta_kind:
+        return None
+    return META_KIND_TO_INTENT.get(meta_kind)
+
+
 async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[str, Any]:
     """Planner Node.
 
@@ -961,6 +975,66 @@ async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[s
         }
 
     if not planner_output or not planner_output.tasks:
+        meta_locale = detected_locale or current_locale
+        meta_locale_updates = locale_updates if meta_locale == current_locale else _build_locale_update(state, meta_locale)
+
+        if (
+            planner_output
+            and planner_output.primary_intent in {"conversational", "faq"}
+            and hasattr(task_planner, "interpret_meta_query")
+        ):
+            existing_meta_intent = _meta_intent_from_response_key(getattr(planner_output, "response_key", None))
+            if existing_meta_intent is None:
+                try:
+                    meta_decision = await task_planner.interpret_meta_query(
+                        state.phone_number, text, context=planner_context
+                    )
+                    if isinstance(meta_decision, dict):
+                        is_meta_query = bool(meta_decision.get("is_meta_query"))
+                        meta_kind = str(meta_decision.get("meta_kind", "not_meta"))
+                        confidence = float(meta_decision.get("confidence", 0.0) or 0.0)
+                    else:
+                        is_meta_query = bool(getattr(meta_decision, "is_meta_query", False))
+                        meta_kind = str(getattr(meta_decision, "meta_kind", "not_meta"))
+                        confidence = float(getattr(meta_decision, "confidence", 0.0) or 0.0)
+
+                    if is_meta_query and confidence >= META_QUERY_MIN_CONFIDENCE:
+                        if meta_kind == "unknown_self_lore":
+                            logger.info(
+                                "meta_query_route_hit",
+                                source="classifier",
+                                meta_kind=meta_kind,
+                                confidence=confidence,
+                            )
+                            return {
+                                "final_response": render_message("meta.unknown_self_lore_refusal", meta_locale),
+                                **meta_locale_updates,
+                            }
+
+                        classifier_intent = _meta_intent_from_meta_kind(meta_kind)
+                        llm = getattr(task_planner, "planner_llm", None)
+                        if classifier_intent and llm is not None and hasattr(llm, "with_structured_output"):
+                            meta_message, handoff = await generate_meta_reply(
+                                llm,
+                                user_message=text,
+                                user_language_hint=meta_locale,
+                                meta_intent=classifier_intent,
+                                redis_client=redis_client,
+                            )
+                            if handoff == "meta" and meta_message:
+                                logger.info(
+                                    "meta_query_route_hit",
+                                    source="classifier",
+                                    meta_kind=meta_kind,
+                                    confidence=confidence,
+                                )
+                                return {
+                                    "final_response": meta_message,
+                                    **meta_locale_updates,
+                                }
+                except Exception as exc:
+                    logger.warning("meta_query_classifier_failed", error=str(exc))
+
         if planner_output and planner_output.primary_intent == "conversational":
             conversational_locale = detected_locale or current_locale
             conversational_locale_updates = (
@@ -995,6 +1069,11 @@ async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[s
                         redis_client=redis_client,
                     )
                     if handoff == "meta" and meta_message:
+                        logger.info(
+                            "meta_query_route_hit",
+                            source="response_key",
+                            meta_kind=meta_intent.value,
+                        )
                         logger.info(
                             "planner_meta_reply_used",
                             response_key=response_key,

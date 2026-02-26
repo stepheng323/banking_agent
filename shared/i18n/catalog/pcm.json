@@ -19,7 +19,12 @@
     "invalid": "I fit set language to English, Pidgin, Yoruba, Hausa, or Igbo."
   },
   "meta": {
-    "fallback": "I be {name}. {description}\nI fit help with: {supported}.\nWetin you wan do?"
+    "fallback": "I be {name}. {description}\nI fit help with: {supported}.\nWetin you wan do?",
+    "unknown_self_lore_refusal": "I fit only share official info about my identity and wetin I fit do.",
+    "creator_fallback": "{name} na {creator} build am.",
+    "brand_origin_fallback": "{brand_origin}",
+    "capabilities_fallback": "I fit help with: {supported}.",
+    "limits_fallback": "I no fit do {unsupported} here. I fit help with {supported}."
   },
   "conversational": {
     "greeting": "How far. Na Narya AI here. Wetin you wan run?",

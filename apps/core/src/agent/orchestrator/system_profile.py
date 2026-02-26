@@ -12,6 +12,8 @@ class SystemProfile:
     name: str
     description: str
     positioning: str
+    creator: str | None
+    brand_origin: str | None
     supported_domains: list[str]
     unsupported_capabilities: list[str]
     tone: str

@@ -19,7 +19,12 @@
     "invalid": "Enwere m ike ịtọ asụsụ na English, Pidgin, Yoruba, Hausa, ma ọ bụ Igbo."
   },
   "meta": {
-    "fallback": "Abụ m {name}. {description}\nEnwere m ike inyere gị aka na: {supported}.\nKedu ihe ịchọrọ ime?"
+    "fallback": "Abụ m {name}. {description}\nEnwere m ike inyere gị aka na: {supported}.\nKedu ihe ịchọrọ ime?",
+    "unknown_self_lore_refusal": "Enwere m ike ịkekọrịta naanị ozi gọọmentị gbasara m na ihe m nwere ike ime.",
+    "creator_fallback": "{creator} wuru {name}.",
+    "brand_origin_fallback": "{brand_origin}",
+    "capabilities_fallback": "Enwere m ike inyere gị aka na: {supported}.",
+    "limits_fallback": "Enweghị m ike ime {unsupported} ebe a. Enwere m ike inyere gị aka na {supported}."
   },
   "conversational": {
     "greeting": "Ndeewo. Abụ m Narya AI. Kedu ihe ịchọrọ ka m mee taa?",
