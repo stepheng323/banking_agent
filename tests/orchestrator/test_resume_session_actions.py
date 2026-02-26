@@ -249,6 +249,8 @@ async def test_resume_session_reruns_worker_and_regenerates_confirmation_prompt(
     second_updates = await advance_wave(resumed_state, config)
     assert second_updates["pending_interrupt"].kind == "confirmation"
     assert second_updates["outbox"][0]["type"] == "request_confirmation"
+    assert second_updates["outbox"][0]["actionable_payload"]["idempotency_key"] == "idem-resume-confirm"
+    assert second_updates["outbox"][0]["actionable_payload"]["task_id"] == "t_stashed"
     assert "From: First Bank (···7890)" in second_updates["outbox"][0]["summary"]
     assert "Bal: ₦30,000.00" in second_updates["outbox"][0]["summary"]
     assert second_updates["pending_interrupt"].prompt == second_updates["outbox"][0]["summary"]
@@ -302,6 +304,8 @@ async def test_resume_session_reruns_worker_and_regenerates_auth_prompt() -> Non
     assert second_updates["pending_interrupt"].kind == "auth"
     assert second_updates["outbox"][0]["type"] == "auth_request"
     assert second_updates["outbox"][0]["idempotency_key"] == "idem-resume-auth"
+    assert second_updates["outbox"][0]["actionable_payload"]["idempotency_key"] == "idem-resume-auth"
+    assert second_updates["outbox"][0]["actionable_payload"]["task_id"] == "t_stashed"
 
 
 async def test_resume_session_reruns_worker_and_regenerates_input_prompt() -> None:
@@ -393,6 +397,8 @@ async def test_confirmation_source_line_without_cached_balance_uses_default_temp
 
     request_confirmation = updates["outbox"][0]
     assert request_confirmation["type"] == "request_confirmation"
+    assert request_confirmation["actionable_payload"]["idempotency_key"] == "idem-confirm-default-source-line"
+    assert request_confirmation["actionable_payload"]["source_bank_name"] == "First Bank"
     assert "From: First Bank (···7890)" in request_confirmation["summary"]
     assert "Bal:" not in request_confirmation["summary"]
 

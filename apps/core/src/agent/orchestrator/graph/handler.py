@@ -21,6 +21,7 @@ from shared.i18n import LocaleManager
 from shared.protocols.worker import WorkerProtocol
 from shared.queue.redis_queue import RedisQueue
 from shared.repositories.account_repository import AccountRepository
+from shared.repositories.actionable_message_repository import ActionableMessageRepository
 from shared.repositories.beneficiary_repository import BeneficiaryRepository
 from shared.repositories.user_repository import UserRepository
 from shared.services.context_manager import ContextManager
@@ -48,6 +49,7 @@ class OrchestratorGraphHandler:
         user_repo: UserRepository,
         beneficiary_repo: BeneficiaryRepository,
         account_repo: AccountRepository,
+        actionable_message_repo: ActionableMessageRepository,
         banking_provider: BankingDataProvider,
         context_manager: ContextManager,
         redis_client: redis.Redis,
@@ -67,6 +69,7 @@ class OrchestratorGraphHandler:
         self.user_repo = user_repo
         self.beneficiary_repo = beneficiary_repo
         self.account_repo = account_repo
+        self.actionable_message_repo = actionable_message_repo
         self.banking_provider = banking_provider
 
         self.services = {
@@ -101,6 +104,7 @@ class OrchestratorGraphHandler:
                 "user_repo": self.user_repo,
                 "beneficiary_repo": self.beneficiary_repo,
                 "account_repo": self.account_repo,
+                "actionable_message_repo": self.actionable_message_repo,
                 "banking_provider": self.banking_provider,
                 "beneficiary_suggestion_service": self.beneficiary_suggestion_service,
                 "redis_client": self.redis_client,

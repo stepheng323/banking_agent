@@ -528,6 +528,8 @@ async def test_confirmation_continue_flow_keeps_pending_and_reissues_confirmatio
     assert updates["pending_interrupt"] is not None
     assert updates["tasks"]["t1"].stage == TaskStage.AWAITING_CONFIRMATION
     assert updates["outbox"][0]["type"] == "request_confirmation"
+    assert updates["outbox"][0]["actionable_payload"]["idempotency_key"] == "idem-1"
+    assert updates["outbox"][0]["actionable_payload"]["task_id"] == "t1"
     assert "From: First Bank (···7890)" in updates["outbox"][0]["summary"]
 
 
@@ -576,6 +578,7 @@ async def test_confirmation_reprompt_uses_interrupt_prompt_without_duplicate_sou
     updates = await handle_pending_interrupt(state, config)
 
     assert updates["outbox"][0]["type"] == "request_confirmation"
+    assert updates["outbox"][0]["actionable_payload"]["idempotency_key"] == "idem-1b"
     assert updates["outbox"][0]["summary"].count("From: First Bank (···7890)") == 1
 
 
@@ -829,6 +832,7 @@ async def test_callback_flow_type_mismatch_reprompts_confirmation_without_advanc
     assert updates["pending_interrupt"] is not None
     assert updates["tasks"]["t1"].stage == TaskStage.AWAITING_CONFIRMATION
     assert updates["outbox"][0]["type"] == "request_confirmation"
+    assert updates["outbox"][0]["actionable_payload"]["idempotency_key"] == "idem-mismatch"
     assert updates["outbox"][0]["summary"] == "Confirm transfer"
 
 

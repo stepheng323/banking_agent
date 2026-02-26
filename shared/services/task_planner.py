@@ -7,6 +7,7 @@ from langchain_openai import ChatOpenAI
 
 from shared.policy import build_planner_policy_block, get_cached_policy
 from shared.services.task_queue import TaskQueueService
+from shared.types.quoted_replay import QuotedReplayInterpretation
 from shared.types.planner import InterruptRouteDecision, PlannerOutput
 from shared.utils.logging import get_logger
 
@@ -313,6 +314,42 @@ Pending context: {context}
 Message: \"\"\"{user_message}\"\"\"
 """
 
+QUOTED_REPLAY_SYSTEM_PROMPT = """You interpret quoted follow-up banking messages for replay execution.
+
+You receive:
+- user message
+- quoted actionable payload (authoritative seed from the quoted outbound message)
+
+Goal:
+- decide if the user is asking to replay/modify that quoted action
+- when yes, return executable domain task payloads directly for workers
+
+You must reason semantically across languages (English, Pidgin, Yoruba, Hausa, Igbo, French).
+Do not use brittle keyword-only heuristics.
+
+Return ONLY JSON matching:
+- decision: not_replay | execute | clarify
+- confidence: 0.0-1.0
+- detected_language: English | Pidgin | Yoruba | Hausa | Igbo | French | null
+- tasks: list of executable tasks (empty unless decision=execute)
+  - each task: {task_type: transfer|airtime|data, payload: object}
+- clarify_message: short user-facing clarification when decision=clarify, else null
+- reason: short internal reason
+
+Rules:
+1) If user message is unrelated to replaying the quoted action, decision=not_replay.
+2) If user clearly asks to replay/modify quoted action, decision=execute and provide worker-ready tasks.
+3) Use quoted actionable payload as the base truth, then apply user-requested modifications.
+4) Include only tasks relevant to user's request; support single or multi-action execution.
+5) If intent is ambiguous or unsafe to execute confidently, decision=clarify with clarify_message.
+6) Never output support tasks; only transfer|airtime|data tasks.
+"""
+
+QUOTED_REPLAY_USER_PROMPT_TEMPLATE = """User phone: {phone_number}
+Quoted context: {context}
+Message: \"\"\"{user_message}\"\"\"
+"""
+
 
 class TaskPlanner:
     """Handles task planning for multi-step requests."""
@@ -325,6 +362,7 @@ class TaskPlanner:
         self.planner_llm = planner_llm
         self.structured_planner = planner_llm.with_structured_output(PlannerOutput)
         self.structured_interrupt_router = planner_llm.with_structured_output(InterruptRouteDecision)
+        self.structured_quoted_replay = planner_llm.with_structured_output(QuotedReplayInterpretation)
         self.task_queue_service = task_queue_service
 
     async def plan_tasks(self, phone_number: str, text: str, context: str = "None") -> PlannerOutput:
@@ -385,6 +423,43 @@ class TaskPlanner:
         if isinstance(result, InterruptRouteDecision):
             return result
         return cast(InterruptRouteDecision, InterruptRouteDecision.model_validate(result))
+
+    async def interpret_quoted_replay(
+        self, phone_number: str, text: str, context: str = "None"
+    ) -> QuotedReplayInterpretation:
+        """Interpret a quoted follow-up turn for replay semantics."""
+        user_prompt = QUOTED_REPLAY_USER_PROMPT_TEMPLATE.format(
+            phone_number=phone_number,
+            user_message=text,
+            context=context,
+        )
+        system_prompt = QUOTED_REPLAY_SYSTEM_PROMPT
+        start = time.perf_counter()
+        result = await self.structured_quoted_replay.ainvoke(
+            [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ]
+        )
+        duration_ms = (time.perf_counter() - start) * 1000
+        logger.info(
+            "quoted_replay_llm_call",
+            duration_ms=round(duration_ms, 2),
+            system_chars=len(system_prompt),
+            user_chars=len(user_prompt),
+        )
+        if isinstance(result, QuotedReplayInterpretation):
+            parsed = result
+        else:
+            parsed = cast(QuotedReplayInterpretation, QuotedReplayInterpretation.model_validate(result))
+        logger.info(
+            "quoted_replay_decision",
+            decision=parsed.decision,
+            confidence=parsed.confidence,
+            detected_language=parsed.detected_language,
+            tasks=len(parsed.tasks),
+        )
+        return parsed
 
 
 # Alias for backward compatibility

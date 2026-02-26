@@ -93,6 +93,58 @@ def _build_name_consistency_patch(payload: TransferPayload, resolved_name: str |
     }
 
 
+def _matches_selected_beneficiary(payload: TransferPayload, selected: dict[str, Any]) -> bool:
+    """Return True when current payload still targets the selected beneficiary."""
+    selected_account = str(selected.get("account_number") or "").strip()
+    selected_bank_code = str(selected.get("bank_code") or "").strip()
+    selected_bank_name = str(selected.get("bank_name") or "").strip()
+    selected_alias = str(selected.get("alias") or "").strip()
+    selected_account_name = str(selected.get("account_name") or "").strip()
+
+    req_account = str(payload.recipient_account or "").strip()
+    if req_account and selected_account and req_account != selected_account:
+        return False
+
+    req_bank_code = str(payload.recipient_bank_code or "").strip()
+    if req_bank_code and selected_bank_code and req_bank_code != selected_bank_code:
+        return False
+
+    req_bank_name = str(payload.recipient_bank_name or "").strip()
+    if req_bank_name and selected_bank_name and _normalize_name(req_bank_name) != _normalize_name(selected_bank_name):
+        return False
+
+    req_name = _normalize_name(payload.recipient_name)
+    if req_name:
+        candidates = [_normalize_name(selected_alias), _normalize_name(selected_account_name)]
+        if not any(req_name and cand and (req_name in cand or cand in req_name) for cand in candidates):
+            return False
+
+    return True
+
+
+def _clear_stale_beneficiary_binding(payload: TransferPayload, selected: dict[str, Any]) -> None:
+    """Detach payload from previously selected beneficiary when recipient changes."""
+    selected_account = str(selected.get("account_number") or "").strip()
+    selected_bank_code = str(selected.get("bank_code") or "").strip()
+    selected_bank_name = str(selected.get("bank_name") or "").strip()
+
+    payload.beneficiary_id = None
+    payload.recipient_resolved_name = None
+    payload.resolved_from_saved_beneficiary = False
+
+    req_account = str(payload.recipient_account or "").strip()
+    if req_account and selected_account and req_account == selected_account:
+        payload.recipient_account = None
+
+    req_bank_code = str(payload.recipient_bank_code or "").strip()
+    if req_bank_code and selected_bank_code and req_bank_code == selected_bank_code:
+        payload.recipient_bank_code = None
+
+    req_bank_name = str(payload.recipient_bank_name or "").strip()
+    if req_bank_name and selected_bank_name and _normalize_name(req_bank_name) == _normalize_name(selected_bank_name):
+        payload.recipient_bank_name = None
+
+
 class ResolutionStep(TransferStep):
     """Resolves beneficiary details."""
 
@@ -123,21 +175,29 @@ async def resolve_beneficiary(
         selected_id = _canonical_beneficiary_id(payload.beneficiary_id)
         selected = next((b for b in ctx.beneficiaries if str(b.get("id")) == selected_id), None)
         if selected:
-            return TransactionResult(
-                outcome=TransactionOutcome.OK,
-                patch={
-                    "recipient_account": str(selected.get("account_number")),
-                    "recipient_bank_code": str(selected.get("bank_code")),
-                    "recipient_bank_name": selected.get("bank_name"),
-                    "recipient_resolved_name": selected.get("account_name") or selected.get("alias"),
-                    "recipient_name": selected.get("account_name") or selected.get("alias"),  # Update name too
-                    "resolved_from_saved_beneficiary": True,
-                    "name_mismatch": False,
-                    "name_match_score": None,
-                    "name_mismatch_warning": None,
-                    "beneficiary_candidates": [],
-                },
-            )
+            if not _matches_selected_beneficiary(payload, selected):
+                logger.info(
+                    "beneficiary_binding_overridden",
+                    beneficiary_id=selected_id,
+                    recipient_name=payload.recipient_name,
+                )
+                _clear_stale_beneficiary_binding(payload, selected)
+            else:
+                return TransactionResult(
+                    outcome=TransactionOutcome.OK,
+                    patch={
+                        "recipient_account": str(selected.get("account_number")),
+                        "recipient_bank_code": str(selected.get("bank_code")),
+                        "recipient_bank_name": selected.get("bank_name"),
+                        "recipient_resolved_name": selected.get("account_name") or selected.get("alias"),
+                        "recipient_name": selected.get("account_name") or selected.get("alias"),  # Update name too
+                        "resolved_from_saved_beneficiary": True,
+                        "name_mismatch": False,
+                        "name_match_score": None,
+                        "name_mismatch_warning": None,
+                        "beneficiary_candidates": [],
+                    },
+                )
 
     if payload.recipient_resolved_name:
         return TransactionResult(outcome=TransactionOutcome.OK)

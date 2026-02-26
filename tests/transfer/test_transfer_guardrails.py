@@ -61,6 +61,70 @@ async def test_confirmation_summary_includes_name_mismatch_warning() -> None:
     assert "Mercy Johnson" in result.confirmation_summary
 
 
+async def test_saved_beneficiary_shortcut_is_used_when_recipient_not_changed() -> None:
+    payload = TransferPayload(
+        amount=6000,
+        beneficiary_id="bene-1",
+        recipient_name="Tolu Adebayo",
+        recipient_account="2010000001",
+        recipient_bank_name="Access Bank",
+        recipient_bank_code="044",
+    )
+    ctx = TransferContext(
+        phone_number="2348000000000",
+        language="en",
+        beneficiaries=[
+            {
+                "id": "bene-1",
+                "alias": "Tolu",
+                "account_name": "Tolu Adebayo",
+                "account_number": "2010000001",
+                "bank_name": "Access Bank",
+                "bank_code": "044",
+            }
+        ],
+        accounts=[],
+    )
+
+    result = await resolve_beneficiary(payload, ctx, banking_provider=None, bank_cache=None)
+
+    assert result.outcome.value == "ok"
+    assert result.patch["resolved_from_saved_beneficiary"] is True
+    assert result.patch["recipient_account"] == "2010000001"
+
+
+async def test_saved_beneficiary_shortcut_is_dropped_when_recipient_changes() -> None:
+    payload = TransferPayload(
+        amount=6000,
+        beneficiary_id="bene-1",
+        recipient_name="Mercy Johnson",
+        recipient_account="2010000001",
+        recipient_bank_name="Access Bank",
+        recipient_bank_code="044",
+    )
+    ctx = TransferContext(
+        phone_number="2348000000000",
+        language="en",
+        beneficiaries=[
+            {
+                "id": "bene-1",
+                "alias": "Tolu",
+                "account_name": "Tolu Adebayo",
+                "account_number": "2010000001",
+                "bank_name": "Access Bank",
+                "bank_code": "044",
+            }
+        ],
+        accounts=[],
+    )
+
+    result = await resolve_beneficiary(payload, ctx, banking_provider=None, bank_cache=None)
+
+    assert result.outcome.value == "needs_input"
+    assert "recipient_account" in result.required_fields
+    assert payload.beneficiary_id is None
+
+
 async def test_dynamic_risk_patch_flags_large_unsaved_transfer() -> None:
     payload = TransferPayload(
         amount=70000,

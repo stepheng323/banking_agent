@@ -32,6 +32,10 @@ class ActionableMessageConsumer:
         self.queue = redis_queue
         self.running = False
 
+    async def _resolve_user(self, uow: UnitOfWork, channel: str, identity_or_phone: str) -> Any | None:
+        """Resolve user strictly by channel identity."""
+        return await uow.users.get_by_channel_identity(channel, identity_or_phone)
+
     async def process_job(self, payload: dict[str, Any]) -> None:
         """Process a single actionable message persistence job."""
         channel = payload.get("channel")
@@ -50,7 +54,7 @@ class ActionableMessageConsumer:
                     return
 
                 # Find the user by channel identity
-                user = await uow.users.get_by_channel_identity(channel, phone_number)
+                user = await self._resolve_user(uow, channel, phone_number)
                 if not user:
                     logger.warning("actionable_consumer_user_not_found", phone_number=phone_number, channel=channel)
                     return
