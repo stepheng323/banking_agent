@@ -46,7 +46,7 @@ class TransferWorkerContext:
     extractor: Any
     banking_provider: Any
     bank_cache: Any
-    queue: Any
+    publisher: Any
     transaction_repo: TransactionRepository
     dd_provider: Any | None
     user_id: str | None
@@ -61,7 +61,7 @@ class TransferWorker:
     def __init__(
         self,
         validation_service: Any,
-        queue: Any,
+        publisher: Any,
         extractor: Any,
         banking_provider: Any,
         bank_cache: Any,
@@ -69,7 +69,7 @@ class TransferWorker:
         dd_provider: Any | None = None,
     ) -> None:
         self.validation_service = validation_service or ValidationService()
-        self.queue = queue
+        self.publisher = publisher
         self.extractor = extractor
         self.banking_provider = banking_provider
         self.bank_cache = bank_cache
@@ -104,7 +104,7 @@ class TransferWorker:
             extractor=self.extractor,
             banking_provider=self.banking_provider,
             bank_cache=self.bank_cache,
-            queue=self.queue,
+            publisher=self.publisher,
             transaction_repo=self.transaction_repo,
             dd_provider=self.dd_provider,
             user_id=context.get("user_id"),

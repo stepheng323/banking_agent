@@ -20,7 +20,6 @@ from apps.core.src.queue_consumers.actionable_consumer import ActionableMessageC
 from apps.core.src.queue_consumers.outbox_consumer import OutboxConsumer
 from shared.database.enums import ActionableMessageTypeEnum
 from shared.database.models import ActionableMessage
-from shared.queue.messages import ACTIONABLE_MESSAGES_QUEUE
 from shared.types.quoted_replay import QuotedReplayInterpretation
 
 
@@ -28,8 +27,8 @@ class _InMemoryQueue:
     def __init__(self) -> None:
         self.enqueued: list[tuple[str, dict]] = []
 
-    async def enqueue(self, queue_name: str, message: dict) -> None:
-        self.enqueued.append((queue_name, message))
+    async def publish(self, topic: str, message: dict) -> None:
+        self.enqueued.append((topic, message))
 
 
 class _MessagingClientStub:
@@ -91,7 +90,7 @@ class _InMemoryUnitOfWork:
         self.actionable_messages = _InMemoryActionableRepo(store)
         self.committed = False
 
-    async def __aenter__(self) -> "_InMemoryUnitOfWork":
+    async def __aenter__(self) -> _InMemoryUnitOfWork:
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb) -> bool:
@@ -167,7 +166,7 @@ def _receipt_intent(transaction_ref: str) -> dict:
 
 
 def _find_actionable_jobs(queue: _InMemoryQueue) -> list[dict]:
-    return [message for queue_name, message in queue.enqueued if queue_name == ACTIONABLE_MESSAGES_QUEUE]
+    return [message for topic, message in queue.enqueued if topic == "actionable_message.send"]
 
 
 @pytest.mark.asyncio
@@ -178,7 +177,7 @@ async def test_receipt_intent_enqueues_actionable_jobs_for_each_sent_message() -
         text_ids=["wamid.text.101"],
     )
     consumer = OutboxConsumer(
-        redis_queue=queue,  # type: ignore[arg-type]
+        publisher=queue,  # type: ignore[arg-type]
         messaging_clients={"whatsapp": client},  # type: ignore[arg-type]
     )
 
@@ -207,7 +206,7 @@ async def test_non_actionable_intent_does_not_enqueue_actionable_job() -> None:
     queue = _InMemoryQueue()
     client = _MessagingClientStub(text_ids=["wamid.text.201"])
     consumer = OutboxConsumer(
-        redis_queue=queue,  # type: ignore[arg-type]
+        publisher=queue,  # type: ignore[arg-type]
         messaging_clients={"whatsapp": client},  # type: ignore[arg-type]
     )
 
@@ -230,7 +229,7 @@ async def test_actionable_persistence_then_support_resolves_quoted_transaction(
     # Step A: receipt outbox -> actionable queue
     queue = _InMemoryQueue()
     outbox_consumer = OutboxConsumer(
-        redis_queue=queue,  # type: ignore[arg-type]
+        publisher=queue,  # type: ignore[arg-type]
         messaging_clients={"whatsapp": _MessagingClientStub(image_ids=["wamid.receipt.301"])},  # type: ignore[arg-type]
     )
     tx_id = str(uuid4())
@@ -253,7 +252,7 @@ async def test_actionable_persistence_then_support_resolves_quoted_transaction(
         "apps.core.src.queue_consumers.actionable_consumer.UnitOfWork",
         lambda: _InMemoryUnitOfWork(store=store, users_by_identity=users),
     )
-    actionable_consumer = ActionableMessageConsumer(redis_queue=SimpleNamespace())
+    actionable_consumer = ActionableMessageConsumer()
     await actionable_consumer.process_job(actionable_job)
     assert len(store) == 1
     assert store[0].message_type == ActionableMessageTypeEnum.TRANSFER_RECEIPT.value
@@ -364,7 +363,12 @@ class _ReplayPlannerStub:
         self.interpretation = interpretation
         self.plan_called = False
 
-    async def interpret_quoted_replay(self, phone_number: str, text: str, context: str = "None") -> QuotedReplayInterpretation:
+    async def interpret_quoted_replay(
+        self,
+        phone_number: str,
+        text: str,
+        context: str = "None",
+    ) -> QuotedReplayInterpretation:
         del phone_number, text, context
         return self.interpretation
 

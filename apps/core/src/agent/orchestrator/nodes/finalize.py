@@ -12,8 +12,8 @@ from apps.core.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
 from apps.core.src.agent.orchestrator.models.state import OrchestratorState
 from shared.formatters import format_multi_action_summary
 from shared.i18n import LocaleManager, render_cancelled_prompt, render_generic_capability_blocked, render_message
+from shared.queue.adapter import QueuePublisher
 from shared.queue.models import ReceiptJobPayload, ReceiptTransferData
-from shared.queue.redis_queue import RedisQueue
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -28,7 +28,7 @@ async def finalize(state: OrchestratorState, config: RunnableConfig) -> dict[str
     configurable = cast(dict[str, Any], config.get("configurable", {}))
     beneficiary_service: BeneficiarySuggestionService | None = configurable.get("beneficiary_suggestion_service")
     redis_client: redis.Redis | None = configurable.get("redis_client")
-    queue: RedisQueue | None = configurable.get("queue")
+    publisher: QueuePublisher | None = configurable.get("queue_publisher")
 
     completed_tasks = [task for task in state.tasks.values() if task.stage == TaskStage.COMPLETED]
     failed_tasks = [task for task in state.tasks.values() if task.stage == TaskStage.FAILED]
@@ -38,7 +38,7 @@ async def finalize(state: OrchestratorState, config: RunnableConfig) -> dict[str
         await _handle_completed_tasks(
             completed_tasks=completed_tasks,
             state=state,
-            queue=queue,
+            publisher=publisher,
             redis_client=redis_client,
             beneficiary_service=beneficiary_service,
             outbox=outbox,
@@ -121,7 +121,7 @@ async def finalize(state: OrchestratorState, config: RunnableConfig) -> dict[str
 async def _handle_completed_tasks(
     completed_tasks: list[TaskSpec],
     state: OrchestratorState,
-    queue: RedisQueue | None,
+    publisher: QueuePublisher | None,
     redis_client: redis.Redis | None,
     beneficiary_service: BeneficiarySuggestionService | None,
     outbox: list[dict[str, Any]],
@@ -163,7 +163,7 @@ async def _handle_completed_tasks(
         await _queue_single_transfer_receipt(
             task=task,
             state=state,
-            queue=queue,
+            publisher=publisher,
             redis_client=redis_client,
             beneficiary_suggestion_message=beneficiary_suggestion_message,
         )
@@ -216,13 +216,13 @@ async def _handle_completed_tasks(
 async def _queue_single_transfer_receipt(
     task: TaskSpec,
     state: OrchestratorState,
-    queue: RedisQueue | None,
+    publisher: QueuePublisher | None,
     redis_client: redis.Redis | None,
     beneficiary_suggestion_message: str | None = None,
 ) -> None:
     """Queue receipt for a single transfer."""
     receipt_data = task.payload.get("receipt")
-    if not receipt_data or not (queue or redis_client):
+    if not receipt_data or not (publisher or redis_client):
         return
 
     logger.info("queuing_single_transfer_receipt", task_id=task.id)
@@ -260,10 +260,10 @@ async def _queue_single_transfer_receipt(
     if beneficiary_suggestion_message:
         job_payload["beneficiary_suggestion_message"] = beneficiary_suggestion_message
 
-    if queue:
-        await queue.enqueue("banking:receipt_jobs", job_payload)
+    if publisher:
+        await publisher.publish("receipt.process", job_payload)
     else:
-        logger.warning("queue_not_available", message="Cannot queue receipt, RedisQueue is None")
+        logger.warning("publisher_not_available", message="Cannot queue receipt, QueuePublisher is None")
 
 
 async def _build_beneficiary_suggestion(

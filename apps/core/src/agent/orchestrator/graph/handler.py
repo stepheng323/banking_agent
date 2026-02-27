@@ -19,7 +19,7 @@ from shared.clients.abstractions.banking import BankingDataProvider
 from shared.clients.whatsapp.client import WhatsAppClient
 from shared.i18n import LocaleManager
 from shared.protocols.worker import WorkerProtocol
-from shared.queue.redis_queue import RedisQueue
+from shared.queue.adapter import QueuePublisher
 from shared.repositories.account_repository import AccountRepository
 from shared.repositories.actionable_message_repository import ActionableMessageRepository
 from shared.repositories.beneficiary_repository import BeneficiaryRepository
@@ -54,14 +54,14 @@ class OrchestratorGraphHandler:
         context_manager: ContextManager,
         redis_client: redis.Redis,
         whatsapp_client: WhatsAppClient,
-        queue: RedisQueue,
+        publisher: QueuePublisher,
         beneficiary_suggestion_service: BeneficiarySuggestionService,
         mode: Literal["planning", "execution", "both"] = "both",
     ):
         self.task_planner = task_planner
         self.redis_client = redis_client
         self.whatsapp_client = whatsapp_client
-        self.queue = queue
+        self.publisher = publisher
         self.beneficiary_suggestion_service = beneficiary_suggestion_service
         self.mode = mode
         self.context_manager = context_manager
@@ -109,7 +109,7 @@ class OrchestratorGraphHandler:
                 "beneficiary_suggestion_service": self.beneficiary_suggestion_service,
                 "redis_client": self.redis_client,
                 "whatsapp_client": self.whatsapp_client,
-                "queue": self.queue,
+                "publisher": self.publisher,
             },
             "recursion_limit": 50,
         }

@@ -37,7 +37,7 @@ class OrchestratorAgent:
             account_repo=self.deps.account_repo,
             actionable_message_repo=self.deps.actionable_message_repo,
             banking_provider=self.deps.banking_provider,
-            queue=self.deps.queue,
+            publisher=self.deps.publisher,
             beneficiary_suggestion_service=self.deps.beneficiary_suggestion_service,
         )
 

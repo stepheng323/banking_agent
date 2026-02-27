@@ -15,6 +15,7 @@ from apps.core.src.agent.orchestrator.models.domain import (
 )
 from shared.database.enums import FundedTransferStatusEnum, FundingStepStatusEnum, TransactionStatusEnum
 from shared.i18n import render_message
+from shared.queue.factory import QueuePublisherFactory
 from shared.utils.logging import get_logger
 from shared.utils.narration import format_narration
 
@@ -118,6 +119,10 @@ class ExecutionStep(TransferStep):
                     logger.error("failed_to_persist_transaction", error=str(e))
 
             queue = worker_context.queue
+            publisher = getattr(worker_context, "publisher", None)
+            if not publisher:
+                publisher = QueuePublisherFactory.get_publisher()
+
             if data.funding_plan and not data.funding_plan.get("is_single_source", True):
                 if not funded_transfer_id:
                     return TransactionResult(
@@ -125,8 +130,8 @@ class ExecutionStep(TransferStep):
                         error=render_message("transfer.execution.failed", locale, {"error": "Funding setup failed"}),
                         retryable=True,
                     )
-                await queue.enqueue(
-                    queue_name="banking:funding",
+                await publisher.publish(
+                    topic="funding.process",
                     message={
                         "type": "initiate_funding",
                         "funded_transfer_id": funded_transfer_id,
@@ -136,8 +141,8 @@ class ExecutionStep(TransferStep):
                     },
                 )
             else:
-                await queue.enqueue(
-                    queue_name="banking:transactions",
+                await publisher.publish(
+                    topic="transaction.execute",
                     message={
                         "type": "execute_transfer",
                         "idempotency_key": key,

@@ -8,8 +8,7 @@ from typing import Any
 from shared.clients.abstractions.bill import BillPaymentProvider
 from shared.database.enums import TransactionStatusEnum
 from shared.i18n import render_message
-from shared.queue.messages import OUTBOX_QUEUE
-from shared.queue.redis_queue import RedisQueue
+from shared.queue.adapter import QueuePublisher
 from shared.repositories.transaction_repository import TransactionRepository
 from shared.utils.logging import get_logger
 
@@ -23,11 +22,11 @@ class AirtimeExecutor:
         self,
         bill_provider: BillPaymentProvider,
         transaction_repo: TransactionRepository,
-        queue: RedisQueue,
+        publisher: QueuePublisher,
     ):
         self.bill_provider = bill_provider
         self.transaction_repo = transaction_repo
-        self.queue = queue
+        self.publisher = publisher
 
     async def handle_airtime(self, data: dict[str, Any]) -> None:
         """Handle execution of an airtime transaction."""
@@ -65,8 +64,8 @@ class AirtimeExecutor:
                         locale,
                         {"amount": f"{amount:,.2f}", "reference": ref},
                     )
-                    await self.queue.enqueue(
-                        queue_name=OUTBOX_QUEUE,
+                    await self.publisher.publish(
+                        topic="notification.send",
                         message={
                             "phone_number": phone_number,
                             "channel": data.get("channel", "whatsapp"),

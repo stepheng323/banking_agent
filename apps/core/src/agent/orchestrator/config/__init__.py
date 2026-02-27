@@ -12,7 +12,7 @@ from shared.cache.user_data import UserDataCache
 from shared.clients.abstractions.banking import BankingDataProvider
 from shared.clients.whatsapp.client import WhatsAppClient
 from shared.protocols.worker import WorkerProtocol
-from shared.queue.redis_queue import RedisQueue
+from shared.queue.adapter import QueuePublisher
 from shared.repositories import BeneficiaryRepository, UserRepository
 from shared.repositories.account_repository import AccountRepository
 from shared.repositories.actionable_message_repository import ActionableMessageRepository
@@ -40,7 +40,7 @@ class OrchestratorDependencies:
     support_service: WorkerProtocol
     faq_service: WorkerProtocol
     whatsapp_client: WhatsAppClient
-    queue: RedisQueue
+    publisher: QueuePublisher
     banking_provider: BankingDataProvider
     beneficiary_suggestion_service: BeneficiarySuggestionService
     user_cache: UserDataCache

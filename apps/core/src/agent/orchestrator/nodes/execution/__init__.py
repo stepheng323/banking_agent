@@ -64,7 +64,7 @@ def _build_mandate_gate_error(accounts: list[dict], locale: str) -> str:
                     raw_extra = {}
             destinations = raw_extra.get("transfer_destinations", []) if isinstance(raw_extra, dict) else []
             if destinations:
-                svc = MandateService(queue=None)  # type: ignore[arg-type]
+                svc = MandateService(publisher=None)  # type: ignore[arg-type]
                 return svc.build_mandate_auth_message(
                     account_number=acct.get("account_number", ""),
                     bank_name=acct.get("bank_name", ""),
@@ -451,7 +451,6 @@ async def advance_wave(state: OrchestratorState, config: RunnableConfig) -> dict
         if not handler:
             continue
 
-
         account_dependent_tasks = {"transfer", "airtime", "data", "account", "query"}
         if task.type in account_dependent_tasks:
             accounts = (state.loaded_context or {}).get("accounts") or []
@@ -484,7 +483,9 @@ async def advance_wave(state: OrchestratorState, config: RunnableConfig) -> dict
             tid for tid, fields in agg.missing_fields_by_task.items() if "beneficiary_id" in set(fields)
         ]
         if beneficiary_blockers:
-            focused_beneficiary_tid = next((tid for tid in current_wave if tid in beneficiary_blockers), beneficiary_blockers[0])
+            focused_beneficiary_tid = next(
+                (tid for tid in current_wave if tid in beneficiary_blockers), beneficiary_blockers[0]
+            )
             for tid in list(agg.missing_fields_by_task):
                 if tid != focused_beneficiary_tid:
                     agg.missing_fields_by_task.pop(tid, None)
@@ -679,11 +680,7 @@ async def advance_wave(state: OrchestratorState, config: RunnableConfig) -> dict
                     task_id=focused_tid,
                     focused_missing_fields=focused_missing_fields,
                 )
-                outbox_entries: list[dict[str, Any]]
-                if options_entry:
-                    outbox_entries = [options_entry]
-                else:
-                    outbox_entries = [{"type": "say", "text": prompt_text}]
+                outbox_entries = [options_entry] if options_entry else [{"type": "say", "text": prompt_text}]
                 return {
                     "pending_interrupt": interrupt,
                     "tasks": state.tasks,
