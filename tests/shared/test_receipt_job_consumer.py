@@ -5,20 +5,18 @@ from unittest.mock import AsyncMock
 import pytest
 
 from apps.receipt.src.consumer import ReceiptJobConsumer
-from shared.queue.messages import OUTBOX_QUEUE
 
 
 @pytest.mark.asyncio
 async def test_receipt_consumer_processes_top_level_payload() -> None:
-    consumer = ReceiptJobConsumer()
+    publisher = cast(Any, SimpleNamespace(publish=AsyncMock()))
+    redis_client = cast(Any, SimpleNamespace(rpush=AsyncMock(), expire=AsyncMock()))
+    consumer = ReceiptJobConsumer(queue_publisher=publisher, redis_client=redis_client)
 
     render_receipt = AsyncMock(return_value=b"png-bytes")
-    enqueue = AsyncMock()
-    rpush = AsyncMock()
-    expire = AsyncMock()
-
     consumer.renderer = cast(Any, SimpleNamespace(render_receipt=render_receipt, close=AsyncMock()))
-    consumer.queue = cast(Any, SimpleNamespace(enqueue=enqueue, _redis=SimpleNamespace(rpush=rpush, expire=expire)))
+    rpush = redis_client.rpush
+    expire = redis_client.expire
 
     job: dict[str, Any] = {
         "phone_number": "2348000000001",
@@ -38,10 +36,10 @@ async def test_receipt_consumer_processes_top_level_payload() -> None:
         transfer_data=job["transfer_data"],
         transaction_reference="TRX-001",
     )
-    enqueue.assert_awaited_once()
-    assert enqueue.await_args is not None
-    kwargs = enqueue.await_args.kwargs
-    assert kwargs["queue_name"] == OUTBOX_QUEUE
+    publisher.publish.assert_awaited_once()
+    assert publisher.publish.await_args is not None
+    kwargs = publisher.publish.await_args.kwargs
+    assert kwargs["topic"] == "notification.send"
     assert kwargs["message"]["phone_number"] == "2348000000001"
     assert kwargs["message"]["intents"][0]["type"] == "show_receipt"
     rpush.assert_awaited_once_with("receipt:signal:test-1", "DONE")
@@ -50,15 +48,14 @@ async def test_receipt_consumer_processes_top_level_payload() -> None:
 
 @pytest.mark.asyncio
 async def test_receipt_consumer_processes_wrapped_payload() -> None:
-    consumer = ReceiptJobConsumer()
+    publisher = cast(Any, SimpleNamespace(publish=AsyncMock()))
+    redis_client = cast(Any, SimpleNamespace(rpush=AsyncMock(), expire=AsyncMock()))
+    consumer = ReceiptJobConsumer(queue_publisher=publisher, redis_client=redis_client)
 
     render_receipt = AsyncMock(return_value=b"png-bytes")
-    enqueue = AsyncMock()
-    rpush = AsyncMock()
-    expire = AsyncMock()
-
     consumer.renderer = cast(Any, SimpleNamespace(render_receipt=render_receipt, close=AsyncMock()))
-    consumer.queue = cast(Any, SimpleNamespace(enqueue=enqueue, _redis=SimpleNamespace(rpush=rpush, expire=expire)))
+    rpush = redis_client.rpush
+    expire = redis_client.expire
 
     job: dict[str, Any] = {
         "payload": {
@@ -80,9 +77,9 @@ async def test_receipt_consumer_processes_wrapped_payload() -> None:
         transfer_data=job["payload"]["transfer_data"],
         transaction_reference="TRX-002",
     )
-    enqueue.assert_awaited_once()
-    assert enqueue.await_args is not None
-    kwargs = enqueue.await_args.kwargs
+    publisher.publish.assert_awaited_once()
+    assert publisher.publish.await_args is not None
+    kwargs = publisher.publish.await_args.kwargs
     assert kwargs["message"]["phone_number"] == "2348000000002"
     assert kwargs["message"]["intents"][0]["type"] == "show_receipt"
     rpush.assert_awaited_once_with("receipt:signal:test-2", "DONE")
@@ -91,15 +88,12 @@ async def test_receipt_consumer_processes_wrapped_payload() -> None:
 
 @pytest.mark.asyncio
 async def test_receipt_consumer_appends_beneficiary_suggestion_after_receipt() -> None:
-    consumer = ReceiptJobConsumer()
+    publisher = cast(Any, SimpleNamespace(publish=AsyncMock()))
+    redis_client = cast(Any, SimpleNamespace(rpush=AsyncMock(), expire=AsyncMock()))
+    consumer = ReceiptJobConsumer(queue_publisher=publisher, redis_client=redis_client)
 
     render_receipt = AsyncMock(return_value=b"png-bytes")
-    enqueue = AsyncMock()
-    rpush = AsyncMock()
-    expire = AsyncMock()
-
     consumer.renderer = cast(Any, SimpleNamespace(render_receipt=render_receipt, close=AsyncMock()))
-    consumer.queue = cast(Any, SimpleNamespace(enqueue=enqueue, _redis=SimpleNamespace(rpush=rpush, expire=expire)))
 
     job: dict[str, Any] = {
         "phone_number": "2348000000003",
@@ -116,8 +110,8 @@ async def test_receipt_consumer_appends_beneficiary_suggestion_after_receipt() -
 
     await consumer._process_job(job)
 
-    assert enqueue.await_args is not None
-    kwargs = enqueue.await_args.kwargs
+    assert publisher.publish.await_args is not None
+    kwargs = publisher.publish.await_args.kwargs
     intents = kwargs["message"]["intents"]
     assert intents[0]["type"] == "show_receipt"
     assert intents[1] == {"type": "say", "text": "Would you like to save Mercy Johnson?"}

@@ -1,15 +1,11 @@
 """Continuity actions for query flow (drill-down, receipts, etc)."""
 
-import json
-from collections.abc import Awaitable
-from typing import Any, cast
+from typing import Any
 
 from apps.core.src.agent.graphs.query.models import QueryResult
 from apps.core.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
-from shared.cache.redis_client import RedisClient
 from shared.i18n import LocaleManager, render_message
-
-QUEUE_NAME = "banking:receipt_jobs"
+from shared.queue.factory import QueuePublisherFactory
 
 
 async def handle_drill_down(state: dict[str, Any]) -> TransactionResult:
@@ -53,7 +49,7 @@ async def handle_drill_down(state: dict[str, Any]) -> TransactionResult:
             )
 
         try:
-            redis_client = RedisClient.get_client()
+            publisher = QueuePublisherFactory.get_publisher()
             transfer_data = {
                 "amount": item.amount,
                 "narration": item.description,
@@ -82,9 +78,7 @@ async def handle_drill_down(state: dict[str, Any]) -> TransactionResult:
 
             job = {"payload": payload, "signal_key": None}
 
-            push_result = redis_client.rpush(QUEUE_NAME, json.dumps(job))
-            if not isinstance(push_result, int):
-                await cast(Awaitable[int], push_result)
+            await publisher.publish(topic="receipt.process", message=job)
 
             return TransactionResult(
                 outcome=TransactionOutcome.OK,

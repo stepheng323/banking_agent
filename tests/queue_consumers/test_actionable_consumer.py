@@ -81,7 +81,7 @@ async def test_actionable_consumer_persists_transfer_receipt_with_expected_ttl(
 ) -> None:
     user = SimpleNamespace(id=uuid4())
     uow = _UowStub(user=user)
-    consumer = ActionableMessageConsumer(redis_queue=SimpleNamespace())
+    consumer = ActionableMessageConsumer()
     monkeypatch.setattr("apps.core.src.queue_consumers.actionable_consumer.UnitOfWork", lambda: uow)
 
     before = datetime.utcnow()
@@ -119,7 +119,7 @@ async def test_actionable_consumer_ignores_duplicate_channel_message_conflict(
         Exception('duplicate key value violates unique constraint "ix_actionable_messages_channel_message_id"'),
     )
     uow = _UowStub(user=user, commit_error=duplicate_error)
-    consumer = ActionableMessageConsumer(redis_queue=SimpleNamespace())
+    consumer = ActionableMessageConsumer()
     monkeypatch.setattr("apps.core.src.queue_consumers.actionable_consumer.UnitOfWork", lambda: uow)
 
     await consumer.process_job(
@@ -139,7 +139,7 @@ async def test_actionable_consumer_ignores_duplicate_channel_message_conflict(
 async def test_actionable_consumer_skips_when_required_fields_or_user_missing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    consumer = ActionableMessageConsumer(redis_queue=SimpleNamespace())
+    consumer = ActionableMessageConsumer()
 
     # Missing required fields should short-circuit before UoW is instantiated.
     monkeypatch.setattr(
@@ -170,7 +170,7 @@ async def test_actionable_consumer_does_not_fallback_to_phone_lookup_when_identi
 ) -> None:
     user = SimpleNamespace(id=uuid4())
     uow = _UowStub(user=None, phone_user=user)
-    consumer = ActionableMessageConsumer(redis_queue=SimpleNamespace())
+    consumer = ActionableMessageConsumer()
     monkeypatch.setattr("apps.core.src.queue_consumers.actionable_consumer.UnitOfWork", lambda: uow)
 
     await consumer.process_job(

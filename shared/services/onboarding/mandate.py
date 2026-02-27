@@ -5,8 +5,8 @@ from datetime import datetime, timedelta
 
 from shared.cache.user_data import UserDataCache
 from shared.clients.providers.mono import MonoApiError, mono_client
-from shared.queue.messages import OUTBOX_QUEUE
-from shared.queue.redis_queue import RedisQueue
+from shared.queue.adapter import QueuePublisher
+from shared.queue.factory import QueuePublisherFactory
 from shared.repositories.unit_of_work import UnitOfWork
 from shared.utils.logging import get_logger
 
@@ -16,12 +16,15 @@ logger = get_logger(__name__)
 class MandateService:
     """Handles mandate creation, reinitiation, and notifications."""
 
-    def __init__(self, queue: RedisQueue | None = None) -> None:
-        self.queue = queue or RedisQueue()
+    def __init__(self, publisher: QueuePublisher | None = None) -> None:
+        if publisher:
+            self.publisher = publisher
+        else:
+            self.publisher = QueuePublisherFactory.get_publisher()
 
     async def enqueue_outbox_say(self, phone_number: str, text: str, channel: str = "whatsapp") -> None:
-        await self.queue.enqueue(
-            queue_name=OUTBOX_QUEUE,
+        await self.publisher.publish(
+            topic="notification.send",
             message={
                 "phone_number": phone_number,
                 "channel": channel,

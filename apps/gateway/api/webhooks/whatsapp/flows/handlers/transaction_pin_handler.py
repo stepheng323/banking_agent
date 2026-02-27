@@ -15,11 +15,11 @@ from apps.gateway.api.webhooks.whatsapp.flows.response_helpers import (
     format_error_response,
     format_success_response,
 )
-from apps.gateway.core.config import settings
 from shared.cache.redis_client import RedisClient
 from shared.clients.whatsapp.client import WhatsAppClient
-from shared.queue.messages import OUTBOX_QUEUE, FlowEvent, FlowEventType
-from shared.queue.redis_queue import RedisQueue
+from shared.queue.adapter import QueuePublisher
+from shared.queue.factory import QueuePublisherFactory
+from shared.queue.messages import FlowEvent, FlowEventType
 from shared.services.auth import AuthorizationService
 from shared.utils.logging import configure_logger, get_logger
 
@@ -34,7 +34,7 @@ async def handle_transaction_pin(
     aes_key_bytes: bytes,
     iv_bytes: bytes,
     whatsapp_client: WhatsAppClient,
-    redis_queue: RedisQueue,
+    publisher: QueuePublisher | None = None,
 ) -> Response:
     """
     Unified PIN handler for all transaction types.
@@ -49,7 +49,6 @@ async def handle_transaction_pin(
         aes_key_bytes: AES key for encryption
         iv_bytes: IV for encryption
         whatsapp_client: WhatsApp client instance
-        redis_queue: RedisQueue for publishing events
     """
     pin = data.get("pin")
 
@@ -121,12 +120,12 @@ async def handle_transaction_pin(
         phone_number = flow_token.split("-")[-1] if flow_token else None
 
         if phone_number:
-            if redis_queue is None:
-                redis_queue = RedisQueue(redis_url=settings.redis_url)
+            if publisher is None:
+                publisher = QueuePublisherFactory.get_publisher()
 
             asyncio.create_task(
-                redis_queue.enqueue(
-                    queue_name=OUTBOX_QUEUE,
+                publisher.publish(
+                    topic="notification.send",
                     message={
                         "phone_number": phone_number,
                         "channel": whatsapp_client.channel_name,
@@ -183,19 +182,20 @@ async def handle_transaction_pin(
             iv_bytes,
         )
 
-    try:
-        if redis_queue is None:
-            redis_queue = RedisQueue(redis_url=settings.redis_url)
+    flow_event = FlowEvent(
+        event_type=FlowEventType.PIN_VERIFIED,
+        phone_number=phone_number,
+        flow_type=transaction_type,
+        idempotency_key=idem_key,
+        success=True,
+    )
 
-        flow_event = FlowEvent(
-            event_type=FlowEventType.PIN_VERIFIED,
-            phone_number=phone_number,
-            flow_type=transaction_type,
-            idempotency_key=idem_key,
-            success=True,
-        )
-        await redis_queue.enqueue(
-            "banking:flow_events",
+    try:
+        if publisher is None:
+            publisher = QueuePublisherFactory.get_publisher()
+
+        await publisher.publish(
+            "flow_event.process",
             message={
                 "event_type": flow_event.event_type.value,
                 "phone_number": flow_event.phone_number,

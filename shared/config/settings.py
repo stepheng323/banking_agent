@@ -23,6 +23,8 @@ class Settings:
         self.pin_confirmation_flow_id: str = os.getenv("PIN_CONFIRMATION_FLOW_ID", "")
 
         self.app_env: str = os.getenv("APP_ENV", "development")
+        self.project_name: str = os.getenv("PROJECT_NAME", "banking-agent")
+        self.environment: str = os.getenv("ENVIRONMENT", "dev")
         self.app_host: str = os.getenv("APP_HOST", "0.0.0.0")
         self.app_port: int = int(os.getenv("APP_PORT", "8000"))
 
@@ -44,7 +46,9 @@ class Settings:
         self.mono_api_key: str = os.getenv("MONO_API_KEY", "")
 
         self.s3_bucket_name: str = os.getenv("S3_BUCKET_NAME", "")
-        self.s3_region: str = os.getenv("AWS_REGION", "us-east-1")
+        self.aws_region: str = os.getenv("AWS_REGION", "us-east-1")
+        self.aws_account_id: str = os.getenv("AWS_ACCOUNT_ID", "000000000000")
+        self.s3_region: str = self.aws_region
         self.s3_receipt_prefix: str = "receipts"
 
         self.default_channel: str = os.getenv("DEFAULT_CHANNEL", "whatsapp")
@@ -76,6 +80,5 @@ class Settings:
             for warning in warnings:
                 print(f"   - {warning}")
             print("   Create a .env file with proper WhatsApp credentials to fix these warnings.")
-
 
 settings = Settings()

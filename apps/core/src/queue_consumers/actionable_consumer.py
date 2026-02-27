@@ -1,6 +1,5 @@
 """Consumer for persisting actionable messages sent via outbox."""
 
-import asyncio
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -8,8 +7,6 @@ from sqlalchemy.exc import IntegrityError
 
 from shared.database.enums import ActionableMessageTypeEnum
 from shared.database.models import ActionableMessage
-from shared.queue.messages import ACTIONABLE_MESSAGES_QUEUE
-from shared.queue.redis_queue import RedisQueue
 from shared.repositories.unit_of_work import UnitOfWork
 from shared.utils.logging import get_logger
 
@@ -28,9 +25,8 @@ def _is_duplicate_channel_message_error(error: IntegrityError) -> bool:
 class ActionableMessageConsumer:
     """Consumes actionable message jobs and persists them to the DB."""
 
-    def __init__(self, redis_queue: RedisQueue):
-        self.queue = redis_queue
-        self.running = False
+    def __init__(self) -> None:
+        pass
 
     async def _resolve_user(self, uow: UnitOfWork, channel: str, identity_or_phone: str) -> Any | None:
         """Resolve user strictly by channel identity."""
@@ -101,30 +97,3 @@ class ActionableMessageConsumer:
 
         except Exception as e:
             logger.error("actionable_consumer_failed", message_id=message_id, error=str(e), exc_info=True)
-
-    async def start(self, queue_name: str = ACTIONABLE_MESSAGES_QUEUE):
-        """Start consuming actionable messages queue."""
-        self.running = True
-        logger.info("actionable_consumer_started", queue=queue_name)
-
-        await self.queue.connect()
-
-        while self.running:
-            try:
-                job_data = await self.queue.dequeue_blocking(queue_name=queue_name, timeout=5)
-                if job_data:
-                    await self.process_job(job_data)
-
-            except asyncio.CancelledError:
-                logger.info("actionable_consumer_cancelled")
-                break
-            except Exception as e:
-                logger.error("actionable_consumer_error", error=str(e), exc_info=True)
-                await asyncio.sleep(1)
-
-        await self.queue.close()
-        logger.info("actionable_consumer_stopped")
-
-    def stop(self):
-        """Stop the consumer."""
-        self.running = False

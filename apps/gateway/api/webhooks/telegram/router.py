@@ -11,9 +11,8 @@ from apps.gateway.api.webhooks.telegram.service import TelegramWebhookService
 from shared.clients.telegram.client import TelegramClient
 from shared.config.settings import settings
 from shared.database.connection import get_db
+from shared.queue.factory import QueuePublisherFactory
 from shared.queue.messages import FlowEvent, FlowEventType
-from shared.queue.models import FlowEventPayload
-from shared.queue.redis_queue import RedisQueue
 from shared.repositories.user_repository import UserRepository
 from shared.services.onboarding import account_service, bvn_service
 from shared.utils.logging import get_logger
@@ -21,15 +20,7 @@ from shared.utils.logging import get_logger
 router = APIRouter(prefix="/webhook", tags=["telegram"])
 logger = get_logger(__name__)
 
-_queue_instance: RedisQueue | None = None
 _service_instance: TelegramWebhookService | None = None
-
-
-def _get_queue() -> RedisQueue:
-    global _queue_instance
-    if _queue_instance is None:
-        _queue_instance = RedisQueue(redis_url=settings.redis_url)
-    return _queue_instance
 
 
 @router.post("/telegram")
@@ -52,8 +43,9 @@ async def telegram_webhook(
     try:
         update = await request.json()
         user_repo = UserRepository(db)
+        publisher = QueuePublisherFactory.get_publisher()
         service = TelegramWebhookService(
-            queue=_get_queue(), user_repository=user_repo, telegram_client=TelegramClient()
+            publisher=publisher, user_repository=user_repo, telegram_client=TelegramClient()
         )
         await service.process_update(update)
         # Commit manually if any inserts (like linking child accounts) happened inside process_update
@@ -246,7 +238,6 @@ async def telegram_pin_submit(
 
     safe_phone_number = str(phone_number)
 
-    # --- Verify PIN ---
     auth_service = AuthorizationService(redis_client=redis_client)
     auth_result = await auth_service.verify_pin(
         phone_number=safe_phone_number,
@@ -269,12 +260,11 @@ async def telegram_pin_submit(
             "locked": auth_result.attempts_remaining <= 0,
         }
 
-    # --- PIN verified — publish FlowEvent ---
     resolved_flow_type = auth_result.transaction_type or flow_type
 
     event = FlowEvent(
         event_type=FlowEventType.PIN_VERIFIED,
-        phone_number=safe_phone_number,  # Real phone number for orchestrator thread lookup
+        phone_number=safe_phone_number,
         flow_type=resolved_flow_type,
         idempotency_key=token_remainder,
         success=True,
@@ -283,14 +273,13 @@ async def telegram_pin_submit(
     )
 
     try:
-        queue = _get_queue()
-        await queue.enqueue(
-            queue_name="banking:flow_events",
-            message=cast(FlowEventPayload, event.to_dict()),
+        publisher = QueuePublisherFactory.get_publisher()
+        await publisher.publish(
+            topic="flow_event.process",
+            message=cast(dict, event.to_dict()),
         )
         logger.info("telegram_pin_rest_published", chat_id=data.chat_id, flow_type=resolved_flow_type)
 
-        # Replace the PIN Web App button with a non-interactive 'Authorized' badge
         if data.chat_id:
             try:
                 stored_msg_id = await redis_client.getdel(f"tg:pin_msg:{data.flow_token}")

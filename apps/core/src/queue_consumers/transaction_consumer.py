@@ -1,13 +1,10 @@
 """Unified transaction consumer for processing all transaction types."""
 
-import asyncio
-
 from shared.protocols.executor import (
     AirtimeExecutorProtocol,
     DataExecutorProtocol,
     TransferExecutorProtocol,
 )
-from shared.queue.redis_queue import RedisQueue
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -18,7 +15,6 @@ class TransactionConsumer:
 
     def __init__(
         self,
-        redis_queue: RedisQueue,
         transfer_executor: TransferExecutorProtocol | None = None,
         airtime_executor: AirtimeExecutorProtocol | None = None,
         data_executor: DataExecutorProtocol | None = None,
@@ -27,16 +23,13 @@ class TransactionConsumer:
         Initialize transaction consumer.
 
         Args:
-            redis_queue: Redis queue instance
             transfer_executor: Optional TransferExecutor instance
             airtime_executor: Optional AirtimeExecutor instance
             data_executor: Optional DataExecutor instance
         """
-        self.queue = redis_queue
         self.transfer_executor = transfer_executor
         self.airtime_executor = airtime_executor
         self.data_executor = data_executor
-        self.running = False
 
     async def process_transaction(self, transaction_data: dict) -> None:
         """
@@ -86,33 +79,3 @@ class TransactionConsumer:
                 error=str(e),
                 exc_info=True,
             )
-
-    async def start(self, queue_name: str = "banking:transactions"):
-        """
-        Start consuming transaction requests from the queue.
-
-        Args:
-            queue_name: Name of the queue to consume from
-        """
-        self.running = True
-        logger.info("transaction_consumer_started", queue_name=queue_name)
-
-        await self.queue.connect()
-
-        while self.running:
-            try:
-                transaction_data = await self.queue.dequeue_blocking(queue_name=queue_name, timeout=5)
-                if transaction_data:
-                    await self.process_transaction(transaction_data)
-
-            except asyncio.CancelledError:
-                break
-            except Exception as e:
-                logger.error("transaction_consumer_error", error=str(e), exc_info=True)
-                await asyncio.sleep(1)
-
-        await self.queue.close()
-
-    def stop(self):
-        """Stop the transaction consumer."""
-        self.running = False

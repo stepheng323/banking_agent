@@ -3,23 +3,22 @@
 from typing import Any
 
 from apps.core.src.agent.orchestrator.models.intents import Say, UiIntent
-from shared.queue.messages import OUTBOX_QUEUE
-from shared.queue.redis_queue import RedisQueue
+from shared.queue.adapter import QueuePublisher
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
 
 
 async def enqueue_outbox_intents(
-    queue: RedisQueue | None,
+    publisher: QueuePublisher | None,
     phone_number: str,
     channel: str,
     intents: list[UiIntent | dict[str, Any]],
     metadata: dict[str, Any] | None = None,
 ) -> None:
     """Enqueue intents for presenter-based delivery."""
-    if not queue:
-        logger.error("outbox_queue_missing", phone=phone_number, channel=channel)
+    if not publisher:
+        logger.error("outbox_publisher_missing", phone=phone_number, channel=channel)
         return
 
     if not intents:
@@ -32,8 +31,8 @@ async def enqueue_outbox_intents(
         else:
             serialized.append(intent.to_dict())
 
-    await queue.enqueue(
-        queue_name=OUTBOX_QUEUE,
+    await publisher.publish(
+        topic="notification.send",
         message={
             "phone_number": phone_number,
             "channel": channel,
@@ -44,7 +43,7 @@ async def enqueue_outbox_intents(
 
 
 async def enqueue_outbox_say(
-    queue: RedisQueue | None,
+    publisher: QueuePublisher | None,
     phone_number: str,
     channel: str,
     text: str,
@@ -53,4 +52,4 @@ async def enqueue_outbox_say(
     """Enqueue a single text intent."""
     if not text:
         return
-    await enqueue_outbox_intents(queue, phone_number, channel, [Say(text=text)], metadata=metadata)
+    await enqueue_outbox_intents(publisher, phone_number, channel, [Say(text=text)], metadata=metadata)

@@ -156,15 +156,15 @@ class _FakeUow:
         self.commit_calls += 1
 
 
-class _NoopQueue:
-    async def enqueue(self, queue_name: str, message: dict) -> None:  # noqa: ARG002
+class _NoopPublisher:
+    async def publish(self, topic: str, message: dict) -> None:  # noqa: ARG002
         return None
 
 
 class TestMonoWebhookRefundGate:
     @pytest.mark.asyncio
     async def test_any_failed_step_triggers_refund_even_if_latest_status_is_confirmed(self):
-        service = MonoWebhookService(queue=_NoopQueue())
+        service = MonoWebhookService(publisher=_NoopPublisher())  # type: ignore[arg-type]
         service._queue_refunds = AsyncMock()  # type: ignore[method-assign]
         uow = _FakeUow()
         transfer = SimpleNamespace(id="tx-1", status=FundedTransferStatusEnum.FUNDING_PENDING.value)

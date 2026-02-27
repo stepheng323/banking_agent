@@ -1,12 +1,11 @@
 """Funding consumer for initiating pooled direct-debit steps."""
 
-import asyncio
 from datetime import UTC, datetime
 from typing import Any
 
 from shared.clients.abstractions.direct_debit import DebitStatus, DirectDebitProvider
 from shared.database.enums import FundedTransferStatusEnum, FundingStepStatusEnum
-from shared.queue.redis_queue import RedisQueue
+from shared.queue.adapter import QueuePublisher
 from shared.repositories.unit_of_work import UnitOfWork
 from shared.utils.logging import get_logger
 
@@ -16,10 +15,9 @@ logger = get_logger(__name__)
 class FundingConsumer:
     """Consumes funding jobs and starts Mono direct debits for each funding step."""
 
-    def __init__(self, redis_queue: RedisQueue, direct_debit_provider: DirectDebitProvider):
-        self.queue = redis_queue
+    def __init__(self, publisher: QueuePublisher, direct_debit_provider: DirectDebitProvider):
+        self.publisher = publisher
         self.direct_debit_provider = direct_debit_provider
-        self.running = False
 
     async def process_job(self, payload: dict[str, Any]) -> None:
         funded_transfer_id = payload.get("funded_transfer_id")
@@ -91,8 +89,8 @@ class FundingConsumer:
                 )
                 confirmed_steps = await uow.funding_steps.get_confirmed_for_transfer(str(transfer.id))
                 for confirmed_step in confirmed_steps:
-                    await self.queue.enqueue(
-                        queue_name="banking:refunds",
+                    await self.publisher.publish(
+                        topic="refund.process",
                         message={
                             "funding_step_id": str(confirmed_step.id),
                             "funded_transfer_id": str(transfer.id),
@@ -112,9 +110,11 @@ class FundingConsumer:
             all_confirmed = await uow.funding_steps.all_confirmed(str(transfer.id))
             if all_confirmed:
                 transfer.funding_completed_at = datetime.now(UTC).replace(tzinfo=None)
-                await uow.funded_transfers.update_status(str(transfer.id), FundedTransferStatusEnum.PAYOUT_PENDING.value)
-                await self.queue.enqueue(
-                    queue_name="banking:payouts",
+                await uow.funded_transfers.update_status(
+                    str(transfer.id), FundedTransferStatusEnum.PAYOUT_PENDING.value
+                )
+                await self.publisher.publish(
+                    topic="payout.process",
                     message={
                         "funded_transfer_id": str(transfer.id),
                         "amount": float(transfer.amount),
@@ -127,26 +127,3 @@ class FundingConsumer:
 
             await uow.commit()
             logger.info("funding_job_processed", funded_transfer_id=funded_transfer_id, all_confirmed=all_confirmed)
-
-    async def start(self, queue_name: str = "banking:funding") -> None:
-        """Start consuming funding jobs."""
-        self.running = True
-        logger.info("funding_consumer_started", queue_name=queue_name)
-        await self.queue.connect()
-
-        while self.running:
-            try:
-                job_data = await self.queue.dequeue_blocking(queue_name=queue_name, timeout=5)
-                if job_data:
-                    await self.process_job(job_data)
-            except asyncio.CancelledError:
-                break
-            except Exception as e:
-                logger.error("funding_consumer_error", error=str(e), exc_info=True)
-                await asyncio.sleep(1)
-
-        await self.queue.close()
-
-    def stop(self) -> None:
-        """Stop the consumer."""
-        self.running = False

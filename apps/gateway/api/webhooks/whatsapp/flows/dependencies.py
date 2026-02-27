@@ -1,23 +1,17 @@
 """Dependency factories for flow webhook handlers.
 
-Note: All agent service calls are now handled via Redis queue events.
-Gateway only needs redis queue and whatsapp client.
+Note: All agent service calls are handled via queue events.
+Gateway only needs queue publisher and WhatsApp client.
 """
 
-from apps.gateway.core.config import settings
 from shared.clients.whatsapp.client import WhatsAppClient
-from shared.queue.redis_queue import RedisQueue
+from shared.queue.adapter import QueuePublisher
+from shared.queue.factory import QueuePublisherFactory
 from shared.services.task_queue import TaskQueueService
 
-_redis_queue_instance = None
-
-
-def get_redis_queue() -> RedisQueue:
-    """Dependency factory for Redis queue with lazy initialization."""
-    global _redis_queue_instance
-    if _redis_queue_instance is None:
-        _redis_queue_instance = RedisQueue(redis_url=settings.redis_url)
-    return _redis_queue_instance
+def get_queue_publisher() -> QueuePublisher:
+    """Dependency factory for queue publisher."""
+    return QueuePublisherFactory.get_publisher()
 
 
 def get_whatsapp_client() -> WhatsAppClient:

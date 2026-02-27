@@ -8,9 +8,9 @@ from apps.gateway.adapters.telegram import ParsedTelegramMessage, parse_update
 from shared.clients.telegram.client import TelegramClient
 from shared.config.settings import settings
 from shared.models.messages import ChannelMessage, MessagePriority, MessageType
+from shared.queue.adapter import QueuePublisher
 from shared.queue.messages import FlowEvent, FlowEventType
 from shared.queue.models import FlowEventPayload
-from shared.queue.redis_queue import RedisQueue
 from shared.repositories.user_repository import UserRepository
 from shared.services.onboarding import session_manager
 from shared.utils.logging import get_logger
@@ -21,8 +21,10 @@ logger = get_logger(__name__)
 class TelegramWebhookService:
     """Handles business logic for Telegram webhook events."""
 
-    def __init__(self, queue: RedisQueue, user_repository: UserRepository, telegram_client: TelegramClient) -> None:
-        self.queue = queue
+    def __init__(
+        self, publisher: QueuePublisher, user_repository: UserRepository, telegram_client: TelegramClient
+    ) -> None:
+        self.publisher = publisher
         self.user_repository = user_repository
         self.telegram_client = telegram_client
 
@@ -273,8 +275,8 @@ class TelegramWebhookService:
         )
 
         try:
-            await self.queue.enqueue(
-                queue_name="banking:flow_events",
+            await self.publisher.publish(
+                topic="flow_event.process",
                 message=cast(FlowEventPayload, event.to_dict()),
             )
             logger.info("telegram_pin_event_published", chat_id=msg.chat_id, flow_type=flow_type)
@@ -326,8 +328,8 @@ class TelegramWebhookService:
     ) -> bool:
         """Enqueue message for core processing."""
         try:
-            await self.queue.enqueue(
-                queue_name="banking:messages",
+            await self.publisher.publish(
+                topic="message.received",
                 message=message.model_dump(mode="json"),
             )
             logger.info("telegram_message_enqueued", msg_type=msg_type, chat_id=chat_id)

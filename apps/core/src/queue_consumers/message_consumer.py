@@ -18,7 +18,7 @@ from apps.core.src.messaging.outbox import enqueue_outbox_intents, enqueue_outbo
 from shared.cache.rate_limiter import message_rate_limiter
 from shared.database.models import UserOnboardingStatusEnum
 from shared.models.messages import ChannelMessage
-from shared.queue.redis_queue import RedisQueue
+from shared.queue.adapter import QueueConsumer, QueuePublisher
 from shared.repositories.user_repository import UserRepository
 from shared.utils.logging import get_logger
 from shared.utils.sanitize import is_suspicious_input, sanitize_message
@@ -26,17 +26,24 @@ from shared.utils.sanitize import is_suspicious_input, sanitize_message
 logger = get_logger(__name__)
 
 
+class _NoopPublisher:
+    async def publish(self, topic: str, message: dict[str, Any]) -> None:
+        del topic, message
+
+
 class MessageConsumer:
     """Message Consumer Class"""
 
     def __init__(
         self,
-        redis_queue: RedisQueue,
         user_repository: UserRepository,
         onboarding_executor: OnboardingExecutor,
         orchestrator: OrchestratorAgent,
+        publisher: QueuePublisher | None = None,
+        queue_consumer: QueueConsumer | None = None,
     ):
-        self.queue = redis_queue
+        self.queue_consumer = queue_consumer
+        self.publisher = publisher or _NoopPublisher()
         self.user_repository = user_repository
         self.onboarding_executor = onboarding_executor
         self.orchestrator = orchestrator
@@ -71,7 +78,7 @@ class MessageConsumer:
                 reset_in=rate_result.reset_in_seconds,
             )
             await enqueue_outbox_say(
-                self.queue,
+                self.publisher,
                 channel_user_id,
                 message.channel,
                 f"⏳ Too many messages. Please wait {rate_result.reset_in_seconds} seconds.",
@@ -93,9 +100,7 @@ class MessageConsumer:
             return {"status": "skipped", "reason": "Flow messages handled by flow webhook"}
 
         user = await self.user_repository.get_by_channel_identity(message.channel, channel_user_id)
-        logger.info(
-            "channel_identity_lookup", user=user, channel=message.channel, channel_user_id=channel_user_id
-        )
+        logger.info("channel_identity_lookup", user=user, channel=message.channel, channel_user_id=channel_user_id)
 
         if user is None or getattr(user, "onboarding_status", None) != UserOnboardingStatusEnum.ONBOARDING_COMPLETED:
             return cast(dict[str, Any] | None, await self.onboarding_executor.handle_onboarding(message))
@@ -139,7 +144,7 @@ class MessageConsumer:
 
             if intents:
                 await enqueue_outbox_intents(
-                    self.queue,
+                    self.publisher,
                     channel_user_id,
                     message.channel,
                     cast(list[UiIntent | dict[str, Any]], intents),
@@ -162,13 +167,13 @@ class MessageConsumer:
 
     async def start(self, queue_name: str = "banking:messages") -> None:
         """Start the message consumer."""
+        if self.queue_consumer is None:
+            raise RuntimeError("message_consumer_requires_queue_consumer")
         self.running = True
         logger.info("message_consumer_starting", queue=queue_name)
-
-        await self.queue.connect()
         while self.running:
             try:
-                message_data = await self.queue.dequeue_blocking(queue_name=queue_name, timeout=5)
+                message_data = await self.queue_consumer.consume_one(queue_name=queue_name, timeout=5)
                 if message_data:
                     await self.process_message(message_data)
 
@@ -178,8 +183,6 @@ class MessageConsumer:
             except Exception as e:
                 logger.error("message_consumer_error", error=str(e), exc_info=True)
                 await asyncio.sleep(1)
-
-        await self.queue.close()
         logger.info("message_consumer_stopped")
 
     def stop(self) -> None:

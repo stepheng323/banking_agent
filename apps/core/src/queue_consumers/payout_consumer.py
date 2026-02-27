@@ -1,12 +1,10 @@
 """Payout consumer for final one-go beneficiary transfer."""
 
-import asyncio
 from datetime import UTC, datetime
 from typing import Any
 
 from apps.core.src.agent.executors.payout import PayoutExecutor
 from shared.database.enums import FundedTransferStatusEnum, TransactionStatusEnum
-from shared.queue.redis_queue import RedisQueue
 from shared.repositories.unit_of_work import UnitOfWork
 from shared.utils.logging import get_logger
 
@@ -16,10 +14,8 @@ logger = get_logger(__name__)
 class PayoutConsumer:
     """Consumes payout jobs and executes a single beneficiary credit."""
 
-    def __init__(self, redis_queue: RedisQueue, payout_executor: PayoutExecutor):
-        self.queue = redis_queue
+    def __init__(self, payout_executor: PayoutExecutor):
         self.payout_executor = payout_executor
-        self.running = False
 
     async def process_job(self, payload: dict[str, Any]) -> None:
         funded_transfer_id = payload.get("funded_transfer_id")
@@ -69,26 +65,3 @@ class PayoutConsumer:
 
             uow.db.add(transfer)
             await uow.commit()
-
-    async def start(self, queue_name: str = "banking:payouts") -> None:
-        """Start consuming payout jobs."""
-        self.running = True
-        logger.info("payout_consumer_started", queue_name=queue_name)
-        await self.queue.connect()
-
-        while self.running:
-            try:
-                job_data = await self.queue.dequeue_blocking(queue_name=queue_name, timeout=5)
-                if job_data:
-                    await self.process_job(job_data)
-            except asyncio.CancelledError:
-                break
-            except Exception as e:
-                logger.error("payout_consumer_error", error=str(e), exc_info=True)
-                await asyncio.sleep(1)
-
-        await self.queue.close()
-
-    def stop(self) -> None:
-        """Stop payout consumer."""
-        self.running = False

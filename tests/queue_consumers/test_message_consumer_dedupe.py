@@ -1,10 +1,10 @@
 """Message consumer dedupe tests."""
 
+import asyncio
 from datetime import UTC, datetime
 from types import SimpleNamespace
 from typing import Any
 
-import asyncio
 import pytest
 
 from apps.core.src.agent.orchestrator.models.intents import Say
@@ -18,11 +18,6 @@ class _RateLimiterAllow:
     async def check(self, identifier: str) -> RateLimitResult:
         del identifier
         return RateLimitResult(allowed=True, remaining=9, reset_in_seconds=60, total_limit=10)
-
-
-class _QueueStub:
-    async def enqueue(self, queue_name: str, message: dict[str, Any]) -> None:
-        del queue_name, message
 
 
 class _UserRepoStub:
@@ -108,7 +103,6 @@ async def test_duplicate_message_id_is_ignored(monkeypatch: pytest.MonkeyPatch) 
     context_manager = _ContextManagerStub(should_claim=True)
     orchestrator = _OrchestratorStub(context_manager)
     consumer = MessageConsumer(
-        redis_queue=_QueueStub(),
         user_repository=_UserRepoStub(),
         onboarding_executor=_OnboardingStub(),
         orchestrator=orchestrator,
@@ -145,7 +139,6 @@ async def test_claim_is_released_when_processing_fails(monkeypatch: pytest.Monke
     context_manager = _ContextManagerStub(should_claim=True)
     orchestrator = _OrchestratorStub(context_manager, should_fail=True)
     consumer = MessageConsumer(
-        redis_queue=_QueueStub(),
         user_repository=_UserRepoStub(),
         onboarding_executor=_OnboardingStub(),
         orchestrator=orchestrator,
