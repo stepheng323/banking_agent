@@ -32,6 +32,20 @@ locals {
   }
 }
 
+data "aws_ssm_parameter" "non_secret" {
+  for_each = var.non_secret_parameter_names
+
+  name            = each.value
+  with_decryption = false
+}
+
+data "aws_ssm_parameter" "secret" {
+  for_each = var.secret_parameter_names
+
+  name            = each.value
+  with_decryption = true
+}
+
 resource "aws_iam_role" "lambda_worker_role" {
   name = "${var.project_name}-lambda-workers-${var.environment}"
 
@@ -76,6 +90,32 @@ resource "aws_iam_role_policy" "lambda_sqs_policy" {
   })
 }
 
+resource "aws_iam_role_policy" "lambda_ssm_policy" {
+  name = "${var.project_name}-lambda-workers-ssm-${var.environment}"
+  role = aws_iam_role.lambda_worker_role.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "ssm:GetParameter",
+          "ssm:GetParameters"
+        ]
+        Resource = values(var.all_parameter_arns)
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "kms:Decrypt"
+        ]
+        Resource = "arn:aws:kms:${var.aws_region}:${var.aws_account_id}:key/*"
+      }
+    ]
+  })
+}
+
 resource "aws_lambda_function" "workers" {
   for_each = local.workers
 
@@ -92,15 +132,17 @@ resource "aws_lambda_function" "workers" {
   }
 
   environment {
-    variables = {
-      APP_ENV        = var.environment
-      ENVIRONMENT    = var.environment
-      PROJECT_NAME   = var.project_name
-      AWS_REGION     = var.aws_region
-      AWS_ACCOUNT_ID = var.aws_account_id
-      DATABASE_URL   = var.database_url
-      REDIS_URL      = var.redis_url
-    }
+    variables = merge(
+      {
+        APP_ENV        = var.environment
+        ENVIRONMENT    = var.environment
+        PROJECT_NAME   = var.project_name
+        AWS_REGION     = var.aws_region
+        AWS_ACCOUNT_ID = var.aws_account_id
+      },
+      { for key, param in data.aws_ssm_parameter.non_secret : key => param.value },
+      { for key, param in data.aws_ssm_parameter.secret : key => param.value }
+    )
   }
 }
 

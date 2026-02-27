@@ -33,14 +33,17 @@ variable "core_chat_worker_image_url" {
   type        = string
 }
 
-variable "database_url" {
-  description = "Postgres connection string"
-  type        = string
-  sensitive   = true
+variable "non_secret_parameter_names" {
+  description = "Map of non-secret env var names to SSM parameter names."
+  type        = map(string)
 }
 
-variable "redis_url" {
-  description = "Redis connection string"
-  type        = string
-  sensitive   = true
+variable "secret_parameter_arns" {
+  description = "Map of secret env var names to SSM parameter ARNs."
+  type        = map(string)
+}
+
+variable "all_parameter_arns" {
+  description = "Map of all env var names to SSM parameter ARNs for IAM scoping."
+  type        = map(string)
 }
