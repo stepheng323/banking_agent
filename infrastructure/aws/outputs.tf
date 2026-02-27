@@ -29,3 +29,16 @@ output "webhook_api_endpoint" {
 output "core_chat_worker_service_name" {
   value = module.compute.core_chat_worker_service_name
 }
+
+output "ssm_secret_parameter_names" {
+  value = module.config_ssm.secret_parameter_names
+}
+
+output "ssm_non_secret_parameter_names" {
+  value = module.config_ssm.non_secret_parameter_names
+}
+
+output "github_actions_role_arn" {
+  value       = length(module.github_oidc) > 0 ? module.github_oidc[0].github_actions_role_arn : null
+  description = "The ARN of the IAM role for GitHub Actions to assume. Paste this into your .github/workflows/deploy-dev.yml file."
+}
