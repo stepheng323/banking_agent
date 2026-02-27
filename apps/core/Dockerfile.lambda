@@ -1,0 +1,15 @@
+FROM public.ecr.aws/lambda/python:3.12
+
+WORKDIR /var/task
+
+COPY pyproject.toml ./
+COPY apps/core/ /var/task/apps/core/
+COPY apps/receipt/ /var/task/apps/receipt/
+COPY shared/ /var/task/shared/
+COPY config/ /var/task/config/
+
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir ".[core,receipt]"
+
+ENV PYTHONPATH=/var/task
+CMD ["apps.core.src.lambda_handlers.transaction_worker_handler.handler"]

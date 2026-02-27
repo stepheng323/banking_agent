@@ -1,18 +1,10 @@
 """Core Banking Service main module."""
-
-import asyncio
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from typing import Any
 
-import redis.asyncio as redis
 from fastapi import FastAPI
 
-from apps.core.src.dependencies import setup_dependencies
-from shared.cache import BankCacheService
-from shared.cache.redis_client import RedisClient
-from shared.clients.factories.payment import PaymentProviderFactory
-from shared.config import settings
+from apps.core.src.runtime_bootstrap import warm_runtime
 from shared.utils.logging import configure_logger, get_logger
 
 configure_logger()
@@ -23,86 +15,19 @@ logger = get_logger(__name__)
 async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
     """Lifespan context manager for startup/shutdown events."""
     logger.info("Starting Core Banking Service...")
-    payment_provider = None
-    try:
-        logger.info("Initializing payment provider...")
-        payment_provider = PaymentProviderFactory.get_provider_for_service("resolve_account")
+    await warm_runtime()
 
-        if payment_provider:
-            logger.info(f"{payment_provider.provider_name.title()} ready", type=str(type(payment_provider)))
-        else:
-            logger.warning("No payment provider available")
-    except Exception as e:
-        logger.warning("Payment provider initialization warning", error=str(e))
-
-    redis_client = None
-    try:
-        redis_client = redis.from_url(settings.redis_url, encoding="utf-8", decode_responses=True)
-        RedisClient.set_client(redis_client)
-        logger.info("Redis client initialized")
-    except Exception as e:
-        logger.warning("Redis client initialization warning", error=str(e))
-
-    if redis_client:
-        try:
-            logger.info("Warming up bank cache...")
-            bank_cache = BankCacheService(redis_client=redis_client)
-
-            if payment_provider and hasattr(payment_provider, "get_banks"):
-
-                async def fetch_banks_wrapper() -> list[Any] | None:
-                    return await payment_provider.get_banks()
-
-                banks = await bank_cache.ensure_banks_cached(fetch_banks_wrapper)
-                if banks:
-                    logger.info("Bank cache ready", count=len(banks))
-                else:
-                    logger.warning("Bank cache warmup failed")
-            else:
-                logger.warning("Payment provider does not support bank list fetching")
-        except Exception as e:
-            logger.warning("Bank cache warmup warning", error=str(e))
-
-    (
-        message_consumer,
-        transaction_consumer,
-        flow_event_consumer,
-        outbox_consumer,
-        actionable_consumer,
-        funding_consumer,
-        payout_consumer,
-        refund_consumer,
-    ) = setup_dependencies()
-    asyncio.create_task(message_consumer.start())
-    logger.info("Message consumer started in background")
-    asyncio.create_task(transaction_consumer.start())
-    logger.info("Transaction consumer started in background")
-    asyncio.create_task(flow_event_consumer.start())
-    logger.info("Flow event consumer started in background")
-    asyncio.create_task(outbox_consumer.start())
-    logger.info("Outbox consumer started in background")
-    asyncio.create_task(actionable_consumer.start())
-    logger.info("Actionable message consumer started in background")
-    asyncio.create_task(funding_consumer.start())
-    logger.info("Funding consumer started in background")
-    asyncio.create_task(payout_consumer.start())
-    logger.info("Payout consumer started in background")
-    asyncio.create_task(refund_consumer.start())
-    logger.info("Refund consumer started in background")
+    logger.info(
+        "consumer_ownership_config",
+        mode="api_only",
+        run_message_consumer=False,
+        run_flow_event_consumer=False,
+        started=[],
+    )
 
     yield
 
     logger.info("Shutting down Core Banking Service...")
-
-    message_consumer.stop()
-    transaction_consumer.stop()
-    flow_event_consumer.stop()
-    outbox_consumer.stop()
-    actionable_consumer.stop()
-    funding_consumer.stop()
-    payout_consumer.stop()
-    refund_consumer.stop()
-    await asyncio.sleep(0.5)
     logger.info("Services stopped")
 
 
