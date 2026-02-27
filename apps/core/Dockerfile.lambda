@@ -1,15 +1,18 @@
+FROM public.ecr.aws/lambda/python:3.12 AS builder
+
+WORKDIR /build
+COPY pyproject.toml ./
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir --target /build ".[core,receipt]"
+
 FROM public.ecr.aws/lambda/python:3.12
 
 WORKDIR /var/task
-
-COPY pyproject.toml ./
+COPY --from=builder /build /var/task/
 COPY apps/core/ /var/task/apps/core/
 COPY apps/receipt/ /var/task/apps/receipt/
 COPY shared/ /var/task/shared/
 COPY config/ /var/task/config/
-
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir ".[core,receipt]"
 
 ENV PYTHONPATH=/var/task
 CMD ["apps.core.src.lambda_handlers.transaction_worker_handler.handler"]
