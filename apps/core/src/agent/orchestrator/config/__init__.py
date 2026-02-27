@@ -1,8 +1,6 @@
 """Configuration and dependencies for the OrchestratorAgent."""
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
-
 import redis.asyncio as redis
 from langchain_openai import ChatOpenAI
 

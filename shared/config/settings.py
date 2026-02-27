@@ -60,6 +60,7 @@ class Settings:
         self.soul_policy_path: str = os.getenv("SOUL_POLICY_PATH", "config/soul_policy.json")
         self.enable_channel_option_ux_v2: bool = os.getenv("ENABLE_CHANNEL_OPTION_UX_V2", "false").lower() == "true"
 
+        self._validate_critical_runtime_config()
         self._validate_whatsapp_config()
 
     def _validate_whatsapp_config(self) -> None:
@@ -80,5 +81,35 @@ class Settings:
             for warning in warnings:
                 print(f"   - {warning}")
             print("   Create a .env file with proper WhatsApp credentials to fix these warnings.")
+
+    def _validate_critical_runtime_config(self) -> None:
+        """Fail fast outside dev/test when critical runtime config is missing."""
+        non_dev_env = self.app_env.lower() not in {"dev", "development", "test", "local"}
+        if not non_dev_env:
+            return
+
+        missing: list[str] = []
+
+        checks = {
+            "DATABASE_URL": self.database_url and self.database_url != "sqlite:///./test.db",
+            "REDIS_URL": self.redis_url and self.redis_url != "redis://localhost:6379",
+            "OPENAI_API_KEY": bool(self.openai_api_key),
+            "MONO_API_KEY": bool(self.mono_api_key),
+            "FLUTTERWAVE_SECRET_KEY": bool(self.flutterwave_secret_key),
+            "META_ACCESS_TOKEN": self.meta_access_token != "development_access_token",
+            "META_VERIFY_TOKEN": self.meta_verify_token != "development_token",
+            "META_PHONE_NUMBER_ID": self.meta_phone_number_id != "development_phone_id",
+            "TELEGRAM_BOT_TOKEN": bool(self.telegram_bot_token),
+            "TELEGRAM_WEBHOOK_SECRET_TOKEN": bool(self.telegram_webhook_secret_token),
+        }
+        for env_key, ok in checks.items():
+            if not ok:
+                missing.append(env_key)
+
+        if missing:
+            raise RuntimeError(
+                "Missing critical runtime configuration for non-dev environment: "
+                + ", ".join(sorted(missing))
+            )
 
 settings = Settings()
