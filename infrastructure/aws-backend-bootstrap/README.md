@@ -2,6 +2,7 @@
 
 Use this stack to bootstrap Terraform backend resources and grant GitHub Actions backend access.
 Current CI defaults use `us-east-1`.
+Terraform state locking uses **S3 native lockfiles** (`use_lockfile = true`), so a DynamoDB lock table is no longer required.
 
 ## Automated Bootstrap Workflow
 
@@ -34,7 +35,6 @@ terraform import aws_s3_bucket.tf_state banking-agent-tf-state-dev-use1-80853741
 terraform import aws_s3_bucket_versioning.tf_state banking-agent-tf-state-dev-use1-808537413474
 terraform import aws_s3_bucket_server_side_encryption_configuration.tf_state banking-agent-tf-state-dev-use1-808537413474
 terraform import aws_s3_bucket_public_access_block.tf_state banking-agent-tf-state-dev-use1-808537413474
-terraform import aws_dynamodb_table.tf_lock banking-agent-tf-locks-dev-use1
 ```
 
 ### 3) Plan/apply backend access policy to existing role
@@ -45,14 +45,12 @@ terraform import aws_dynamodb_table.tf_lock banking-agent-tf-locks-dev-use1
 terraform plan \
   -var='aws_region=us-east-1' \
   -var='state_bucket_name=banking-agent-tf-state-dev-use1-808537413474' \
-  -var='lock_table_name=banking-agent-tf-locks-dev-use1' \
   -var='github_actions_role_name=banking-agent-github-actions-role-dev' \
   -var='state_key_prefix=dev/*'
 
 terraform apply \
   -var='aws_region=us-east-1' \
   -var='state_bucket_name=banking-agent-tf-state-dev-use1-808537413474' \
-  -var='lock_table_name=banking-agent-tf-locks-dev-use1' \
   -var='github_actions_role_name=banking-agent-github-actions-role-dev' \
   -var='state_key_prefix=dev/*'
 ```
@@ -75,7 +73,7 @@ aws s3 cp s3://banking-agent-tf-state-dev/dev/terraform.tfstate \
 
 Then update your Terraform backend block (where your deploy stack is defined) to:
 - `bucket = "banking-agent-tf-state-dev-use1-808537413474"`
-- `dynamodb_table = "banking-agent-tf-locks-dev-use1"`
+- `use_lockfile = true`
 - `region = "us-east-1"`
 
 Run:
@@ -132,7 +130,6 @@ Then apply with role creation ownership enabled:
 terraform apply \
   -var='aws_region=us-east-1' \
   -var='state_bucket_name=banking-agent-tf-state-dev-use1-808537413474' \
-  -var='lock_table_name=banking-agent-tf-locks-dev-use1' \
   -var='github_actions_role_name=banking-agent-github-actions-role-dev' \
   -var='github_repo_owner=stepheng323' \
   -var='github_repo_name=banking_agent' \

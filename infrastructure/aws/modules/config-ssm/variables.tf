@@ -24,3 +24,8 @@ variable "overwrite" {
   type        = bool
   default     = true
 }
+
+variable "ssm_kms_key_arn" {
+  description = "KMS key ARN used to encrypt SSM SecureString parameters."
+  type        = string
+}

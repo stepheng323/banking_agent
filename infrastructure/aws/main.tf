@@ -2,12 +2,12 @@ terraform {
   required_version = ">= 1.6.0"
 
   backend "s3" {
-    # must run backend-setup.tf first, then provide their bucket/table names below
-    bucket         = "banking-agent-tf-state-dev-use1-808537413474"
-    key            = "dev/terraform.tfstate"
-    region         = "us-east-1"
-    dynamodb_table = "banking-agent-tf-locks-dev-use1"
-    encrypt        = true
+    # must run backend-setup.tf first, then provide backend details below
+    bucket       = "banking-agent-tf-state-dev-use1-808537413474"
+    key          = "dev/terraform.tfstate"
+    region       = "us-east-1"
+    use_lockfile = true
+    encrypt      = true
   }
 
   required_providers {
@@ -29,23 +29,24 @@ locals {
   environment           = "dev"
   rds_database_url      = var.provision_rds ? "postgresql://banking_user:${var.db_password}@${module.database[0].db_endpoint}/banking_db" : ""
   resolved_database_url = var.database_url != "" ? var.database_url : local.rds_database_url
+  ssm_kms_key_alias     = var.ssm_kms_key_alias_name != "" ? var.ssm_kms_key_alias_name : "alias/${local.project_name}-${local.environment}-ssm"
 
   non_secret_env_vars = merge(
     {
-      META_PHONE_NUMBER_ID           = "FIXME"
-      WHATSAPP_FLOW_PRIVATE_KEY_PATH = "FIXME"
-      ONBOARDING_FLOW_ID             = "FIXME"
-      ACCOUNT_LINKING_FLOW_ID        = "FIXME"
-      PIN_CONFIRMATION_FLOW_ID       = "FIXME"
-      TTL_SECONDS                    = "6000"
-      FLOW_SESSION_TIMEOUT           = "600"
-      PENDING_TRANSACTION_TTL        = "300"
-      FLUTTERWAVE_USE_SANDBOX        = "false"
-      S3_BUCKET_NAME                 = "FIXME"
-      DEFAULT_CHANNEL                = "whatsapp"
-      TELEGRAM_MINI_APP_BASE_URL     = "FIXME"
-      SOUL_POLICY_PATH               = "config/soul_policy.json"
-      ENABLE_CHANNEL_OPTION_UX_V2    = "false"
+      META_PHONE_NUMBER_ID           = var.meta_phone_number_id
+      WHATSAPP_FLOW_PRIVATE_KEY_PATH = var.whatsapp_flow_private_key_path
+      ONBOARDING_FLOW_ID             = var.onboarding_flow_id
+      ACCOUNT_LINKING_FLOW_ID        = var.account_linking_flow_id
+      PIN_CONFIRMATION_FLOW_ID       = var.pin_confirmation_flow_id
+      TTL_SECONDS                    = var.ttl_seconds
+      FLOW_SESSION_TIMEOUT           = var.flow_session_timeout
+      PENDING_TRANSACTION_TTL        = var.pending_transaction_ttl
+      FLUTTERWAVE_USE_SANDBOX        = var.flutterwave_use_sandbox
+      S3_BUCKET_NAME                 = var.s3_bucket_name
+      DEFAULT_CHANNEL                = var.default_channel
+      TELEGRAM_MINI_APP_BASE_URL     = var.telegram_mini_app_base_url
+      SOUL_POLICY_PATH               = var.soul_policy_path
+      ENABLE_CHANNEL_OPTION_UX_V2    = var.enable_channel_option_ux_v2
     },
     var.non_secret_config_values
   )
@@ -54,16 +55,74 @@ locals {
     {
       DATABASE_URL                  = local.resolved_database_url
       REDIS_URL                     = var.redis_url
-      OPENAI_API_KEY                = "FIXME"
-      META_VERIFY_TOKEN             = "FIXME"
-      META_ACCESS_TOKEN             = "FIXME"
-      TELEGRAM_BOT_TOKEN            = "FIXME"
-      TELEGRAM_WEBHOOK_SECRET_TOKEN = "FIXME"
-      MONO_API_KEY                  = "FIXME"
-      FLUTTERWAVE_SECRET_KEY        = "FIXME"
+      OPENAI_API_KEY                = var.openai_api_key
+      META_VERIFY_TOKEN             = var.meta_verify_token
+      META_ACCESS_TOKEN             = var.meta_access_token
+      TELEGRAM_BOT_TOKEN            = var.telegram_bot_token
+      TELEGRAM_WEBHOOK_SECRET_TOKEN = var.telegram_webhook_secret_token
+      MONO_API_KEY                  = var.mono_api_key
+      FLUTTERWAVE_SECRET_KEY        = var.flutterwave_secret_key
     },
     var.secret_config_values
   )
+
+  critical_secret_keys = [
+    "OPENAI_API_KEY",
+    "META_VERIFY_TOKEN",
+    "META_ACCESS_TOKEN",
+    "MONO_API_KEY",
+    "FLUTTERWAVE_SECRET_KEY"
+  ]
+
+  critical_non_secret_keys = [
+    "META_PHONE_NUMBER_ID",
+    "WHATSAPP_FLOW_PRIVATE_KEY_PATH",
+    "ONBOARDING_FLOW_ID",
+    "ACCOUNT_LINKING_FLOW_ID",
+    "PIN_CONFIRMATION_FLOW_ID"
+  ]
+
+  missing_critical_secret_keys = [
+    for key in local.critical_secret_keys : key
+    if trimspace(lookup(local.secret_env_vars, key, "")) == ""
+  ]
+
+  missing_critical_non_secret_keys = [
+    for key in local.critical_non_secret_keys : key
+    if trimspace(lookup(local.non_secret_env_vars, key, "")) == ""
+  ]
+}
+
+resource "aws_kms_key" "ssm_parameters" {
+  description             = "CMK for SSM SecureString parameters (${local.project_name}-${local.environment})"
+  enable_key_rotation     = true
+  deletion_window_in_days = 7
+}
+
+resource "aws_kms_alias" "ssm_parameters" {
+  name          = local.ssm_kms_key_alias
+  target_key_id = aws_kms_key.ssm_parameters.key_id
+}
+
+check "critical_secret_config_present" {
+  assert {
+    condition     = length(local.missing_critical_secret_keys) == 0
+    error_message = "Missing critical secret configuration values: ${join(", ", local.missing_critical_secret_keys)}"
+  }
+}
+
+check "critical_non_secret_config_present" {
+  assert {
+    condition     = length(local.missing_critical_non_secret_keys) == 0
+    error_message = "Missing critical non-secret configuration values: ${join(", ", local.missing_critical_non_secret_keys)}"
+  }
+}
+
+check "database_url_present_when_rds_disabled" {
+  assert {
+    condition     = var.provision_rds || trimspace(local.resolved_database_url) != ""
+    error_message = "DATABASE_URL must be set when provision_rds=false."
+  }
 }
 
 module "networking" {
@@ -95,6 +154,7 @@ module "config_ssm" {
   environment         = local.environment
   secret_env_vars     = local.secret_env_vars
   non_secret_env_vars = local.non_secret_env_vars
+  ssm_kms_key_arn     = aws_kms_key.ssm_parameters.arn
   overwrite           = true
 }
 
@@ -110,6 +170,7 @@ module "compute" {
   non_secret_env_vars        = local.non_secret_env_vars
   secret_parameter_arns      = module.config_ssm.secret_parameter_arns
   all_parameter_arns         = module.config_ssm.all_parameter_arns
+  ssm_kms_key_arn            = aws_kms_key.ssm_parameters.arn
 }
 
 module "messaging" {
@@ -128,6 +189,7 @@ module "compute_lambda_events" {
   non_secret_env_vars   = local.non_secret_env_vars
   secret_env_vars       = local.secret_env_vars
   all_parameter_arns    = module.config_ssm.all_parameter_arns
+  ssm_kms_key_arn       = aws_kms_key.ssm_parameters.arn
   queue_arns            = module.messaging.queue_arns
 }
 
@@ -141,6 +203,7 @@ module "compute_lambda_gateway" {
   non_secret_env_vars      = local.non_secret_env_vars
   secret_env_vars          = local.secret_env_vars
   all_parameter_arns       = module.config_ssm.all_parameter_arns
+  ssm_kms_key_arn          = aws_kms_key.ssm_parameters.arn
   topic_arns               = module.messaging.topic_arns
 }
 
