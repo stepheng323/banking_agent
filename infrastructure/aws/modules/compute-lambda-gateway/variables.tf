@@ -38,6 +38,11 @@ variable "all_parameter_arns" {
   type        = map(string)
 }
 
+variable "ssm_kms_key_arn" {
+  description = "KMS key ARN used for SSM SecureString decryption."
+  type        = string
+}
+
 variable "topic_arns" {
   description = "SNS topic ARN map from messaging module"
   type        = map(string)

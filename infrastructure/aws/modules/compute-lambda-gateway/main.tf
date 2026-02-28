@@ -59,7 +59,7 @@ resource "aws_iam_role_policy" "gateway_lambda_ssm_policy" {
         Action = [
           "kms:Decrypt"
         ]
-        Resource = "arn:aws:kms:${var.aws_region}:${var.aws_account_id}:key/*"
+        Resource = var.ssm_kms_key_arn
       }
     ]
   })

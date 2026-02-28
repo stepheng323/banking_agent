@@ -74,7 +74,7 @@ resource "aws_iam_role_policy" "ecs_task_ssm" {
       {
         Effect   = "Allow"
         Action   = ["kms:Decrypt"]
-        Resource = "arn:aws:kms:${var.aws_region}:${var.aws_account_id}:key/*"
+        Resource = var.ssm_kms_key_arn
       }
     ]
   })
@@ -95,7 +95,7 @@ resource "aws_iam_role_policy" "ecs_execution_ssm" {
       {
         Effect   = "Allow"
         Action   = ["kms:Decrypt"]
-        Resource = "arn:aws:kms:${var.aws_region}:${var.aws_account_id}:key/*"
+        Resource = var.ssm_kms_key_arn
       }
     ]
   })
