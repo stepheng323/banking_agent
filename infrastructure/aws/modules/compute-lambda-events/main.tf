@@ -118,17 +118,18 @@ resource "aws_lambda_function" "workers" {
   }
 
   environment {
-    variables = merge(
-      {
-        APP_ENV        = var.environment
-        ENVIRONMENT    = var.environment
-        PROJECT_NAME   = var.project_name
-        AWS_REGION     = var.aws_region
-        AWS_ACCOUNT_ID = var.aws_account_id
-      },
-      var.non_secret_env_vars,
-      var.secret_env_vars
-    )
+    variables = {
+      for key, value in merge(
+        {
+          APP_ENV        = var.environment
+          ENVIRONMENT    = var.environment
+          PROJECT_NAME   = var.project_name
+          AWS_ACCOUNT_ID = var.aws_account_id
+        },
+        var.non_secret_env_vars,
+        var.secret_env_vars
+      ) : key => value if key != "AWS_REGION"
+    }
   }
 }
 

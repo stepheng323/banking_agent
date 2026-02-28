@@ -111,7 +111,7 @@ resource "aws_ecs_task_definition" "core" {
   network_mode             = "awsvpc"
   requires_compatibilities = ["FARGATE"]
   cpu                      = "1024" # 1 vCPU
-  memory                   = "1024" # 1 GB
+  memory                   = "2048" # 2 GB (required minimum for 1 vCPU on Fargate)
   execution_role_arn       = aws_iam_role.ecs_execution.arn
   task_role_arn            = aws_iam_role.ecs_task.arn
 
