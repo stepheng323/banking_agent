@@ -42,6 +42,7 @@ permissions:
 
 env:
   AWS_REGION: eu-west-1
+  TF_VAR_aws_region: ${{ env.AWS_REGION }}
   TF_DIR: infrastructure/aws-backend-bootstrap
   TF_VAR_state_bucket_name: banking-agent-tf-state-dev
   TF_VAR_lock_table_name: banking-agent-tf-locks-dev
