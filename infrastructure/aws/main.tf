@@ -153,7 +153,6 @@ module "api_gateway_webhooks" {
 }
 
 module "github_oidc" {
-  count             = var.github_repo_owner != "" && var.github_repo_name != "" ? 1 : 0
   source            = "./modules/github-oidc"
   project_name      = local.project_name
   environment       = local.environment
