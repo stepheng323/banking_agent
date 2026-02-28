@@ -78,6 +78,25 @@ jobs:
         with:
           terraform_version: "1.6.6"
 
+      - name: Verify Terraform source snapshot
+        working-directory: ${{ env.TF_DIR }}
+        run: |
+          set -euo pipefail
+          echo "GITHUB_SHA=${GITHUB_SHA}"
+          echo "Checked out commit: $(git rev-parse HEAD)"
+
+          echo "Checking ECS task size..."
+          grep -nE 'cpu\s*=\s*"1024"' modules/compute-ecs/main.tf
+          grep -nE 'memory\s*=\s*"2048"' modules/compute-ecs/main.tf
+
+          echo "Checking Lambda reserved env keys are not configured..."
+          if grep -nE 'AWS_REGION\s*=\s*var\.aws_region' \
+            modules/compute-lambda-events/main.tf \
+            modules/compute-lambda-gateway/main.tf; then
+            echo "ERROR: Reserved Lambda env var AWS_REGION is still configured in source."
+            exit 1
+          fi
+
       - name: Terraform init
         working-directory: ${{ env.TF_DIR }}
         run: terraform init -input=false
