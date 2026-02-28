@@ -52,13 +52,13 @@ variable "visibility_timeout_by_queue" {
   default = {
     "message-received"        = 30
     "flow-event-process"      = 30
-    "transaction-execute"     = 120
-    "funding-process"         = 120
-    "payout-process"          = 120
-    "refund-process"          = 120
-    "notification-send"       = 60
-    "actionable-message-send" = 60
-    "receipt-process"         = 90
+    "transaction-execute"     = 180
+    "funding-process"         = 180
+    "payout-process"          = 180
+    "refund-process"          = 180
+    "notification-send"       = 150
+    "actionable-message-send" = 150
+    "receipt-process"         = 150
   }
 }
 
