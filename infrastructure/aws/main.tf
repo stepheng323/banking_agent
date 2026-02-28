@@ -5,7 +5,7 @@ terraform {
     # must run backend-setup.tf first, then provide their bucket/table names below
     bucket         = "banking-agent-tf-state-dev"
     key            = "dev/terraform.tfstate"
-    region         = "eu-west-1"
+    region         = "us-east-1"
     dynamodb_table = "banking-agent-tf-locks-dev"
     encrypt        = true
   }

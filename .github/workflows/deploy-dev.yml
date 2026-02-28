@@ -92,6 +92,9 @@ jobs:
 
       - name: Terraform plan
         working-directory: ${{ env.TF_DIR }}
+        env:
+          TF_VAR_redis_url: ${{ secrets.REDIS_URL_DEV }}
+          TF_VAR_database_url: ${{ secrets.DATABASE_URL_DEV }}
         run: terraform plan -input=false -out=plan.out
 
       - name: Upload plan artifact

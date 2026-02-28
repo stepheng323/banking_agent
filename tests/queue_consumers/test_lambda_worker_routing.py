@@ -8,7 +8,7 @@ from apps.core.src.lambda_handlers.transaction_worker_handler import Transaction
 
 
 def _queue_arn(queue_name: str) -> str:
-    return f"arn:aws:sqs:eu-west-1:123456789012:banking-agent-{queue_name}-dev"
+    return f"arn:aws:sqs:us-east-1:123456789012:banking-agent-{queue_name}-dev"
 
 
 @pytest.mark.asyncio
