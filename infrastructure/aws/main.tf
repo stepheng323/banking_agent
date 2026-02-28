@@ -3,10 +3,10 @@ terraform {
 
   backend "s3" {
     # must run backend-setup.tf first, then provide their bucket/table names below
-    bucket         = "banking-agent-tf-state-dev"
+    bucket         = "banking-agent-tf-state-dev-use1-808537413474"
     key            = "dev/terraform.tfstate"
-    region         = "eu-west-1"
-    dynamodb_table = "banking-agent-tf-locks-dev"
+    region         = "us-east-1"
+    dynamodb_table = "banking-agent-tf-locks-dev-use1"
     encrypt        = true
   }
 
