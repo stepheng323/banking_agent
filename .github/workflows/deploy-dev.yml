@@ -32,6 +32,10 @@ env:
   ECR_GATEWAY_REPO: banking-agent-gateway-dev
   ECS_CLUSTER: banking-agent-cluster-dev
   ECS_SERVICE: banking-agent-core-chat-worker
+  LAMBDA_TRANSACTION_FUNCTION: banking-agent-transaction-worker-dev
+  LAMBDA_MESSAGING_FUNCTION: banking-agent-messaging-worker-dev
+  LAMBDA_GATEWAY_FUNCTION: banking-agent-gateway-webhooks-dev
+  LAMBDA_IMAGE_PLATFORM: linux/amd64
 
 jobs:
   lint-and-test:
@@ -161,6 +165,7 @@ jobs:
         with:
           context: .
           file: apps/core/Dockerfile.lambda
+          platforms: ${{ env.LAMBDA_IMAGE_PLATFORM }}
           push: true
           tags: ${{ steps.login-ecr-preapply.outputs.registry }}/${{ env.ECR_CORE_REPO }}:lambda-workers-latest
           cache-from: type=gha
@@ -171,6 +176,7 @@ jobs:
         with:
           context: .
           file: apps/gateway/Dockerfile.lambda
+          platforms: ${{ env.LAMBDA_IMAGE_PLATFORM }}
           push: true
           tags: ${{ steps.login-ecr-preapply.outputs.registry }}/${{ env.ECR_GATEWAY_REPO }}:lambda-latest
           cache-from: type=gha
@@ -264,37 +270,33 @@ jobs:
 
       - name: Build, tag, and push Core Worker
         uses: docker/build-push-action@v5
-        env:
-          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
         with:
           context: .
           file: apps/core/Dockerfile.worker
           push: true
-          tags: ${{ env.ECR_REGISTRY }}/${{ env.ECR_CORE_REPO }}:chat-worker-${{ github.sha }},${{ env.ECR_REGISTRY }}/${{ env.ECR_CORE_REPO }}:chat-worker-latest
+          tags: ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_CORE_REPO }}:chat-worker-${{ github.sha }},${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_CORE_REPO }}:chat-worker-latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
       - name: Build, tag, and push Core Lambda
         uses: docker/build-push-action@v5
-        env:
-          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
         with:
           context: .
           file: apps/core/Dockerfile.lambda
+          platforms: ${{ env.LAMBDA_IMAGE_PLATFORM }}
           push: true
-          tags: ${{ env.ECR_REGISTRY }}/${{ env.ECR_CORE_REPO }}:lambda-workers-${{ github.sha }},${{ env.ECR_REGISTRY }}/${{ env.ECR_CORE_REPO }}:lambda-workers-latest
+          tags: ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_CORE_REPO }}:lambda-workers-${{ github.sha }},${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_CORE_REPO }}:lambda-workers-latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
       - name: Build, tag, and push Gateway Lambda
         uses: docker/build-push-action@v5
-        env:
-          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
         with:
           context: .
           file: apps/gateway/Dockerfile.lambda
+          platforms: ${{ env.LAMBDA_IMAGE_PLATFORM }}
           push: true
-          tags: ${{ env.ECR_REGISTRY }}/${{ env.ECR_GATEWAY_REPO }}:lambda-${{ github.sha }},${{ env.ECR_REGISTRY }}/${{ env.ECR_GATEWAY_REPO }}:lambda-latest
+          tags: ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_GATEWAY_REPO }}:lambda-${{ github.sha }},${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_GATEWAY_REPO }}:lambda-latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -309,20 +311,32 @@ jobs:
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
         run: |
+          set -euo pipefail
+
+          aws lambda get-function --function-name "${LAMBDA_TRANSACTION_FUNCTION}" >/dev/null
+          aws lambda get-function --function-name "${LAMBDA_MESSAGING_FUNCTION}" >/dev/null
+
           # Update Transaction Worker
           aws lambda update-function-code \
-            --function-name banking-agent-transaction-worker-dev \
+            --function-name "${LAMBDA_TRANSACTION_FUNCTION}" \
             --image-uri $ECR_REGISTRY/$ECR_CORE_REPO:lambda-workers-${{ github.sha }}
+          aws lambda wait function-updated --function-name "${LAMBDA_TRANSACTION_FUNCTION}"
 
           # Update Messaging Worker
           aws lambda update-function-code \
-            --function-name banking-agent-messaging-worker-dev \
+            --function-name "${LAMBDA_MESSAGING_FUNCTION}" \
             --image-uri $ECR_REGISTRY/$ECR_CORE_REPO:lambda-workers-${{ github.sha }}
+          aws lambda wait function-updated --function-name "${LAMBDA_MESSAGING_FUNCTION}"
 
       - name: Update Gateway Lambda Function
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
         run: |
+          set -euo pipefail
+
+          aws lambda get-function --function-name "${LAMBDA_GATEWAY_FUNCTION}" >/dev/null
+
           aws lambda update-function-code \
-            --function-name banking-agent-api-gateway-dev \
+            --function-name "${LAMBDA_GATEWAY_FUNCTION}" \
             --image-uri $ECR_REGISTRY/$ECR_GATEWAY_REPO:lambda-${{ github.sha }}
+          aws lambda wait function-updated --function-name "${LAMBDA_GATEWAY_FUNCTION}"
