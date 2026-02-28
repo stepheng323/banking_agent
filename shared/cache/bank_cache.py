@@ -194,7 +194,7 @@ class BankCacheService:
             # Find the bank object for the matched name
             for bank in banks:
                 if bank.get("name") == matched_name:
-                    code = bank.get("code") or bank.get("bank_code")
+                    code: str | None = bank.get("code") or bank.get("bank_code")
                     logger.info(
                         "bank_code_found",
                         bank_name=matched_name,

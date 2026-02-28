@@ -48,12 +48,12 @@ class AsyncValidationService:
         If balance check fails, we still return the account resolution result.
         """
 
-        async def _resolve():
+        async def _resolve() -> dict[str, Any] | None:
             return await self.account_cache.get_or_fetch(
                 account_number, bank_code, lambda: self.provider.resolve_account(account_number, bank_code)
             )
 
-        async def _balance():
+        async def _balance() -> dict[str, Any] | None:
             try:
                 if hasattr(self.provider, "get_balance"):
                     return await self.provider.get_balance(source_account_id)
@@ -64,13 +64,19 @@ class AsyncValidationService:
         resolve_task = asyncio.create_task(asyncio.wait_for(_resolve(), timeout=timeout_s))
         balance_task = asyncio.create_task(asyncio.wait_for(_balance(), timeout=timeout_s))
 
-        resolved, balance = await asyncio.gather(resolve_task, balance_task, return_exceptions=True)
+        results = await asyncio.gather(resolve_task, balance_task, return_exceptions=True)
 
-        if isinstance(resolved, Exception):
-            exception_type = type(resolved).__name__
-            exception_msg = str(resolved) if str(resolved) else f"{exception_type} (no message)"
+        resolved: dict[str, Any] | None = None
+        balance: dict[str, Any] | None = None
 
-            if isinstance(resolved, asyncio.TimeoutError):
+        raw_resolved = results[0]
+        raw_balance = results[1]
+
+        if isinstance(raw_resolved, Exception):
+            exception_type = type(raw_resolved).__name__
+            exception_msg = str(raw_resolved) if str(raw_resolved) else f"{exception_type} (no message)"
+
+            if isinstance(raw_resolved, asyncio.TimeoutError):
                 logger.error(
                     "account_resolution_timeout",
                     timeout_seconds=timeout_s,
@@ -84,14 +90,16 @@ class AsyncValidationService:
                     error=exception_msg,
                     account_number=account_number,
                     bank_code=bank_code,
-                    exc_info=resolved,
+                    exc_info=raw_resolved,
                 )
-            resolved = None
+        else:
+            resolved = raw_resolved
 
-        if isinstance(balance, Exception):
-            exception_type = type(balance).__name__
-            exception_msg = str(balance) if str(balance) else f"{exception_type} (no message)"
+        if isinstance(raw_balance, Exception):
+            exception_type = type(raw_balance).__name__
+            exception_msg = str(raw_balance) if str(raw_balance) else f"{exception_type} (no message)"
             logger.warning("balance_check_exception", exception_type=exception_type, error=exception_msg)
-            balance = None
+        else:
+            balance = raw_balance
 
         return resolved, balance

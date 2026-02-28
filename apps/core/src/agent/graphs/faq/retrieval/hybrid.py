@@ -1,6 +1,6 @@
 """Hybrid retriever combining keyword and semantic search."""
 
-from sqlalchemy.orm import Session
+from typing import Any
 
 from apps.core.src.agent.graphs.faq.models import FAQRetrievalHit
 from apps.core.src.agent.graphs.faq.retrieval.normalizer import QueryNormalizer
@@ -25,9 +25,9 @@ class HybridRetriever:
 
     def __init__(
         self,
-        db: Session,
+        db: Any,
         normalizer: QueryNormalizer | None = None,
-        embedding_service=None,
+        embedding_service: Any = None,
     ):
         self.db = db
         self.repo = FAQRepository(db)
@@ -52,7 +52,7 @@ class HybridRetriever:
         hits = []
 
         if keywords:
-            keyword_results = self.repo.search_by_keywords(
+            keyword_results = await self.repo.search_by_keywords(
                 keywords=keywords,
                 category=category,
                 limit=limit,
@@ -73,7 +73,7 @@ class HybridRetriever:
             logger.debug("Using semantic search with embeddings")
             try:
                 query_embedding = await self.embedding_service.get_embedding(query)
-                semantic_results = self.repo.search_by_embedding(
+                semantic_results = await self.repo.search_by_embedding(
                     embedding=query_embedding,
                     limit=limit - len(hits),
                     threshold=0.5,
@@ -96,7 +96,7 @@ class HybridRetriever:
 
         if len(hits) < 2:
             logger.debug("Falling back to fuzzy search")
-            fuzzy_results = self.repo.search_fuzzy(
+            fuzzy_results = await self.repo.search_fuzzy(
                 query_text=query,
                 category=category,
                 limit=limit - len(hits),
