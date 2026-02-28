@@ -26,5 +26,4 @@ class AuthorizationStep(AirtimeStep):
 
         return TransactionResult(
             outcome=TransactionOutcome.NEEDS_AUTH,
-            auth_method="pin",
         )

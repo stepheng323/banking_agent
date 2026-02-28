@@ -11,8 +11,7 @@ def build_dependency_waves(task_ids: list[str], depends_on_by_task: Mapping[str,
     ordered_ids = [tid for tid in task_ids if tid]
     known = set(ordered_ids)
     deps: dict[str, list[str]] = {
-        tid: [dep for dep in depends_on_by_task.get(tid, []) if dep in known]
-        for tid in ordered_ids
+        tid: [dep for dep in depends_on_by_task.get(tid, []) if dep in known] for tid in ordered_ids
     }
 
     in_degree: dict[str, int] = {tid: len(dep_list) for tid, dep_list in deps.items()}

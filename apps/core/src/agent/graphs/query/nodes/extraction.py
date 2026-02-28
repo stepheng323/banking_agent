@@ -148,11 +148,7 @@ class ExtractionStep(QueryStep):
                 allow_limit = delta_type in (None, "limit", "reference")
                 allow_reference = delta_type in (None, "reference", "limit")
 
-                new_query = (
-                    apply_filter_delta(original_query, data["filters"])
-                    if "filters" in data
-                    else original_query
-                )
+                new_query = apply_filter_delta(original_query, data["filters"]) if "filters" in data else original_query
 
                 if "result_limit" in data and allow_limit:
                     new_query.result_limit = data["result_limit"]

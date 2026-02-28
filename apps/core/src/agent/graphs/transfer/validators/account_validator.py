@@ -5,7 +5,7 @@ from apps.core.src.agent.graphs.__shared__.validation.service import (
 )
 from apps.core.src.messaging.outbox import enqueue_outbox_say
 from shared.clients.whatsapp.client import WhatsAppClient
-from shared.queue.redis_queue import RedisQueue
+from shared.queue.adapter import QueuePublisher
 from shared.utils.async_helpers import create_background_task
 from shared.utils.logging import get_logger
 
@@ -19,7 +19,7 @@ class AccountValidator:
         self,
         validation_service: AsyncValidationService,
         whatsapp_client: WhatsAppClient | None = None,
-        queue: RedisQueue | None = None,
+        publisher: QueuePublisher | None = None,
     ):
         """
         Initialize validator.
@@ -27,11 +27,11 @@ class AccountValidator:
         Args:
             validation_service: Service for account validation
             whatsapp_client: Optional WhatsApp client (unused; presenters handle sending)
-            queue: Optional outbox queue for acknowledgments
+            publisher: Optional outbox publisher for acknowledgments
         """
         self.validation_service = validation_service
         self.whatsapp_client = whatsapp_client
-        self.queue = queue
+        self.publisher = publisher
 
     async def validate(
         self,
@@ -54,10 +54,10 @@ class AccountValidator:
             - resolved_account: Account resolution result or None if failed
             - balance: Balance info or None if not available
         """
-        if self.queue and phone_number:
+        if self.publisher and phone_number:
             create_background_task(
                 enqueue_outbox_say(
-                    self.queue,
+                    self.publisher,
                     phone_number,
                     "whatsapp",
                     "🔍 Validating account details...",

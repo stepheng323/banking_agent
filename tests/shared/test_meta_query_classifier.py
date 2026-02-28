@@ -50,7 +50,10 @@ class _FakeStructuredRunner:
                 "detected_language": "English",
                 "reason": "lore ask",
             }
-        if any(term in lowered for term in {"what can you do", "wetin you fit do", "menene zaka iya yi", "gini ka nwere ike ime"}):
+        if any(
+            term in lowered
+            for term in {"what can you do", "wetin you fit do", "menene zaka iya yi", "gini ka nwere ike ime"}
+        ):
             return {
                 "is_meta_query": True,
                 "meta_kind": "capabilities",

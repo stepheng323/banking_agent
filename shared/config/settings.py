@@ -23,6 +23,8 @@ class Settings:
         self.pin_confirmation_flow_id: str = os.getenv("PIN_CONFIRMATION_FLOW_ID", "")
 
         self.app_env: str = os.getenv("APP_ENV", "development")
+        self.project_name: str = os.getenv("PROJECT_NAME", "banking-agent")
+        self.environment: str = os.getenv("ENVIRONMENT", "dev")
         self.app_host: str = os.getenv("APP_HOST", "0.0.0.0")
         self.app_port: int = int(os.getenv("APP_PORT", "8000"))
 
@@ -44,7 +46,9 @@ class Settings:
         self.mono_api_key: str = os.getenv("MONO_API_KEY", "")
 
         self.s3_bucket_name: str = os.getenv("S3_BUCKET_NAME", "")
-        self.s3_region: str = os.getenv("AWS_REGION", "us-east-1")
+        self.aws_region: str = os.getenv("AWS_REGION", "us-east-1")
+        self.aws_account_id: str = os.getenv("AWS_ACCOUNT_ID", "000000000000")
+        self.s3_region: str = self.aws_region
         self.s3_receipt_prefix: str = "receipts"
 
         self.default_channel: str = os.getenv("DEFAULT_CHANNEL", "whatsapp")
@@ -56,6 +60,7 @@ class Settings:
         self.soul_policy_path: str = os.getenv("SOUL_POLICY_PATH", "config/soul_policy.json")
         self.enable_channel_option_ux_v2: bool = os.getenv("ENABLE_CHANNEL_OPTION_UX_V2", "false").lower() == "true"
 
+        self._validate_critical_runtime_config()
         self._validate_whatsapp_config()
 
     def _validate_whatsapp_config(self) -> None:
@@ -76,6 +81,35 @@ class Settings:
             for warning in warnings:
                 print(f"   - {warning}")
             print("   Create a .env file with proper WhatsApp credentials to fix these warnings.")
+
+    def _validate_critical_runtime_config(self) -> None:
+        """Fail fast outside dev/test when critical runtime config is missing."""
+        non_dev_env = self.app_env.lower() not in {"dev", "development", "test", "local"}
+        if not non_dev_env:
+            return
+
+        missing: list[str] = []
+
+        checks = {
+            "DATABASE_URL": self.database_url and self.database_url != "sqlite:///./test.db",
+            "REDIS_URL": self.redis_url and self.redis_url != "redis://localhost:6379",
+            "OPENAI_API_KEY": bool(self.openai_api_key),
+            "MONO_API_KEY": bool(self.mono_api_key),
+            "FLUTTERWAVE_SECRET_KEY": bool(self.flutterwave_secret_key),
+            "META_ACCESS_TOKEN": self.meta_access_token != "development_access_token",
+            "META_VERIFY_TOKEN": self.meta_verify_token != "development_token",
+            "META_PHONE_NUMBER_ID": self.meta_phone_number_id != "development_phone_id",
+            "TELEGRAM_BOT_TOKEN": bool(self.telegram_bot_token),
+            "TELEGRAM_WEBHOOK_SECRET_TOKEN": bool(self.telegram_webhook_secret_token),
+        }
+        for env_key, ok in checks.items():
+            if not ok:
+                missing.append(env_key)
+
+        if missing:
+            raise RuntimeError(
+                "Missing critical runtime configuration for non-dev environment: " + ", ".join(sorted(missing))
+            )
 
 
 settings = Settings()

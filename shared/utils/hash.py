@@ -36,7 +36,7 @@ def hash_plaintext(value: str, algorithm: str = "bcrypt") -> str:  # noqa: ARG00
         Bcrypt hash string (contains algorithm, cost, salt, and hash)
     """
     safe_value = _bcrypt_truncate(value)
-    return pwd_context.hash(safe_value)
+    return str(pwd_context.hash(safe_value))
 
 
 def verify_hash(value: str, stored_hash: str) -> bool:
@@ -52,7 +52,7 @@ def verify_hash(value: str, stored_hash: str) -> bool:
     """
     try:
         safe_value = _bcrypt_truncate(value)
-        return pwd_context.verify(safe_value, stored_hash)
+        return bool(pwd_context.verify(safe_value, stored_hash))
     except (ValueError, TypeError):
         return False
 

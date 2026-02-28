@@ -10,6 +10,7 @@ from langchain_core.runnables import RunnableConfig
 
 from apps.core.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
 from apps.core.src.agent.orchestrator.models.state import OrchestratorState
+from shared.i18n import LocaleManager, render_message
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -88,8 +89,11 @@ async def session_gate_fastpath(state: OrchestratorState, config: RunnableConfig
         logger.warning("gate_pin_verified_no_session", reason="checkpoint_cleaned")
         return {
             "fast_path_triggered": True,
-            "final_response": render_message("orchestrator.session.expired_pin", locale,
-                                              fallback_en="Your transaction session has expired. Please start a new transaction."),
+            "final_response": render_message(
+                "orchestrator.session.expired_pin",
+                locale,
+                fallback_en="Your transaction session has expired. Please start a new transaction.",
+            ),
         }
 
     logger.info("gate_fallback_to_planner", reason="no_fast_path_match")

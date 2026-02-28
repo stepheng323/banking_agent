@@ -7,7 +7,7 @@ from typing import Any
 from apps.core.src.messaging.outbox import enqueue_outbox_say
 from shared.cache.redis_client import RedisClient
 from shared.i18n import render_message
-from shared.queue.redis_queue import RedisQueue
+from shared.queue.adapter import QueuePublisher
 from shared.repositories.unit_of_work import UnitOfWork
 from shared.utils.logging import get_logger
 
@@ -19,17 +19,16 @@ class BeneficiarySuggestionService:
 
     def __init__(
         self,
-        queue: RedisQueue,
+        queue: QueuePublisher,
     ):
         """
         Initialize beneficiary suggestion service.
 
         Args:
-            queue: Redis queue for outbox intents
-            redis_client: Redis client for storing suggestion context
+            queue: Queue publisher for outbox intents
         """
         self.queue = queue
-        self.redis_client = queue._redis or RedisClient.get_client()
+        self.redis_client = RedisClient.get_client()
 
     async def check_and_suggest_beneficiary(
         self,
@@ -290,6 +289,7 @@ class BeneficiarySuggestionService:
             await self.redis_client.delete(suggestion_key)
 
             from shared.cache.user_data import UserDataCache
+
             await UserDataCache(redis_client=self.redis_client).invalidate_beneficiaries(phone_number)
 
             return render_message(

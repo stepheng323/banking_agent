@@ -248,4 +248,3 @@ async def test_auth_yes_text_still_uses_router_path() -> None:
     assert planner.route_calls == 1
     assert planner.plan_calls == 0
     assert updates["pending_interrupt"] is not None
-

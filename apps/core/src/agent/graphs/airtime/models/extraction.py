@@ -1,7 +1,7 @@
 """Airtime extraction models v2. Pure extraction, no business logic."""
 
 from enum import Enum
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -42,7 +42,7 @@ class SimpleAirtimeEntities(BaseModel):
 
     @field_validator("amount", mode="before")
     @classmethod
-    def validate_amount(cls, v):
+    def validate_amount(cls, v: Any) -> float | None:
         """Validate that amount is not negative when provided."""
         if v is None:
             return v

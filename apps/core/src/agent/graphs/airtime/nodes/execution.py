@@ -10,6 +10,7 @@ from apps.core.src.agent.graphs.airtime.models.types import (
 from apps.core.src.agent.graphs.airtime.pipeline.base import AirtimeStep
 from apps.core.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
 from shared.i18n import render_message
+from shared.queue.factory import QueuePublisherFactory
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -63,9 +64,9 @@ class ExecutionStep(AirtimeStep):
                     logger.error("failed_to_persist_airtime_transaction", error=str(e))
                     raise e
 
-            queue = worker_context.queue
-            if not queue._redis:
-                await queue.connect()
+            publisher = getattr(worker_context, "publisher", None)
+            if not publisher:
+                publisher = QueuePublisherFactory.get_publisher()
 
             airtime_data = {
                 "amount": data.amount,
@@ -75,8 +76,8 @@ class ExecutionStep(AirtimeStep):
                 "source_account_id": data.source_account_id,
             }
 
-            await queue.enqueue(
-                queue_name="banking:transactions",
+            await publisher.publish(
+                topic="transaction.execute",
                 message={
                     "type": "execute_airtime",
                     "idempotency_key": key,

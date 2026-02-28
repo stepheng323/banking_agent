@@ -1,0 +1,60 @@
+shared/utils/hash.py:39: error: Returning Any from function declared to return "str"  [no-any-return]
+shared/utils/hash.py:55: error: Returning Any from function declared to return "bool"  [no-any-return]
+shared/receipts/utils.py:46: error: Returning Any from function declared to return "str"  [no-any-return]
+shared/utils/flow_decryption.py:88: error: Unused "type: ignore" comment  [unused-ignore]
+apps/gateway/api/webhooks/whatsapp/flows/response_helpers.py:22: error: Incompatible default for argument "aes_key_bytes" (default has type "None", argument has type "bytes")  [assignment]
+apps/gateway/api/webhooks/whatsapp/flows/response_helpers.py:22: note: PEP 484 prohibits implicit Optional. Accordingly, mypy has changed its default to no_implicit_optional=True
+apps/gateway/api/webhooks/whatsapp/flows/response_helpers.py:22: note: Use https://github.com/hauntsaninja/no_implicit_optional to automatically upgrade your codebase
+apps/gateway/api/webhooks/whatsapp/flows/response_helpers.py:23: error: Incompatible default for argument "iv_bytes" (default has type "None", argument has type "bytes")  [assignment]
+apps/gateway/api/webhooks/whatsapp/flows/response_helpers.py:23: note: PEP 484 prohibits implicit Optional. Accordingly, mypy has changed its default to no_implicit_optional=True
+apps/gateway/api/webhooks/whatsapp/flows/response_helpers.py:23: note: Use https://github.com/hauntsaninja/no_implicit_optional to automatically upgrade your codebase
+apps/gateway/api/webhooks/whatsapp/flows/response_helpers.py:41: error: Incompatible default for argument "aes_key_bytes" (default has type "None", argument has type "bytes")  [assignment]
+apps/gateway/api/webhooks/whatsapp/flows/response_helpers.py:41: note: PEP 484 prohibits implicit Optional. Accordingly, mypy has changed its default to no_implicit_optional=True
+apps/gateway/api/webhooks/whatsapp/flows/response_helpers.py:41: note: Use https://github.com/hauntsaninja/no_implicit_optional to automatically upgrade your codebase
+apps/gateway/api/webhooks/whatsapp/flows/response_helpers.py:42: error: Incompatible default for argument "iv_bytes" (default has type "None", argument has type "bytes")  [assignment]
+apps/gateway/api/webhooks/whatsapp/flows/response_helpers.py:42: note: PEP 484 prohibits implicit Optional. Accordingly, mypy has changed its default to no_implicit_optional=True
+apps/gateway/api/webhooks/whatsapp/flows/response_helpers.py:42: note: Use https://github.com/hauntsaninja/no_implicit_optional to automatically upgrade your codebase
+apps/gateway/api/webhooks/whatsapp/flows/response_helpers.py:60: error: Incompatible default for argument "aes_key_bytes" (default has type "None", argument has type "bytes")  [assignment]
+apps/gateway/api/webhooks/whatsapp/flows/response_helpers.py:60: note: PEP 484 prohibits implicit Optional. Accordingly, mypy has changed its default to no_implicit_optional=True
+apps/gateway/api/webhooks/whatsapp/flows/response_helpers.py:60: note: Use https://github.com/hauntsaninja/no_implicit_optional to automatically upgrade your codebase
+apps/gateway/api/webhooks/whatsapp/flows/response_helpers.py:61: error: Incompatible default for argument "iv_bytes" (default has type "None", argument has type "bytes")  [assignment]
+apps/gateway/api/webhooks/whatsapp/flows/response_helpers.py:61: note: PEP 484 prohibits implicit Optional. Accordingly, mypy has changed its default to no_implicit_optional=True
+apps/gateway/api/webhooks/whatsapp/flows/response_helpers.py:61: note: Use https://github.com/hauntsaninja/no_implicit_optional to automatically upgrade your codebase
+apps/gateway/adapters/meta_whatsapp.py:117: error: Unexpected keyword argument "from_number" for "ParsedMessage"  [call-arg]
+apps/core/src/agent/graphs/transfer/models/entities.py:65: error: Function is missing a type annotation  [no-untyped-def]
+apps/core/src/agent/graphs/transfer/models/entities.py:77: error: Function is missing a type annotation  [no-untyped-def]
+apps/core/src/agent/graphs/transfer/models/entities.py:92: error: Function is missing a type annotation  [no-untyped-def]
+apps/core/src/agent/graphs/airtime/models/extraction.py:45: error: Function is missing a type annotation  [no-untyped-def]
+apps/core/src/messaging/outbox.py:32: error: "UiIntent" has no attribute "to_dict"  [attr-defined]
+shared/queue/lambda_base.py:101: error: Returning Any from function declared to return "dict[str, Any]"  [no-any-return]
+shared/queue/lambda_base.py:102: error: Returning Any from function declared to return "dict[str, Any]"  [no-any-return]
+shared/clients/providers/flutterwave/client.py:67: error: Returning Any from function declared to return "str"  [no-any-return]
+Traceback (most recent call last):
+  File "/home/abiodun/dev/personal/banking_agent/.venv/bin/mypy", line 10, in <module>
+    sys.exit(console_entry())
+             ~~~~~~~~~~~~~^^
+  File "/home/abiodun/dev/personal/banking_agent/.venv/lib/python3.13/site-packages/mypy/__main__.py", line 15, in console_entry
+    main()
+    ~~~~^^
+  File "mypy/main.py", line 135, in main
+  File "mypy/main.py", line 219, in run_build
+  File "mypy/build.py", line 222, in build
+  File "mypy/build.py", line 301, in _build
+  File "mypy/build.py", line 2952, in dispatch
+  File "mypy/build.py", line 3347, in process_graph
+  File "mypy/build.py", line 925, in wait_for_done
+  File "mypy/build.py", line 3455, in process_stale_scc
+  File "mypy/build.py", line 3412, in process_fresh_modules
+  File "mypy/build.py", line 2124, in load_tree
+  File "mypy/nodes.py", line 437, in deserialize
+  File "mypy/nodes.py", line 4751, in deserialize
+  File "mypy/nodes.py", line 4644, in deserialize
+  File "mypy/nodes.py", line 286, in deserialize
+  File "mypy/nodes.py", line 3934, in deserialize
+  File "mypy/nodes.py", line 4751, in deserialize
+  File "mypy/nodes.py", line 4644, in deserialize
+  File "mypy/nodes.py", line 286, in deserialize
+  File "mypy/nodes.py", line 1034, in deserialize
+  File "mypy/types.py", line 250, in deserialize_type
+  File "mypy/types.py", line 2623, in deserialize
+KeyError: 'is_bound'

@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse, Response
 
 from apps.gateway.api.webhooks.whatsapp.flows.dependencies import (
-    get_redis_queue,
+    get_queue_publisher,
     get_whatsapp_client,
 )
 from apps.gateway.api.webhooks.whatsapp.flows.handlers.account_selection_handler import (
@@ -36,7 +36,7 @@ from apps.gateway.api.webhooks.whatsapp.flows.handlers.transaction_pin_handler i
 )
 from apps.gateway.api.webhooks.whatsapp.flows.request_processor import process_flow_request
 from shared.clients.whatsapp.client import WhatsAppClient
-from shared.queue.redis_queue import RedisQueue
+from shared.queue.adapter import QueuePublisher
 from shared.utils import encrypt_flow_response
 
 router = APIRouter()
@@ -46,13 +46,13 @@ router = APIRouter()
 async def flow_webhook(
     req: Request,
     whatsapp_client: WhatsAppClient = Depends(get_whatsapp_client),
-    redis_queue: RedisQueue = Depends(get_redis_queue),
+    queue_publisher: QueuePublisher = Depends(get_queue_publisher),
 ):
     """
     Handle WhatsApp Flow data exchange.
     This is called when user interacts with flow screens or for health checks.
 
-    Note: Agent services are now called via Redis queue events, not directly.
+    Note: Agent services are called via queue events, not directly.
     """
     try:
         processed_request, error_response = await process_flow_request(req)
@@ -137,7 +137,7 @@ async def flow_webhook(
                 aes_key_bytes or b"",
                 iv_bytes or b"",
                 whatsapp_client,
-                redis_queue=redis_queue,
+                publisher=queue_publisher,
             )
 
         print(f" 🏥 Health check (unknown screen: {screen})")

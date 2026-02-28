@@ -1,5 +1,6 @@
 import logging
 import sys
+from typing import Any
 
 import structlog
 
@@ -9,7 +10,7 @@ from shared.config import settings
 def configure_logger():
     """Configure structured logging."""
 
-    shared_processors = [
+    shared_processors: list[Any] = [
         structlog.contextvars.merge_contextvars,
         structlog.stdlib.add_logger_name,
         structlog.stdlib.add_log_level,
@@ -20,6 +21,7 @@ def configure_logger():
         structlog.processors.UnicodeDecoder(),
     ]
 
+    processors: list[Any]
     if settings.app_env == "production":
         processors = shared_processors + [structlog.processors.JSONRenderer()]
     else:

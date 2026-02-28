@@ -84,10 +84,10 @@ class OrchestratorContextManager:
                 items_str = ", ".join(items)
 
             elif frame.frame_type == ContextFrameType.RECEIPT:
-                item = frame.items[0] if frame.items else None
-                if item:
-                    label = _clip_text(item.label or "Receipt", CONTEXT_FRAME_LABEL_MAX_CHARS)
-                    amount_text = _clip_text(str(item.data.get("amount", "")), CONTEXT_FRAME_DETAILS_MAX_CHARS)
+                receipt_item = frame.items[0] if frame.items else None
+                if receipt_item:
+                    label = _clip_text(receipt_item.label or "Receipt", CONTEXT_FRAME_LABEL_MAX_CHARS)
+                    amount_text = _clip_text(str(receipt_item.data.get("amount", "")), CONTEXT_FRAME_DETAILS_MAX_CHARS)
                     items_str = f"{label} - {amount_text}"
 
             else:

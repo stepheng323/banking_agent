@@ -73,7 +73,9 @@ async def test_resolver_uses_quoted_actionable_message_transaction_id() -> None:
     )
     resolver = TransactionResolver(
         transaction_repo=_TransactionRepoStub(by_id=tx),
-        actionable_message_repo=_ActionableRepoStub(actionable=SimpleNamespace(message_data={"transaction_id": str(tx.id)})),
+        actionable_message_repo=_ActionableRepoStub(
+            actionable=SimpleNamespace(message_data={"transaction_id": str(tx.id)})
+        ),
     )
 
     resolved, method = await resolver.resolve(user_id="u1", tx_ref=None, quoted_message_id="wamid.receipt.1")
@@ -93,7 +95,9 @@ async def test_resolver_falls_back_to_idempotency_key_when_transaction_id_is_not
     tx_repo = _TransactionRepoStub(by_id=None, by_idempotency_key=tx)
     resolver = TransactionResolver(
         transaction_repo=tx_repo,
-        actionable_message_repo=_ActionableRepoStub(actionable=SimpleNamespace(message_data={"transaction_id": "idem-42"})),
+        actionable_message_repo=_ActionableRepoStub(
+            actionable=SimpleNamespace(message_data={"transaction_id": "idem-42"})
+        ),
     )
 
     resolved, method = await resolver.resolve(user_id="u1", tx_ref=None, quoted_message_id="wamid.receipt.2")
@@ -115,7 +119,9 @@ async def test_resolver_uses_idempotency_key_from_actionable_payload() -> None:
     tx_repo = _TransactionRepoStub(by_id=None, by_idempotency_key=tx)
     resolver = TransactionResolver(
         transaction_repo=tx_repo,
-        actionable_message_repo=_ActionableRepoStub(actionable=SimpleNamespace(message_data={"idempotency_key": "idem-77"})),
+        actionable_message_repo=_ActionableRepoStub(
+            actionable=SimpleNamespace(message_data={"idempotency_key": "idem-77"})
+        ),
     )
 
     resolved, method = await resolver.resolve(user_id="u1", tx_ref=None, quoted_message_id="wamid.confirm.77")

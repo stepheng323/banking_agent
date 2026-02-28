@@ -1,0 +1,17 @@
+FROM public.ecr.aws/lambda/python:3.12 AS builder
+
+WORKDIR /build
+COPY pyproject.toml ./
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir --target /build ".[gateway]"
+
+FROM public.ecr.aws/lambda/python:3.12
+
+WORKDIR /var/task
+COPY --from=builder /build /var/task/
+COPY apps/gateway/ /var/task/apps/gateway/
+COPY shared/ /var/task/shared/
+COPY config/ /var/task/config/
+
+ENV PYTHONPATH=/var/task
+CMD ["apps.gateway.lambda_handler.handler"]

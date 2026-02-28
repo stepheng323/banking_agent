@@ -18,7 +18,7 @@ from apps.core.src.messaging.outbox import enqueue_outbox_intents, enqueue_outbo
 from shared.cache.rate_limiter import message_rate_limiter
 from shared.database.models import UserOnboardingStatusEnum
 from shared.models.messages import ChannelMessage
-from shared.queue.redis_queue import RedisQueue
+from shared.queue.adapter import QueueConsumer, QueuePublisher
 from shared.repositories.user_repository import UserRepository
 from shared.utils.logging import get_logger
 from shared.utils.sanitize import is_suspicious_input, sanitize_message
@@ -26,17 +26,24 @@ from shared.utils.sanitize import is_suspicious_input, sanitize_message
 logger = get_logger(__name__)
 
 
+class _NoopPublisher:
+    async def publish(self, topic: str, message: dict[str, Any]) -> None:
+        del topic, message
+
+
 class MessageConsumer:
     """Message Consumer Class"""
 
     def __init__(
         self,
-        redis_queue: RedisQueue,
         user_repository: UserRepository,
         onboarding_executor: OnboardingExecutor,
         orchestrator: OrchestratorAgent,
+        publisher: QueuePublisher | None = None,
+        queue_consumer: QueueConsumer | None = None,
     ):
-        self.queue = redis_queue
+        self.queue_consumer = queue_consumer
+        self.publisher = publisher or _NoopPublisher()
         self.user_repository = user_repository
         self.onboarding_executor = onboarding_executor
         self.orchestrator = orchestrator
@@ -71,7 +78,7 @@ class MessageConsumer:
                 reset_in=rate_result.reset_in_seconds,
             )
             await enqueue_outbox_say(
-                self.queue,
+                self.publisher,
                 channel_user_id,
                 message.channel,
                 f"⏳ Too many messages. Please wait {rate_result.reset_in_seconds} seconds.",
@@ -93,9 +100,7 @@ class MessageConsumer:
             return {"status": "skipped", "reason": "Flow messages handled by flow webhook"}
 
         user = await self.user_repository.get_by_channel_identity(message.channel, channel_user_id)
-        logger.info(
-            "channel_identity_lookup", user=user, channel=message.channel, channel_user_id=channel_user_id
-        )
+        logger.info("channel_identity_lookup", user=user, channel=message.channel, channel_user_id=channel_user_id)
 
         if user is None or getattr(user, "onboarding_status", None) != UserOnboardingStatusEnum.ONBOARDING_COMPLETED:
             return cast(dict[str, Any] | None, await self.onboarding_executor.handle_onboarding(message))
@@ -103,11 +108,11 @@ class MessageConsumer:
         # Use the real phone number from the database for the orchestrator.
         # For WhatsApp, channel_user_id == phone_number, but for Telegram
         # channel_user_id is a chat ID which would break account lookups.
-        phone_number = user.phone_number
+        phone_number = str(user.phone_number)
 
         claimed_message = await self.orchestrator.context_manager.claim_inbound_message(
             phone_number,
-            message.message_id,
+            str(message.message_id),
         )
         if not claimed_message:
             logger.info("duplicate_inbound_message_ignored", phone_number=phone_number, message_id=message.message_id)
@@ -115,12 +120,12 @@ class MessageConsumer:
 
         response_text: str | None = None
         try:
-            await self.orchestrator.context_manager.save_message_id(phone_number, message.message_id)
+            await self.orchestrator.context_manager.save_message_id(phone_number, str(message.message_id))
 
             orchestrator_output = await self.orchestrator.invoke(
                 phone_number,
                 sanitized_text,
-                message.message_id,
+                str(message.message_id),
                 message_type=message.message_type.value,
                 media_id=message.media_id,
                 quoted_message_id=message.quoted_message_id,
@@ -139,7 +144,7 @@ class MessageConsumer:
 
             if intents:
                 await enqueue_outbox_intents(
-                    self.queue,
+                    self.publisher,
                     channel_user_id,
                     message.channel,
                     cast(list[UiIntent | dict[str, Any]], intents),
@@ -147,7 +152,7 @@ class MessageConsumer:
                 )
                 logger.info("message_consumer_enqueued_outbox", count=len(intents))
         except Exception:
-            await self.orchestrator.context_manager.release_inbound_message_claim(phone_number, message.message_id)
+            await self.orchestrator.context_manager.release_inbound_message_claim(phone_number, str(message.message_id))
             raise
 
         duration = (time.perf_counter() - start_time) * 1000
@@ -162,15 +167,18 @@ class MessageConsumer:
 
     async def start(self, queue_name: str = "banking:messages") -> None:
         """Start the message consumer."""
+        if self.queue_consumer is None:
+            raise RuntimeError("message_consumer_requires_queue_consumer")
         self.running = True
         logger.info("message_consumer_starting", queue=queue_name)
-
-        await self.queue.connect()
         while self.running:
             try:
-                message_data = await self.queue.dequeue_blocking(queue_name=queue_name, timeout=5)
-                if message_data:
+                result = await self.queue_consumer.consume_one(queue_name=queue_name, timeout=5)
+                if result:
+                    message_data, receipt_handle = result
                     await self.process_message(message_data)
+                    if self.queue_consumer is not None and hasattr(self.queue_consumer, "ack_message"):
+                        await self.queue_consumer.ack_message(queue_name, receipt_handle)
 
             except asyncio.CancelledError:
                 logger.info("message_consumer_cancelled")
@@ -178,8 +186,6 @@ class MessageConsumer:
             except Exception as e:
                 logger.error("message_consumer_error", error=str(e), exc_info=True)
                 await asyncio.sleep(1)
-
-        await self.queue.close()
         logger.info("message_consumer_stopped")
 
     def stop(self) -> None:

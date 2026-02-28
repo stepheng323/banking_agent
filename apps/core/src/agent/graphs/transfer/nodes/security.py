@@ -19,7 +19,7 @@ class AuthorizationStep(TransferStep):
         data: TransferPayload,
         context: TransferContext,
         gates: TransferGates,
-        worker_context: Any,
+        worker_context: Any = None,
     ) -> TransactionResult:
         if gates.confirmation_confirmed:
             return TransactionResult(outcome=TransactionOutcome.OK, patch={})

@@ -75,7 +75,7 @@ async def handle_escalation(
         }
 
     # Create ticket
-    ticket = ticket_service.create_ticket(
+    ticket = await ticket_service.create_ticket(
         user_id=user_id,
         intent=intent,
         summary=summary,

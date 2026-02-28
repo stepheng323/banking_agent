@@ -3,8 +3,7 @@
 from fastapi import APIRouter, Request, Response
 
 from apps.gateway.api.webhooks.mono.service import MonoWebhookService
-from apps.gateway.core.config import settings
-from shared.queue.redis_queue import RedisQueue
+from shared.queue.factory import QueuePublisherFactory
 from shared.utils.logging import get_logger
 
 router = APIRouter(prefix="/webhook", tags=["webhooks"])
@@ -17,7 +16,8 @@ def _get_service() -> MonoWebhookService:
     """Get or create Mono webhook service instance."""
     global _service_instance
     if _service_instance is None:
-        _service_instance = MonoWebhookService(queue=RedisQueue(redis_url=settings.redis_url))
+        publisher = QueuePublisherFactory.get_publisher()
+        _service_instance = MonoWebhookService(publisher=publisher)
     return _service_instance
 
 

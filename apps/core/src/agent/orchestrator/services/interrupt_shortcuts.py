@@ -9,6 +9,7 @@ These rules are intentionally narrow and high-precision:
 from __future__ import annotations
 
 import re
+from typing import Literal
 
 from shared.i18n import LocaleManager
 from shared.i18n.models import LocaleCode
@@ -75,7 +76,7 @@ _UPDATE_HINT_RE = re.compile(r"\b(change|update|edit|instead|amount|bank|account
 
 def _normalize_text(text: str) -> str:
     compact = re.sub(r"\s+", " ", text.strip().lower())
-    return compact.strip(".,!?;:\"`~()[]{}")
+    return compact.strip('.,!?;:"`~()[]{}')
 
 
 def _detected_language(locale: LocaleCode) -> str:
@@ -91,9 +92,11 @@ def _detected_language(locale: LocaleCode) -> str:
 def _build_decision(
     *,
     locale: LocaleCode,
-    decision: str,
+    decision: Literal[
+        "continue_flow", "switch_intent", "cancel", "unclear", "approve_flow", "reject_flow", "status_query"
+    ],
     reason: str,
-    status_query_type: str | None = None,
+    status_query_type: Literal["recap", "requirements"] | None = None,
 ) -> InterruptRouteDecision:
     return InterruptRouteDecision(
         decision=decision,

@@ -31,13 +31,12 @@ class OrchestratorAgent:
             faq_service=self.deps.faq_service,
             context_manager=self.context_manager,
             redis_client=self.deps.redis_client,
-            whatsapp_client=self.deps.whatsapp_client,
             user_repo=self.deps.user_repo,
             beneficiary_repo=self.deps.beneficiary_repo,
             account_repo=self.deps.account_repo,
             actionable_message_repo=self.deps.actionable_message_repo,
             banking_provider=self.deps.banking_provider,
-            queue=self.deps.queue,
+            publisher=self.deps.publisher,
             beneficiary_suggestion_service=self.deps.beneficiary_suggestion_service,
         )
 

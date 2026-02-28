@@ -6,7 +6,7 @@ from apps.gateway.adapters.meta_whatsapp import ParsedMessage, parse_payload
 from apps.gateway.adapters.sender import send_text
 from shared.clients.whatsapp.client import WhatsAppClient
 from shared.models.messages import ChannelMessage, MessagePriority, MessageType
-from shared.queue.redis_queue import RedisQueue
+from shared.queue.adapter import QueuePublisher
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -20,10 +20,10 @@ class WhatsAppWebhookService:
 
     def __init__(
         self,
-        queue: RedisQueue,
+        publisher: QueuePublisher,
         whatsapp_client: WhatsAppClient,
     ):
-        self.queue = queue
+        self.publisher = publisher
         self.whatsapp_client = whatsapp_client
 
     async def process_payload(self, payload: dict) -> int:
@@ -98,8 +98,8 @@ class WhatsAppWebhookService:
     ) -> bool:
         """Enqueue message for processing. Returns True on success."""
         try:
-            await self.queue.enqueue(
-                queue_name="banking:messages",
+            await self.publisher.publish(
+                topic="message.received",
                 message=message.model_dump(mode="json"),
             )
             logger.info("message_enqueued", msg_type=msg_type, from_id=from_id)

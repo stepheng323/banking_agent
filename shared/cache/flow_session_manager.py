@@ -22,11 +22,11 @@ class FlowSessionManager:
 
     def __init__(
         self,
-        redis: RedisClient | None = None,
+        redis: Any = None,
         key_prefix: str = "flow",
         ttl: int = DEFAULT_SESSION_TTL,
     ):
-        self.redis = redis or RedisClient.get_client()
+        self.redis: Any = redis or RedisClient.get_client()
         self.key_prefix = key_prefix
         self.ttl = ttl
 

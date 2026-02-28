@@ -2,15 +2,15 @@ from apps.core.src.agent.orchestrator.models.intents import ShowFlow
 from apps.core.src.messaging.outbox import enqueue_outbox_intents
 from shared.config import settings
 from shared.i18n import render_message
-from shared.queue.redis_queue import RedisQueue
+from shared.queue.adapter import QueuePublisher
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
 
 
 class OnboardingService:
-    def __init__(self, queue: RedisQueue):
-        self.queue = queue
+    def __init__(self, publisher: QueuePublisher):
+        self.publisher = publisher
 
     async def send_onboarding_flow(self, phone_number: str, channel: str = "whatsapp", locale: str = "en") -> None:
         """Send the onboarding flow to the user."""
@@ -33,7 +33,7 @@ class OnboardingService:
                 fallback_text=fallback_text,
             )
             await enqueue_outbox_intents(
-                self.queue,
+                self.publisher,
                 phone_number,
                 channel,
                 [intent],

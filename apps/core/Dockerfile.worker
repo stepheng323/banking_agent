@@ -1,0 +1,19 @@
+FROM python:3.13-slim
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y \
+    gcc \
+    postgresql-client \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY pyproject.toml ./
+COPY apps/core/ /app/apps/core/
+COPY shared/ /app/shared/
+COPY config/ /app/config/
+
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir ".[core]"
+
+ENV PYTHONPATH=/app
+CMD ["python", "-m", "apps.core.src.worker_main"]

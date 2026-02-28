@@ -29,6 +29,7 @@ def build_orchestrator_graph(checkpointer: Any = None) -> Any:
     builder.set_entry_point("ingest")
 
     builder.add_edge("ingest", "gate")
+
     def route_interrupt(state: OrchestratorState) -> Literal["advance", "plan"] | str:
         if state.final_response:
             return cast(str, END)

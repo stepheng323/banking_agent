@@ -190,6 +190,7 @@ class BeneficiaryWorker:
         if phone_number:
             from shared.cache.redis_client import RedisClient
             from shared.cache.user_data import UserDataCache
+
             await UserDataCache(redis_client=RedisClient.get_client()).invalidate_beneficiaries(phone_number)
 
         display_name = alias or final_account_name or render_message("beneficiary.common.default_name", locale)
@@ -242,6 +243,7 @@ class BeneficiaryWorker:
         if phone_number:
             from shared.cache.redis_client import RedisClient
             from shared.cache.user_data import UserDataCache
+
             await UserDataCache(redis_client=RedisClient.get_client()).invalidate_beneficiaries(phone_number)
 
         return TransactionResult(
@@ -249,9 +251,9 @@ class BeneficiaryWorker:
             response=render_message("beneficiary.delete.success", locale, {"target": target}),
         )
 
-    def _update_beneficiary(self, user_id: str, payload: dict) -> TransactionResult:
+    async def _update_beneficiary(self, user_id: str, payload: dict, context: dict[str, Any]) -> TransactionResult:
         # Placeholder for update logic
-        locale = LocaleManager.normalize(payload.get("language")).value
+        locale = LocaleManager.normalize(context.get("language")).value
         return TransactionResult(
             outcome=TransactionOutcome.FAILED,
             error=render_message("beneficiary.update.not_supported", locale),

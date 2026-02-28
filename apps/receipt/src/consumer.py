@@ -1,4 +1,4 @@
-"""Redis queue consumer for receipt generation jobs."""
+"""Receipt job consumer for queue-dispatched receipt generation jobs."""
 
 import asyncio
 import base64
@@ -6,24 +6,28 @@ from collections.abc import Awaitable
 from typing import Any, cast
 
 from apps.receipt.src.renderer import ReceiptRenderer
-from shared.queue.messages import OUTBOX_QUEUE
-from shared.queue.redis_queue import RedisQueue
+from shared.cache.redis_client import Redis
+from shared.queue.adapter import QueuePublisher
+from shared.queue.factory import QueuePublisherFactory
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
 
-QUEUE_NAME = "banking:receipt_jobs"
 MAX_RETRIES = 3
 RETRY_DELAY_SECONDS = 2
 
 
 class ReceiptJobConsumer:
-    """Consumes receipt generation jobs from Redis queue."""
+    """Consumes receipt generation jobs from queue payloads."""
 
-    def __init__(self) -> None:
-        self.running = False
+    def __init__(
+        self,
+        queue_publisher: QueuePublisher | None = None,
+        redis_client: Redis | None = None,
+    ) -> None:
         self.renderer = ReceiptRenderer()
-        self.queue = RedisQueue()
+        self.redis_client = redis_client
+        self.publisher = queue_publisher or QueuePublisherFactory.get_publisher()
 
     @staticmethod
     def _extract_payload(job: dict[str, Any]) -> dict[str, Any]:
@@ -60,47 +64,15 @@ class ReceiptJobConsumer:
 
     async def _signal_completion(self, signal_key: str | None) -> None:
         """Best-effort completion signal to unblock waiters."""
-        if not signal_key or not self.queue._redis:
+        if not signal_key or not self.redis_client:
             return
         try:
-            push_result = self.queue._redis.rpush(signal_key, "DONE")
+            push_result = self.redis_client.rpush(signal_key, "DONE")
             if not isinstance(push_result, int):
                 await cast(Awaitable[int], push_result)
-            await self.queue._redis.expire(signal_key, 60)  # Cleanup key quickly
+            await self.redis_client.expire(signal_key, 60)  # Cleanup key quickly
         except Exception as e:
             logger.warning("receipt_signal_failed", error=str(e))
-
-    async def start(self) -> None:
-        """Start consuming jobs from the queue."""
-        self.running = True
-        while self.running:
-            try:
-                job = await self.queue.dequeue_blocking(QUEUE_NAME, timeout=5)
-
-                if job is None:
-                    continue
-
-                payload = self._extract_payload(job)
-                logger.info(
-                    "receipt_job_received",
-                    phone=payload.get("phone_number"),
-                    has_payload=bool(payload),
-                    job=job,
-                )
-
-                await self._process_job(job)
-
-            except asyncio.CancelledError:
-                break
-            except Exception as e:
-                logger.error("receipt_consumer_error", error=str(e))
-                await asyncio.sleep(1)
-
-    async def stop(self) -> None:
-        """Stop the consumer gracefully."""
-        self.running = False
-        await self.renderer.close()
-        logger.info("receipt_consumer_stopped")
 
     async def _process_job(self, job: dict[str, Any]) -> None:
         """Process a single receipt job with retry logic."""
@@ -154,8 +126,8 @@ class ReceiptJobConsumer:
                         if beneficiary_suggestion:
                             intents.append({"type": "say", "text": beneficiary_suggestion})
 
-                        await cast(Any, self.queue).enqueue(
-                            queue_name=OUTBOX_QUEUE,
+                        await self.publisher.publish(
+                            topic="notification.send",
                             message={
                                 "phone_number": outbox_phone,
                                 "channel": channel,
@@ -185,8 +157,8 @@ class ReceiptJobConsumer:
 
             try:
                 channel = payload.get("channel", "whatsapp")
-                await cast(Any, self.queue).enqueue(
-                    queue_name=OUTBOX_QUEUE,
+                await self.publisher.publish(
+                    topic="notification.send",
                     message={
                         "phone_number": outbox_phone,
                         "channel": channel,
@@ -211,3 +183,7 @@ class ReceiptJobConsumer:
                 )
         finally:
             await self._signal_completion(signal_key)
+
+    async def process_job(self, job: dict[str, Any]) -> None:
+        """Public job entrypoint used by non-loop consumers (Lambda worker dispatch)."""
+        await self._process_job(job)

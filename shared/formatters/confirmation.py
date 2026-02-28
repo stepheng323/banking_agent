@@ -73,8 +73,8 @@ def build_source_account_info(
 ) -> str | None:
     """Build localized source-account line from task/snapshot data."""
     bank = snapshot.get("sourceBank") or snapshot.get("source_bank") or task_payload.get("source_bank_name")
-    account_number = snapshot.get("sourceAccount") or snapshot.get("source_account") or task_payload.get(
-        "source_account_number"
+    account_number = (
+        snapshot.get("sourceAccount") or snapshot.get("source_account") or task_payload.get("source_account_number")
     )
     if not bank or not account_number:
         return None

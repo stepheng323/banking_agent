@@ -6,7 +6,7 @@ from .context import ResponseContext
 from .intent import ResponseIntent
 
 
-def build_response_context(intent: ResponseIntent, state: dict[str, Any], **overrides) -> ResponseContext:
+def build_response_context(intent: ResponseIntent, state: dict[str, Any], **overrides: Any) -> ResponseContext:
     """Build ResponseContext from subgraph state.
 
     Extracts common fields from state and allows overrides.
@@ -93,7 +93,7 @@ def build_response_context(intent: ResponseIntent, state: dict[str, Any], **over
 
 
 def build_clarification_context(
-    intent: ResponseIntent, candidates: list[dict[str, Any]], state: dict[str, Any], **overrides
+    intent: ResponseIntent, candidates: list[dict[str, Any]], state: dict[str, Any], **overrides: Any
 ) -> ResponseContext:
     """Build ResponseContext for clarification responses.
 

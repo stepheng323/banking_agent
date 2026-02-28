@@ -32,7 +32,9 @@ def _render_beneficiary_retry_prompt(
     candidates: list[dict[str, Any]],
     locale: str,
 ) -> str:
-    numbered_lines = [f"{idx}. {str(candidate.get('label') or f'Option {idx}')}" for idx, candidate in enumerate(candidates, start=1)]
+    numbered_lines = [
+        f"{idx}. {str(candidate.get('label') or f'Option {idx}')}" for idx, candidate in enumerate(candidates, start=1)
+    ]
     candidates_list = "\n".join(numbered_lines)
     prompt = render_message(
         "response.templates.clarify_beneficiary",
@@ -122,7 +124,7 @@ class ExtractionStep(TransferStep):
         data: TransferPayload,
         context: TransferContext,
         gates: TransferGates,
-        worker_context: Any,
+        worker_context: Any = None,
     ) -> TransactionResult:
         if not self.user_message:
             return TransactionResult(outcome=TransactionOutcome.OK, patch={})
@@ -203,7 +205,10 @@ class ExtractionStep(TransferStep):
                         "ambiguity": "MULTIPLE_BENEFICIARIES",
                         "candidates": invalid_candidates,
                         "options": [
-                            {"id": str(candidate.get("option_id", "")).strip(), "title": str(candidate.get("label", ""))}
+                            {
+                                "id": str(candidate.get("option_id", "")).strip(),
+                                "title": str(candidate.get("label", "")),
+                            }
                             for candidate in invalid_candidates
                             if str(candidate.get("option_id", "")).strip()
                         ],
@@ -329,7 +334,11 @@ async def _extract_transfer_update(
             extracted_data["source_account_name"] = None
             extracted_data["source_account_number"] = None
 
-        if "source_accounts" in extracted_data or "use_dual_accounts" in extracted_data or "explicit_split" in extracted_data:
+        if (
+            "source_accounts" in extracted_data
+            or "use_dual_accounts" in extracted_data
+            or "explicit_split" in extracted_data
+        ):
             extracted_data["source_account_id"] = None
             extracted_data["source_bank_name"] = None
             extracted_data["source_account_name"] = None

@@ -17,7 +17,7 @@ from sqlalchemy import (
     UniqueConstraint,
 )
 from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import declarative_base, relationship
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from sqlalchemy.sql import text
 
 from shared.database.enums import (
@@ -31,7 +31,9 @@ from shared.database.enums import (
     UserOnboardingStatusEnum,
 )
 
-Base = declarative_base()
+
+class Base(DeclarativeBase):
+    pass
 
 
 class User(Base):
@@ -337,17 +339,19 @@ class FAQEntry(Base):
 
     __tablename__ = "faq_entries"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
-    category = Column(String, nullable=False, index=True)
-    question = Column(Text, nullable=False)
-    answer = Column(Text, nullable=False)
-    tags = Column(ARRAY(String), default=[], nullable=False)
-    keywords = Column(ARRAY(String), default=[], nullable=False)
-    priority = Column(Integer, default=0, nullable=False)
-    is_active = Column(Boolean, default=True, nullable=False, index=True)
-    embedding = Column(JSON, nullable=True)
-    created_at = Column(DateTime, server_default=text("now()"), nullable=False)
-    updated_at = Column(DateTime, server_default=text("now()"), onupdate=datetime.utcnow, nullable=False)
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    category: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    question: Mapped[str] = mapped_column(Text, nullable=False)
+    answer: Mapped[str] = mapped_column(Text, nullable=False)
+    tags: Mapped[list[str]] = mapped_column(ARRAY(String), default=[], nullable=False)
+    keywords: Mapped[list[str]] = mapped_column(ARRAY(String), default=[], nullable=False)
+    priority: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False, index=True)
+    embedding: Mapped[list[float] | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=text("now()"), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=text("now()"), onupdate=datetime.utcnow, nullable=False
+    )
 
     def __repr__(self):
         return f"<FAQEntry(id={self.id}, category={self.category}, question={self.question[:50]}...)>"

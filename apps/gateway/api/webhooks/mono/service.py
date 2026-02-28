@@ -5,8 +5,7 @@ from typing import Any
 from shared.cache.user_data import UserDataCache
 from shared.database.enums import FundedTransferStatusEnum, FundingStepStatusEnum
 from shared.database.models import FundedTransfer
-from shared.queue.messages import OUTBOX_QUEUE
-from shared.queue.redis_queue import RedisQueue
+from shared.queue.adapter import QueuePublisher
 from shared.repositories.unit_of_work import UnitOfWork
 from shared.utils.logging import get_logger
 
@@ -33,9 +32,11 @@ class MonoWebhookService:
 
     def __init__(
         self,
-        queue: RedisQueue,
+        publisher: QueuePublisher | None = None,
     ):
-        self.queue = queue
+        if publisher is None:
+            raise ValueError("publisher is required")
+        self.publisher = publisher
         self.cache = UserDataCache()
 
     async def handle_mandate_event(self, event: str, data: dict[str, Any]) -> bool:
@@ -161,8 +162,8 @@ class MonoWebhookService:
     ) -> None:
         """Send notification when mandate is ready."""
         try:
-            await self.queue.enqueue(
-                queue_name=OUTBOX_QUEUE,
+            await self.publisher.publish(
+                topic="notification.send",
                 message={
                     "phone_number": phone_number,
                     "channel": channel,
@@ -226,8 +227,8 @@ class MonoWebhookService:
 
         for step in successful_steps:
             try:
-                await self.queue.enqueue(
-                    queue_name="banking:refunds",
+                await self.publisher.publish(
+                    topic="refund.process",
                     message={
                         "funding_step_id": str(step.id),
                         "funded_transfer_id": str(transfer.id),
@@ -246,8 +247,8 @@ class MonoWebhookService:
     async def _queue_payout(self, transfer: FundedTransfer) -> None:
         """Queue payout job after all debits complete."""
         try:
-            await self.queue.enqueue(
-                queue_name="banking:payouts",
+            await self.publisher.publish(
+                topic="payout.process",
                 message={
                     "funded_transfer_id": str(transfer.id),
                     "amount": float(transfer.amount),

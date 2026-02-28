@@ -37,7 +37,7 @@ logger = get_logger(__name__)
 class DataWorkerContext:
     extractor: Any
     bill_provider: Any
-    queue: Any
+    publisher: Any
     transaction_repo: Any
     user_id: str | None
     required_fields: list[str]
@@ -51,12 +51,12 @@ class DataWorker:
         extractor,
         bill_provider,
         transaction_repo,
-        queue,
+        publisher,
     ):
         self.extractor = extractor
         self.bill_provider = bill_provider
         self.transaction_repo = transaction_repo
-        self.queue = queue
+        self.publisher = publisher
 
     def _ensure_idempotency_key(self, data: DataPayload) -> DataPayload:
         if data.idempotency_key and data.idempotency_key != "no-key":
@@ -93,7 +93,7 @@ class DataWorker:
         return DataWorkerContext(
             extractor=self.extractor,
             bill_provider=self.bill_provider,
-            queue=self.queue,
+            publisher=self.publisher,
             transaction_repo=self.transaction_repo,
             user_id=context.get("user_id"),
             required_fields=required_fields if isinstance(required_fields, list) else [],

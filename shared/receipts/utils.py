@@ -1,6 +1,7 @@
 """Utility functions for receipt generation."""
 
 from decimal import Decimal
+from typing import Any
 
 
 def mask_account(account: str) -> str:
@@ -33,7 +34,7 @@ def format_naira(amount: Decimal | float | int) -> str:
     return f"₦{amount:,.2f}"
 
 
-def format_datetime(dt) -> str:
+def format_datetime(dt: Any) -> str:
     """Format datetime for receipt display.
 
     Args:
@@ -42,4 +43,4 @@ def format_datetime(dt) -> str:
     Returns:
         Formatted string (e.g., "02 Jan 2026, 14:30")
     """
-    return dt.strftime("%d %b %Y, %H:%M")
+    return str(dt.strftime("%d %b %Y, %H:%M"))

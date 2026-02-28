@@ -157,10 +157,7 @@ class LocaleManager:
             return current
 
         pending_locale, pending_count = await cls._load_candidate(phone_number)
-        if pending_locale == candidate:
-            new_count = pending_count + 1
-        else:
-            new_count = 1
+        new_count = pending_count + 1 if pending_locale == candidate else 1
 
         await cls._save_candidate(phone_number, candidate, new_count)
 

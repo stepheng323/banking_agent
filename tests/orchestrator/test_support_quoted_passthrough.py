@@ -1,5 +1,3 @@
-from types import SimpleNamespace
-
 import pytest
 
 from apps.core.src.agent.orchestrator.execution.handlers import (

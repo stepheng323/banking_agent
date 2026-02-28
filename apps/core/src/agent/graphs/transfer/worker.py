@@ -46,9 +46,10 @@ class TransferWorkerContext:
     extractor: Any
     banking_provider: Any
     bank_cache: Any
-    queue: Any
+    publisher: Any
     transaction_repo: TransactionRepository
     dd_provider: Any | None
+    redis_client: Any
     user_id: str | None
     validation_service: Any
     required_fields: list[str]
@@ -61,20 +62,22 @@ class TransferWorker:
     def __init__(
         self,
         validation_service: Any,
-        queue: Any,
+        publisher: Any,
         extractor: Any,
         banking_provider: Any,
         bank_cache: Any,
         transaction_repo: TransactionRepository,
         dd_provider: Any | None = None,
+        redis_client: Any | None = None,
     ) -> None:
         self.validation_service = validation_service or ValidationService()
-        self.queue = queue
+        self.publisher = publisher
         self.extractor = extractor
         self.banking_provider = banking_provider
         self.bank_cache = bank_cache
         self.transaction_repo = transaction_repo
         self.dd_provider = dd_provider
+        self.redis_client = redis_client
 
     def _ensure_idempotency_key(self, data: TransferPayload) -> TransferPayload:
         if data.idempotency_key and data.idempotency_key != "no-key":
@@ -104,9 +107,10 @@ class TransferWorker:
             extractor=self.extractor,
             banking_provider=self.banking_provider,
             bank_cache=self.bank_cache,
-            queue=self.queue,
+            publisher=self.publisher,
             transaction_repo=self.transaction_repo,
             dd_provider=self.dd_provider,
+            redis_client=self.redis_client,
             user_id=context.get("user_id"),
             validation_service=self.validation_service,
             required_fields=required_fields if isinstance(required_fields, list) else [],

@@ -29,7 +29,10 @@ def test_context_read_fastpath_rules_present() -> None:
 
 def test_interrupt_status_query_contract_present() -> None:
     """Interrupt router prompt should include status-query decision + subtype contract."""
-    assert "decision: continue_flow | switch_intent | cancel | unclear | approve_flow | reject_flow | status_query" in INTERRUPT_ROUTER_SYSTEM_PROMPT
+    assert (
+        "decision: continue_flow | switch_intent | cancel | unclear | approve_flow | reject_flow | status_query"
+        in INTERRUPT_ROUTER_SYSTEM_PROMPT
+    )
     assert "status_query_type: recap | requirements | null" in INTERRUPT_ROUTER_SYSTEM_PROMPT
     assert "decision=status_query" in INTERRUPT_ROUTER_SYSTEM_PROMPT
 

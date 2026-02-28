@@ -40,6 +40,7 @@ class UnitOfWork:
 
     async def __aexit__(self, exc_type, exc_val, exc_tb) -> bool:
         """Exit transaction context and commit or rollback."""
+        assert self.db is not None
         try:
             if exc_type:
                 await self.db.rollback()
@@ -52,10 +53,12 @@ class UnitOfWork:
 
     async def commit(self):
         """Manually commit transaction."""
+        assert self.db is not None
         if not self._rolled_back:
             await self.db.commit()
 
     async def rollback(self):
         """Manually rollback transaction."""
+        assert self.db is not None
         await self.db.rollback()
         self._rolled_back = True

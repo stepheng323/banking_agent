@@ -7,7 +7,9 @@ from fastapi.responses import JSONResponse, Response
 from shared.utils import encrypt_flow_response
 
 
-def format_encrypted_response(response_data: dict[str, Any], aes_key_bytes: bytes, iv_bytes: bytes) -> Response:
+def format_encrypted_response(
+    response_data: dict[str, Any], aes_key_bytes: bytes | None, iv_bytes: bytes | None
+) -> Response:
     """Format and encrypt a response."""
     if aes_key_bytes is None or iv_bytes is None:
         return JSONResponse(content={"error": "Encryption keys missing"}, status_code=500)
@@ -19,9 +21,9 @@ def format_error_response(
     screen: str,
     error_message: str,
     request_was_encrypted: bool = False,
-    aes_key_bytes: bytes = None,
-    iv_bytes: bytes = None,
-    **extra_data,
+    aes_key_bytes: bytes | None = None,
+    iv_bytes: bytes | None = None,
+    **extra_data: Any,
 ) -> Response:
     """Format a standardized error response."""
     response = {
@@ -38,9 +40,9 @@ def format_error_response(
 def format_success_response(
     screen: str,
     request_was_encrypted: bool = False,
-    aes_key_bytes: bytes = None,
-    iv_bytes: bytes = None,
-    **data,
+    aes_key_bytes: bytes | None = None,
+    iv_bytes: bytes | None = None,
+    **data: Any,
 ) -> Response:
     """Format a standardized success response."""
     response = {
@@ -57,9 +59,9 @@ def format_success_response(
 def format_complete_response(
     message: str,
     request_was_encrypted: bool = False,
-    aes_key_bytes: bytes = None,
-    iv_bytes: bytes = None,
-    **extra_data,
+    aes_key_bytes: bytes | None = None,
+    iv_bytes: bytes | None = None,
+    **extra_data: Any,
 ) -> Response:
     """Format a response that closes the flow permanently.
 
