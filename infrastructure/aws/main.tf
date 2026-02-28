@@ -151,11 +151,3 @@ module "api_gateway_webhooks" {
   lambda_function_name = module.compute_lambda_gateway.gateway_lambda_name
   lambda_invoke_arn    = module.compute_lambda_gateway.gateway_lambda_invoke_arn
 }
-
-module "github_oidc" {
-  source            = "./modules/github-oidc"
-  project_name      = local.project_name
-  environment       = local.environment
-  github_repo_owner = var.github_repo_owner
-  github_repo_name  = var.github_repo_name
-}

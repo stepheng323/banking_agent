@@ -37,8 +37,3 @@ output "ssm_secret_parameter_names" {
 output "ssm_non_secret_parameter_names" {
   value = module.config_ssm.non_secret_parameter_names
 }
-
-output "github_actions_role_arn" {
-  value       = module.github_oidc.github_actions_role_arn
-  description = "The ARN of the IAM role for GitHub Actions to assume. Paste this into your .github/workflows/deploy-dev.yml file."
-}

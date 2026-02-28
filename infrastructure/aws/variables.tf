@@ -42,15 +42,3 @@ variable "provision_rds" {
   type        = bool
   default     = false
 }
-
-variable "github_repo_owner" {
-  description = "The GitHub username or organization name for OIDC access"
-  type        = string
-  default     = ""
-}
-
-variable "github_repo_name" {
-  description = "The GitHub repository name for OIDC access"
-  type        = string
-  default     = ""
-}
