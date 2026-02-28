@@ -123,6 +123,31 @@ jobs:
         working-directory: ${{ env.TF_DIR }}
         run: terraform init -input=false
 
+      - name: Terraform import pre-existing resources
+        working-directory: ${{ env.TF_DIR }}
+        env:
+          TF_VAR_redis_url: ${{ secrets.REDIS_URL_DEV }}
+          TF_VAR_database_url: ${{ secrets.DATABASE_URL_DEV }}
+        run: |
+          set -euo pipefail
+
+          import_if_missing() {
+            local address="$1"
+            local id="$2"
+
+            if terraform state show "$address" >/dev/null 2>&1; then
+              echo "State already contains $address"
+              return
+            fi
+
+            echo "Importing $address from $id"
+            terraform import -input=false "$address" "$id"
+          }
+
+          import_if_missing "module.compute.aws_cloudwatch_log_group.core" "/ecs/banking-agent-core-chat-worker"
+          import_if_missing "module.compute_lambda_events.aws_iam_role.lambda_worker_role" "banking-agent-lambda-workers-dev"
+          import_if_missing "module.compute_lambda_gateway.aws_iam_role.gateway_lambda_role" "banking-agent-gateway-lambda-dev"
+
       - name: Terraform plan (fresh)
         working-directory: ${{ env.TF_DIR }}
         env:
