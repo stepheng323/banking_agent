@@ -57,6 +57,10 @@ data "aws_iam_role" "github_actions_existing" {
 
 resource "aws_s3_bucket" "tf_state" {
   bucket = var.state_bucket_name
+
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 resource "aws_s3_bucket_versioning" "tf_state" {
