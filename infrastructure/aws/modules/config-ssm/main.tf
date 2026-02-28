@@ -3,11 +3,11 @@ locals {
 }
 
 resource "aws_ssm_parameter" "secret" {
-  for_each = var.secret_env_vars
+  for_each = nonsensitive(toset(keys(var.secret_env_vars)))
 
   name      = "${local.prefix}/${each.key}"
   type      = "SecureString"
-  value     = each.value
+  value     = var.secret_env_vars[each.key]
   overwrite = var.overwrite
 
   lifecycle {
