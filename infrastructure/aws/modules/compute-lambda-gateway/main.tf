@@ -15,19 +15,6 @@ resource "aws_iam_role" "gateway_lambda_role" {
   })
 }
 
-data "aws_ssm_parameter" "non_secret" {
-  for_each = var.non_secret_parameter_names
-
-  name            = each.value
-  with_decryption = false
-}
-
-data "aws_ssm_parameter" "secret" {
-  for_each = var.secret_parameter_names
-
-  name            = each.value
-  with_decryption = true
-}
 
 resource "aws_iam_role_policy_attachment" "gateway_lambda_basic_execution" {
   role       = aws_iam_role.gateway_lambda_role.name
@@ -100,8 +87,8 @@ resource "aws_lambda_function" "gateway" {
         AWS_REGION     = var.aws_region
         AWS_ACCOUNT_ID = var.aws_account_id
       },
-      { for key, param in data.aws_ssm_parameter.non_secret : key => param.value },
-      { for key, param in data.aws_ssm_parameter.secret : key => param.value }
+      var.non_secret_env_vars,
+      var.secret_env_vars
     )
   }
 }

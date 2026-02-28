@@ -101,13 +101,6 @@ resource "aws_iam_role_policy" "ecs_execution_ssm" {
   })
 }
 
-data "aws_ssm_parameter" "non_secret" {
-  for_each = var.non_secret_parameter_names
-
-  name            = each.value
-  with_decryption = false
-}
-
 resource "aws_cloudwatch_log_group" "core" {
   name              = "/ecs/${var.project_name}-core-chat-worker"
   retention_in_days = 30
@@ -140,7 +133,7 @@ resource "aws_ecs_task_definition" "core" {
           { name = "ENVIRONMENT", value = var.environment },
           { name = "APP_ENV", value = var.environment }
         ],
-        [for key, param in data.aws_ssm_parameter.non_secret : { name = key, value = param.value }]
+        [for key, value in var.non_secret_env_vars : { name = key, value = value }]
       )
 
       secrets = [for key, arn in var.secret_parameter_arns : { name = key, valueFrom = arn }]

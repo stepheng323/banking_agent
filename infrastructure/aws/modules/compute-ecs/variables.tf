@@ -33,8 +33,8 @@ variable "core_chat_worker_image_url" {
   type        = string
 }
 
-variable "non_secret_parameter_names" {
-  description = "Map of non-secret env var names to SSM parameter names."
+variable "non_secret_env_vars" {
+  description = "Map of non-secret env var names to their values."
   type        = map(string)
 }
 

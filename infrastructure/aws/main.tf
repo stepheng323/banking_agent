@@ -107,7 +107,7 @@ module "compute" {
   public_subnet_ids          = module.networking.public_subnet_ids
   ecs_security_group_id      = module.networking.ecs_security_group_id
   core_chat_worker_image_url = "${module.ecr.core_repository_url}:chat-worker-latest"
-  non_secret_parameter_names = module.config_ssm.non_secret_parameter_names
+  non_secret_env_vars        = local.non_secret_env_vars
   secret_parameter_arns      = module.config_ssm.secret_parameter_arns
   all_parameter_arns         = module.config_ssm.all_parameter_arns
 }
@@ -119,29 +119,29 @@ module "messaging" {
 }
 
 module "compute_lambda_events" {
-  source                     = "./modules/compute-lambda-events"
-  project_name               = local.project_name
-  environment                = local.environment
-  aws_region                 = var.aws_region
-  aws_account_id             = data.aws_caller_identity.current.account_id
-  core_lambda_image_url      = "${module.ecr.core_repository_url}:lambda-workers-latest"
-  non_secret_parameter_names = module.config_ssm.non_secret_parameter_names
-  secret_parameter_names     = module.config_ssm.secret_parameter_names
-  all_parameter_arns         = module.config_ssm.all_parameter_arns
-  queue_arns                 = module.messaging.queue_arns
+  source                = "./modules/compute-lambda-events"
+  project_name          = local.project_name
+  environment           = local.environment
+  aws_region            = var.aws_region
+  aws_account_id        = data.aws_caller_identity.current.account_id
+  core_lambda_image_url = "${module.ecr.core_repository_url}:lambda-workers-latest"
+  non_secret_env_vars   = local.non_secret_env_vars
+  secret_env_vars       = local.secret_env_vars
+  all_parameter_arns    = module.config_ssm.all_parameter_arns
+  queue_arns            = module.messaging.queue_arns
 }
 
 module "compute_lambda_gateway" {
-  source                     = "./modules/compute-lambda-gateway"
-  project_name               = local.project_name
-  environment                = local.environment
-  aws_region                 = var.aws_region
-  aws_account_id             = data.aws_caller_identity.current.account_id
-  gateway_lambda_image_url   = "${module.ecr.gateway_repository_url}:lambda-latest"
-  non_secret_parameter_names = module.config_ssm.non_secret_parameter_names
-  secret_parameter_names     = module.config_ssm.secret_parameter_names
-  all_parameter_arns         = module.config_ssm.all_parameter_arns
-  topic_arns                 = module.messaging.topic_arns
+  source                   = "./modules/compute-lambda-gateway"
+  project_name             = local.project_name
+  environment              = local.environment
+  aws_region               = var.aws_region
+  aws_account_id           = data.aws_caller_identity.current.account_id
+  gateway_lambda_image_url = "${module.ecr.gateway_repository_url}:lambda-latest"
+  non_secret_env_vars      = local.non_secret_env_vars
+  secret_env_vars          = local.secret_env_vars
+  all_parameter_arns       = module.config_ssm.all_parameter_arns
+  topic_arns               = module.messaging.topic_arns
 }
 
 module "api_gateway_webhooks" {
