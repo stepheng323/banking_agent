@@ -26,7 +26,7 @@ permissions:
   contents: read
 
 env:
-  AWS_REGION: eu-east-1
+  AWS_REGION: us-east-1
   TF_DIR: infrastructure/aws
   ECR_CORE_REPO: banking-agent-core-repo
   ECR_GATEWAY_REPO: banking-agent-gateway-repo
