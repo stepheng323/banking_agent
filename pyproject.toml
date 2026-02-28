@@ -1,8 +1,16 @@
 # Python project configuration
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "banking-agent"
 version = "0.1.0"
 requires-python = ">=3.11"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["apps*", "shared*"]
 
 # BASE dependencies - shared by all apps
 dependencies = [
