@@ -1,5 +1,5 @@
 resource "aws_ecs_cluster" "main" {
-  name = "${var.project_name}-cluster"
+  name = "${var.project_name}-cluster-${var.environment}"
 
   setting {
     name  = "containerInsights"
@@ -20,7 +20,7 @@ resource "aws_ecs_cluster_capacity_providers" "main" {
 }
 
 resource "aws_iam_role" "ecs_execution" {
-  name = "${var.project_name}-ecs-execution-role"
+  name = "${var.project_name}-ecs-execution-role-${var.environment}"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -42,7 +42,7 @@ resource "aws_iam_role_policy_attachment" "ecs_execution" {
 }
 
 resource "aws_iam_role" "ecs_task" {
-  name = "${var.project_name}-ecs-task-role"
+  name = "${var.project_name}-ecs-task-role-${var.environment}"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"

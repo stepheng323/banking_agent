@@ -32,18 +32,18 @@ locals {
 
   non_secret_env_vars = merge(
     {
-      META_PHONE_NUMBER_ID           = ""
-      WHATSAPP_FLOW_PRIVATE_KEY_PATH = ""
-      ONBOARDING_FLOW_ID             = ""
-      ACCOUNT_LINKING_FLOW_ID        = ""
-      PIN_CONFIRMATION_FLOW_ID       = ""
+      META_PHONE_NUMBER_ID           = "FIXME"
+      WHATSAPP_FLOW_PRIVATE_KEY_PATH = "FIXME"
+      ONBOARDING_FLOW_ID             = "FIXME"
+      ACCOUNT_LINKING_FLOW_ID        = "FIXME"
+      PIN_CONFIRMATION_FLOW_ID       = "FIXME"
       TTL_SECONDS                    = "6000"
       FLOW_SESSION_TIMEOUT           = "600"
       PENDING_TRANSACTION_TTL        = "300"
       FLUTTERWAVE_USE_SANDBOX        = "false"
-      S3_BUCKET_NAME                 = ""
+      S3_BUCKET_NAME                 = "FIXME"
       DEFAULT_CHANNEL                = "whatsapp"
-      TELEGRAM_MINI_APP_BASE_URL     = ""
+      TELEGRAM_MINI_APP_BASE_URL     = "FIXME"
       SOUL_POLICY_PATH               = "config/soul_policy.json"
       ENABLE_CHANNEL_OPTION_UX_V2    = "false"
     },
@@ -54,13 +54,13 @@ locals {
     {
       DATABASE_URL                  = local.resolved_database_url
       REDIS_URL                     = var.redis_url
-      OPENAI_API_KEY                = ""
-      META_VERIFY_TOKEN             = ""
-      META_ACCESS_TOKEN             = ""
-      TELEGRAM_BOT_TOKEN            = ""
-      TELEGRAM_WEBHOOK_SECRET_TOKEN = ""
-      MONO_API_KEY                  = ""
-      FLUTTERWAVE_SECRET_KEY        = ""
+      OPENAI_API_KEY                = "FIXME"
+      META_VERIFY_TOKEN             = "FIXME"
+      META_ACCESS_TOKEN             = "FIXME"
+      TELEGRAM_BOT_TOKEN            = "FIXME"
+      TELEGRAM_WEBHOOK_SECRET_TOKEN = "FIXME"
+      MONO_API_KEY                  = "FIXME"
+      FLUTTERWAVE_SECRET_KEY        = "FIXME"
     },
     var.secret_config_values
   )

@@ -1,5 +1,5 @@
 resource "aws_ecr_repository" "core" {
-  name                 = "${var.project_name}-core"
+  name                 = "${var.project_name}-core-${var.environment}"
   image_tag_mutability = "MUTABLE"
 
   image_scanning_configuration {
@@ -7,13 +7,13 @@ resource "aws_ecr_repository" "core" {
   }
 
   tags = {
-    Name        = "${var.project_name}-core"
+    Name        = "${var.project_name}-core-${var.environment}"
     Environment = var.environment
   }
 }
 
 resource "aws_ecr_repository" "gateway" {
-  name                 = "${var.project_name}-gateway"
+  name                 = "${var.project_name}-gateway-${var.environment}"
   image_tag_mutability = "MUTABLE"
 
   image_scanning_configuration {
@@ -21,7 +21,7 @@ resource "aws_ecr_repository" "gateway" {
   }
 
   tags = {
-    Name        = "${var.project_name}-gateway"
+    Name        = "${var.project_name}-gateway-${var.environment}"
     Environment = var.environment
   }
 }
