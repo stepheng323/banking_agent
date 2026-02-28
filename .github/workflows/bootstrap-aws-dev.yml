@@ -81,6 +81,33 @@ jobs:
         working-directory: ${{ env.TF_DIR }}
         run: terraform init -input=false
 
+      - name: Import existing backend resources
+        working-directory: ${{ env.TF_DIR }}
+        run: |
+          set -euo pipefail
+
+          import_if_missing() {
+            local address="$1"
+            local id="$2"
+
+            if terraform state show "$address" >/dev/null 2>&1; then
+              echo "State already contains $address"
+              return
+            fi
+
+            echo "Importing $address from $id"
+            terraform import -input=false "$address" "$id"
+          }
+
+          if aws s3api head-bucket --bucket "$TF_VAR_state_bucket_name" >/dev/null 2>&1; then
+            import_if_missing "aws_s3_bucket.tf_state" "$TF_VAR_state_bucket_name"
+            import_if_missing "aws_s3_bucket_versioning.tf_state" "$TF_VAR_state_bucket_name" || true
+            import_if_missing "aws_s3_bucket_server_side_encryption_configuration.tf_state" "$TF_VAR_state_bucket_name" || true
+            import_if_missing "aws_s3_bucket_public_access_block.tf_state" "$TF_VAR_state_bucket_name" || true
+          else
+            echo "Bucket $TF_VAR_state_bucket_name not found yet; skipping imports."
+          fi
+
       - name: Terraform fmt (check)
         working-directory: ${{ env.TF_DIR }}
         run: terraform fmt -check -recursive
