@@ -45,7 +45,7 @@ async def test_finalize_defers_beneficiary_prompt_to_receipt_job() -> None:
         "configurable": {
             "beneficiary_suggestion_service": _SuggestionServiceStub(),
             "redis_client": None,
-            "queue": queue,
+            "queue_publisher": queue,
         }
     }
 
@@ -53,8 +53,8 @@ async def test_finalize_defers_beneficiary_prompt_to_receipt_job() -> None:
 
     assert updates["outbox"] and len(updates["outbox"]) == 1
     assert "Would you like to save" not in updates["outbox"][0]["text"]
-    queue.enqueue.assert_awaited_once()
-    args = cast(tuple[Any, ...], queue.enqueue.await_args.args)
+    queue.publish.assert_awaited_once()
+    args = cast(tuple[Any, ...], queue.publish.await_args.args)
     payload = cast(dict[str, Any], args[1])
     assert payload.get("beneficiary_suggestion_message") == "Would you like to save Mercy Johnson?"
 
@@ -98,14 +98,14 @@ async def test_finalize_keeps_beneficiary_suggestion_when_stashed_session_exists
         "configurable": {
             "beneficiary_suggestion_service": _SuggestionServiceStub(),
             "redis_client": None,
-            "queue": queue,
+            "queue_publisher": queue,
         }
     }
 
     updates = await finalize(state, config)
 
-    queue.enqueue.assert_awaited_once()
-    args = cast(tuple[Any, ...], queue.enqueue.await_args.args)
+    queue.publish.assert_awaited_once()
+    args = cast(tuple[Any, ...], queue.publish.await_args.args)
     payload = cast(dict[str, Any], args[1])
     assert payload.get("beneficiary_suggestion_message") == "Would you like to save Mercy Johnson?"
     assert "Would you like to resume your transfer?" not in updates["outbox"][-1]["text"]

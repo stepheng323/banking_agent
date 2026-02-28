@@ -76,8 +76,7 @@ async def test_graph_handler_invoke_passes_quoted_message_fields(monkeypatch: py
         banking_provider=SimpleNamespace(),
         context_manager=_ContextManagerStub(),
         redis_client=SimpleNamespace(),
-        whatsapp_client=SimpleNamespace(),
-        queue=SimpleNamespace(),
+        publisher=SimpleNamespace(),
         beneficiary_suggestion_service=SimpleNamespace(),
     )
 
@@ -128,8 +127,7 @@ async def test_graph_handler_resume_flow_clears_quoted_message_fields(monkeypatc
         banking_provider=SimpleNamespace(),
         context_manager=_ContextManagerStub(),
         redis_client=SimpleNamespace(),
-        whatsapp_client=SimpleNamespace(),
-        queue=SimpleNamespace(),
+        publisher=SimpleNamespace(),
         beneficiary_suggestion_service=SimpleNamespace(),
     )
 

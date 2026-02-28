@@ -193,7 +193,7 @@ async def test_transfer_worker_blocks_unsupported_action_from_policy() -> None:
     """Transfer worker should fail fast on unsupported policy action."""
     worker = TransferWorker(
         validation_service=None,
-        queue=None,
+        publisher=None,
         extractor=None,
         banking_provider=None,
         bank_cache=None,
@@ -217,7 +217,7 @@ async def test_airtime_worker_blocks_unknown_action_from_policy() -> None:
         extractor=None,
         bill_provider=None,
         transaction_repo=None,
-        queue=None,
+        publisher=None,
     )
 
     result = await worker.run(
@@ -236,7 +236,7 @@ async def test_data_worker_blocks_unknown_action_from_policy() -> None:
         extractor=None,
         bill_provider=None,
         transaction_repo=None,
-        queue=None,
+        publisher=None,
     )
 
     result = await worker.run(
