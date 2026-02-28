@@ -261,7 +261,7 @@ async def _queue_single_transfer_receipt(
         job_payload["beneficiary_suggestion_message"] = beneficiary_suggestion_message
 
     if publisher:
-        await publisher.publish("receipt.process", job_payload)
+        await publisher.publish("receipt.process", cast(dict[str, Any], job_payload))
     else:
         logger.warning("publisher_not_available", message="Cannot queue receipt, QueuePublisher is None")
 

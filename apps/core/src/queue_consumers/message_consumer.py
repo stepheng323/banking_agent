@@ -108,11 +108,11 @@ class MessageConsumer:
         # Use the real phone number from the database for the orchestrator.
         # For WhatsApp, channel_user_id == phone_number, but for Telegram
         # channel_user_id is a chat ID which would break account lookups.
-        phone_number = user.phone_number
+        phone_number = str(user.phone_number)
 
         claimed_message = await self.orchestrator.context_manager.claim_inbound_message(
             phone_number,
-            message.message_id,
+            str(message.message_id),
         )
         if not claimed_message:
             logger.info("duplicate_inbound_message_ignored", phone_number=phone_number, message_id=message.message_id)
@@ -120,12 +120,12 @@ class MessageConsumer:
 
         response_text: str | None = None
         try:
-            await self.orchestrator.context_manager.save_message_id(phone_number, message.message_id)
+            await self.orchestrator.context_manager.save_message_id(phone_number, str(message.message_id))
 
             orchestrator_output = await self.orchestrator.invoke(
                 phone_number,
                 sanitized_text,
-                message.message_id,
+                str(message.message_id),
                 message_type=message.message_type.value,
                 media_id=message.media_id,
                 quoted_message_id=message.quoted_message_id,
@@ -152,7 +152,7 @@ class MessageConsumer:
                 )
                 logger.info("message_consumer_enqueued_outbox", count=len(intents))
         except Exception:
-            await self.orchestrator.context_manager.release_inbound_message_claim(phone_number, message.message_id)
+            await self.orchestrator.context_manager.release_inbound_message_claim(phone_number, str(message.message_id))
             raise
 
         duration = (time.perf_counter() - start_time) * 1000
@@ -173,9 +173,12 @@ class MessageConsumer:
         logger.info("message_consumer_starting", queue=queue_name)
         while self.running:
             try:
-                message_data = await self.queue_consumer.consume_one(queue_name=queue_name, timeout=5)
-                if message_data:
+                result = await self.queue_consumer.consume_one(queue_name=queue_name, timeout=5)
+                if result:
+                    message_data, receipt_handle = result
                     await self.process_message(message_data)
+                    if self.queue_consumer is not None and hasattr(self.queue_consumer, "ack_message"):
+                        await self.queue_consumer.ack_message(queue_name, receipt_handle)
 
             except asyncio.CancelledError:
                 logger.info("message_consumer_cancelled")

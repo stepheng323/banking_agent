@@ -1,6 +1,7 @@
 """Configuration and dependencies for the OrchestratorAgent."""
 
 from dataclasses import dataclass
+
 import redis.asyncio as redis
 from langchain_openai import ChatOpenAI
 
@@ -8,7 +9,6 @@ from apps.core.src.agent.graphs.__shared__.beneficiary.suggestion_service import
 from apps.core.src.agent.orchestrator.services.media_service import MediaService
 from shared.cache.user_data import UserDataCache
 from shared.clients.abstractions.banking import BankingDataProvider
-from shared.clients.whatsapp.client import WhatsAppClient
 from shared.protocols.worker import WorkerProtocol
 from shared.queue.adapter import QueuePublisher
 from shared.repositories import BeneficiaryRepository, UserRepository
@@ -37,7 +37,6 @@ class OrchestratorDependencies:
     data_service: WorkerProtocol
     support_service: WorkerProtocol
     faq_service: WorkerProtocol
-    whatsapp_client: WhatsAppClient
     publisher: QueuePublisher
     banking_provider: BankingDataProvider
     beneficiary_suggestion_service: BeneficiarySuggestionService

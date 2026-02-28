@@ -28,10 +28,10 @@ class FlowEventConsumer:
     async def process_event(self, event_data: dict[str, Any]) -> None:
         """Process a flow event from the queue."""
         try:
-            event_type = event_data.get("event_type")
-            flow_type = event_data.get("flow_type")
-            phone_number = event_data.get("phone_number")
-            idempotency_key = event_data.get("idempotency_key")
+            event_type = str(event_data.get("event_type", ""))
+            flow_type = str(event_data.get("flow_type", ""))
+            phone_number = str(event_data.get("phone_number", ""))
+            idempotency_key = str(event_data.get("idempotency_key", ""))
             success = event_data.get("success", False)
 
             logger.info(
@@ -132,8 +132,18 @@ class FlowEventConsumer:
                 error=str(e),
                 exc_info=True,
             )
+            raise  # Re-raise to prevent acking on failure
 
-    async def start(self, queue_name: str = FLOW_EVENTS_QUEUE):
+    async def _process_and_ack(self, event_data: dict[str, Any], receipt_handle: Any, queue_name: str) -> None:
+        """Process event and explicitly acknowledge it to prevent dropping on failure."""
+        try:
+            await self.process_event(event_data)
+            if self.queue_consumer is not None and hasattr(self.queue_consumer, "ack_message"):
+                await self.queue_consumer.ack_message(queue_name, receipt_handle)
+        except Exception as e:
+            logger.error("background_process_and_ack_failed", error=str(e), exc_info=True)
+
+    async def start(self, queue_name: str = FLOW_EVENTS_QUEUE) -> None:
         """Start the flow event consumer."""
         if self.queue_consumer is None:
             raise RuntimeError("flow_event_consumer_requires_queue_consumer")
@@ -141,10 +151,11 @@ class FlowEventConsumer:
         logger.info("flow_event_consumer_starting", queue=queue_name)
         while self.running:
             try:
-                event_data = await self.queue_consumer.consume_one(queue_name=queue_name, timeout=5)
-                if event_data:
+                result = await self.queue_consumer.consume_one(queue_name=queue_name, timeout=5)
+                if result:
+                    event_data, receipt_handle = result
                     # Process in background to not block the consumer
-                    asyncio.create_task(self.process_event(event_data))
+                    asyncio.create_task(self._process_and_ack(event_data, receipt_handle, queue_name))
 
             except asyncio.CancelledError:
                 logger.info("flow_event_consumer_cancelled")
@@ -154,6 +165,6 @@ class FlowEventConsumer:
                 await asyncio.sleep(1)
         logger.info("flow_event_consumer_stopped")
 
-    def stop(self):
+    def stop(self) -> None:
         """Stop the flow event consumer."""
         self.running = False

@@ -1,7 +1,7 @@
 """Confirmation logic."""
 
-from datetime import UTC, datetime, timedelta
 import math
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from apps.core.src.agent.graphs.transfer.models.types import (
@@ -11,8 +11,7 @@ from apps.core.src.agent.graphs.transfer.models.types import (
 )
 from apps.core.src.agent.graphs.transfer.pipeline.base import TransferStep
 from apps.core.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
-from shared.formatters.transfer import format_funding_plan_summary
-from shared.formatters.transfer import format_transfer_summary
+from shared.formatters.transfer import format_funding_plan_summary, format_transfer_summary
 from shared.i18n import render_message
 from shared.policy import get_cached_policy
 from shared.utils.logging import get_logger
@@ -28,7 +27,7 @@ class ConfirmationStep(TransferStep):
         data: TransferPayload,
         context: TransferContext,
         gates: TransferGates,
-        worker_context: Any,
+        worker_context: Any = None,
     ) -> TransactionResult:
         if gates.confirmation_confirmed:
             return TransactionResult(outcome=TransactionOutcome.OK, patch={})
@@ -42,22 +41,23 @@ class ConfirmationStep(TransferStep):
             res.patch = {**(res.patch or {}), **risk_patch}
 
         try:
-            if not worker_context.queue._redis:
-                await worker_context.queue.connect()
-
+            redis_client = getattr(worker_context, "redis_client", None)
             key = data.idempotency_key
 
-            # Persist tokens
-            await worker_context.queue._redis.setex(
-                f"transfer:token:{key}:phone",
-                3600,
-                context.phone_number,
-            )  # Also write generic transaction token if needed by unified handler
-            await worker_context.queue._redis.setex(
-                f"transaction:token:{key}:phone",
-                3600,
-                context.phone_number,
-            )
+            if redis_client:
+                # Persist tokens
+                await redis_client.setex(
+                    f"transfer:token:{key}:phone",
+                    3600,
+                    context.phone_number,
+                )  # Also write generic transaction token if needed by unified handler
+                await redis_client.setex(
+                    f"transaction:token:{key}:phone",
+                    3600,
+                    context.phone_number,
+                )
+            else:
+                logger.warning("redis_client_not_in_context_cannot_persist_transfer_token")
         except Exception as e:
             logger.error("failed_to_persist_token", error=str(e))
 
@@ -170,11 +170,8 @@ def build_confirmation(
                 or steps[0].get("bank_name")
                 or render_message("transfer.format.funding_plan.bank_fallback", ctx.language)
             )
-            primary_balance = float(
-                funding_plan.get("primary_available_balance")
-                if funding_plan.get("primary_available_balance") is not None
-                else steps[0].get("amount", 0.0)
-            )
+            balance_val = funding_plan.get("primary_available_balance")
+            primary_balance = float(balance_val if balance_val is not None else steps[0].get("amount", 0.0))
             funding_summary = format_funding_plan_summary(
                 steps=steps,
                 amount=float(payload.amount or funding_plan.get("transfer_amount", 0.0)),
@@ -186,9 +183,7 @@ def build_confirmation(
                 locale=ctx.language,
             )
             summary = (
-                f"{funding_summary}\n\n"
-                "Recipient will be credited once after all funding debits succeed.\n\n"
-                f"{summary}"
+                f"{funding_summary}\n\nRecipient will be credited once after all funding debits succeed.\n\n{summary}"
             )
 
     return TransactionResult(

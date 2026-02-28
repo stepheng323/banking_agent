@@ -61,6 +61,6 @@ class MessageContext:
         """Create new context with response set."""
         return replace(self, response=response, handled=handled)
 
-    def update(self, **kwargs) -> "MessageContext":
+    def update(self, **kwargs: Any) -> "MessageContext":
         """Create new context with updated fields."""
         return replace(self, **kwargs)

@@ -747,20 +747,20 @@ async def advance_wave(state: OrchestratorState, config: RunnableConfig) -> dict
                 if name and name in found_names:
                     task.payload["recipient_ui_confirmed"] = True
 
-        options_entry: dict[str, Any] | None = None
+        fallback_options_entry: dict[str, Any] | None = None
         if len(agg.missing_fields_by_task) == 1:
             task_id = next(iter(agg.missing_fields_by_task.keys()))
             details = agg.details_by_task.get(task_id)
             focused_missing_fields = agg.missing_fields_by_task.get(task_id, [])
-            options_entry = _build_show_options_entry(
+            fallback_options_entry = _build_show_options_entry(
                 details=details,
                 prompt_text=prompt_text,
                 task_id=task_id,
                 focused_missing_fields=focused_missing_fields,
             )
-            if options_entry:
+            if fallback_options_entry:
                 prompt_text = _compact_prompt_for_options(prompt_text)
-                options_entry["title"] = prompt_text
+                fallback_options_entry["title"] = prompt_text
 
         interrupt = PendingInterrupt(
             kind="input",
@@ -768,13 +768,13 @@ async def advance_wave(state: OrchestratorState, config: RunnableConfig) -> dict
             fields_by_task=agg.missing_fields_by_task,
             prompt=prompt_text,
         )
-        outbox_entries: list[dict[str, Any]] = [{"type": "say", "text": prompt_text}]
-        if options_entry:
-            outbox_entries = [options_entry]
+        fallback_outbox_entries: list[dict[str, Any]] = [{"type": "say", "text": prompt_text}]
+        if fallback_options_entry:
+            fallback_outbox_entries = [fallback_options_entry]
         return {
             "pending_interrupt": interrupt,
             "tasks": state.tasks,
-            "outbox": _with_policy_notice(state, outbox_entries),
+            "outbox": _with_policy_notice(state, fallback_outbox_entries),
             "policy_notice": None,
         }
 

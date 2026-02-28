@@ -31,7 +31,6 @@ class OrchestratorAgent:
             faq_service=self.deps.faq_service,
             context_manager=self.context_manager,
             redis_client=self.deps.redis_client,
-            whatsapp_client=self.deps.whatsapp_client,
             user_repo=self.deps.user_repo,
             beneficiary_repo=self.deps.beneficiary_repo,
             account_repo=self.deps.account_repo,

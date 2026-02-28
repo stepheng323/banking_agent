@@ -16,7 +16,6 @@ from apps.core.src.agent.orchestrator.graph import build_orchestrator_graph
 from apps.core.src.agent.orchestrator.models.message_context import MessageContext
 from apps.core.src.agent.orchestrator.presentation.intents import map_outbox_to_intents
 from shared.clients.abstractions.banking import BankingDataProvider
-from shared.clients.whatsapp.client import WhatsAppClient
 from shared.i18n import LocaleManager
 from shared.protocols.worker import WorkerProtocol
 from shared.queue.adapter import QueuePublisher
@@ -53,14 +52,12 @@ class OrchestratorGraphHandler:
         banking_provider: BankingDataProvider,
         context_manager: ContextManager,
         redis_client: redis.Redis,
-        whatsapp_client: WhatsAppClient,
         publisher: QueuePublisher,
         beneficiary_suggestion_service: BeneficiarySuggestionService,
         mode: Literal["planning", "execution", "both"] = "both",
     ):
         self.task_planner = task_planner
         self.redis_client = redis_client
-        self.whatsapp_client = whatsapp_client
         self.publisher = publisher
         self.beneficiary_suggestion_service = beneficiary_suggestion_service
         self.mode = mode
@@ -108,7 +105,6 @@ class OrchestratorGraphHandler:
                 "banking_provider": self.banking_provider,
                 "beneficiary_suggestion_service": self.beneficiary_suggestion_service,
                 "redis_client": self.redis_client,
-                "whatsapp_client": self.whatsapp_client,
                 "publisher": self.publisher,
             },
             "recursion_limit": 50,
@@ -149,7 +145,7 @@ class OrchestratorGraphHandler:
             phone_number=phone_number,
         )
 
-        loaded_context = {
+        loaded_context: dict[str, Any] = {
             "profile": user_ctx.get("profile"),
             "accounts": user_ctx.get("accounts"),
             "beneficiaries": user_ctx.get("beneficiaries"),

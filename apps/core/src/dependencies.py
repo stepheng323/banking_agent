@@ -87,7 +87,6 @@ def setup_core_consumers() -> tuple[MessageConsumer, FlowEventConsumer]:
 
     queue_publisher = QueuePublisherFactory.get_publisher()
     messaging_clients = _build_messaging_clients()
-    whatsapp_client = messaging_clients["whatsapp"]
 
     user_repository = UserRepository(db=get_db_session())
     shared_redis = RedisClient.get_client()
@@ -164,6 +163,7 @@ def setup_core_consumers() -> tuple[MessageConsumer, FlowEventConsumer]:
         bank_cache=bank_cache_service,
         transaction_repo=transaction_repository,
         dd_provider=direct_debit_provider,
+        redis_client=shared_redis,
     )
 
     media_service = MediaService(messaging_clients)
@@ -184,7 +184,6 @@ def setup_core_consumers() -> tuple[MessageConsumer, FlowEventConsumer]:
         data_service=data_worker,
         user_cache=user_data_cache,
         faq_service=faq_worker,
-        whatsapp_client=whatsapp_client,
         publisher=queue_publisher,
         beneficiary_suggestion_service=beneficiary_suggestion_service,
         account_repo=account_repository,

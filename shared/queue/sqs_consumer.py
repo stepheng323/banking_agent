@@ -51,14 +51,15 @@ class SQSQueueConsumer(QueueConsumer):
             message = decoded.get("Message")
             if isinstance(message, str):
                 try:
-                    return json.loads(message)
+                    parsed = json.loads(message)
+                    return parsed if isinstance(parsed, dict) else {}
                 except json.JSONDecodeError:
                     return {}
             return decoded
 
         return {}
 
-    async def consume_one(self, queue_name: str, timeout: int = 5) -> dict[str, Any] | None:
+    async def consume_one(self, queue_name: str, timeout: int = 5) -> tuple[dict[str, Any], Any] | None:
         queue_url = self._get_queue_url(queue_name)
         wait_time = max(1, min(timeout, 20))
 
@@ -78,8 +79,18 @@ class SQSQueueConsumer(QueueConsumer):
             body = record.get("Body", "{}")
             payload = self._decode_body(body)
 
-            if receipt_handle:
-                await sqs.delete_message(QueueUrl=queue_url, ReceiptHandle=receipt_handle)
-
             logger.info("sqs_message_consumed", queue_name=queue_name, queue_url=queue_url)
-            return payload
+            return payload, receipt_handle
+
+    async def ack_message(self, queue_name: str, receipt_handle: Any) -> None:
+        """Acknowledge (delete) a message from SQS after successful processing."""
+        if not receipt_handle:
+            return
+
+        queue_url = self._get_queue_url(queue_name)
+        try:
+            async with self.session.client("sqs", region_name=self.region_name) as sqs:
+                await sqs.delete_message(QueueUrl=queue_url, ReceiptHandle=receipt_handle)
+                logger.debug("sqs_message_deleted", queue_name=queue_name)
+        except Exception as e:
+            logger.error("sqs_message_delete_failed", queue_name=queue_name, error=str(e))

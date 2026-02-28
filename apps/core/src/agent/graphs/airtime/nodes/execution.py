@@ -64,10 +64,6 @@ class ExecutionStep(AirtimeStep):
                     logger.error("failed_to_persist_airtime_transaction", error=str(e))
                     raise e
 
-            queue = worker_context.queue
-            if not queue._redis:
-                await queue.connect()
-
             publisher = getattr(worker_context, "publisher", None)
             if not publisher:
                 publisher = QueuePublisherFactory.get_publisher()

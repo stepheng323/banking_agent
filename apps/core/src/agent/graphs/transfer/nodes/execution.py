@@ -30,7 +30,7 @@ class ExecutionStep(TransferStep):
         data: TransferPayload,
         context: TransferContext,
         gates: TransferGates,
-        worker_context: Any,
+        worker_context: Any = None,
     ) -> TransactionResult:
         locale = context.language
         if not gates.confirmation_confirmed:
@@ -41,13 +41,13 @@ class ExecutionStep(TransferStep):
             if res.outcome == TransactionOutcome.NEEDS_AUTH:
                 try:
                     key = data.idempotency_key
-                    if not worker_context.queue._redis:
-                        await worker_context.queue.connect()
-                    await worker_context.queue._redis.setex(
-                        f"transfer:token:{key}:phone",
-                        3600,
-                        context.phone_number,
-                    )
+                    redis_client = getattr(worker_context, "redis_client", None)
+                    if redis_client:
+                        await redis_client.setex(
+                            f"transfer:token:{key}:phone",
+                            3600,
+                            context.phone_number,
+                        )
                 except Exception:
                     pass
             return res
@@ -118,7 +118,6 @@ class ExecutionStep(TransferStep):
                 except Exception as e:
                     logger.error("failed_to_persist_transaction", error=str(e))
 
-            queue = worker_context.queue
             publisher = getattr(worker_context, "publisher", None)
             if not publisher:
                 publisher = QueuePublisherFactory.get_publisher()

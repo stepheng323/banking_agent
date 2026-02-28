@@ -24,7 +24,7 @@ class FundingStep(TransferStep):
         data: TransferPayload,
         context: TransferContext,
         gates: TransferGates,
-        worker_context: Any,
+        worker_context: Any = None,
     ) -> TransactionResult:
         dd_provider = getattr(worker_context, "dd_provider", None)
         if dd_provider:
@@ -49,12 +49,12 @@ class AccountAdapter:
         raw_extra = data.get("extra_data") or {}
         if isinstance(raw_extra, str):
             import json
+
             try:
                 raw_extra = json.loads(raw_extra)
             except Exception:
                 raw_extra = {}
         self.extra_data = raw_extra if isinstance(raw_extra, dict) else {}
-
 
 
 async def plan_transaction_funding(

@@ -51,13 +51,13 @@ jobs:
         run: uv sync --all-extras --dev
 
       - name: Ruff (lint)
-        run: ruff check .
+        run: uv run ruff check .
 
       - name: Mypy (type-check)
-        run: mypy .
+        run: uv run mypy .
 
       - name: Pytest (tests)
-        run: pytest -q
+        run: uv run pytest -q
 
   terraform-plan:
     name: Terraform Plan
@@ -189,7 +189,7 @@ jobs:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
         with:
           context: .
-          file: apps/core/Dockerfile
+          file: apps/core/Dockerfile.worker
           push: true
           tags: ${{ env.ECR_REGISTRY }}/${{ env.ECR_CORE_REPO }}:chat-worker-${{ github.sha }},${{ env.ECR_REGISTRY }}/${{ env.ECR_CORE_REPO }}:chat-worker-latest
           cache-from: type=gha

@@ -48,22 +48,23 @@ class ConfirmationStep(AirtimeStep):
         )
 
         try:
-            if not worker_context.queue._redis:
-                await worker_context.queue.connect()
-
+            redis_client = getattr(worker_context, "redis_client", None)
             key = data.idempotency_key
 
-            # Persist tokens so Webhook can look them up
-            await worker_context.queue._redis.setex(
-                f"airtime:token:{key}:phone",
-                3600,
-                context.phone_number,
-            )
-            await worker_context.queue._redis.setex(
-                f"transaction:token:{key}:phone",
-                3600,
-                context.phone_number,
-            )
+            if redis_client:
+                # Persist tokens so Webhook can look them up
+                await redis_client.setex(
+                    f"airtime:token:{key}:phone",
+                    3600,
+                    context.phone_number,
+                )
+                await redis_client.setex(
+                    f"transaction:token:{key}:phone",
+                    3600,
+                    context.phone_number,
+                )
+            else:
+                logger.warning("redis_client_not_in_context_cannot_persist_airtime_token")
         except Exception as e:
             logger.error("failed_to_persist_airtime_token", error=str(e))
 
