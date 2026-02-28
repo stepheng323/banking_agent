@@ -9,6 +9,7 @@ from shared.queue.adapter import QueuePublisher
 from shared.queue.factory import QueuePublisherFactory
 from shared.services.task_queue import TaskQueueService
 
+
 def get_queue_publisher() -> QueuePublisher:
     """Dependency factory for queue publisher."""
     return QueuePublisherFactory.get_publisher()

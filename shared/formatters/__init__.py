@@ -1,8 +1,8 @@
 """Formatters package."""
 
 from shared.formatters.accounts import format_accounts_list
-from shared.formatters.beneficiary import format_beneficiary_suggestion
 from shared.formatters.batch_funding import format_batch_funding_shortfall
+from shared.formatters.beneficiary import format_beneficiary_suggestion
 from shared.formatters.data import (
     format_data_plan_list,
     format_data_plan_suggestion,

@@ -119,10 +119,7 @@ class FundingPlanner:
 
             if not eligible:
                 # Distinguish between "pending mandate" and "no mandate at all"
-                pending_accounts = [
-                    a for a in accounts
-                    if getattr(a, "mandate_status", None) not in (None, "ready")
-                ]
+                pending_accounts = [a for a in accounts if getattr(a, "mandate_status", None) not in (None, "ready")]
                 if pending_accounts:
                     error_msg = self._build_pending_mandate_message(pending_accounts[0], locale)
                 else:
@@ -132,10 +129,12 @@ class FundingPlanner:
                     total_funded=0,
                     is_sufficient=False,
                     error=error_msg,
-                    is_pending_mandate=True if pending_accounts else False,
+                    is_pending_mandate=bool(pending_accounts),
                 )
 
-            normalized_requested_sources = [s for s in (requested_source_banks or []) if isinstance(s, str) and s.strip()]
+            normalized_requested_sources = [
+                s for s in (requested_source_banks or []) if isinstance(s, str) and s.strip()
+            ]
             cleaned_explicit_split = {
                 bank: float(amount)
                 for bank, amount in (explicit_split or {}).items()
@@ -289,10 +288,7 @@ class FundingPlanner:
                 trigger_mode="explicit",
                 requested_sources=requested_source_banks,
                 explicit_split_applied=True,
-                error=(
-                    "Please use at most 2 source accounts in your split. "
-                    "Revise the split and try again."
-                ),
+                error=("Please use at most 2 source accounts in your split. Revise the split and try again."),
             )
 
         split_total = round(sum(explicit_split.values()), 2)
@@ -327,7 +323,10 @@ class FundingPlanner:
                     trigger_mode="explicit",
                     requested_sources=requested_source_banks,
                     explicit_split_applied=True,
-                    error=f"I could not match '{requested_bank}' to your eligible linked accounts. Please revise the split.",
+                    error=(
+                        f"I could not match '{requested_bank}' to your eligible linked accounts. "
+                        "Please revise the split."
+                    ),
                 )
 
             account_id = str(account.id)
@@ -590,7 +589,7 @@ class FundingPlanner:
         bank_name: str = getattr(account, "bank_name", "") or ""
 
         if destinations:
-            svc = MandateService(queue=None)  # type: ignore[arg-type]
+            svc = MandateService(queue=None)
             return svc.build_mandate_auth_message(
                 account_number=account_number,
                 bank_name=bank_name,

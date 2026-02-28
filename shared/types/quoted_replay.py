@@ -4,7 +4,6 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-
 QuotedReplayDecision = Literal["not_replay", "execute", "clarify"]
 
 

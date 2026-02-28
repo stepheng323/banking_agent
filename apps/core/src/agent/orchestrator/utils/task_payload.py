@@ -78,9 +78,13 @@ def _apply_transfer_payload_fields(
 
     # Guard against planner hallucinating a fully-resolved name not present in user text.
     recipient_name = payload.get("recipient_name")
-    if isinstance(recipient_name, str) and recipient_name and not _recipient_grounded_in_user_text(
-        recipient_name,
-        fallback_message,
+    if (
+        isinstance(recipient_name, str)
+        and recipient_name
+        and not _recipient_grounded_in_user_text(
+            recipient_name,
+            fallback_message,
+        )
     ):
         derived = _derive_recipient_from_user_text(recipient_name, fallback_message)
         if derived:

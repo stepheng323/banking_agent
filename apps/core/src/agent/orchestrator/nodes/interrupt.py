@@ -582,6 +582,7 @@ def _reprompt_updates(state: OrchestratorState, interrupt: Any) -> dict[str, Any
 
 def _format_task_details_for_status(task: TaskSpec, task_type: str) -> str:
     payload = task.payload or {}
+
     def _fmt_amount(value: Any) -> str | None:
         try:
             return f"₦{float(value):,.0f}"

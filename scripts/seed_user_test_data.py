@@ -144,11 +144,7 @@ async def _seed_for_user(user: User) -> None:
 
         # Ensure there is a default account for the user.
         all_accounts = list(
-            (
-                await db.execute(
-                    select(Account).where(Account.user_id == user.id).order_by(Account.created_at.asc())
-                )
-            )
+            (await db.execute(select(Account).where(Account.user_id == user.id).order_by(Account.created_at.asc())))
             .scalars()
             .all()
         )
@@ -187,11 +183,7 @@ async def _seed_for_user(user: User) -> None:
         await db.commit()
 
         account_rows = list(
-            (
-                await db.execute(
-                    select(Account).where(Account.user_id == user.id).order_by(Account.created_at.asc())
-                )
-            )
+            (await db.execute(select(Account).where(Account.user_id == user.id).order_by(Account.created_at.asc())))
             .scalars()
             .all()
         )
@@ -210,17 +202,10 @@ async def _seed_for_user(user: User) -> None:
 
     print("\nSeed complete")
     print(f"User: {user.phone_number} ({user.id})")
-    print(
-        "Accounts: "
-        f"{len(account_rows)} total "
-        f"(created={created_accounts}, updated={updated_accounts})"
-    )
+    print(f"Accounts: {len(account_rows)} total (created={created_accounts}, updated={updated_accounts})")
     for idx, acc in enumerate(account_rows, start=1):
         default_mark = " [default]" if acc.is_default else ""
-        print(
-            f"  {idx}. {acc.bank_name} ({acc.account_number}) "
-            f"status={acc.mandate_status}{default_mark}"
-        )
+        print(f"  {idx}. {acc.bank_name} ({acc.account_number}) status={acc.mandate_status}{default_mark}")
     print(
         "Transfer beneficiaries: "
         f"{len(beneficiary_rows)} total "
@@ -228,10 +213,7 @@ async def _seed_for_user(user: User) -> None:
     )
     for idx, bene in enumerate(beneficiary_rows, start=1):
         alias_part = f" alias={bene.alias}" if bene.alias else ""
-        print(
-            f"  {idx}. {bene.account_name}{alias_part} "
-            f"-> {bene.bank_name} {bene.account_number}"
-        )
+        print(f"  {idx}. {bene.account_name}{alias_part} -> {bene.bank_name} {bene.account_number}")
 
 
 async def _async_main(phone: str | None) -> None:

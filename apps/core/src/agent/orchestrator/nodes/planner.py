@@ -154,9 +154,7 @@ def _infer_recent_domain_focus(state: OrchestratorState) -> str | None:
             return "orchestrator"
 
         prior_tasks = getattr(prior_output, "tasks", None) or []
-        prior_executors = {
-            getattr(task, "executor", None) for task in prior_tasks if getattr(task, "executor", None)
-        }
+        prior_executors = {getattr(task, "executor", None) for task in prior_tasks if getattr(task, "executor", None)}
         if len(prior_executors) == 1:
             return cast(str, next(iter(prior_executors)))
 
@@ -482,9 +480,7 @@ def _build_quoted_replay_context_with_payload(state: OrchestratorState, quoted_p
     )
 
 
-def _next_quoted_replay_task_id(
-    state: OrchestratorState, task_type: str, existing_ids: set[str] | None = None
-) -> str:
+def _next_quoted_replay_task_id(state: OrchestratorState, task_type: str, existing_ids: set[str] | None = None) -> str:
     seen = set(existing_ids or set())
     seen.update(state.tasks.keys())
     idx = 1
@@ -514,11 +510,7 @@ async def _load_quoted_actionable_payload(state: OrchestratorState, config: Runn
     if not row:
         return None
 
-    message_data = None
-    if isinstance(row, dict):
-        message_data = row.get("message_data")
-    else:
-        message_data = getattr(row, "message_data", None)
+    message_data = row.get("message_data") if isinstance(row, dict) else getattr(row, "message_data", None)
     if isinstance(message_data, dict):
         return dict(message_data)
     return None
@@ -526,7 +518,9 @@ async def _load_quoted_actionable_payload(state: OrchestratorState, config: Runn
 
 def _is_replay_payload_sufficient(task_type: str, payload: dict[str, Any]) -> bool:
     if task_type == "airtime":
-        return bool(payload.get("amount") is not None and (payload.get("recipient_phone") or payload.get("target_phone")))
+        return bool(
+            payload.get("amount") is not None and (payload.get("recipient_phone") or payload.get("target_phone"))
+        )
     if task_type == "data":
         return bool(
             (payload.get("target_phone") or payload.get("recipient_phone"))
@@ -976,7 +970,9 @@ async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[s
 
     if not planner_output or not planner_output.tasks:
         meta_locale = detected_locale or current_locale
-        meta_locale_updates = locale_updates if meta_locale == current_locale else _build_locale_update(state, meta_locale)
+        meta_locale_updates = (
+            locale_updates if meta_locale == current_locale else _build_locale_update(state, meta_locale)
+        )
 
         if (
             planner_output

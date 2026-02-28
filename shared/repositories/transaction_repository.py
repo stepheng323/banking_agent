@@ -6,8 +6,8 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from shared.database.models import Transaction
 from shared.database.enums import TransactionTypeEnum
+from shared.database.models import Transaction
 from shared.repositories.base import BaseRepository
 
 

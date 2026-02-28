@@ -138,8 +138,13 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"__init__.py" = ["F401"]  # Allow unused imports in __init__.py files
-"**/tests/**" = ["B", "SIM"]  # Ignore some rules in tests
+"__init__.py" = ["F401", "F403"]  # Allow unused/star imports in __init__.py files
+"shared/services/task_planner.py" = ["E501"]  # Long LLM prompts
+"shared/services/funding/planner.py" = ["E501"]  # Long error messages
+"apps/core/src/agent/graphs/**" = ["E501"]  # Long nodes/prompts
+"apps/core/src/agent/orchestrator/models/**" = ["E501"]  # Long field descriptions
+"scripts/**" = ["E402"]  # Allow sys.path modifications before imports
+"**/tests/**" = ["B", "SIM", "E501"]  # Ignore some rules and line length in tests
 
 [tool.ruff.format]
 quote-style = "double"

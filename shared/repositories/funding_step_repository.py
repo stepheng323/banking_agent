@@ -26,9 +26,7 @@ class FundingStepRepository(BaseRepository[FundingStep]):
             pass
 
         result = await self.db.execute(
-            select(FundingStep)
-            .filter(FundingStep.funded_transfer_id == lookup_id)
-            .order_by(FundingStep.sequence.asc())
+            select(FundingStep).filter(FundingStep.funded_transfer_id == lookup_id).order_by(FundingStep.sequence.asc())
         )
         return list(result.scalars().all())
 
@@ -69,8 +67,7 @@ class FundingStepRepository(BaseRepository[FundingStep]):
             pass
 
         result = await self.db.execute(
-            select(FundingStep)
-            .filter(
+            select(FundingStep).filter(
                 FundingStep.funded_transfer_id == lookup_id,
                 FundingStep.status == FundingStepStatusEnum.CONFIRMED.value,
             )

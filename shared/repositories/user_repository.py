@@ -121,7 +121,7 @@ class UserRepository(BaseRepository[User]):
     async def get_accounts_by_phone(self, phone_number: str) -> list:
         """Get user accounts by phone number."""
         user = await self.get_by_phone(phone_number)
-        if user: # Need to deal with lazy loading of accounts!
+        if user:  # Need to deal with lazy loading of accounts!
             # AsyncSession requires explicit handling for lazy relationships or eager loading.
             # Assuming joinedload or selectinload should be used if accessed.
             # But simple access `user.accounts` might fail if session is async and relation is lazy.

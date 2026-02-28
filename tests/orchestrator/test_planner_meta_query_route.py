@@ -18,10 +18,10 @@ class _FakeMetaLLM:
     def __init__(self, response: dict[str, Any]) -> None:
         self._response = response
 
-    def with_structured_output(self, _schema: Any) -> "_FakeMetaLLM":
+    def with_structured_output(self, _schema: Any) -> _FakeMetaLLM:
         return self
 
-    def with_config(self, _config: dict[str, Any]) -> "_FakeMetaLLM":
+    def with_config(self, _config: dict[str, Any]) -> _FakeMetaLLM:
         return self
 
     async def ainvoke(self, _messages: list[dict[str, str]]) -> dict[str, Any]:

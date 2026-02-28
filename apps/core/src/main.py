@@ -1,4 +1,5 @@
 """Core Banking Service main module."""
+
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 

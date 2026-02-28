@@ -25,7 +25,9 @@ def format_batch_funding_shortfall(
 
     lines: list[str] = [header, "", body, ""]
     for shortfall in shortfalls:
-        account_requested = str(getattr(shortfall, "account_requested", "") or render_message("funding.format.plan.bank_fallback", locale))
+        account_requested = str(
+            getattr(shortfall, "account_requested", "") or render_message("funding.format.plan.bank_fallback", locale)
+        )
         amount_needed = float(getattr(shortfall, "amount_needed", 0.0))
         account_available = float(getattr(shortfall, "account_available", 0.0))
         deficit = float(getattr(shortfall, "deficit", max(0.0, amount_needed - account_available)))

@@ -1,9 +1,7 @@
-"""Repository for FAQ entries with hybrid search capabilities."""
-
 from typing import Any
 
-from sqlalchemy import or_
-from sqlalchemy.orm import Session
+from sqlalchemy import or_, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.database.models import FAQEntry
 from shared.repositories.base import BaseRepository
@@ -15,24 +13,25 @@ logger = get_logger(__name__)
 class FAQRepository(BaseRepository[FAQEntry]):
     """Repository for FAQ entries with hybrid keyword + semantic search."""
 
-    def __init__(self, db: Session):
+    def __init__(self, db: AsyncSession):
         super().__init__(db, FAQEntry)
 
-    def get_all_active(self) -> list[FAQEntry]:
+    async def get_all_active(self) -> list[FAQEntry]:
         """Get all active FAQ entries."""
-        return self.db.query(FAQEntry).filter(FAQEntry.is_active == True).all()  # noqa: E712
+        result = await self.db.execute(select(FAQEntry).filter(FAQEntry.is_active == True))  # noqa: E712
+        return list(result.scalars().all())
 
-    def get_by_category(self, category: str, limit: int = 10) -> list[FAQEntry]:
+    async def get_by_category(self, category: str, limit: int = 10) -> list[FAQEntry]:
         """Get active FAQ entries by category."""
-        return (
-            self.db.query(FAQEntry)
+        result = await self.db.execute(
+            select(FAQEntry)
             .filter(FAQEntry.is_active == True, FAQEntry.category == category)  # noqa: E712
             .order_by(FAQEntry.priority.desc())
             .limit(limit)
-            .all()
         )
+        return list(result.scalars().all())
 
-    def search_by_keywords(
+    async def search_by_keywords(
         self,
         keywords: list[str],
         limit: int = 5,
@@ -42,22 +41,16 @@ class FAQRepository(BaseRepository[FAQEntry]):
         Search FAQ entries by keywords.
 
         Returns list of (FAQEntry, score) tuples ordered by relevance.
-        Scoring:
-        - Exact keyword in keywords[]: +3 points
-        - Exact keyword in tags[]: +2 points
-        - Keyword in question (fuzzy): +1 point
-        - Add priority value
         """
         if not keywords:
             return []
 
-        query = self.db.query(FAQEntry).filter(FAQEntry.is_active == True)  # noqa: E712
-
+        stmt = select(FAQEntry).filter(FAQEntry.is_active == True)  # noqa: E712
         if category:
-            query = query.filter(FAQEntry.category == category)
+            stmt = stmt.filter(FAQEntry.category == category)
 
-        # Get all active entries (we'll score in Python for flexibility)
-        entries = query.all()
+        result = await self.db.execute(stmt)
+        entries = result.scalars().all()
 
         scored_results: list[tuple[FAQEntry, int]] = []
 
@@ -87,7 +80,7 @@ class FAQRepository(BaseRepository[FAQEntry]):
 
         return scored_results[:limit]
 
-    def search_fuzzy(
+    async def search_fuzzy(
         self,
         query_text: str,
         limit: int = 5,
@@ -95,18 +88,16 @@ class FAQRepository(BaseRepository[FAQEntry]):
     ) -> list[FAQEntry]:
         """
         Fuzzy search on question text using ILIKE.
-
-        Fallback when keyword search returns too few results.
         """
-        base_query = self.db.query(FAQEntry).filter(FAQEntry.is_active == True)  # noqa: E712
+        stmt = select(FAQEntry).filter(FAQEntry.is_active == True)  # noqa: E712
 
         if category:
-            base_query = base_query.filter(FAQEntry.category == category)
+            stmt = stmt.filter(FAQEntry.category == category)
 
         # Search for query text in question or answer
         search_pattern = f"%{query_text}%"
-        results = (
-            base_query.filter(
+        stmt = (
+            stmt.filter(
                 or_(
                     FAQEntry.question.ilike(search_pattern),
                     FAQEntry.answer.ilike(search_pattern),
@@ -114,12 +105,12 @@ class FAQRepository(BaseRepository[FAQEntry]):
             )
             .order_by(FAQEntry.priority.desc())
             .limit(limit)
-            .all()
         )
 
-        return results
+        result = await self.db.execute(stmt)
+        return list(result.scalars().all())
 
-    def search_by_embedding(
+    async def search_by_embedding(
         self,
         embedding: list[float],
         limit: int = 5,
@@ -127,17 +118,11 @@ class FAQRepository(BaseRepository[FAQEntry]):
     ) -> list[tuple[FAQEntry, float]]:
         """
         Search FAQ entries by embedding similarity.
-
-        NOTE: This is a placeholder for pgvector integration.
-        Currently uses cosine similarity computed in Python.
-        For production, use pgvector's <=> operator for efficiency.
         """
-        # Get all entries with embeddings
-        entries = (
-            self.db.query(FAQEntry)
-            .filter(FAQEntry.is_active == True, FAQEntry.embedding.isnot(None))  # noqa: E712
-            .all()
+        result = await self.db.execute(
+            select(FAQEntry).filter(FAQEntry.is_active == True, FAQEntry.embedding.isnot(None))  # noqa: E712
         )
+        entries = result.scalars().all()
 
         if not entries:
             return []
@@ -161,7 +146,7 @@ class FAQRepository(BaseRepository[FAQEntry]):
         if len(vec1) != len(vec2):
             return 0.0
 
-        dot_product = sum(a * b for a, b in zip(vec1, vec2))
+        dot_product = sum(a * b for a, b in zip(vec1, vec2, strict=True))
         magnitude1 = sum(a * a for a in vec1) ** 0.5
         magnitude2 = sum(b * b for b in vec2) ** 0.5
 
@@ -170,17 +155,17 @@ class FAQRepository(BaseRepository[FAQEntry]):
 
         return dot_product / (magnitude1 * magnitude2)
 
-    def bulk_create(self, entries: list[dict[str, Any]]) -> list[FAQEntry]:
+    async def bulk_create(self, entries: list[dict[str, Any]]) -> list[FAQEntry]:
         """Bulk create FAQ entries."""
         faq_entries = [FAQEntry(**entry) for entry in entries]
         self.db.add_all(faq_entries)
-        self.db.flush()
+        await self.db.flush()
         return faq_entries
 
-    def update_embedding(self, faq_id: str, embedding: list[float]) -> FAQEntry | None:
+    async def update_embedding(self, faq_id: str, embedding: list[float]) -> FAQEntry | None:
         """Update the embedding for a specific FAQ entry."""
-        entry = self.get_by_id(faq_id)
+        entry = await self.get_by_id(faq_id)
         if entry:
             entry.embedding = embedding
-            self.db.flush()
+            await self.db.flush()
         return entry

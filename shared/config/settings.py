@@ -108,8 +108,8 @@ class Settings:
 
         if missing:
             raise RuntimeError(
-                "Missing critical runtime configuration for non-dev environment: "
-                + ", ".join(sorted(missing))
+                "Missing critical runtime configuration for non-dev environment: " + ", ".join(sorted(missing))
             )
+
 
 settings = Settings()

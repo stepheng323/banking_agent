@@ -281,7 +281,17 @@ async def test_resume_session_reruns_worker_and_regenerates_auth_prompt() -> Non
         tasks={"o3": orchestrator_task},
         waves=[["o3"]],
         current_wave_index=0,
-        loaded_context={"accounts": [{"id": "acc-1", "bank_name": "Test Bank", "account_number": "0000000001", "mandate_status": "ready", "mandate_id": "m1"}]},
+        loaded_context={
+            "accounts": [
+                {
+                    "id": "acc-1",
+                    "bank_name": "Test Bank",
+                    "account_number": "0000000001",
+                    "mandate_status": "ready",
+                    "mandate_id": "m1",
+                }
+            ]
+        },
         stashed_sessions=[
             {
                 "tasks": {"t_stashed": stashed_task},
@@ -330,7 +340,17 @@ async def test_resume_session_reruns_worker_and_regenerates_input_prompt() -> No
         tasks={"o4": orchestrator_task},
         waves=[["o4"]],
         current_wave_index=0,
-        loaded_context={"accounts": [{"id": "acc-1", "bank_name": "Test Bank", "account_number": "0000000001", "mandate_status": "ready", "mandate_id": "m1"}]},
+        loaded_context={
+            "accounts": [
+                {
+                    "id": "acc-1",
+                    "bank_name": "Test Bank",
+                    "account_number": "0000000001",
+                    "mandate_status": "ready",
+                    "mandate_id": "m1",
+                }
+            ]
+        },
         stashed_sessions=[
             {
                 "tasks": {"t_stashed": stashed_task},

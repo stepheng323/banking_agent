@@ -190,6 +190,7 @@ class BeneficiaryWorker:
         if phone_number:
             from shared.cache.redis_client import RedisClient
             from shared.cache.user_data import UserDataCache
+
             await UserDataCache(redis_client=RedisClient.get_client()).invalidate_beneficiaries(phone_number)
 
         display_name = alias or final_account_name or render_message("beneficiary.common.default_name", locale)
@@ -242,6 +243,7 @@ class BeneficiaryWorker:
         if phone_number:
             from shared.cache.redis_client import RedisClient
             from shared.cache.user_data import UserDataCache
+
             await UserDataCache(redis_client=RedisClient.get_client()).invalidate_beneficiaries(phone_number)
 
         return TransactionResult(

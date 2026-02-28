@@ -40,9 +40,7 @@ class FundedTransferRepository(BaseRepository[FundedTransfer]):
     async def get_by_status(self, status: str) -> list[FundedTransfer]:
         """Get funded transfers by status (for background processing)."""
         result = await self.db.execute(
-            select(FundedTransfer)
-            .filter(FundedTransfer.status == status)
-            .order_by(FundedTransfer.created_at.asc())
+            select(FundedTransfer).filter(FundedTransfer.status == status).order_by(FundedTransfer.created_at.asc())
         )
         return list(result.scalars().all())
 
@@ -58,7 +56,9 @@ class FundedTransferRepository(BaseRepository[FundedTransfer]):
         """Get transfers being refunded."""
         return await self.get_by_status(FundedTransferStatusEnum.REFUNDING.value)
 
-    async def update_status(self, transfer_id: str, status: str, error_message: str | None = None) -> FundedTransfer | None:
+    async def update_status(
+        self, transfer_id: str, status: str, error_message: str | None = None
+    ) -> FundedTransfer | None:
         """Update transfer status."""
         transfer = await self.get_by_id(transfer_id)
         if transfer:

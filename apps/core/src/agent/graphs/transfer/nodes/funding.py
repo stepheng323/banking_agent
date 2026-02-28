@@ -153,7 +153,4 @@ def _build_plan_signature(payload: TransferPayload) -> dict[str, Any]:
 
 
 def _signature_matches(plan: dict[str, Any], signature: dict[str, Any]) -> bool:
-    for key, expected in signature.items():
-        if plan.get(key) != expected:
-            return False
-    return True
+    return all(plan.get(key) == expected for key, expected in signature.items())

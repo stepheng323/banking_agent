@@ -293,9 +293,24 @@ async def test_fastpath_v2_beneficiary_name_match_preview_uses_direct_response()
         last_message_text="Which Tolu do I have?",
         loaded_context={
             "beneficiaries": [
-                {"alias": "Tolu Access", "account_name": "Tolu Adebayo", "bank_name": "Access", "account_number": "11110001"},
-                {"alias": "Tolu GTB", "account_name": "Tolu Adeyemi", "bank_name": "GTBank", "account_number": "11110002"},
-                {"alias": "Tolu First", "account_name": "Tolulope Johnson", "bank_name": "First Bank", "account_number": "11110003"},
+                {
+                    "alias": "Tolu Access",
+                    "account_name": "Tolu Adebayo",
+                    "bank_name": "Access",
+                    "account_number": "11110001",
+                },
+                {
+                    "alias": "Tolu GTB",
+                    "account_name": "Tolu Adeyemi",
+                    "bank_name": "GTBank",
+                    "account_number": "11110002",
+                },
+                {
+                    "alias": "Tolu First",
+                    "account_name": "Tolulope Johnson",
+                    "bank_name": "First Bank",
+                    "account_number": "11110003",
+                },
             ]
         },
     )
@@ -337,7 +352,10 @@ async def test_fastpath_v2_flow_recap_without_active_flow_returns_no_active_flow
     }
 
     updates = await plan_tasks(state, config)
-    assert updates.get("final_response") == "There is no active transfer flow right now. Start a transfer and I will guide you."
+    assert (
+        updates.get("final_response")
+        == "There is no active transfer flow right now. Start a transfer and I will guide you."
+    )
     assert "tasks" not in updates
 
 

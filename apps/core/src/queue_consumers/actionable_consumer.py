@@ -16,9 +16,8 @@ logger = get_logger(__name__)
 def _is_duplicate_channel_message_error(error: IntegrityError) -> bool:
     """Return True when integrity error corresponds to duplicate channel message id."""
     message = str(getattr(error, "orig", error)).lower()
-    return (
-        ("duplicate key value" in message or "unique constraint" in message)
-        and ("channel_message_id" in message or "wa_message_id" in message)
+    return ("duplicate key value" in message or "unique constraint" in message) and (
+        "channel_message_id" in message or "wa_message_id" in message
     )
 
 

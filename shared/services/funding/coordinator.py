@@ -201,8 +201,7 @@ class BatchFundingCoordinator:
         step_account_ids = {str(step.account_id) for step in plan.steps}
         shortfall = self._build_shortfall(
             demand=demand,
-            account_requested=plan.primary_bank_name
-            or render_message("funding.format.plan.bank_fallback", locale),
+            account_requested=plan.primary_bank_name or render_message("funding.format.plan.bank_fallback", locale),
             account_available=float(plan.primary_available_balance or 0.0),
             deficit=max(0.0, float(plan.shortfall or demand.amount)),
             ledger=ledger,
@@ -284,7 +283,11 @@ class BatchFundingCoordinator:
             requested_name = (
                 first_account.bank_name
                 if first_account is not None
-                else (demand.explicit_sources[0] if demand.explicit_sources else render_message("funding.format.plan.bank_fallback", locale))
+                else (
+                    demand.explicit_sources[0]
+                    if demand.explicit_sources
+                    else render_message("funding.format.plan.bank_fallback", locale)
+                )
             )
             shortfall = self._build_shortfall(
                 demand=demand,
@@ -325,7 +328,9 @@ class BatchFundingCoordinator:
         if len(explicit_split) > MAX_SOURCE_ACCOUNTS:
             shortfall = self._build_shortfall(
                 demand=demand,
-                account_requested=next(iter(explicit_split.keys()), render_message("funding.format.plan.bank_fallback", locale)),
+                account_requested=next(
+                    iter(explicit_split.keys()), render_message("funding.format.plan.bank_fallback", locale)
+                ),
                 account_available=0.0,
                 deficit=float(demand.amount),
                 ledger=ledger,
@@ -337,7 +342,9 @@ class BatchFundingCoordinator:
         if abs(split_total - float(demand.amount)) > 0.01:
             shortfall = self._build_shortfall(
                 demand=demand,
-                account_requested=next(iter(explicit_split.keys()), render_message("funding.format.plan.bank_fallback", locale)),
+                account_requested=next(
+                    iter(explicit_split.keys()), render_message("funding.format.plan.bank_fallback", locale)
+                ),
                 account_available=0.0,
                 deficit=max(0.0, float(demand.amount) - split_total),
                 ledger=ledger,
