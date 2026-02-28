@@ -22,7 +22,6 @@ provider "aws" {
   region = var.aws_region
 }
 
-# Get current AWS account ID
 data "aws_caller_identity" "current" {}
 
 locals {

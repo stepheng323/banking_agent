@@ -9,6 +9,10 @@ resource "aws_ssm_parameter" "secret" {
   type      = "SecureString"
   value     = each.value
   overwrite = var.overwrite
+
+  lifecycle {
+    ignore_changes = [value]
+  }
 }
 
 resource "aws_ssm_parameter" "non_secret" {
