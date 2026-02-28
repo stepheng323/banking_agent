@@ -65,8 +65,8 @@ class UserRepository(BaseRepository[User]):
 
     async def get_by_whatsapp_id(self, whatsapp_id: str) -> User | None:
         """Get user by WhatsApp ID."""
-        result = await self.db.execute(select(User).filter(User.whatsapp_id == whatsapp_id))
-        return result.scalars().first()
+        # This is a legacy method, mapping to channel identity
+        return await self.get_by_channel_identity("whatsapp", whatsapp_id)
 
     async def is_registered(self, phone_number: str) -> bool:
         """Check if a user is registered."""
@@ -106,35 +106,19 @@ class UserRepository(BaseRepository[User]):
         if user is not None:
             user.last_active = datetime.utcnow()
 
-    async def mark_verified(self, user_id: str) -> User:
-        """Mark user as verified (doesn't commit)."""
-        user = await self.get_by_id(user_id)
-        if user:
-            user.is_verified = True
-        return user
-
     async def get_registered_count(self) -> int:
         """Get count of registered users."""
         result = await self.db.execute(select(func.count(User.id)))
-        return result.scalar() or 0
+        val = result.scalar()
+        return int(val) if val is not None else 0
 
     async def get_accounts_by_phone(self, phone_number: str) -> list:
         """Get user accounts by phone number."""
         user = await self.get_by_phone(phone_number)
-        if user:  # Need to deal with lazy loading of accounts!
-            # AsyncSession requires explicit handling for lazy relationships or eager loading.
-            # Assuming joinedload or selectinload should be used if accessed.
-            # But simple access `user.accounts` might fail if session is async and relation is lazy.
-            # For now, let's assume we need to fetch them.
-            # Actually, the proper way is `options(selectinload(User.accounts))` in `get_by_phone` if often needed,
-            # or manual fetch here.
-            # Given the scope, let's rely on `awaitable attrs` if configured or just fetch manually.
-            # Easiest quick fix:
-            # return user.accounts might raise MissingGreenlet.
-            # Better:
-            # result = await self.db.execute(select(Account).filter(Account.user_id == user.id))
-            # return result.scalars().all()
-            # But Account import might loop.
-            pass  # See instruction below.
+        if user:
+            from shared.database.models import Account
+
+            result = await self.db.execute(select(Account).filter(Account.user_id == user.id))
+            return list(result.scalars().all())
 
         return []

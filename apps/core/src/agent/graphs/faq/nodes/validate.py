@@ -1,6 +1,7 @@
 """Validate intent node - detect forbidden scopes."""
 
 import re
+from typing import cast
 
 from apps.core.src.agent.graphs.faq.prompts import FORBIDDEN_PATTERNS
 from apps.core.src.agent.graphs.faq.state import FAQState
@@ -39,6 +40,6 @@ def validate_intent_node(state: FAQState) -> FAQState:
     return {
         **state,
         "is_forbidden_scope": is_forbidden,
-        "forbidden_reason": forbidden_reason,
+        "forbidden_reason": cast(str | None, forbidden_reason),
         "should_route_to_support": is_forbidden,
     }

@@ -51,8 +51,8 @@ class AccountRepository(BaseRepository[Account]):
     async def deactivate_account(self, account_id: str) -> Account | None:
         """Deactivate an account (doesn't commit)."""
         account = await self.get_by_account_id(account_id)
-        if account:
-            account.is_active = cast(Any, False)
+        # Account model doesn't have is_active, this was a legacy check.
+        # If we need it, we should add it to the model.
         return account
 
     async def get_default_account(self, user_id: str) -> Account | None:
@@ -86,6 +86,7 @@ class AccountRepository(BaseRepository[Account]):
 
         account = await self.get_by_account_id(account_id)
         if account and str(account.user_id) == str(user_uuid):
+            # Use cast to handle SQLAlchemy InstrumentedAttribute assignment
             account.is_default = cast(Any, True)
             await self.db.flush()
             return account

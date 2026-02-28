@@ -1,0 +1,24 @@
+shared/utils/flow_decryption.py:88: error: Unused "type: ignore" comment  [unused-ignore]
+Traceback (most recent call last):
+  File "/home/abiodun/dev/personal/banking_agent/.venv/bin/mypy", line 10, in <module>
+    sys.exit(console_entry())
+             ~~~~~~~~~~~~~^^
+  File "/home/abiodun/dev/personal/banking_agent/.venv/lib/python3.13/site-packages/mypy/__main__.py", line 15, in console_entry
+    main()
+    ~~~~^^
+  File "mypy/main.py", line 135, in main
+  File "mypy/main.py", line 219, in run_build
+  File "mypy/build.py", line 222, in build
+  File "mypy/build.py", line 301, in _build
+  File "mypy/build.py", line 2952, in dispatch
+  File "mypy/build.py", line 3347, in process_graph
+  File "mypy/build.py", line 925, in wait_for_done
+  File "mypy/build.py", line 3455, in process_stale_scc
+  File "mypy/build.py", line 3412, in process_fresh_modules
+  File "mypy/build.py", line 2124, in load_tree
+  File "mypy/nodes.py", line 437, in deserialize
+  File "mypy/nodes.py", line 4751, in deserialize
+  File "mypy/nodes.py", line 4644, in deserialize
+  File "mypy/nodes.py", line 286, in deserialize
+  File "mypy/nodes.py", line 1350, in deserialize
+KeyError: 'setter_type'

@@ -116,7 +116,6 @@ def parse_payload(payload: dict[str, Any]) -> list[ParsedMessage]:
                 results.append(
                     ParsedMessage(
                         id=message.get("id"),
-                        from_number=message.get("from"),
                         text=text,
                         type=message_type,
                         flow_data=flow_data,

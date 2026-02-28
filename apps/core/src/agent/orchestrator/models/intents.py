@@ -14,6 +14,10 @@ class UiIntent:
 
     actionable_payload: dict[str, Any] | None = field(default=None, kw_only=True)
 
+    def to_dict(self) -> dict[str, Any]:
+        """Convert intent to dictionary."""
+        raise NotImplementedError("Subclasses must implement to_dict")
+
 
 @dataclass
 class Say(UiIntent):
@@ -32,6 +36,15 @@ class Ask(UiIntent):
     text: str
     fields: list[str] = field(default_factory=list)
     task_ids: list[str] = field(default_factory=list)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "type": "ask",
+            "text": self.text,
+            "fields": self.fields,
+            "task_ids": self.task_ids,
+            "actionable_payload": self.actionable_payload,
+        }
 
 
 @dataclass

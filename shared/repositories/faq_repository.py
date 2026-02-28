@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, cast
 
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -55,25 +55,27 @@ class FAQRepository(BaseRepository[FAQEntry]):
         scored_results: list[tuple[FAQEntry, int]] = []
 
         for entry in entries:
-            score = entry.priority  # Start with priority
+            score = float(entry.priority)  # Start with priority
 
             for keyword in keywords:
                 keyword_lower = keyword.lower()
 
                 # Check keywords array (highest value)
-                if entry.keywords and keyword_lower in [k.lower() for k in entry.keywords]:
-                    score += 3
+                entry_keywords: list[str] = list(entry.keywords) if entry.keywords is not None else []
+                if keyword_lower in [str(k).lower() for k in entry_keywords]:
+                    score += 3.0
 
                 # Check tags array
-                if entry.tags and keyword_lower in [t.lower() for t in entry.tags]:
-                    score += 2
+                entry_tags: list[str] = list(entry.tags) if entry.tags is not None else []
+                if keyword_lower in [str(t).lower() for t in entry_tags]:
+                    score += 2.0
 
                 # Check if keyword appears in question (fuzzy match)
-                if keyword_lower in entry.question.lower():
-                    score += 1
+                if keyword_lower in str(entry.question).lower():
+                    score += 1.0
 
-            if score > entry.priority:  # Only include if we found any matches
-                scored_results.append((entry, score))
+            if score > float(entry.priority):  # Only include if we found any matches
+                scored_results.append((entry, int(score)))
 
         # Sort by score descending
         scored_results.sort(key=lambda x: x[1], reverse=True)
@@ -130,8 +132,9 @@ class FAQRepository(BaseRepository[FAQEntry]):
         results: list[tuple[FAQEntry, float]] = []
 
         for entry in entries:
-            if entry.embedding:
-                similarity = self._cosine_similarity(embedding, entry.embedding)
+            if entry.embedding is not None:
+                # Cast to list[float] since entry.embedding is Column[Any]
+                similarity = self._cosine_similarity(embedding, cast(list[float], entry.embedding))
                 if similarity >= threshold:
                     results.append((entry, similarity))
 

@@ -1,5 +1,7 @@
 """Pydantic models for transfer entity extraction."""
 
+from typing import Any
+
 from pydantic import BaseModel, Field, field_validator
 
 
@@ -62,7 +64,7 @@ class TransferEntities(BaseModel):
 
     @field_validator("amount", mode="before")
     @classmethod
-    def validate_amount(cls, v):
+    def validate_amount(cls, v: Any) -> float | None:
         """Convert amount to float, let validation node handle limit checks."""
         if v is None:
             return v
@@ -74,7 +76,7 @@ class TransferEntities(BaseModel):
 
     @field_validator("transfer_percentage", mode="before")
     @classmethod
-    def validate_transfer_percentage(cls, v):
+    def validate_transfer_percentage(cls, v: Any) -> float | None:
         """Validate that percentage is within bounds when provided."""
         if v is None:
             return v
@@ -89,7 +91,7 @@ class TransferEntities(BaseModel):
 
     @field_validator("amount_multiplier", mode="before")
     @classmethod
-    def validate_amount_multiplier(cls, v):
+    def validate_amount_multiplier(cls, v: Any) -> float | None:
         """Validate that multiplier is positive when provided."""
         if v is None:
             return v

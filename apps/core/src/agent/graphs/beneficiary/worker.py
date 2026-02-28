@@ -251,9 +251,9 @@ class BeneficiaryWorker:
             response=render_message("beneficiary.delete.success", locale, {"target": target}),
         )
 
-    def _update_beneficiary(self, user_id: str, payload: dict) -> TransactionResult:
+    async def _update_beneficiary(self, user_id: str, payload: dict, context: dict[str, Any]) -> TransactionResult:
         # Placeholder for update logic
-        locale = LocaleManager.normalize(payload.get("language")).value
+        locale = LocaleManager.normalize(context.get("language")).value
         return TransactionResult(
             outcome=TransactionOutcome.FAILED,
             error=render_message("beneficiary.update.not_supported", locale),

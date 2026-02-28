@@ -45,7 +45,7 @@ class PayoutJobPayload(TypedDict):
     recipient_account: str
     recipient_bank_code: str
     idempotency_key: str
-    narration: NotRequired[str] | None
+    narration: NotRequired[str | None]
 
 
 class FundingJobPayload(TypedDict):
@@ -109,7 +109,7 @@ class FlowEventPayload(TypedDict):
     idempotency_key: str
     success: bool
     error: NotRequired[str]
-    extra_data: NotRequired[dict[str, Any]] | None
+    extra_data: NotRequired[dict[str, Any] | None]
     channel: NotRequired[str]
 
 
