@@ -20,11 +20,19 @@ variable "aws_region" {
 variable "github_repo_owner" {
   description = "The GitHub username or organization name for OIDC trust."
   type        = string
+  default     = ""
 }
 
 variable "github_repo_name" {
   description = "The GitHub repository name for OIDC trust."
   type        = string
+  default     = ""
+}
+
+variable "create_github_actions_role" {
+  description = "When true, this stack manages GitHub OIDC provider and GitHub Actions role; when false, it uses an existing role."
+  type        = bool
+  default     = false
 }
 
 variable "state_bucket_name" {
@@ -44,6 +52,11 @@ variable "state_key_prefix" {
   description = "Object key prefix in the state bucket that Terraform can read/write (e.g. dev/*)."
   type        = string
   default     = "dev/*"
+}
+
+data "aws_iam_role" "github_actions_existing" {
+  count = var.create_github_actions_role ? 0 : 1
+  name  = var.github_actions_role_name
 }
 
 resource "aws_s3_bucket" "tf_state" {
@@ -86,6 +99,7 @@ resource "aws_dynamodb_table" "tf_lock" {
 }
 
 resource "aws_iam_openid_connect_provider" "github" {
+  count          = var.create_github_actions_role ? 1 : 0
   url            = "https://token.actions.githubusercontent.com"
   client_id_list = ["sts.amazonaws.com"]
 
@@ -96,7 +110,15 @@ resource "aws_iam_openid_connect_provider" "github" {
 }
 
 resource "aws_iam_role" "github_actions" {
-  name = var.github_actions_role_name
+  count = var.create_github_actions_role ? 1 : 0
+  name  = var.github_actions_role_name
+
+  lifecycle {
+    precondition {
+      condition     = length(trim(var.github_repo_owner, " ")) > 0 && length(trim(var.github_repo_name, " ")) > 0
+      error_message = "When create_github_actions_role=true, github_repo_owner and github_repo_name must be provided."
+    }
+  }
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -104,7 +126,7 @@ resource "aws_iam_role" "github_actions" {
       {
         Effect = "Allow",
         Principal = {
-          Federated = aws_iam_openid_connect_provider.github.arn
+          Federated = aws_iam_openid_connect_provider.github[0].arn
         },
         Action = "sts:AssumeRoleWithWebIdentity",
         Condition = {
@@ -121,13 +143,19 @@ resource "aws_iam_role" "github_actions" {
 }
 
 resource "aws_iam_role_policy_attachment" "github_actions_admin" {
-  role       = aws_iam_role.github_actions.name
+  count      = var.create_github_actions_role ? 1 : 0
+  role       = aws_iam_role.github_actions[0].name
   policy_arn = "arn:aws:iam::aws:policy/AdministratorAccess"
+}
+
+locals {
+  github_actions_role_name_effective = var.create_github_actions_role ? aws_iam_role.github_actions[0].name : data.aws_iam_role.github_actions_existing[0].name
+  github_actions_role_arn_effective  = var.create_github_actions_role ? aws_iam_role.github_actions[0].arn : data.aws_iam_role.github_actions_existing[0].arn
 }
 
 resource "aws_iam_role_policy" "github_actions_backend_access" {
   name = "terraform-backend-access-${var.state_bucket_name}"
-  role = aws_iam_role.github_actions.id
+  role = local.github_actions_role_name_effective
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -182,5 +210,5 @@ output "github_actions_backend_policy_name" {
 
 output "github_actions_role_arn" {
   description = "The ARN of the IAM role for GitHub Actions to assume."
-  value       = aws_iam_role.github_actions.arn
+  value       = local.github_actions_role_arn_effective
 }

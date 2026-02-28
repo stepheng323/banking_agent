@@ -6,15 +6,15 @@ on:
     paths:
       - "apps/**"
       - "shared/**"
-      - "infrastructure/**"
-      - ".github/workflows/**"
+      - "infrastructure/aws/**"
+      - ".github/workflows/deploy-dev.yml"
   pull_request:
     branches: [main]
     paths:
       - "apps/**"
       - "shared/**"
-      - "infrastructure/**"
-      - ".github/workflows/**"
+      - "infrastructure/aws/**"
+      - ".github/workflows/deploy-dev.yml"
   workflow_dispatch:
 
 concurrency:
