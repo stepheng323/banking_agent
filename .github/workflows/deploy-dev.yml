@@ -1,0 +1,255 @@
+name: Deploy to AWS Dev Environment
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/**"
+      - "shared/**"
+      - "infrastructure/aws/**"
+      - ".github/workflows/deploy-dev.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "apps/**"
+      - "shared/**"
+      - "infrastructure/aws/**"
+      - ".github/workflows/deploy-dev.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-dev
+  cancel-in-progress: false
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AWS_REGION: us-east-1
+  TF_DIR: infrastructure/aws
+  ECR_CORE_REPO: banking-agent-core-dev
+  ECR_GATEWAY_REPO: banking-agent-gateway-dev
+  ECS_CLUSTER: banking-agent-cluster-dev
+  ECS_SERVICE: banking-agent-core-chat-worker
+
+jobs:
+  lint-and-test:
+    name: Lint / Type-check / Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Setup Python
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: uv sync --all-extras --dev
+
+      - name: Ruff (lint)
+        run: uv run ruff check .
+
+      - name: Mypy (type-check)
+        run: uv run mypy .
+
+      - name: Pytest (tests)
+        run: uv run pytest -q
+
+  terraform-plan:
+    name: Terraform Plan
+    runs-on: ubuntu-latest
+    needs: [lint-and-test]
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::808537413474:role/banking-agent-github-actions-role-dev
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.6.6"
+
+      - name: Terraform init
+        working-directory: ${{ env.TF_DIR }}
+        run: terraform init -input=false
+
+      - name: Terraform fmt (check)
+        working-directory: ${{ env.TF_DIR }}
+        run: terraform fmt -check -recursive
+
+      - name: Terraform validate
+        working-directory: ${{ env.TF_DIR }}
+        run: terraform validate
+
+      - name: Terraform plan
+        working-directory: ${{ env.TF_DIR }}
+        env:
+          TF_VAR_redis_url: ${{ secrets.REDIS_URL_DEV }}
+          TF_VAR_database_url: ${{ secrets.DATABASE_URL_DEV }}
+        run: terraform plan -input=false -out=plan.out
+
+      - name: Upload plan artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tf-plan
+          path: ${{ env.TF_DIR }}/plan.out
+
+  terraform-apply:
+    name: Terraform Apply
+    runs-on: ubuntu-latest
+    needs: [terraform-plan]
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    # Optional: protect with a GitHub Environment that requires approval
+    # environment: dev
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::808537413474:role/banking-agent-github-actions-role-dev
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.6.6"
+
+      - name: Download plan artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: tf-plan
+          path: ${{ env.TF_DIR }}
+
+      - name: Terraform init
+        working-directory: ${{ env.TF_DIR }}
+        run: terraform init -input=false
+
+      - name: Terraform apply
+        working-directory: ${{ env.TF_DIR }}
+        env:
+          TF_VAR_redis_url: ${{ secrets.REDIS_URL_DEV }}
+          TF_VAR_database_url: ${{ secrets.DATABASE_URL_DEV }}
+        run: terraform apply -input=false -auto-approve plan.out
+
+  database-migrations:
+    name: DB Migrations & Seeding
+    runs-on: ubuntu-latest
+    needs: [terraform-apply]
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install ".[dev,all]"
+
+      - name: Run Alembic migrations
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL_DEV }}
+        run: alembic upgrade head
+
+  build-and-deploy-app:
+    name: Build & Deploy App
+    runs-on: ubuntu-latest
+    needs: [database-migrations]
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::808537413474:role/banking-agent-github-actions-role-dev
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build, tag, and push Core Worker
+        uses: docker/build-push-action@v5
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        with:
+          context: .
+          file: apps/core/Dockerfile.worker
+          push: true
+          tags: ${{ env.ECR_REGISTRY }}/${{ env.ECR_CORE_REPO }}:chat-worker-${{ github.sha }},${{ env.ECR_REGISTRY }}/${{ env.ECR_CORE_REPO }}:chat-worker-latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build, tag, and push Core Lambda
+        uses: docker/build-push-action@v5
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        with:
+          context: .
+          file: apps/core/Dockerfile.lambda
+          push: true
+          tags: ${{ env.ECR_REGISTRY }}/${{ env.ECR_CORE_REPO }}:lambda-workers-${{ github.sha }},${{ env.ECR_REGISTRY }}/${{ env.ECR_CORE_REPO }}:lambda-workers-latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build, tag, and push Gateway Lambda
+        uses: docker/build-push-action@v5
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        with:
+          context: .
+          file: apps/gateway/Dockerfile.lambda
+          push: true
+          tags: ${{ env.ECR_REGISTRY }}/${{ env.ECR_GATEWAY_REPO }}:lambda-${{ github.sha }},${{ env.ECR_REGISTRY }}/${{ env.ECR_GATEWAY_REPO }}:lambda-latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Force New ECS Deployment
+        run: |
+          aws ecs update-service \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --service ${{ env.ECS_SERVICE }} \
+            --force-new-deployment
+
+      - name: Update Core Lambda Functions
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        run: |
+          # Update Transaction Worker
+          aws lambda update-function-code \
+            --function-name banking-agent-transaction-worker-dev \
+            --image-uri $ECR_REGISTRY/$ECR_CORE_REPO:lambda-workers-${{ github.sha }}
+
+          # Update Messaging Worker
+          aws lambda update-function-code \
+            --function-name banking-agent-messaging-worker-dev \
+            --image-uri $ECR_REGISTRY/$ECR_CORE_REPO:lambda-workers-${{ github.sha }}
+
+      - name: Update Gateway Lambda Function
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        run: |
+          aws lambda update-function-code \
+            --function-name banking-agent-api-gateway-dev \
+            --image-uri $ECR_REGISTRY/$ECR_GATEWAY_REPO:lambda-${{ github.sha }}

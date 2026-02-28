@@ -1,0 +1,142 @@
+name: Bootstrap AWS Dev Terraform
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "infrastructure/aws-backend-bootstrap/**"
+      - ".github/workflows/bootstrap-aws-dev.yml"
+  push:
+    branches: [main]
+    paths:
+      - "infrastructure/aws-backend-bootstrap/**"
+      - ".github/workflows/bootstrap-aws-dev.yml"
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "Run mode"
+        required: true
+        default: "plan"
+        type: choice
+        options:
+          - plan
+          - apply
+      create_github_actions_role:
+        description: "Manage GitHub OIDC provider and role in bootstrap stack"
+        required: true
+        default: false
+        type: boolean
+      state_key_prefix:
+        description: "S3 object prefix for Terraform state access (example: dev/*)"
+        required: true
+        default: "dev/*"
+        type: string
+
+concurrency:
+  group: bootstrap-aws-dev
+  cancel-in-progress: false
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AWS_REGION: eu-west-1
+  TF_DIR: infrastructure/aws-backend-bootstrap
+  TF_VAR_state_bucket_name: banking-agent-tf-state-dev
+  TF_VAR_lock_table_name: banking-agent-tf-locks-dev
+  TF_VAR_github_actions_role_name: banking-agent-github-actions-role-dev
+  TF_VAR_github_repo_owner: ${{ github.repository_owner }}
+  TF_VAR_github_repo_name: ${{ github.event.repository.name }}
+  TF_VAR_create_github_actions_role: ${{ github.event.inputs.create_github_actions_role || 'false' }}
+  TF_VAR_state_key_prefix: ${{ github.event.inputs.state_key_prefix || 'dev/*' }}
+
+jobs:
+  terraform-plan:
+    name: Terraform Bootstrap Plan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Validate Bootstrap Role Secret
+        run: |
+          if [ -z "${{ secrets.AWS_BOOTSTRAP_ROLE_ARN_DEV }}" ]; then
+            echo "Missing required repository secret: AWS_BOOTSTRAP_ROLE_ARN_DEV"
+            exit 1
+          fi
+
+      - name: Configure AWS Credentials (OIDC Bootstrap Role)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_BOOTSTRAP_ROLE_ARN_DEV }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.6.6"
+
+      - name: Terraform init
+        working-directory: ${{ env.TF_DIR }}
+        run: terraform init -input=false
+
+      - name: Terraform fmt (check)
+        working-directory: ${{ env.TF_DIR }}
+        run: terraform fmt -check -recursive
+
+      - name: Terraform validate
+        working-directory: ${{ env.TF_DIR }}
+        run: terraform validate
+
+      - name: Terraform plan
+        working-directory: ${{ env.TF_DIR }}
+        run: terraform plan -input=false -out=plan.out
+
+      - name: Upload plan artifact
+        if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'apply')
+        uses: actions/upload-artifact@v4
+        with:
+          name: bootstrap-tf-plan
+          path: ${{ env.TF_DIR }}/plan.out
+
+  terraform-apply:
+    name: Terraform Bootstrap Apply
+    runs-on: ubuntu-latest
+    needs: [terraform-plan]
+    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'apply')
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Validate Bootstrap Role Secret
+        run: |
+          if [ -z "${{ secrets.AWS_BOOTSTRAP_ROLE_ARN_DEV }}" ]; then
+            echo "Missing required repository secret: AWS_BOOTSTRAP_ROLE_ARN_DEV"
+            exit 1
+          fi
+
+      - name: Configure AWS Credentials (OIDC Bootstrap Role)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_BOOTSTRAP_ROLE_ARN_DEV }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.6.6"
+
+      - name: Download plan artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: bootstrap-tf-plan
+          path: ${{ env.TF_DIR }}
+
+      - name: Terraform init
+        working-directory: ${{ env.TF_DIR }}
+        run: terraform init -input=false
+
+      - name: Terraform apply
+        working-directory: ${{ env.TF_DIR }}
+        run: terraform apply -input=false -auto-approve plan.out
