@@ -166,7 +166,9 @@ jobs:
           context: .
           file: apps/core/Dockerfile.lambda
           platforms: ${{ env.LAMBDA_IMAGE_PLATFORM }}
-          push: true
+          provenance: false
+          sbom: false
+          outputs: type=image,oci-mediatypes=false,push=true
           tags: ${{ steps.login-ecr-preapply.outputs.registry }}/${{ env.ECR_CORE_REPO }}:lambda-workers-latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
@@ -177,10 +179,43 @@ jobs:
           context: .
           file: apps/gateway/Dockerfile.lambda
           platforms: ${{ env.LAMBDA_IMAGE_PLATFORM }}
-          push: true
+          provenance: false
+          sbom: false
+          outputs: type=image,oci-mediatypes=false,push=true
           tags: ${{ steps.login-ecr-preapply.outputs.registry }}/${{ env.ECR_GATEWAY_REPO }}:lambda-latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Validate Lambda image manifest media types in ECR
+        run: |
+          set -euo pipefail
+
+          validate_lambda_manifest() {
+            local repository="$1"
+            local tag="$2"
+            local media_type
+
+            media_type="$(aws ecr describe-images \
+              --repository-name "$repository" \
+              --image-ids imageTag="$tag" \
+              --query 'imageDetails[0].imageManifestMediaType' \
+              --output text)"
+
+            echo "$repository:$tag -> $media_type"
+
+            case "$media_type" in
+              application/vnd.docker.distribution.manifest.v2+json)
+                ;;
+              *)
+                echo "ERROR: Lambda-incompatible manifest media type for $repository:$tag ($media_type)"
+                echo "Expected: application/vnd.docker.distribution.manifest.v2+json"
+                exit 1
+                ;;
+            esac
+          }
+
+          validate_lambda_manifest "$ECR_CORE_REPO" "lambda-workers-latest"
+          validate_lambda_manifest "$ECR_GATEWAY_REPO" "lambda-latest"
 
       - name: Terraform import pre-existing resources
         working-directory: ${{ env.TF_DIR }}
@@ -284,7 +319,9 @@ jobs:
           context: .
           file: apps/core/Dockerfile.lambda
           platforms: ${{ env.LAMBDA_IMAGE_PLATFORM }}
-          push: true
+          provenance: false
+          sbom: false
+          outputs: type=image,oci-mediatypes=false,push=true
           tags: ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_CORE_REPO }}:lambda-workers-${{ github.sha }},${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_CORE_REPO }}:lambda-workers-latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
@@ -295,7 +332,9 @@ jobs:
           context: .
           file: apps/gateway/Dockerfile.lambda
           platforms: ${{ env.LAMBDA_IMAGE_PLATFORM }}
-          push: true
+          provenance: false
+          sbom: false
+          outputs: type=image,oci-mediatypes=false,push=true
           tags: ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_GATEWAY_REPO }}:lambda-${{ github.sha }},${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_GATEWAY_REPO }}:lambda-latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
