@@ -63,8 +63,8 @@ jobs:
       - name: Pytest (tests)
         run: uv run pytest -q
 
-  terraform-plan:
-    name: Terraform Plan
+  terraform-validate:
+    name: Terraform Validate
     runs-on: ubuntu-latest
     needs: [lint-and-test]
     steps:
@@ -118,19 +118,116 @@ jobs:
         env:
           TF_VAR_redis_url: ${{ secrets.REDIS_URL_DEV }}
           TF_VAR_database_url: ${{ secrets.DATABASE_URL_DEV }}
-          # JSON object with string values, e.g. {"OPENAI_API_KEY":"...","META_VERIFY_TOKEN":"..."}
           TF_VAR_secret_config_values: ${{ secrets.TF_SECRET_CONFIG_JSON_DEV }}
-          # JSON object with string values, e.g. {"META_PHONE_NUMBER_ID":"...","ONBOARDING_FLOW_ID":"..."}
           TF_VAR_non_secret_config_values: ${{ secrets.TF_NON_SECRET_CONFIG_JSON_DEV }}
-        run: terraform plan -input=false -out=plan.out
+        run: terraform plan -input=false
+
+  build-images:
+    name: Build ${{ matrix.image.name }}
+    runs-on: ubuntu-latest
+    needs: [lint-and-test]
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    strategy:
+      fail-fast: true
+      matrix:
+        image:
+          - name: chat-worker
+            dockerfile: apps/core/Dockerfile.worker
+            ecr_repo_env: ECR_CORE_REPO
+            tag_prefix: chat-worker
+            is_lambda: false
+          - name: transaction-worker-lambda
+            dockerfile: apps/core/Dockerfile.lambda.transaction
+            ecr_repo_env: ECR_CORE_REPO
+            tag_prefix: lambda-transaction
+            is_lambda: true
+          - name: messaging-worker-lambda
+            dockerfile: apps/core/Dockerfile.lambda.messaging
+            ecr_repo_env: ECR_CORE_REPO
+            tag_prefix: lambda-messaging
+            is_lambda: true
+          - name: gateway-lambda
+            dockerfile: apps/gateway/Dockerfile.lambda
+            ecr_repo_env: ECR_GATEWAY_REPO
+            tag_prefix: lambda
+            is_lambda: true
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::808537413474:role/banking-agent-github-actions-role-dev
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Ensure ECR repository exists
+        run: |
+          set -euo pipefail
+          repo_name="${{ env[matrix.image.ecr_repo_env] }}"
+          if aws ecr describe-repositories --repository-names "$repo_name" >/dev/null 2>&1; then
+            echo "ECR repository already exists: $repo_name"
+          else
+            echo "Creating missing ECR repository: $repo_name"
+            aws ecr create-repository \
+              --repository-name "$repo_name" \
+              --image-tag-mutability MUTABLE \
+              --image-scanning-configuration scanOnPush=true >/dev/null
+          fi
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build, tag, and push image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ${{ matrix.image.dockerfile }}
+          platforms: ${{ matrix.image.is_lambda && env.LAMBDA_IMAGE_PLATFORM || '' }}
+          provenance: ${{ !matrix.image.is_lambda }}
+          sbom: ${{ !matrix.image.is_lambda }}
+          outputs: ${{ matrix.image.is_lambda && 'type=image,oci-mediatypes=false,push=true' || '' }}
+          push: ${{ !matrix.image.is_lambda }}
+          tags: |
+            ${{ steps.login-ecr.outputs.registry }}/${{ env[matrix.image.ecr_repo_env] }}:${{ matrix.image.tag_prefix }}-${{ github.sha }}
+            ${{ steps.login-ecr.outputs.registry }}/${{ env[matrix.image.ecr_repo_env] }}:${{ matrix.image.tag_prefix }}-latest
+          cache-from: type=gha,scope=${{ matrix.image.name }}
+          cache-to: type=gha,scope=${{ matrix.image.name }},mode=max
+
+      - name: Validate Lambda manifest media type
+        if: matrix.image.is_lambda
+        run: |
+          set -euo pipefail
+          repo_name="${{ env[matrix.image.ecr_repo_env] }}"
+          tag="${{ matrix.image.tag_prefix }}-${{ github.sha }}"
+
+          media_type="$(aws ecr describe-images \
+            --repository-name "$repo_name" \
+            --image-ids imageTag="$tag" \
+            --query 'imageDetails[0].imageManifestMediaType' \
+            --output text)"
+
+          echo "$repo_name:$tag -> $media_type"
+
+          case "$media_type" in
+            application/vnd.docker.distribution.manifest.v2+json)
+              ;;
+            *)
+              echo "ERROR: Lambda-incompatible manifest media type ($media_type)"
+              echo "Expected: application/vnd.docker.distribution.manifest.v2+json"
+              exit 1
+              ;;
+          esac
 
   terraform-apply:
     name: Terraform Apply
     runs-on: ubuntu-latest
-    needs: [terraform-plan]
+    needs: [terraform-validate, build-images]
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
-    # Optional: protect with a GitHub Environment that requires approval
-    # environment: dev
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -150,107 +247,7 @@ jobs:
         working-directory: ${{ env.TF_DIR }}
         run: terraform init -input=false
 
-      - name: Ensure ECR repositories exist (idempotent bootstrap)
-        run: |
-          set -euo pipefail
-
-          ensure_repo() {
-            local repo_name="$1"
-
-            if aws ecr describe-repositories --repository-names "$repo_name" >/dev/null 2>&1; then
-              echo "ECR repository already exists: $repo_name"
-              return
-            fi
-
-            echo "Creating missing ECR repository: $repo_name"
-            aws ecr create-repository \
-              --repository-name "$repo_name" \
-              --image-tag-mutability MUTABLE \
-              --image-scanning-configuration scanOnPush=true >/dev/null
-          }
-
-          ensure_repo "$ECR_CORE_REPO"
-          ensure_repo "$ECR_GATEWAY_REPO"
-
-      - name: Login to Amazon ECR (pre-apply image seed)
-        id: login-ecr-preapply
-        uses: aws-actions/amazon-ecr-login@v2
-
-      - name: Set up Docker Buildx (pre-apply image seed)
-        uses: docker/setup-buildx-action@v3
-
-      - name: Build, tag, and push Transaction Worker Lambda (latest seed)
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: apps/core/Dockerfile.lambda.transaction
-          platforms: ${{ env.LAMBDA_IMAGE_PLATFORM }}
-          provenance: false
-          sbom: false
-          outputs: type=image,oci-mediatypes=false,push=true
-          tags: ${{ steps.login-ecr-preapply.outputs.registry }}/${{ env.ECR_CORE_REPO }}:lambda-transaction-latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      - name: Build, tag, and push Messaging Worker Lambda (latest seed)
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: apps/core/Dockerfile.lambda.messaging
-          platforms: ${{ env.LAMBDA_IMAGE_PLATFORM }}
-          provenance: false
-          sbom: false
-          outputs: type=image,oci-mediatypes=false,push=true
-          tags: ${{ steps.login-ecr-preapply.outputs.registry }}/${{ env.ECR_CORE_REPO }}:lambda-messaging-latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      - name: Build, tag, and push Gateway Lambda (latest seed)
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: apps/gateway/Dockerfile.lambda
-          platforms: ${{ env.LAMBDA_IMAGE_PLATFORM }}
-          provenance: false
-          sbom: false
-          outputs: type=image,oci-mediatypes=false,push=true
-          tags: ${{ steps.login-ecr-preapply.outputs.registry }}/${{ env.ECR_GATEWAY_REPO }}:lambda-latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      - name: Validate Lambda image manifest media types in ECR
-        run: |
-          set -euo pipefail
-
-          validate_lambda_manifest() {
-            local repository="$1"
-            local tag="$2"
-            local media_type
-
-            media_type="$(aws ecr describe-images \
-              --repository-name "$repository" \
-              --image-ids imageTag="$tag" \
-              --query 'imageDetails[0].imageManifestMediaType' \
-              --output text)"
-
-            echo "$repository:$tag -> $media_type"
-
-            case "$media_type" in
-              application/vnd.docker.distribution.manifest.v2+json)
-                ;;
-              *)
-                echo "ERROR: Lambda-incompatible manifest media type for $repository:$tag ($media_type)"
-                echo "Expected: application/vnd.docker.distribution.manifest.v2+json"
-                exit 1
-                ;;
-            esac
-          }
-
-          validate_lambda_manifest "$ECR_CORE_REPO" "lambda-transaction-latest"
-          validate_lambda_manifest "$ECR_CORE_REPO" "lambda-messaging-latest"
-          validate_lambda_manifest "$ECR_GATEWAY_REPO" "lambda-latest"
-
-      - name: Terraform plan (fresh)
+      - name: Terraform plan
         working-directory: ${{ env.TF_DIR }}
         env:
           TF_VAR_redis_url: ${{ secrets.REDIS_URL_DEV }}
@@ -293,15 +290,12 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL_DEV }}
         run: alembic upgrade head
 
-  build-and-deploy-app:
-    name: Build & Deploy App
+  deploy-app:
+    name: Deploy App
     runs-on: ubuntu-latest
-    needs: [database-migrations]
+    needs: [database-migrations, build-images]
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-
       - name: Configure AWS Credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -312,58 +306,6 @@ jobs:
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Build, tag, and push Core Worker
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: apps/core/Dockerfile.worker
-          push: true
-          tags: ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_CORE_REPO }}:chat-worker-${{ github.sha }},${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_CORE_REPO }}:chat-worker-latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      - name: Build, tag, and push Transaction Worker Lambda
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: apps/core/Dockerfile.lambda.transaction
-          platforms: ${{ env.LAMBDA_IMAGE_PLATFORM }}
-          provenance: false
-          sbom: false
-          outputs: type=image,oci-mediatypes=false,push=true
-          tags: ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_CORE_REPO }}:lambda-transaction-${{ github.sha }},${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_CORE_REPO }}:lambda-transaction-latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      - name: Build, tag, and push Messaging Worker Lambda
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: apps/core/Dockerfile.lambda.messaging
-          platforms: ${{ env.LAMBDA_IMAGE_PLATFORM }}
-          provenance: false
-          sbom: false
-          outputs: type=image,oci-mediatypes=false,push=true
-          tags: ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_CORE_REPO }}:lambda-messaging-${{ github.sha }},${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_CORE_REPO }}:lambda-messaging-latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      - name: Build, tag, and push Gateway Lambda
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: apps/gateway/Dockerfile.lambda
-          platforms: ${{ env.LAMBDA_IMAGE_PLATFORM }}
-          provenance: false
-          sbom: false
-          outputs: type=image,oci-mediatypes=false,push=true
-          tags: ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_GATEWAY_REPO }}:lambda-${{ github.sha }},${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_GATEWAY_REPO }}:lambda-latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
       - name: Force New ECS Deployment
         run: |
           aws ecs update-service \
@@ -371,36 +313,30 @@ jobs:
             --service ${{ env.ECS_SERVICE }} \
             --force-new-deployment
 
-      - name: Update Core Lambda Functions
+      - name: Update Lambda Functions
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
         run: |
           set -euo pipefail
 
-          aws lambda get-function --function-name "${LAMBDA_TRANSACTION_FUNCTION}" >/dev/null
-          aws lambda get-function --function-name "${LAMBDA_MESSAGING_FUNCTION}" >/dev/null
+          update_lambda() {
+            local fn_name="$1"
+            local image_uri="$2"
 
-          # Update Transaction Worker
-          aws lambda update-function-code \
-            --function-name "${LAMBDA_TRANSACTION_FUNCTION}" \
-            --image-uri $ECR_REGISTRY/$ECR_CORE_REPO:lambda-transaction-${{ github.sha }}
-          aws lambda wait function-updated --function-name "${LAMBDA_TRANSACTION_FUNCTION}"
+            echo "Updating $fn_name → $image_uri"
+            aws lambda get-function --function-name "$fn_name" >/dev/null
+            aws lambda update-function-code \
+              --function-name "$fn_name" \
+              --image-uri "$image_uri"
+            aws lambda wait function-updated --function-name "$fn_name"
+            echo "✓ $fn_name updated"
+          }
 
-          # Update Messaging Worker
-          aws lambda update-function-code \
-            --function-name "${LAMBDA_MESSAGING_FUNCTION}" \
-            --image-uri $ECR_REGISTRY/$ECR_CORE_REPO:lambda-messaging-${{ github.sha }}
-          aws lambda wait function-updated --function-name "${LAMBDA_MESSAGING_FUNCTION}"
+          update_lambda "${LAMBDA_TRANSACTION_FUNCTION}" \
+            "$ECR_REGISTRY/$ECR_CORE_REPO:lambda-transaction-${{ github.sha }}"
 
-      - name: Update Gateway Lambda Function
-        env:
-          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-        run: |
-          set -euo pipefail
+          update_lambda "${LAMBDA_MESSAGING_FUNCTION}" \
+            "$ECR_REGISTRY/$ECR_CORE_REPO:lambda-messaging-${{ github.sha }}"
 
-          aws lambda get-function --function-name "${LAMBDA_GATEWAY_FUNCTION}" >/dev/null
-
-          aws lambda update-function-code \
-            --function-name "${LAMBDA_GATEWAY_FUNCTION}" \
-            --image-uri $ECR_REGISTRY/$ECR_GATEWAY_REPO:lambda-${{ github.sha }}
-          aws lambda wait function-updated --function-name "${LAMBDA_GATEWAY_FUNCTION}"
+          update_lambda "${LAMBDA_GATEWAY_FUNCTION}" \
+            "$ECR_REGISTRY/$ECR_GATEWAY_REPO:lambda-${{ github.sha }}"
