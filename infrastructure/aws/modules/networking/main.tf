@@ -119,14 +119,6 @@ resource "aws_security_group" "ecs" {
   description = "Security group for ECS services"
   vpc_id      = aws_vpc.main.id
 
-  ingress {
-    description = "Allow traffic within VPC"
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = [var.vpc_cidr]
-  }
-
   egress {
     from_port   = 0
     to_port     = 0

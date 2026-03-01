@@ -47,3 +47,9 @@ variable "topic_arns" {
   description = "SNS topic ARN map from messaging module"
   type        = map(string)
 }
+
+variable "log_retention_in_days" {
+  description = "Retention period for gateway Lambda log group."
+  type        = number
+  default     = 30
+}

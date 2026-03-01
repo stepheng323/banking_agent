@@ -107,7 +107,7 @@ resource "aws_kms_alias" "ssm_parameters" {
 check "critical_secret_config_present" {
   assert {
     condition     = length(local.missing_critical_secret_keys) == 0
-    error_message = "Missing critical secret configuration values: ${join(", ", local.missing_critical_secret_keys)}"
+    error_message = "Missing critical secret configuration values: ${join(", ", nonsensitive(local.missing_critical_secret_keys))}"
   }
 }
 
@@ -122,6 +122,27 @@ check "database_url_present_when_rds_disabled" {
   assert {
     condition     = var.provision_rds || trimspace(local.resolved_database_url) != ""
     error_message = "DATABASE_URL must be set when provision_rds=false."
+  }
+}
+
+check "database_url_not_set_when_rds_enabled" {
+  assert {
+    condition     = !var.provision_rds || trimspace(var.database_url) == ""
+    error_message = "database_url must be empty when provision_rds=true."
+  }
+}
+
+check "db_password_required_when_rds_enabled" {
+  assert {
+    condition     = !var.provision_rds || trimspace(var.db_password) != ""
+    error_message = "db_password must be set when provision_rds=true."
+  }
+}
+
+check "api_gateway_throttling_values_valid" {
+  assert {
+    condition     = var.api_gateway_throttling_burst_limit >= 0 && var.api_gateway_throttling_rate_limit > 0
+    error_message = "API Gateway throttling values must be non-negative (burst) and positive (rate)."
   }
 }
 
@@ -192,6 +213,7 @@ module "compute_lambda_events" {
   all_parameter_arns    = module.config_ssm.all_parameter_arns
   ssm_kms_key_arn       = aws_kms_key.ssm_parameters.arn
   queue_arns            = module.messaging.queue_arns
+  log_retention_in_days = var.lambda_log_retention_in_days
 }
 
 module "compute_lambda_gateway" {
@@ -206,12 +228,16 @@ module "compute_lambda_gateway" {
   all_parameter_arns       = module.config_ssm.all_parameter_arns
   ssm_kms_key_arn          = aws_kms_key.ssm_parameters.arn
   topic_arns               = module.messaging.topic_arns
+  log_retention_in_days    = var.lambda_log_retention_in_days
 }
 
 module "api_gateway_webhooks" {
-  source               = "./modules/api-gateway-webhooks"
-  project_name         = local.project_name
-  environment          = local.environment
-  lambda_function_name = module.compute_lambda_gateway.gateway_lambda_name
-  lambda_invoke_arn    = module.compute_lambda_gateway.gateway_lambda_invoke_arn
+  source                       = "./modules/api-gateway-webhooks"
+  project_name                 = local.project_name
+  environment                  = local.environment
+  lambda_function_name         = module.compute_lambda_gateway.gateway_lambda_name
+  lambda_invoke_arn            = module.compute_lambda_gateway.gateway_lambda_invoke_arn
+  access_log_retention_in_days = var.api_gateway_access_log_retention_in_days
+  throttling_burst_limit       = var.api_gateway_throttling_burst_limit
+  throttling_rate_limit        = var.api_gateway_throttling_rate_limit
 }
