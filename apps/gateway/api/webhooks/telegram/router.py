@@ -46,7 +46,12 @@ async def telegram_webhook(
         service = TelegramWebhookService(
             publisher=publisher, user_repository=user_repo, telegram_client=TelegramClient()
         )
-        await service.process_update(update)
+        handled = await service.process_update(update)
+        logger.info(
+            "telegram_webhook_processed",
+            update_id=update.get("update_id"),
+            handled=handled,
+        )
         await db.commit()
         return Response(status_code=200)
     except Exception as e:
