@@ -5,7 +5,7 @@
       db-migrate db-upgrade db-rollback db-reset db-shell \
       install install-dev install-all deps-check setup rebuild-venv \
       install-hooks lint-file check-file format-file check-orchestrator check-agent \
-      info status ci test-venv init-checkpoints
+      info status ci test-venv init-checkpoints local-build local-build-smoke local-build-images
 
 # Colors for output
 BLUE := \033[36m
@@ -265,3 +265,15 @@ status: info ## Alias for info
 
 ci: check-all test ## Run CI checks (lint + type-check + format + test)
 	@echo "$(GREEN)✅ CI checks passed!$(RESET)"
+
+local-build: ## Run local runtime smoke checks + build all deploy images
+	@echo "$(BLUE)🏗️  Running local deploy build workflow...$(RESET)"
+	@bash scripts/build_local.sh
+
+local-build-smoke: ## Run local runtime boundary smoke checks only
+	@echo "$(BLUE)🧪 Running local runtime smoke checks...$(RESET)"
+	@bash scripts/build_local.sh --smoke-only
+
+local-build-images: ## Build local deploy images only
+	@echo "$(BLUE)🐳 Building local deploy images...$(RESET)"
+	@bash scripts/build_local.sh --build-only
