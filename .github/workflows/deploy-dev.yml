@@ -85,7 +85,7 @@ jobs:
             local venv=".venv-${name}"
 
             uv venv "$venv"
-            "$venv/bin/uv" pip install ".[${extra}]"
+            uv pip install --python "$venv/bin/python" ".[${extra}]"
             "$venv/bin/python" -c "import importlib; m = importlib.import_module('${module}'); getattr(m, '${symbol}')"
             echo "✓ ${name} runtime import check passed"
           }
