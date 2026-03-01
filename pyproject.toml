@@ -8,28 +8,21 @@ name = "banking-agent"
 version = "0.1.0"
 requires-python = ">=3.11"
 
-# BASE dependencies - shared by all apps
+# BASE dependencies - truly universal, shared by ALL runtimes
 dependencies = [
-    "fastapi>=0.121.1",
-    "uvicorn[standard]>=0.38.0",
     "pydantic>=2.9.0",
     "pydantic-settings>=2.5.0",
     "psycopg[binary]>=3.1.0",
     "asyncpg>=0.30.0",
     "greenlet>=3.1.1",
     "sqlalchemy>=2.0.44",
-    "alembic>=1.17.2",
     "redis>=5.2.1",
     "httpx>=0.28.1",
-    "python-multipart>=0.0.9",
     "python-dotenv>=1.0.1",
     "structlog>=25.5.0",
-    "pycryptodome>=3.23.0",
     "passlib[bcrypt]>=1.7.4",
     "bcrypt==4.0.1",
     "aioboto3>=15.5.0",
-    "mangum>=0.19.0",
-    "awslambdaric>=2.2.1",
 ]
 
 [tool.hatch.build.targets.wheel]
@@ -37,6 +30,13 @@ packages = ["apps", "shared"]
 
 # App-specific optional dependencies
 [project.optional-dependencies]
+# Web server stack (FastAPI + ASGI)
+web = [
+    "fastapi>=0.121.1",
+    "uvicorn[standard]>=0.38.0",
+    "python-multipart>=0.0.9",
+]
+
 # Core app - AI/Agent dependencies
 core = [
     "langchain>=1.2.0",
@@ -51,8 +51,17 @@ receipt = [
     "jinja2>=3.0.0",
 ]
 
-# Gateway app - minimal, uses base only
-gateway = []
+# Gateway app - web stack + WhatsApp flow encryption + Lambda ASGI adapter
+gateway = [
+    "banking-agent[web]",
+    "mangum>=0.19.0",
+    "pycryptodome>=3.23.0",
+]
+
+# DB migrations (CI only, not shipped in any runtime image)
+migrations = [
+    "alembic>=1.17.2",
+]
 
 # Runtime-specific bundles for deploy targets
 runtime-core-chat = [
@@ -71,7 +80,7 @@ runtime-gateway = [
 
 # All apps combined (for local dev)
 all = [
-    "banking-agent[core,receipt,gateway,runtime-core-chat,runtime-worker-transaction,runtime-worker-messaging,runtime-gateway]",
+    "banking-agent[core,receipt,gateway,migrations,runtime-core-chat,runtime-worker-transaction,runtime-worker-messaging,runtime-gateway]",
 ]
 
 # Development dependencies
