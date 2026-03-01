@@ -6,16 +6,14 @@ Prefer importing directly from:
 - apps.core.src.runtime.messaging_worker_dependencies
 """
 
-from apps.core.src.queue_consumers import (
-    FundingConsumer,
-    MessageConsumer,
-    OutboxConsumer,
-    PayoutConsumer,
-    RefundConsumer,
-    TransactionConsumer,
-)
 from apps.core.src.queue_consumers.actionable_consumer import ActionableMessageConsumer
 from apps.core.src.queue_consumers.flow_event_consumer import FlowEventConsumer
+from apps.core.src.queue_consumers.funding_consumer import FundingConsumer
+from apps.core.src.queue_consumers.message_consumer import MessageConsumer
+from apps.core.src.queue_consumers.outbox_consumer import OutboxConsumer
+from apps.core.src.queue_consumers.payout_consumer import PayoutConsumer
+from apps.core.src.queue_consumers.refund_consumer import RefundConsumer
+from apps.core.src.queue_consumers.transaction_consumer import TransactionConsumer
 
 
 def setup_core_consumers() -> tuple[MessageConsumer, FlowEventConsumer]:

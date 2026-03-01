@@ -4,7 +4,10 @@ from apps.core.src.agent.executors.airtime import AirtimeExecutor
 from apps.core.src.agent.executors.data import DataExecutor
 from apps.core.src.agent.executors.payout import PayoutExecutor
 from apps.core.src.agent.executors.transfer import TransferExecutor
-from apps.core.src.queue_consumers import FundingConsumer, PayoutConsumer, RefundConsumer, TransactionConsumer
+from apps.core.src.queue_consumers.funding_consumer import FundingConsumer
+from apps.core.src.queue_consumers.payout_consumer import PayoutConsumer
+from apps.core.src.queue_consumers.refund_consumer import RefundConsumer
+from apps.core.src.queue_consumers.transaction_consumer import TransactionConsumer
 from apps.core.src.runtime.common import require_aws_account_id
 from shared.clients.factories.payment import PaymentProviderFactory
 from shared.clients.providers.mono.banking import MonoBankingProvider
@@ -68,4 +71,3 @@ def setup_transaction_worker_consumers() -> tuple[
         payout_consumer,
         refund_consumer,
     )
-

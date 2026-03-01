@@ -19,8 +19,8 @@ from apps.core.src.agent.graphs.transfer.services.extractor import TransferEntit
 from apps.core.src.agent.orchestrator import OrchestratorAgent
 from apps.core.src.agent.orchestrator.config import OrchestratorDependencies
 from apps.core.src.agent.orchestrator.services.media_service import MediaService
-from apps.core.src.queue_consumers import MessageConsumer
 from apps.core.src.queue_consumers.flow_event_consumer import FlowEventConsumer
+from apps.core.src.queue_consumers.message_consumer import MessageConsumer
 from apps.core.src.runtime.common import build_messaging_clients, require_aws_account_id
 from shared.cache.bank_cache import BankCacheService
 from shared.cache.redis_client import RedisClient
@@ -184,4 +184,3 @@ def setup_core_consumers() -> tuple[MessageConsumer, FlowEventConsumer]:
     )
 
     return message_consumer, flow_event_consumer
-

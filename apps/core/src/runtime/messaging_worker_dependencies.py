@@ -1,7 +1,7 @@
 """Dependency loader for messaging-domain Lambda worker."""
 
-from apps.core.src.queue_consumers import OutboxConsumer
 from apps.core.src.queue_consumers.actionable_consumer import ActionableMessageConsumer
+from apps.core.src.queue_consumers.outbox_consumer import OutboxConsumer
 from apps.core.src.runtime.common import build_messaging_clients, require_aws_account_id
 from shared.queue.factory import QueuePublisherFactory
 
@@ -17,4 +17,3 @@ def setup_messaging_worker_consumers() -> tuple[OutboxConsumer, ActionableMessag
     )
     actionable_consumer = ActionableMessageConsumer()
     return outbox_consumer, actionable_consumer
-
