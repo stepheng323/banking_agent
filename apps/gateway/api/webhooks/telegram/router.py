@@ -30,7 +30,6 @@ async def telegram_webhook(
     x_telegram_bot_api_secret_token: str | None = Header(default=None),
 ) -> Response:
     """Handle incoming Telegram Bot webhook updates."""
-    # 1. Validate Secret Token
     expected_token = settings.telegram_webhook_secret_token
     if expected_token and x_telegram_bot_api_secret_token != expected_token:
         logger.warning(
@@ -47,8 +46,12 @@ async def telegram_webhook(
         service = TelegramWebhookService(
             publisher=publisher, user_repository=user_repo, telegram_client=TelegramClient()
         )
-        await service.process_update(update)
-        # Commit manually if any inserts (like linking child accounts) happened inside process_update
+        handled = await service.process_update(update)
+        logger.info(
+            "telegram_webhook_processed",
+            update_id=update.get("update_id"),
+            handled=handled,
+        )
         await db.commit()
         return Response(status_code=200)
     except Exception as e:

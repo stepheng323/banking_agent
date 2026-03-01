@@ -32,7 +32,11 @@ class TelegramWebhookService:
         """Process a single Telegram update. Returns True if handled."""
         parsed = parse_update(update)
         if not parsed:
-            logger.debug("telegram_update_ignored", update_id=update.get("update_id"))
+            logger.info(
+                "telegram_update_ignored",
+                update_id=update.get("update_id"),
+                keys=sorted(update.keys()),
+            )
             return False
 
         logger.info(
