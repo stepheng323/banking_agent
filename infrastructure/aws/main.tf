@@ -202,6 +202,7 @@ module "compute" {
   all_parameter_arns         = module.config_ssm.all_parameter_arns
   ssm_kms_key_arn            = aws_kms_key.ssm_parameters.arn
   queue_arns                 = module.messaging.queue_arns
+  topic_arns                 = module.messaging.topic_arns
 }
 
 module "messaging" {
