@@ -21,9 +21,8 @@ from shared.queue.adapter import QueuePublisher
 from shared.queue.factory import QueuePublisherFactory
 from shared.queue.messages import FlowEvent, FlowEventType
 from shared.services.auth import AuthorizationService
-from shared.utils.logging import configure_logger, get_logger
+from shared.utils.logging import get_logger
 
-configure_logger()
 logger = get_logger(__name__)
 
 

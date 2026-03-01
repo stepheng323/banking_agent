@@ -110,7 +110,7 @@ variable "meta_phone_number_id" {
 }
 
 variable "whatsapp_flow_private_key_path" {
-  description = "Path to WhatsApp flow private key"
+  description = "Fallback file path to WhatsApp flow private key (optional if WHATSAPP_FLOW_PRIVATE_KEY_PEM is set)"
   type        = string
   default     = ""
 }

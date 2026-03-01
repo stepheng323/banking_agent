@@ -76,7 +76,6 @@ locals {
 
   critical_non_secret_keys = [
     "META_PHONE_NUMBER_ID",
-    "WHATSAPP_FLOW_PRIVATE_KEY_PATH",
     "ONBOARDING_FLOW_ID",
     "ACCOUNT_LINKING_FLOW_ID",
     "PIN_CONFIRMATION_FLOW_ID"
@@ -115,6 +114,16 @@ check "critical_non_secret_config_present" {
   assert {
     condition     = length(local.missing_critical_non_secret_keys) == 0
     error_message = "Missing critical non-secret configuration values: ${join(", ", local.missing_critical_non_secret_keys)}"
+  }
+}
+
+check "whatsapp_flow_private_key_source_present" {
+  assert {
+    condition = (
+      trimspace(lookup(local.secret_env_vars, "WHATSAPP_FLOW_PRIVATE_KEY_PEM", "")) != ""
+      || trimspace(lookup(local.non_secret_env_vars, "WHATSAPP_FLOW_PRIVATE_KEY_PATH", "")) != ""
+    )
+    error_message = "Set either WHATSAPP_FLOW_PRIVATE_KEY_PEM (preferred) or WHATSAPP_FLOW_PRIVATE_KEY_PATH."
   }
 }
 
