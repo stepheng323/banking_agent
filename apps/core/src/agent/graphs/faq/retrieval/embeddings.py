@@ -2,7 +2,7 @@
 
 from openai import AsyncOpenAI
 
-from shared.config import settings
+from shared.config.settings import settings
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)

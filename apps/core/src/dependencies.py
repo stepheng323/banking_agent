@@ -40,20 +40,22 @@ from shared.clients.providers.mono.banking import MonoBankingProvider
 from shared.clients.providers.mono.direct_debit import MonoDirectDebitProvider
 from shared.clients.telegram.client import TelegramClient
 from shared.clients.whatsapp.client import WhatsAppClient
-from shared.config import settings
+from shared.config.settings import settings
 from shared.database.connection import get_db_session
 from shared.i18n import validate_catalog_completeness
-from shared.policy import get_cached_policy, validate_policy_coverage
+from shared.policy.loader import get_cached_policy
+from shared.policy.validation import validate_policy_coverage
 from shared.queue.factory import QueuePublisherFactory
 from shared.queue.sqs_consumer import SQSQueueConsumer
-from shared.repositories import AccountRepository, BeneficiaryRepository
+from shared.repositories.account_repository import AccountRepository
 from shared.repositories.actionable_message_repository import ActionableMessageRepository
+from shared.repositories.beneficiary_repository import BeneficiaryRepository
 from shared.repositories.transaction_repository import TransactionRepository
 from shared.repositories.user_repository import UserRepository
-from shared.services import ConversationResponder
+from shared.services.conversation_responder import ConversationResponder
 from shared.services.onboarding import session_manager as onboarding_session_manager
 from shared.services.task_planner import refresh_planner_system_prompt
-from shared.services.task_queue import TaskQueueService as TaskQueue
+from shared.services.task_queue.service import TaskQueueService as TaskQueue
 
 
 def _require_aws_account_id() -> None:

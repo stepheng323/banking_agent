@@ -3,7 +3,7 @@
 import asyncio
 from typing import Any
 
-from shared.cache import AccountCacheService
+from shared.cache.account_cache import AccountCacheService
 from shared.clients.abstractions.payment import PaymentProvider
 from shared.utils.logging import get_logger
 

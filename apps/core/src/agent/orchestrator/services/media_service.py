@@ -6,7 +6,7 @@ import io
 from openai import AsyncOpenAI
 
 from shared.clients.abstractions.messaging import MessagingClient
-from shared.config import settings
+from shared.config.settings import settings
 from shared.i18n import render_message
 from shared.utils.logging import get_logger
 

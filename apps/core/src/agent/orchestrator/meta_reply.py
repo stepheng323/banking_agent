@@ -11,7 +11,8 @@ from pydantic import BaseModel, Field
 from apps.core.src.agent.orchestrator.models.domain import MetaIntent
 from apps.core.src.agent.orchestrator.system_profile import SYSTEM_PROFILE, SystemProfile
 from shared.i18n import LocaleManager, render_message
-from shared.policy import build_meta_policy_payload, get_cached_policy
+from shared.policy.adapters import build_meta_policy_payload
+from shared.policy.loader import get_cached_policy
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)

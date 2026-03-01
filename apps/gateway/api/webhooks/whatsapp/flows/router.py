@@ -37,7 +37,7 @@ from apps.gateway.api.webhooks.whatsapp.flows.handlers.transaction_pin_handler i
 from apps.gateway.api.webhooks.whatsapp.flows.request_processor import process_flow_request
 from shared.clients.whatsapp.client import WhatsAppClient
 from shared.queue.adapter import QueuePublisher
-from shared.utils import encrypt_flow_response
+from shared.utils.flow_encryption import encrypt_flow_response
 
 router = APIRouter()
 

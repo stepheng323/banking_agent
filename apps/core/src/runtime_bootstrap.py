@@ -2,10 +2,10 @@
 
 from typing import Any
 
-from shared.cache import BankCacheService
+from shared.cache.bank_cache import BankCacheService
 from shared.cache.redis_client import RedisClient
 from shared.clients.factories.payment import PaymentProviderFactory
-from shared.config import settings
+from shared.config.settings import settings
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)

@@ -16,7 +16,7 @@ __all__ = [
 ]
 
 if TYPE_CHECKING:
-    from shared.receipts import ReceiptGenerator
+    from shared.receipts.receipt_generator import ReceiptGenerator
     from shared.services.context_manager import ContextManager, OrchestratorContextManager
     from shared.services.conversation_responder import ConversationResponder
     from shared.services.task_planner import OrchestratorTaskPlanner, TaskPlanner
@@ -24,7 +24,7 @@ if TYPE_CHECKING:
 
 def __getattr__(name: str) -> Any:
     if name == "ReceiptGenerator":
-        from shared.receipts import ReceiptGenerator
+        from shared.receipts.receipt_generator import ReceiptGenerator
 
         return ReceiptGenerator
 

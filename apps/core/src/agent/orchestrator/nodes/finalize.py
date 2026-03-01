@@ -10,7 +10,7 @@ if TYPE_CHECKING:
 
 from apps.core.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
 from apps.core.src.agent.orchestrator.models.state import OrchestratorState
-from shared.formatters import format_multi_action_summary
+from shared.formatters.transaction_summary import format_multi_action_summary
 from shared.i18n import LocaleManager, render_cancelled_prompt, render_generic_capability_blocked, render_message
 from shared.queue.adapter import QueuePublisher
 from shared.queue.models import ReceiptJobPayload, ReceiptTransferData

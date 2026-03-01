@@ -3,7 +3,7 @@
 import asyncio
 
 from shared.cache.flow_session_manager import FlowSessionManager
-from shared.models import CreateAccount
+from shared.models.account import CreateAccount
 from shared.repositories.unit_of_work import UnitOfWork
 from shared.services.onboarding.mandate import MandateService
 from shared.services.onboarding.session import OnboardingStep

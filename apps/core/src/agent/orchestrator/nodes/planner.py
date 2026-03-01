@@ -18,7 +18,7 @@ from shared.i18n import (
     render_safe_capability_fallback,
     render_text,
 )
-from shared.policy import get_cached_policy
+from shared.policy.loader import get_cached_policy
 from shared.types.planner import PlannedTask, TaskParameters
 from shared.types.quoted_replay import QuotedReplayInterpretation
 from shared.utils.logging import get_logger

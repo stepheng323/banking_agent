@@ -20,7 +20,7 @@ from apps.core.src.agent.graphs.airtime.nodes.validation import ValidationStep
 from apps.core.src.agent.graphs.airtime.pipeline.base import AirtimePipeline
 from apps.core.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
 from shared.i18n import LocaleManager, render_capability_limitation, render_message
-from shared.policy import resolve_capability_alternative, resolve_capability_rule
+from shared.policy.adapters import resolve_capability_alternative, resolve_capability_rule
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)

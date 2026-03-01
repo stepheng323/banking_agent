@@ -32,7 +32,7 @@ from apps.core.src.agent.orchestrator.models.domain import (
     TransactionResult,
 )
 from shared.i18n import LocaleManager, render_capability_limitation, render_message
-from shared.policy import resolve_capability_alternative, resolve_capability_rule
+from shared.policy.adapters import resolve_capability_alternative, resolve_capability_rule
 from shared.repositories.transaction_repository import (
     TransactionRepository,
 )

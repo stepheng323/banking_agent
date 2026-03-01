@@ -4,7 +4,7 @@ import difflib
 import re
 import unicodedata
 
-from shared.database import Beneficiary
+from shared.database.models import Beneficiary
 
 
 def _normalize_text(value: str | None) -> str:

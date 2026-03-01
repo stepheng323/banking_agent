@@ -4,7 +4,7 @@ from typing import Any
 
 from fastapi.responses import JSONResponse, Response
 
-from shared.utils import encrypt_flow_response
+from shared.utils.flow_encryption import encrypt_flow_response
 
 
 def format_encrypted_response(

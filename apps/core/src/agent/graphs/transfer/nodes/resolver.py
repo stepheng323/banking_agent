@@ -15,7 +15,7 @@ from apps.core.src.agent.graphs.transfer.pipeline.base import TransferStep
 from apps.core.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
 from shared.database.models import Beneficiary
 from shared.i18n import render_message
-from shared.policy import get_cached_policy
+from shared.policy.loader import get_cached_policy
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)

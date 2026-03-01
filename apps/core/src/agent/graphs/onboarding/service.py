@@ -1,6 +1,6 @@
 from apps.core.src.agent.orchestrator.models.intents import ShowFlow
 from apps.core.src.messaging.outbox import enqueue_outbox_intents
-from shared.config import settings
+from shared.config.settings import settings
 from shared.i18n import render_message
 from shared.queue.adapter import QueuePublisher
 from shared.utils.logging import get_logger

@@ -14,15 +14,9 @@ from apps.core.src.agent.graphs.query import capabilities as query_capabilities
 from apps.core.src.agent.graphs.transfer.worker import TransferWorker
 from apps.core.src.agent.orchestrator.models.domain import AccountOutcome, TransactionOutcome
 from apps.core.src.agent.orchestrator.nodes.planner import _build_policy_notice
-from shared.policy import (
-    build_planner_policy_block,
-    get_cached_policy,
-    load_policy,
-    load_soul_policy,
-    resolve_capability_message,
-    resolve_capability_rule,
-    validate_policy_coverage,
-)
+from shared.policy.adapters import build_planner_policy_block, resolve_capability_message, resolve_capability_rule
+from shared.policy.loader import get_cached_policy, load_policy, load_soul_policy
+from shared.policy.validation import validate_policy_coverage
 
 POLICY_PATH = "config/soul_policy.json"
 

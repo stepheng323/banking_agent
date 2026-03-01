@@ -5,8 +5,9 @@ from typing import cast
 
 from langchain_openai import ChatOpenAI
 
-from shared.policy import build_planner_policy_block, get_cached_policy
-from shared.services.task_queue import TaskQueueService
+from shared.policy.adapters import build_planner_policy_block
+from shared.policy.loader import get_cached_policy
+from shared.services.task_queue.service import TaskQueueService
 from shared.types.planner import InterruptRouteDecision, MetaQueryDecision, PlannerOutput
 from shared.types.quoted_replay import QuotedReplayInterpretation
 from shared.utils.logging import get_logger
