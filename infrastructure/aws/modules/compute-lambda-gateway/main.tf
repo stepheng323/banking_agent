@@ -65,6 +65,11 @@ resource "aws_iam_role_policy" "gateway_lambda_ssm_policy" {
   })
 }
 
+resource "aws_cloudwatch_log_group" "gateway" {
+  name              = "/aws/lambda/${var.project_name}-gateway-webhooks-${var.environment}"
+  retention_in_days = var.log_retention_in_days
+}
+
 resource "aws_lambda_function" "gateway" {
   function_name = "${var.project_name}-gateway-webhooks-${var.environment}"
   role          = aws_iam_role.gateway_lambda_role.arn
@@ -92,4 +97,6 @@ resource "aws_lambda_function" "gateway" {
       ) : key => value if key != "AWS_REGION"
     }
   }
+
+  depends_on = [aws_cloudwatch_log_group.gateway]
 }

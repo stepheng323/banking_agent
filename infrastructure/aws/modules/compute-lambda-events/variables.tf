@@ -75,3 +75,9 @@ variable "batch_window_by_queue" {
     "receipt-process"         = 1
   }
 }
+
+variable "log_retention_in_days" {
+  description = "Retention period for worker Lambda log groups."
+  type        = number
+  default     = 30
+}
