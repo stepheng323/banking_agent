@@ -419,7 +419,7 @@ class TelegramClient(MessagingClient):
             return False
 
     async def mark_as_authorized(self, chat_id: str, message_id: str | int) -> bool:
-        """Replace the PIN Web App button with a non-interactive '✅ Authorized' badge.
+        """Replace the PIN Web App button with a non-interactive 'Authorized' badge.
 
         Called after a successful PIN auth so the user sees confirmation but
         cannot re-open the Mini App.
@@ -430,7 +430,7 @@ class TelegramClient(MessagingClient):
                 {
                     "chat_id": chat_id,
                     "message_id": message_id,
-                    "reply_markup": {"inline_keyboard": [[{"text": "✅ Authorized", "callback_data": "auth:done"}]]},
+                    "reply_markup": {"inline_keyboard": [[{"text": "✓ Authorized", "callback_data": "auth:done"}]]},
                 },
                 max_retries=1,
             )

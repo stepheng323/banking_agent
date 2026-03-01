@@ -4,6 +4,7 @@ locals {
     "POST /webhook/whatsapp",
     "POST /webhook/flow",
     "POST /webhook/telegram",
+    "GET /static/{proxy+}",
     "POST /webhook/telegram/onboarding/bvn",
     "POST /webhook/telegram/onboarding/send_otp",
     "POST /webhook/telegram/onboarding/otp",

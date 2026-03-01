@@ -210,7 +210,7 @@
       "field_category": "*Category:* {category}",
       "field_status": "*Status:* {status}",
       "field_ref": "*Ref:* {reference}",
-      "status_success": "✅ Successful",
+      "status_success": "✓ Successful",
       "status_pending_generic": "⏳ {status}",
       "transfer_reply_hint": "_Reply: 'receipt' for proof | 'issue' to report a problem_",
       "transactions_heading": "*Transactions*",
@@ -381,9 +381,9 @@
     "execution": {
       "source_account_info": "Site na: {bank} (···{last4})",
       "source_account_info_with_balance": "Site na: {bank} (···{last4}) • Balans: ₦{balance}",
-      "recipient_resolved_with_bank": "✅ {label} resolved: {resolved} ({bank} • {account})",
-      "recipient_resolved": "✅ {label} resolved: {resolved}",
-      "recipient_resolved_generic": "✅ {label} resolved",
+      "recipient_resolved_with_bank": "✓ {label} resolved: {resolved} ({bank} • {account})",
+      "recipient_resolved": "✓ {label} resolved: {resolved}",
+      "recipient_resolved_generic": "✓ {label} resolved",
       "pin_prompt_default": "Please enter your PIN.",
       "batch_each_total": "You're sending {amount_each} each (total {total_amount}).",
       "batch_total_only": "Total: {total_amount}.",
@@ -696,7 +696,7 @@
     "batch": {
       "shortfall_header": "⚠️ Insufficient funds for this batch",
       "shortfall_body": "This batch needs {demanded}, but only {available} is currently available.",
-      "task_covered": "✅ {task_id}: {amount} available from {bank}.",
+      "task_covered": "✓ {task_id}: {amount} available from {bank}.",
       "task_short": "❌ {task_id}: need {needed}, available {available} from {bank} ({deficit} short).",
       "alternate_suggestion": "💡 {bank} has {available}. Should I use it instead?",
       "total_infeasible": "Reply with updated source accounts/split, or reduce the transfer amounts."
