@@ -108,7 +108,7 @@ resource "aws_lambda_function" "workers" {
   function_name = "${var.project_name}-${each.key}-${var.environment}"
   role          = aws_iam_role.lambda_worker_role.arn
   package_type  = "Image"
-  image_uri     = var.core_lambda_image_url
+  image_uri     = var.worker_lambda_image_urls[each.key]
   timeout       = each.value.timeout
   memory_size   = each.value.memory
   publish       = true

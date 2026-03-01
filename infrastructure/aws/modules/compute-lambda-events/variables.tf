@@ -18,9 +18,17 @@ variable "aws_account_id" {
   type        = string
 }
 
-variable "core_lambda_image_url" {
-  description = "ECR image URL used by async lambda workers"
-  type        = string
+variable "worker_lambda_image_urls" {
+  description = "ECR image URLs keyed by worker name (transaction-worker, messaging-worker)"
+  type        = map(string)
+
+  validation {
+    condition = alltrue([
+      contains(keys(var.worker_lambda_image_urls), "transaction-worker"),
+      contains(keys(var.worker_lambda_image_urls), "messaging-worker"),
+    ])
+    error_message = "worker_lambda_image_urls must include keys: transaction-worker and messaging-worker."
+  }
 }
 
 variable "non_secret_env_vars" {

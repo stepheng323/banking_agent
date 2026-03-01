@@ -54,9 +54,24 @@ receipt = [
 # Gateway app - minimal, uses base only
 gateway = []
 
+# Runtime-specific bundles for deploy targets
+runtime-core-chat = [
+    "banking-agent[core]",
+]
+
+runtime-worker-transaction = []
+
+runtime-worker-messaging = [
+    "banking-agent[receipt]",
+]
+
+runtime-gateway = [
+    "banking-agent[gateway]",
+]
+
 # All apps combined (for local dev)
 all = [
-    "banking-agent[core,receipt,gateway]",
+    "banking-agent[core,receipt,gateway,runtime-core-chat,runtime-worker-transaction,runtime-worker-messaging,runtime-gateway]",
 ]
 
 # Development dependencies
