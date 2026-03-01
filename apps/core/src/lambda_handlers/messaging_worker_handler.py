@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from apps.core.src.dependencies import setup_messaging_worker_consumers
+from apps.core.src.runtime.messaging_worker_dependencies import setup_messaging_worker_consumers
 from apps.receipt.src.consumer import ReceiptJobConsumer
 from shared.queue.factory import QueuePublisherFactory
 from shared.queue.lambda_base import BaseSQSHandler

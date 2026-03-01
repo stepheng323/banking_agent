@@ -3,7 +3,7 @@
 import asyncio
 import signal
 
-from apps.core.src.dependencies import setup_core_consumers
+from apps.core.src.runtime.core_chat_dependencies import setup_core_consumers
 from apps.core.src.runtime_bootstrap import warm_runtime
 from shared.utils.logging import configure_logger, get_logger
 

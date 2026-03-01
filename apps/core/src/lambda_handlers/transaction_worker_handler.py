@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from apps.core.src.dependencies import setup_transaction_worker_consumers
+from apps.core.src.runtime.transaction_worker_dependencies import setup_transaction_worker_consumers
 from shared.queue.lambda_base import BaseSQSHandler
 from shared.utils.logging import get_logger
 
