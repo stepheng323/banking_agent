@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1.7
 FROM python:3.13-slim
 
 WORKDIR /app
@@ -12,8 +13,9 @@ COPY apps/core/ /app/apps/core/
 COPY shared/ /app/shared/
 COPY config/ /app/config/
 
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir ".[runtime-core-chat]"
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install --upgrade pip && \
+    pip install ".[runtime-core-chat]"
 
 ENV PYTHONPATH=/app
 CMD ["python", "-m", "apps.core.src.worker_main"]
