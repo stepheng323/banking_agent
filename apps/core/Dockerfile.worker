@@ -13,7 +13,7 @@ COPY shared/ /app/shared/
 COPY config/ /app/config/
 
 RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir ".[core]"
+    pip install --no-cache-dir ".[runtime-core-chat]"
 
 ENV PYTHONPATH=/app
 CMD ["python", "-m", "apps.core.src.worker_main"]

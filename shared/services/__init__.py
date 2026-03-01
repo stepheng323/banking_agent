@@ -1,13 +1,5 @@
-"""Shared services package."""
+"""Shared service modules.
 
-from shared.services.context_manager import ContextManager, OrchestratorContextManager
-from shared.services.conversation_responder import ConversationResponder
-from shared.services.task_planner import OrchestratorTaskPlanner, TaskPlanner
+Import concrete modules directly, e.g. ``shared.services.onboarding.session``.
+"""
 
-__all__ = [
-    "ContextManager",
-    "OrchestratorContextManager",
-    "ConversationResponder",
-    "TaskPlanner",
-    "OrchestratorTaskPlanner",
-]

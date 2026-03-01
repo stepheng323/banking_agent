@@ -202,18 +202,21 @@ module "messaging" {
 }
 
 module "compute_lambda_events" {
-  source                = "./modules/compute-lambda-events"
-  project_name          = local.project_name
-  environment           = local.environment
-  aws_region            = var.aws_region
-  aws_account_id        = data.aws_caller_identity.current.account_id
-  core_lambda_image_url = "${module.ecr.core_repository_url}:lambda-workers-latest"
-  non_secret_env_vars   = local.non_secret_env_vars
-  secret_env_vars       = local.secret_env_vars
-  all_parameter_arns    = module.config_ssm.all_parameter_arns
-  ssm_kms_key_arn       = aws_kms_key.ssm_parameters.arn
-  queue_arns            = module.messaging.queue_arns
-  log_retention_in_days = var.lambda_log_retention_in_days
+  source              = "./modules/compute-lambda-events"
+  project_name        = local.project_name
+  environment         = local.environment
+  aws_region          = var.aws_region
+  aws_account_id      = data.aws_caller_identity.current.account_id
+  non_secret_env_vars = local.non_secret_env_vars
+  secret_env_vars     = local.secret_env_vars
+  all_parameter_arns  = module.config_ssm.all_parameter_arns
+  ssm_kms_key_arn     = aws_kms_key.ssm_parameters.arn
+  queue_arns          = module.messaging.queue_arns
+
+  worker_lambda_image_urls = {
+    "transaction-worker" = "${module.ecr.core_repository_url}:lambda-transaction-latest"
+    "messaging-worker"   = "${module.ecr.core_repository_url}:lambda-messaging-latest"
+  }
 }
 
 module "compute_lambda_gateway" {

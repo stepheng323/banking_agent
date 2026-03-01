@@ -2,7 +2,8 @@
 
 from dataclasses import dataclass
 
-from shared.policy import build_system_profile, get_cached_policy
+from shared.policy.adapters import build_system_profile
+from shared.policy.loader import get_cached_policy
 
 
 @dataclass(frozen=True)

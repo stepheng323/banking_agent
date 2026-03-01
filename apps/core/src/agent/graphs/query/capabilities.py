@@ -7,7 +7,7 @@ LLM outputs requested_capabilities, resolver checks and negotiates.
 from enum import Enum
 
 from shared.i18n import render_capability_limitation
-from shared.policy import resolve_capability_alternative, resolve_capability_rule
+from shared.policy.adapters import resolve_capability_alternative, resolve_capability_rule
 
 
 class QueryCapability(str, Enum):

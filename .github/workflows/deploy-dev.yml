@@ -179,16 +179,29 @@ jobs:
       - name: Set up Docker Buildx (pre-apply image seed)
         uses: docker/setup-buildx-action@v3
 
-      - name: Build, tag, and push Core Lambda (latest seed)
+      - name: Build, tag, and push Transaction Worker Lambda (latest seed)
         uses: docker/build-push-action@v5
         with:
           context: .
-          file: apps/core/Dockerfile.lambda
+          file: apps/core/Dockerfile.lambda.transaction
           platforms: ${{ env.LAMBDA_IMAGE_PLATFORM }}
           provenance: false
           sbom: false
           outputs: type=image,oci-mediatypes=false,push=true
-          tags: ${{ steps.login-ecr-preapply.outputs.registry }}/${{ env.ECR_CORE_REPO }}:lambda-workers-latest
+          tags: ${{ steps.login-ecr-preapply.outputs.registry }}/${{ env.ECR_CORE_REPO }}:lambda-transaction-latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build, tag, and push Messaging Worker Lambda (latest seed)
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: apps/core/Dockerfile.lambda.messaging
+          platforms: ${{ env.LAMBDA_IMAGE_PLATFORM }}
+          provenance: false
+          sbom: false
+          outputs: type=image,oci-mediatypes=false,push=true
+          tags: ${{ steps.login-ecr-preapply.outputs.registry }}/${{ env.ECR_CORE_REPO }}:lambda-messaging-latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -233,7 +246,8 @@ jobs:
             esac
           }
 
-          validate_lambda_manifest "$ECR_CORE_REPO" "lambda-workers-latest"
+          validate_lambda_manifest "$ECR_CORE_REPO" "lambda-transaction-latest"
+          validate_lambda_manifest "$ECR_CORE_REPO" "lambda-messaging-latest"
           validate_lambda_manifest "$ECR_GATEWAY_REPO" "lambda-latest"
 
       - name: Terraform plan (fresh)
@@ -311,16 +325,29 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Build, tag, and push Core Lambda
+      - name: Build, tag, and push Transaction Worker Lambda
         uses: docker/build-push-action@v5
         with:
           context: .
-          file: apps/core/Dockerfile.lambda
+          file: apps/core/Dockerfile.lambda.transaction
           platforms: ${{ env.LAMBDA_IMAGE_PLATFORM }}
           provenance: false
           sbom: false
           outputs: type=image,oci-mediatypes=false,push=true
-          tags: ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_CORE_REPO }}:lambda-workers-${{ github.sha }},${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_CORE_REPO }}:lambda-workers-latest
+          tags: ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_CORE_REPO }}:lambda-transaction-${{ github.sha }},${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_CORE_REPO }}:lambda-transaction-latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build, tag, and push Messaging Worker Lambda
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: apps/core/Dockerfile.lambda.messaging
+          platforms: ${{ env.LAMBDA_IMAGE_PLATFORM }}
+          provenance: false
+          sbom: false
+          outputs: type=image,oci-mediatypes=false,push=true
+          tags: ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_CORE_REPO }}:lambda-messaging-${{ github.sha }},${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_CORE_REPO }}:lambda-messaging-latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -356,13 +383,13 @@ jobs:
           # Update Transaction Worker
           aws lambda update-function-code \
             --function-name "${LAMBDA_TRANSACTION_FUNCTION}" \
-            --image-uri $ECR_REGISTRY/$ECR_CORE_REPO:lambda-workers-${{ github.sha }}
+            --image-uri $ECR_REGISTRY/$ECR_CORE_REPO:lambda-transaction-${{ github.sha }}
           aws lambda wait function-updated --function-name "${LAMBDA_TRANSACTION_FUNCTION}"
 
           # Update Messaging Worker
           aws lambda update-function-code \
             --function-name "${LAMBDA_MESSAGING_FUNCTION}" \
-            --image-uri $ECR_REGISTRY/$ECR_CORE_REPO:lambda-workers-${{ github.sha }}
+            --image-uri $ECR_REGISTRY/$ECR_CORE_REPO:lambda-messaging-${{ github.sha }}
           aws lambda wait function-updated --function-name "${LAMBDA_MESSAGING_FUNCTION}"
 
       - name: Update Gateway Lambda Function

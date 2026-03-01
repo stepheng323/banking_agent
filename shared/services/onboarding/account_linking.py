@@ -3,9 +3,10 @@
 import asyncio
 
 from shared.clients.providers.mono import mono_client
-from shared.models import CreateAccount, UserUpdate
+from shared.models.account import CreateAccount
+from shared.models.user import UserUpdate
 from shared.repositories.unit_of_work import UnitOfWork
-from shared.utils import hash_plaintext, is_valid_pin_format
+from shared.utils.hash import hash_plaintext, is_valid_pin_format
 from shared.utils.logging import get_logger
 
 from .mandate import MandateService

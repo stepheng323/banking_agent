@@ -3,7 +3,7 @@ FROM public.ecr.aws/lambda/python:3.12 AS builder
 WORKDIR /build
 COPY pyproject.toml ./
 RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir --target /build ".[gateway]"
+    pip install --no-cache-dir --target /build ".[runtime-gateway]"
 
 FROM public.ecr.aws/lambda/python:3.12
 

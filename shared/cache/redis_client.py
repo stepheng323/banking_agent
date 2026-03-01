@@ -2,7 +2,7 @@
 
 import redis.asyncio as redis
 
-from shared.config import settings
+from shared.config.settings import settings
 
 Redis = redis.Redis
 

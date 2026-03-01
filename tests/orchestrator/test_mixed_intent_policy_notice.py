@@ -12,7 +12,7 @@ from apps.core.src.agent.orchestrator.nodes.finalize import finalize
 from apps.core.src.agent.orchestrator.nodes.ingest import ingest_message
 from apps.core.src.agent.orchestrator.nodes.planner import SAFE_CAPABILITY_FALLBACK, plan_tasks
 from shared.i18n import render_message
-from shared.policy import get_cached_policy
+from shared.policy.loader import get_cached_policy
 from shared.types.planner import PlannedTask, PlannerOutput, TaskParameters
 
 

@@ -6,7 +6,7 @@ from typing import Any, Literal
 from fastapi import Request
 from fastapi.responses import Response
 
-from shared.utils import decrypt_flow_data, is_encrypted
+from shared.utils.flow_decryption import decrypt_flow_data, is_encrypted
 
 ScreenType = Literal[
     "BVN_ENTRY",

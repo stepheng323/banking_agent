@@ -6,7 +6,8 @@ from apps.core.src.agent.orchestrator.config import OrchestratorDependencies
 from apps.core.src.agent.orchestrator.graph.handler import OrchestratorGraphHandler
 from apps.core.src.agent.orchestrator.models.message_context import MessageContext
 from shared.i18n import LocaleManager, render_message
-from shared.services import OrchestratorContextManager, OrchestratorTaskPlanner
+from shared.services.context_manager import OrchestratorContextManager
+from shared.services.task_planner import OrchestratorTaskPlanner
 from shared.utils.async_helpers import create_background_task
 
 

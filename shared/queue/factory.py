@@ -1,4 +1,4 @@
-from shared.config import settings
+from shared.config.settings import settings
 from shared.queue.adapter import QueuePublisher
 from shared.queue.sns_adapter import SNSPublisher
 from shared.utils.logging import get_logger

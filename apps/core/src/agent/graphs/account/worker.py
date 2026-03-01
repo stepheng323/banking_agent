@@ -422,7 +422,7 @@ class AccountWorker:
     async def _build_link_account_flow(self, context: dict[str, Any]) -> dict[str, Any]:
         """Build account linking flow."""
 
-        from shared.config import settings
+        from shared.config.settings import settings
         from shared.services.onboarding.session import OnboardingStep
 
         flow_id = settings.account_linking_flow_id

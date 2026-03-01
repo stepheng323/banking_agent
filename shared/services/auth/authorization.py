@@ -5,7 +5,7 @@ from dataclasses import dataclass
 
 from shared.cache.redis_client import RedisClient
 from shared.repositories.unit_of_work import UnitOfWork
-from shared.utils import is_valid_pin_format, verify_hash
+from shared.utils.hash import is_valid_pin_format, verify_hash
 
 
 @dataclass
