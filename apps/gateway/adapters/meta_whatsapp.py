@@ -119,17 +119,20 @@ def parse_payload(payload: dict[str, Any]) -> list[ParsedMessage]:
                     )
 
                 results.append(
-                    ParsedMessage(
-                        id=message.get("id"),
-                        from_number=sender,
-                        text=text,
-                        type=message_type,
-                        flow_data=flow_data,
-                        media_id=media_id,
-                        mime_type=mime_type,
-                        quoted=quoted,
-                        raw=message,
+                    ParsedMessage.model_validate(
+                        {
+                            "id": message.get("id"),
+                            "from": sender,
+                            "text": text,
+                            "type": message_type,
+                            "flow_data": flow_data,
+                            "media_id": media_id,
+                            "mime_type": mime_type,
+                            "quoted": quoted,
+                            "raw": message,
+                        }
                     )
+
                 )
     return results
 
