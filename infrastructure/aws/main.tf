@@ -210,6 +210,7 @@ module "compute_lambda_events" {
   non_secret_env_vars = local.non_secret_env_vars
   secret_env_vars     = local.secret_env_vars
   all_parameter_arns  = module.config_ssm.all_parameter_arns
+  ssm_kms_key_arn     = aws_kms_key.ssm_parameters.arn
   queue_arns          = module.messaging.queue_arns
 
   worker_lambda_image_urls = {
