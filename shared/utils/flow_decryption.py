@@ -20,19 +20,34 @@ from Crypto.Hash import SHA256
 from Crypto.PublicKey import RSA
 
 
+def _normalize_private_key(private_key_pem: str) -> str:
+    """Normalize PEM content passed through environment variables."""
+    return private_key_pem.strip().replace("\\n", "\n")
+
+
 def get_private_key_from_env() -> str:
     """
-    Get the RSA private key from file path.
+    Get the RSA private key from environment or file path.
 
-    Reads the private key from the file specified by whatsapp_flow_private_key_path env variable.
+    Preferred source:
+    - WHATSAPP_FLOW_PRIVATE_KEY_PEM
+
+    Fallback source:
+    - WHATSAPP_FLOW_PRIVATE_KEY_PATH
 
     Returns:
-        Private key as string, or None if not found
+        Private key as string.
     """
+    private_key_pem = os.getenv("WHATSAPP_FLOW_PRIVATE_KEY_PEM") or os.getenv("whatsapp_flow_private_key_pem")
+    if private_key_pem and private_key_pem.strip():
+        return _normalize_private_key(private_key_pem)
+
     key_path = os.getenv("WHATSAPP_FLOW_PRIVATE_KEY_PATH") or os.getenv("whatsapp_flow_private_key_path")
 
     if not key_path:
-        raise FileNotFoundError("Environment variable WHATSAPP_FLOW_PRIVATE_KEY_PATH not set or empty")
+        raise FileNotFoundError(
+            "Neither WHATSAPP_FLOW_PRIVATE_KEY_PEM nor WHATSAPP_FLOW_PRIVATE_KEY_PATH is set."
+        )
 
     if not os.path.exists(key_path):
         raise FileNotFoundError(f"Private key file not found at: {key_path}")
@@ -67,7 +82,8 @@ def decrypt_flow_data(
         if not private_key_pem:
             raise FileNotFoundError(
                 "No private key configured for flow decryption. "
-                "Set WHATSAPP_FLOW_PRIVATE_KEY_PATH environment variable."
+                "Set WHATSAPP_FLOW_PRIVATE_KEY_PEM (preferred) "
+                "or WHATSAPP_FLOW_PRIVATE_KEY_PATH."
             )
 
         private_key = RSA.import_key(private_key_pem)

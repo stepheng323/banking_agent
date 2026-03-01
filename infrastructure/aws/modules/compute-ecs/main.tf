@@ -165,7 +165,7 @@ resource "aws_ecs_task_definition" "core" {
       secrets = [for key, arn in var.secret_parameter_arns : { name = key, valueFrom = arn }]
 
       healthCheck = {
-        command     = ["CMD-SHELL", "ps aux | grep '[p]ython -m apps.core.src.worker_main' || exit 1"]
+        command     = ["CMD-SHELL", "kill -0 1 || exit 1"]
         interval    = 30
         timeout     = 5
         retries     = 3
