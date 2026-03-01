@@ -4,6 +4,7 @@
 
 from collections.abc import AsyncGenerator
 
+from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from shared.config.settings import settings
@@ -14,18 +15,50 @@ _engine = None
 _AsyncSessionLocal = None
 
 
+def _build_async_db_url_and_connect_args(raw_database_url: str) -> tuple[str, dict[str, bool]]:
+    """Normalize database URL and connect args for SQLAlchemy asyncpg."""
+    db_url = raw_database_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+    if "postgresql+psycopg://" in db_url:
+        db_url = db_url.replace("postgresql+psycopg://", "postgresql+asyncpg://", 1)
+
+    connect_args: dict[str, bool] = {}
+
+    if not db_url.startswith("postgresql+asyncpg://"):
+        return db_url, connect_args
+
+    parsed = make_url(db_url)
+    query = dict(parsed.query)
+    removed_params: list[str] = []
+
+    sslmode = query.pop("sslmode", None)
+    if sslmode is not None:
+        removed_params.append("sslmode")
+        connect_args["ssl"] = str(sslmode).lower() != "disable"
+
+    # asyncpg does not accept channel_binding in connect kwargs.
+    if query.pop("channel_binding", None) is not None:
+        removed_params.append("channel_binding")
+
+    if removed_params:
+        db_url = parsed.set(query=query).render_as_string(hide_password=False)
+        print(
+            "⚙️  Normalized DATABASE_URL for asyncpg; removed unsupported params: "
+            + ", ".join(removed_params)
+        )
+
+    return db_url, connect_args
+
+
 def get_engine():
     global _engine
     if _engine is None:
         if not DATABASE_URL:
             raise ValueError("DATABASE_URL environment variable is not set")
-        # Ensure we use the async driver
-        db_url = DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://", 1)
-        if "postgresql+psycopg://" in db_url:  # Handle previous replacement if it existed or direct psycopg usage
-            db_url = db_url.replace("postgresql+psycopg://", "postgresql+asyncpg://", 1)
+        db_url, connect_args = _build_async_db_url_and_connect_args(DATABASE_URL)
 
         _engine = create_async_engine(
             db_url,
+            connect_args=connect_args,
             echo=False,
             pool_size=20,
             max_overflow=10,
