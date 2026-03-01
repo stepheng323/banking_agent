@@ -46,6 +46,11 @@ variable "all_parameter_arns" {
   type        = map(string)
 }
 
+variable "ssm_kms_key_arn" {
+  description = "KMS key ARN used for SSM SecureString decryption."
+  type        = string
+}
+
 variable "queue_arns" {
   description = "Queue ARN map from messaging module, keyed by topic key"
   type        = map(string)
@@ -77,4 +82,10 @@ variable "batch_window_by_queue" {
     "actionable-message-send" = 1
     "receipt-process"         = 1
   }
+}
+
+variable "log_retention_in_days" {
+  description = "Retention period for worker Lambda log groups."
+  type        = number
+  default     = 30
 }

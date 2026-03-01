@@ -8,11 +8,8 @@ resource "aws_ssm_parameter" "secret" {
   name      = "${local.prefix}/${each.key}"
   type      = "SecureString"
   value     = var.secret_env_vars[each.key]
+  key_id    = var.ssm_kms_key_arn
   overwrite = var.overwrite
-
-  lifecycle {
-    ignore_changes = [value]
-  }
 }
 
 resource "aws_ssm_parameter" "non_secret" {

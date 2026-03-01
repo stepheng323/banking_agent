@@ -1,5 +1,0 @@
-   Building banking-agent @ file:///home/abiodun/dev/personal/banking_agent
-      Built banking-agent @ file:///home/abiodun/dev/personal/banking_agent
-Uninstalled 1 package in 0.63ms
-Installed 1 package in 1ms
-Success: no issues found in 445 source files

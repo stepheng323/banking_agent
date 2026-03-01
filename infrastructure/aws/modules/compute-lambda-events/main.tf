@@ -96,10 +96,17 @@ resource "aws_iam_role_policy" "lambda_ssm_policy" {
         Action = [
           "kms:Decrypt"
         ]
-        Resource = "arn:aws:kms:${var.aws_region}:${var.aws_account_id}:key/*"
+        Resource = var.ssm_kms_key_arn
       }
     ]
   })
+}
+
+resource "aws_cloudwatch_log_group" "workers" {
+  for_each = local.workers
+
+  name              = "/aws/lambda/${var.project_name}-${each.key}-${var.environment}"
+  retention_in_days = var.log_retention_in_days
 }
 
 resource "aws_lambda_function" "workers" {
@@ -131,6 +138,8 @@ resource "aws_lambda_function" "workers" {
       ) : key => value if key != "AWS_REGION"
     }
   }
+
+  depends_on = [aws_cloudwatch_log_group.workers]
 }
 
 resource "aws_lambda_event_source_mapping" "async_queue_mappings" {

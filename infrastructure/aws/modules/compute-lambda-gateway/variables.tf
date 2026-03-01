@@ -38,7 +38,18 @@ variable "all_parameter_arns" {
   type        = map(string)
 }
 
+variable "ssm_kms_key_arn" {
+  description = "KMS key ARN used for SSM SecureString decryption."
+  type        = string
+}
+
 variable "topic_arns" {
   description = "SNS topic ARN map from messaging module"
   type        = map(string)
+}
+
+variable "log_retention_in_days" {
+  description = "Retention period for gateway Lambda log group."
+  type        = number
+  default     = 30
 }

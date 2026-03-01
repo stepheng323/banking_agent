@@ -7,7 +7,6 @@ only when those symbols are requested.
 from typing import TYPE_CHECKING, Any
 
 __all__ = [
-    "ReceiptGenerator",
     "ContextManager",
     "OrchestratorContextManager",
     "ConversationResponder",

@@ -74,7 +74,7 @@ resource "aws_iam_role_policy" "ecs_task_ssm" {
       {
         Effect   = "Allow"
         Action   = ["kms:Decrypt"]
-        Resource = "arn:aws:kms:${var.aws_region}:${var.aws_account_id}:key/*"
+        Resource = var.ssm_kms_key_arn
       }
     ]
   })
@@ -95,7 +95,33 @@ resource "aws_iam_role_policy" "ecs_execution_ssm" {
       {
         Effect   = "Allow"
         Action   = ["kms:Decrypt"]
-        Resource = "arn:aws:kms:${var.aws_region}:${var.aws_account_id}:key/*"
+        Resource = var.ssm_kms_key_arn
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy" "ecs_task_sqs_consume" {
+  name = "${var.project_name}-ecs-task-sqs-consume-${var.environment}"
+  role = aws_iam_role.ecs_task.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "sqs:ReceiveMessage",
+          "sqs:DeleteMessage",
+          "sqs:GetQueueAttributes",
+          "sqs:ChangeMessageVisibility"
+        ]
+        Resource = values(var.queue_arns)
+      },
+      {
+        Effect   = "Allow"
+        Action   = ["sqs:GetQueueUrl"]
+        Resource = "*"
       }
     ]
   })

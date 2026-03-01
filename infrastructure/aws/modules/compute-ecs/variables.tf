@@ -47,3 +47,13 @@ variable "all_parameter_arns" {
   description = "Map of all env var names to SSM parameter ARNs for IAM scoping."
   type        = map(string)
 }
+
+variable "ssm_kms_key_arn" {
+  description = "KMS key ARN used for SSM SecureString decryption."
+  type        = string
+}
+
+variable "queue_arns" {
+  description = "Queue ARN map from messaging module, keyed by topic key."
+  type        = map(string)
+}

@@ -80,7 +80,7 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: "1.6.6"
+          terraform_version: "1.13.4"
 
       - name: Verify Terraform source snapshot
         working-directory: ${{ env.TF_DIR }}
@@ -118,6 +118,10 @@ jobs:
         env:
           TF_VAR_redis_url: ${{ secrets.REDIS_URL_DEV }}
           TF_VAR_database_url: ${{ secrets.DATABASE_URL_DEV }}
+          # JSON object with string values, e.g. {"OPENAI_API_KEY":"...","META_VERIFY_TOKEN":"..."}
+          TF_VAR_secret_config_values: ${{ secrets.TF_SECRET_CONFIG_JSON_DEV }}
+          # JSON object with string values, e.g. {"META_PHONE_NUMBER_ID":"...","ONBOARDING_FLOW_ID":"..."}
+          TF_VAR_non_secret_config_values: ${{ secrets.TF_NON_SECRET_CONFIG_JSON_DEV }}
         run: terraform plan -input=false -out=plan.out
 
   terraform-apply:
@@ -140,18 +144,33 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: "1.6.6"
+          terraform_version: "1.13.4"
 
       - name: Terraform init
         working-directory: ${{ env.TF_DIR }}
         run: terraform init -input=false
 
-      - name: Terraform apply (ECR bootstrap)
-        working-directory: ${{ env.TF_DIR }}
-        env:
-          TF_VAR_redis_url: ${{ secrets.REDIS_URL_DEV }}
-          TF_VAR_database_url: ${{ secrets.DATABASE_URL_DEV }}
-        run: terraform apply -input=false -auto-approve -target=module.ecr
+      - name: Ensure ECR repositories exist (idempotent bootstrap)
+        run: |
+          set -euo pipefail
+
+          ensure_repo() {
+            local repo_name="$1"
+
+            if aws ecr describe-repositories --repository-names "$repo_name" >/dev/null 2>&1; then
+              echo "ECR repository already exists: $repo_name"
+              return
+            fi
+
+            echo "Creating missing ECR repository: $repo_name"
+            aws ecr create-repository \
+              --repository-name "$repo_name" \
+              --image-tag-mutability MUTABLE \
+              --image-scanning-configuration scanOnPush=true >/dev/null
+          }
+
+          ensure_repo "$ECR_CORE_REPO"
+          ensure_repo "$ECR_GATEWAY_REPO"
 
       - name: Login to Amazon ECR (pre-apply image seed)
         id: login-ecr-preapply
@@ -231,36 +250,13 @@ jobs:
           validate_lambda_manifest "$ECR_CORE_REPO" "lambda-messaging-latest"
           validate_lambda_manifest "$ECR_GATEWAY_REPO" "lambda-latest"
 
-      - name: Terraform import pre-existing resources
-        working-directory: ${{ env.TF_DIR }}
-        env:
-          TF_VAR_redis_url: ${{ secrets.REDIS_URL_DEV }}
-          TF_VAR_database_url: ${{ secrets.DATABASE_URL_DEV }}
-        run: |
-          set -euo pipefail
-
-          import_if_missing() {
-            local address="$1"
-            local id="$2"
-
-            if terraform state show "$address" >/dev/null 2>&1; then
-              echo "State already contains $address"
-              return
-            fi
-
-            echo "Importing $address from $id"
-            terraform import -input=false "$address" "$id"
-          }
-
-          import_if_missing "module.compute.aws_cloudwatch_log_group.core" "/ecs/banking-agent-core-chat-worker"
-          import_if_missing "module.compute_lambda_events.aws_iam_role.lambda_worker_role" "banking-agent-lambda-workers-dev"
-          import_if_missing "module.compute_lambda_gateway.aws_iam_role.gateway_lambda_role" "banking-agent-gateway-lambda-dev"
-
       - name: Terraform plan (fresh)
         working-directory: ${{ env.TF_DIR }}
         env:
           TF_VAR_redis_url: ${{ secrets.REDIS_URL_DEV }}
           TF_VAR_database_url: ${{ secrets.DATABASE_URL_DEV }}
+          TF_VAR_secret_config_values: ${{ secrets.TF_SECRET_CONFIG_JSON_DEV }}
+          TF_VAR_non_secret_config_values: ${{ secrets.TF_NON_SECRET_CONFIG_JSON_DEV }}
         run: terraform plan -input=false -out=plan.out
 
       - name: Terraform apply
@@ -268,6 +264,8 @@ jobs:
         env:
           TF_VAR_redis_url: ${{ secrets.REDIS_URL_DEV }}
           TF_VAR_database_url: ${{ secrets.DATABASE_URL_DEV }}
+          TF_VAR_secret_config_values: ${{ secrets.TF_SECRET_CONFIG_JSON_DEV }}
+          TF_VAR_non_secret_config_values: ${{ secrets.TF_NON_SECRET_CONFIG_JSON_DEV }}
         run: terraform apply -input=false -auto-approve plan.out
 
   database-migrations:
