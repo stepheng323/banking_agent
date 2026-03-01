@@ -1,9 +1,11 @@
+# syntax=docker/dockerfile:1.7
 FROM public.ecr.aws/lambda/python:3.12 AS builder
 
 WORKDIR /build
 COPY pyproject.toml ./
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir --target /build ".[runtime-worker-messaging]"
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install --upgrade pip && \
+    pip install --target /build ".[runtime-worker-messaging]"
 
 FROM public.ecr.aws/lambda/python:3.12
 
@@ -16,4 +18,3 @@ COPY config/ /var/task/config/
 
 ENV PYTHONPATH=/var/task
 CMD ["apps.core.src.lambda_handlers.messaging_worker_handler.handler"]
-
