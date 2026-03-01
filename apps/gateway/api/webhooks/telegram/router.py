@@ -167,7 +167,7 @@ async def telegram_onboarding_complete(
                     {
                         "chat_id": cta_chat_id,
                         "message_id": int(cta_message_id),
-                        "reply_markup": {"inline_keyboard": [[{"text": "✅ Setup Complete", "callback_data": "noop"}]]},
+                        "reply_markup": {"inline_keyboard": [[{"text": "✓ Setup Complete", "callback_data": "noop"}]]},
                     },
                 )
         except Exception as e:

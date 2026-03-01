@@ -123,7 +123,7 @@ class TelegramWebhookService:
                 "sendMessage",
                 {
                     "chat_id": msg.chat_id,
-                    "text": "✅ Your Telegram account is already linked to your banking profile!",
+                    "text": "✓ Your Telegram account is already linked to your banking profile.",
                     "reply_markup": {"remove_keyboard": True},
                 },
             )
@@ -139,7 +139,7 @@ class TelegramWebhookService:
                 "sendMessage",
                 {
                     "chat_id": msg.chat_id,
-                    "text": "✅ Your Telegram account has been successfully linked to your banking profile!",
+                    "text": "✓ Your Telegram account has been successfully linked to your banking profile!",
                     "reply_markup": {"remove_keyboard": True},
                 },
             )
@@ -171,7 +171,7 @@ class TelegramWebhookService:
                         "inline_keyboard": [
                             [
                                 {
-                                    "text": "🛠 Start Setup",
+                                    "text": "Start Onboarding",
                                     "web_app": {"url": app_url},
                                 }
                             ]

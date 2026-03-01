@@ -58,7 +58,7 @@ def format_multi_action_summary(completed_tasks: list, locale: str = "en") -> st
         WhatsApp-formatted transaction summary
 
     Example:
-        ✅ *Transaction Summary*
+        ✓ *Transaction Summary*
 
         *Transfer:* ₦100,000.00 to 2 recipients
           ✓ Mum - ₦50,000.00 (GT Bank •••1234)

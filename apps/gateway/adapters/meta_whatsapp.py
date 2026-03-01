@@ -49,11 +49,16 @@ def parse_payload(payload: dict[str, Any]) -> list[ParsedMessage]:
         for change in changes:
             value: dict[str, Any] = change.get("value", {})
             messages: list[dict[str, Any]] = value.get("messages", []) or []
+            contacts: list[dict[str, Any]] = value.get("contacts", []) or []
 
             for message in messages:
                 text = ""
                 message_type: str = message.get("type", "")
                 flow_data: dict[str, Any] | None = None
+                sender = message.get("from")
+                if not sender and contacts:
+                    # Fallback for payload variants where sender id is only present in contacts.
+                    sender = contacts[0].get("wa_id")
 
                 if message_type == "text":
                     text_content: dict[str, Any] = message.get("text", {})
@@ -116,6 +121,7 @@ def parse_payload(payload: dict[str, Any]) -> list[ParsedMessage]:
                 results.append(
                     ParsedMessage(
                         id=message.get("id"),
+                        from_number=sender,
                         text=text,
                         type=message_type,
                         flow_data=flow_data,
