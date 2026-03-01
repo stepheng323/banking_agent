@@ -16,8 +16,8 @@ from apps.core.src.agent.graphs.query.worker import QueryWorker as AgentQueryWor
 from apps.core.src.agent.graphs.support import SupportWorker
 from apps.core.src.agent.graphs.transfer import TransferWorker
 from apps.core.src.agent.graphs.transfer.services.extractor import TransferEntityExtractor
-from apps.core.src.agent.orchestrator import OrchestratorAgent
 from apps.core.src.agent.orchestrator.config import OrchestratorDependencies
+from apps.core.src.agent.orchestrator.graph.orchestrator import OrchestratorAgent
 from apps.core.src.agent.orchestrator.services.media_service import MediaService
 from apps.core.src.queue_consumers.flow_event_consumer import FlowEventConsumer
 from apps.core.src.queue_consumers.message_consumer import MessageConsumer

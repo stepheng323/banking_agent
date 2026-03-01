@@ -5,7 +5,7 @@ import time
 from typing import Any, cast
 
 from apps.core.src.agent.graphs.onboarding.executor import OnboardingExecutor
-from apps.core.src.agent.orchestrator import OrchestratorAgent
+from apps.core.src.agent.orchestrator.graph.orchestrator import OrchestratorAgent
 from apps.core.src.agent.orchestrator.models.intents import (
     RequestAuth,
     RequestConfirmation,
