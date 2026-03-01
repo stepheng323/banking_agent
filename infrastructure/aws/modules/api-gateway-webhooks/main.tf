@@ -1,9 +1,15 @@
 locals {
   webhook_routes = toset([
-    "GET /webhook",
+    "GET /webhook/whatsapp",
     "POST /webhook/whatsapp",
     "POST /webhook/flow",
     "POST /webhook/telegram",
+    "POST /webhook/telegram/onboarding/bvn",
+    "POST /webhook/telegram/onboarding/send_otp",
+    "POST /webhook/telegram/onboarding/otp",
+    "POST /webhook/telegram/onboarding/account",
+    "POST /webhook/telegram/onboarding/complete",
+    "POST /webhook/telegram/pin_submit",
     "POST /webhook/mono",
   ])
 }
