@@ -370,6 +370,17 @@ receipt = [
     { name = "jinja2" },
     { name = "playwright" },
 ]
+runtime-core-chat = [
+    { name = "langchain" },
+    { name = "langchain-community" },
+    { name = "langchain-openai" },
+    { name = "langgraph" },
+    { name = "langgraph-checkpoint-redis" },
+]
+runtime-worker-messaging = [
+    { name = "jinja2" },
+    { name = "playwright" },
+]
 
 [package.dev-dependencies]
 dev = [
@@ -387,7 +398,10 @@ requires-dist = [
     { name = "alembic", specifier = ">=1.17.2" },
     { name = "asyncpg", specifier = ">=0.30.0" },
     { name = "awslambdaric", specifier = ">=2.2.1" },
-    { name = "banking-agent", extras = ["core", "receipt", "gateway"], marker = "extra == 'all'" },
+    { name = "banking-agent", extras = ["core"], marker = "extra == 'runtime-core-chat'" },
+    { name = "banking-agent", extras = ["core", "receipt", "gateway", "runtime-core-chat", "runtime-worker-transaction", "runtime-worker-messaging", "runtime-gateway"], marker = "extra == 'all'" },
+    { name = "banking-agent", extras = ["gateway"], marker = "extra == 'runtime-gateway'" },
+    { name = "banking-agent", extras = ["receipt"], marker = "extra == 'runtime-worker-messaging'" },
     { name = "bcrypt", specifier = "==4.0.1" },
     { name = "fastapi", specifier = ">=0.121.1" },
     { name = "greenlet", specifier = ">=3.1.1" },
@@ -412,7 +426,7 @@ requires-dist = [
     { name = "structlog", specifier = ">=25.5.0" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.38.0" },
 ]
-provides-extras = ["core", "receipt", "gateway", "all"]
+provides-extras = ["core", "receipt", "gateway", "runtime-core-chat", "runtime-worker-transaction", "runtime-worker-messaging", "runtime-gateway", "all"]
 
 [package.metadata.requires-dev]
 dev = [
