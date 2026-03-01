@@ -127,6 +127,22 @@ resource "aws_iam_role_policy" "ecs_task_sqs_consume" {
   })
 }
 
+resource "aws_iam_role_policy" "ecs_task_sns_publish" {
+  name = "${var.project_name}-ecs-task-sns-publish-${var.environment}"
+  role = aws_iam_role.ecs_task.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = ["sns:Publish"]
+        Resource = values(var.topic_arns)
+      }
+    ]
+  })
+}
+
 resource "aws_cloudwatch_log_group" "core" {
   name              = "/ecs/${var.project_name}-core-chat-worker"
   retention_in_days = 30

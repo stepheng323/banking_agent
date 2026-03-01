@@ -57,3 +57,8 @@ variable "queue_arns" {
   description = "Queue ARN map from messaging module, keyed by topic key."
   type        = map(string)
 }
+
+variable "topic_arns" {
+  description = "SNS topic ARN map from messaging module, keyed by topic key."
+  type        = map(string)
+}
