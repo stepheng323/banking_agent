@@ -6,21 +6,18 @@ from collections.abc import Awaitable, Callable
 from inspect import isawaitable
 from typing import Any
 
-from shared.queue.contracts import resolve_contract_from_sns_topic_arn, resolve_contract_from_sqs_queue_name
+from shared.queue.contracts import resolve_contract_from_domain
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
-
-# Base type for a processor function
-ProcessorType = Callable[[dict[str, Any]], Awaitable[None]]
 
 
 class BaseSQSHandler:
     """Utility class for building SQS/SNS-to-Lambda bridge handlers."""
 
-    def __init__(self, name: str, dependecy_loader: Callable[[], Awaitable[Any] | Any]):
+    def __init__(self, name: str, dependency_loader: Callable[[], Awaitable[Any] | Any]):
         self.name = name
-        self.dependency_loader = dependecy_loader
+        self.dependency_loader = dependency_loader
         self._deps: Any | None = None
         self._active_record_context: dict[str, Any] | None = None
         try:
@@ -92,11 +89,14 @@ class BaseSQSHandler:
         raise NotImplementedError("Subclasses must implement process_record")
 
     def _extract_payload(self, record: dict[str, Any]) -> dict[str, Any]:
-        """Extract JSON payload from SQS record (handles SNS wrapping)."""
+        """Extract JSON payload from SQS record.
+
+        With RawMessageDelivery=true the body is the raw JSON message.
+        Legacy SNS→SQS envelopes (TopicArn/Message wrapper) are also handled.
+        """
         body = record.get("body", "{}")
         try:
             data = json.loads(body)
-            # Check if it's an SNS message delivered via SQS
             if isinstance(data, dict) and "Message" in data and "TopicArn" in data:
                 return json.loads(data["Message"])
             return data
@@ -105,34 +105,39 @@ class BaseSQSHandler:
             return {}
 
     def _extract_record_context(self, record: dict[str, Any]) -> dict[str, Any]:
-        """Extract contextual metadata from an SQS event record."""
+        """Extract contextual metadata from an SQS event record.
+
+        With RawMessageDelivery the SNS MessageAttributes are forwarded as
+        SQS MessageAttributes, so we can read the `domain` attribute directly.
+        """
         event_source_arn = record.get("eventSourceARN") or record.get("eventSourceArn")
         queue_name = self._extract_queue_name(event_source_arn)
+
+        domain = self._extract_domain_attribute(record)
         logical_topic = None
-
-        if queue_name:
-            queue_contract = resolve_contract_from_sqs_queue_name(queue_name)
-            if queue_contract:
-                logical_topic = queue_contract.logical_topic
-
-        body = record.get("body", "{}")
-        try:
-            body_obj = json.loads(body)
-            if isinstance(body_obj, dict):
-                topic_arn = body_obj.get("TopicArn")
-                if isinstance(topic_arn, str):
-                    contract = resolve_contract_from_sns_topic_arn(topic_arn)
-                    if contract:
-                        logical_topic = contract.logical_topic
-        except json.JSONDecodeError:
-            pass
+        if domain:
+            contract = resolve_contract_from_domain(domain)
+            if contract:
+                logical_topic = contract.logical_topic
 
         return {
             "message_id": record.get("messageId"),
             "queue_name": queue_name,
+            "domain": domain,
             "logical_topic": logical_topic,
             "event_source_arn": event_source_arn,
         }
+
+    @staticmethod
+    def _extract_domain_attribute(record: dict[str, Any]) -> str | None:
+        """Extract the `domain` value from SQS MessageAttributes.
+
+        With SNS RawMessageDelivery, SNS MessageAttributes become
+        SQS MessageAttributes in the event record.
+        """
+        attrs = record.get("messageAttributes") or record.get("MessageAttributes") or {}
+        domain_attr = attrs.get("domain", {})
+        return domain_attr.get("stringValue") or domain_attr.get("StringValue")
 
     @staticmethod
     def _extract_queue_name(event_source_arn: str | None) -> str | None:
