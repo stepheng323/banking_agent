@@ -63,7 +63,7 @@ class MessageConsumer:
         except Exception as e:
             await self.user_repository.db.rollback()
             logger.error("message_processing_failed", error=str(e), exc_info=True)
-            raise e
+            raise
 
     async def _handle_message(self, message: ChannelMessage) -> dict[str, Any] | None:
         """Handle a Channel message."""

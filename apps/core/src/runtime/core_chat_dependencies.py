@@ -1,6 +1,7 @@
 """Dependency loader for the ECS core chat runtime."""
 
 from langchain_openai import ChatOpenAI
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.core.src.agent.graphs.__shared__.beneficiary.suggestion_service import BeneficiarySuggestionService
 from apps.core.src.agent.graphs.account import AccountWorker
@@ -46,39 +47,27 @@ from shared.services.task_planner import refresh_planner_system_prompt
 from shared.services.task_queue.service import TaskQueueService
 
 
-def setup_core_consumers() -> tuple[MessageConsumer, FlowEventConsumer]:
-    """Setup chat-critical consumers owned by ECS core."""
-    validate_catalog_completeness()
-    policy = get_cached_policy(force_reload=True)
-    validate_policy_coverage(policy)
-    refresh_planner_system_prompt()
+def _build_orchestrator_runtime_bundle(
+    queue_publisher, messaging_clients, shared_redis, llm
+) -> tuple[AsyncSession, UserRepository, OnboardingExecutor, OrchestratorAgent]:
+    """
+    Build one isolated runtime bundle.
 
-    require_aws_account_id()
-    sqs_consumer = SQSQueueConsumer(
-        region_name=settings.aws_region,
-        account_id=settings.aws_account_id,
-        project_name=settings.project_name,
-        environment=settings.environment,
-    )
+    Each bundle gets its own AsyncSession to avoid cross-task session contention.
+    """
+    db_session = get_db_session()
 
-    queue_publisher = QueuePublisherFactory.get_publisher()
-    messaging_clients = build_messaging_clients()
+    user_repository = UserRepository(db=db_session)
+    beneficiary_repository = BeneficiaryRepository(db=db_session)
+    account_repository = AccountRepository(db=db_session)
+    actionable_message_repository = ActionableMessageRepository(db=db_session)
+    transaction_repository = TransactionRepository(db=db_session)
 
-    user_repository = UserRepository(db=get_db_session())
-    shared_redis = RedisClient.get_client()
     user_data_cache = UserDataCache(redis_client=shared_redis)
-
     onboarding_service = OnboardingService(queue_publisher)
     onboarding_executor = OnboardingExecutor(user_repository, onboarding_service)
 
-    beneficiary_repository = BeneficiaryRepository(db=get_db_session())
-    account_repository = AccountRepository(db=get_db_session())
-    actionable_message_repository = ActionableMessageRepository(db=get_db_session())
-    transaction_repository = TransactionRepository(db=get_db_session())
-
     beneficiary_suggestion_service = BeneficiarySuggestionService(queue_publisher)
-    llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
-
     banking_provider = MonoBankingProvider()
     direct_debit_provider = MonoDirectDebitProvider()
 
@@ -104,7 +93,7 @@ def setup_core_consumers() -> tuple[MessageConsumer, FlowEventConsumer]:
         transaction_repo=transaction_repository,
         actionable_message_repo=actionable_message_repository,
         redis_client=shared_redis,
-        db_session=get_db_session(),
+        db_session=db_session,
     )
 
     query_session_manager = QuerySessionManager(shared_redis)
@@ -167,20 +156,55 @@ def setup_core_consumers() -> tuple[MessageConsumer, FlowEventConsumer]:
         banking_provider=banking_provider,
     )
 
-    orchestrator = OrchestratorAgent(orchestrator_deps)
+    return db_session, user_repository, onboarding_executor, OrchestratorAgent(orchestrator_deps)
+
+
+def setup_core_consumers() -> tuple[MessageConsumer, FlowEventConsumer]:
+    """Setup chat-critical consumers owned by ECS core."""
+    validate_catalog_completeness()
+    policy = get_cached_policy(force_reload=True)
+    validate_policy_coverage(policy)
+    refresh_planner_system_prompt()
+
+    require_aws_account_id()
+    sqs_consumer = SQSQueueConsumer(
+        region_name=settings.aws_region,
+        account_id=settings.aws_account_id,
+        project_name=settings.project_name,
+        environment=settings.environment,
+    )
+
+    queue_publisher = QueuePublisherFactory.get_publisher()
+    messaging_clients = build_messaging_clients()
+    shared_redis = RedisClient.get_client()
+    llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+
+    _, message_user_repo, onboarding_executor, message_orchestrator = _build_orchestrator_runtime_bundle(
+        queue_publisher=queue_publisher,
+        messaging_clients=messaging_clients,
+        shared_redis=shared_redis,
+        llm=llm,
+    )
+    flow_db_session, _, _, flow_orchestrator = _build_orchestrator_runtime_bundle(
+        queue_publisher=queue_publisher,
+        messaging_clients=messaging_clients,
+        shared_redis=shared_redis,
+        llm=llm,
+    )
 
     message_consumer = MessageConsumer(
         publisher=queue_publisher,
-        user_repository=user_repository,
+        user_repository=message_user_repo,
         onboarding_executor=onboarding_executor,
-        orchestrator=orchestrator,
+        orchestrator=message_orchestrator,
         queue_consumer=sqs_consumer,
     )
 
     flow_event_consumer = FlowEventConsumer(
         publisher=queue_publisher,
-        orchestrator=orchestrator,
+        orchestrator=flow_orchestrator,
         queue_consumer=sqs_consumer,
+        db_session=flow_db_session,
     )
 
     return message_consumer, flow_event_consumer
