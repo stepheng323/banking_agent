@@ -23,10 +23,15 @@ class MandateService:
     ) -> None:
         # publisher/queue are retained for backwards compatibility with older call sites.
         del publisher, queue
-        self.delivery_service = delivery_service or DeliveryService()
+        self.delivery_service = delivery_service
+
+    def _get_delivery_service(self) -> DeliveryService:
+        if self.delivery_service is None:
+            self.delivery_service = DeliveryService()
+        return self.delivery_service
 
     async def enqueue_outbox_say(self, phone_number: str, text: str, channel: str = "whatsapp") -> None:
-        await self.delivery_service.deliver_text(
+        await self._get_delivery_service().deliver_text(
             phone_number=phone_number,
             channel=channel,
             text=text,
