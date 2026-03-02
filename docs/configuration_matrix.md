@@ -65,7 +65,7 @@ Delivery model:
 
 - Deploy-time injection from SSM (`data.aws_ssm_parameter`)
 
-## messaging-worker (Lambda)
+## receipt-worker (Lambda)
 
 Required keys:
 

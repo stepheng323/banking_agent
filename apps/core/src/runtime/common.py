@@ -13,9 +13,8 @@ def require_aws_account_id() -> None:
 
 
 def build_messaging_clients() -> dict[str, MessagingClient]:
-    """Construct messaging clients used by chat and messaging worker runtimes."""
+    """Construct messaging clients used by chat and receipt worker runtimes."""
     return {
         "whatsapp": WhatsAppClient(),
         "telegram": TelegramClient(),
     }
-

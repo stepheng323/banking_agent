@@ -18,7 +18,7 @@
   - `payout.process`
   - `refund.process`
 
-4. `messaging-worker` (Lambda)
+4. `receipt-worker` (Lambda)
 - Owns async messaging queues:
   - `notification.send`
   - `actionable_message.send`
@@ -35,5 +35,5 @@
 - Runtime configuration is delivered from SSM Parameter Store with prefix `/banking-agent/<env>/`.
 - `config-ssm` Terraform module is the canonical source for parameter creation.
 - ECS `core-chat-worker` reads secrets via task definition `secrets` (SSM ARN references).
-- Lambda workers (`transaction-worker`, `messaging-worker`, `gateway-lambda`) receive env values from SSM at deploy time.
+- Lambda workers (`transaction-worker`, `receipt-worker`, `gateway-lambda`) receive env values from SSM at deploy time.
 - SSM and KMS IAM permissions are scoped to Terraform-managed parameter ARNs.

@@ -120,7 +120,7 @@ class ExecutionStep(TransferStep):
 
             publisher = getattr(worker_context, "publisher", None)
             if not publisher:
-                publisher = QueuePublisherFactory.get_publisher()
+                publisher = QueuePublisherFactory.get_async_publisher()
 
             if data.funding_plan and not data.funding_plan.get("is_single_source", True):
                 if not funded_transfer_id:

@@ -22,7 +22,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
         "consumer_ownership_config",
         mode="api_only",
         run_message_consumer=False,
-        run_flow_event_consumer=False,
+        run_stream_consumer=False,
         started=[],
     )
 

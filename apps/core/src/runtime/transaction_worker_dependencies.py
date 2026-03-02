@@ -25,7 +25,7 @@ def setup_transaction_worker_consumers() -> tuple[
 ]:
     """Setup async transaction-domain consumers owned by transaction Lambda worker."""
     require_aws_account_id()
-    queue_publisher = QueuePublisherFactory.get_publisher()
+    queue_publisher = QueuePublisherFactory.get_async_publisher()
     transaction_repository = TransactionRepository(db=get_db_session())
     banking_provider = MonoBankingProvider()
     direct_debit_provider = MonoDirectDebitProvider()

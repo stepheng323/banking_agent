@@ -7,8 +7,7 @@ from typing import Any, cast
 
 from apps.receipt.src.renderer import ReceiptRenderer
 from shared.cache.redis_client import Redis
-from shared.queue.adapter import QueuePublisher
-from shared.queue.factory import QueuePublisherFactory
+from shared.services.delivery_service import DeliveryService
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -22,12 +21,12 @@ class ReceiptJobConsumer:
 
     def __init__(
         self,
-        queue_publisher: QueuePublisher | None = None,
+        delivery_service: DeliveryService | None = None,
         redis_client: Redis | None = None,
     ) -> None:
         self.renderer = ReceiptRenderer()
         self.redis_client = redis_client
-        self.publisher = queue_publisher or QueuePublisherFactory.get_publisher()
+        self.delivery_service = delivery_service or DeliveryService()
 
     @staticmethod
     def _extract_payload(job: dict[str, Any]) -> dict[str, Any]:
@@ -126,14 +125,13 @@ class ReceiptJobConsumer:
                         if beneficiary_suggestion:
                             intents.append({"type": "say", "text": beneficiary_suggestion})
 
-                        await self.publisher.publish(
-                            topic="notification.send",
-                            message={
-                                "phone_number": outbox_phone,
-                                "channel": channel,
-                                "intents": intents,
-                                "metadata": {"source": "receipt_consumer"},
-                            },
+                        await self.delivery_service.deliver_intents(
+                            phone_number=str(outbox_phone),
+                            channel=str(channel),
+                            intents=intents,
+                            metadata={"source": "receipt_consumer"},
+                            dedupe_key=f"receipt:{reference}",
+                            strict_actionable=True,
                         )
                         return
 
@@ -157,23 +155,16 @@ class ReceiptJobConsumer:
 
             try:
                 channel = payload.get("channel", "whatsapp")
-                await self.publisher.publish(
-                    topic="notification.send",
-                    message={
-                        "phone_number": outbox_phone,
-                        "channel": channel,
-                        "intents": [
-                            {
-                                "type": "say",
-                                "text": (
-                                    "We couldn't generate your receipt image at this time. "
-                                    "Don't worry - your transfer was successful! "
-                                    f"Reference: {reference}"
-                                ),
-                            }
-                        ],
-                        "metadata": {"source": "receipt_consumer", "reason": "generation_failed"},
-                    },
+                await self.delivery_service.deliver_text(
+                    phone_number=str(outbox_phone),
+                    channel=str(channel),
+                    text=(
+                        "We couldn't generate your receipt image at this time. "
+                        "Don't worry - your transfer was successful! "
+                        f"Reference: {reference}"
+                    ),
+                    metadata={"source": "receipt_consumer", "reason": "generation_failed"},
+                    dedupe_key=f"receipt-fallback:{reference}",
                 )
             except Exception as notify_error:
                 logger.error(

@@ -383,12 +383,14 @@ async def advance_wave(state: OrchestratorState, config: RunnableConfig) -> dict
         agg=agg,
     )
     locale = (state.loaded_context or {}).get("language", "en")
+    mandate_gate_accounts: list[dict[str, Any]] = []
 
     # ── Filter accounts to mandate-ready only ────────────────────────
     # Workers should only see accounts eligible for transactions.
     # Pending/expired accounts are hidden from source selection, balance, etc.
     if state.loaded_context and "accounts" in state.loaded_context:
         raw_accounts = state.loaded_context["accounts"]
+        mandate_gate_accounts = [a for a in raw_accounts if isinstance(a, dict)]
         logger.info(
             "mandate_gate_pre_filter",
             account_statuses=[
@@ -398,7 +400,7 @@ async def advance_wave(state: OrchestratorState, config: RunnableConfig) -> dict
             ],
         )
         state.loaded_context["accounts"] = [
-            a for a in raw_accounts if isinstance(a, dict) and a.get("mandate_status") == "ready"
+            a for a in mandate_gate_accounts if a.get("mandate_status") == "ready"
         ]
         logger.info(
             "mandate_gate_post_filter",
@@ -458,7 +460,8 @@ async def advance_wave(state: OrchestratorState, config: RunnableConfig) -> dict
             if not has_ready:
                 task.stage = TaskStage.FAILED
                 task.payload["is_pending_mandate"] = True
-                task.payload["error"] = _build_mandate_gate_error(accounts, locale)
+                task.payload["mandate_accounts"] = mandate_gate_accounts
+                task.payload["error"] = _build_mandate_gate_error(mandate_gate_accounts or accounts, locale)
                 progressed = True
                 continue
 

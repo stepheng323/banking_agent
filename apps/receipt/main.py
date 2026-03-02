@@ -6,7 +6,6 @@ from fastapi import FastAPI
 
 from apps.receipt.src.consumer import ReceiptJobConsumer
 from shared.cache.redis_client import RedisClient
-from shared.queue.factory import QueuePublisherFactory
 from shared.utils.logging import configure_logger, get_logger
 
 configure_logger()
@@ -33,8 +32,6 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     # Initialize shared resources
     RedisClient.get_client()
-    QueuePublisherFactory.get_publisher()
-
     # Start background worker if configured (optional for local dev)
     # Background worker logic can be added here
 
