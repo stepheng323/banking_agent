@@ -43,13 +43,13 @@ variable "ssm_kms_key_arn" {
   type        = string
 }
 
-variable "topic_arns" {
-  description = "SNS topic ARN map from messaging module"
-  type        = map(string)
+variable "sns_topic_arn" {
+  description = "SNS topic ARN for publishing async jobs"
+  type        = string
 }
 
 variable "log_retention_in_days" {
   description = "Retention period for gateway Lambda log group."
   type        = number
-  default     = 30
+  default     = 7
 }

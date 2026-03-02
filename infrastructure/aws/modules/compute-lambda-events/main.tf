@@ -5,21 +5,16 @@ locals {
       timeout = 120
       memory  = 1024
     }
-    "messaging-worker" = {
-      handler = "apps.core.src.lambda_handlers.messaging_worker_handler.handler"
+    "receipt-worker" = {
+      handler = "apps.core.src.lambda_handlers.receipt_worker_handler.handler"
       timeout = 90
       memory  = 1024
     }
   }
 
   queue_worker_map = {
-    "transaction-execute"     = "transaction-worker"
-    "funding-process"         = "transaction-worker"
-    "payout-process"          = "transaction-worker"
-    "refund-process"          = "transaction-worker"
-    "notification-send"       = "messaging-worker"
-    "actionable-message-send" = "messaging-worker"
-    "receipt-process"         = "messaging-worker"
+    "transactions" = "transaction-worker"
+    "receipts"     = "receipt-worker"
   }
 
   async_event_mappings = {
@@ -71,6 +66,22 @@ resource "aws_iam_role_policy" "lambda_sqs_policy" {
           "sqs:GetQueueUrl"
         ]
         Resource = values(var.queue_arns)
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy" "lambda_sns_publish" {
+  name = "${var.project_name}-lambda-workers-sns-${var.environment}"
+  role = aws_iam_role.lambda_worker_role.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = ["sns:Publish"]
+        Resource = [var.sns_topic_arn]
       }
     ]
   })

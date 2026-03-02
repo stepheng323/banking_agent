@@ -1,6 +1,5 @@
-resource "aws_sns_topic" "topics" {
-  for_each = toset(var.topics)
-  name     = "${var.project_name}-${each.value}-${var.environment}"
+resource "aws_sns_topic" "async_jobs" {
+  name = "${var.project_name}-${var.sns_topic_name}-${var.environment}"
 
   tags = {
     Project     = var.project_name
@@ -34,37 +33,35 @@ resource "aws_sqs_queue" "queues" {
   }
 }
 
-resource "aws_sns_topic_subscription" "subscriptions" {
-  for_each = var.queues
-
-  topic_arn            = aws_sns_topic.topics[each.key].arn
-  protocol             = "sqs"
-  endpoint             = aws_sqs_queue.queues[each.key].arn
-  raw_message_delivery = true
-}
-
-# Allow SNS to publish to SQS
-resource "aws_sqs_queue_policy" "sns_to_sqs" {
-  for_each = var.queues
-
+resource "aws_sqs_queue_policy" "allow_sns" {
+  for_each  = var.queues
   queue_url = aws_sqs_queue.queues[each.key].id
 
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
       {
-        Effect = "Allow"
-        Principal = {
-          Service = "sns.amazonaws.com"
-        }
-        Action   = "sqs:SendMessage"
-        Resource = aws_sqs_queue.queues[each.key].arn
+        Effect    = "Allow"
+        Principal = { Service = "sns.amazonaws.com" }
+        Action    = "sqs:SendMessage"
+        Resource  = aws_sqs_queue.queues[each.key].arn
         Condition = {
           ArnEquals = {
-            "aws:SourceArn" = aws_sns_topic.topics[each.key].arn
+            "aws:SourceArn" = aws_sns_topic.async_jobs.arn
           }
         }
       }
     ]
   })
+}
+
+resource "aws_sns_topic_subscription" "queue_subscriptions" {
+  for_each  = var.queues
+  topic_arn = aws_sns_topic.async_jobs.arn
+  protocol  = "sqs"
+  endpoint  = aws_sqs_queue.queues[each.key].arn
+
+  raw_message_delivery = true
+  filter_policy        = lookup(var.queue_filter_policies, each.key, null)
+  filter_policy_scope  = "MessageAttributes"
 }

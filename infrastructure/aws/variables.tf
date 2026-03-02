@@ -190,13 +190,13 @@ variable "enable_channel_option_ux_v2" {
 variable "lambda_log_retention_in_days" {
   description = "Retention period for Lambda log groups."
   type        = number
-  default     = 30
+  default     = 7
 }
 
 variable "api_gateway_access_log_retention_in_days" {
   description = "Retention period for API Gateway access logs."
   type        = number
-  default     = 14
+  default     = 7
 }
 
 variable "api_gateway_throttling_burst_limit" {
