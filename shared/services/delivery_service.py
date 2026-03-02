@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Awaitable, Sequence
 from datetime import datetime, timedelta
-from typing import Any
+from inspect import isawaitable
+from typing import Any, TypeVar, cast
 
 from sqlalchemy.exc import IntegrityError
 
@@ -22,6 +24,13 @@ from shared.repositories.unit_of_work import UnitOfWork
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
+_T = TypeVar("_T")
+
+
+async def _await_maybe(value: _T | Awaitable[_T]) -> _T:
+    if isawaitable(value):
+        return await cast(Awaitable[_T], value)
+    return value
 
 
 def _is_duplicate_channel_message_error(error: IntegrityError) -> bool:
@@ -68,7 +77,7 @@ class DeliveryService:
         self,
         phone_number: str,
         channel: str,
-        intents: list[UiIntent | dict[str, Any]],
+        intents: Sequence[UiIntent | dict[str, Any]],
         metadata: dict[str, Any] | None = None,
         dedupe_key: str | None = None,
         strict_actionable: bool = False,
@@ -96,8 +105,8 @@ class DeliveryService:
             if resumed:
                 return True
 
-            await self.redis.hset(ledger_key, mapping={"status": "pending", "payload_hash": payload_hash})
-            await self.redis.expire(ledger_key, 86400)
+            await _await_maybe(self.redis.hset(ledger_key, mapping={"status": "pending", "payload_hash": payload_hash}))
+            await _await_maybe(self.redis.expire(ledger_key, 86400))
 
         client = self._get_client(channel)
         presenter = PresenterFactory.create(channel=channel, client=client)
@@ -110,15 +119,17 @@ class DeliveryService:
         result = await presenter.present(ui_intents, context)
         if not result.success:
             if ledger_key:
-                await self.redis.hset(ledger_key, mapping={"status": "unknown"})
+                await _await_maybe(self.redis.hset(ledger_key, mapping={"status": "unknown"}))
             raise RuntimeError(
                 f"delivery_failed channel={channel} errors={','.join(result.errors) if result.errors else 'unknown'}"
             )
 
         if ledger_key:
-            await self.redis.hset(
-                ledger_key,
-                mapping={"status": "sent", "message_ids": json.dumps(result.message_ids)},
+            await _await_maybe(
+                self.redis.hset(
+                    ledger_key,
+                    mapping={"status": "sent", "message_ids": json.dumps(result.message_ids)},
+                )
             )
 
         await self._persist_actionable_if_any(
@@ -130,11 +141,11 @@ class DeliveryService:
         )
 
         if ledger_key:
-            await self.redis.hset(ledger_key, mapping={"status": "completed"})
+            await _await_maybe(self.redis.hset(ledger_key, mapping={"status": "completed"}))
         return True
 
     @staticmethod
-    def _normalize_intents(intents: list[UiIntent | dict[str, Any]]) -> list[UiIntent]:
+    def _normalize_intents(intents: Sequence[UiIntent | dict[str, Any]]) -> list[UiIntent]:
         normalized: list[UiIntent] = []
         for intent in intents:
             if isinstance(intent, dict):
@@ -179,7 +190,7 @@ class DeliveryService:
         intents: list[UiIntent],
         strict_actionable: bool,
     ) -> bool:
-        status = await self.redis.hget(ledger_key, "status")
+        status = await _await_maybe(self.redis.hget(ledger_key, "status"))
         if status == "completed":
             logger.info("delivery_dedupe_hit", ledger_key=ledger_key, status=status)
             return True
@@ -187,7 +198,7 @@ class DeliveryService:
         if status != "sent":
             return False
 
-        message_ids_raw = await self.redis.hget(ledger_key, "message_ids")
+        message_ids_raw = await _await_maybe(self.redis.hget(ledger_key, "message_ids"))
         message_ids = []
         if message_ids_raw:
             try:
@@ -204,7 +215,7 @@ class DeliveryService:
             message_ids=message_ids,
             strict_actionable=strict_actionable,
         )
-        await self.redis.hset(ledger_key, mapping={"status": "completed"})
+        await _await_maybe(self.redis.hset(ledger_key, mapping={"status": "completed"}))
         logger.info("delivery_dedupe_resume_completed", ledger_key=ledger_key)
         return True
 

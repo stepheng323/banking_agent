@@ -3,10 +3,17 @@
 import json
 import socket
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any, cast
 
 from shared.cache.redis_client import RedisClient
 from shared.queue.contracts import resolve_contract_from_redis_stream_name
+
+if TYPE_CHECKING:
+    RedisStreamKey = bytes | str | memoryview[int]
+    RedisStreamId = int | bytes | str | memoryview[int]
+else:
+    RedisStreamKey = bytes | str | memoryview
+    RedisStreamId = int | bytes | str | memoryview
 
 
 @dataclass(frozen=True, slots=True)
@@ -59,7 +66,7 @@ class RedisStreamConsumer:
                 stream_name,
                 self.group_name,
                 self.consumer_name,
-                min_idle_ms=min_idle_ms,
+                min_idle_time=min_idle_ms,
                 start_id=next_start,
                 count=count,
             )
@@ -88,7 +95,10 @@ class RedisStreamConsumer:
     async def consume(self, count: int = 20, block_ms: int = 5000) -> list[RedisStreamRecord]:
         """Consume new records from all configured streams."""
         await self.ensure_groups()
-        streams_cursor = dict.fromkeys(self.stream_names, ">")
+        streams_cursor = cast(
+            dict[RedisStreamKey, RedisStreamId],
+            dict.fromkeys(self.stream_names, ">"),
+        )
         response = await self.redis.xreadgroup(
             groupname=self.group_name,
             consumername=self.consumer_name,
