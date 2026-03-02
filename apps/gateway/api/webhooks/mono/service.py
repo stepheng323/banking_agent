@@ -39,8 +39,13 @@ class MonoWebhookService:
         if publisher is None:
             raise ValueError("publisher is required")
         self.publisher = publisher
-        self.delivery_service = delivery_service or DeliveryService()
+        self.delivery_service = delivery_service
         self.cache = UserDataCache()
+
+    def _get_delivery_service(self) -> DeliveryService:
+        if self.delivery_service is None:
+            self.delivery_service = DeliveryService()
+        return self.delivery_service
 
     async def handle_mandate_event(self, event: str, data: dict[str, Any]) -> bool:
         """
@@ -165,7 +170,7 @@ class MonoWebhookService:
     ) -> None:
         """Send notification when mandate is ready."""
         try:
-            await self.delivery_service.deliver_text(
+            await self._get_delivery_service().deliver_text(
                 phone_number=phone_number,
                 channel=channel,
                 text=f"✓ Your {bank_name} account ({account_number}) is now ready for payments.",
