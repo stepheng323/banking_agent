@@ -4,8 +4,6 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any
 
-from shared.queue.contracts import get_contract_by_topic
-
 
 class FlowEventType(str, Enum):
     """Types of flow events."""
@@ -44,8 +42,3 @@ class FlowEvent:
         if self.extra_data:
             result["extra_data"] = self.extra_data
         return result
-
-
-FLOW_EVENTS_QUEUE = get_contract_by_topic("flow_event.process").queue_name
-OUTBOX_QUEUE = get_contract_by_topic("notification.send").queue_name
-ACTIONABLE_MESSAGES_QUEUE = get_contract_by_topic("actionable_message.send").queue_name
