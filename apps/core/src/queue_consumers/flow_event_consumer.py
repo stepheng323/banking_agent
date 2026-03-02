@@ -3,6 +3,8 @@
 import asyncio
 from typing import Any
 
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from apps.core.src.agent.orchestrator.graph.orchestrator import OrchestratorAgent
 from shared.queue.adapter import QueueConsumer, QueuePublisher
 from shared.queue.messages import FLOW_EVENTS_QUEUE, FlowEventType
@@ -19,10 +21,12 @@ class FlowEventConsumer:
         publisher: QueuePublisher,
         orchestrator: OrchestratorAgent,
         queue_consumer: QueueConsumer | None = None,
+        db_session: AsyncSession | None = None,
     ):
         self.queue_consumer = queue_consumer
         self.publisher = publisher
         self.orchestrator = orchestrator
+        self.db_session = db_session
         self.running = False
 
     async def process_event(self, event_data: dict[str, Any]) -> None:
@@ -63,13 +67,19 @@ class FlowEventConsumer:
                     event_data=event_data,
                 )
 
+            if self.db_session is not None:
+                await self.db_session.commit()
+
         except Exception as e:
+            if self.db_session is not None:
+                await self.db_session.rollback()
             logger.error(
                 "flow_event_processing_failed",
                 error=str(e),
                 event_data=event_data,
                 exc_info=True,
             )
+            raise
 
     async def _handle_pin_verified(
         self,
@@ -134,15 +144,6 @@ class FlowEventConsumer:
             )
             raise  # Re-raise to prevent acking on failure
 
-    async def _process_and_ack(self, event_data: dict[str, Any], receipt_handle: Any, queue_name: str) -> None:
-        """Process event and explicitly acknowledge it to prevent dropping on failure."""
-        try:
-            await self.process_event(event_data)
-            if self.queue_consumer is not None and hasattr(self.queue_consumer, "ack_message"):
-                await self.queue_consumer.ack_message(queue_name, receipt_handle)
-        except Exception as e:
-            logger.error("background_process_and_ack_failed", error=str(e), exc_info=True)
-
     async def start(self, queue_name: str = FLOW_EVENTS_QUEUE) -> None:
         """Start the flow event consumer."""
         if self.queue_consumer is None:
@@ -154,8 +155,9 @@ class FlowEventConsumer:
                 result = await self.queue_consumer.consume_one(queue_name=queue_name, timeout=5)
                 if result:
                     event_data, receipt_handle = result
-                    # Process in background to not block the consumer
-                    asyncio.create_task(self._process_and_ack(event_data, receipt_handle, queue_name))
+                    await self.process_event(event_data)
+                    if self.queue_consumer is not None and hasattr(self.queue_consumer, "ack_message"):
+                        await self.queue_consumer.ack_message(queue_name, receipt_handle)
 
             except asyncio.CancelledError:
                 logger.info("flow_event_consumer_cancelled")

@@ -3,6 +3,7 @@
 Integrates the Top-Level LangGraph into the Message Processing Pipeline.
 """
 
+import asyncio
 import time
 from typing import Any, Literal
 
@@ -81,6 +82,7 @@ class OrchestratorGraphHandler:
 
         self.checkpointer = AsyncRedisSaver(redis_client=redis_client)
         self._checkpointer_setup = False
+        self._invoke_lock = asyncio.Lock()
 
         self.graph: CompiledStateGraph = build_orchestrator_graph(checkpointer=self.checkpointer)
 
@@ -118,77 +120,78 @@ class OrchestratorGraphHandler:
             str: Response message if any
             None: If no response generated
         """
-        await self._ensure_checkpointer()
+        async with self._invoke_lock:
+            await self._ensure_checkpointer()
 
-        phone_number = context.phone_number
+            phone_number = context.phone_number
 
-        inputs = {
-            "user_id": phone_number,
-            "phone_number": phone_number,
-            "last_message_text": context.text,
-            "last_message_id": context.message_id,
-            "last_callback": None,
-            "has_quote": bool(context.quoted_message_id),
-            "quoted_message_id": context.quoted_message_id,
-            "channel": context.channel,
-            "channel_identity": context.channel_identity,
-        }
+            inputs = {
+                "user_id": phone_number,
+                "phone_number": phone_number,
+                "last_message_text": context.text,
+                "last_message_id": context.message_id,
+                "last_callback": None,
+                "has_quote": bool(context.quoted_message_id),
+                "quoted_message_id": context.quoted_message_id,
+                "channel": context.channel,
+                "channel_identity": context.channel_identity,
+            }
 
-        # Hydrate via ContextManager (Parallel Fetch)
-        h_start = time.perf_counter()
-        user_ctx, _, _, _ = await self.context_manager.load_context_parallel(phone_number)
-        h_duration = (time.perf_counter() - h_start) * 1000
-        logger.info(
-            "perf_timer_latency",
-            gate="orchestrator_context_hydration",
-            duration_ms=round(h_duration, 2),
-            phone_number=phone_number,
-        )
+            # Hydrate via ContextManager (Parallel Fetch)
+            h_start = time.perf_counter()
+            user_ctx, _, _, _ = await self.context_manager.load_context_parallel(phone_number)
+            h_duration = (time.perf_counter() - h_start) * 1000
+            logger.info(
+                "perf_timer_latency",
+                gate="orchestrator_context_hydration",
+                duration_ms=round(h_duration, 2),
+                phone_number=phone_number,
+            )
 
-        loaded_context: dict[str, Any] = {
-            "profile": user_ctx.get("profile"),
-            "accounts": user_ctx.get("accounts"),
-            "beneficiaries": user_ctx.get("beneficiaries"),
-            "history": user_ctx.get("history", []),
-            "language": LocaleManager.normalize(user_ctx.get("language")).value,
-            "detected_language": LocaleManager.normalize(user_ctx.get("language")).value,
-            "user_id": user_ctx.get("profile", {}).get("id") if user_ctx.get("profile") else None,
-        }
+            loaded_context: dict[str, Any] = {
+                "profile": user_ctx.get("profile"),
+                "accounts": user_ctx.get("accounts"),
+                "beneficiaries": user_ctx.get("beneficiaries"),
+                "history": user_ctx.get("history", []),
+                "language": LocaleManager.normalize(user_ctx.get("language")).value,
+                "detected_language": LocaleManager.normalize(user_ctx.get("language")).value,
+                "user_id": user_ctx.get("profile", {}).get("id") if user_ctx.get("profile") else None,
+            }
 
-        inputs["loaded_context"] = loaded_context
+            inputs["loaded_context"] = loaded_context
 
-        config = self._get_config(phone_number, channel=context.channel)
+            config = self._get_config(phone_number, channel=context.channel)
 
-        logger.info("orchestrator_graph_invoke", user=phone_number)
+            logger.info("orchestrator_graph_invoke", user=phone_number)
 
-        g_start = time.perf_counter()
-        final_state = await self.graph.ainvoke(inputs, config=config)
-        g_duration = (time.perf_counter() - g_start) * 1000
-        logger.info(
-            "perf_timer_latency",
-            gate="orchestrator_graph_execution",
-            duration_ms=round(g_duration, 2),
-            phone_number=phone_number,
-        )
-        outbox = final_state.get("outbox", [])
-        response_text = final_state.get("final_response")
-        resolved_locale = LocaleManager.normalize(
-            (final_state.get("loaded_context") or {}).get("language") or loaded_context.get("language")
-        ).value
+            g_start = time.perf_counter()
+            final_state = await self.graph.ainvoke(inputs, config=config)
+            g_duration = (time.perf_counter() - g_start) * 1000
+            logger.info(
+                "perf_timer_latency",
+                gate="orchestrator_graph_execution",
+                duration_ms=round(g_duration, 2),
+                phone_number=phone_number,
+            )
+            outbox = final_state.get("outbox", [])
+            response_text = final_state.get("final_response")
+            resolved_locale = LocaleManager.normalize(
+                (final_state.get("loaded_context") or {}).get("language") or loaded_context.get("language")
+            ).value
 
-        intents = map_outbox_to_intents(outbox, response_text)
+            intents = map_outbox_to_intents(outbox, response_text)
 
-        # Apply cleanup policy
-        thread_id = config["configurable"]["thread_id"]
-        await self._cleanup_if_idle(thread_id, final_state)
-        await self._apply_session_ttl(thread_id)
+            # Apply cleanup policy
+            thread_id = config["configurable"]["thread_id"]
+            await self._cleanup_if_idle(thread_id, final_state)
+            await self._apply_session_ttl(thread_id)
 
-        return {
-            "text": response_text,
-            "intents": intents,
-            "outbox": outbox,  # Keep raw outbox for logging/debug if needed
-            "locale": resolved_locale,
-        }
+            return {
+                "text": response_text,
+                "intents": intents,
+                "outbox": outbox,  # Keep raw outbox for logging/debug if needed
+                "locale": resolved_locale,
+            }
 
     async def _apply_session_ttl(self, thread_id: str, ttl: int = 86400) -> None:
         """Apply TTL to all Redis keys associated with a thread to prevent bloat."""
@@ -240,33 +243,35 @@ class OrchestratorGraphHandler:
     async def resume_flow(self, phone_number: str, payload: dict[str, Any], channel: str) -> dict[str, Any]:
         """Resume flow externally (e.g. from auth callback)."""
 
-        await self._ensure_checkpointer()
-        inputs = {
-            "user_id": phone_number,
-            "phone_number": phone_number,
-            "last_callback": payload,
-            "has_quote": False,
-            "quoted_message_id": None,
-        }
-
-        config = self._get_config(phone_number, channel=channel)
-
-        logger.info("orchestrator_graph_resume", user=phone_number, payload=payload)
-
-        try:
-            final_state = await self.graph.ainvoke(inputs, config=config)
-            resolved_locale = LocaleManager.normalize((final_state.get("loaded_context") or {}).get("language")).value
-
-            # Apply cleanup policy
-            thread_id = config["configurable"]["thread_id"]
-            await self._cleanup_if_idle(thread_id, final_state)
-            await self._apply_session_ttl(thread_id)
-
-            return {
-                "text": final_state.get("final_response"),
-                "outbox": final_state.get("outbox", []),
-                "locale": resolved_locale,
+        async with self._invoke_lock:
+            await self._ensure_checkpointer()
+            inputs = {
+                "user_id": phone_number,
+                "phone_number": phone_number,
+                "last_callback": payload,
+                "has_quote": False,
+                "quoted_message_id": None,
             }
-        except Exception as e:
-            logger.exception("graph_resume_error", error=str(e))
-            return {"text": None, "outbox": [], "locale": LocaleManager.DEFAULT_LOCALE.value}
+
+            config = self._get_config(phone_number, channel=channel)
+
+            logger.info("orchestrator_graph_resume", user=phone_number, payload=payload)
+
+            try:
+                final_state = await self.graph.ainvoke(inputs, config=config)
+                resolved_locale = LocaleManager.normalize(
+                    (final_state.get("loaded_context") or {}).get("language")
+                ).value
+
+                thread_id = config["configurable"]["thread_id"]
+                await self._cleanup_if_idle(thread_id, final_state)
+                await self._apply_session_ttl(thread_id)
+
+                return {
+                    "text": final_state.get("final_response"),
+                    "outbox": final_state.get("outbox", []),
+                    "locale": resolved_locale,
+                }
+            except Exception as e:
+                logger.exception("graph_resume_error", error=str(e))
+                return {"text": None, "outbox": [], "locale": LocaleManager.DEFAULT_LOCALE.value}
