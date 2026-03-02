@@ -287,6 +287,10 @@ class TelegramWebhookService:
             return True
         except Exception as e:
             logger.error("telegram_pin_event_failed", error=str(e), exc_info=True)
+            await self.telegram_client.send_text(
+                to=msg.chat_id,
+                text="Sorry, I couldn't process that right now. Please try again.",
+            )
             return False
 
     def _build_message(self, msg: ParsedTelegramMessage) -> ChannelMessage:
@@ -340,4 +344,8 @@ class TelegramWebhookService:
             return True
         except Exception as e:
             logger.error("telegram_message_enqueue_failed", error=str(e), exc_info=True)
+            await self.telegram_client.send_text(
+                to=chat_id,
+                text="Sorry, I couldn't process that right now. Please try again.",
+            )
             return False

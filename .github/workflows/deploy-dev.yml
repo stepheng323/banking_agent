@@ -33,7 +33,7 @@ env:
   ECS_CLUSTER: banking-agent-cluster-dev
   ECS_SERVICE: banking-agent-core-chat-worker
   LAMBDA_TRANSACTION_FUNCTION: banking-agent-transaction-worker-dev
-  LAMBDA_MESSAGING_FUNCTION: banking-agent-messaging-worker-dev
+  LAMBDA_RECEIPT_FUNCTION: banking-agent-receipt-worker-dev
   LAMBDA_GATEWAY_FUNCTION: banking-agent-gateway-webhooks-dev
   LAMBDA_IMAGE_PLATFORM: linux/amd64
 
@@ -90,7 +90,7 @@ jobs:
             echo "✓ ${name} runtime import check passed"
           }
 
-          run_check "messaging-runtime" "runtime-worker-messaging" "apps.core.src.lambda_handlers.messaging_worker_handler" "handler"
+          run_check "receipt-runtime" "runtime-worker-receipt" "apps.core.src.lambda_handlers.receipt_worker_handler" "handler"
           run_check "transaction-runtime" "runtime-worker-transaction" "apps.core.src.lambda_handlers.transaction_worker_handler" "handler"
           run_check "gateway-runtime" "runtime-gateway" "apps.gateway.lambda_handler" "handler"
 
@@ -172,10 +172,10 @@ jobs:
             ecr_repo_env: ECR_CORE_REPO
             tag_prefix: lambda-transaction
             is_lambda: true
-          - name: messaging-worker-lambda
-            dockerfile: apps/core/Dockerfile.lambda.messaging
+          - name: receipt-worker-lambda
+            dockerfile: apps/core/Dockerfile.lambda.receipt
             ecr_repo_env: ECR_CORE_REPO
-            tag_prefix: lambda-messaging
+            tag_prefix: lambda-receipt
             is_lambda: true
           - name: gateway-lambda
             dockerfile: apps/gateway/Dockerfile.lambda
@@ -366,8 +366,8 @@ jobs:
           update_lambda "${LAMBDA_TRANSACTION_FUNCTION}" \
             "$ECR_REGISTRY/$ECR_CORE_REPO:lambda-transaction-${{ github.sha }}"
 
-          update_lambda "${LAMBDA_MESSAGING_FUNCTION}" \
-            "$ECR_REGISTRY/$ECR_CORE_REPO:lambda-messaging-${{ github.sha }}"
+          update_lambda "${LAMBDA_RECEIPT_FUNCTION}" \
+            "$ECR_REGISTRY/$ECR_CORE_REPO:lambda-receipt-${{ github.sha }}"
 
           update_lambda "${LAMBDA_GATEWAY_FUNCTION}" \
             "$ECR_REGISTRY/$ECR_GATEWAY_REPO:lambda-${{ github.sha }}"

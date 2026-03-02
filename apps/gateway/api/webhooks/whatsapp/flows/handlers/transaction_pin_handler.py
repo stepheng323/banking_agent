@@ -21,6 +21,7 @@ from shared.queue.adapter import QueuePublisher
 from shared.queue.factory import QueuePublisherFactory
 from shared.queue.messages import FlowEvent, FlowEventType
 from shared.services.auth import AuthorizationService
+from shared.services.delivery_service import DeliveryService
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -122,20 +123,14 @@ async def handle_transaction_pin(
             if publisher is None:
                 publisher = QueuePublisherFactory.get_publisher()
 
+            delivery_service = DeliveryService()
             asyncio.create_task(
-                publisher.publish(
-                    topic="notification.send",
-                    message={
-                        "phone_number": phone_number,
-                        "channel": whatsapp_client.channel_name,
-                        "intents": [
-                            {
-                                "type": "say",
-                                "text": "Your transaction session has expired. Please start a new transaction.",
-                            }
-                        ],
-                        "metadata": {"source": "transaction_pin_handler", "status": "expired"},
-                    },
+                delivery_service.deliver_text(
+                    phone_number=str(phone_number),
+                    channel=whatsapp_client.channel_name,
+                    text="Your transaction session has expired. Please start a new transaction.",
+                    metadata={"source": "transaction_pin_handler", "status": "expired"},
+                    dedupe_key=f"expired-session:{idem_key}",
                 )
             )
 

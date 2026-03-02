@@ -10,6 +10,7 @@ from shared.database.enums import TransactionStatusEnum
 from shared.i18n import render_message
 from shared.queue.adapter import QueuePublisher
 from shared.repositories.transaction_repository import TransactionRepository
+from shared.services.delivery_service import DeliveryService
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -23,10 +24,12 @@ class AirtimeExecutor:
         bill_provider: BillPaymentProvider,
         transaction_repo: TransactionRepository,
         publisher: QueuePublisher,
+        delivery_service: DeliveryService | None = None,
     ):
         self.bill_provider = bill_provider
         self.transaction_repo = transaction_repo
         self.publisher = publisher
+        self.delivery_service = delivery_service or DeliveryService()
 
     async def handle_airtime(self, data: dict[str, Any]) -> None:
         """Handle execution of an airtime transaction."""
@@ -64,14 +67,12 @@ class AirtimeExecutor:
                         locale,
                         {"amount": f"{amount:,.2f}", "reference": ref},
                     )
-                    await self.publisher.publish(
-                        topic="notification.send",
-                        message={
-                            "phone_number": phone_number,
-                            "channel": data.get("channel", "whatsapp"),
-                            "intents": [{"type": "say", "text": message}],
-                            "metadata": {"source": "airtime_executor", "transaction_id": transaction_id},
-                        },
+                    await self.delivery_service.deliver_text(
+                        phone_number=phone_number,
+                        channel=data.get("channel", "whatsapp"),
+                        text=message,
+                        metadata={"source": "airtime_executor", "transaction_id": transaction_id},
+                        dedupe_key=f"airtime:{transaction_id}",
                     )
             else:
                 error_msg = result.get("message") or render_message("airtime.error.provider_failed", locale)

@@ -8,35 +8,18 @@ variable "environment" {
   type        = string
 }
 
-variable "topics" {
-  description = "List of SNS topics to create"
-  type        = list(string)
-  default = [
-    "notification-send",
-    "flow-event-process",
-    "transaction-execute",
-    "funding-process",
-    "payout-process",
-    "refund-process",
-    "receipt-process",
-    "actionable-message-send",
-    "message-received"
-  ]
+variable "sns_topic_name" {
+  description = "Base name for the consolidated async-jobs SNS topic"
+  type        = string
+  default     = "async-jobs"
 }
 
 variable "queues" {
-  description = "Map of SNS topics to their primary SQS queue names"
+  description = "Map of queue keys to their primary SQS queue names"
   type        = map(string)
   default = {
-    "notification-send"       = "banking-outbox"
-    "flow-event-process"      = "banking-flow-events"
-    "transaction-execute"     = "banking-transactions"
-    "funding-process"         = "banking-funding"
-    "payout-process"          = "banking-payouts"
-    "refund-process"          = "banking-refunds"
-    "receipt-process"         = "banking-receipt-jobs"
-    "actionable-message-send" = "banking-actionable-messages"
-    "message-received"        = "banking-messages"
+    "transactions" = "banking-transactions"
+    "receipts"     = "banking-receipts"
   }
 }
 
@@ -47,18 +30,11 @@ variable "default_visibility_timeout_seconds" {
 }
 
 variable "visibility_timeout_by_queue" {
-  description = "Per-queue visibility timeout overrides (keyed by topic key)"
+  description = "Per-queue visibility timeout overrides"
   type        = map(number)
   default = {
-    "message-received"        = 30
-    "flow-event-process"      = 30
-    "transaction-execute"     = 180
-    "funding-process"         = 180
-    "payout-process"          = 180
-    "refund-process"          = 180
-    "notification-send"       = 150
-    "actionable-message-send" = 150
-    "receipt-process"         = 150
+    "transactions" = 180
+    "receipts"     = 150
   }
 }
 
@@ -66,4 +42,13 @@ variable "dlq_max_receive_count" {
   description = "Number of receives before moving message to DLQ"
   type        = number
   default     = 5
+}
+
+variable "queue_filter_policies" {
+  description = "SNS subscription filter policies per queue (jsonencode'd)"
+  type        = map(string)
+  default = {
+    "transactions" = "{\"domain\":[\"transaction\",\"funding\",\"payout\",\"refund\"]}"
+    "receipts"     = "{\"domain\":[\"receipt\"]}"
+  }
 }

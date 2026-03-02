@@ -6,41 +6,39 @@ import pytest
 import apps.core.src.worker_main as worker_main
 
 
-class _BlockingConsumer:
+class _LoopProbe:
     def __init__(self) -> None:
-        self.start_calls = 0
-        self.stop_calls = 0
+        self.started = False
         self.cancelled = False
+        self.args: tuple[object, object] | None = None
 
-    async def start(self) -> None:
-        self.start_calls += 1
+    async def run(self, message_consumer: object, stream_consumer: object) -> None:
+        self.started = True
+        self.args = (message_consumer, stream_consumer)
         try:
             await asyncio.Event().wait()
         except asyncio.CancelledError:
             self.cancelled = True
             raise
 
-    def stop(self) -> None:
-        self.stop_calls += 1
-
 
 @pytest.mark.asyncio
-async def test_run_worker_starts_and_stops_consumers(monkeypatch: pytest.MonkeyPatch) -> None:
-    message_consumer = _BlockingConsumer()
-    flow_event_consumer = _BlockingConsumer()
+async def test_run_worker_starts_and_stops_stream_loop(monkeypatch: pytest.MonkeyPatch) -> None:
+    message_consumer = object()
+    stream_consumer = object()
+    loop_probe = _LoopProbe()
     stop_event = asyncio.Event()
 
     monkeypatch.setattr(worker_main, "warm_runtime", AsyncMock())
-    monkeypatch.setattr(worker_main, "setup_core_consumers", lambda: (message_consumer, flow_event_consumer))
+    monkeypatch.setattr(worker_main, "setup_core_consumers", lambda: (message_consumer, stream_consumer))
+    monkeypatch.setattr(worker_main, "_run_stream_loop", loop_probe.run)
 
     task = asyncio.create_task(worker_main.run_worker(stop_event=stop_event))
     await asyncio.sleep(0.05)
     stop_event.set()
     await task
 
-    assert message_consumer.start_calls == 1
-    assert flow_event_consumer.start_calls == 1
-    assert message_consumer.stop_calls == 1
-    assert flow_event_consumer.stop_calls == 1
-    assert message_consumer.cancelled is True
-    assert flow_event_consumer.cancelled is True
+    worker_main.warm_runtime.assert_awaited_once()
+    assert loop_probe.started is True
+    assert loop_probe.cancelled is True
+    assert loop_probe.args == (message_consumer, stream_consumer)

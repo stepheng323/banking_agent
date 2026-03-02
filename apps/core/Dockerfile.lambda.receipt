@@ -5,7 +5,7 @@ WORKDIR /build
 COPY pyproject.toml ./
 RUN --mount=type=cache,target=/root/.cache/pip \
     pip install --upgrade pip && \
-    pip install --target /build ".[runtime-worker-messaging]"
+    pip install --target /build ".[runtime-worker-receipt]"
 
 FROM public.ecr.aws/lambda/python:3.12
 
@@ -17,4 +17,4 @@ COPY shared/ /var/task/shared/
 COPY config/ /var/task/config/
 
 ENV PYTHONPATH=/var/task
-CMD ["apps.core.src.lambda_handlers.messaging_worker_handler.handler"]
+CMD ["apps.core.src.lambda_handlers.receipt_worker_handler.handler"]

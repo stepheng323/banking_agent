@@ -74,13 +74,17 @@ runtime-worker-messaging = [
     "banking-agent[receipt]",
 ]
 
+runtime-worker-receipt = [
+    "banking-agent[receipt]",
+]
+
 runtime-gateway = [
     "banking-agent[gateway]",
 ]
 
 # All apps combined (for local dev)
 all = [
-    "banking-agent[core,receipt,gateway,migrations,runtime-core-chat,runtime-worker-transaction,runtime-worker-messaging,runtime-gateway]",
+    "banking-agent[core,receipt,gateway,migrations,runtime-core-chat,runtime-worker-transaction,runtime-worker-messaging,runtime-worker-receipt,runtime-gateway]",
 ]
 
 # Development dependencies

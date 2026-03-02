@@ -1,15 +1,15 @@
-output "topic_arns" {
-  description = "Map of topic names to ARNs"
-  value       = { for k, v in aws_sns_topic.topics : k => v.arn }
+output "sns_topic_arn" {
+  description = "ARN of the consolidated async-jobs SNS topic"
+  value       = aws_sns_topic.async_jobs.arn
 }
 
 output "queue_arns" {
-  description = "Map of queue names to ARNs"
+  description = "Map of queue keys to ARNs"
   value       = { for k, v in aws_sqs_queue.queues : k => v.arn }
 }
 
 output "queue_urls" {
-  description = "Map of queue names to URLs"
+  description = "Map of queue keys to URLs"
   value       = { for k, v in aws_sqs_queue.queues : k => v.id }
 }
 

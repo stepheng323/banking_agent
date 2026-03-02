@@ -16,7 +16,7 @@ def _get_service() -> MonoWebhookService:
     """Get or create Mono webhook service instance."""
     global _service_instance
     if _service_instance is None:
-        publisher = QueuePublisherFactory.get_publisher()
+        publisher = QueuePublisherFactory.get_async_publisher()
         _service_instance = MonoWebhookService(publisher=publisher)
     return _service_instance
 

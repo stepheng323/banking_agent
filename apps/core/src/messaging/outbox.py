@@ -1,12 +1,19 @@
-"""Outbox helpers for presenter-based messaging."""
+"""Outbox helpers for direct presenter-based messaging delivery."""
 
 from typing import Any
 
 from apps.core.src.agent.orchestrator.models.intents import Say, UiIntent
 from shared.queue.adapter import QueuePublisher
-from shared.utils.logging import get_logger
+from shared.services.delivery_service import DeliveryService
 
-logger = get_logger(__name__)
+_delivery_service: DeliveryService | None = None
+
+
+def _get_delivery_service() -> DeliveryService:
+    global _delivery_service
+    if _delivery_service is None:
+        _delivery_service = DeliveryService()
+    return _delivery_service
 
 
 async def enqueue_outbox_intents(
@@ -16,29 +23,26 @@ async def enqueue_outbox_intents(
     intents: list[UiIntent | dict[str, Any]],
     metadata: dict[str, Any] | None = None,
 ) -> None:
-    """Enqueue intents for presenter-based delivery."""
-    if not publisher:
-        logger.error("outbox_publisher_missing", phone=phone_number, channel=channel)
-        return
+    """Deliver intents directly.
+
+    The publisher argument is intentionally retained for backwards
+    compatibility with existing call sites.
+    """
+    del publisher
 
     if not intents:
         return
 
-    serialized: list[dict[str, Any]] = []
-    for intent in intents:
-        if isinstance(intent, dict):
-            serialized.append(intent)
-        else:
-            serialized.append(intent.to_dict())
+    dedupe_key = None
+    if metadata:
+        dedupe_key = metadata.get("message_id") or metadata.get("idempotency_key") or metadata.get("dedupe_key")
 
-    await publisher.publish(
-        topic="notification.send",
-        message={
-            "phone_number": phone_number,
-            "channel": channel,
-            "intents": serialized,
-            "metadata": metadata or {},
-        },
+    await _get_delivery_service().deliver_intents(
+        phone_number=phone_number,
+        channel=channel,
+        intents=intents,
+        metadata=metadata or {},
+        dedupe_key=str(dedupe_key) if dedupe_key else None,
     )
 
 
@@ -49,7 +53,7 @@ async def enqueue_outbox_say(
     text: str,
     metadata: dict[str, Any] | None = None,
 ) -> None:
-    """Enqueue a single text intent."""
+    """Deliver one text message directly."""
     if not text:
         return
     await enqueue_outbox_intents(publisher, phone_number, channel, [Say(text=text)], metadata=metadata)

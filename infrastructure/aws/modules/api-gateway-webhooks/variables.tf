@@ -21,7 +21,7 @@ variable "lambda_invoke_arn" {
 variable "access_log_retention_in_days" {
   description = "Retention period for API Gateway access logs."
   type        = number
-  default     = 14
+  default     = 7
 }
 
 variable "throttling_burst_limit" {

@@ -1,6 +1,5 @@
-"""Message consumer for processing queued messages."""
+"""Unified core consumer for chat messages and flow events."""
 
-import asyncio
 import time
 from typing import Any, cast
 
@@ -18,7 +17,8 @@ from apps.core.src.messaging.outbox import enqueue_outbox_intents, enqueue_outbo
 from shared.cache.rate_limiter import message_rate_limiter
 from shared.database.models import UserOnboardingStatusEnum
 from shared.models.messages import ChannelMessage
-from shared.queue.adapter import QueueConsumer, QueuePublisher
+from shared.queue.adapter import QueuePublisher
+from shared.queue.messages import FlowEventType
 from shared.repositories.user_repository import UserRepository
 from shared.utils.logging import get_logger
 from shared.utils.sanitize import is_suspicious_input, sanitize_message
@@ -27,12 +27,12 @@ logger = get_logger(__name__)
 
 
 class _NoopPublisher:
-    async def publish(self, topic: str, message: dict[str, Any]) -> None:
+    async def publish(self, topic: Any, message: dict[str, Any]) -> None:
         del topic, message
 
 
 class MessageConsumer:
-    """Message Consumer Class"""
+    """Unified chat consumer used by the core ECS worker."""
 
     def __init__(
         self,
@@ -40,33 +40,125 @@ class MessageConsumer:
         onboarding_executor: OnboardingExecutor,
         orchestrator: OrchestratorAgent,
         publisher: QueuePublisher | None = None,
-        queue_consumer: QueueConsumer | None = None,
-    ):
-        self.queue_consumer = queue_consumer
+    ) -> None:
         self.publisher = publisher or _NoopPublisher()
         self.user_repository = user_repository
         self.onboarding_executor = onboarding_executor
         self.orchestrator = orchestrator
-        self.running = False
 
-    async def process_message(self, message_data: dict) -> None:
-        """Process a message from the queue."""
-        # Refresh the database session state so we don't read stale cached data
+    async def process_record(self, topic: str, payload: dict[str, Any]) -> None:
+        """Route one transport payload by logical topic."""
+        if topic == "message.received":
+            await self.process_message(payload)
+            return
+        if topic == "flow_event.process":
+            await self.process_flow_event(payload)
+            return
+        logger.warning("message_consumer_unknown_topic", topic=topic)
+
+    async def process_message(self, message_data: dict[str, Any]) -> None:
+        """Process one inbound chat message payload."""
         await self.user_repository.db.rollback()
-
         try:
             msg = ChannelMessage(**message_data)
             await self._handle_message(msg)
-            # Commit any changes pushed by the orchestrator into the session
             await self.user_repository.db.commit()
-
-        except Exception as e:
+        except Exception as exc:
             await self.user_repository.db.rollback()
-            logger.error("message_processing_failed", error=str(e), exc_info=True)
+            logger.error("message_processing_failed", error=str(exc), exc_info=True)
             raise
 
+    async def process_flow_event(self, event_data: dict[str, Any]) -> None:
+        """Process one flow event payload."""
+        await self.user_repository.db.rollback()
+        try:
+            event_type = str(event_data.get("event_type", ""))
+            flow_type = str(event_data.get("flow_type", ""))
+            phone_number = str(event_data.get("phone_number", ""))
+            idempotency_key = str(event_data.get("idempotency_key", ""))
+            channel = str(event_data.get("channel", "whatsapp"))
+            success = bool(event_data.get("success", False))
+            extra_data_raw = event_data.get("extra_data")
+            extra_data = extra_data_raw if isinstance(extra_data_raw, dict) else None
+
+            logger.info(
+                "flow_event_received",
+                event_type=event_type,
+                flow_type=flow_type,
+                phone=phone_number,
+                idem_key=idempotency_key,
+            )
+
+            if event_type == FlowEventType.PIN_VERIFIED.value:
+                await self._handle_pin_verified(
+                    flow_type=flow_type,
+                    phone_number=phone_number,
+                    success=success,
+                    channel=channel,
+                    extra_data=extra_data,
+                )
+            elif event_type == FlowEventType.PIN_FAILED.value:
+                logger.info("pin_verification_failed", phone=phone_number, flow_type=flow_type)
+            else:
+                logger.warning("unknown_flow_event", event_type=event_type, event_data=event_data)
+
+            await self.user_repository.db.commit()
+        except Exception as exc:
+            await self.user_repository.db.rollback()
+            logger.error("flow_event_processing_failed", error=str(exc), event_data=event_data, exc_info=True)
+            raise
+
+    async def _handle_pin_verified(
+        self,
+        flow_type: str,
+        phone_number: str,
+        success: bool,
+        channel: str,
+        extra_data: dict[str, Any] | None = None,
+    ) -> None:
+        """Resume a paused transaction after a successful PIN flow."""
+        if not success:
+            logger.warning("pin_verified_but_not_success", phone=phone_number, flow_type=flow_type)
+            return
+
+        logger.info("resuming_via_orchestrator", phone=phone_number, flow=flow_type, channel=channel)
+        response = await self.orchestrator.resume_transaction(
+            phone_number=phone_number,
+            flow_type=flow_type,
+            pin_verified=True,
+            channel=channel,
+        )
+
+        if not response:
+            return
+
+        text = response.get("text") or response.get("final_response")
+        outbox = response.get("outbox", [])
+
+        intents_to_send: list[UiIntent | dict[str, Any]] = []
+        if text:
+            intents_to_send.append({"type": "say", "text": text})
+        if isinstance(outbox, list):
+            intents_to_send.extend([item for item in outbox if isinstance(item, dict)])
+
+        if not intents_to_send:
+            return
+
+        outbox_phone = phone_number
+        if extra_data and "chat_id" in extra_data:
+            outbox_phone = str(extra_data["chat_id"])
+
+        await enqueue_outbox_intents(
+            self.publisher,
+            outbox_phone,
+            channel,
+            intents_to_send,
+            metadata={"source": "flow_event_handler", "flow_type": flow_type},
+        )
+        logger.info("pin_response_enqueued_outbox", outbox_phone=outbox_phone, mapped_from=phone_number)
+
     async def _handle_message(self, message: ChannelMessage) -> dict[str, Any] | None:
-        """Handle a Channel message."""
+        """Handle one channel message event."""
         start_time = time.perf_counter()
         channel_user_id = message.channel_user_id
 
@@ -97,7 +189,7 @@ class MessageConsumer:
             )
 
         if message.message_type.value == "flow":
-            return {"status": "skipped", "reason": "Flow messages handled by flow webhook"}
+            return {"status": "skipped", "reason": "flow_messages_handled_by_flow_ingress"}
 
         user = await self.user_repository.get_by_channel_identity(message.channel, channel_user_id)
         logger.info("channel_identity_lookup", user=user, channel=message.channel, channel_user_id=channel_user_id)
@@ -105,9 +197,6 @@ class MessageConsumer:
         if user is None or getattr(user, "onboarding_status", None) != UserOnboardingStatusEnum.ONBOARDING_COMPLETED:
             return cast(dict[str, Any] | None, await self.onboarding_executor.handle_onboarding(message))
 
-        # Use the real phone number from the database for the orchestrator.
-        # For WhatsApp, channel_user_id == phone_number, but for Telegram
-        # channel_user_id is a chat ID which would break account lookups.
         phone_number = str(user.phone_number)
 
         claimed_message = await self.orchestrator.context_manager.claim_inbound_message(
@@ -134,12 +223,11 @@ class MessageConsumer:
             )
 
             intents: list[UiIntent] = orchestrator_output.get("intents", [])
-
             response_text = orchestrator_output.get("text")
             has_primary_interaction = any(
-                isinstance(i, (RequestAuth, RequestConfirmation, ShowReceipt, ShowOptions)) for i in intents
+                isinstance(intent, (RequestAuth, RequestConfirmation, ShowReceipt, ShowOptions)) for intent in intents
             )
-            if response_text and not has_primary_interaction and not any(isinstance(i, Say) for i in intents):
+            if response_text and not has_primary_interaction and not any(isinstance(intent, Say) for intent in intents):
                 intents.append(Say(text=response_text))
 
             if intents:
@@ -162,32 +250,4 @@ class MessageConsumer:
             duration_ms=round(duration, 2),
             channel_user_id=channel_user_id,
         )
-
         return {"status": "success", "response": response_text}
-
-    async def start(self, queue_name: str = "banking:messages") -> None:
-        """Start the message consumer."""
-        if self.queue_consumer is None:
-            raise RuntimeError("message_consumer_requires_queue_consumer")
-        self.running = True
-        logger.info("message_consumer_starting", queue=queue_name)
-        while self.running:
-            try:
-                result = await self.queue_consumer.consume_one(queue_name=queue_name, timeout=5)
-                if result:
-                    message_data, receipt_handle = result
-                    await self.process_message(message_data)
-                    if self.queue_consumer is not None and hasattr(self.queue_consumer, "ack_message"):
-                        await self.queue_consumer.ack_message(queue_name, receipt_handle)
-
-            except asyncio.CancelledError:
-                logger.info("message_consumer_cancelled")
-                break
-            except Exception as e:
-                logger.error("message_consumer_error", error=str(e), exc_info=True)
-                await asyncio.sleep(1)
-        logger.info("message_consumer_stopped")
-
-    def stop(self) -> None:
-        """Stop the message consumer."""
-        self.running = False

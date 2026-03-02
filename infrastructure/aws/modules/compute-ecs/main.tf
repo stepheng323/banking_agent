@@ -101,32 +101,6 @@ resource "aws_iam_role_policy" "ecs_execution_ssm" {
   })
 }
 
-resource "aws_iam_role_policy" "ecs_task_sqs_consume" {
-  name = "${var.project_name}-ecs-task-sqs-consume-${var.environment}"
-  role = aws_iam_role.ecs_task.id
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Effect = "Allow"
-        Action = [
-          "sqs:ReceiveMessage",
-          "sqs:DeleteMessage",
-          "sqs:GetQueueAttributes",
-          "sqs:ChangeMessageVisibility"
-        ]
-        Resource = values(var.queue_arns)
-      },
-      {
-        Effect   = "Allow"
-        Action   = ["sqs:GetQueueUrl"]
-        Resource = "*"
-      }
-    ]
-  })
-}
-
 resource "aws_iam_role_policy" "ecs_task_sns_publish" {
   name = "${var.project_name}-ecs-task-sns-publish-${var.environment}"
   role = aws_iam_role.ecs_task.id
@@ -135,9 +109,11 @@ resource "aws_iam_role_policy" "ecs_task_sns_publish" {
     Version = "2012-10-17"
     Statement = [
       {
-        Effect   = "Allow"
-        Action   = ["sns:Publish"]
-        Resource = values(var.topic_arns)
+        Effect = "Allow"
+        Action = [
+          "sns:Publish"
+        ]
+        Resource = [var.sns_topic_arn]
       }
     ]
   })
@@ -145,7 +121,7 @@ resource "aws_iam_role_policy" "ecs_task_sns_publish" {
 
 resource "aws_cloudwatch_log_group" "core" {
   name              = "/ecs/${var.project_name}-core-chat-worker"
-  retention_in_days = 30
+  retention_in_days = 7
 }
 
 resource "aws_ecs_task_definition" "core" {

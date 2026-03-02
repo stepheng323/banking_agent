@@ -5,9 +5,8 @@ from datetime import datetime, timedelta
 
 from shared.cache.user_data import UserDataCache
 from shared.clients.providers.mono import MonoApiError, mono_client
-from shared.queue.adapter import QueuePublisher
-from shared.queue.factory import QueuePublisherFactory
 from shared.repositories.unit_of_work import UnitOfWork
+from shared.services.delivery_service import DeliveryService
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -16,21 +15,22 @@ logger = get_logger(__name__)
 class MandateService:
     """Handles mandate creation, reinitiation, and notifications."""
 
-    def __init__(self, publisher: QueuePublisher | None = None) -> None:
-        if publisher:
-            self.publisher = publisher
-        else:
-            self.publisher = QueuePublisherFactory.get_publisher()
+    def __init__(
+        self,
+        publisher: object | None = None,
+        delivery_service: DeliveryService | None = None,
+        queue: object | None = None,
+    ) -> None:
+        # publisher/queue are retained for backwards compatibility with older call sites.
+        del publisher, queue
+        self.delivery_service = delivery_service or DeliveryService()
 
     async def enqueue_outbox_say(self, phone_number: str, text: str, channel: str = "whatsapp") -> None:
-        await self.publisher.publish(
-            topic="notification.send",
-            message={
-                "phone_number": phone_number,
-                "channel": channel,
-                "intents": [{"type": "say", "text": text}],
-                "metadata": {"source": "mandate_service"},
-            },
+        await self.delivery_service.deliver_text(
+            phone_number=phone_number,
+            channel=channel,
+            text=text,
+            metadata={"source": "mandate_service"},
         )
 
     def build_mandate_auth_message(

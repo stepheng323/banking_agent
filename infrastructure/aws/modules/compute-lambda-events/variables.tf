@@ -19,15 +19,15 @@ variable "aws_account_id" {
 }
 
 variable "worker_lambda_image_urls" {
-  description = "ECR image URLs keyed by worker name (transaction-worker, messaging-worker)"
+  description = "ECR image URLs keyed by worker name (transaction-worker, receipt-worker)"
   type        = map(string)
 
   validation {
     condition = alltrue([
       contains(keys(var.worker_lambda_image_urls), "transaction-worker"),
-      contains(keys(var.worker_lambda_image_urls), "messaging-worker"),
+      contains(keys(var.worker_lambda_image_urls), "receipt-worker"),
     ])
-    error_message = "worker_lambda_image_urls must include keys: transaction-worker and messaging-worker."
+    error_message = "worker_lambda_image_urls must include keys: transaction-worker and receipt-worker."
   }
 }
 
@@ -52,40 +52,35 @@ variable "ssm_kms_key_arn" {
 }
 
 variable "queue_arns" {
-  description = "Queue ARN map from messaging module, keyed by topic key"
+  description = "Queue ARN map from messaging module, keyed by queue key (transactions, receipts)"
   type        = map(string)
 }
 
+variable "sns_topic_arn" {
+  description = "SNS topic ARN for async job publishing (used by FundingConsumer)"
+  type        = string
+}
+
 variable "batch_size_by_queue" {
-  description = "Per-queue SQS batch sizes, keyed by topic key"
+  description = "Per-queue SQS batch sizes"
   type        = map(number)
   default = {
-    "transaction-execute"     = 5
-    "funding-process"         = 5
-    "payout-process"          = 5
-    "refund-process"          = 5
-    "notification-send"       = 10
-    "actionable-message-send" = 10
-    "receipt-process"         = 5
+    "transactions" = 5
+    "receipts"     = 5
   }
 }
 
 variable "batch_window_by_queue" {
-  description = "Per-queue batching windows in seconds, keyed by topic key"
+  description = "Per-queue batching windows in seconds"
   type        = map(number)
   default = {
-    "transaction-execute"     = 2
-    "funding-process"         = 2
-    "payout-process"          = 2
-    "refund-process"          = 2
-    "notification-send"       = 1
-    "actionable-message-send" = 1
-    "receipt-process"         = 1
+    "transactions" = 2
+    "receipts"     = 1
   }
 }
 
 variable "log_retention_in_days" {
   description = "Retention period for worker Lambda log groups."
   type        = number
-  default     = 30
+  default     = 7
 }

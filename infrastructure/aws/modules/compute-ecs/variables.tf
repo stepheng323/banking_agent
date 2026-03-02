@@ -53,12 +53,7 @@ variable "ssm_kms_key_arn" {
   type        = string
 }
 
-variable "queue_arns" {
-  description = "Queue ARN map from messaging module, keyed by topic key."
-  type        = map(string)
-}
-
-variable "topic_arns" {
-  description = "SNS topic ARN map from messaging module, keyed by topic key."
-  type        = map(string)
+variable "sns_topic_arn" {
+  description = "SNS topic ARN for publishing async jobs."
+  type        = string
 }

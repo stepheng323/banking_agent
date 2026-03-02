@@ -2,12 +2,10 @@ terraform {
   required_version = ">= 1.10.0"
 
   backend "s3" {
-    # must run backend-setup.tf first, then provide backend details below
-    bucket       = "banking-agent-tf-state-dev-use1-808537413474"
-    key          = "dev/terraform.tfstate"
-    region       = "us-east-1"
-    use_lockfile = true
-    encrypt      = true
+    bucket  = "banking-agent-tf-state-dev-use1-808537413474"
+    key     = "dev/terraform.tfstate"
+    region  = "us-east-1"
+    encrypt = true
   }
 
   required_providers {
@@ -201,8 +199,7 @@ module "compute" {
   secret_parameter_arns      = module.config_ssm.secret_parameter_arns
   all_parameter_arns         = module.config_ssm.all_parameter_arns
   ssm_kms_key_arn            = aws_kms_key.ssm_parameters.arn
-  queue_arns                 = module.messaging.queue_arns
-  topic_arns                 = module.messaging.topic_arns
+  sns_topic_arn              = module.messaging.sns_topic_arn
 }
 
 module "messaging" {
@@ -212,20 +209,22 @@ module "messaging" {
 }
 
 module "compute_lambda_events" {
-  source              = "./modules/compute-lambda-events"
-  project_name        = local.project_name
-  environment         = local.environment
-  aws_region          = var.aws_region
-  aws_account_id      = data.aws_caller_identity.current.account_id
-  non_secret_env_vars = local.non_secret_env_vars
-  secret_env_vars     = local.secret_env_vars
-  all_parameter_arns  = module.config_ssm.all_parameter_arns
-  ssm_kms_key_arn     = aws_kms_key.ssm_parameters.arn
-  queue_arns          = module.messaging.queue_arns
+  source                = "./modules/compute-lambda-events"
+  project_name          = local.project_name
+  environment           = local.environment
+  aws_region            = var.aws_region
+  aws_account_id        = data.aws_caller_identity.current.account_id
+  non_secret_env_vars   = local.non_secret_env_vars
+  secret_env_vars       = local.secret_env_vars
+  all_parameter_arns    = module.config_ssm.all_parameter_arns
+  ssm_kms_key_arn       = aws_kms_key.ssm_parameters.arn
+  queue_arns            = module.messaging.queue_arns
+  sns_topic_arn         = module.messaging.sns_topic_arn
+  log_retention_in_days = var.lambda_log_retention_in_days
 
   worker_lambda_image_urls = {
     "transaction-worker" = "${module.ecr.core_repository_url}:lambda-transaction-latest"
-    "messaging-worker"   = "${module.ecr.core_repository_url}:lambda-messaging-latest"
+    "receipt-worker"     = "${module.ecr.core_repository_url}:lambda-receipt-latest"
   }
 }
 
@@ -240,7 +239,7 @@ module "compute_lambda_gateway" {
   secret_env_vars          = local.secret_env_vars
   all_parameter_arns       = module.config_ssm.all_parameter_arns
   ssm_kms_key_arn          = aws_kms_key.ssm_parameters.arn
-  topic_arns               = module.messaging.topic_arns
+  sns_topic_arn            = module.messaging.sns_topic_arn
   log_retention_in_days    = var.lambda_log_retention_in_days
 }
 

@@ -20,7 +20,6 @@ from apps.core.src.agent.graphs.transfer.services.extractor import TransferEntit
 from apps.core.src.agent.orchestrator.config import OrchestratorDependencies
 from apps.core.src.agent.orchestrator.graph.orchestrator import OrchestratorAgent
 from apps.core.src.agent.orchestrator.services.media_service import MediaService
-from apps.core.src.queue_consumers.flow_event_consumer import FlowEventConsumer
 from apps.core.src.queue_consumers.message_consumer import MessageConsumer
 from apps.core.src.runtime.common import build_messaging_clients, require_aws_account_id
 from shared.cache.bank_cache import BankCacheService
@@ -34,8 +33,9 @@ from shared.database.connection import get_db_session
 from shared.i18n import validate_catalog_completeness
 from shared.policy.loader import get_cached_policy
 from shared.policy.validation import validate_policy_coverage
+from shared.queue.contracts import get_contract_by_topic
 from shared.queue.factory import QueuePublisherFactory
-from shared.queue.sqs_consumer import SQSQueueConsumer
+from shared.queue.redis_stream_consumer import RedisStreamConsumer
 from shared.repositories.account_repository import AccountRepository
 from shared.repositories.actionable_message_repository import ActionableMessageRepository
 from shared.repositories.beneficiary_repository import BeneficiaryRepository
@@ -50,11 +50,7 @@ from shared.services.task_queue.service import TaskQueueService
 def _build_orchestrator_runtime_bundle(
     queue_publisher, messaging_clients, shared_redis, llm
 ) -> tuple[AsyncSession, UserRepository, OnboardingExecutor, OrchestratorAgent]:
-    """
-    Build one isolated runtime bundle.
-
-    Each bundle gets its own AsyncSession to avoid cross-task session contention.
-    """
+    """Build one isolated runtime bundle."""
     db_session = get_db_session()
 
     user_repository = UserRepository(db=db_session)
@@ -105,7 +101,6 @@ def _build_orchestrator_runtime_bundle(
 
     task_queue_service = TaskQueueService()
     conversation_responder = ConversationResponder(llm)
-
     bank_cache_service = BankCacheService(redis_client=shared_redis)
 
     agent_airtime_worker = AirtimeWorker(
@@ -159,33 +154,20 @@ def _build_orchestrator_runtime_bundle(
     return db_session, user_repository, onboarding_executor, OrchestratorAgent(orchestrator_deps)
 
 
-def setup_core_consumers() -> tuple[MessageConsumer, FlowEventConsumer]:
-    """Setup chat-critical consumers owned by ECS core."""
+def setup_core_consumers() -> tuple[MessageConsumer, RedisStreamConsumer]:
+    """Setup core ECS chat runtime dependencies."""
     validate_catalog_completeness()
     policy = get_cached_policy(force_reload=True)
     validate_policy_coverage(policy)
     refresh_planner_system_prompt()
 
     require_aws_account_id()
-    sqs_consumer = SQSQueueConsumer(
-        region_name=settings.aws_region,
-        account_id=settings.aws_account_id,
-        project_name=settings.project_name,
-        environment=settings.environment,
-    )
-
-    queue_publisher = QueuePublisherFactory.get_publisher()
+    queue_publisher = QueuePublisherFactory.get_async_publisher()
     messaging_clients = build_messaging_clients()
     shared_redis = RedisClient.get_client()
     llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
 
     _, message_user_repo, onboarding_executor, message_orchestrator = _build_orchestrator_runtime_bundle(
-        queue_publisher=queue_publisher,
-        messaging_clients=messaging_clients,
-        shared_redis=shared_redis,
-        llm=llm,
-    )
-    flow_db_session, _, _, flow_orchestrator = _build_orchestrator_runtime_bundle(
         queue_publisher=queue_publisher,
         messaging_clients=messaging_clients,
         shared_redis=shared_redis,
@@ -197,14 +179,14 @@ def setup_core_consumers() -> tuple[MessageConsumer, FlowEventConsumer]:
         user_repository=message_user_repo,
         onboarding_executor=onboarding_executor,
         orchestrator=message_orchestrator,
-        queue_consumer=sqs_consumer,
     )
 
-    flow_event_consumer = FlowEventConsumer(
-        publisher=queue_publisher,
-        orchestrator=flow_orchestrator,
-        queue_consumer=sqs_consumer,
-        db_session=flow_db_session,
+    stream_names = [
+        get_contract_by_topic("message.received").redis_stream_name,
+        get_contract_by_topic("flow_event.process").redis_stream_name,
+    ]
+    redis_stream_consumer = RedisStreamConsumer(
+        stream_names=[name for name in stream_names if name],
+        group_name=f"{settings.project_name}-core-chat-{settings.environment}",
     )
-
-    return message_consumer, flow_event_consumer
+    return message_consumer, redis_stream_consumer

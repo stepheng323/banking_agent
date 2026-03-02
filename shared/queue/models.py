@@ -111,17 +111,3 @@ class FlowEventPayload(TypedDict):
     error: NotRequired[str]
     extra_data: NotRequired[dict[str, Any] | None]
     channel: NotRequired[str]
-
-
-class NotificationJobPayload(TypedDict):
-    phone_number: str
-    message: str
-    type: str  # "text", "template"
-    channel: str  # "whatsapp", "telegram"
-
-
-class OutboxJobPayload(TypedDict):
-    phone_number: str
-    channel: str
-    intents: list[dict[str, Any]]
-    metadata: dict[str, Any] | None

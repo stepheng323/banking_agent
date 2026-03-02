@@ -21,7 +21,7 @@ resource "aws_iam_role_policy_attachment" "gateway_lambda_basic_execution" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
 }
 
-resource "aws_iam_role_policy" "gateway_lambda_publish_policy" {
+resource "aws_iam_role_policy" "gateway_lambda_queue_publish_policy" {
   name = "${var.project_name}-gateway-lambda-sns-${var.environment}"
   role = aws_iam_role.gateway_lambda_role.id
 
@@ -33,7 +33,7 @@ resource "aws_iam_role_policy" "gateway_lambda_publish_policy" {
         Action = [
           "sns:Publish"
         ]
-        Resource = values(var.topic_arns)
+        Resource = [var.sns_topic_arn]
       }
     ]
   })

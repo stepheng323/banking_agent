@@ -66,7 +66,7 @@ class ExecutionStep(AirtimeStep):
 
             publisher = getattr(worker_context, "publisher", None)
             if not publisher:
-                publisher = QueuePublisherFactory.get_publisher()
+                publisher = QueuePublisherFactory.get_async_publisher()
 
             airtime_data = {
                 "amount": data.amount,

@@ -49,7 +49,7 @@ async def handle_drill_down(state: dict[str, Any]) -> TransactionResult:
             )
 
         try:
-            publisher = QueuePublisherFactory.get_publisher()
+            publisher = QueuePublisherFactory.get_async_publisher()
             transfer_data = {
                 "amount": item.amount,
                 "narration": item.description,

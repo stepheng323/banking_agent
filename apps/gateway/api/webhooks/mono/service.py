@@ -7,6 +7,7 @@ from shared.database.enums import FundedTransferStatusEnum, FundingStepStatusEnu
 from shared.database.models import FundedTransfer
 from shared.queue.adapter import QueuePublisher
 from shared.repositories.unit_of_work import UnitOfWork
+from shared.services.delivery_service import DeliveryService
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -33,10 +34,12 @@ class MonoWebhookService:
     def __init__(
         self,
         publisher: QueuePublisher | None = None,
+        delivery_service: DeliveryService | None = None,
     ):
         if publisher is None:
             raise ValueError("publisher is required")
         self.publisher = publisher
+        self.delivery_service = delivery_service or DeliveryService()
         self.cache = UserDataCache()
 
     async def handle_mandate_event(self, event: str, data: dict[str, Any]) -> bool:
@@ -162,19 +165,12 @@ class MonoWebhookService:
     ) -> None:
         """Send notification when mandate is ready."""
         try:
-            await self.publisher.publish(
-                topic="notification.send",
-                message={
-                    "phone_number": phone_number,
-                    "channel": channel,
-                    "intents": [
-                        {
-                            "type": "say",
-                            "text": f"✓ Your {bank_name} account ({account_number}) is now ready for payments.",
-                        }
-                    ],
-                    "metadata": {"source": "mono_webhook"},
-                },
+            await self.delivery_service.deliver_text(
+                phone_number=phone_number,
+                channel=channel,
+                text=f"✓ Your {bank_name} account ({account_number}) is now ready for payments.",
+                metadata={"source": "mono_webhook"},
+                dedupe_key=f"mandate-ready:{phone_number}:{account_number}",
             )
         except Exception as e:
             logger.error("mandate_ready_notification_failed", error=str(e))

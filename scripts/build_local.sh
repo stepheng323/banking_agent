@@ -20,7 +20,7 @@ Options:
   --image <name>           Build only one image (repeatable). Values:
                            chat-worker
                            transaction-worker-lambda
-                           messaging-worker-lambda
+                           receipt-worker-lambda
                            gateway-lambda
   -h, --help               Show this help.
 
@@ -73,7 +73,7 @@ run_runtime_smoke() {
   }
 
   echo "Running runtime boundary smoke checks..."
-  run_check "messaging-runtime" "runtime-worker-messaging" "apps.core.src.lambda_handlers.messaging_worker_handler" "handler"
+  run_check "receipt-runtime" "runtime-worker-receipt" "apps.core.src.lambda_handlers.receipt_worker_handler" "handler"
   run_check "transaction-runtime" "runtime-worker-transaction" "apps.core.src.lambda_handlers.transaction_worker_handler" "handler"
   run_check "gateway-runtime" "runtime-gateway" "apps.gateway.lambda_handler" "handler"
 }
@@ -122,8 +122,8 @@ run_docker_builds() {
     build_image "transaction-worker-lambda" "banking-agent-core-dev" "apps/core/Dockerfile.lambda.transaction" "true"
   fi
 
-  if contains_image "messaging-worker-lambda"; then
-    build_image "messaging-worker-lambda" "banking-agent-core-dev" "apps/core/Dockerfile.lambda.messaging" "true"
+  if contains_image "receipt-worker-lambda"; then
+    build_image "receipt-worker-lambda" "banking-agent-core-dev" "apps/core/Dockerfile.lambda.receipt" "true"
   fi
 
   if contains_image "gateway-lambda"; then
@@ -152,7 +152,7 @@ while [ "$#" -gt 0 ]; do
     --image)
       img="${2:-}"
       case "$img" in
-        chat-worker|transaction-worker-lambda|messaging-worker-lambda|gateway-lambda)
+        chat-worker|transaction-worker-lambda|receipt-worker-lambda|gateway-lambda)
           SELECTED_IMAGES+=("$img")
           ;;
         *)
