@@ -2,6 +2,7 @@ import re
 from typing import Any
 
 from apps.core.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
+from shared.utils.sanitize import normalize_bank_account_number
 
 
 def apply_source_account_fields(payload: dict[str, Any], plan_item: Any) -> None:
@@ -61,6 +62,16 @@ def _apply_transfer_payload_fields(
 ) -> None:
     if plan_item.executor != "transfer":
         return
+
+    # Planner schema uses `bank_name`; transfer runtime expects `recipient_bank_name`.
+    bank_name = payload.pop("bank_name", None)
+    if bank_name and not payload.get("recipient_bank_name"):
+        payload["recipient_bank_name"] = bank_name
+
+    if "recipient_account" in payload:
+        normalized_account = normalize_bank_account_number(payload.get("recipient_account"))
+        if normalized_account:
+            payload["recipient_account"] = normalized_account
 
     has_recipient_field = "recipient" in payload
     if has_recipient_field:

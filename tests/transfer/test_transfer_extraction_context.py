@@ -3,6 +3,7 @@
 from types import SimpleNamespace
 from uuid import uuid4
 
+from apps.core.src.agent.graphs.transfer.models.entities import TransferEntities
 from apps.core.src.agent.graphs.transfer.models.extraction import TransferExtractionResult
 from apps.core.src.agent.graphs.transfer.models.types import TransferContext, TransferGates, TransferPayload
 from apps.core.src.agent.graphs.transfer.nodes.extraction import ExtractionStep
@@ -230,3 +231,39 @@ async def test_extraction_step_supports_multi_digit_source_account_selection() -
 
     assert result.outcome == TransactionOutcome.OK
     assert result.patch["source_account_index"] == 10
+
+
+async def test_skip_extraction_override_parses_account_and_bank_from_account_like_recipient() -> None:
+    class _Extractor:
+        def __init__(self) -> None:
+            self.called = False
+
+        async def extract(self, text: str, smart_context: dict | None = None) -> TransferExtractionResult:
+            self.called = True
+            assert text == "Please send 5k to 816 251 1023 Access"
+            assert smart_context is not None
+            return TransferExtractionResult(
+                entities=TransferEntities(recipient_account="8162511023", bank_name="Access Bank"),
+            )
+
+    extractor = _Extractor()
+    step = ExtractionStep(user_message="Please send 5k to 816 251 1023 Access")
+    payload = TransferPayload(
+        recipient_name="816 251 1023 Access",
+        amount=5000,
+        skip_extraction=True,
+    )
+    context = TransferContext(phone_number="2348000000999", language="en", beneficiaries=[], accounts=[])
+    worker_context = SimpleNamespace(
+        extractor=extractor,
+        required_fields=[],
+        previous_response=None,
+    )
+
+    result = await step.execute(payload, context, TransferGates(), worker_context)
+
+    assert result.outcome == TransactionOutcome.OK
+    assert extractor.called is True
+    assert result.patch["recipient_account"] == "8162511023"
+    assert result.patch["recipient_bank_name"] == "Access Bank"
+    assert result.patch["skip_extraction"] is False

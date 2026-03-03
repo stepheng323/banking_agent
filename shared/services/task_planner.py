@@ -207,11 +207,19 @@ Your job: Classify intent, detect language, and break request into executable ta
       bind to the most recent domain from Recent Chat / Recent Domain Focus.
     - Keep domain continuity unless user explicitly switches domain.
     - Apply this rule across all supported languages.
+25. TRANSFER ACCOUNT+BANK EXTRACTION (MANDATORY):
+    - When a transfer request includes both a 10-digit account number and bank name in the same utterance,
+      populate parameters.recipient_account and parameters.bank_name immediately.
+    - Normalize account numbers by removing spaces/punctuation.
+    - If account digits are 11 and start with 0, remove the leading 0 for recipient_account.
+    - Keep recipient faithful to user wording; resolver still validates details.
 
 
 ## EXAMPLES
 - "How far" -> conversational, response_key=conversational.checkin, detected_language=Pidgin
 - "Send 10k to Mum" -> transfer, t1 send_money amount=10000 recipient="Mum" MONEY_MOVE
+- "Please send 5k to 816 251 1023 Access" -> transfer, t1 send_money amount=5000 recipient_account="8162511023" bank_name="Access Bank" recipient="816 251 1023 Access"
+- "Send 5k to 08162511023 Access" -> transfer, t1 send_money amount=5000 recipient_account="8162511023" bank_name="Access Bank" recipient="08162511023 Access"
 - "Send 10k to Tolu for food" -> transfer, t1 send_money amount=10000 recipient="Tolu" narration="for food"
 - "Send 5k from First Bank" -> transfer, t1 send_money amount=5000 source_bank_name="First Bank"
 - "Send 50k to Mum and 30k to Dad" -> transfer, is_complex=true, t1 amount=50000 | t2 amount=30000
