@@ -29,7 +29,9 @@ FILTER INFERENCE
 
 TIME NORMALIZATION
 - all time / ever → reference_type=all_time
-- explicit periods ("last week", "this month", "January") → reference_type=explicit, set period
+- explicit periods ("today", "yesterday", "last week", "this month", "January") → reference_type=explicit, set period
+  - "today" → days_back=0
+  - "yesterday" → days_back=1
 - vague ("recently", "sometime ago") → reference_type=vague, estimate days_back
 - no time mentioned → reference_type=unspecified
 
@@ -67,6 +69,18 @@ Examples:
 
 MULTILINGUAL
 Support English, Nigerian Pidgin, Yoruba, Igbo, Hausa, and others.
+
+EXAMPLES
+User: "how much have I spent today"
+→ intent=spending_total, aggregation.type=sum,
+  time_range.reference_type=explicit, time_range.period="today", time_range.days_back=0
+User: "how much have I received today"
+→ intent=spending_total, filters.transaction_type="credit",
+  time_range.reference_type=explicit, time_range.period="today", time_range.days_back=0
+User: "show my transactions"
+→ intent=transaction_list, time_range.reference_type=unspecified
+User: "what was my last transaction status"
+→ intent=transaction_list, result_limit=1, result_reference="latest"
 """
 
 CONTINUATION_CLASSIFIER_PROMPT = """
@@ -102,7 +116,7 @@ Optional fields (fill the ONE relevant to the type):
 - result_limit: number
 - result_reference: "latest|oldest"
 - drill_down_index: number
-- drill_down_action: "view_details|get_receipt|report_issue"
+- drill_down_action: "view_details|get_receipt|report_issue|re_transfer"
 - recipient_name: "string"
 
 CORE RULES (apply in order)
@@ -118,6 +132,9 @@ OR if user restates a full query such as:
 "show my last transaction", "show my last 5 transfers", "list my transactions"
 => continuation_type="new_query" AND is_new_query_override=true.
 Also set restates_query=true when the message stands alone as a full query.
+EXCEPTION: If surface is SUMMARY or BREAKDOWN and user asks to see items
+("show transactions", "show my transactions", "list transactions", "show them", "which ones"),
+classify as EXPAND, not new_query.
 
 3) SHOW MORE (highest priority among list navigation)
 If the message means pagination/continuation ONLY:
@@ -148,9 +165,14 @@ Set delta_type="filter" for filter changes, "limit" for count changes, "referenc
 NOTE: replace the previous filter of the same kind.
 
 6) EXPAND (only from summaries)
-Use ONLY when prior response was an analytics/summary (not a list) and user asks to see underlying items:
-"show transactions", "show the items", "which ones"
+Use when current surface is SUMMARY or BREAKDOWN and user asks to see underlying items:
+"show transactions", "show my transactions", "list transactions",
+"show the items", "which ones", "show them", "list them"
 If they also add a time/filter qualifier ("recent", "this month", "over 10k") => continuation_type="new_query".
+
+7) RE-TRANSFER FROM QUERY CONTEXT
+If user says "resend", "repeat", "send again", "do it again" while viewing a transaction:
+=> continuation_type="drill_down", drill_down_action="re_transfer".
 
 9) DRILL DOWN (details/action on a specific item)
 If user asks to see details for a specific item/category:
@@ -182,6 +204,12 @@ User: "show details"
 
 User: "I need receipt"
 -> {{"continuation_type": "drill_down", "drill_down_action": "get_receipt"}}
+
+User: "resend it"
+-> {{"continuation_type": "drill_down", "drill_down_action": "re_transfer"}}
+
+User: "show my transactions"
+-> {{"continuation_type": "expand"}}
 
 User: "what about last month?"
 -> {{"continuation_type": "time_delta"}}

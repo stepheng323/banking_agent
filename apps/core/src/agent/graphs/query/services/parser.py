@@ -169,7 +169,14 @@ class QueryParser:
 
         time_range = None
         if extraction.time_range:
-            days_back = extraction.time_range.days_back or 30
+            days_back = extraction.time_range.days_back
+            period_lower = (extraction.time_range.period or "").strip().lower()
+            if period_lower == "today":
+                days_back = 0
+            elif period_lower == "yesterday":
+                days_back = 1
+            if days_back is None:
+                days_back = 30
             if extraction.time_range.reference_type == TimeReference.ALL_TIME:
                 days_back = QUERY_LIMITS["max_lookback_days"]
             elif extraction.time_range.reference_type == TimeReference.UNSPECIFIED:
@@ -185,17 +192,21 @@ class QueryParser:
         if extraction.filters:
             from apps.core.src.agent.graphs.query.models import Filters
 
-            transaction_type = extraction.filters.transaction_type
+            transaction_type = (extraction.filters.transaction_type or "").strip().lower() or None
             if not transaction_type:
+                raw_lower = (extraction.raw_query or "").lower()
+                has_explicit_credit_intent = any(k in raw_lower for k in ("received", "credited", "income", "salary"))
+                if has_explicit_credit_intent:
+                    transaction_type = "credit"
+
                 # Force debit for specific intents OR if keywords are present
-                is_expense_query = extraction.intent in (
+                is_expense_query = not has_explicit_credit_intent and extraction.intent in (
                     ExtractionIntent.SPENDING_TOTAL,
                     ExtractionIntent.CATEGORY_BREAKDOWN,
                 )
 
                 # Check for expense keywords in raw query if not already explicit
-                if not is_expense_query and extraction.raw_query:
-                    raw_lower = extraction.raw_query.lower()
+                if not is_expense_query and raw_lower:
                     if any(k in raw_lower for k in ("spending", "expense", "spent", "cost", "paid")):
                         is_expense_query = True
 
