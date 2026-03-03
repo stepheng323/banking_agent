@@ -43,7 +43,7 @@ variable "non_secret_config_values" {
 }
 
 variable "database_url" {
-  description = "External database URL (e.g., Neon). If provided, ECS/Lambda will use this directly."
+  description = "Optional override for DATABASE_URL. Prefer secret_config_values[\"DATABASE_URL\"] for CI/local parity."
   type        = string
   sensitive   = true
   default     = ""

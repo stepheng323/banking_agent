@@ -152,7 +152,6 @@ jobs:
       - name: Terraform plan
         working-directory: ${{ env.TF_DIR }}
         env:
-          TF_VAR_database_url: ${{ fromJSON(secrets.TF_SECRET_CONFIG_JSON_DEV).DATABASE_URL }}
           TF_VAR_secret_config_values: ${{ secrets.TF_SECRET_CONFIG_JSON_DEV }}
           TF_VAR_non_secret_config_values: ${{ secrets.TF_NON_SECRET_CONFIG_JSON_DEV }}
         run: terraform plan -input=false
@@ -285,7 +284,6 @@ jobs:
       - name: Terraform plan
         working-directory: ${{ env.TF_DIR }}
         env:
-          TF_VAR_database_url: ${{ fromJSON(secrets.TF_SECRET_CONFIG_JSON_DEV).DATABASE_URL }}
           TF_VAR_secret_config_values: ${{ secrets.TF_SECRET_CONFIG_JSON_DEV }}
           TF_VAR_non_secret_config_values: ${{ secrets.TF_NON_SECRET_CONFIG_JSON_DEV }}
         run: terraform plan -input=false -out=plan.out
@@ -293,7 +291,6 @@ jobs:
       - name: Terraform apply
         working-directory: ${{ env.TF_DIR }}
         env:
-          TF_VAR_database_url: ${{ fromJSON(secrets.TF_SECRET_CONFIG_JSON_DEV).DATABASE_URL }}
           TF_VAR_secret_config_values: ${{ secrets.TF_SECRET_CONFIG_JSON_DEV }}
           TF_VAR_non_secret_config_values: ${{ secrets.TF_NON_SECRET_CONFIG_JSON_DEV }}
         run: terraform apply -input=false -auto-approve plan.out
