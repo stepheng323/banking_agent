@@ -158,7 +158,7 @@ class ResolutionStep(TransferStep):
         return await resolve_beneficiary(
             data,
             context,
-            worker_context.banking_provider,
+            worker_context.resolver_provider,
             worker_context.bank_cache,
         )
 
@@ -166,7 +166,7 @@ class ResolutionStep(TransferStep):
 async def resolve_beneficiary(
     payload: TransferPayload,
     ctx: TransferContext,
-    banking_provider: Any | None = None,
+    resolver_provider: Any | None = None,
     bank_cache: Any | None = None,
 ) -> TransactionResult:
     """Resolve recipient name to bank details using BeneficiaryMatcher."""
@@ -206,8 +206,8 @@ async def resolve_beneficiary(
     if payload.recipient_bank_name and not payload.recipient_bank_code:
         if bank_cache:
             # Ensure banks are loaded in cache
-            if banking_provider:
-                await bank_cache.ensure_banks_cached(banking_provider.get_banks)
+            if resolver_provider:
+                await bank_cache.ensure_banks_cached(resolver_provider.get_banks)
 
             code = await bank_cache.get_bank_code(payload.recipient_bank_name)
             if code:
@@ -215,23 +215,22 @@ async def resolve_beneficiary(
                 payload.recipient_bank_code = code
 
     if payload.recipient_account and payload.recipient_bank_code and not payload.recipient_resolved_name:
-        if banking_provider:
+        if resolver_provider:
             try:
-                # Use resolve_account (dict return) instead of resolve_account_number (object return)
                 logger.info(
                     "resolving_recipient_account",
                     account=payload.recipient_account,
                     bank_code=payload.recipient_bank_code,
                 )
-                resolved = await banking_provider.resolve_account(
+                resolved = await resolver_provider.resolve_account(
                     payload.recipient_account, payload.recipient_bank_code
                 )
-                if resolved and resolved.get("success"):
-                    resolved_name = resolved.get("account_name")
+                if resolved and resolved.success and resolved.account:
+                    resolved_name = resolved.account.account_name
                     patch = {
                         "recipient_resolved_name": resolved_name,
                         "recipient_bank_name": payload.recipient_bank_name,
-                        "recipient_bank_code": payload.recipient_bank_code,
+                        "recipient_bank_code": resolved.account.bank_code or payload.recipient_bank_code,
                         "resolved_from_saved_beneficiary": False,
                     }
                     if not payload.recipient_name and resolved_name:

@@ -44,7 +44,7 @@ logger = get_logger(__name__)
 @dataclass(slots=True)
 class TransferWorkerContext:
     extractor: Any
-    banking_provider: Any
+    resolver_provider: Any
     bank_cache: Any
     publisher: Any
     transaction_repo: TransactionRepository
@@ -64,7 +64,7 @@ class TransferWorker:
         validation_service: Any,
         publisher: Any,
         extractor: Any,
-        banking_provider: Any,
+        resolver_provider: Any,
         bank_cache: Any,
         transaction_repo: TransactionRepository,
         dd_provider: Any | None = None,
@@ -73,7 +73,7 @@ class TransferWorker:
         self.validation_service = validation_service or ValidationService()
         self.publisher = publisher
         self.extractor = extractor
-        self.banking_provider = banking_provider
+        self.resolver_provider = resolver_provider
         self.bank_cache = bank_cache
         self.transaction_repo = transaction_repo
         self.dd_provider = dd_provider
@@ -105,7 +105,7 @@ class TransferWorker:
         previous_response = context.get("previous_response")
         return TransferWorkerContext(
             extractor=self.extractor,
-            banking_provider=self.banking_provider,
+            resolver_provider=self.resolver_provider,
             bank_cache=self.bank_cache,
             publisher=self.publisher,
             transaction_repo=self.transaction_repo,

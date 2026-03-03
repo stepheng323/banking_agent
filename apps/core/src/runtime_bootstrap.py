@@ -1,10 +1,8 @@
 """Shared runtime startup bootstrap utilities for core processes."""
 
-from typing import Any
-
 from shared.cache.bank_cache import BankCacheService
 from shared.cache.redis_client import RedisClient
-from shared.clients.factories.payment import PaymentProviderFactory
+from shared.clients.factories.providers import ProviderFactory
 from shared.config.settings import settings
 from shared.utils.logging import get_logger
 
@@ -13,17 +11,17 @@ logger = get_logger(__name__)
 
 async def warm_runtime() -> None:
     """Warm key runtime dependencies for worker and API entrypoints."""
-    payment_provider = None
+    resolver_provider = None
     try:
-        logger.info("Initializing payment provider...")
-        payment_provider = PaymentProviderFactory.get_provider_for_service("resolve_account")
+        logger.info("Initializing resolver provider...")
+        resolver_provider = ProviderFactory.get_resolver_for_flow("bootstrap")
 
-        if payment_provider:
-            logger.info(f"{payment_provider.provider_name.title()} ready", type=str(type(payment_provider)))
+        if resolver_provider:
+            logger.info(f"{resolver_provider.provider_name.title()} ready", type=str(type(resolver_provider)))
         else:
-            logger.warning("No payment provider available")
+            logger.warning("No resolver provider available")
     except Exception as e:
-        logger.warning("Payment provider initialization warning", error=str(e))
+        logger.warning("Resolver provider initialization warning", error=str(e))
 
     redis_client = None
     try:
@@ -39,17 +37,13 @@ async def warm_runtime() -> None:
         logger.info("Warming up bank cache...")
         bank_cache = BankCacheService(redis_client=redis_client)
 
-        if payment_provider and hasattr(payment_provider, "get_banks"):
-
-            async def fetch_banks_wrapper() -> list[Any] | None:
-                return await payment_provider.get_banks()
-
-            banks = await bank_cache.ensure_banks_cached(fetch_banks_wrapper)
+        if resolver_provider:
+            banks = await bank_cache.ensure_banks_cached(resolver_provider.get_banks)
             if banks:
                 logger.info("Bank cache ready", count=len(banks))
             else:
                 logger.warning("Bank cache warmup failed")
         else:
-            logger.warning("Payment provider does not support bank list fetching")
+            logger.warning("Resolver provider not available for bank list warmup")
     except Exception as e:
         logger.warning("Bank cache warmup warning", error=str(e))

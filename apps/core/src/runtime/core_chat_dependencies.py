@@ -25,8 +25,7 @@ from apps.core.src.runtime.common import build_messaging_clients, require_aws_ac
 from shared.cache.bank_cache import BankCacheService
 from shared.cache.redis_client import RedisClient
 from shared.cache.user_data import UserDataCache
-from shared.clients.factories.payment import PaymentProviderFactory
-from shared.clients.providers.mono.banking import MonoBankingProvider
+from shared.clients.factories.providers import ProviderFactory
 from shared.clients.providers.mono.direct_debit import MonoDirectDebitProvider
 from shared.config.settings import settings
 from shared.database.connection import get_db_session
@@ -68,19 +67,26 @@ def _build_orchestrator_runtime_bundle(
     onboarding_executor = OnboardingExecutor(user_repository, onboarding_service)
 
     beneficiary_suggestion_service = BeneficiarySuggestionService(queue_publisher)
-    banking_provider = MonoBankingProvider()
+    bank_data_provider = ProviderFactory.get_bank_data_provider("mono")
+    if bank_data_provider is None:
+        raise RuntimeError("Mono bank data provider is not configured")
+    resolver_provider = ProviderFactory.get_resolver_for_flow("transfer")
+    if resolver_provider is None:
+        raise RuntimeError("Transfer resolver provider is not configured")
     direct_debit_provider = MonoDirectDebitProvider()
 
     account_worker = AccountWorker(
         account_repo=account_repository,
         user_repo=user_repository,
         llm=llm,
-        banking_provider=banking_provider,
+        banking_provider=bank_data_provider,
         session_manager=onboarding_session_manager,
         direct_debit_provider=direct_debit_provider,
     )
 
-    bill_provider = PaymentProviderFactory.get_bill_payment_provider()
+    bill_provider = ProviderFactory.get_bill_provider()
+    if bill_provider is None:
+        raise RuntimeError("Bill provider is not configured")
     data_worker = AgentDataWorker(
         extractor=DataEntityExtractor(llm=llm),
         bill_provider=bill_provider,
@@ -99,7 +105,7 @@ def _build_orchestrator_runtime_bundle(
     query_session_manager = QuerySessionManager(shared_redis)
     query_worker = AgentQueryWorker(
         llm=llm,
-        banking_provider=banking_provider,
+        banking_provider=bank_data_provider,
         session_manager=query_session_manager,
     )
 
@@ -123,7 +129,7 @@ def _build_orchestrator_runtime_bundle(
         validation_service=None,
         publisher=queue_publisher,
         extractor=TransferEntityExtractor(llm=llm),
-        banking_provider=banking_provider,
+        resolver_provider=resolver_provider,
         bank_cache=bank_cache_service,
         transaction_repo=transaction_repository,
         dd_provider=direct_debit_provider,
@@ -153,7 +159,7 @@ def _build_orchestrator_runtime_bundle(
         beneficiary_suggestion_service=beneficiary_suggestion_service,
         account_repo=account_repository,
         redis_client=shared_redis,
-        banking_provider=banking_provider,
+        banking_provider=bank_data_provider,
     )
 
     return db_session, user_repository, onboarding_executor, OrchestratorAgent(orchestrator_deps)

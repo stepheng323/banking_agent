@@ -354,13 +354,13 @@ async def handle_beneficiary_task(task: Any, task_id: str, ctx: ExecutionContext
 
         provider = None
         transfer_worker = ctx.services.get("transfer")
-        if transfer_worker and hasattr(transfer_worker, "banking_provider"):
-            provider = transfer_worker.banking_provider
+        if transfer_worker and hasattr(transfer_worker, "resolver_provider"):
+            provider = transfer_worker.resolver_provider
 
         context_data = {
             "user_id": ctx.state.loaded_context.get("user_id"),
             "phone_number": ctx.state.phone_number,
-            "banking_provider": provider,
+            "resolver_provider": provider,
             "language": _state_locale(ctx.state),
         }
 

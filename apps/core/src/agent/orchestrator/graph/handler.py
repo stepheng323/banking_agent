@@ -16,7 +16,7 @@ from apps.core.src.agent.graphs.__shared__.beneficiary.suggestion_service import
 from apps.core.src.agent.orchestrator.graph import build_orchestrator_graph
 from apps.core.src.agent.orchestrator.models.message_context import MessageContext
 from apps.core.src.agent.orchestrator.presentation.intents import map_outbox_to_intents
-from shared.clients.abstractions.banking import BankingDataProvider
+from shared.clients.abstractions.banking import BankDataProvider
 from shared.i18n import LocaleManager
 from shared.protocols.worker import WorkerProtocol
 from shared.queue.adapter import QueuePublisher
@@ -50,7 +50,7 @@ class OrchestratorGraphHandler:
         beneficiary_repo: BeneficiaryRepository,
         account_repo: AccountRepository,
         actionable_message_repo: ActionableMessageRepository,
-        banking_provider: BankingDataProvider,
+        banking_provider: BankDataProvider,
         context_manager: ContextManager,
         redis_client: redis.Redis,
         publisher: QueuePublisher,

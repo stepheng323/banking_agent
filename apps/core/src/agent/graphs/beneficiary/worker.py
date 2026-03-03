@@ -122,30 +122,30 @@ class BeneficiaryWorker:
                 error=render_message("beneficiary.add.missing_account_or_bank", locale),
             )
 
-        provider = context.get("banking_provider")
+        provider = context.get("resolver_provider")
         resolved_name = None
 
         if provider:
             if not bank_code and bank_name:
                 try:
                     banks_resp = await provider.get_banks()
-                    if banks_resp.get("success"):
+                    if banks_resp.success:
                         target = bank_name.lower()
-                        for b in banks_resp.get("banks", []):
-                            if b["name"].lower() == target or target in b["name"].lower():
-                                bank_code = b["code"]
-                                bank_name = b["name"]
+                        for bank in banks_resp.banks:
+                            if bank.name.lower() == target or target in bank.name.lower():
+                                bank_code = bank.code
+                                bank_name = bank.name
                                 break
                 except Exception:
                     logger.warning("bank_resolution_failed")
 
             if account_number and bank_code:
                 try:
-                    resolved = await provider.resolve_account_number(account_number, bank_code)
-                    if resolved:
-                        resolved_name = resolved.account_name
-                        if resolved.bank_code:
-                            bank_code = resolved.bank_code
+                    resolved = await provider.resolve_account(account_number, bank_code)
+                    if resolved.success and resolved.account:
+                        resolved_name = resolved.account.account_name
+                        if resolved.account.bank_code:
+                            bank_code = resolved.account.bank_code
                 except Exception as e:
                     logger.warning("account_resolution_failed", error=str(e))
                     return TransactionResult(

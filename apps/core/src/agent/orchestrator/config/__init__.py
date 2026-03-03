@@ -8,7 +8,7 @@ from langchain_openai import ChatOpenAI
 from apps.core.src.agent.graphs.__shared__.beneficiary.suggestion_service import BeneficiarySuggestionService
 from apps.core.src.agent.orchestrator.services.media_service import MediaService
 from shared.cache.user_data import UserDataCache
-from shared.clients.abstractions.banking import BankingDataProvider
+from shared.clients.abstractions.banking import BankDataProvider
 from shared.protocols.worker import WorkerProtocol
 from shared.queue.adapter import QueuePublisher
 from shared.repositories.account_repository import AccountRepository
@@ -40,7 +40,7 @@ class OrchestratorDependencies:
     support_service: WorkerProtocol
     faq_service: WorkerProtocol
     publisher: QueuePublisher
-    banking_provider: BankingDataProvider
+    banking_provider: BankDataProvider
     beneficiary_suggestion_service: BeneficiarySuggestionService
     user_cache: UserDataCache
     redis_client: redis.Redis

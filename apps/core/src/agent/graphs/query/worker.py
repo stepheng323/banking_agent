@@ -16,7 +16,7 @@ from apps.core.src.agent.graphs.query.nodes.extraction import ExtractionStep
 from apps.core.src.agent.graphs.query.pipeline import QueryPipeline
 from apps.core.src.agent.graphs.query.session import QuerySessionManager
 from apps.core.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
-from shared.clients.abstractions.banking import BankingDataProvider
+from shared.clients.abstractions.banking import BankDataProvider
 from shared.i18n import LocaleManager, render_message
 from shared.utils.logging import get_logger
 
@@ -29,7 +29,7 @@ class QueryWorker:
     def __init__(
         self,
         llm: Runnable,
-        banking_provider: BankingDataProvider,
+        banking_provider: BankDataProvider,
         session_manager: QuerySessionManager,
     ):
         self.llm = llm

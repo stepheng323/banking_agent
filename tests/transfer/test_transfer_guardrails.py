@@ -11,9 +11,16 @@ class _MockBankingProvider:
     def __init__(self, resolved_name: str) -> None:
         self.resolved_name = resolved_name
 
-    async def resolve_account(self, account_number: str, bank_code: str) -> dict:
+    async def resolve_account(self, account_number: str, bank_code: str) -> SimpleNamespace:
         del account_number, bank_code
-        return {"success": True, "account_name": self.resolved_name}
+        return SimpleNamespace(
+            success=True,
+            account=SimpleNamespace(
+                account_name=self.resolved_name,
+                account_number="1234567890",
+                bank_code="044",
+            ),
+        )
 
 
 class _MockTxRepo:
@@ -34,7 +41,12 @@ async def test_resolver_relational_alias_exempts_name_mismatch_warning() -> None
     )
     ctx = TransferContext(phone_number="2348000000000", language="en", beneficiaries=[], accounts=[])
 
-    result = await resolve_beneficiary(payload, ctx, banking_provider=_MockBankingProvider("John Doe"), bank_cache=None)
+    result = await resolve_beneficiary(
+        payload,
+        ctx,
+        resolver_provider=_MockBankingProvider("John Doe"),
+        bank_cache=None,
+    )
 
     assert result.outcome.value == "ok"
     assert result.patch["recipient_resolved_name"] == "John Doe"
@@ -86,7 +98,7 @@ async def test_saved_beneficiary_shortcut_is_used_when_recipient_not_changed() -
         accounts=[],
     )
 
-    result = await resolve_beneficiary(payload, ctx, banking_provider=None, bank_cache=None)
+    result = await resolve_beneficiary(payload, ctx, resolver_provider=None, bank_cache=None)
 
     assert result.outcome.value == "ok"
     assert result.patch["resolved_from_saved_beneficiary"] is True
@@ -118,7 +130,7 @@ async def test_saved_beneficiary_shortcut_is_dropped_when_recipient_changes() ->
         accounts=[],
     )
 
-    result = await resolve_beneficiary(payload, ctx, banking_provider=None, bank_cache=None)
+    result = await resolve_beneficiary(payload, ctx, resolver_provider=None, bank_cache=None)
 
     assert result.outcome.value == "needs_input"
     assert "recipient_account" in result.required_fields

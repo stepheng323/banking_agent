@@ -1,44 +1,13 @@
-"""Abstract base class for payment service providers."""
+"""Abstract base class for payout service providers."""
 
 from abc import ABC, abstractmethod
 from typing import Any
 
 
-class PaymentProvider(ABC):
+class PayoutProvider(ABC):
     """
-    Abstract interface for payment service providers.
-
-    Payment providers typically offer multiple services:
-    - Account resolution/verification
-    - Payment processing
-    - Transfer execution
-    - Bill payments
-    - etc.
+    Abstract interface for payout execution providers.
     """
-
-    @abstractmethod
-    async def resolve_account(self, account_number: str, bank_code: str, currency: str = "NGN") -> dict[str, Any]:
-        """
-        Resolve bank account details using the provider's API.
-
-        Args:
-            account_number: The bank account number to verify
-            bank_code: The bank code (e.g., "058" for GTBank, "011" for First Bank)
-            currency: Currency code (default: "NGN")
-
-        Returns:
-            Dictionary with:
-                - success: bool
-                - account_name: str (account holder name) if successful
-                - account_number: str (normalized account number)
-                - bank_code: str
-                - error: str if failed
-                - provider: str (provider name, e.g., "flutterwave")
-
-        Raises:
-            ValueError: If credentials are not configured
-        """
-        raise NotImplementedError
 
     @abstractmethod
     async def initiate_transfer(
@@ -116,28 +85,3 @@ class PaymentProvider(ABC):
     def supports_status_checks(self) -> bool:
         """Check if the provider supports transaction status checks."""
         return False
-
-    @property
-    def supports_bank_list(self) -> bool:
-        """Check if the provider supports fetching bank lists."""
-        return False
-
-    async def get_banks(self, country: str = "NG") -> dict[str, Any]:
-        """
-        Fetch list of supported banks from the provider.
-
-        Args:
-            country: Country code (e.g., "NG" for Nigeria, "GH" for Ghana)
-
-        Returns:
-            Dictionary with:
-                - success: bool
-                - banks: List[Dict[str, str]] with id, code, and name
-                - count: int (number of banks)
-                - error: str (if failed)
-                - provider: str
-
-        Raises:
-            NotImplementedError: If provider doesn't support bank list fetching
-        """
-        raise NotImplementedError(f"{self.provider_name} does not support bank list fetching")
