@@ -23,6 +23,7 @@ def test_telegram_html_formatter_does_not_break_plain_text() -> None:
 @pytest.mark.asyncio
 async def test_send_message_draft_calls_telegram_draft_endpoint(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "telegram_bot_token", "test-token")
+    monkeypatch.setattr(settings, "telegram_enable_message_draft", True)
     client = TelegramClient()
     calls: list[tuple[str, dict[str, object], int]] = []
 
@@ -47,6 +48,7 @@ async def test_send_message_draft_calls_telegram_draft_endpoint(monkeypatch: pyt
 @pytest.mark.asyncio
 async def test_send_text_streamed_sends_drafts_before_final_message(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "telegram_bot_token", "test-token")
+    monkeypatch.setattr(settings, "telegram_enable_message_draft", True)
     client = TelegramClient()
     calls: list[str] = []
 
@@ -81,6 +83,7 @@ async def test_send_text_streamed_sends_drafts_before_final_message(monkeypatch:
 @pytest.mark.asyncio
 async def test_send_text_streamed_disables_draft_when_endpoint_unsupported(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "telegram_bot_token", "test-token")
+    monkeypatch.setattr(settings, "telegram_enable_message_draft", True)
     client = TelegramClient()
     calls: list[str] = []
 
@@ -121,4 +124,36 @@ async def test_send_text_streamed_disables_draft_when_endpoint_unsupported(monke
         draft_delay_seconds=0,
     )
     assert second.success is True
+    assert calls == ["sendMessage"]
+
+
+@pytest.mark.asyncio
+async def test_send_text_streamed_skips_draft_when_feature_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "telegram_bot_token", "test-token")
+    monkeypatch.setattr(settings, "telegram_enable_message_draft", False)
+    client = TelegramClient()
+    calls: list[str] = []
+
+    async def _fake_call(
+        method: str,
+        payload: dict[str, object] | None = None,
+        files: dict[str, object] | None = None,
+        max_retries: int = 3,
+    ) -> dict[str, object]:
+        del payload, files, max_retries
+        calls.append(method)
+        return {"ok": True, "result": {"message_id": 101}}
+
+    monkeypatch.setattr(client, "_call", _fake_call)
+
+    result = await client.send_text_streamed(
+        to="12345",
+        text="x" * 280,
+        draft_step_chars=100,
+        max_draft_updates=3,
+        draft_delay_seconds=0,
+    )
+
+    assert result.success is True
+    assert result.message_id == "101"
     assert calls == ["sendMessage"]
