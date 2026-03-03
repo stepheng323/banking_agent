@@ -43,7 +43,7 @@ class TelegramClient(MessagingClient):
     def __init__(self) -> None:
         self.bot_token = settings.telegram_bot_token
         self.mini_app_base_url = settings.telegram_mini_app_base_url
-        self._draft_supported: bool | None = None
+        self._draft_supported: bool = settings.telegram_enable_message_draft
         self._validate_config()
 
     def _validate_config(self) -> None:
@@ -150,7 +150,7 @@ class TelegramClient(MessagingClient):
 
     async def send_message_draft(self, to: str, text: str) -> bool:
         """Set a draft message in chat using Telegram Bot API sendMessageDraft."""
-        if self._draft_supported is False:
+        if not self._draft_supported:
             return False
 
         draft_text = (text or "").strip()
@@ -163,7 +163,6 @@ class TelegramClient(MessagingClient):
         }
         try:
             await self._call("sendMessageDraft", payload, max_retries=1)
-            self._draft_supported = True
             return True
         except httpx.HTTPStatusError as e:
             status = e.response.status_code
@@ -194,7 +193,7 @@ class TelegramClient(MessagingClient):
             clipped = clean_text[:4096]
             sent = 0
             cursor = min(len(clipped), max(1, draft_step_chars))
-            draft_enabled = True
+            draft_enabled = self._draft_supported
             while cursor < len(clipped) and sent < max_draft_updates and draft_enabled:
                 draft_enabled = await self.send_message_draft(to=to, text=clipped[:cursor])
                 sent += 1
