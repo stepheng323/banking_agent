@@ -2,12 +2,15 @@
 
 import uuid as uuid_module
 from datetime import datetime, timedelta
+from typing import TYPE_CHECKING
 
 from shared.cache.user_data import UserDataCache
 from shared.clients.providers.mono import MonoApiError, mono_client
 from shared.repositories.unit_of_work import UnitOfWork
-from shared.services.delivery_service import DeliveryService
 from shared.utils.logging import get_logger
+
+if TYPE_CHECKING:
+    from shared.services.delivery_service import DeliveryService
 
 logger = get_logger(__name__)
 
@@ -18,14 +21,16 @@ class MandateService:
     def __init__(
         self,
         publisher: object | None = None,
-        delivery_service: DeliveryService | None = None,
+        delivery_service: "DeliveryService | None" = None,
         queue: object | None = None,
     ) -> None:
         # publisher/queue are retained for backwards compatibility with older call sites.
         del publisher, queue
         self.delivery_service = delivery_service
 
-    def _get_delivery_service(self) -> DeliveryService:
+    def _get_delivery_service(self) -> "DeliveryService":
+        from shared.services.delivery_service import DeliveryService
+
         if self.delivery_service is None:
             self.delivery_service = DeliveryService()
         return self.delivery_service

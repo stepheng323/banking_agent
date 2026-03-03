@@ -64,8 +64,24 @@ jobs:
         run: uv run pytest -q
 
   runtime-boundary-smoke:
-    name: Runtime Boundary Smoke
+    name: Runtime Boundary Smoke (${{ matrix.name }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - name: receipt-runtime
+            extra: runtime-worker-receipt
+            module: apps.core.src.lambda_handlers.receipt_worker_handler
+            symbol: handler
+          - name: transaction-runtime
+            extra: runtime-worker-transaction
+            module: apps.core.src.lambda_handlers.transaction_worker_handler
+            symbol: handler
+          - name: gateway-runtime
+            extra: runtime-gateway
+            module: apps.gateway.lambda_handler
+            symbol: handler
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -73,26 +89,15 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v5
 
-      - name: Validate minimal runtime import boundaries
+      - name: Validate runtime import boundary
         run: |
           set -euo pipefail
 
-          run_check() {
-            local name="$1"
-            local extra="$2"
-            local module="$3"
-            local symbol="$4"
-            local venv=".venv-${name}"
-
-            uv venv "$venv"
-            uv pip install --python "$venv/bin/python" ".[${extra}]"
-            "$venv/bin/python" -c "import importlib; m = importlib.import_module('${module}'); getattr(m, '${symbol}')"
-            echo "✓ ${name} runtime import check passed"
-          }
-
-          run_check "receipt-runtime" "runtime-worker-receipt" "apps.core.src.lambda_handlers.receipt_worker_handler" "handler"
-          run_check "transaction-runtime" "runtime-worker-transaction" "apps.core.src.lambda_handlers.transaction_worker_handler" "handler"
-          run_check "gateway-runtime" "runtime-gateway" "apps.gateway.lambda_handler" "handler"
+          venv=".venv-${{ matrix.name }}"
+          uv venv "$venv"
+          uv pip install --python "$venv/bin/python" ".[${{ matrix.extra }}]"
+          "$venv/bin/python" -c "import importlib; m = importlib.import_module('${{ matrix.module }}'); getattr(m, '${{ matrix.symbol }}')"
+          echo "✓ ${{ matrix.name }} runtime import check passed"
 
   terraform-validate:
     name: Terraform Validate

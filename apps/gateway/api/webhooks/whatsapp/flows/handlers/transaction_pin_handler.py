@@ -21,7 +21,6 @@ from shared.queue.adapter import QueuePublisher
 from shared.queue.factory import QueuePublisherFactory
 from shared.queue.messages import FlowEvent, FlowEventType
 from shared.services.auth import AuthorizationService
-from shared.services.delivery_service import DeliveryService
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -122,6 +121,8 @@ async def handle_transaction_pin(
         if phone_number:
             if publisher is None:
                 publisher = QueuePublisherFactory.get_publisher()
+
+            from shared.services.delivery_service import DeliveryService
 
             delivery_service = DeliveryService()
             asyncio.create_task(
