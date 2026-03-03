@@ -113,6 +113,19 @@ def _resolve_beneficiary_selection_from_input(
     )
 
 
+def _should_override_skip_extraction(payload: TransferPayload) -> bool:
+    """Return True when planner-provided recipient text still needs LLM entity extraction."""
+    if payload.recipient_account and (payload.recipient_bank_name or payload.recipient_bank_code):
+        return False
+
+    recipient_hint = (payload.recipient_name or "").strip()
+    if not recipient_hint:
+        return False
+
+    digits_only = "".join(ch for ch in recipient_hint if ch.isdigit())
+    return len(digits_only) >= 10
+
+
 class ExtractionStep(TransferStep):
     """Refines transfer data from user message."""
 
@@ -172,9 +185,12 @@ class ExtractionStep(TransferStep):
 
         # Optimization: Phase 4 (Planner-as-Extractor)
         # Skip extraction if Planner already did it (signaled by flag)
-        if data.skip_extraction:
+        override_skip_extraction = data.skip_extraction and _should_override_skip_extraction(data)
+        if data.skip_extraction and not override_skip_extraction:
             logger.info("skip_redundant_extraction", task="transfer")
             return TransactionResult(outcome=TransactionOutcome.OK, patch={"skip_extraction": False})
+        if override_skip_extraction:
+            logger.info("override_skip_extraction_for_account_like_recipient", recipient=data.recipient_name)
 
         waiting_for_beneficiary = "beneficiary_id" in required_fields
         waiting_for_source_account = "source_account_id" in required_fields
@@ -226,7 +242,8 @@ class ExtractionStep(TransferStep):
 
         if not worker_context.extractor:
             logger.info("transfer_extraction_skipped", reason="extractor_unavailable")
-            return TransactionResult(outcome=TransactionOutcome.OK)
+            patch = {"skip_extraction": False} if data.skip_extraction else {}
+            return TransactionResult(outcome=TransactionOutcome.OK, patch=patch)
 
         res = await _extract_transfer_update(
             data,
@@ -247,6 +264,8 @@ class ExtractionStep(TransferStep):
                 },
             },
         )
+        if data.skip_extraction:
+            res.patch["skip_extraction"] = False
 
         return res
 

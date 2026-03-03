@@ -107,6 +107,23 @@ def sanitize_account_number(account_number: str | None) -> str:
     return digits[:20]
 
 
+def normalize_bank_account_number(account_number: str | None) -> str:
+    """
+    Normalize Nigerian bank account numbers for transfer recipient parsing.
+
+    Rules:
+    - If digits are exactly 10: keep as-is.
+    - If digits are exactly 11 and start with 0: drop the leading 0.
+    - Otherwise: return digits unchanged for downstream validation.
+    """
+    digits = sanitize_account_number(account_number)
+    if len(digits) == 10:
+        return digits
+    if len(digits) == 11 and digits.startswith("0"):
+        return digits[1:]
+    return digits
+
+
 def is_suspicious_input(text: str) -> bool:
     """
     Check if input contains suspicious patterns that might indicate an attack.

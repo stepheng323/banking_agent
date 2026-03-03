@@ -1,3 +1,4 @@
+import httpx
 import pytest
 
 from shared.clients.abstractions.messaging import MessageResult
@@ -75,3 +76,49 @@ async def test_send_text_streamed_sends_drafts_before_final_message(monkeypatch:
     assert result.success is True
     assert result.message_id == "99"
     assert calls == ["sendMessageDraft", "sendMessageDraft", "sendMessageDraft", "sendMessage"]
+
+
+@pytest.mark.asyncio
+async def test_send_text_streamed_disables_draft_when_endpoint_unsupported(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "telegram_bot_token", "test-token")
+    client = TelegramClient()
+    calls: list[str] = []
+
+    async def _fake_call(
+        method: str,
+        payload: dict[str, object] | None = None,
+        files: dict[str, object] | None = None,
+        max_retries: int = 3,
+    ) -> dict[str, object]:
+        del payload, files, max_retries
+        calls.append(method)
+        if method == "sendMessageDraft":
+            request = httpx.Request("POST", "https://api.telegram.org/botTEST/sendMessageDraft")
+            response = httpx.Response(status_code=400, request=request)
+            raise httpx.HTTPStatusError("400 Bad Request", request=request, response=response)
+        return {"ok": True, "result": {"message_id": 100}}
+
+    monkeypatch.setattr(client, "_call", _fake_call)
+
+    result = await client.send_text_streamed(
+        to="12345",
+        text="x" * 280,
+        draft_step_chars=100,
+        max_draft_updates=3,
+        draft_delay_seconds=0,
+    )
+
+    assert result.success is True
+    assert result.message_id == "100"
+    assert calls == ["sendMessageDraft", "sendMessage"]
+
+    calls.clear()
+    second = await client.send_text_streamed(
+        to="12345",
+        text="another message",
+        draft_step_chars=5,
+        max_draft_updates=3,
+        draft_delay_seconds=0,
+    )
+    assert second.success is True
+    assert calls == ["sendMessage"]

@@ -5,7 +5,8 @@ WORKDIR /build
 COPY pyproject.toml ./
 RUN --mount=type=cache,target=/root/.cache/pip \
     pip install --upgrade pip && \
-    pip install --target /build ".[runtime-worker-receipt]"
+    pip install --target /build ".[runtime-worker-receipt]" && \
+    PLAYWRIGHT_BROWSERS_PATH=/build/ms-playwright PYTHONPATH=/build python -m playwright install chromium
 
 FROM public.ecr.aws/lambda/python:3.12
 
@@ -16,5 +17,6 @@ COPY apps/receipt/ /var/task/apps/receipt/
 COPY shared/ /var/task/shared/
 COPY config/ /var/task/config/
 
-ENV PYTHONPATH=/var/task
+ENV PYTHONPATH=/var/task \
+    PLAYWRIGHT_BROWSERS_PATH=/var/task/ms-playwright
 CMD ["apps.core.src.lambda_handlers.receipt_worker_handler.handler"]

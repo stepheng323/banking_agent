@@ -43,6 +43,7 @@ class TelegramClient(MessagingClient):
     def __init__(self) -> None:
         self.bot_token = settings.telegram_bot_token
         self.mini_app_base_url = settings.telegram_mini_app_base_url
+        self._draft_supported: bool | None = None
         self._validate_config()
 
     def _validate_config(self) -> None:
@@ -149,6 +150,9 @@ class TelegramClient(MessagingClient):
 
     async def send_message_draft(self, to: str, text: str) -> bool:
         """Set a draft message in chat using Telegram Bot API sendMessageDraft."""
+        if self._draft_supported is False:
+            return False
+
         draft_text = (text or "").strip()
         if not draft_text:
             return False
@@ -159,7 +163,17 @@ class TelegramClient(MessagingClient):
         }
         try:
             await self._call("sendMessageDraft", payload, max_retries=1)
+            self._draft_supported = True
             return True
+        except httpx.HTTPStatusError as e:
+            status = e.response.status_code
+            # Some bots/runtimes may not support sendMessageDraft yet.
+            if status in {400, 404, 405, 501}:
+                self._draft_supported = False
+                print(f"⚠️ sendMessageDraft unsupported (HTTP {status}); disabling draft streaming for this runtime.")
+                return False
+            print(f"⚠️ sendMessageDraft failed: {e}")
+            return False
         except Exception as e:
             print(f"⚠️ sendMessageDraft failed: {e}")
             return False
@@ -180,13 +194,15 @@ class TelegramClient(MessagingClient):
             clipped = clean_text[:4096]
             sent = 0
             cursor = min(len(clipped), max(1, draft_step_chars))
-            while cursor < len(clipped) and sent < max_draft_updates:
-                await self.send_message_draft(to=to, text=clipped[:cursor])
+            draft_enabled = True
+            while cursor < len(clipped) and sent < max_draft_updates and draft_enabled:
+                draft_enabled = await self.send_message_draft(to=to, text=clipped[:cursor])
                 sent += 1
                 if draft_delay_seconds > 0:
                     await asyncio.sleep(draft_delay_seconds)
                 cursor = min(len(clipped), cursor + max(1, draft_step_chars))
-            await self.send_message_draft(to=to, text=clipped)
+            if draft_enabled:
+                await self.send_message_draft(to=to, text=clipped)
 
         return await self.send_text(to=to, text=text, message_id=message_id)
 

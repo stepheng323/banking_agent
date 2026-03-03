@@ -11,6 +11,7 @@ from apps.core.src.agent.graphs.transfer.models.types import (
 )
 from apps.core.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
 from shared.utils.logging import get_logger
+from shared.utils.sanitize import normalize_bank_account_number
 
 logger = get_logger(__name__)
 
@@ -53,6 +54,15 @@ class TransferPipeline:
     def __init__(self, steps: list[TransferStep]):
         self.steps = steps
 
+    @staticmethod
+    def _normalize_patch(patch: dict[str, Any]) -> dict[str, Any]:
+        normalized_patch = dict(patch)
+        if "recipient_account" in normalized_patch:
+            normalized_account = normalize_bank_account_number(normalized_patch.get("recipient_account"))
+            if normalized_account:
+                normalized_patch["recipient_account"] = normalized_account
+        return normalized_patch
+
     async def run(
         self,
         data: TransferPayload,
@@ -80,7 +90,9 @@ class TransferPipeline:
 
             last_result = result
             if result.patch:
-                data = data.model_copy(update=result.patch)
+                normalized_patch = self._normalize_patch(result.patch)
+                result.patch = normalized_patch
+                data = data.model_copy(update=normalized_patch)
 
         if last_result:
             return self._finalize_result(last_result, data)
