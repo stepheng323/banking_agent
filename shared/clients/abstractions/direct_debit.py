@@ -128,7 +128,7 @@ class DirectDebitProvider(ABC):
             beneficiary_bank_code=None,
         )
 
-    async def initiate_direct_beneficiary_debit(
+    async def initiate_debit_to_beneficiary(
         self,
         mandate_id: str,
         amount: float,
