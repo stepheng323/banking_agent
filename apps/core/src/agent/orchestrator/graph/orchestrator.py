@@ -19,7 +19,11 @@ class OrchestratorAgent:
         self.message_type = "text"
 
         self.context_manager = OrchestratorContextManager(deps.user_repo, deps.beneficiary_repo, deps.account_repo)
-        self.task_planner = OrchestratorTaskPlanner(deps.llm, deps.task_queue_service)
+        self.task_planner = OrchestratorTaskPlanner(
+            planner_llm=deps.llm,
+            interrupt_llm=deps.interrupt_llm,
+            task_queue_service=deps.task_queue_service,
+        )
 
         self.orchestrator_handler = OrchestratorGraphHandler(
             task_planner=self.task_planner,

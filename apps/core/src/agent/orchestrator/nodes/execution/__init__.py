@@ -35,6 +35,7 @@ from shared.formatters.prompts import (
 from shared.formatters.transaction_summary import format_batch_transfer_summary, format_intent_line
 from shared.i18n import render_message
 from shared.services.funding.coordinator import BatchFundingCoordinator, SourceAffinity, TransferDemand
+from shared.services.onboarding.mandate_messages import build_pending_mandate_message
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -44,34 +45,9 @@ BLOCKING_DEPENDENCY_STAGES = {TaskStage.FAILED, TaskStage.CANCELLED}
 
 
 def _build_mandate_gate_error(accounts: list[dict], locale: str) -> str:
-    """Build a rich error message when no account has a ready mandate.
-
-    Reuses MandateService.build_mandate_auth_message() to show transfer
-    destinations for the first pending-mandate account.
-    """
-    import json
-
-    from shared.services.onboarding.mandate import MandateService
-
-    for acct in accounts:
-        status = acct.get("mandate_status")
-        if status and status != "ready":
-            raw_extra = acct.get("extra_data") or {}
-            if isinstance(raw_extra, str):
-                try:
-                    raw_extra = json.loads(raw_extra)
-                except Exception:
-                    raw_extra = {}
-            destinations = raw_extra.get("transfer_destinations", []) if isinstance(raw_extra, dict) else []
-            if destinations:
-                svc = MandateService(publisher=None)  # type: ignore[arg-type]
-                return svc.build_mandate_auth_message(
-                    account_number=acct.get("account_number", ""),
-                    bank_name=acct.get("bank_name", ""),
-                    transfer_destinations=destinations,
-                )
-
-    return render_message("mandate.pending_complete_transfer", locale)
+    """Build mandate error using contextual transfer destinations when available."""
+    normalized_accounts = [account for account in accounts if isinstance(account, dict)]
+    return build_pending_mandate_message(normalized_accounts, locale)
 
 
 def _with_policy_notice(state: OrchestratorState, outbox: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -458,10 +434,12 @@ async def advance_wave(state: OrchestratorState, config: RunnableConfig) -> dict
             accounts = (state.loaded_context or {}).get("accounts") or []
             has_ready = any(isinstance(a, dict) and a.get("mandate_status") == "ready" for a in accounts)
             if not has_ready:
+                mandate_error = _build_mandate_gate_error(mandate_gate_accounts or accounts, locale)
+
                 task.stage = TaskStage.FAILED
                 task.payload["is_pending_mandate"] = True
                 task.payload["mandate_accounts"] = mandate_gate_accounts
-                task.payload["error"] = _build_mandate_gate_error(mandate_gate_accounts or accounts, locale)
+                task.payload["error"] = mandate_error
                 progressed = True
                 continue
 

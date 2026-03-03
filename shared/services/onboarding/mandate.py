@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 from shared.cache.user_data import UserDataCache
 from shared.clients.providers.mono import MonoApiError, mono_client
 from shared.repositories.unit_of_work import UnitOfWork
+from shared.services.onboarding.mandate_messages import format_mandate_auth_message
 from shared.utils.logging import get_logger
 
 if TYPE_CHECKING:
@@ -51,41 +52,29 @@ class MandateService:
         is_reinitiation: bool = False,
     ) -> str:
         """Build WhatsApp message with mandate authorization instructions."""
-        if is_reinitiation:
-            lines = [
-                "✓ *Mandate Reinitiated Successfully!*",
-                "",
-                f"To activate your {bank_name} account ending in {account_number[-4:]}, "
-                "transfer ₦50 from that account to any of these accounts:",
-                "",
-            ]
-        else:
-            lines = [
-                "📋 *One Last Step to Complete Setup*",
-                "",
-                f"To activate your {bank_name} account ending in {account_number[-4:]}, "
-                "transfer ₦50 from that account to any of these accounts:",
-                "",
-            ]
+        normalized_destinations: list[dict[str, str]] = []
+        for item in transfer_destinations:
+            if isinstance(item, dict):
+                bank_name_value = str(item.get("bank_name") or "").strip()
+                account_number_value = str(item.get("account_number") or "").strip()
+            else:
+                bank_name_value = str(getattr(item, "bank_name", "") or "").strip()
+                account_number_value = str(getattr(item, "account_number", "") or "").strip()
+            if not bank_name_value or not account_number_value:
+                continue
+            normalized_destinations.append(
+                {
+                    "bank_name": bank_name_value,
+                    "account_number": account_number_value,
+                }
+            )
 
-        for dest in transfer_destinations:
-            bank = dest.get("bank_name") if isinstance(dest, dict) else dest.bank_name
-            acct = dest.get("account_number") if isinstance(dest, dict) else dest.account_number
-            lines.append(f"• *{bank}*: {acct}")
-
-        lines.extend(
-            [
-                "",
-                "⚠️ Important:",
-                "• Transfer must come from your linked account",
-                "• Complete within 1 hour",
-                "• This ₦50 goes to NIBSS for verification",
-                "",
-                "Once done, your account will be ready in about 1 hour!",
-            ]
+        return format_mandate_auth_message(
+            account_number=account_number,
+            bank_name=bank_name,
+            transfer_destinations=normalized_destinations,
+            is_reinitiation=is_reinitiation,
         )
-
-        return "\n".join(lines)
 
     async def create_mandate(
         self,

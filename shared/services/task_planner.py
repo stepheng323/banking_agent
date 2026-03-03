@@ -8,7 +8,7 @@ from langchain_openai import ChatOpenAI
 from shared.policy.adapters import build_planner_policy_block
 from shared.policy.loader import get_cached_policy
 from shared.services.task_queue.service import TaskQueueService
-from shared.types.planner import InterruptRouteDecision, MetaQueryDecision, PlannerOutput
+from shared.types.planner import InterruptRouteDecision, PlannerOutput
 from shared.types.quoted_replay import QuotedReplayInterpretation
 from shared.utils.logging import get_logger
 
@@ -351,49 +351,19 @@ Quoted context: {context}
 Message: \"\"\"{user_message}\"\"\"
 """
 
-META_QUERY_SYSTEM_PROMPT = """You classify whether a user message is primarily a self-query about the assistant.
-
-Return ONLY JSON for this schema:
-- is_meta_query: boolean
-- meta_kind: identity | creator | brand_origin | capabilities | limits | unknown_self_lore | not_meta
-- confidence: 0.0-1.0
-- detected_language: English | Pidgin | Yoruba | Hausa | Igbo | French | null
-- reason: short reason
-
-Definitions:
-- identity: asks assistant name/what it is
-- creator: asks who made/built the assistant
-- brand_origin: asks why/where the assistant name comes from
-- capabilities: asks what the assistant can do
-- limits: asks what the assistant cannot do
-- unknown_self_lore: asks speculative lore/background details not clearly about official identity/capabilities
-- not_meta: not about assistant self-description
-
-Rules:
-1) Be multilingual and semantic across English, Pidgin, Yoruba, Hausa, Igbo, and French.
-2) Classify only intent type; do not generate content answers.
-3) If uncertain, prefer not_meta with lower confidence.
-4) Banking task commands (send money, buy airtime/data, account/query/support actions) are not_meta.
-"""
-
-META_QUERY_USER_PROMPT_TEMPLATE = """User phone: {phone_number}
-Context: {context}
-Message: \"\"\"{user_message}\"\"\"
-"""
-
-
 class TaskPlanner:
     """Handles task planning for multi-step requests."""
 
     def __init__(
         self,
         planner_llm: ChatOpenAI,
+        interrupt_llm: ChatOpenAI | None = None,
         task_queue_service: TaskQueueService | None = None,
     ) -> None:
         self.planner_llm = planner_llm
+        self.interrupt_llm = interrupt_llm or planner_llm
         self.structured_planner = planner_llm.with_structured_output(PlannerOutput)
-        self.structured_interrupt_router = planner_llm.with_structured_output(InterruptRouteDecision)
-        self.structured_meta_query = planner_llm.with_structured_output(MetaQueryDecision)
+        self.structured_interrupt_router = self.interrupt_llm.with_structured_output(InterruptRouteDecision)
         self.structured_quoted_replay = planner_llm.with_structured_output(QuotedReplayInterpretation)
         self.task_queue_service = task_queue_service
 
@@ -493,41 +463,4 @@ class TaskPlanner:
         )
         return parsed
 
-    async def interpret_meta_query(self, phone_number: str, text: str, context: str = "None") -> MetaQueryDecision:
-        """Classify broad self-identity/capability meta queries."""
-        user_prompt = META_QUERY_USER_PROMPT_TEMPLATE.format(
-            phone_number=phone_number,
-            user_message=text,
-            context=context,
-        )
-        system_prompt = META_QUERY_SYSTEM_PROMPT
-        start = time.perf_counter()
-        result = await self.structured_meta_query.ainvoke(
-            [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ]
-        )
-        duration_ms = (time.perf_counter() - start) * 1000
-        logger.info(
-            "meta_query_classifier_call",
-            duration_ms=round(duration_ms, 2),
-            system_chars=len(system_prompt),
-            user_chars=len(user_prompt),
-        )
-        if isinstance(result, MetaQueryDecision):
-            parsed = result
-        else:
-            parsed = cast(MetaQueryDecision, MetaQueryDecision.model_validate(result))
-        logger.info(
-            "meta_query_classifier_decision",
-            is_meta_query=parsed.is_meta_query,
-            meta_kind=parsed.meta_kind,
-            confidence=parsed.confidence,
-            detected_language=parsed.detected_language,
-        )
-        return parsed
-
-
-# Alias for backward compatibility
 OrchestratorTaskPlanner = TaskPlanner
