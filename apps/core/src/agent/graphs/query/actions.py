@@ -8,6 +8,39 @@ from shared.i18n import LocaleManager, render_message
 from shared.queue.factory import QueuePublisherFactory
 
 
+def _resolve_transaction_type(item: Any, locale: str) -> tuple[str, str]:
+    transaction_type = ""
+    if isinstance(getattr(item, "metadata", None), dict):
+        transaction_type = str(item.metadata.get("transaction_type") or "")
+    transaction_type_display = (
+        transaction_type.title() if transaction_type else render_message("query.common.transaction", locale)
+    )
+    return transaction_type, transaction_type_display
+
+
+def _build_query_transfer_handoff(item: Any) -> dict[str, Any]:
+    metadata = item.metadata if isinstance(getattr(item, "metadata", None), dict) else {}
+
+    recipient_name = str(metadata.get("recipient_name") or item.description or "").strip() or None
+    recipient_account = (
+        str(metadata.get("recipient_account_number") or metadata.get("recipient_account") or "").strip() or None
+    )
+    recipient_bank_name = str(metadata.get("recipient_bank_name") or metadata.get("bank_name") or "").strip() or None
+    recipient_bank_code = str(metadata.get("recipient_bank_code") or "").strip() or None
+
+    payload: dict[str, Any] = {
+        "action": "send_money",
+        "amount": item.amount,
+        "narration": item.description,
+        "recipient_name": recipient_name,
+        "recipient_account": recipient_account,
+        "recipient_bank_name": recipient_bank_name,
+        "recipient_bank_code": recipient_bank_code,
+        "skip_extraction": True,
+    }
+    return {k: v for k, v in payload.items() if v is not None and v != ""}
+
+
 async def handle_drill_down(state: dict[str, Any]) -> TransactionResult:
     """Handle drill-down using index and action from classifier."""
     locale = LocaleManager.normalize(state.get("language")).value
@@ -33,10 +66,7 @@ async def handle_drill_down(state: dict[str, Any]) -> TransactionResult:
     item = query_result.items[index]
 
     if drill_down_action == "get_receipt":
-        transaction_type = item.metadata.get("transaction_type", "") if item.metadata else ""
-        transaction_type_display = (
-            transaction_type.title() if transaction_type else render_message("query.common.transaction", locale)
-        )
+        transaction_type, transaction_type_display = _resolve_transaction_type(item, locale)
         if transaction_type != "transfer":
             return TransactionResult(
                 outcome=TransactionOutcome.OK,
@@ -72,7 +102,12 @@ async def handle_drill_down(state: dict[str, Any]) -> TransactionResult:
 
             payload = {
                 "phone_number": state.get("phone_number"),
-                "transaction_reference": item.id or render_message("query.receipt.na", locale),
+                "transaction_reference": (
+                    item.metadata.get("transaction_id")
+                    if isinstance(item.metadata, dict) and item.metadata.get("transaction_id")
+                    else item.id
+                )
+                or render_message("query.receipt.na", locale),
                 **transfer_data,
             }
 
@@ -91,6 +126,27 @@ async def handle_drill_down(state: dict[str, Any]) -> TransactionResult:
                 response=render_message("query.receipt.failed", locale),
                 patch={"session_active": True},
             )
+
+    if drill_down_action == "re_transfer":
+        transaction_type, transaction_type_display = _resolve_transaction_type(item, locale)
+        payload = _build_query_transfer_handoff(item)
+        is_transfer_item = transaction_type == "transfer" or bool(
+            payload.get("recipient_account") and (payload.get("recipient_bank_name") or payload.get("recipient_bank_code"))
+        )
+        if not is_transfer_item:
+            return TransactionResult(
+                outcome=TransactionOutcome.OK,
+                response=f"I can only resend transfer transactions. This looks like {transaction_type_display}.",
+                patch={"session_active": True},
+            )
+        return TransactionResult(
+            outcome=TransactionOutcome.OK,
+            response="Understood. I will start that transfer again now.",
+            patch={
+                "session_active": False,
+                "query_transfer_handoff": payload,
+            },
+        )
 
     if drill_down_action == "report_issue":
         response = render_message(

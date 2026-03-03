@@ -1,4 +1,5 @@
 import json
+import re
 from typing import Any, cast
 
 from langchain_core.runnables import RunnableConfig
@@ -83,6 +84,39 @@ META_RESPONSE_KEY_TO_INTENT: dict[str, MetaIntent] = {
     "conversational.capability_question": MetaIntent.CAPABILITIES,
     "conversational.out_of_scope": MetaIntent.LIMITS,
 }
+QUERY_CONTINUATION_SHORTCUT_EXACT = {
+    "more",
+    "next",
+    "show more",
+    "next page",
+    "show transactions",
+    "show my transactions",
+    "list transactions",
+    "show them",
+    "which ones",
+    "details",
+    "show details",
+    "receipt",
+    "issue",
+    "report issue",
+    "last month",
+    "this month",
+    "yesterday",
+    "today",
+    "only debits",
+    "only credits",
+}
+QUERY_CONTINUATION_SHORTCUT_BLOCKLIST_PATTERNS = (
+    r"\bbalance\b",
+    r"\baccounts?\b",
+    r"\bairtime\b",
+    r"\bdata\b",
+    r"\bbeneficiar(?:y|ies)\b",
+    r"\bsupport\b",
+    r"\bhelp\b",
+    r"\bsend\b",
+    r"\btransfer\b",
+)
 
 
 def _clip_text(value: str, max_chars: int) -> str:
@@ -679,6 +713,37 @@ def _meta_intent_from_response_key(response_key: str | None) -> MetaIntent | Non
     return META_RESPONSE_KEY_TO_INTENT.get(response_key)
 
 
+def _normalize_shortcut_message(message: str) -> str:
+    return " ".join(message.lower().strip().split())
+
+
+def _looks_like_explicit_query_continuation(message_text: str) -> bool:
+    normalized = _normalize_shortcut_message(message_text)
+    if not normalized:
+        return False
+    if normalized in QUERY_CONTINUATION_SHORTCUT_EXACT:
+        return True
+    if re.fullmatch(r"(only|just)\s+(credits?|debits?)", normalized):
+        return True
+    if re.fullmatch(r"(last|recent)\s+\d+", normalized):
+        return True
+    return False
+
+
+def _is_query_continuation_blocked(message_text: str) -> bool:
+    normalized = _normalize_shortcut_message(message_text)
+    return any(re.search(pattern, normalized) for pattern in QUERY_CONTINUATION_SHORTCUT_BLOCKLIST_PATTERNS)
+
+
+def _next_query_continuation_task_id(existing_tasks: dict[str, TaskSpec]) -> str:
+    idx = 1
+    task_id = f"query_continuation_{idx}"
+    while task_id in existing_tasks:
+        idx += 1
+        task_id = f"query_continuation_{idx}"
+    return task_id
+
+
 async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[str, Any]:
     """Planner Node.
 
@@ -813,6 +878,33 @@ async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[s
                 import json
 
                 session = json.loads(query_session_data)
+                session_active = bool(session.get("session_active"))
+                if (
+                    session_active
+                    and state.pending_interrupt is None
+                    and _looks_like_explicit_query_continuation(text)
+                    and not _is_query_continuation_blocked(text)
+                ):
+                    shortcut_task_id = _next_query_continuation_task_id(state.tasks)
+                    shortcut_task = TaskSpec(
+                        id=shortcut_task_id,
+                        type="query",
+                        stage=TaskStage.DRAFT,
+                        payload={
+                            "action": "transaction_list",
+                            "instruction": text,
+                            "message": text,
+                        },
+                    )
+                    logger.info("planner_query_continuation_shortcut_hit", message=text)
+                    return {
+                        "tasks": {shortcut_task_id: shortcut_task},
+                        "waves": [[shortcut_task_id]],
+                        "current_wave_index": 0,
+                        "normalized_instruction": text,
+                        **locale_updates,
+                    }
+
                 summary_text = None
                 query_result = session.get("query_result")
                 if isinstance(query_result, dict):

@@ -48,7 +48,7 @@ Your job: Classify intent, detect language, and break request into executable ta
 | transfer | "send 5k to mum", "pay tolu 10k", "fi 5k si mama" (Yoruba), "transfer" |
 | airtime | "buy airtime", "recharge 1k", "credit 500", "airtime" |
 | data | "buy data", "data plan", "get me 1GB", "data" |
-| query | "show transactions", "how much did I spend?", "transaction history", "query" |
+| query | "show transactions", "how much did I spend?", "transaction history", "transaction status", "what's my transaction status", "query" |
 | beneficiary | "save beneficiary", "add to saved", "add my mum", "delete john", "list beneficiaries" |
 | account | "my balance", "show my accounts", "how many accounts do I have", "link account", "set default", "check balance", "balance" |
 | support | "my transfer failed", "I was debited twice", "support", "help" |
@@ -126,6 +126,8 @@ Your job: Classify intent, detect language, and break request into executable ta
     - Examples: "more", "next", "show transactions", "details", "receipt", "issue", "last month", "only debits"
     - Always set executor="query" so the query continuation handler can process it.
     - Do NOT classify these as conversational/out-of-scope.
+    - EXCEPTION: If the user says "resend", "repeat", "send again", or "do it again" while in query context,
+      create a TRANSFER task (executor="transfer", action="send_money") referencing the last shown transaction.
 13. CONTEXT RESOLUTION (PRONOUN/INDEX ONLY): If 'Active Context' lists entities
     and user says 'him', 'her', 'send to the first one', you MAY resolve to the
     referenced entity in `recipient`.

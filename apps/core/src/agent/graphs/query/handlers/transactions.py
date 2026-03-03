@@ -53,6 +53,12 @@ async def handle_transaction_list(
                 "bank_name": t.get("bank_name", ""),
                 "transaction_type": t.get("transaction_type"),
                 "status": t.get("status", ""),
+                "transaction_id": t.get("transaction_id") or t.get("id"),
+                "recipient_name": t.get("recipient_name"),
+                "recipient_account": t.get("recipient_account"),
+                "recipient_account_number": t.get("recipient_account_number"),
+                "recipient_bank_name": t.get("recipient_bank_name"),
+                "recipient_bank_code": t.get("recipient_bank_code"),
             },
         )
         for i, t in enumerate(paginated)

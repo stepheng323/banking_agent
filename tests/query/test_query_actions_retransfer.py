@@ -1,0 +1,73 @@
+from datetime import date
+
+import pytest
+
+from apps.core.src.agent.graphs.query.actions import handle_drill_down
+from apps.core.src.agent.graphs.query.models import QueryResult, QueryResultItem
+from apps.core.src.agent.orchestrator.models.domain import TransactionOutcome
+
+
+@pytest.mark.asyncio
+async def test_retransfer_builds_handoff_payload_for_transfer_item() -> None:
+    item = QueryResultItem(
+        id="txn-1",
+        description="Transfer to Tolu",
+        amount=5000.0,
+        date=date.today(),
+        metadata={
+            "transaction_type": "transfer",
+            "recipient_name": "Tolu",
+            "recipient_account_number": "8162511023",
+            "recipient_bank_name": "Opay",
+            "recipient_bank_code": "999992",
+            "transaction_id": "prov-1",
+        },
+    )
+    query_result = QueryResult(summary_text="single", items=[item], context_key="ctx-1")
+
+    result = await handle_drill_down(
+        {
+            "language": "en",
+            "query_result": query_result,
+            "drill_down_action": "re_transfer",
+            "selected_item_index": 0,
+        }
+    )
+
+    assert result.outcome == TransactionOutcome.OK
+    assert result.patch["session_active"] is False
+    assert "query_transfer_handoff" in result.patch
+    handoff = result.patch["query_transfer_handoff"]
+    assert handoff["action"] == "send_money"
+    assert handoff["amount"] == 5000.0
+    assert handoff["recipient_name"] == "Tolu"
+    assert handoff["recipient_account"] == "8162511023"
+    assert handoff["recipient_bank_name"] == "Opay"
+    assert handoff["recipient_bank_code"] == "999992"
+
+
+@pytest.mark.asyncio
+async def test_retransfer_rejects_non_transfer_item() -> None:
+    item = QueryResultItem(
+        id="txn-2",
+        description="Airtime purchase",
+        amount=1000.0,
+        date=date.today(),
+        metadata={"transaction_type": "airtime"},
+    )
+    query_result = QueryResult(summary_text="single", items=[item], context_key="ctx-2")
+
+    result = await handle_drill_down(
+        {
+            "language": "en",
+            "query_result": query_result,
+            "drill_down_action": "re_transfer",
+            "selected_item_index": 0,
+        }
+    )
+
+    assert result.outcome == TransactionOutcome.OK
+    assert result.patch["session_active"] is True
+    assert "query_transfer_handoff" not in result.patch
+    assert "only resend transfer" in (result.response or "").lower()
+

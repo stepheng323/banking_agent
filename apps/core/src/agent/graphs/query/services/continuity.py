@@ -8,6 +8,7 @@ Handles:
 Uses LLM for multilingual continuation classification.
 """
 
+import re
 from datetime import date
 from typing import Any, Literal, cast
 
@@ -27,6 +28,36 @@ from shared.i18n import render_message
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
+
+_SHOW_MORE_EXACT = {
+    "more",
+    "next",
+    "continue",
+    "show more",
+    "next page",
+    "another page",
+    "others",
+    "any others",
+    "any other ones",
+}
+_END_SESSION_PATTERNS = (
+    r"\bthanks?\b",
+    r"\bthank you\b",
+    r"\bi'?m done\b",
+    r"\bdone\b",
+    r"\be se\b",
+    r"\bese\b",
+)
+_EXPAND_EXACT = {
+    "show transactions",
+    "show my transactions",
+    "list transactions",
+    "show the items",
+    "which ones",
+    "show them",
+    "list them",
+}
+_RETRANSFER_PHRASES = ("resend", "repeat", "send again", "do it again")
 
 
 class ContinuationType:
@@ -90,7 +121,7 @@ class ContinuationClassification(BaseModel):
         default=None, description="Index of item user is referencing (0-indexed) if drill_down"
     )
 
-    drill_down_action: Literal["view_details", "get_receipt", "report_issue"] | None = Field(
+    drill_down_action: Literal["view_details", "get_receipt", "report_issue", "re_transfer"] | None = Field(
         default=None, description="What user wants to do with the item if drill_down"
     )
 
@@ -109,6 +140,47 @@ class ContinuationClassifier:
     def __init__(self, llm: Runnable):
         self.llm = llm
         self.structured_llm = cast(Any, llm).with_structured_output(ContinuationClassification)
+
+    @staticmethod
+    def _normalize_message(message: str) -> str:
+        return " ".join(message.lower().strip().split())
+
+    def _guardrail_classify(
+        self,
+        *,
+        message: str,
+        surface: ResultSurface | None,
+        language: str,
+    ) -> tuple[str, dict[str, Any]] | None:
+        normalized = self._normalize_message(message)
+        if not normalized:
+            return None
+
+        if normalized in _SHOW_MORE_EXACT:
+            return ContinuationType.SHOW_MORE, {"confidence": 1.0, "reason": "deterministic_show_more"}
+
+        if any(re.search(pattern, normalized) for pattern in _END_SESSION_PATTERNS):
+            return ContinuationType.END_SESSION, {
+                "confidence": 1.0,
+                "reason": "deterministic_end_session",
+                "end_session_response": render_message("query.session.you_are_welcome", language),
+            }
+
+        if surface and surface.type in {SurfaceType.SUMMARY, SurfaceType.BREAKDOWN} and normalized in _EXPAND_EXACT:
+            return ContinuationType.EXPAND, {"confidence": 0.98, "reason": "deterministic_expand"}
+
+        if any(phrase in normalized for phrase in _RETRANSFER_PHRASES) and surface and surface.type in {
+            SurfaceType.SINGLE_ITEM,
+            SurfaceType.LIST,
+        }:
+            return ContinuationType.DRILL_DOWN, {
+                "confidence": 0.98,
+                "reason": "deterministic_retransfer",
+                "drill_down_index": 0,
+                "drill_down_action": "re_transfer",
+            }
+
+        return None
 
     async def classify(
         self,
@@ -134,6 +206,12 @@ class ContinuationClassifier:
         """
         if not has_active_session:
             return ContinuationType.NEW_QUERY, {}
+
+        guarded = self._guardrail_classify(message=message, surface=surface, language=language)
+        if guarded is not None:
+            continuation_type, guarded_data = guarded
+            logger.info("continuation_guardrail_hit", type=continuation_type, reason=guarded_data.get("reason"))
+            return continuation_type, guarded_data
 
         try:
             items_section = ""

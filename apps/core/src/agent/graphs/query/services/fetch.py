@@ -190,6 +190,12 @@ async def fetch_and_filter(
                             "date": raw_date.isoformat(),
                             "currency": l_txn.currency,
                             "status": l_txn.status,
+                            "transaction_id": l_txn.transaction_id,
+                            "recipient_name": l_txn.recipient_name,
+                            "recipient_account": l_txn.recipient_account_number,
+                            "recipient_account_number": l_txn.recipient_account_number,
+                            "recipient_bank_name": l_txn.recipient_bank_name,
+                            "recipient_bank_code": l_txn.recipient_bank_code,
                             "bank_name": l_txn.source_bank_name or render_message("query.fetch.local.wallet", language),
                         }
 

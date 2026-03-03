@@ -9,6 +9,7 @@ from apps.core.src.agent.orchestrator.models.domain import (
     ActiveSession,
     FAQOutcome,
     SupportOutcome,
+    TaskSpec,
     TaskStage,
     TransactionOutcome,
 )
@@ -121,6 +122,15 @@ def _get_worker(
 def _apply_result_patch(task: Any, result: Any) -> None:
     if result.patch:
         task.payload.update(result.patch)
+
+
+def _next_query_handoff_transfer_task_id(tasks: dict[str, Any]) -> str:
+    index = 1
+    candidate = f"query_handoff_transfer_{index}"
+    while candidate in tasks:
+        index += 1
+        candidate = f"query_handoff_transfer_{index}"
+    return candidate
 
 
 def _set_confirmation(task: Any, result: Any, *, gate_on: str) -> None:
@@ -543,12 +553,42 @@ async def handle_query_task(task: Any, task_id: str, ctx: ExecutionContext) -> N
     )
 
     _apply_result_patch(task, result)
+    handoff_payload = None
+    if result.patch and isinstance(result.patch, dict):
+        candidate = result.patch.get("query_transfer_handoff")
+        if isinstance(candidate, dict):
+            handoff_payload = candidate
 
     if result.outcome == TransactionOutcome.OK:
         task.stage = TaskStage.COMPLETED
         if result.response:
             task.payload["result"] = result.response
             ctx.agg.say(result.response)
+
+        if handoff_payload:
+            transfer_payload = dict(handoff_payload)
+            transfer_payload.setdefault("action", "send_money")
+            transfer_payload.setdefault("instruction", "Resend the selected transaction")
+            transfer_payload.setdefault("message", ctx.state.last_message_text or "Resend the selected transaction")
+            transfer_payload.setdefault("skip_extraction", True)
+
+            tasks = cast(dict[str, Any], ctx.agg.updates.get("tasks", ctx.state.tasks))
+            transfer_task_id = _next_query_handoff_transfer_task_id(tasks)
+            tasks[transfer_task_id] = TaskSpec(
+                id=transfer_task_id,
+                type="transfer",
+                stage=TaskStage.DRAFT,
+                payload=transfer_payload,
+            )
+            ctx.agg.updates["tasks"] = tasks
+
+            waves = list(cast(list[list[str]], ctx.agg.updates.get("waves", ctx.state.waves)))
+            insert_index = min(ctx.state.current_wave_index + 1, len(waves))
+            waves.insert(insert_index, [transfer_task_id])
+            ctx.agg.updates["waves"] = waves
+
+            if not result.response:
+                ctx.agg.say("Okay. I will resend that transfer now.")
 
     elif result.outcome == TransactionOutcome.NEEDS_INPUT:
         task.stage = TaskStage.EXTRACTED
@@ -566,16 +606,20 @@ async def handle_query_task(task: Any, task_id: str, ctx: ExecutionContext) -> N
 
     if result.outcome in (TransactionOutcome.OK, TransactionOutcome.NEEDS_INPUT):
         stack = list(ctx.state.session_stack)
-        if stack and stack[-1].domain == "query":
-            stack[-1].state = "WAITING_FOR_INPUT" if result.outcome == TransactionOutcome.NEEDS_INPUT else "RUNNING"
+        if handoff_payload and result.outcome == TransactionOutcome.OK:
+            if stack and stack[-1].domain == "query":
+                stack.pop()
         else:
-            new_session = ActiveSession(
-                domain="query",
-                state="WAITING_FOR_INPUT" if result.outcome == TransactionOutcome.NEEDS_INPUT else "RUNNING",
-                interrupt_policy="ALLOW",
-                resume_hint={"task_id": task_id},
-            )
-            stack.append(new_session)
+            if stack and stack[-1].domain == "query":
+                stack[-1].state = "WAITING_FOR_INPUT" if result.outcome == TransactionOutcome.NEEDS_INPUT else "RUNNING"
+            else:
+                new_session = ActiveSession(
+                    domain="query",
+                    state="WAITING_FOR_INPUT" if result.outcome == TransactionOutcome.NEEDS_INPUT else "RUNNING",
+                    interrupt_policy="ALLOW",
+                    resume_hint={"task_id": task_id},
+                )
+                stack.append(new_session)
 
         ctx.agg.updates["session_stack"] = stack
 
