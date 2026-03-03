@@ -27,7 +27,7 @@ class DebitResult:
     status: DebitStatus
     debit_id: str | None = None
     reference: str | None = None
-    amount: float | None = None  # In naira
+    amount: float | None = None
     error_message: str | None = None
     provider_response: dict | None = None
 
@@ -37,7 +37,7 @@ class BalanceResult:
     """Result of checking account balance."""
 
     success: bool
-    available_balance: float  # In naira
+    available_balance: float
     ledger_balance: float | None = None
     currency: str = "NGN"
     error_message: str | None = None
@@ -47,9 +47,9 @@ class BalanceResult:
 class AccountInfo:
     """Account information for direct debit eligibility."""
 
-    account_id: str  # Internal account ID
-    mandate_id: str | None = None  # Provider's mandate ID
-    mandate_status: str = "pending"  # pending, ready, expired, cancelled
+    account_id: str
+    mandate_id: str | None = None
+    mandate_status: str = "pending"
     account_number: str = ""
     bank_code: str = ""
     bank_name: str = ""

@@ -26,7 +26,8 @@ locals {
   project_name          = "banking-agent"
   environment           = "dev"
   rds_database_url      = var.provision_rds ? "postgresql://banking_user:${var.db_password}@${module.database[0].db_endpoint}/banking_db" : ""
-  resolved_database_url = var.database_url != "" ? var.database_url : local.rds_database_url
+  secret_database_url   = trimspace(lookup(var.secret_config_values, "DATABASE_URL", ""))
+  resolved_database_url = trimspace(var.database_url) != "" ? trimspace(var.database_url) : (local.secret_database_url != "" ? local.secret_database_url : local.rds_database_url)
   ssm_kms_key_alias     = var.ssm_kms_key_alias_name != "" ? var.ssm_kms_key_alias_name : "alias/${local.project_name}-${local.environment}-ssm"
 
   non_secret_env_vars = merge(
@@ -52,7 +53,6 @@ locals {
   secret_env_vars = merge(
     {
       DATABASE_URL                  = local.resolved_database_url
-      REDIS_URL                     = var.redis_url
       OPENAI_API_KEY                = var.openai_api_key
       META_VERIFY_TOKEN             = var.meta_verify_token
       META_ACCESS_TOKEN             = var.meta_access_token
@@ -61,6 +61,7 @@ locals {
       MONO_API_KEY                  = var.mono_api_key
       FLUTTERWAVE_SECRET_KEY        = var.flutterwave_secret_key
     },
+    var.secret_config_values
   )
 
   critical_secret_keys = [
@@ -133,8 +134,8 @@ check "database_url_present_when_rds_disabled" {
 
 check "database_url_not_set_when_rds_enabled" {
   assert {
-    condition     = !var.provision_rds || trimspace(var.database_url) == ""
-    error_message = "database_url must be empty when provision_rds=true."
+    condition     = !var.provision_rds || (trimspace(var.database_url) == "" && local.secret_database_url == "")
+    error_message = "When provision_rds=true, DATABASE_URL must not be set in either database_url or secret_config_values."
   }
 }
 
