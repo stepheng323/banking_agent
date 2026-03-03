@@ -61,7 +61,6 @@ locals {
       MONO_API_KEY                  = var.mono_api_key
       FLUTTERWAVE_SECRET_KEY        = var.flutterwave_secret_key
     },
-    var.secret_config_values
   )
 
   critical_secret_keys = [

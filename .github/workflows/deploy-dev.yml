@@ -152,8 +152,7 @@ jobs:
       - name: Terraform plan
         working-directory: ${{ env.TF_DIR }}
         env:
-          TF_VAR_redis_url: ${{ secrets.REDIS_URL_DEV }}
-          TF_VAR_database_url: ${{ secrets.DATABASE_URL_DEV }}
+          TF_VAR_database_url: ${{ fromJSON(secrets.TF_SECRET_CONFIG_JSON_DEV).DATABASE_URL }}
           TF_VAR_secret_config_values: ${{ secrets.TF_SECRET_CONFIG_JSON_DEV }}
           TF_VAR_non_secret_config_values: ${{ secrets.TF_NON_SECRET_CONFIG_JSON_DEV }}
         run: terraform plan -input=false
@@ -286,8 +285,7 @@ jobs:
       - name: Terraform plan
         working-directory: ${{ env.TF_DIR }}
         env:
-          TF_VAR_redis_url: ${{ secrets.REDIS_URL_DEV }}
-          TF_VAR_database_url: ${{ secrets.DATABASE_URL_DEV }}
+          TF_VAR_database_url: ${{ fromJSON(secrets.TF_SECRET_CONFIG_JSON_DEV).DATABASE_URL }}
           TF_VAR_secret_config_values: ${{ secrets.TF_SECRET_CONFIG_JSON_DEV }}
           TF_VAR_non_secret_config_values: ${{ secrets.TF_NON_SECRET_CONFIG_JSON_DEV }}
         run: terraform plan -input=false -out=plan.out
@@ -295,8 +293,7 @@ jobs:
       - name: Terraform apply
         working-directory: ${{ env.TF_DIR }}
         env:
-          TF_VAR_redis_url: ${{ secrets.REDIS_URL_DEV }}
-          TF_VAR_database_url: ${{ secrets.DATABASE_URL_DEV }}
+          TF_VAR_database_url: ${{ fromJSON(secrets.TF_SECRET_CONFIG_JSON_DEV).DATABASE_URL }}
           TF_VAR_secret_config_values: ${{ secrets.TF_SECRET_CONFIG_JSON_DEV }}
           TF_VAR_non_secret_config_values: ${{ secrets.TF_NON_SECRET_CONFIG_JSON_DEV }}
         run: terraform apply -input=false -auto-approve plan.out
@@ -323,7 +320,7 @@ jobs:
 
       - name: Run Alembic migrations
         env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL_DEV }}
+          DATABASE_URL: ${{ fromJSON(secrets.TF_SECRET_CONFIG_JSON_DEV).DATABASE_URL }}
         run: alembic upgrade head
 
   deploy-app:

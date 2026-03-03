@@ -23,9 +23,10 @@ variable "db_password" {
 }
 
 variable "redis_url" {
-  description = "Connection string for Redis (Upstash or ElastiCache)"
+  description = "Deprecated: use secret_config_values[\"REDIS_URL\"] instead."
   type        = string
   sensitive   = true
+  default     = ""
 }
 
 variable "secret_config_values" {
