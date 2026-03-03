@@ -147,6 +147,49 @@ class TelegramClient(MessagingClient):
             print(f"❌ Failed to send Telegram text: {e}")
             return MessageResult(success=False, error=str(e))
 
+    async def send_message_draft(self, to: str, text: str) -> bool:
+        """Set a draft message in chat using Telegram Bot API sendMessageDraft."""
+        draft_text = (text or "").strip()
+        if not draft_text:
+            return False
+
+        payload: dict[str, Any] = {
+            "chat_id": to,
+            "text": draft_text[:4096],
+        }
+        try:
+            await self._call("sendMessageDraft", payload, max_retries=1)
+            return True
+        except Exception as e:
+            print(f"⚠️ sendMessageDraft failed: {e}")
+            return False
+
+    async def send_text_streamed(
+        self,
+        to: str,
+        text: str,
+        message_id: str | None = None,
+        *,
+        draft_step_chars: int = 120,
+        max_draft_updates: int = 12,
+        draft_delay_seconds: float = 0.2,
+    ) -> MessageResult:
+        """Stream a response as Telegram drafts, then publish the final message."""
+        clean_text = (text or "").strip()
+        if clean_text:
+            clipped = clean_text[:4096]
+            sent = 0
+            cursor = min(len(clipped), max(1, draft_step_chars))
+            while cursor < len(clipped) and sent < max_draft_updates:
+                await self.send_message_draft(to=to, text=clipped[:cursor])
+                sent += 1
+                if draft_delay_seconds > 0:
+                    await asyncio.sleep(draft_delay_seconds)
+                cursor = min(len(clipped), cursor + max(1, draft_step_chars))
+            await self.send_message_draft(to=to, text=clipped)
+
+        return await self.send_text(to=to, text=text, message_id=message_id)
+
     async def send_interactive(
         self,
         to: str,

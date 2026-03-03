@@ -28,7 +28,7 @@ async def finalize(state: OrchestratorState, config: RunnableConfig) -> dict[str
     configurable = cast(dict[str, Any], config.get("configurable", {}))
     beneficiary_service: BeneficiarySuggestionService | None = configurable.get("beneficiary_suggestion_service")
     redis_client: redis.Redis | None = configurable.get("redis_client")
-    publisher: QueuePublisher | None = configurable.get("queue_publisher")
+    publisher: QueuePublisher | None = configurable.get("publisher")
 
     completed_tasks = [task for task in state.tasks.values() if task.stage == TaskStage.COMPLETED]
     failed_tasks = [task for task in state.tasks.values() if task.stage == TaskStage.FAILED]

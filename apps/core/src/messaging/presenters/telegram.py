@@ -2,6 +2,7 @@
 
 import base64
 import html
+from typing import Any, cast
 
 from apps.core.src.agent.orchestrator.models.intents import (
     RequestAuth,
@@ -82,13 +83,23 @@ class TelegramPresenter(Presenter):
                     },
                 },
             )
-            return str(resp.get("message_id")) if isinstance(resp, dict) and "message_id" in resp else None
+            return self._extract_message_id(resp)
+
+        stream_enabled = bool(context.metadata.get("telegram_stream_response", True))
+        stream_min_chars = int(context.metadata.get("telegram_stream_min_chars", 48))
+        stream_client = cast(Any, self.client)
+        if (
+            stream_enabled
+            and len(intent.text.strip()) >= stream_min_chars
+            and hasattr(stream_client, "send_text_streamed")
+        ):
+            resp = await stream_client.send_text_streamed(to=context.phone_number, text=intent.text)
         else:
             resp = await self.client.send_text(
                 to=context.phone_number,
                 text=intent.text,
             )
-            return str(resp.get("message_id")) if isinstance(resp, dict) and "message_id" in resp else None
+        return self._extract_message_id(resp)
 
     async def _present_auth(self, intent: RequestAuth, context: PresentationContext) -> str | None:
         """Present auth request via Telegram Mini App for secure PIN entry."""
@@ -241,6 +252,17 @@ class TelegramPresenter(Presenter):
         logger.info("option_fallback_text_used", channel="telegram", option_count=len(options))
         fallback_text = f"{intent.title}\n{numbered}"
         text_resp = await self.client.send_text(to=context.phone_number, text=fallback_text)
-        if hasattr(text_resp, "message_id"):
-            return text_resp.message_id
-        return str(text_resp.get("message_id")) if isinstance(text_resp, dict) and "message_id" in text_resp else None
+        return self._extract_message_id(text_resp)
+
+    @staticmethod
+    def _extract_message_id(response: Any) -> str | None:
+        if hasattr(response, "message_id"):
+            value = response.message_id
+            return str(value) if value else None
+        if isinstance(response, dict):
+            if "message_id" in response and response.get("message_id") is not None:
+                return str(response["message_id"])
+            nested = response.get("result")
+            if isinstance(nested, dict) and nested.get("message_id") is not None:
+                return str(nested["message_id"])
+        return None
