@@ -1,14 +1,16 @@
 """Mono webhook service - business logic for handling Mono events."""
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from shared.cache.user_data import UserDataCache
 from shared.database.enums import FundedTransferStatusEnum, FundingStepStatusEnum
 from shared.database.models import FundedTransfer
 from shared.queue.adapter import QueuePublisher
 from shared.repositories.unit_of_work import UnitOfWork
-from shared.services.delivery_service import DeliveryService
 from shared.utils.logging import get_logger
+
+if TYPE_CHECKING:
+    from shared.services.delivery_service import DeliveryService
 
 logger = get_logger(__name__)
 
@@ -34,7 +36,7 @@ class MonoWebhookService:
     def __init__(
         self,
         publisher: QueuePublisher | None = None,
-        delivery_service: DeliveryService | None = None,
+        delivery_service: "DeliveryService | None" = None,
     ):
         if publisher is None:
             raise ValueError("publisher is required")
@@ -42,7 +44,9 @@ class MonoWebhookService:
         self.delivery_service = delivery_service
         self.cache = UserDataCache()
 
-    def _get_delivery_service(self) -> DeliveryService:
+    def _get_delivery_service(self) -> "DeliveryService":
+        from shared.services.delivery_service import DeliveryService
+
         if self.delivery_service is None:
             self.delivery_service = DeliveryService()
         return self.delivery_service
