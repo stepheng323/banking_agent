@@ -17,6 +17,33 @@ COPY apps/receipt/ /var/task/apps/receipt/
 COPY shared/ /var/task/shared/
 COPY config/ /var/task/config/
 
+# Install shared libraries required by Playwright Chromium at Lambda runtime.
+RUN set -eux; \
+    if command -v dnf >/dev/null 2>&1; then \
+      dnf install -y \
+        nspr nss \
+        atk at-spi2-atk \
+        libXcomposite libXdamage libXfixes libXrandr libXcursor libXi libXtst \
+        mesa-libgbm pango alsa-lib cups-libs \
+        libdrm libxkbcommon \
+        gtk3; \
+      dnf clean all; \
+      rm -rf /var/cache/dnf; \
+    elif command -v yum >/dev/null 2>&1; then \
+      yum install -y \
+        nspr nss \
+        atk at-spi2-atk \
+        libXcomposite libXdamage libXfixes libXrandr libXcursor libXi libXtst \
+        mesa-libgbm pango alsa-lib cups-libs \
+        libdrm libxkbcommon \
+        gtk3; \
+      yum clean all; \
+      rm -rf /var/cache/yum; \
+    else \
+      echo "No supported package manager found (dnf/yum)"; \
+      exit 1; \
+    fi
+
 ENV PYTHONPATH=/var/task \
     PLAYWRIGHT_BROWSERS_PATH=/var/task/ms-playwright
 CMD ["apps.core.src.lambda_handlers.receipt_worker_handler.handler"]
