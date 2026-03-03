@@ -17,7 +17,7 @@ from apps.core.src.agent.orchestrator.models.domain import (
     AccountOutcome,
     AccountResult,
 )
-from shared.clients.abstractions.banking import BankingDataProvider
+from shared.clients.abstractions.banking import BankDataProvider
 from shared.clients.abstractions.direct_debit import DirectDebitProvider
 from shared.i18n import LocaleManager, render_message
 from shared.repositories.account_repository import AccountRepository
@@ -52,7 +52,7 @@ class AccountWorker:
         account_repo: AccountRepository,
         user_repo: UserRepository,
         llm: BaseChatModel,
-        banking_provider: BankingDataProvider,
+        banking_provider: BankDataProvider,
         session_manager: SessionManager,
         direct_debit_provider: DirectDebitProvider,
     ) -> None:

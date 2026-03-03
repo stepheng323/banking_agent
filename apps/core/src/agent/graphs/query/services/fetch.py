@@ -5,7 +5,7 @@ from datetime import date, datetime
 from typing import Any, cast
 
 from apps.core.src.agent.graphs.query.models import Filters, NormalizedQuery, match_category
-from shared.clients.abstractions.banking import BankingDataProvider
+from shared.clients.abstractions.banking import BankDataProvider
 from shared.i18n import render_message
 from shared.utils.logging import get_logger
 
@@ -109,7 +109,7 @@ def apply_filters(transactions: list[dict[str, Any]], filters: Filters) -> list[
 
 
 async def fetch_and_filter(
-    provider: BankingDataProvider,
+    provider: BankDataProvider,
     query: NormalizedQuery,
     account_id: str,
     account_ids: list[str],

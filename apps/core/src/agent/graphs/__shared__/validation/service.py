@@ -4,7 +4,8 @@ import asyncio
 from typing import Any
 
 from shared.cache.account_cache import AccountCacheService
-from shared.clients.abstractions.payment import PaymentProvider
+from shared.clients.abstractions.banking import BankDataProvider
+from shared.clients.abstractions.resolution import AccountResolverProvider
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -13,8 +14,9 @@ logger = get_logger(__name__)
 class AsyncValidationService:
     """Async validation service to run provider validations in parallel."""
 
-    def __init__(self, provider: PaymentProvider) -> None:
-        self.provider = provider
+    def __init__(self, resolver_provider: AccountResolverProvider, bank_data_provider: BankDataProvider | None) -> None:
+        self.resolver_provider = resolver_provider
+        self.bank_data_provider = bank_data_provider
         self.account_cache = AccountCacheService()
 
     async def validate_account(self, bank_code: str, account_number: str) -> dict[str, Any] | None:
@@ -23,7 +25,7 @@ class AsyncValidationService:
             return await self.account_cache.get_or_fetch(
                 account_number,
                 bank_code,
-                lambda: self.provider.resolve_account(account_number, bank_code),
+                lambda: self._resolve_account_dict(account_number, bank_code),
             )
         except Exception as e:
             logger.error(
@@ -50,13 +52,21 @@ class AsyncValidationService:
 
         async def _resolve() -> dict[str, Any] | None:
             return await self.account_cache.get_or_fetch(
-                account_number, bank_code, lambda: self.provider.resolve_account(account_number, bank_code)
+                account_number, bank_code, lambda: self._resolve_account_dict(account_number, bank_code)
             )
 
         async def _balance() -> dict[str, Any] | None:
             try:
-                if hasattr(self.provider, "get_balance"):
-                    return await self.provider.get_balance(source_account_id)
+                if self.bank_data_provider:
+                    balance = await self.bank_data_provider.get_balance(source_account_id)
+                    if balance is None:
+                        return None
+                    return {
+                        "available_balance": balance.available_balance,
+                        "ledger_balance": balance.ledger_balance,
+                        "currency": balance.currency,
+                        "account_id": balance.account_id,
+                    }
             except Exception as e:
                 logger.warning("balance_check_unavailable", error=str(e))
             return None
@@ -103,3 +113,20 @@ class AsyncValidationService:
             balance = raw_balance
 
         return resolved, balance
+
+    async def _resolve_account_dict(self, account_number: str, bank_code: str) -> dict[str, Any]:
+        result = await self.resolver_provider.resolve_account(account_number, bank_code)
+        if not result.success or result.account is None:
+            return {
+                "success": False,
+                "error": result.error or "Account resolution failed",
+                "provider": result.provider or self.resolver_provider.provider_name,
+            }
+
+        return {
+            "success": True,
+            "account_name": result.account.account_name,
+            "account_number": result.account.account_number,
+            "bank_code": result.account.bank_code,
+            "provider": result.provider or self.resolver_provider.provider_name,
+        }

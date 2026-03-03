@@ -32,7 +32,7 @@ class PayoutConsumer:
             result = await self.payout_executor.handle_payout(payload)
             now = datetime.now(UTC).replace(tzinfo=None)
             transfer.payout_initiated_at = now
-            transfer.payout_provider = self.payout_executor.payment_provider.provider_name
+            transfer.payout_provider = self.payout_executor.payout_provider.provider_name
             transfer.payout_reference = result.get("transaction_id") or result.get("reference")
 
             tx = await uow.transactions.get_by_idempotency_key(transfer.idempotency_key) if uow.transactions else None

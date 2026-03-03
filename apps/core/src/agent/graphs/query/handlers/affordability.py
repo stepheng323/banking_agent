@@ -3,12 +3,12 @@
 from typing import Any
 
 from apps.core.src.agent.graphs.query.models import NormalizedQuery, QueryResult
-from shared.clients.abstractions.banking import BankingDataProvider
+from shared.clients.abstractions.banking import BankDataProvider
 from shared.i18n import render_message
 
 
 async def handle_affordability(
-    provider: BankingDataProvider,
+    provider: BankDataProvider,
     query: NormalizedQuery,
     account_id: str,
     account_ids: list[str],

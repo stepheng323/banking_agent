@@ -6,7 +6,7 @@ from typing import cast
 from apps.core.src.agent.graphs.__shared__.account_selection.service import find_account_by_bank_name
 from apps.core.src.agent.graphs.query.handlers import HANDLER_REGISTRY
 from apps.core.src.agent.graphs.query.models import NormalizedQuery, QueryResult
-from shared.clients.abstractions.banking import BankingDataProvider
+from shared.clients.abstractions.banking import BankDataProvider
 from shared.i18n import render_message
 from shared.utils.logging import get_logger
 
@@ -21,7 +21,7 @@ class QueryExecutor:
     All handlers are idempotent and read-only.
     """
 
-    def __init__(self, provider: BankingDataProvider):
+    def __init__(self, provider: BankDataProvider):
         self.provider = provider
 
     async def execute(

@@ -3,11 +3,11 @@
 import json
 from collections.abc import Awaitable, Callable
 from datetime import datetime
-from typing import Any
 
 import redis.asyncio as redis
 
 from shared.cache.redis_client import RedisClient
+from shared.clients.abstractions.resolution import BankListResult
 from shared.utils.bank_aliases import get_bank_search_terms
 from shared.utils.logging import get_logger
 
@@ -116,14 +116,13 @@ class BankCacheService:
             return None
 
     async def refresh_banks(
-        self, fetch_banks_func: Callable[[], Awaitable[dict[str, Any]]]
+        self, fetch_banks_func: Callable[[], Awaitable[BankListResult]]
     ) -> list[dict[str, str]] | None:
         """
         Force refresh banks from Flutterwave and update cache.
 
         Args:
-            fetch_banks_func: Async function that returns bank data from payment provider.
-                       Should return dict with 'success' bool and 'banks' list.
+            fetch_banks_func: Async function that returns bank data from resolver provider.
 
         Returns:
             List of banks
@@ -132,13 +131,13 @@ class BankCacheService:
             logger.info("banks_refresh_started")
             result = await fetch_banks_func()
 
-            if result.get("success") and result.get("banks"):
-                banks = result["banks"]
+            if result.success and result.banks:
+                banks = [{"code": bank.code, "name": bank.name} for bank in result.banks]
                 await self.set_banks(banks)
                 logger.info("banks_refreshed", count=len(banks))
                 return banks
 
-            logger.warning("banks_refresh_failed", result=result)
+            logger.warning("banks_refresh_failed", error=result.error, provider=result.provider)
             return None
         except Exception as e:
             logger.error("banks_refresh_error", error=str(e), exc_info=True)
@@ -207,14 +206,13 @@ class BankCacheService:
         return None
 
     async def ensure_banks_cached(
-        self, fetch_banks_func: Callable[[], Awaitable[dict[str, Any]]]
+        self, fetch_banks_func: Callable[[], Awaitable[BankListResult]]
     ) -> list[dict[str, str]] | None:
         """
         Ensure banks are cached. Fetch from provider if cache is empty.
 
         Args:
-            fetch_banks_func: Async function that returns bank data from payment provider.
-                       Should return dict with 'success' bool and 'banks' list.
+            fetch_banks_func: Async function that returns bank data from resolver provider.
 
         Returns:
             List of banks if available (cached or fetched), None otherwise
@@ -229,13 +227,13 @@ class BankCacheService:
             logger.info("banks_cache_miss_fetching")
             result = await fetch_banks_func()
 
-            if result.get("success") and result.get("banks"):
-                banks_list = result["banks"]
+            if result.success and result.banks:
+                banks_list = [{"code": bank.code, "name": bank.name} for bank in result.banks]
                 await self.set_banks(banks_list, ttl=86400)
                 logger.info("banks_fetched_and_cached", count=len(banks_list))
                 return banks_list
             else:
-                error = result.get("error", "Unknown error")
+                error = result.error or "Unknown error"
                 logger.error("banks_fetch_failed", error=error)
                 return None
         except Exception as e:
