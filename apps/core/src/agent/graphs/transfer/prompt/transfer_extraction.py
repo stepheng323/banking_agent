@@ -54,7 +54,11 @@ When user corrects mid-flow ("I meant 50k"):
 ## CONTEXT-AWARE SLOT FILL
 - Context may include `RequiredFields` and `LastMsg`.
 - If `RequiredFields` contains `recipient_bank_name` and user replies with only a bank, map it to `bank_name`.
-- If `RequiredFields` contains `recipient_account` and user replies with only digits, map it to `recipient_account`.
+- If `RequiredFields` contains `recipient_account` and user reply contains account digits with separators
+  (spaces, hyphens, commas, periods), strip non-digits; if result is exactly 10 digits, map to `recipient_account`.
+- If reply contains both a valid account number and a bank token (e.g. "816 251 1023 opay"),
+  extract BOTH `recipient_account` and `bank_name` in the same turn.
+- If reply is numeric-looking, do NOT put it in `recipient_name`.
 - Do not infer unrelated fields when reply is a direct slot-fill response.
 
 ## RECIPIENT NAME FIDELITY
@@ -69,6 +73,8 @@ When user corrects mid-flow ("I meant 50k"):
 | "send 5k to mum" | amount=5000, recipient_name="mum" |
 | "GTB → Access 5k" | amount=5000, source_bank_name="GTBank", bank_name="Access Bank" |
 | "Send 25k to 0760505261 Access Bank" | amount=25000, recipient_account="0760505261", bank_name="Access Bank" |
+| "816 251 1023 opay" (when awaiting account+bank) | recipient_account="8162511023", bank_name="Opay" |
+| "816-251-1023" (when awaiting account) | recipient_account="8162511023" |
 | "send 5 to john" | recipient_name="john", ambiguities=[AMOUNT_UNCLEAR: [5,5000]] |
 | "send 50k to mum tomorrow" | amount=50000, recipient_name="mum", requested_features=["SCHEDULED"] |
 | "Send to my GTB" | bank_name="GTBank", is_self=true |
