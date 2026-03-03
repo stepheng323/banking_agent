@@ -48,7 +48,11 @@ from shared.services.task_queue.service import TaskQueueService
 
 
 def _build_orchestrator_runtime_bundle(
-    queue_publisher, messaging_clients, shared_redis, llm
+    queue_publisher,
+    messaging_clients,
+    shared_redis,
+    llm,
+    interrupt_llm: ChatOpenAI | None = None,
 ) -> tuple[AsyncSession, UserRepository, OnboardingExecutor, OrchestratorAgent]:
     """Build one isolated runtime bundle."""
     db_session = get_db_session()
@@ -130,6 +134,7 @@ def _build_orchestrator_runtime_bundle(
 
     orchestrator_deps = OrchestratorDependencies(
         llm=llm,
+        interrupt_llm=interrupt_llm,
         user_repo=user_repository,
         beneficiary_repo=beneficiary_repository,
         actionable_message_repo=actionable_message_repository,
@@ -165,13 +170,17 @@ def setup_core_consumers() -> tuple[MessageConsumer, RedisStreamConsumer]:
     queue_publisher = QueuePublisherFactory.get_async_publisher()
     messaging_clients = build_messaging_clients()
     shared_redis = RedisClient.get_client()
-    llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+    llm = ChatOpenAI(model=settings.planner_model, temperature=0)
+    interrupt_llm: ChatOpenAI | None = None
+    if settings.interrupt_router_model and settings.interrupt_router_model != settings.planner_model:
+        interrupt_llm = ChatOpenAI(model=settings.interrupt_router_model, temperature=0)
 
     _, message_user_repo, onboarding_executor, message_orchestrator = _build_orchestrator_runtime_bundle(
         queue_publisher=queue_publisher,
         messaging_clients=messaging_clients,
         shared_redis=shared_redis,
         llm=llm,
+        interrupt_llm=interrupt_llm,
     )
 
     message_consumer = MessageConsumer(

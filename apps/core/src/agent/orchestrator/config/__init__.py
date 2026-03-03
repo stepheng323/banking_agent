@@ -24,6 +24,7 @@ class OrchestratorDependencies:
     """Dependencies required by the OrchestratorAgent."""
 
     llm: ChatOpenAI
+    interrupt_llm: ChatOpenAI | None
     user_repo: UserRepository
     account_repo: AccountRepository
     beneficiary_repo: BeneficiaryRepository
