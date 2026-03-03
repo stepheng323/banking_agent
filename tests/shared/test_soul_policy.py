@@ -189,7 +189,7 @@ async def test_transfer_worker_blocks_unsupported_action_from_policy() -> None:
         validation_service=None,
         publisher=None,
         extractor=None,
-        banking_provider=None,
+        resolver_provider=None,
         bank_cache=None,
         transaction_repo=None,
     )
