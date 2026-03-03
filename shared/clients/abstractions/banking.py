@@ -1,4 +1,4 @@
-"""Abstract base class for banking data providers.
+"""Abstract base class for bank data providers.
 
 This abstraction allows swapping between providers (Mono, Okra, etc.)
 for account data, transactions, and BVN verification.
@@ -7,15 +7,6 @@ for account data, transactions, and BVN verification.
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any
-
-
-@dataclass
-class ResolvedAccount:
-    """Standardized resolved account details."""
-
-    account_name: str
-    account_number: str
-    bank_code: str | None = None
 
 
 @dataclass
@@ -73,9 +64,9 @@ class BvnVerificationResult:
     error_message: str | None = None
 
 
-class BankingDataProvider(ABC):
+class BankDataProvider(ABC):
     """
-    Abstract interface for banking data providers.
+    Abstract interface for bank data providers.
 
     Handles account data, transactions, and BVN verification.
     Implementations: MonoClient, OkraClient (future), etc.
@@ -182,29 +173,5 @@ class BankingDataProvider(ABC):
 
         Returns:
             BvnVerificationResult with accounts and customer data
-        """
-        pass
-
-    @abstractmethod
-    async def resolve_account_number(self, account_number: str, bank_code: str) -> ResolvedAccount | None:
-        """
-        Resolve account name and details for a given number and bank.
-
-        Args:
-            account_number: Bank account number
-            bank_code: Bank code (e.g., '011', '035')
-
-        Returns:
-            ResolvedAccount if found, else None
-        """
-        pass
-
-    @abstractmethod
-    async def get_banks(self) -> dict[str, Any]:
-        """
-        Get list of supported banks.
-
-        Returns:
-            Dict containing 'success' (bool) and 'banks' (list of dicts)
         """
         pass

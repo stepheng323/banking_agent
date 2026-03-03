@@ -9,7 +9,7 @@ class BillPaymentProvider(ABC):
     Abstract interface for bill payment service providers.
 
     Handles airtime, data, cable TV, electricity, and other bill payments.
-    Separated from PaymentProvider to allow independent provider selection.
+    Separated from PayoutProvider to allow independent provider selection.
     """
 
     @property

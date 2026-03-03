@@ -5,17 +5,12 @@ from typing import Any
 
 import structlog
 
-from shared.clients.abstractions.payment import PaymentProvider
+from shared.clients.abstractions.payment import PayoutProvider
 from shared.clients.providers.flutterwave.client import FlutterwaveClient
 
 logger = structlog.get_logger(__name__)
 
-
-FLUTTERWAVE_TEST_ACCOUNT = "0690000032"
-FLUTTERWAVE_TEST_BANK_CODE = "044"  # Access Bank
-
-
-class FlutterwavePaymentProvider(PaymentProvider):
+class FlutterwavePaymentProvider(PayoutProvider):
     """Flutterwave payment service provider implementation using v3 API."""
 
     def __init__(
@@ -51,11 +46,6 @@ class FlutterwavePaymentProvider(PaymentProvider):
         """Flutterwave supports transaction status checks."""
         return True
 
-    @property
-    def supports_bank_list(self) -> bool:
-        """Flutterwave supports fetching bank lists."""
-        return True
-
     def _error_response(self, error: str, **kwargs) -> dict[str, Any]:
         """Build a standardized error response."""
         return {
@@ -72,16 +62,6 @@ class FlutterwavePaymentProvider(PaymentProvider):
             "provider": self.provider_name,
             **kwargs,
         }
-
-    async def get_banks(self, country: str = "NG") -> dict[str, Any]:
-        """Fetch list of supported banks from Flutterwave."""
-        result = await self._client.request("GET", f"/v3/banks/{country}")
-
-        if result["success"]:
-            banks = result.get("data", [])
-            return self._success_response(banks=banks, count=len(banks))
-
-        return self._error_response(result.get("error", "Failed to fetch banks"), banks=[], count=0)
 
     async def initiate_transfer(
         self,
@@ -127,39 +107,3 @@ class FlutterwavePaymentProvider(PaymentProvider):
         TODO: Implement Flutterwave status check API integration.
         """
         raise NotImplementedError("Flutterwave status check not yet implemented")
-
-    async def resolve_account(
-        self, account_number: str, bank_code: str, currency: str = "NGN", max_retries: int = 3
-    ) -> dict[str, Any]:
-        """Resolve bank account details using Flutterwave Account Resolution API."""
-        original_account = account_number
-        original_bank = bank_code
-
-        # In sandbox mode, swap to test account for API call but return original account info
-        if self.use_sandbox:
-            logger.info(
-                "sandbox_mode_swap",
-                original_account=account_number,
-                test_account=FLUTTERWAVE_TEST_ACCOUNT,
-            )
-            account_number = FLUTTERWAVE_TEST_ACCOUNT
-            bank_code = FLUTTERWAVE_TEST_BANK_CODE
-
-        account_info = {"account_number": original_account, "bank_code": original_bank}
-        payload = {"account_number": account_number, "account_bank": bank_code}
-
-        result = await self._client.request("POST", "/v3/accounts/resolve", payload=payload, max_retries=max_retries)
-
-        if result["success"]:
-            data = result.get("data", {})
-            account_name = data.get("account_name", "").strip()
-            if account_name:
-                # Return original account info, not the test account
-                return self._success_response(
-                    account_name=account_name,
-                    account_number=original_account,
-                    bank_code=original_bank,
-                )
-            return self._error_response("Account name not found", **account_info)
-
-        return self._error_response(result.get("error", "Account resolution failed"), **account_info)

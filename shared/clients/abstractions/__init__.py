@@ -3,7 +3,7 @@
 from shared.clients.abstractions.banking import (
     AccountData,
     BalanceData,
-    BankingDataProvider,
+    BankDataProvider,
     BvnLookupResult,
     BvnVerificationResult,
     TransactionData,
@@ -17,10 +17,17 @@ from shared.clients.abstractions.direct_debit import (
     DirectDebitProvider,
 )
 from shared.clients.abstractions.messaging import MessageResult, MessagingClient
-from shared.clients.abstractions.payment import PaymentProvider
+from shared.clients.abstractions.payment import PayoutProvider
+from shared.clients.abstractions.resolution import (
+    AccountResolutionResult,
+    AccountResolverProvider,
+    BankListResult,
+    BankRecord,
+    ResolvedAccount,
+)
 
 __all__ = [
-    "BankingDataProvider",
+    "BankDataProvider",
     "AccountData",
     "BalanceData",
     "TransactionData",
@@ -31,7 +38,12 @@ __all__ = [
     "DebitStatus",
     "BalanceResult",
     "AccountInfo",
-    "PaymentProvider",
+    "PayoutProvider",
+    "AccountResolverProvider",
+    "BankRecord",
+    "BankListResult",
+    "ResolvedAccount",
+    "AccountResolutionResult",
     "BillPaymentProvider",
     "MessagingClient",
     "MessageResult",
