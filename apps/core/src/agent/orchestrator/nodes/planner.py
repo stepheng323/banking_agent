@@ -839,6 +839,14 @@ async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[s
     planner_context_parts: list[str] = []
     query_session_snapshot: dict[str, Any] | None = None
     query_session_source: str | None = None
+    current_flow_type: str | None = None
+    if state.waves and state.current_wave_index < len(state.waves):
+        current_wave = state.waves[state.current_wave_index]
+        if current_wave:
+            wave_task = state.tasks.get(current_wave[0])
+            if wave_task:
+                current_flow_type = wave_task.type
+    is_transactional_flow = current_flow_type in TRANSACTION_EXECUTORS
 
     if redis_client:
         try:
@@ -846,16 +854,6 @@ async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[s
 
             suggestion_key = f"user:{state.phone_number}:beneficiary_suggestion"
             query_session_key = f"query:session:{state.phone_number}"
-
-            current_flow_type: str | None = None
-            if state.waves and state.current_wave_index < len(state.waves):
-                current_wave = state.waves[state.current_wave_index]
-                if current_wave:
-                    wave_task = state.tasks.get(current_wave[0])
-                    if wave_task:
-                        current_flow_type = wave_task.type
-
-            is_transactional_flow = current_flow_type in TRANSACTION_EXECUTORS
             suggestion_data, query_session_data = await asyncio.gather(
                 redis_client.get(suggestion_key),
                 redis_client.get(query_session_key),

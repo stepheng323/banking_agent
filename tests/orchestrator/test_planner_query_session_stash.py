@@ -150,3 +150,50 @@ async def test_planner_uses_stashed_query_session_context_when_redis_session_mis
     assert planner.last_context is not None
     assert "Active Query Session" in planner.last_context
     assert "You spent ₦5,000 today." in planner.last_context
+
+
+@pytest.mark.asyncio
+async def test_planner_uses_stashed_query_session_context_without_redis_client() -> None:
+    planner = _StaticPlanner(
+        PlannerOutput(
+            primary_intent="conversational",
+            response="Noted.",
+            response_key=None,
+            confidence=0.9,
+            is_complex=False,
+            is_cancellation=False,
+            is_confirmation=False,
+            detected_language=None,
+            context_fastpath_subtype=None,
+            normalized_instruction="any credits?",
+            tasks=[],
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_stash_3",
+        phone_number="2348000000202",
+        channel="whatsapp",
+        last_message_text="any credits?",
+        loaded_context={"language": "en"},
+        tasks={},
+        waves=[],
+        current_wave_index=0,
+        stashed_query_session={
+            "session_active": True,
+            "query_result": {"summary_text": "You spent ₦5,000 today."},
+        },
+    )
+    config: RunnableConfig = {
+        "configurable": {
+            "task_planner": planner,
+            "services": {},
+        },
+        "recursion_limit": 50,
+    }
+
+    updates = await plan_tasks(state, config)
+
+    assert updates["final_response"] == "Noted."
+    assert planner.last_context is not None
+    assert "Active Query Session" in planner.last_context
+    assert "You spent ₦5,000 today." in planner.last_context

@@ -187,3 +187,20 @@ def test_formatter_heading_appends_account_and_today_suffix() -> None:
 
     response = QueryFormatter.format(result, locale="en")
     assert response.splitlines()[0] == "*Transactions* — Zenith — Today"
+
+
+def test_formatter_heading_single_day_past_range_is_not_labeled_today() -> None:
+    today = date.today()
+    past_day = today - timedelta(days=1)
+    result = _sample_list_result(
+        NormalizedQuery(
+            intent=QueryIntent.TRANSACTION_LIST,
+            time_range=TimeRange(start=past_day, end=past_day),
+        )
+    )
+
+    response = QueryFormatter.format(result, locale="en")
+    heading = response.splitlines()[0]
+    past_label = past_day.strftime("%b %d").replace(" 0", " ")
+    assert heading == f"*Transactions* — {past_label}–{past_label}"
+    assert "Today" not in heading

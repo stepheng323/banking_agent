@@ -161,7 +161,7 @@ class QueryFormatter:
             return None
 
         today = date.today()
-        if time_range.start == time_range.end:
+        if time_range.start == time_range.end == today:
             return render_message("query.format.heading_period_today", locale)
 
         this_month_start, _ = QueryFormatter._month_start_and_end(today)
