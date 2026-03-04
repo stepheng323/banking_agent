@@ -71,7 +71,7 @@ services:
   receipt-worker:
     build:
       context: .
-      dockerfile: apps/receipt/Dockerfile
+      dockerfile: apps/receipt/Dockerfile.local
     env_file: .env
     environment:
       - REDIS_URL=redis://redis:6379

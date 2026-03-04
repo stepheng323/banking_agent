@@ -527,9 +527,7 @@ def _deescalate_mandate_acknowledgement(
     planner_output.is_complex = False
     accounts = loaded_context.get("accounts") if isinstance(loaded_context, dict) else []
     normalized_accounts = (
-        [account for account in accounts if isinstance(account, dict)]
-        if isinstance(accounts, list)
-        else []
+        [account for account in accounts if isinstance(account, dict)] if isinstance(accounts, list) else []
     )
     planner_output.response = build_pending_mandate_message(normalized_accounts, locale)
     planner_output.response_key = None
@@ -923,12 +921,16 @@ async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[s
                     " (e.g., 'more', 'next', 'show transactions', 'details', 'receipt',"
                     " 'any credits?', 'is there any debit?', 'only debits',"
                     " 'last month', 'just food', 'over 10k'),"
+                    " or asks analytical/summary questions about the data"
+                    " (e.g., 'how much did I spend', 'what is the total',"
+                    " 'total spending', 'sum it up'),"
                     " create a query task (executor='query') so the continuation handler"
                     " can process it.\n"
                     "- If the user asks a fresh query (e.g., 'show my recent transactions'),"
                     " still create a query task as a new query.\n"
-                    "- IMPORTANT: Questions about the data ('any credits?', 'how about debits?')"
-                    " are filter refinements on the active session, NOT conversational questions."
+                    "- IMPORTANT: Questions about the data ('any credits?', 'how about debits?',"
+                    " 'how much did I spend?') are analytical or filter refinements on the"
+                    " active session, NOT conversational questions."
                     " Always route them as query tasks."
                 )
                 logger.info("planner_context_injected", context="query_session")
@@ -954,12 +956,16 @@ async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[s
             " (e.g., 'more', 'next', 'show transactions', 'details', 'receipt',"
             " 'any credits?', 'is there any debit?', 'only debits',"
             " 'last month', 'just food', 'over 10k'),"
+            " or asks analytical/summary questions about the data"
+            " (e.g., 'how much did I spend', 'what is the total',"
+            " 'total spending', 'sum it up'),"
             " create a query task (executor='query') so the continuation handler"
             " can process it.\n"
             "- If the user asks a fresh query (e.g., 'show my recent transactions'),"
             " still create a query task as a new query.\n"
-            "- IMPORTANT: Questions about the data ('any credits?', 'how about debits?')"
-            " are filter refinements on the active session, NOT conversational questions."
+            "- IMPORTANT: Questions about the data ('any credits?', 'how about debits?',"
+            " 'how much did I spend?') are analytical or filter refinements on the"
+            " active session, NOT conversational questions."
             " Always route them as query tasks."
         )
         logger.info("planner_context_injected", context="query_session_stashed")

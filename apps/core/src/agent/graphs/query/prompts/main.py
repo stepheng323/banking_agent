@@ -103,7 +103,7 @@ ITEMS (optional)
 
 OUTPUT (STRICT JSON ONLY)
 Return exactly one JSON object with:
-- continuation_type: one of ["show_more","time_delta","filter_delta","expand","drill_down","recipient_drill_down","unclear","end_session","new_query"]
+- continuation_type: one of ["show_more","time_delta","filter_delta","expand","drill_down","recipient_drill_down","aggregate","unclear","end_session","new_query"]
 - confidence: number 0.0-1.0
 - reason: short string
 - is_new_query_override: boolean
@@ -141,6 +141,13 @@ If the message means pagination/continuation ONLY:
 "more", "next", "continue", "show more", "next page", "another page", "wetin else", "siwaju", "any others", "others", "any other ones"
 => continuation_type="show_more"
 IMPORTANT: Do NOT misclassify these as drill_down.
+
+3.5) AGGREGATE / ANALYTICAL QUESTION
+If user asks about totals, sums, counts, or spending analysis of the viewed data:
+"how much did I spend", "what is the total", "total spending", "how many transactions",
+"sum it up", "how much have I spent", "what did I spend"
+=> continuation_type="aggregate"
+This differs from new_query because it asks an analytical question ABOUT the currently viewed data.
 
 4) TIME DELTA
 If user ONLY changes time period (without restating the full intent):

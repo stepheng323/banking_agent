@@ -58,6 +58,12 @@ _EXPAND_EXACT = {
     "list them",
 }
 _RETRANSFER_PHRASES = ("resend", "repeat", "send again", "do it again")
+_AGGREGATE_PATTERNS = (
+    r"\bhow much\b",
+    r"\btotal\s*(spending|spent|received)?\b",
+    r"\bsum\s*(it|them)?\s*(up)?\b",
+    r"\bhow many\b",
+)
 
 
 class ContinuationType:
@@ -69,6 +75,7 @@ class ContinuationType:
     EXPAND = "expand"
     DRILL_DOWN = "drill_down"
     RECIPIENT_DRILL_DOWN = "recipient_drill_down"
+    AGGREGATE = "aggregate"
     UNCLEAR = "unclear"
     END_SESSION = "end_session"
     NEW_QUERY = "new_query"
@@ -92,6 +99,7 @@ class ContinuationClassification(BaseModel):
         "expand",
         "drill_down",
         "recipient_drill_down",
+        "aggregate",
         "unclear",
         "end_session",
         "new_query",
@@ -169,16 +177,24 @@ class ContinuationClassifier:
         if surface and surface.type in {SurfaceType.SUMMARY, SurfaceType.BREAKDOWN} and normalized in _EXPAND_EXACT:
             return ContinuationType.EXPAND, {"confidence": 0.98, "reason": "deterministic_expand"}
 
-        if any(phrase in normalized for phrase in _RETRANSFER_PHRASES) and surface and surface.type in {
-            SurfaceType.SINGLE_ITEM,
-            SurfaceType.LIST,
-        }:
+        if (
+            any(phrase in normalized for phrase in _RETRANSFER_PHRASES)
+            and surface
+            and surface.type
+            in {
+                SurfaceType.SINGLE_ITEM,
+                SurfaceType.LIST,
+            }
+        ):
             return ContinuationType.DRILL_DOWN, {
                 "confidence": 0.98,
                 "reason": "deterministic_retransfer",
                 "drill_down_index": 0,
                 "drill_down_action": "re_transfer",
             }
+
+        if any(re.search(pattern, normalized) for pattern in _AGGREGATE_PATTERNS):
+            return ContinuationType.AGGREGATE, {"confidence": 0.95, "reason": "deterministic_aggregate"}
 
         return None
 
