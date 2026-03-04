@@ -1,7 +1,7 @@
 """Transaction list and search handlers."""
 
 import time
-from typing import Any
+from typing import Any, cast
 
 from apps.core.src.agent.graphs.query.models import (
     NormalizedQuery,
@@ -28,7 +28,9 @@ def _coerce_session_cache(session_cache: dict[str, Any] | None) -> tuple[list[di
         return None, None, None
     cached_transactions_raw = session_cache.get("cached_transactions")
     cached_transactions = (
-        [item for item in cached_transactions_raw if isinstance(item, dict)] if isinstance(cached_transactions_raw, list) else None
+        [cast(dict[str, Any], item) for item in cached_transactions_raw if isinstance(item, dict)]
+        if isinstance(cached_transactions_raw, list)
+        else None
     )
     fetched_at_raw = session_cache.get("cache_fetched_at")
     fetched_at = float(fetched_at_raw) if isinstance(fetched_at_raw, (int, float)) else None
@@ -63,10 +65,10 @@ async def handle_transaction_list(
         and cached_fingerprint == cache_fingerprint
     )
 
-    base_transactions = (
-        cached_transactions
-        if can_reuse_cache
-        else await fetch_transactions_base(
+    if can_reuse_cache and cached_transactions is not None:
+        base_transactions: list[dict[str, Any]] = cached_transactions
+    else:
+        base_transactions = await fetch_transactions_base(
             provider,
             query,
             account_id,
@@ -75,7 +77,6 @@ async def handle_transaction_list(
             user_id=user_id,
             language=language,
         )
-    )
     cache_fetched_at_value = cache_fetched_at if can_reuse_cache and cache_fetched_at is not None else time.time()
     transactions = apply_filters(base_transactions, query.filters) if query.filters else list(base_transactions)
 

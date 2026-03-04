@@ -7,8 +7,8 @@ from apps.core.src.agent.graphs.query.models import (
     QueryIntent,
     QueryResult,
     QueryResultItem,
-    TimeRange,
     SurfaceType,
+    TimeRange,
 )
 from shared.i18n import render_message
 from shared.utils.logging import get_logger

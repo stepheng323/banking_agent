@@ -1,5 +1,4 @@
 import json
-from typing import Any
 
 import pytest
 from langchain_core.runnables import RunnableConfig

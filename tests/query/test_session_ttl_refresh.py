@@ -1,9 +1,8 @@
 import json
-from typing import Any
 
 import pytest
 
-from apps.core.src.agent.graphs.query.session import QuerySessionManager, SESSION_TTL
+from apps.core.src.agent.graphs.query.session import SESSION_TTL, QuerySessionManager
 
 
 class _RedisStub:

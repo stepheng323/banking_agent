@@ -59,7 +59,8 @@ class ExecutionStep(QueryStep):
         account_ids = [str(acc_id) for acc_id in account_ids]
 
         user_id = worker_context.user_id if worker_context else None
-        query_session = state.get("query_session") if isinstance(state.get("query_session"), dict) else {}
+        query_session_raw = state.get("query_session")
+        query_session: dict[str, Any] = query_session_raw if isinstance(query_session_raw, dict) else {}
 
         session_cache = {
             "cached_transactions": query_session.get("cached_transactions"),

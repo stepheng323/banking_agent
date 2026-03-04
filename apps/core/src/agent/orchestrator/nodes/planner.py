@@ -1307,6 +1307,8 @@ async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[s
         "normalized_instruction": text,
         "planner_output": planner_output,
         "policy_notice": policy_notice,
-        "stashed_query_session": stashed_query_session_update if stashed_query_session_update else state.stashed_query_session,
+        "stashed_query_session": (
+            stashed_query_session_update if stashed_query_session_update else state.stashed_query_session
+        ),
         **locale_updates,
     }
