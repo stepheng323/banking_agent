@@ -95,3 +95,29 @@ async def test_restated_full_query_remains_new_query_override() -> None:
     assert continuation_type == "new_query"
     assert data["is_new_query_override"] is True
     assert data["restates_query"] is True
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "message",
+    [
+        "how much did I spend yesterday",
+        "how much did I spend",
+        "total spending",
+        "how many transactions",
+        "sum it up",
+        "How much have I spent today",
+    ],
+)
+async def test_aggregate_phrases_hit_guardrail(message: str) -> None:
+    classifier = ContinuationClassifier(_FailingLLM())
+
+    continuation_type, data = await classifier.classify(
+        message=message,
+        has_active_session=True,
+        today=date.today().isoformat(),
+    )
+
+    assert continuation_type == "aggregate"
+    assert data["reason"] == "deterministic_aggregate"
+    assert data["confidence"] == 0.95

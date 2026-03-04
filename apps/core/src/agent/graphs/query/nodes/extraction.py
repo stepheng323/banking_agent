@@ -236,7 +236,7 @@ class ExtractionStep(QueryStep):
             # Usually fallback to new query check is safer.
             return await self._parse_new_query(state)
 
-        elif cont_type == "new_query":
+        elif cont_type == "new_query" or cont_type == "aggregate":
             return await self._parse_new_query(state)
 
         elif cont_type == "end_session":
