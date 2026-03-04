@@ -106,12 +106,17 @@ async def plan_transaction_funding(
                 prompt=plan.error or render_message("transfer.funding.insufficient_funds", locale),
                 patch={"funding_plan": None},
             )
+        if plan.is_pending_mandate:
+            return TransactionResult(
+                outcome=TransactionOutcome.FAILED,
+                error=plan.error or render_message("transfer.funding.insufficient_funds", locale),
+                patch={"is_pending_mandate": True, "funding_plan": None},
+            )
         return TransactionResult(
-            outcome=TransactionOutcome.FAILED,
-            error=plan.error or render_message("transfer.funding.insufficient_funds", locale),
-            patch={"is_pending_mandate": plan.is_pending_mandate, "funding_plan": None}
-            if plan.is_pending_mandate
-            else {"funding_plan": None},
+            outcome=TransactionOutcome.NEEDS_INPUT,
+            required_fields=["amount"],
+            prompt=plan.error or render_message("transfer.funding.insufficient_funds", locale),
+            patch={"funding_plan": None},
         )
 
     plan_dict = {
