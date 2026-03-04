@@ -1,5 +1,7 @@
 """Fetch and filter utilities for query execution."""
 
+import hashlib
+import json
 from dataclasses import asdict, is_dataclass
 from datetime import date, datetime
 from typing import Any, cast
@@ -108,6 +110,40 @@ def apply_filters(transactions: list[dict[str, Any]], filters: Filters) -> list[
     return result
 
 
+def resolve_query_date_bounds(query: NormalizedQuery) -> tuple[str, str]:
+    """Resolve start/end ISO dates for a query."""
+    if query.time_range:
+        return query.time_range.start.isoformat(), query.time_range.end.isoformat()
+
+    from datetime import timedelta
+
+    days = 30 if query.intent == "analytics_summary" else 7
+    end = date.today().isoformat()
+    start = (date.today() - timedelta(days=days)).isoformat()
+    return start, end
+
+
+def build_cache_fingerprint(
+    query: NormalizedQuery,
+    account_id: str,
+    account_ids: list[str],
+    user_id: str | None = None,
+) -> str:
+    """Build fingerprint for cache-safe transaction base reuse."""
+    start, end = resolve_query_date_bounds(query)
+    payload = {
+        "intent": str(query.intent),
+        "accounts_scope": query.accounts_scope,
+        "account_id": account_id,
+        "account_ids": sorted(str(acc) for acc in account_ids),
+        "start": start,
+        "end": end,
+        "user_id": str(user_id or ""),
+    }
+    serialized = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
+
+
 async def fetch_and_filter(
     provider: BankDataProvider,
     query: NormalizedQuery,
@@ -118,15 +154,33 @@ async def fetch_and_filter(
     language: str = "en",
 ) -> list[dict]:
     """Fetch transactions and apply filters."""
-    if query.time_range:
-        start = query.time_range.start.isoformat()
-        end = query.time_range.end.isoformat()
-    else:
-        from datetime import timedelta
+    transactions = await fetch_transactions_base(
+        provider,
+        query,
+        account_id,
+        account_ids,
+        accounts_info,
+        user_id=user_id,
+        language=language,
+    )
 
-        days = 30 if query.intent == "analytics_summary" else 7
-        end = date.today().isoformat()
-        start = (date.today() - timedelta(days=days)).isoformat()
+    if query.filters:
+        transactions = apply_filters(transactions, query.filters)
+
+    return transactions
+
+
+async def fetch_transactions_base(
+    provider: BankDataProvider,
+    query: NormalizedQuery,
+    account_id: str,
+    account_ids: list[str],
+    accounts_info: list[dict] | None = None,
+    user_id: str | None = None,
+    language: str = "en",
+) -> list[dict]:
+    """Fetch transaction base set for the query time/account envelope (no query.filters applied)."""
+    start, end = resolve_query_date_bounds(query)
 
     bank_map: dict[str, str] = {}
     if accounts_info:
@@ -223,8 +277,5 @@ async def fetch_and_filter(
     transactions = sorted(transactions, key=lambda t: (t.get("date", ""), t.get("id", "")), reverse=True)
 
     transactions = [t for t in transactions if start <= t.get("date", "")[:10] <= end]
-
-    if query.filters:
-        transactions = apply_filters(transactions, query.filters)
 
     return transactions

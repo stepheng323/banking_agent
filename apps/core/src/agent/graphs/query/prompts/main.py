@@ -217,6 +217,12 @@ User: "what about last month?"
 User: "only credits"
 -> {{"continuation_type": "filter_delta", "filters": {{"transaction_type": "credit"}}}}
 
+User: "is there any credit?"
+-> {{"continuation_type": "filter_delta", "filters": {{"transaction_type": "credit"}}}}
+
+User: "how about debits?"
+-> {{"continuation_type": "filter_delta", "filters": {{"transaction_type": "debit"}}}}
+
 User: "what's my balance"
 -> {{"continuation_type": "new_query", "is_new_query_override": true}}
 

@@ -56,6 +56,11 @@ class QuerySessionManager:
                     logger.warning("surface_restore_error", error=str(e))
                     session["surface"] = None
 
+            try:
+                await self.redis.expire(key, SESSION_TTL)
+            except Exception as exc:
+                logger.warning("refresh_session_ttl_failed", error=str(exc))
+
             return session
         except Exception as e:
             logger.error("load_session_error", error=str(e))
@@ -77,6 +82,8 @@ class QuerySessionManager:
                 "total_results",
                 "has_more",
                 "cached_transactions",
+                "cache_fetched_at",
+                "cache_fingerprint",
                 "language",
                 "session_active",
                 "query",

@@ -67,6 +67,13 @@ def _build_name_consistency_patch(payload: TransferPayload, resolved_name: str |
     if not requested_name:
         return {"name_mismatch": False, "name_match_score": None, "name_mismatch_warning": None}
 
+    # Skip mismatch check if the "name" is actually an account number.
+    # When user provides "816 251 1024 zenith", extraction may keep the
+    # digits as recipient_name before resolver overwrites it.
+    digits_only = "".join(ch for ch in requested_name if ch.isdigit())
+    if len(digits_only) >= 8:
+        return {"name_mismatch": False, "name_match_score": None, "name_mismatch_warning": None}
+
     policy = get_cached_policy()
     aliases = policy.transfer_guardrails.relational_aliases
     if _is_relational_alias(requested_name, aliases):

@@ -59,6 +59,14 @@ class ExecutionStep(QueryStep):
         account_ids = [str(acc_id) for acc_id in account_ids]
 
         user_id = worker_context.user_id if worker_context else None
+        query_session_raw = state.get("query_session")
+        query_session: dict[str, Any] = query_session_raw if isinstance(query_session_raw, dict) else {}
+
+        session_cache = {
+            "cached_transactions": query_session.get("cached_transactions"),
+            "cache_fetched_at": query_session.get("cache_fetched_at"),
+            "cache_fingerprint": query_session.get("cache_fingerprint"),
+        }
 
         if "selected_item_index" in state and state.get("query_session"):
             return await handle_drill_down(state)
@@ -81,6 +89,9 @@ class ExecutionStep(QueryStep):
             page_size=page_size,
             user_id=user_id,
             language=locale,
+            continuation_type=state.get("continuation_type"),
+            continuation_delta_type=state.get("continuation_delta_type"),
+            session_cache=session_cache,
         )
 
         formatted_response = QueryFormatter.format(
@@ -103,5 +114,8 @@ class ExecutionStep(QueryStep):
                 "session_active": True,
                 "flow_state": "complete",
                 "last_successful_query": query,
+                "cached_transactions": result.cached_transactions,
+                "cache_fetched_at": result.cache_fetched_at,
+                "cache_fingerprint": result.cache_fingerprint,
             },
         )

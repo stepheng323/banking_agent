@@ -5,7 +5,13 @@ from typing import Any
 
 from langchain_core.runnables import Runnable
 
-from apps.core.src.agent.graphs.query.models import NormalizedQuery, QueryResultItem, ResolverOutcome, SurfaceType
+from apps.core.src.agent.graphs.query.models import (
+    NormalizedQuery,
+    QueryResultItem,
+    ResolverOutcome,
+    SurfaceType,
+    TimeReference,
+)
 from apps.core.src.agent.graphs.query.pipeline import QueryStep
 from apps.core.src.agent.graphs.query.services.continuity import (
     ContinuationClassifier,
@@ -114,6 +120,7 @@ class ExtractionStep(QueryStep):
         updates: dict[str, Any] = {
             "flow_state": "executing",
             "continuation_type": cont_type,
+            "continuation_delta_type": data.get("delta_type"),
             # Merging session data is handled by the worker initiating the state,
             # but we ensure critical keys are present or updated.
             # Ideally the 'state' passed in already has session data merged.
@@ -279,6 +286,32 @@ class ExtractionStep(QueryStep):
 
         # Convert to NormalizedQuery
         query = self.parser.convert_to_normalized(result.extraction, today=today)
+
+        # If this is a fresh parse with unspecified time, inherit prior active-session window.
+        query_session = state.get("query_session")
+        if (
+            isinstance(query_session, dict)
+            and query_session.get("session_active")
+            and result.extraction.time_range.reference_type == TimeReference.UNSPECIFIED
+        ):
+            previous_query = query_session.get("query")
+            if previous_query:
+                try:
+                    if isinstance(previous_query, dict):
+                        previous_query = NormalizedQuery.model_validate(previous_query)
+                    if isinstance(previous_query, NormalizedQuery) and previous_query.time_range:
+                        old_start = query.time_range.start.isoformat() if query.time_range else None
+                        old_end = query.time_range.end.isoformat() if query.time_range else None
+                        query.time_range = previous_query.time_range.model_copy(deep=True)
+                        logger.info(
+                            "query_time_range_inherited_from_session",
+                            previous_start=query.time_range.start.isoformat(),
+                            previous_end=query.time_range.end.isoformat(),
+                            replaced_start=old_start,
+                            replaced_end=old_end,
+                        )
+                except Exception as exc:
+                    logger.warning("query_time_range_inheritance_failed", error=str(exc))
 
         return {
             "query": query,

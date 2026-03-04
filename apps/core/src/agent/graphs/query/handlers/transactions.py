@@ -1,5 +1,8 @@
 """Transaction list and search handlers."""
 
+import time
+from typing import Any, cast
+
 from apps.core.src.agent.graphs.query.models import (
     NormalizedQuery,
     QueryIntent,
@@ -8,9 +11,31 @@ from apps.core.src.agent.graphs.query.models import (
     ResultSurface,
     SurfaceType,
 )
-from apps.core.src.agent.graphs.query.services.fetch import fetch_and_filter, parse_date
+from apps.core.src.agent.graphs.query.services.fetch import (
+    apply_filters,
+    build_cache_fingerprint,
+    fetch_transactions_base,
+    parse_date,
+)
 from shared.clients.abstractions.banking import BankDataProvider
 from shared.i18n import render_message
+
+TRANSACTION_CACHE_MAX_AGE_SECONDS = 90.0
+
+
+def _coerce_session_cache(session_cache: dict[str, Any] | None) -> tuple[list[dict[str, Any]] | None, float | None, str | None]:
+    if not isinstance(session_cache, dict):
+        return None, None, None
+    cached_transactions_raw = session_cache.get("cached_transactions")
+    cached_transactions = (
+        [cast(dict[str, Any], item) for item in cached_transactions_raw if isinstance(item, dict)]
+        if isinstance(cached_transactions_raw, list)
+        else None
+    )
+    fetched_at_raw = session_cache.get("cache_fetched_at")
+    fetched_at = float(fetched_at_raw) if isinstance(fetched_at_raw, (int, float)) else None
+    fingerprint = str(session_cache.get("cache_fingerprint") or "")
+    return cached_transactions, fetched_at, (fingerprint or None)
 
 
 async def handle_transaction_list(
@@ -23,17 +48,37 @@ async def handle_transaction_list(
     page_size: int = 5,
     user_id: str | None = None,
     language: str = "en",
+    continuation_type: str | None = None,
+    continuation_delta_type: str | None = None,
+    session_cache: dict[str, Any] | None = None,
 ) -> QueryResult:
     """Handle transaction list queries."""
-    transactions = await fetch_and_filter(
-        provider,
-        query,
-        account_id,
-        account_ids,
-        accounts_info,
-        user_id=user_id,
-        language=language,
+    cache_fingerprint = build_cache_fingerprint(query, account_id, account_ids, user_id=user_id)
+    cached_transactions, cache_fetched_at, cached_fingerprint = _coerce_session_cache(session_cache)
+    cache_age_seconds = (time.time() - cache_fetched_at) if cache_fetched_at is not None else None
+    can_reuse_cache = (
+        continuation_type == "filter_delta"
+        and continuation_delta_type != "time"
+        and cached_transactions is not None
+        and cache_age_seconds is not None
+        and cache_age_seconds <= TRANSACTION_CACHE_MAX_AGE_SECONDS
+        and cached_fingerprint == cache_fingerprint
     )
+
+    if can_reuse_cache and cached_transactions is not None:
+        base_transactions: list[dict[str, Any]] = cached_transactions
+    else:
+        base_transactions = await fetch_transactions_base(
+            provider,
+            query,
+            account_id,
+            account_ids,
+            accounts_info,
+            user_id=user_id,
+            language=language,
+        )
+    cache_fetched_at_value = cache_fetched_at if can_reuse_cache and cache_fetched_at is not None else time.time()
+    transactions = apply_filters(base_transactions, query.filters) if query.filters else list(base_transactions)
 
     # Apply result_limit if specified (e.g., "last transaction" → 1)
     if query.result_limit:
@@ -105,6 +150,10 @@ async def handle_transaction_list(
         items=items,
         has_more=has_more,
         surface=surface,
+        cached_transactions=base_transactions,
+        cache_fetched_at=cache_fetched_at_value,
+        cache_fingerprint=cache_fingerprint,
+        cache_reused=can_reuse_cache,
     )
 
 
@@ -118,6 +167,9 @@ async def handle_transaction_search(
     page_size: int = 5,
     user_id: str | None = None,
     language: str = "en",
+    continuation_type: str | None = None,
+    continuation_delta_type: str | None = None,
+    session_cache: dict[str, Any] | None = None,
 ) -> QueryResult:
     """Handle transaction search (same as list but with merchant filter)."""
     return await handle_transaction_list(
@@ -130,4 +182,7 @@ async def handle_transaction_search(
         page_size,
         user_id=user_id,
         language=language,
+        continuation_type=continuation_type,
+        continuation_delta_type=continuation_delta_type,
+        session_cache=session_cache,
     )

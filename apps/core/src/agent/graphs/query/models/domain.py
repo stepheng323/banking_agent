@@ -119,6 +119,10 @@ class QueryResult(BaseModel):
     has_more: bool = False
     query_snapshot: NormalizedQuery | None = None  # For follow-up deltas
     surface: ResultSurface | None = None  # UI/Interaction surface state
+    cached_transactions: list[dict[str, Any]] | None = None
+    cache_fetched_at: float | None = None
+    cache_fingerprint: str | None = None
+    cache_reused: bool = False
 
 
 CATEGORY_KEYWORDS: dict[str, list[str]] = {

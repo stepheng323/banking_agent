@@ -837,6 +837,16 @@ async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[s
             logger.warning("quoted_replay_shortcut_failed", error=str(exc))
 
     planner_context_parts: list[str] = []
+    query_session_snapshot: dict[str, Any] | None = None
+    query_session_source: str | None = None
+    current_flow_type: str | None = None
+    if state.waves and state.current_wave_index < len(state.waves):
+        current_wave = state.waves[state.current_wave_index]
+        if current_wave:
+            wave_task = state.tasks.get(current_wave[0])
+            if wave_task:
+                current_flow_type = wave_task.type
+    is_transactional_flow = current_flow_type in TRANSACTION_EXECUTORS
 
     if redis_client:
         try:
@@ -844,16 +854,6 @@ async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[s
 
             suggestion_key = f"user:{state.phone_number}:beneficiary_suggestion"
             query_session_key = f"query:session:{state.phone_number}"
-
-            current_flow_type: str | None = None
-            if state.waves and state.current_wave_index < len(state.waves):
-                current_wave = state.waves[state.current_wave_index]
-                if current_wave:
-                    wave_task = state.tasks.get(current_wave[0])
-                    if wave_task:
-                        current_flow_type = wave_task.type
-
-            is_transactional_flow = current_flow_type in TRANSACTION_EXECUTORS
             suggestion_data, query_session_data = await asyncio.gather(
                 redis_client.get(suggestion_key),
                 redis_client.get(query_session_key),
@@ -874,10 +874,16 @@ async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[s
                 )
                 logger.info("planner_context_injected", context="beneficiary_suggestion")
 
-            if query_session_data and not is_transactional_flow:
+            if query_session_data:
                 import json
 
                 session = json.loads(query_session_data)
+                if isinstance(session, dict):
+                    query_session_snapshot = session
+                    query_session_source = "redis"
+
+            if query_session_snapshot and not is_transactional_flow:
+                session = query_session_snapshot
                 session_active = bool(session.get("session_active"))
                 if (
                     session_active
@@ -913,17 +919,52 @@ async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[s
                 planner_context_parts.append(
                     "Active Query Session: The user recently viewed transaction results."
                     f"{summary_snippet}\n"
-                    "- If the user asks to continue (e.g., 'more', 'next', 'show transactions',"
-                    " 'details', 'receipt', 'issue') or adjusts time/filters, create a query task"
-                    " (executor='query') so the continuation handler can process it.\n"
+                    "- If the user asks to continue, navigate, or refine results"
+                    " (e.g., 'more', 'next', 'show transactions', 'details', 'receipt',"
+                    " 'any credits?', 'is there any debit?', 'only debits',"
+                    " 'last month', 'just food', 'over 10k'),"
+                    " create a query task (executor='query') so the continuation handler"
+                    " can process it.\n"
                     "- If the user asks a fresh query (e.g., 'show my recent transactions'),"
-                    " still create a query task as a new query."
+                    " still create a query task as a new query.\n"
+                    "- IMPORTANT: Questions about the data ('any credits?', 'how about debits?')"
+                    " are filter refinements on the active session, NOT conversational questions."
+                    " Always route them as query tasks."
                 )
                 logger.info("planner_context_injected", context="query_session")
-            elif query_session_data and is_transactional_flow:
+            elif query_session_snapshot and is_transactional_flow:
                 logger.info("planner_query_context_skipped", reason="active_transaction_flow")
         except Exception as e:
             logger.warning("planner_context_check_failed", error=str(e))
+
+    if query_session_snapshot is None and isinstance(state.stashed_query_session, dict):
+        query_session_snapshot = dict(state.stashed_query_session)
+        query_session_source = "stashed"
+
+    if query_session_snapshot and query_session_source == "stashed" and not is_transactional_flow:
+        summary_text = None
+        query_result = query_session_snapshot.get("query_result")
+        if isinstance(query_result, dict):
+            summary_text = query_result.get("summary_text")
+        summary_snippet = f' Last summary: "{summary_text[:200]}".' if summary_text else ""
+        planner_context_parts.append(
+            "Active Query Session: The user recently viewed transaction results."
+            f"{summary_snippet}\n"
+            "- If the user asks to continue, navigate, or refine results"
+            " (e.g., 'more', 'next', 'show transactions', 'details', 'receipt',"
+            " 'any credits?', 'is there any debit?', 'only debits',"
+            " 'last month', 'just food', 'over 10k'),"
+            " create a query task (executor='query') so the continuation handler"
+            " can process it.\n"
+            "- If the user asks a fresh query (e.g., 'show my recent transactions'),"
+            " still create a query task as a new query.\n"
+            "- IMPORTANT: Questions about the data ('any credits?', 'how about debits?')"
+            " are filter refinements on the active session, NOT conversational questions."
+            " Always route them as query tasks."
+        )
+        logger.info("planner_context_injected", context="query_session_stashed")
+    elif query_session_snapshot and query_session_source == "stashed" and is_transactional_flow:
+        logger.info("planner_query_context_skipped", reason="active_transaction_flow_stashed")
 
     active_intent = None
     if state.waves:
@@ -1203,6 +1244,37 @@ async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[s
             return locale_updates
         logger.info("planner_intent_switch", old=active_intent, new=planner_output.primary_intent)
 
+    stashed_query_session_update: dict[str, Any] | None = None
+    if (
+        query_session_source == "redis"
+        and query_session_snapshot
+        and bool(query_session_snapshot.get("session_active"))
+        and any(getattr(task, "executor", None) in TRANSACTION_EXECUTORS for task in planner_output.tasks)
+    ):
+        stash_keys = (
+            "session_active",
+            "query",
+            "query_result",
+            "surface",
+            "show_expanded",
+            "current_page",
+            "page_size",
+            "account_id",
+            "account_ids",
+            "cached_transactions",
+            "cache_fetched_at",
+            "cache_fingerprint",
+            "timestamp",
+        )
+        stashed_query_session_update = {
+            key: query_session_snapshot.get(key) for key in stash_keys if key in query_session_snapshot
+        }
+        stashed_query_session_update["session_active"] = True
+        logger.info(
+            "planner_query_session_stashed_for_transaction_switch",
+            keys=list(stashed_query_session_update.keys()),
+        )
+
     new_tasks = {}
     task_ids: list[str] = []
     depends_on_by_task: dict[str, list[str]] = {}
@@ -1233,5 +1305,8 @@ async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[s
         "normalized_instruction": text,
         "planner_output": planner_output,
         "policy_notice": policy_notice,
+        "stashed_query_session": (
+            stashed_query_session_update if stashed_query_session_update else state.stashed_query_session
+        ),
         **locale_updates,
     }

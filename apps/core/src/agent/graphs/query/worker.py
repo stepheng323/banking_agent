@@ -55,6 +55,10 @@ class QueryWorker:
         phone_number = context.get("phone_number")
         session_key = f"query:session:{phone_number}"
         query_session = await self.session_manager.load(session_key) or {}
+        restored_from_stashed_query_session = False
+        if not query_session and isinstance(context.get("stashed_query_session"), dict):
+            query_session = dict(cast(dict[str, Any], context["stashed_query_session"]))
+            restored_from_stashed_query_session = True
 
         # Merge key session fields into state so continuation steps have context.
         session_defaults = {
@@ -65,6 +69,9 @@ class QueryWorker:
             "page_size": query_session.get("page_size"),
             "account_id": query_session.get("account_id"),
             "account_ids": query_session.get("account_ids"),
+            "cached_transactions": query_session.get("cached_transactions"),
+            "cache_fetched_at": query_session.get("cache_fetched_at"),
+            "cache_fingerprint": query_session.get("cache_fingerprint"),
         }
 
         # 2. Build Initial State
@@ -113,6 +120,9 @@ class QueryWorker:
                     await self.session_manager.save(session_key, final_state)
                 else:
                     await self.session_manager.clear(session_key)
+
+                if restored_from_stashed_query_session:
+                    result.patch["restored_from_stashed_query_session"] = True
 
             return result
 

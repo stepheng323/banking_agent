@@ -5,7 +5,7 @@ from typing import cast
 
 from apps.core.src.agent.graphs.__shared__.account_selection.service import find_account_by_bank_name
 from apps.core.src.agent.graphs.query.handlers import HANDLER_REGISTRY
-from apps.core.src.agent.graphs.query.models import NormalizedQuery, QueryResult
+from apps.core.src.agent.graphs.query.models import NormalizedQuery, QueryIntent, QueryResult
 from shared.clients.abstractions.banking import BankDataProvider
 from shared.i18n import render_message
 from shared.utils.logging import get_logger
@@ -34,6 +34,9 @@ class QueryExecutor:
         page_size: int = 5,
         user_id: str | None = None,
         language: str = "en",
+        continuation_type: str | None = None,
+        continuation_delta_type: str | None = None,
+        session_cache: dict[str, object] | None = None,
     ) -> QueryResult:
         """
         Execute a normalized query.
@@ -76,17 +79,33 @@ class QueryExecutor:
         typed_handler = cast(Callable[..., Awaitable[QueryResult]], handler)
 
         try:
-            result = await typed_handler(
-                self.provider,
-                query,
-                account_id,
-                all_account_ids,
-                accounts_info,
-                current_page,
-                page_size,
-                user_id=user_id,  # Explicitly passing it
-                language=language,
-            )
+            if query.intent in {QueryIntent.TRANSACTION_LIST, QueryIntent.TRANSACTION_SEARCH}:
+                result = await typed_handler(
+                    self.provider,
+                    query,
+                    account_id,
+                    all_account_ids,
+                    accounts_info,
+                    current_page,
+                    page_size,
+                    user_id=user_id,  # Explicitly passing it
+                    language=language,
+                    continuation_type=continuation_type,
+                    continuation_delta_type=continuation_delta_type,
+                    session_cache=session_cache,
+                )
+            else:
+                result = await typed_handler(
+                    self.provider,
+                    query,
+                    account_id,
+                    all_account_ids,
+                    accounts_info,
+                    current_page,
+                    page_size,
+                    user_id=user_id,  # Explicitly passing it
+                    language=language,
+                )
             result.query_snapshot = query
             return result
         except Exception as e:
