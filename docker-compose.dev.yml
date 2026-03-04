@@ -44,6 +44,16 @@ services:
       - META_ACCESS_TOKEN=${META_ACCESS_TOKEN}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - WHATSAPP_FLOW_PRIVATE_KEY_PATH=/app/whatsapp_flow_private_key.pem
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - TELEGRAM_MINI_APP_BASE_URL=${TELEGRAM_MINI_APP_BASE_URL}
+      - TELEGRAM_WEBHOOK_SECRET_TOKEN=${TELEGRAM_WEBHOOK_SECRET_TOKEN}
+      - ONBOARDING_FLOW_ID=${ONBOARDING_FLOW_ID}
+      - PIN_CONFIRMATION_FLOW_ID=${PIN_CONFIRMATION_FLOW_ID}
+      - ACCOUNT_LINKING_FLOW_ID=${ACCOUNT_LINKING_FLOW_ID}
+      - MONO_API_KEY=${MONO_API_KEY}
+      - FLUTTERWAVE_SECRET_KEY=${FLUTTERWAVE_SECRET_KEY}
+      - FLUTTERWAVE_USE_SANDBOX=${FLUTTERWAVE_USE_SANDBOX:-true}
+
     depends_on:
       db:
         condition: service_healthy
@@ -66,6 +76,11 @@ services:
       - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
       - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
       - AWS_REGION=${AWS_REGION:-us-east-1}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - MONO_API_KEY=${MONO_API_KEY}
+      - FLUTTERWAVE_SECRET_KEY=${FLUTTERWAVE_SECRET_KEY}
+      - FLUTTERWAVE_USE_SANDBOX=${FLUTTERWAVE_USE_SANDBOX:-true}
+
     depends_on:
       db:
         condition: service_healthy
@@ -78,7 +93,7 @@ services:
   receipt-worker:
     build:
       context: .
-      dockerfile: apps/receipt/Dockerfile
+      dockerfile: apps/receipt/Dockerfile.local
     environment:
       - REDIS_URL=redis://redis:6379
       - META_ACCESS_TOKEN=${META_ACCESS_TOKEN}
