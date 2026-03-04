@@ -1,8 +1,17 @@
 """Regression tests for locale-safe query formatter behavior."""
 
-from datetime import date
+from datetime import date, timedelta
 
-from apps.core.src.agent.graphs.query.models import QueryResult, QueryResultItem, ResultSurface, SurfaceType
+from apps.core.src.agent.graphs.query.models import (
+    Filters,
+    NormalizedQuery,
+    QueryIntent,
+    QueryResult,
+    QueryResultItem,
+    ResultSurface,
+    SurfaceType,
+    TimeRange,
+)
 from apps.core.src.agent.graphs.query.services.formatter import QueryFormatter
 
 
@@ -77,3 +86,104 @@ def test_formatter_uses_rank_metadata_without_english_summary() -> None:
     response = QueryFormatter.format(result, locale="yo")
     assert "🏆" in response
     assert "1." in response
+
+
+def test_formatter_no_results_with_type_for_today() -> None:
+    today = date.today()
+    result = QueryResult(
+        summary_text="",
+        items=[],
+        query_snapshot=NormalizedQuery(
+            intent=QueryIntent.TRANSACTION_LIST,
+            filters=Filters(transaction_type="credit"),
+            time_range=TimeRange(start=today, end=today),
+        ),
+    )
+
+    assert QueryFormatter.format(result, locale="en") == "No credit transactions found today."
+
+
+def test_formatter_no_results_with_type_for_period() -> None:
+    today = date.today()
+    result = QueryResult(
+        summary_text="",
+        items=[],
+        query_snapshot=NormalizedQuery(
+            intent=QueryIntent.TRANSACTION_LIST,
+            filters=Filters(transaction_type="debit"),
+            time_range=TimeRange(start=today - timedelta(days=7), end=today - timedelta(days=1)),
+        ),
+    )
+
+    assert QueryFormatter.format(result, locale="en") == "No debit transactions found for this period."
+
+
+def test_formatter_no_results_without_type_uses_generic_message() -> None:
+    result = QueryResult(
+        summary_text="",
+        items=[],
+        query_snapshot=NormalizedQuery(intent=QueryIntent.TRANSACTION_LIST),
+    )
+
+    assert QueryFormatter.format(result, locale="en") == "No matching transactions found for your search."
+
+
+def _sample_list_result(query_snapshot: NormalizedQuery) -> QueryResult:
+    return QueryResult(
+        summary_text="accounts:1|showing:1-2|total:2",
+        items=[
+            QueryResultItem(
+                id="tx1",
+                description="Transfer to Ada",
+                amount=2000,
+                date=date.today(),
+                metadata={"type": "debit", "bank_name": "Zenith"},
+            ),
+            QueryResultItem(
+                id="tx2",
+                description="Salary",
+                amount=10000,
+                date=date.today(),
+                metadata={"type": "credit", "bank_name": "Zenith"},
+            ),
+        ],
+        query_snapshot=query_snapshot,
+    )
+
+
+def test_formatter_heading_uses_credit_context() -> None:
+    result = _sample_list_result(
+        NormalizedQuery(
+            intent=QueryIntent.TRANSACTION_LIST,
+            filters=Filters(transaction_type="credit"),
+        )
+    )
+
+    response = QueryFormatter.format(result, locale="en")
+    assert response.splitlines()[0] == "*Credit Transactions*"
+
+
+def test_formatter_heading_uses_category_spending_for_debit() -> None:
+    result = _sample_list_result(
+        NormalizedQuery(
+            intent=QueryIntent.TRANSACTION_LIST,
+            filters=Filters(transaction_type="debit", category=["food"]),
+        )
+    )
+
+    response = QueryFormatter.format(result, locale="en")
+    assert response.splitlines()[0] == "*Food Spending*"
+
+
+def test_formatter_heading_appends_account_and_today_suffix() -> None:
+    today = date.today()
+    result = _sample_list_result(
+        NormalizedQuery(
+            intent=QueryIntent.TRANSACTION_LIST,
+            filters=Filters(account_filter="Zenith"),
+            time_range=TimeRange(start=today, end=today),
+        )
+    )
+
+    response = QueryFormatter.format(result, locale="en")
+    assert response.splitlines()[0] == "*Transactions* — Zenith — Today"

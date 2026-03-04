@@ -1,8 +1,15 @@
 """Formatter for query responses."""
 
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
-from apps.core.src.agent.graphs.query.models import QueryIntent, QueryResult, QueryResultItem, SurfaceType
+from apps.core.src.agent.graphs.query.models import (
+    NormalizedQuery,
+    QueryIntent,
+    QueryResult,
+    QueryResultItem,
+    TimeRange,
+    SurfaceType,
+)
 from shared.i18n import render_message
 from shared.utils.logging import get_logger
 
@@ -119,6 +126,117 @@ class QueryFormatter:
         if amount >= 1000:
             return f"₦{amount:,.0f}"
         return f"₦{amount:.0f}"
+
+    @staticmethod
+    def _format_no_results(result: QueryResult, locale: str) -> str:
+        """Format no-results output using available query context."""
+        query_snapshot = result.query_snapshot
+        tx_type = query_snapshot.filters.transaction_type if query_snapshot and query_snapshot.filters else None
+        if tx_type not in ("credit", "debit"):
+            return render_message("query.format.no_matching_transactions", locale)
+
+        time_suffix = ""
+        if query_snapshot and query_snapshot.time_range:
+            if query_snapshot.time_range.start == query_snapshot.time_range.end == date.today():
+                time_suffix = render_message("query.format.no_results_time_suffix_today", locale)
+            else:
+                time_suffix = render_message("query.format.no_results_time_suffix_period", locale)
+
+        return render_message(
+            "query.format.no_results_with_type",
+            locale,
+            {"transaction_type": tx_type, "time_suffix": time_suffix},
+        )
+
+    @staticmethod
+    def _month_start_and_end(d: date) -> tuple[date, date]:
+        start = d.replace(day=1)
+        next_month_anchor = (start + timedelta(days=32)).replace(day=1)
+        end = next_month_anchor - timedelta(days=1)
+        return start, end
+
+    @staticmethod
+    def _period_label(time_range: TimeRange | None, locale: str) -> str | None:
+        if not time_range:
+            return None
+
+        today = date.today()
+        if time_range.start == time_range.end:
+            return render_message("query.format.heading_period_today", locale)
+
+        this_month_start, _ = QueryFormatter._month_start_and_end(today)
+        if time_range.start == this_month_start and time_range.end == today:
+            return render_message("query.format.heading_period_this_month", locale)
+
+        prev_month_end = this_month_start - timedelta(days=1)
+        prev_month_start, _ = QueryFormatter._month_start_and_end(prev_month_end)
+        if time_range.start == prev_month_start and time_range.end == prev_month_end:
+            return prev_month_start.strftime("%B")
+
+        return render_message(
+            "query.format.heading_period_range",
+            locale,
+            {
+                "start": QueryFormatter._format_date(time_range.start, locale),
+                "end": QueryFormatter._format_date(time_range.end, locale),
+            },
+        )
+
+    @staticmethod
+    def _build_contextual_heading(query_snapshot: NormalizedQuery | None, locale: str) -> tuple[str, bool]:
+        base_heading = render_message("query.format.heading_transactions_default", locale)
+        if not query_snapshot or query_snapshot.intent not in {
+            QueryIntent.TRANSACTION_LIST,
+            QueryIntent.TRANSACTION_SEARCH,
+        }:
+            return base_heading, False
+
+        filters = query_snapshot.filters
+        heading = base_heading
+        is_contextual = False
+
+        tx_type = filters.transaction_type if filters else None
+        categories = filters.category if filters and filters.category else []
+        if len(categories) == 1 and tx_type == "debit":
+            category_name = categories[0].strip().title()
+            heading = render_message("query.format.heading_spending_category", locale, {"category": category_name})
+            is_contextual = True
+        elif tx_type in ("credit", "debit"):
+            heading = render_message(
+                "query.format.heading_transactions_type",
+                locale,
+                {
+                    "transaction_type": render_message(
+                        "query.format.heading_type_credit" if tx_type == "credit" else "query.format.heading_type_debit",
+                        locale,
+                    )
+                },
+            )
+            is_contextual = True
+        elif len(categories) == 1:
+            category_name = categories[0].strip().title()
+            heading = render_message("query.format.heading_transactions_category", locale, {"category": category_name})
+            is_contextual = True
+
+        account_filter = (filters.account_filter or "").strip() if filters else ""
+        if account_filter:
+            heading = render_message(
+                "query.format.heading_suffix_account",
+                locale,
+                {"heading": heading, "account": account_filter},
+            )
+            is_contextual = True
+
+        period_label = QueryFormatter._period_label(query_snapshot.time_range, locale)
+        if period_label:
+            heading = render_message(
+                "query.format.heading_suffix_period",
+                locale,
+                {"heading": heading, "period": period_label},
+            )
+            is_contextual = True
+
+        return heading, is_contextual
 
     @staticmethod
     def _format_query_result(
@@ -270,7 +388,7 @@ class QueryFormatter:
 
         # Handle no results case for transaction lists
         if not result.items:
-            return render_message("query.format.no_matching_transactions", locale)
+            return QueryFormatter._format_no_results(result, locale)
 
         # Special handling for single transaction - show detailed view
         if len(result.items) == 1:
@@ -351,13 +469,16 @@ class QueryFormatter:
 
         account_count = 1
         pagination = ""
-        heading = render_message("query.format.transactions_heading", locale)
+        heading = render_message("query.format.heading_transactions_default", locale)
+        is_recipient_heading = False
+        contextual_heading_applied = False
 
         # Check for dynamic heading from recipient drill-down or analytics
         if result.summary_text:
             # If summary contains recipient name pattern (*Name* — ₦X), use it as heading
             if "—" in result.summary_text and result.summary_text.startswith("*"):
                 heading = result.summary_text.split(chr(10))[0]  # First line only
+                is_recipient_heading = True
             elif summary_parts:
                 # Standard pagination info
                 parts = summary_parts
@@ -371,7 +492,10 @@ class QueryFormatter:
                         {"showing": showing, "total": total},
                     )
 
-        if account_count > 1:
+        if not is_recipient_heading:
+            heading, contextual_heading_applied = QueryFormatter._build_contextual_heading(result.query_snapshot, locale)
+
+        if account_count > 1 and not contextual_heading_applied and not is_recipient_heading:
             heading = render_message(
                 "query.format.transactions_across_accounts",
                 locale,
