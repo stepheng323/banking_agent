@@ -268,7 +268,11 @@ def _build_beneficiary_fastpath_context_updates(
     """Persist beneficiary fastpath entities as context frames for pronoun follow-ups."""
     if subtype not in {"beneficiary_list", "beneficiary_name_match_preview"}:
         return {}
-    if not planner_output or planner_output.primary_intent != "conversational" or getattr(planner_output, "tasks", None):
+    if (
+        not planner_output
+        or planner_output.primary_intent != "conversational"
+        or getattr(planner_output, "tasks", None)
+    ):
         return {}
     if not _has_context_for_fastpath_subtype(state, subtype):
         return {}
