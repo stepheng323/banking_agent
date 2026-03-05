@@ -229,9 +229,6 @@ module "compute_lambda_events" {
     "transactions" = 2
     "receipts"     = 0
   }
-  reserved_concurrency_by_worker = {
-    "receipt-worker" = 10
-  }
   max_concurrency_by_queue = {
     "receipts" = 10
   }

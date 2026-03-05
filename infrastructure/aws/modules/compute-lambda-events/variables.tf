@@ -82,9 +82,7 @@ variable "batch_window_by_queue" {
 variable "reserved_concurrency_by_worker" {
   description = "Optional Lambda reserved concurrency by worker name"
   type        = map(number)
-  default = {
-    "receipt-worker" = 10
-  }
+  default     = {}
 }
 
 variable "max_concurrency_by_queue" {
