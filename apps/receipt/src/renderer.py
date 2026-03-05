@@ -29,6 +29,10 @@ class ReceiptRenderer:
 
     async def _get_browser(self) -> Browser:
         """Get or create browser instance."""
+        if self._browser is not None and not self._browser.is_connected():
+            logger.warning("playwright_browser_disconnected_reinitializing")
+            await self._reset_browser_runtime()
+
         if self._browser is None:
             self._playwright = await async_playwright().start()
             self._browser = await self._playwright.chromium.launch(
@@ -38,14 +42,26 @@ class ReceiptRenderer:
             logger.info("playwright_browser_launched")
         return self._browser
 
+    async def _reset_browser_runtime(self) -> None:
+        """Clear cached browser/runtime so next request can relaunch cleanly."""
+        if self._browser:
+            try:
+                await self._browser.close()
+            except Exception as e:
+                logger.warning("playwright_browser_close_failed", error=str(e))
+            finally:
+                self._browser = None
+        if self._playwright:
+            try:
+                await self._playwright.stop()
+            except Exception as e:
+                logger.warning("playwright_runtime_stop_failed", error=str(e))
+            finally:
+                self._playwright = None
+
     async def close(self) -> None:
         """Close browser and cleanup."""
-        if self._browser:
-            await self._browser.close()
-            self._browser = None
-        if self._playwright:
-            await self._playwright.stop()
-            self._playwright = None
+        await self._reset_browser_runtime()
         logger.info("playwright_browser_closed")
 
     async def render_receipt(
@@ -79,10 +95,15 @@ class ReceiptRenderer:
         html_content = template.render(**template_data)
 
         browser = await self._get_browser()
-        page = await browser.new_page(
-            viewport={"width": RECEIPT_WIDTH, "height": 1},
-            device_scale_factor=3,
-        )
+        try:
+            page = await browser.new_page(
+                viewport={"width": RECEIPT_WIDTH, "height": 1},
+                device_scale_factor=3,
+            )
+        except Exception as e:
+            logger.warning("playwright_new_page_failed", error=str(e))
+            await self._reset_browser_runtime()
+            raise
 
         try:
             await page.set_content(html_content, wait_until="load")
