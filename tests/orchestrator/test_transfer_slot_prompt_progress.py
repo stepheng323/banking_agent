@@ -682,3 +682,62 @@ async def test_multi_transfer_confirmation_preserves_existing_waiting_task() -> 
     assert set(confirmation_entry["task_ids"]) == {"t1", "t2"}
     assert "Confirm Mum" in confirmation_entry["summary"]
     assert "Confirm Tolu" in confirmation_entry["summary"]
+
+
+async def test_multi_transfer_fanout_task_ids_keep_all_recipients_in_confirmation() -> None:
+    worker = _MockTransferMixedConfirmWorker()
+    state = OrchestratorState(
+        user_id="u_multi_confirm_fanout",
+        phone_number="2348000000114",
+        channel="whatsapp",
+        tasks={
+            "t1": TaskSpec(
+                id="t1",
+                type="transfer",
+                stage=TaskStage.EXTRACTED,
+                payload={"recipient_name": "Mum", "amount": 10000, "source_account_id": "acct-1"},
+            ),
+            "t1_r2": TaskSpec(
+                id="t1_r2",
+                type="transfer",
+                stage=TaskStage.EXTRACTED,
+                payload={"recipient_name": "Tolu", "amount": 10000, "source_account_id": "acct-1"},
+            ),
+        },
+        waves=[["t1", "t1_r2"]],
+        current_wave_index=0,
+        loaded_context={
+            "language": "en",
+            "accounts": [
+                {
+                    "id": "acct-1",
+                    "bank_name": "Zenith Bank",
+                    "account_number": "0000009384",
+                    "mandate_status": "ready",
+                    "mandate_id": "m1",
+                }
+            ],
+        },
+    )
+    config: RunnableConfig = {"configurable": {"services": {"transfer": worker}}, "recursion_limit": 50}
+
+    first_updates = await advance_wave(state, config)
+    assert first_updates["pending_interrupt"].kind == "input"
+    assert first_updates["pending_interrupt"].task_ids == ["t1_r2"]
+    assert first_updates["tasks"]["t1"].stage == TaskStage.AWAITING_CONFIRMATION
+    assert first_updates["tasks"]["t1_r2"].stage == TaskStage.EXTRACTED
+
+    state.tasks = first_updates["tasks"]
+    state.last_interrupt = first_updates["pending_interrupt"]
+    state.pending_interrupt = None
+    state.last_message_text = "816 251 1027 First Bank"
+
+    second_updates = await advance_wave(state, config)
+    second_interrupt = second_updates["pending_interrupt"]
+    assert second_interrupt.kind == "confirmation"
+    assert set(second_interrupt.task_ids) == {"t1", "t1_r2"}
+
+    confirmation_entry = next(entry for entry in second_updates["outbox"] if entry["type"] == "request_confirmation")
+    assert set(confirmation_entry["task_ids"]) == {"t1", "t1_r2"}
+    assert "Confirm Mum" in confirmation_entry["summary"]
+    assert "Confirm Tolu" in confirmation_entry["summary"]

@@ -1,4 +1,8 @@
-from apps.core.src.agent.orchestrator.utils.task_payload import build_task_spec_from_plan_item
+from apps.core.src.agent.orchestrator.utils.task_payload import (
+    _derive_recipient_from_user_text,
+    _derive_recipients_from_user_text,
+    build_task_spec_from_plan_item,
+)
 from shared.types.planner import PlannedTask, TaskParameters
 
 
@@ -225,6 +229,16 @@ def test_transfer_recipient_derivation_prefers_preposition_target() -> None:
     )
 
     assert spec.payload.get("recipient_name") == "tolu"
+
+
+def test_transfer_recipient_list_derivation_supports_and_separator() -> None:
+    recipients = _derive_recipients_from_user_text("send 10k to mum and tolu")
+    assert recipients == ["mum", "tolu"]
+
+
+def test_transfer_single_recipient_derivation_uses_first_candidate_from_list() -> None:
+    recipient = _derive_recipient_from_user_text("Mum and Tolu", "send 10k to mum and tolu")
+    assert recipient == "mum"
 
 
 def test_transfer_reference_is_mapped_to_recipient_reference() -> None:

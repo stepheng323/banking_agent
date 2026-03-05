@@ -6,6 +6,7 @@ from shared.utils.sanitize import normalize_bank_account_number
 
 _TRANSFER_VERB_TOKENS = {"send", "transfer", "pay", "remit"}
 _RECIPIENT_NOISE_TOKENS = _TRANSFER_VERB_TOKENS | {"to", "for", "money", "cash", "funds", "s"}
+_RECIPIENT_SEGMENT_BOUNDARY = re.compile(r"\b(?:then|from|using|with|via|through|while)\b")
 
 
 def apply_source_account_fields(payload: dict[str, Any], plan_item: Any) -> None:
@@ -32,6 +33,8 @@ def _is_plausible_recipient_candidate(candidate: str | None) -> bool:
     if norm_candidate.isdigit():
         return False
     tokens = [token for token in norm_candidate.split() if token]
+    if any(re.fullmatch(r"\d+(?:k|m)?", token) for token in tokens):
+        return False
     return not all(token in _RECIPIENT_NOISE_TOKENS for token in tokens)
 
 
@@ -46,6 +49,38 @@ def _recipient_grounded_in_user_text(recipient: str | None, user_text: str) -> b
     return norm_recipient in norm_text
 
 
+def _derive_recipients_from_user_text(user_text: str) -> list[str]:
+    """Derive ordered recipient candidates from a transfer utterance."""
+    norm_text = _normalize_text(user_text)
+    if not norm_text:
+        return []
+
+    match = re.search(r"\b(?:to|for|si|ga|zuwa)\b\s+(.+)", norm_text)
+    if not match:
+        return []
+
+    segment = match.group(1).strip()
+    if not segment:
+        return []
+
+    segment = _RECIPIENT_SEGMENT_BOUNDARY.split(segment, maxsplit=1)[0].strip()
+    segment = re.sub(r"\band\s+to\b", " and ", segment)
+    if not segment:
+        return []
+
+    candidates: list[str] = []
+    seen: set[str] = set()
+    for raw_part in re.split(r"\s*(?:,|\band\b)\s*", segment):
+        part = re.sub(r"^(?:to|for|si|ga|zuwa)\s+", "", raw_part).strip()
+        if not _is_plausible_recipient_candidate(part):
+            continue
+        key = _normalize_text(part)
+        if key and key not in seen:
+            seen.add(key)
+            candidates.append(part)
+    return candidates
+
+
 def _derive_recipient_from_user_text(planned_recipient: str | None, user_text: str) -> str | None:
     """Derive a safe recipient token from user text when planner over-expands names."""
     norm_planned = _normalize_text(planned_recipient)
@@ -53,12 +88,9 @@ def _derive_recipient_from_user_text(planned_recipient: str | None, user_text: s
     if not norm_text:
         return None
 
-    # Lightweight deterministic fallback: token after a transfer preposition.
-    match = re.search(r"\b(?:to|for|si|ga|zuwa)\s+([a-z0-9']+)", norm_text)
-    if match:
-        candidate = match.group(1).strip()
-        if _is_plausible_recipient_candidate(candidate):
-            return candidate
+    recipient_candidates = _derive_recipients_from_user_text(user_text)
+    if recipient_candidates:
+        return recipient_candidates[0]
 
     planned_tokens = [token for token in norm_planned.split() if token]
     text_tokens = {token for token in norm_text.split() if token}

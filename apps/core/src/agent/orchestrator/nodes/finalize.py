@@ -61,7 +61,7 @@ async def finalize(state: OrchestratorState, config: RunnableConfig) -> dict[str
                 }
             )
 
-    for _ in cancelled_tasks:
+    if cancelled_tasks:
         outbox.append({"type": "say", "text": render_cancelled_prompt(locale)})
 
     # Check for stashed sessions and prompt

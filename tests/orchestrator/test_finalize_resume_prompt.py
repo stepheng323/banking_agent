@@ -81,6 +81,28 @@ async def test_finalize_stashed_and_cancelled_only_does_not_prompt_resume() -> N
 
 
 @pytest.mark.asyncio
+async def test_finalize_multiple_cancelled_tasks_emits_single_cancel_message() -> None:
+    state = OrchestratorState(
+        user_id="u_resume_6",
+        phone_number="2348000000016",
+        channel="whatsapp",
+        tasks={
+            "t1": TaskSpec(id="t1", type="transfer", stage=TaskStage.CANCELLED, payload={}),
+            "t2": TaskSpec(id="t2", type="transfer", stage=TaskStage.CANCELLED, payload={}),
+        },
+    )
+
+    updates = await finalize(state, _config())
+
+    cancelled_lines = [
+        entry.get("text")
+        for entry in updates["outbox"]
+        if entry.get("type") == "say" and "Transaction cancelled" in str(entry.get("text"))
+    ]
+    assert len(cancelled_lines) == 1
+
+
+@pytest.mark.asyncio
 async def test_finalize_stashed_with_no_terminal_tasks_does_not_prompt_resume() -> None:
     state = OrchestratorState(
         user_id="u_resume_4",

@@ -10,7 +10,10 @@ from apps.core.src.agent.orchestrator.meta_reply import generate_meta_reply
 from apps.core.src.agent.orchestrator.models.domain import MetaIntent, TaskSpec, TaskStage
 from apps.core.src.agent.orchestrator.models.state import OrchestratorState
 from apps.core.src.agent.orchestrator.services.context_manager import OrchestratorContextManager
-from apps.core.src.agent.orchestrator.utils.task_payload import build_task_spec_from_plan_item
+from apps.core.src.agent.orchestrator.utils.task_payload import (
+    _derive_recipients_from_user_text,
+    build_task_spec_from_plan_item,
+)
 from apps.core.src.agent.orchestrator.utils.waves import build_dependency_waves
 from shared.i18n import (
     LanguageDetectionSignal,
@@ -799,6 +802,82 @@ def _next_query_continuation_task_id(existing_tasks: dict[str, TaskSpec]) -> str
     return task_id
 
 
+def _next_transfer_fanout_task_id(base_task_id: str, index: int, existing_ids: set[str]) -> str:
+    candidate = f"{base_task_id}_r{index}"
+    while candidate in existing_ids:
+        index += 1
+        candidate = f"{base_task_id}_r{index}"
+    existing_ids.add(candidate)
+    return candidate
+
+
+def _expand_underproduced_transfer_tasks(
+    planned_tasks: list[PlannedTask],
+    user_text: str,
+) -> tuple[list[PlannedTask], dict[str, Any] | None]:
+    """Fan out a single transfer task when user text clearly contains multiple recipients."""
+    transfer_indices = [idx for idx, task in enumerate(planned_tasks) if task.executor == "transfer"]
+    if len(transfer_indices) != 1:
+        return planned_tasks, None
+
+    recipients = _derive_recipients_from_user_text(user_text)
+    if len(recipients) < 2:
+        return planned_tasks, None
+
+    source_index = transfer_indices[0]
+    source_task = planned_tasks[source_index]
+    source_parameters = source_task.parameters
+
+    # Keep parser repair narrow: avoid fanout when task is account+bank explicit or purely reference-based.
+    if source_parameters.recipient_account or source_parameters.bank_name:
+        return planned_tasks, None
+    if source_parameters.reference and not (source_parameters.recipient or source_parameters.recipient_name):
+        return planned_tasks, None
+
+    existing_ids = {task.task_id for task in planned_tasks}
+    expanded_task_ids: list[str] = [source_task.task_id]
+    expanded_source_tasks: list[PlannedTask] = []
+
+    first_task = source_task.model_copy(deep=True)
+    first_task.parameters.recipient = recipients[0]
+    first_task.parameters.recipient_name = recipients[0]
+    expanded_source_tasks.append(first_task)
+
+    for idx, recipient in enumerate(recipients[1:], start=2):
+        clone = source_task.model_copy(deep=True)
+        clone.task_id = _next_transfer_fanout_task_id(source_task.task_id, idx, existing_ids)
+        clone.parameters.recipient = recipient
+        clone.parameters.recipient_name = recipient
+        expanded_source_tasks.append(clone)
+        expanded_task_ids.append(clone.task_id)
+
+    expanded_tasks: list[PlannedTask] = []
+    for idx, task in enumerate(planned_tasks):
+        if idx == source_index:
+            expanded_tasks.extend(expanded_source_tasks)
+            continue
+
+        copy_task = task.model_copy(deep=True)
+        if source_task.task_id in copy_task.depends_on:
+            rewritten: list[str] = []
+            for dep in copy_task.depends_on:
+                if dep == source_task.task_id:
+                    rewritten.extend(expanded_task_ids)
+                else:
+                    rewritten.append(dep)
+            copy_task.depends_on = list(dict.fromkeys(rewritten))
+        expanded_tasks.append(copy_task)
+
+    return (
+        expanded_tasks,
+        {
+            "source_task_id": source_task.task_id,
+            "recipient_count": len(expanded_task_ids),
+            "recipient_names": recipients,
+        },
+    )
+
+
 async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[str, Any]:
     """Planner Node.
 
@@ -1326,6 +1405,17 @@ async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[s
             logger.info("planner_intent_match_active", intent=active_intent, action="pass_through")
             return locale_updates
         logger.info("planner_intent_switch", old=active_intent, new=planner_output.primary_intent)
+
+    fanout_tasks, fanout_meta = _expand_underproduced_transfer_tasks(planner_output.tasks, text)
+    if fanout_meta:
+        planner_output.tasks = fanout_tasks
+        planner_output.is_complex = True
+        logger.info(
+            "planner_transfer_multi_recipient_fanout_applied",
+            source_task_id=fanout_meta["source_task_id"],
+            recipient_count=fanout_meta["recipient_count"],
+            recipient_names=fanout_meta["recipient_names"],
+        )
 
     stashed_query_session_update: dict[str, Any] | None = None
     if (
