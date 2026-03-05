@@ -677,16 +677,19 @@
       "total": "Lapapọ ti yoo jade: {amount}"
     },
     "multi": {
-      "header": "✓ *Transaction Summary*",
+      "header": "*Transaction Summary*",
       "transfer_batch_line": "*Transfer:* {amount} to {count} recipients",
       "recipient_unknown": "Unknown",
       "recipient_fallback": "recipient",
-      "transfer_single_line": "✓ *Transfer:* {amount} to {recipient}",
+      "transfer_single_line": "*Transfer:* {amount} to {recipient}",
+      "transfer_compact_line": "{icon} {amount} → {recipient} • {bank} • {account}",
+      "bank_fallback": "Bank",
+      "account_fallback": "N/A",
       "phone_fallback": "N/A",
-      "airtime_line": "✓ *Airtime:* {amount} for {phone} ({network})",
+      "airtime_line": "*Airtime:* {amount} for {phone} ({network})",
       "data_plan_fallback": "data",
-      "data_line": "✓ *Data:* {plan} - {amount} for {phone}",
-      "other_completed_line": "✓ *{task_type}:* Completed",
+      "data_line": "*Data:* {plan} - {amount} for {phone}",
+      "other_completed_line": "*{task_type}:* Completed",
       "total_spent": "*Total Spent:* {amount}",
       "success_footer": "_All transactions completed successfully_"
     },
@@ -710,8 +713,8 @@
     "batch": {
       "shortfall_header": "⚠️ Insufficient funds for this batch",
       "shortfall_body": "This batch needs {demanded}, but only {available} is currently available.",
-      "task_covered": "✓ {task_id}: {amount} available from {bank}.",
-      "task_short": "❌ {task_id}: need {needed}, available {available} from {bank} ({deficit} short).",
+      "task_covered": "{task_id}: {amount} available from {bank}.",
+      "task_short": "{task_id}: need {needed}, available {available} from {bank} ({deficit} short).",
       "alternate_suggestion": "💡 {bank} has {available}. Should I use it instead?",
       "total_infeasible": "Reply with updated source accounts/split, or reduce the transfer amounts."
     },

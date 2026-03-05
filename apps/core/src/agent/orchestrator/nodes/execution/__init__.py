@@ -21,6 +21,7 @@ from apps.core.src.agent.orchestrator.models.domain import (
     TaskStage,
 )
 from apps.core.src.agent.orchestrator.models.state import OrchestratorState
+from apps.core.src.agent.orchestrator.utils.actionable_payload import build_actionable_payload
 from shared.formatters.accounts import (
     format_accounts_list,
 )
@@ -32,6 +33,7 @@ from shared.formatters.prompts import (
     format_single_transfer_recipient_prompt,
     format_source_repair_prompt,
 )
+from shared.formatters.recipient_display import format_recipient_display_label
 from shared.formatters.transaction_summary import format_batch_transfer_summary, format_intent_line
 from shared.i18n import render_message
 from shared.services.funding.coordinator import BatchFundingCoordinator, SourceAffinity, TransferDemand
@@ -42,6 +44,7 @@ logger = get_logger(__name__)
 
 TERMINAL_STAGES = {TaskStage.COMPLETED, TaskStage.FAILED, TaskStage.CANCELLED}
 BLOCKING_DEPENDENCY_STAGES = {TaskStage.FAILED, TaskStage.CANCELLED}
+EXECUTION_ONLY_FIELDS = {"source_account_id", "pin", "confirmation_summary"}
 INPUT_MUTABLE_STAGES = {
     TaskStage.DRAFT,
     TaskStage.EXTRACTED,
@@ -62,47 +65,6 @@ def _with_policy_notice(state: OrchestratorState, outbox: list[dict[str, Any]]) 
         return outbox
     logger.info("policy_notice_injected")
     return [{"type": "say", "text": state.policy_notice}, *outbox]
-
-
-def _build_actionable_payload(task: Any) -> dict[str, Any] | None:
-    """Build actionable payload for quote-based follow-up messages."""
-    task_payload = task.payload if isinstance(task.payload, dict) else {}
-    idem_key = task_payload.get("idempotency_key")
-    tx_id = task_payload.get("transaction_id")
-    action = task_payload.get("action")
-    if not any([idem_key, tx_id, action]):
-        return None
-
-    payload: dict[str, Any] = {
-        "idempotency_key": idem_key,
-        "task_id": task.id,
-        "task_type": task.type,
-    }
-    for key in (
-        "transaction_id",
-        "action",
-        "amount",
-        "beneficiary_id",
-        "recipient_name",
-        "recipient_resolved_name",
-        "recipient_phone",
-        "target_phone",
-        "recipient_account",
-        "recipient_account_number",
-        "recipient_bank_code",
-        "recipient_bank_name",
-        "resolved_from_saved_beneficiary",
-        "source_bank_name",
-        "narration",
-        "network",
-        "plan_code",
-        "plan_name",
-    ):
-        value = task_payload.get(key)
-        if value is not None and value != "":
-            payload[key] = value
-
-    return payload
 
 
 def _dedupe_task_ids(task_ids: list[str], current_wave: list[str]) -> list[str]:
@@ -209,19 +171,12 @@ def _compact_prompt_for_options(prompt_text: str) -> str:
 
 def _recipient_prompt_label(task_payload: dict[str, Any]) -> str | None:
     """Build recipient display label for prompts: alias first, resolved name in parentheses."""
-    recipient_name_raw = task_payload.get("recipient_name")
-    resolved_name_raw = task_payload.get("recipient_resolved_name")
-
-    recipient_name = str(recipient_name_raw).strip() if isinstance(recipient_name_raw, str) else ""
-    resolved_name = str(resolved_name_raw).strip() if isinstance(resolved_name_raw, str) else ""
-
-    if recipient_name and resolved_name and recipient_name.casefold() != resolved_name.casefold():
-        return f"{recipient_name} ({resolved_name})"
-    if recipient_name:
-        return recipient_name
-    if resolved_name:
-        return resolved_name
-    return None
+    recipient_name = task_payload.get("recipient_name")
+    resolved_name = task_payload.get("recipient_resolved_name")
+    return format_recipient_display_label(
+        str(recipient_name) if isinstance(recipient_name, str) else None,
+        str(resolved_name) if isinstance(resolved_name, str) else None,
+    )
 
 
 def _build_planning_signature(task_payload: dict[str, Any]) -> dict[str, Any]:
@@ -555,11 +510,9 @@ async def advance_wave(state: OrchestratorState, config: RunnableConfig) -> dict
         # If ANY task needs basic details (beneficiary, amount, etc.), suppress "Execution" prompts (Source/PIN)
         # for ALL tasks. This prevents confusing parallel prompts like "Select Account" + "Who is Dad?".
 
-        execution_fields = {"source_account_id", "pin", "confirmation_summary"}
-
         has_basic_blocker = False
         for fields in agg.missing_fields_by_task.values():
-            if any(f not in execution_fields for f in fields):
+            if any(f not in EXECUTION_ONLY_FIELDS for f in fields):
                 has_basic_blocker = True
                 break
 
@@ -567,7 +520,7 @@ async def advance_wave(state: OrchestratorState, config: RunnableConfig) -> dict
             # Suppress tasks that are ONLY waiting for execution fields
             suppressed_tasks = []
             for tid, fields in agg.missing_fields_by_task.items():
-                if all(f in execution_fields for f in fields):
+                if all(f in EXECUTION_ONLY_FIELDS for f in fields):
                     suppressed_tasks.append(tid)
 
             for tid in suppressed_tasks:
@@ -644,11 +597,10 @@ async def advance_wave(state: OrchestratorState, config: RunnableConfig) -> dict
                 state.tasks[tid].payload["recipient_ui_confirmed"] = True
         else:
             # [One-at-a-time] When multiple tasks need basic details, focus on one per turn.
-            execution_fields = {"source_account_id", "pin", "confirmation_summary"}
             tasks_needing_basic = [
                 tid
                 for tid in agg.missing_fields_by_task
-                if any(f not in execution_fields for f in agg.missing_fields_by_task[tid])
+                if any(f not in EXECUTION_ONLY_FIELDS for f in agg.missing_fields_by_task[tid])
             ]
             focused_tid = None
             if tasks_needing_basic:
@@ -911,7 +863,7 @@ async def advance_wave(state: OrchestratorState, config: RunnableConfig) -> dict
                     "idempotency_key",
                     "unknown",
                 ),
-                "actionable_payload": _build_actionable_payload(state.tasks[confirm_task_ids[0]]),
+                "actionable_payload": build_actionable_payload(state.tasks[confirm_task_ids[0]]),
             }
         )
 
@@ -948,7 +900,7 @@ async def advance_wave(state: OrchestratorState, config: RunnableConfig) -> dict
                 "idempotency_key": idem_key,
                 "header": reason,
                 "summary": summ,
-                "actionable_payload": _build_actionable_payload(first_task),
+                "actionable_payload": build_actionable_payload(first_task),
             }
         ]
         updates["pending_interrupt"] = interrupt

@@ -11,6 +11,7 @@ from apps.core.src.agent.graphs.transfer.models.types import (
 )
 from apps.core.src.agent.graphs.transfer.pipeline.base import TransferStep
 from apps.core.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
+from shared.formatters.recipient_display import format_recipient_display_label
 from shared.formatters.transfer import format_funding_plan_summary, format_transfer_summary
 from shared.i18n import render_message
 from shared.policy.loader import get_cached_policy
@@ -128,9 +129,14 @@ def build_confirmation(
     ctx: TransferContext,
 ) -> TransactionResult:
     """Build confirmation summary."""
+    recipient_display_name = (
+        format_recipient_display_label(payload.recipient_name, payload.recipient_resolved_name)
+        or payload.recipient_resolved_name
+        or payload.recipient_name
+    )
     snap = {
         "amount": payload.amount,
-        "recipient_name": payload.recipient_resolved_name or payload.recipient_name,
+        "recipient_name": recipient_display_name,
         "recipient_bank": payload.recipient_bank_name,
         "recipient_account": payload.recipient_account,
         "sourceBank": payload.source_bank_name,
@@ -142,7 +148,7 @@ def build_confirmation(
     base_summary = format_transfer_summary(
         {
             "amount": payload.amount,
-            "recipientName": payload.recipient_resolved_name or payload.recipient_name,
+            "recipientName": recipient_display_name,
             "recipientBank": payload.recipient_bank_name,
             "recipientAccount": payload.recipient_account,
             "sourceBank": payload.source_bank_name,

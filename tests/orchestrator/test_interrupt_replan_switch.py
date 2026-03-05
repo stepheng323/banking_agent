@@ -1010,3 +1010,45 @@ async def test_status_query_multilingual_route_keeps_interrupt_active() -> None:
     assert updates["pending_interrupt"].kind == "confirmation"
     assert updates["tasks"]["t1"].stage == TaskStage.AWAITING_CONFIRMATION
     assert updates["outbox"][0]["type"] == "say"
+
+
+@pytest.mark.asyncio
+async def test_transfer_input_unclear_reprompt_uses_short_account_bank_reminder() -> None:
+    state = OrchestratorState(
+        user_id="u_interrupt_reprompt_1",
+        phone_number="2348010101094",
+        channel="whatsapp",
+        last_message_text="hi",
+        pending_interrupt=PendingInterrupt(
+            kind="input",
+            task_ids=["t1"],
+            fields_by_task={"t1": ["recipient_account", "recipient_bank_name"]},
+            prompt="I found Mum (MERCY JOHNSON).\n\nWhat's Tolu's account number and bank?",
+        ),
+        tasks={
+            "t1": TaskSpec(
+                id="t1",
+                type="transfer",
+                stage=TaskStage.EXTRACTED,
+                payload={"recipient_name": "Tolu", "recipient_resolved_name": "TOLU ADEDAYO"},
+            )
+        },
+    )
+    planner = _RouteOnlyPlanner(
+        InterruptRouteDecision(
+            decision="unclear",
+            confidence=0.55,
+            detected_language="English",
+            target_intent=None,
+            target_mode=None,
+            reason="smalltalk while waiting for transfer input",
+        )
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await handle_pending_interrupt(state, config)
+
+    assert updates["pending_interrupt"] is not None
+    assert updates["outbox"][0]["type"] == "say"
+    assert updates["outbox"][0]["text"] == "What's Tolu (TOLU ADEDAYO)'s account number and bank?"
+    assert "I found" not in updates["outbox"][0]["text"]

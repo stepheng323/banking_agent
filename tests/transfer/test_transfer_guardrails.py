@@ -76,6 +76,7 @@ async def test_confirmation_summary_includes_name_mismatch_warning() -> None:
     assert result.outcome.value == "needs_confirmation"
     assert result.confirmation_summary is not None
     assert "You asked to send to David" in result.confirmation_summary
+    assert "₦5,000 → David (Mercy Johnson)" in result.confirmation_summary
     assert "Mercy Johnson" in result.confirmation_summary
 
 

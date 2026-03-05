@@ -10,11 +10,13 @@ from apps.core.src.agent.orchestrator.services.interrupt_shortcuts import (
     resolve_interrupt_shortcut_with_reason,
     resolve_shortcut_locale,
 )
+from apps.core.src.agent.orchestrator.utils.actionable_payload import build_actionable_payload
 from apps.core.src.agent.orchestrator.utils.task_payload import build_task_spec_from_plan_item
 from apps.core.src.agent.orchestrator.utils.task_state import reset_tasks_to_extracted, set_tasks_cancelled
 from apps.core.src.agent.orchestrator.utils.waves import build_dependency_waves
 from shared.formatters.confirmation import build_confirmation_summary
-from shared.formatters.prompts import format_auth_reason
+from shared.formatters.prompts import format_auth_reason, sanitize_recipient_display_name
+from shared.formatters.recipient_display import format_recipient_display_label
 from shared.i18n import LocaleManager, render_message
 from shared.types.planner import InterruptRouteDecision, PlannerOutput
 from shared.utils.logging import get_logger
@@ -55,49 +57,6 @@ def _current_task_types(state: OrchestratorState, task_ids: list[str]) -> set[st
 
 def _active_intent(current_task_types: set[str]) -> str:
     return next(iter(current_task_types)) if current_task_types else "unknown"
-
-
-def _build_actionable_payload(task: TaskSpec | None) -> dict[str, Any] | None:
-    """Build actionable payload for quote-based follow-up messages."""
-    if not task:
-        return None
-    task_payload = task.payload if isinstance(task.payload, dict) else {}
-    idem_key = task_payload.get("idempotency_key")
-    tx_id = task_payload.get("transaction_id")
-    action = task_payload.get("action")
-    if not any([idem_key, tx_id, action]):
-        return None
-
-    payload: dict[str, Any] = {
-        "idempotency_key": idem_key,
-        "task_id": task.id,
-        "task_type": task.type,
-    }
-    for key in (
-        "transaction_id",
-        "action",
-        "amount",
-        "beneficiary_id",
-        "recipient_name",
-        "recipient_resolved_name",
-        "recipient_phone",
-        "target_phone",
-        "recipient_account",
-        "recipient_account_number",
-        "recipient_bank_code",
-        "recipient_bank_name",
-        "resolved_from_saved_beneficiary",
-        "source_bank_name",
-        "narration",
-        "network",
-        "plan_code",
-        "plan_name",
-    ):
-        value = task_payload.get(key)
-        if value is not None and value != "":
-            payload[key] = value
-
-    return payload
 
 
 def _callback_flow_type(state: OrchestratorState) -> str | None:
@@ -530,7 +489,7 @@ def _build_confirmation_reprompt_outbox(
             "summary": summary,
             "snapshot": snapshot,
             "idempotency_key": first_task.payload.get("idempotency_key", "unknown"),
-            "actionable_payload": _build_actionable_payload(first_task),
+            "actionable_payload": build_actionable_payload(first_task),
         }
     ]
 
@@ -555,7 +514,7 @@ def _build_auth_reprompt_outbox(state: OrchestratorState, interrupt: Any) -> lis
             "idempotency_key": first_task.payload.get("idempotency_key", "unknown"),
             "header": format_auth_reason(first_task.type, locale=locale),
             "summary": summary,
-            "actionable_payload": _build_actionable_payload(first_task),
+            "actionable_payload": build_actionable_payload(first_task),
         }
     ]
 
@@ -563,7 +522,11 @@ def _build_auth_reprompt_outbox(state: OrchestratorState, interrupt: Any) -> lis
 def _reprompt_updates(state: OrchestratorState, interrupt: Any) -> dict[str, Any]:
     outbox: list[dict[str, Any]] = []
     if interrupt.kind == "input":
-        if interrupt.prompt:
+        compact_transfer_reprompt = _build_compact_transfer_input_reprompt(state, interrupt)
+        if compact_transfer_reprompt:
+            logger.info("interrupt_compact_transfer_reprompt", task_ids=interrupt.task_ids)
+            outbox = [{"type": "say", "text": compact_transfer_reprompt}]
+        elif interrupt.prompt:
             outbox = [{"type": "say", "text": interrupt.prompt}]
     elif interrupt.kind == "confirmation":
         outbox = _build_confirmation_reprompt_outbox(state, interrupt, interrupt.task_ids)
@@ -578,6 +541,60 @@ def _reprompt_updates(state: OrchestratorState, interrupt: Any) -> dict[str, Any
     if outbox:
         updates["outbox"] = outbox
     return updates
+
+
+def _build_compact_transfer_input_reprompt(state: OrchestratorState, interrupt: Any) -> str | None:
+    if getattr(interrupt, "kind", None) != "input":
+        return None
+    task_ids = getattr(interrupt, "task_ids", None)
+    if not isinstance(task_ids, list) or not task_ids:
+        return None
+
+    first_task_id = str(task_ids[0])
+    task = state.tasks.get(first_task_id)
+    if not task or task.type != "transfer":
+        return None
+
+    fields_by_task = getattr(interrupt, "fields_by_task", {}) or {}
+    if not isinstance(fields_by_task, dict):
+        return None
+    required_fields_raw = fields_by_task.get(first_task_id, [])
+    required_fields = [field for field in required_fields_raw if isinstance(field, str)]
+    required_set = set(required_fields)
+    transfer_fields = {"recipient_account", "recipient_bank_name"}
+    if not required_set or not required_set.issubset(transfer_fields):
+        return None
+
+    locale = _state_locale(state)
+    task_payload = task.payload if isinstance(task.payload, dict) else {}
+    recipient_label = format_recipient_display_label(
+        task_payload.get("recipient_name"),
+        task_payload.get("recipient_resolved_name"),
+    )
+    safe_recipient = sanitize_recipient_display_name(recipient_label, locale)
+
+    if required_set == transfer_fields:
+        return cast(
+            str,
+            render_message(
+                "response.templates.ask_account_number_and_bank",
+                locale,
+                {"recipient_name": safe_recipient},
+            ),
+        )
+    if required_set == {"recipient_account"}:
+        return cast(
+            str,
+            render_message(
+                "response.templates.ask_account_number",
+                locale,
+                {"recipient_name": safe_recipient},
+            ),
+        )
+    if required_set == {"recipient_bank_name"}:
+        return cast(str, render_message("response.templates.ask_bank", locale))
+
+    return None
 
 
 def _format_task_details_for_status(task: TaskSpec, task_type: str) -> str:
