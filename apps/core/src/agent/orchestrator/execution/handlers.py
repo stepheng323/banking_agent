@@ -17,8 +17,8 @@ from apps.core.src.agent.orchestrator.models.domain import (
 from apps.core.src.agent.orchestrator.models.state import OrchestratorState
 from apps.core.src.agent.orchestrator.services.context_manager import OrchestratorContextManager
 from shared.i18n import LocaleManager, render_message
-from shared.utils.serialization import sqlalchemy_to_dict
 from shared.utils.logging import get_logger
+from shared.utils.serialization import sqlalchemy_to_dict
 
 logger = get_logger(__name__)
 
