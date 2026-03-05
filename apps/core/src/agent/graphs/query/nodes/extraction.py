@@ -9,6 +9,7 @@ from apps.core.src.agent.graphs.query.models import (
     NormalizedQuery,
     QueryResultItem,
     ResolverOutcome,
+    ResultSurface,
     SurfaceType,
     TimeReference,
 )
@@ -90,12 +91,15 @@ class ExtractionStep(QueryStep):
             if raw_items:
                 items = [QueryResultItem.model_validate(i) if isinstance(i, dict) else i for i in raw_items]
 
+        raw_surface = session.get("surface")
+        surface = ResultSurface.model_validate(raw_surface) if isinstance(raw_surface, dict) else raw_surface
+
         cont_type, data = await self.classifier.classify(
             message,
             has_active_session=True,
             today=date.today().isoformat(),
             items=items,
-            surface=session.get("surface"),
+            surface=surface,
             language=LocaleManager.normalize(state.get("language")).value,
         )
 
