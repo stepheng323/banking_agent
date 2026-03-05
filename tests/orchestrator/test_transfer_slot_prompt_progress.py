@@ -14,6 +14,28 @@ from apps.core.src.agent.orchestrator.nodes.execution import advance_wave
 from shared.config.settings import settings
 
 
+class _MockNonTransferNeedsInputWorker:
+    """Worker that returns NEEDS_INPUT with non-transfer fields (e.g. airtime)."""
+
+    def __init__(self, required_fields: list[str], prompt: str) -> None:
+        self.required_fields = required_fields
+        self.prompt = prompt
+
+    async def run(
+        self,
+        payload: dict,
+        context: dict,
+        user_message: str | None = None,
+        pin_verified: bool = False,
+    ) -> TransactionResult:
+        del payload, pin_verified, context, user_message
+        return TransactionResult(
+            outcome=TransactionOutcome.NEEDS_INPUT,
+            required_fields=self.required_fields,
+            prompt=self.prompt,
+        )
+
+
 class _MockTransferNeedsInputWorker:
     def __init__(
         self,
@@ -222,3 +244,56 @@ async def test_source_account_prompt_emits_options_when_flag_enabled(monkeypatch
     assert "*Which account would you like to use?*" in updates["outbox"][0]["title"]
     assert "1. Access" not in updates["outbox"][0]["title"]
     assert [opt["id"] for opt in updates["outbox"][0]["options"]] == ["1", "2"]
+
+
+async def test_superset_missing_fields_still_prompts_for_account_and_bank() -> None:
+    """When required_fields contains extra fields beyond account+bank, the prompt should still be specific."""
+    worker = _MockTransferNeedsInputWorker(["recipient_name", "recipient_account", "recipient_bank_name"])
+    state = _build_state()
+    config: RunnableConfig = {"configurable": {"services": {"transfer": worker}}, "recursion_limit": 50}
+
+    updates = await advance_wave(state, config)
+    text = updates["outbox"][0]["text"]
+
+    assert "account number and bank" in text
+    assert "I need account details for Tolu." not in text
+
+
+async def test_non_transfer_task_uses_worker_prompt_not_transfer_formatter() -> None:
+    """Airtime/data tasks with non-transfer missing fields should use the worker's own prompt."""
+    airtime_prompt = "What phone number should I send airtime to?"
+    worker = _MockNonTransferNeedsInputWorker(["recipient_phone"], airtime_prompt)
+    state = OrchestratorState(
+        user_id="u_airtime",
+        phone_number="2348000000100",
+        channel="whatsapp",
+        tasks={
+            "t1": TaskSpec(
+                id="t1",
+                type="airtime",
+                stage=TaskStage.EXTRACTED,
+                payload={"amount": 2000},
+            )
+        },
+        waves=[["t1"]],
+        current_wave_index=0,
+        loaded_context={
+            "language": "en",
+            "accounts": [
+                {
+                    "id": "acct-1",
+                    "bank_name": "Test Bank",
+                    "account_number": "0000000001",
+                    "mandate_status": "ready",
+                    "mandate_id": "m1",
+                }
+            ],
+        },
+    )
+    config: RunnableConfig = {"configurable": {"services": {"airtime": worker}}, "recursion_limit": 50}
+
+    updates = await advance_wave(state, config)
+    text = updates["outbox"][0]["text"]
+
+    assert text == airtime_prompt
+    assert "account details" not in text
