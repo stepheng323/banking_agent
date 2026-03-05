@@ -225,25 +225,23 @@ async def handle_transfer_task(task: Any, task_id: str, ctx: ExecutionContext) -
     if not worker:
         return
 
-    user_msg = _maybe_user_message(task, ctx.state)
-
-    # [SAFETY] If recipient is known/valid (not placeholder), synthesize message to enforce it
-    # This prevents TransferWorker from re-extracting "him" from original message if LLM resolved it.
-    # Skip synthesis when waiting for account selection — raw input (e.g. "2") must reach the extractor.
-    needs_account_selection = not task.payload.get("source_account_id")
-    if task.payload.get("recipient_name") and not needs_account_selection:
-        r_name = task.payload["recipient_name"]
-        if isinstance(r_name, str) and r_name.lower() not in ("him", "her", "them", "that", "it", "this", "previous"):
-            amt = task.payload.get("amount") or ""
-            user_msg = f"Send {amt} to {r_name}"
-            logger.info("user_msg_synthesized", msg=user_msg)
-
     required_fields: list[str] = []
     previous_response: str | None = None
     if ctx.state.last_interrupt and task_id in ctx.state.last_interrupt.task_ids:
         raw_required_fields = ctx.state.last_interrupt.fields_by_task.get(task_id, [])
         required_fields = [field for field in raw_required_fields if isinstance(field, str)]
         previous_response = ctx.state.last_interrupt.prompt
+
+    user_msg = _maybe_user_message(task, ctx.state)
+
+    awaiting_raw_slot_input = bool(required_fields)
+    needs_account_selection = not task.payload.get("source_account_id")
+    if task.payload.get("recipient_name") and not needs_account_selection and not awaiting_raw_slot_input:
+        r_name = task.payload["recipient_name"]
+        if isinstance(r_name, str) and r_name.lower() not in ("him", "her", "them", "that", "it", "this", "previous"):
+            amt = task.payload.get("amount") or ""
+            user_msg = f"Send {amt} to {r_name}"
+            logger.info("user_msg_synthesized", msg=user_msg)
 
     beneficiaries = ctx.state.loaded_context.get("beneficiaries", [])
     if not isinstance(beneficiaries, list):
