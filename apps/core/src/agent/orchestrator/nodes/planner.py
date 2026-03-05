@@ -82,6 +82,7 @@ CONTEXT_FASTPATH_SUBTYPES = (
 )
 TRANSACTION_EXECUTORS = {"transfer", "airtime", "data"}
 BENEFICIARY_MATCH_PREVIEW_LIMIT = 3
+BENEFICIARY_FASTPATH_PERSIST_SUBTYPES = {"beneficiary_list", "beneficiary_name_match_preview"}
 QUOTED_REPLAY_MIN_CONFIDENCE = 0.75
 NO_ACTIVE_FLOW_FASTPATH_MESSAGE = "There is no active transfer flow right now. Start a transfer and I will guide you."
 META_RESPONSE_KEY_TO_INTENT: dict[str, MetaIntent] = {
@@ -224,12 +225,7 @@ def _has_context_for_fastpath_subtype(state: OrchestratorState, subtype: str) ->
         return isinstance(accounts_raw, list) and any(bool(acc.get("is_default")) for acc in accounts)
     if subtype == "pending_mandate_explanation":
         return isinstance(accounts_raw, list) and any(acc.get("mandate_status") == "pending" for acc in accounts)
-    if subtype in {
-        "beneficiary_count",
-        "beneficiary_list",
-        "beneficiary_existence_check",
-        "beneficiary_name_match_preview",
-    }:
+    if subtype in CONTEXT_FASTPATH_BENEFICIARY_SUBTYPES:
         return isinstance(beneficiaries_raw, list)
     if subtype in CONTEXT_FASTPATH_FLOW_SUBTYPES:
         pending_interrupt = state.pending_interrupt
@@ -269,7 +265,7 @@ def _build_beneficiary_fastpath_context_updates(
     subtype: str | None,
 ) -> dict[str, Any]:
     """Persist beneficiary fastpath entities as context frames for pronoun follow-ups."""
-    if subtype not in {"beneficiary_list", "beneficiary_name_match_preview"}:
+    if subtype not in BENEFICIARY_FASTPATH_PERSIST_SUBTYPES:
         return {}
     if (
         not planner_output
