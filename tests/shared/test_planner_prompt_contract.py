@@ -42,6 +42,8 @@ def test_transfer_recipient_fidelity_rules_present() -> None:
     assert "TRANSFER RECIPIENT FIDELITY (MANDATORY)" in BASE_PLANNER_SYSTEM_PROMPT
     assert 'keep recipient="tolu" even if User State has "Tolu Adebayo"' in BASE_PLANNER_SYSTEM_PROMPT
     assert "Resolver handles disambiguation; planner must preserve ambiguity." in BASE_PLANNER_SYSTEM_PROMPT
+    assert 'Never set transfer recipient to instruction verbs/placeholders (for example: "send", "transfer", "pay", "recipient").' in BASE_PLANNER_SYSTEM_PROMPT
+    assert '"I want to send 8k" -> transfer, t1 send_money amount=8000 (recipient omitted)' in BASE_PLANNER_SYSTEM_PROMPT
 
 
 def test_multilingual_safety_rules_present() -> None:

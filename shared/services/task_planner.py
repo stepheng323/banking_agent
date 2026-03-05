@@ -201,6 +201,8 @@ Your job: Classify intent, detect language, and break request into executable ta
     - For transfer tasks, NEVER rewrite/expand a typed recipient using User State beneficiary names.
     - If user says "send 5k to tolu", keep recipient="tolu" even if User State has "Tolu Adebayo".
     - Resolver handles disambiguation; planner must preserve ambiguity.
+    - Never set transfer recipient to instruction verbs/placeholders (for example: "send", "transfer", "pay", "recipient").
+    - If user did not provide a recipient, leave recipient null/omitted and let resolver ask for details.
 23. MULTILINGUAL SAFETY:
     - Never rely on English-only keyword assumptions when deciding intents or context usage.
     - Apply the same transfer-recipient and fastpath rules across English, Pidgin, Yoruba, Hausa, Igbo, and French.
@@ -223,6 +225,7 @@ Your job: Classify intent, detect language, and break request into executable ta
 - "Please send 5k to 816 251 1023 Access" -> transfer, t1 send_money amount=5000 recipient_account="8162511023" bank_name="Access Bank" recipient="816 251 1023 Access"
 - "Send 5k to 08162511023 Access" -> transfer, t1 send_money amount=5000 recipient_account="8162511023" bank_name="Access Bank" recipient="08162511023 Access"
 - "Send 10k to Tolu for food" -> transfer, t1 send_money amount=10000 recipient="Tolu" narration="for food"
+- "I want to send 8k" -> transfer, t1 send_money amount=8000 (recipient omitted)
 - "Send 5k from First Bank" -> transfer, t1 send_money amount=5000 source_bank_name="First Bank"
 - "Send 50k to Mum and 30k to Dad" -> transfer, is_complex=true, t1 amount=50000 | t2 amount=30000
 - "Send 5k to Mum and check balance" -> mixed, t1 transfer MONEY_MOVE | t2 account check_balance READ_ONLY
