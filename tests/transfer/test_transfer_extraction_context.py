@@ -298,6 +298,131 @@ async def test_deterministic_account_bank_fastpath() -> None:
     assert extractor.called is False
 
 
+async def test_deterministic_account_bank_fastpath_bank_first() -> None:
+    """When awaiting account+bank and user sends 'Opay 8162511023', parse deterministically."""
+
+    class _NeverCalledExtractor:
+        def __init__(self) -> None:
+            self.called = False
+
+        async def extract(self, text: str, smart_context: dict | None = None) -> TransferExtractionResult:
+            self.called = True
+            return TransferExtractionResult()
+
+    extractor = _NeverCalledExtractor()
+    step = ExtractionStep(user_message="Opay 8162511023")
+    payload = TransferPayload(recipient_name="Mum")
+    context = TransferContext(phone_number="2348000000999", language="en", beneficiaries=[], accounts=[])
+    worker_context = SimpleNamespace(
+        extractor=extractor,
+        required_fields=["recipient_account", "recipient_bank_name"],
+        previous_response="What's mum's account number and bank?",
+    )
+
+    result = await step.execute(payload, context, TransferGates(), worker_context)
+
+    assert result.outcome == TransactionOutcome.OK
+    assert result.patch["recipient_account"] == "8162511023"
+    assert result.patch["recipient_bank_name"] == "Opay"
+    assert extractor.called is False
+
+
+async def test_deterministic_account_bank_fastpath_bank_first_with_separators() -> None:
+    """When awaiting account+bank, parse bank-first input with account separators."""
+
+    class _NeverCalledExtractor:
+        def __init__(self) -> None:
+            self.called = False
+
+        async def extract(self, text: str, smart_context: dict | None = None) -> TransferExtractionResult:
+            self.called = True
+            return TransferExtractionResult()
+
+    extractor = _NeverCalledExtractor()
+    step = ExtractionStep(user_message="Opay 816 251 1023")
+    payload = TransferPayload(recipient_name="Mum")
+    context = TransferContext(phone_number="2348000000999", language="en", beneficiaries=[], accounts=[])
+    worker_context = SimpleNamespace(
+        extractor=extractor,
+        required_fields=["recipient_account", "recipient_bank_name"],
+        previous_response="What's mum's account number and bank?",
+    )
+
+    result = await step.execute(payload, context, TransferGates(), worker_context)
+
+    assert result.outcome == TransactionOutcome.OK
+    assert result.patch["recipient_account"] == "8162511023"
+    assert result.patch["recipient_bank_name"] == "Opay"
+    assert extractor.called is False
+
+
+async def test_deterministic_account_bank_fastpath_account_first_with_separators() -> None:
+    """When awaiting account+bank, parse account-first input with account separators."""
+
+    class _NeverCalledExtractor:
+        def __init__(self) -> None:
+            self.called = False
+
+        async def extract(self, text: str, smart_context: dict | None = None) -> TransferExtractionResult:
+            self.called = True
+            return TransferExtractionResult()
+
+    extractor = _NeverCalledExtractor()
+    step = ExtractionStep(user_message="816-251-1023 Opay")
+    payload = TransferPayload(recipient_name="Mum")
+    context = TransferContext(phone_number="2348000000999", language="en", beneficiaries=[], accounts=[])
+    worker_context = SimpleNamespace(
+        extractor=extractor,
+        required_fields=["recipient_account", "recipient_bank_name"],
+        previous_response="What's mum's account number and bank?",
+    )
+
+    result = await step.execute(payload, context, TransferGates(), worker_context)
+
+    assert result.outcome == TransactionOutcome.OK
+    assert result.patch["recipient_account"] == "8162511023"
+    assert result.patch["recipient_bank_name"] == "Opay"
+    assert extractor.called is False
+
+
+async def test_deterministic_fastpath_invalid_normalized_account_falls_back_to_extractor() -> None:
+    """Invalid normalized account length should skip deterministic fast-path."""
+    extractor = _CaptureExtractor()
+    step = ExtractionStep(user_message="Opay 81625110234")
+    payload = TransferPayload(recipient_name="Mum")
+    context = TransferContext(phone_number="2348000000999", language="en", beneficiaries=[], accounts=[])
+    worker_context = SimpleNamespace(
+        extractor=extractor,
+        required_fields=["recipient_account", "recipient_bank_name"],
+        previous_response="What's mum's account number and bank?",
+    )
+
+    result = await step.execute(payload, context, TransferGates(), worker_context)
+
+    assert result.outcome == TransactionOutcome.OK
+    assert "recipient_account" not in result.patch
+    assert extractor.last_user_message == "Opay 81625110234"
+
+
+async def test_deterministic_fastpath_rejects_numeric_bank_tail() -> None:
+    """Numeric-only bank tail should skip deterministic fast-path and call extractor."""
+    extractor = _CaptureExtractor()
+    step = ExtractionStep(user_message="8162511023 12345")
+    payload = TransferPayload(recipient_name="Mum")
+    context = TransferContext(phone_number="2348000000999", language="en", beneficiaries=[], accounts=[])
+    worker_context = SimpleNamespace(
+        extractor=extractor,
+        required_fields=["recipient_account", "recipient_bank_name"],
+        previous_response="What's mum's account number and bank?",
+    )
+
+    result = await step.execute(payload, context, TransferGates(), worker_context)
+
+    assert result.outcome == TransactionOutcome.OK
+    assert "recipient_account" not in result.patch
+    assert extractor.last_user_message == "8162511023 12345"
+
+
 async def test_deterministic_fastpath_does_not_trigger_for_pure_digits() -> None:
     """The fast-path requires a non-digit bank token; pure digit strings should fall through to LLM."""
     extractor = _CaptureExtractor()
