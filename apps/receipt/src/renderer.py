@@ -4,7 +4,7 @@ import asyncio
 from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from jinja2 import Environment, FileSystemLoader
 from playwright.async_api import Browser, Playwright, async_playwright
@@ -17,7 +17,7 @@ TEMPLATE_DIR = Path(__file__).parent / "templates"
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 FONTS_DIR = PROJECT_ROOT / "shared" / "receipts" / "fonts"
 RECEIPT_WIDTH = 480
-RENDER_WAIT_UNTIL = "domcontentloaded"
+RENDER_WAIT_UNTIL: Literal["domcontentloaded"] = "domcontentloaded"
 RENDER_DEVICE_SCALE_FACTOR = 2
 RENDER_SELECTOR_TIMEOUT_MS = 3000
 RENDER_PAGE_TIMEOUT_MS = 8000
