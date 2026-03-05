@@ -42,11 +42,15 @@ class ContextManager:
         """
         cached_data = await self.data_cache.get_all_user_data(phone_number)
 
-        if cached_data["profile"] and cached_data["accounts"]:
+        if (
+            cached_data["profile"] is not None
+            and cached_data["accounts"] is not None
+            and cached_data["beneficiaries"] is not None
+        ):
             return {
                 "profile": cached_data["profile"],
                 "accounts": cached_data["accounts"],
-                "beneficiaries": cached_data["beneficiaries"] or [],
+                "beneficiaries": cached_data["beneficiaries"],
             }
 
         current_profile = user
@@ -82,8 +86,9 @@ class ContextManager:
             await self.data_cache.set_user_profile(phone_number, safe_profile)
         if safe_accounts:
             await self.data_cache.set_accounts(phone_number, safe_accounts)
-        if safe_beneficiaries:
-            await self.data_cache.set_beneficiaries(phone_number, safe_beneficiaries)
+        # Cache beneficiaries even when empty to avoid repeated DB fetches
+        # on partial cache misses.
+        await self.data_cache.set_beneficiaries(phone_number, safe_beneficiaries)
 
         return context
 

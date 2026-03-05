@@ -134,6 +134,9 @@ Your job: Classify intent, detect language, and break request into executable ta
     - Do NOT auto-pick between multiple similarly named beneficiaries from User State.
     - For explicit typed names (e.g. "tolu", "david"), preserve the typed name exactly.
     - Resolver/worker is the authority for beneficiary disambiguation.
+    - If recent context is beneficiary-focused and recipient is a pronoun/index reference,
+      keep transfer continuity by setting `reference` (selector=previous/index) instead of inventing a name.
+    - If beneficiary reference is ambiguous, preserve ambiguity with `reference` and let resolver request clarification.
 14. RESUMPTION: If and ONLY IF Context explicitly says 'Asked to resume [Intent]'
     and user says 'Yes', 'Okay', 'Proceed', create a task with executor='orchestrator',
     action='resume_session'. If that context is missing, NEVER create a resume_session task.
@@ -201,6 +204,8 @@ Your job: Classify intent, detect language, and break request into executable ta
     - For transfer tasks, NEVER rewrite/expand a typed recipient using User State beneficiary names.
     - If user says "send 5k to tolu", keep recipient="tolu" even if User State has "Tolu Adebayo".
     - Resolver handles disambiguation; planner must preserve ambiguity.
+    - Never set transfer recipient to instruction verbs/placeholders (for example: "send", "transfer", "pay", "recipient").
+    - If user did not provide a recipient, leave recipient null/omitted and let resolver ask for details.
 23. MULTILINGUAL SAFETY:
     - Never rely on English-only keyword assumptions when deciding intents or context usage.
     - Apply the same transfer-recipient and fastpath rules across English, Pidgin, Yoruba, Hausa, Igbo, and French.
@@ -223,6 +228,7 @@ Your job: Classify intent, detect language, and break request into executable ta
 - "Please send 5k to 816 251 1023 Access" -> transfer, t1 send_money amount=5000 recipient_account="8162511023" bank_name="Access Bank" recipient="816 251 1023 Access"
 - "Send 5k to 08162511023 Access" -> transfer, t1 send_money amount=5000 recipient_account="8162511023" bank_name="Access Bank" recipient="08162511023 Access"
 - "Send 10k to Tolu for food" -> transfer, t1 send_money amount=10000 recipient="Tolu" narration="for food"
+- "I want to send 8k" -> transfer, t1 send_money amount=8000 (recipient omitted)
 - "Send 5k from First Bank" -> transfer, t1 send_money amount=5000 source_bank_name="First Bank"
 - "Send 50k to Mum and 30k to Dad" -> transfer, is_complex=true, t1 amount=50000 | t2 amount=30000
 - "Send 5k to Mum and check balance" -> mixed, t1 transfer MONEY_MOVE | t2 account check_balance READ_ONLY
@@ -243,6 +249,8 @@ Your job: Classify intent, detect language, and break request into executable ta
 - Recent Chat last turn was account_count answer, User="List them" -> conversational, context_fastpath_subtype=linked_accounts_summary, tasks=[]
 - Recent Chat last turn was beneficiary_count answer, User="List them" -> conversational, context_fastpath_subtype=beneficiary_list, tasks=[]
 - UserState beneficiaries include "Tolu Adebayo", User="send 5k to tolu" -> transfer, t1 recipient="tolu" (do NOT expand to full name)
+- Recent Chat last turn listed beneficiaries (single item), User="Send 10k to her" -> transfer, t1 amount=10000 reference={"selector":"previous"}
+- Recent Chat last turn listed beneficiaries (multiple items), User="Send 10k to her" -> transfer, t1 amount=10000 reference={"selector":"previous"} (resolver clarifies if needed)
 - UserState missing beneficiaries, User="How many beneficiaries do I have?" -> beneficiary, context_fastpath_subtype=beneficiary_count, t1 list_beneficiaries READ_ONLY
 - UserState missing accounts, User="Which account is default?" -> account, context_fastpath_subtype=default_account_identity, t1 list_accounts READ_ONLY
 - UserState accounts include pending+ready, User="Which of my accounts are ready?" -> conversational, context_fastpath_subtype=account_mandate_readiness_summary, tasks=[]

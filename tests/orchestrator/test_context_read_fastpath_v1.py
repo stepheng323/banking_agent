@@ -5,6 +5,7 @@ from typing import Any
 import pytest
 from langchain_core.runnables import RunnableConfig
 
+from apps.core.src.agent.orchestrator.context.models import ContextFrameType
 from apps.core.src.agent.orchestrator.models.domain import PendingInterrupt, TaskSpec, TaskStage
 from apps.core.src.agent.orchestrator.models.state import OrchestratorState
 from apps.core.src.agent.orchestrator.nodes.planner import plan_tasks
@@ -454,3 +455,99 @@ async def test_fastpath_v2_flow_recap_with_active_interrupt_uses_direct_response
     updates = await plan_tasks(state, config)
     assert updates.get("final_response") == "We are waiting for your beneficiary selection."
     assert "tasks" not in updates
+
+
+@pytest.mark.asyncio
+async def test_fastpath_beneficiary_list_persists_context_frame() -> None:
+    planner_output = PlannerOutput(
+        primary_intent="conversational",
+        response="You have 1 saved beneficiary: Mum (Opay ...1023).",
+        response_key=None,
+        confidence=0.9,
+        is_complex=False,
+        is_cancellation=False,
+        is_confirmation=False,
+        detected_language="English",
+        context_fastpath_subtype="beneficiary_list",
+        normalized_instruction="show my beneficiaries",
+        tasks=[],
+    )
+    state = OrchestratorState(
+        user_id="u_fastpath_frame_1",
+        phone_number="2348111000000",
+        channel="whatsapp",
+        last_message_text="Show my beneficiaries",
+        loaded_context={
+            "beneficiaries": [
+                {
+                    "id": "bene-1",
+                    "alias": "Mum",
+                    "account_name": "Mama Nkechi",
+                    "account_number": "8162511023",
+                    "bank_name": "Opay",
+                    "bank_code": "100004",
+                    "beneficiary_type": "transfer",
+                }
+            ]
+        },
+    )
+    config: RunnableConfig = {
+        "configurable": {"task_planner": _MockPlanner(planner_output), "services": {}, "redis_client": None},
+        "recursion_limit": 50,
+    }
+
+    updates = await plan_tasks(state, config)
+
+    assert updates.get("final_response") == "You have 1 saved beneficiary: Mum (Opay ...1023)."
+    assert updates.get("context_frames")
+    assert state.context_frames
+    assert state.context_frames[-1].frame_type == ContextFrameType.BENEFICIARY_LIST
+    assert state.context_frames[-1].items[0].label == "Mum"
+
+
+@pytest.mark.asyncio
+async def test_fastpath_beneficiary_name_preview_persists_context_frame() -> None:
+    planner_output = PlannerOutput(
+        primary_intent="conversational",
+        response="You have these Tolu beneficiaries: Tolu Adebayo (...0001).",
+        response_key=None,
+        confidence=0.9,
+        is_complex=False,
+        is_cancellation=False,
+        is_confirmation=False,
+        detected_language="English",
+        context_fastpath_subtype="beneficiary_name_match_preview",
+        normalized_instruction="which tolu do i have",
+        tasks=[],
+    )
+    state = OrchestratorState(
+        user_id="u_fastpath_frame_2",
+        phone_number="2348111000001",
+        channel="whatsapp",
+        last_message_text="Which Tolu do I have?",
+        loaded_context={
+            "beneficiaries": [
+                {
+                    "id": "bene-2",
+                    "alias": "Tolu",
+                    "account_name": "Tolu Adebayo",
+                    "account_number": "11110001",
+                    "bank_name": "Access Bank",
+                    "bank_code": "044",
+                    "beneficiary_type": "transfer",
+                }
+            ]
+        },
+    )
+    config: RunnableConfig = {
+        "configurable": {"task_planner": _MockPlanner(planner_output), "services": {}, "redis_client": None},
+        "recursion_limit": 50,
+    }
+
+    updates = await plan_tasks(state, config)
+
+    assert updates.get("final_response") == "You have these Tolu beneficiaries: Tolu Adebayo (...0001)."
+    assert updates.get("context_frames")
+    assert state.context_frames
+    assert state.context_frames[-1].frame_type == ContextFrameType.BENEFICIARY_LIST
+    assert state.context_frames[-1].items[0].data["id"] == "bene-2"

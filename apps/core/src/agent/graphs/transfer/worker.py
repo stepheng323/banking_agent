@@ -91,6 +91,7 @@ class TransferWorker:
             language=LocaleManager.normalize(context.get("language")).value,
             beneficiaries=context.get("beneficiaries", []),
             accounts=context.get("accounts", []),
+            recent_beneficiary_context=bool(context.get("recent_beneficiary_context")),
         )
 
     @staticmethod

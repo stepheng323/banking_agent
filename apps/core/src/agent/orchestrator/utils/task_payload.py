@@ -4,6 +4,9 @@ from typing import Any
 from apps.core.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
 from shared.utils.sanitize import normalize_bank_account_number
 
+_TRANSFER_VERB_TOKENS = {"send", "transfer", "pay", "remit"}
+_RECIPIENT_NOISE_TOKENS = _TRANSFER_VERB_TOKENS | {"to", "for", "money", "cash", "funds", "s"}
+
 
 def apply_source_account_fields(payload: dict[str, Any], plan_item: Any) -> None:
     if plan_item.executor not in ("transfer", "airtime", "data") or not plan_item.parameters:
@@ -18,7 +21,18 @@ def apply_source_account_fields(payload: dict[str, Any], plan_item: Any) -> None
 def _normalize_text(value: str | None) -> str:
     if not value:
         return ""
-    return re.sub(r"[^a-z0-9]+", " ", value.lower()).strip()
+    lowered = re.sub(r"([a-z])['’]s\b", r"\1", value.lower())
+    return re.sub(r"[^a-z0-9]+", " ", lowered).strip()
+
+
+def _is_plausible_recipient_candidate(candidate: str | None) -> bool:
+    norm_candidate = _normalize_text(candidate)
+    if not norm_candidate:
+        return False
+    if norm_candidate.isdigit():
+        return False
+    tokens = [token for token in norm_candidate.split() if token]
+    return not all(token in _RECIPIENT_NOISE_TOKENS for token in tokens)
 
 
 def _recipient_grounded_in_user_text(recipient: str | None, user_text: str) -> bool:
@@ -27,6 +41,8 @@ def _recipient_grounded_in_user_text(recipient: str | None, user_text: str) -> b
     norm_text = _normalize_text(user_text)
     if not norm_recipient or not norm_text:
         return True
+    if not _is_plausible_recipient_candidate(norm_recipient):
+        return False
     return norm_recipient in norm_text
 
 
@@ -37,17 +53,18 @@ def _derive_recipient_from_user_text(planned_recipient: str | None, user_text: s
     if not norm_text:
         return None
 
-    planned_tokens = [token for token in norm_planned.split() if token]
-    text_tokens = {token for token in norm_text.split() if token}
-    overlap = [token for token in planned_tokens if token in text_tokens]
-    if overlap:
-        return overlap[0]
-
     # Lightweight deterministic fallback: token after a transfer preposition.
     match = re.search(r"\b(?:to|for|si|ga|zuwa)\s+([a-z0-9']+)", norm_text)
     if match:
         candidate = match.group(1).strip()
-        return candidate or None
+        if _is_plausible_recipient_candidate(candidate):
+            return candidate
+
+    planned_tokens = [token for token in norm_planned.split() if token]
+    text_tokens = {token for token in norm_text.split() if token}
+    for token in planned_tokens:
+        if token in text_tokens and _is_plausible_recipient_candidate(token):
+            return token
 
     return None
 
@@ -62,6 +79,9 @@ def _apply_transfer_payload_fields(
 ) -> None:
     if plan_item.executor != "transfer":
         return
+
+    if plan_item.parameters and plan_item.parameters.reference:
+        payload["recipient_reference"] = plan_item.parameters.reference.model_dump(exclude_none=True)
 
     # Planner schema uses `bank_name`; transfer runtime expects `recipient_bank_name`.
     bank_name = payload.pop("bank_name", None)

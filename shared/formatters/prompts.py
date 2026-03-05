@@ -1,10 +1,47 @@
 """Prompts formatting utilities for the orchestrator."""
 
+import re
 from typing import cast
 
 from shared.formatters.accounts import format_accounts_list
 from shared.formatters.transaction_summary import format_amount
 from shared.i18n import MessageKey, render_message
+
+_UNSAFE_RECIPIENT_TOKENS = {
+    "send",
+    "transfer",
+    "pay",
+    "recipient",
+    "her",
+    "him",
+    "them",
+    "that",
+    "it",
+    "this",
+    "previous",
+    "to",
+    "for",
+    "money",
+    "cash",
+    "funds",
+    "s",
+}
+
+
+def sanitize_recipient_display_name(recipient_name: str | None, locale: str = "en") -> str:
+    """Return a safe recipient label for user-facing prompts."""
+    fallback = render_message("response.common.recipient_fallback", locale)
+    if not recipient_name:
+        return fallback
+
+    lowered = recipient_name.strip().lower()
+    lowered = re.sub(r"([a-z])['’]s\b", r"\1", lowered)
+    tokens = [token for token in re.sub(r"[^a-z0-9]+", " ", lowered).split() if token]
+    if not tokens:
+        return fallback
+    if all(token in _UNSAFE_RECIPIENT_TOKENS for token in tokens):
+        return fallback
+    return recipient_name
 
 
 def format_batch_transfer_source_prompt(
@@ -53,6 +90,7 @@ def format_single_transfer_recipient_prompt(
     locale: str = "en",
 ) -> str:
     """Format the prompt for requesting account details for a single transfer in focus."""
+    focused_display_name = sanitize_recipient_display_name(focused_name, locale)
     normalized_missing = set(focused_missing_fields)
     has_account = "recipient_account" in normalized_missing
     has_bank = "recipient_bank_name" in normalized_missing
@@ -63,10 +101,16 @@ def format_single_transfer_recipient_prompt(
     ask_lines: list[str] = []
     if needs_account_and_bank:
         ask_lines = [
-            render_message("response.templates.ask_account_number_and_bank", locale, {"recipient_name": focused_name}),
+            render_message(
+                "response.templates.ask_account_number_and_bank",
+                locale,
+                {"recipient_name": focused_display_name},
+            ),
         ]
     elif needs_account:
-        ask_lines = [render_message("response.templates.ask_account_number", locale, {"recipient_name": focused_name})]
+        ask_lines = [
+            render_message("response.templates.ask_account_number", locale, {"recipient_name": focused_display_name})
+        ]
     elif needs_bank:
         ask_lines = [render_message("response.templates.ask_bank", locale)]
     else:
@@ -115,7 +159,7 @@ def format_single_transfer_recipient_prompt(
                     {
                         "resolved_name": just_resolved_name,
                         "resolved_bank": just_resolved_bank,
-                        "focused_name": focused_name,
+                        "focused_name": focused_display_name,
                     },
                 ),
             )
@@ -125,7 +169,7 @@ def format_single_transfer_recipient_prompt(
                 render_message(
                     "orchestrator.execution.single_found_need_details",
                     locale,
-                    {"resolved_name": just_resolved_name, "focused_name": focused_name},
+                    {"resolved_name": just_resolved_name, "focused_name": focused_display_name},
                 ),
             )
         return cast(
@@ -133,7 +177,7 @@ def format_single_transfer_recipient_prompt(
             render_message(
                 "orchestrator.execution.need_account_details_for",
                 locale,
-                {"focused_name": focused_name},
+                {"focused_name": focused_display_name},
             ),
         )
 
@@ -143,7 +187,7 @@ def format_single_transfer_recipient_prompt(
             render_message(
                 "orchestrator.execution.found_many_need_details",
                 locale,
-                {"found_names": ", ".join(found_names), "focused_name": focused_name},
+                {"found_names": ", ".join(found_names), "focused_name": focused_display_name},
             ),
         )
     return cast(
@@ -151,7 +195,7 @@ def format_single_transfer_recipient_prompt(
         render_message(
             "orchestrator.execution.need_account_details_for",
             locale,
-            {"focused_name": focused_name},
+            {"focused_name": focused_display_name},
         ),
     )
 

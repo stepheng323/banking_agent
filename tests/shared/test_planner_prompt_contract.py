@@ -42,6 +42,8 @@ def test_transfer_recipient_fidelity_rules_present() -> None:
     assert "TRANSFER RECIPIENT FIDELITY (MANDATORY)" in BASE_PLANNER_SYSTEM_PROMPT
     assert 'keep recipient="tolu" even if User State has "Tolu Adebayo"' in BASE_PLANNER_SYSTEM_PROMPT
     assert "Resolver handles disambiguation; planner must preserve ambiguity." in BASE_PLANNER_SYSTEM_PROMPT
+    assert 'Never set transfer recipient to instruction verbs/placeholders (for example: "send", "transfer", "pay", "recipient").' in BASE_PLANNER_SYSTEM_PROMPT
+    assert '"I want to send 8k" -> transfer, t1 send_money amount=8000 (recipient omitted)' in BASE_PLANNER_SYSTEM_PROMPT
 
 
 def test_multilingual_safety_rules_present() -> None:
@@ -56,3 +58,10 @@ def test_follow_up_referent_binding_rules_present() -> None:
     assert "bind to the most recent domain from Recent Chat / Recent Domain Focus" in BASE_PLANNER_SYSTEM_PROMPT
     assert 'Recent Chat last turn was account_count answer, User="List them"' in BASE_PLANNER_SYSTEM_PROMPT
     assert 'Recent Chat last turn was beneficiary_count answer, User="List them"' in BASE_PLANNER_SYSTEM_PROMPT
+
+
+def test_transfer_pronoun_reference_continuity_rules_present() -> None:
+    """Prompt should preserve beneficiary pronoun continuity with reference semantics."""
+    assert "keep transfer continuity by setting `reference`" in BASE_PLANNER_SYSTEM_PROMPT
+    assert "reference={\"selector\":\"previous\"}" in BASE_PLANNER_SYSTEM_PROMPT
+    assert "resolver clarifies if needed" in BASE_PLANNER_SYSTEM_PROMPT

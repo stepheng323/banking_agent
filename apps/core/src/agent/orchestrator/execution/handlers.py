@@ -1,3 +1,4 @@
+import time
 from dataclasses import dataclass
 from typing import Any, Literal, cast
 
@@ -16,6 +17,7 @@ from apps.core.src.agent.orchestrator.models.domain import (
 from apps.core.src.agent.orchestrator.models.state import OrchestratorState
 from apps.core.src.agent.orchestrator.services.context_manager import OrchestratorContextManager
 from shared.i18n import LocaleManager, render_message
+from shared.utils.serialization import sqlalchemy_to_dict
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -76,6 +78,16 @@ def _state_locale(state: OrchestratorState) -> str:
     return cast(str, LocaleManager.normalize(state.loaded_context.get("language")).value)
 
 
+def _normalize_beneficiary_rows(rows: list[Any]) -> list[dict[str, Any]]:
+    normalized: list[dict[str, Any]] = []
+    for row in rows:
+        if isinstance(row, dict):
+            normalized.append(row)
+        else:
+            normalized.append(sqlalchemy_to_dict(row))
+    return normalized
+
+
 def _is_resume_prompt_frame(frame: ContextFrame) -> bool:
     """Return True if a context frame represents a resume prompt."""
     return any(item.data.get("resume_prompt") is True for item in frame.items)
@@ -84,6 +96,18 @@ def _is_resume_prompt_frame(frame: ContextFrame) -> bool:
 def _clear_resume_prompt_frames(frames: list[ContextFrame]) -> list[ContextFrame]:
     """Remove stale resume prompt frames after accept/decline."""
     return [frame for frame in frames if not _is_resume_prompt_frame(frame)]
+
+
+def _has_recent_beneficiary_context(frames: list[ContextFrame]) -> bool:
+    """True when a non-expired beneficiary-list frame exists with entries."""
+    now = int(time.time())
+    for frame in reversed(frames):
+        if frame.frame_type != ContextFrameType.BENEFICIARY_LIST:
+            continue
+        if (frame.created_at_ts + frame.ttl_seconds) <= now:
+            continue
+        return bool(frame.items)
+    return False
 
 
 def _maybe_user_message(task: Any, state: OrchestratorState) -> str | None:
@@ -221,11 +245,43 @@ async def handle_transfer_task(task: Any, task_id: str, ctx: ExecutionContext) -
         required_fields = [field for field in raw_required_fields if isinstance(field, str)]
         previous_response = ctx.state.last_interrupt.prompt
 
+    beneficiaries = ctx.state.loaded_context.get("beneficiaries", [])
+    if not isinstance(beneficiaries, list):
+        beneficiaries = []
+
+    recipient_name = task.payload.get("recipient_name")
+    beneficiary_repo = ctx.config["configurable"].get("beneficiary_repo")
+    user_id = ctx.state.loaded_context.get("user_id")
+    if (
+        isinstance(recipient_name, str)
+        and recipient_name.strip()
+        and not beneficiaries
+        and beneficiary_repo
+        and user_id
+    ):
+        try:
+            fetched_rows = await beneficiary_repo.get_by_user(str(user_id), beneficiary_type="transfer")
+            beneficiaries = _normalize_beneficiary_rows(fetched_rows if isinstance(fetched_rows, list) else [])
+            if isinstance(ctx.state.loaded_context, dict):
+                ctx.state.loaded_context["beneficiaries"] = beneficiaries
+            logger.info(
+                "transfer_beneficiaries_reloaded_for_resolution",
+                user_id=str(user_id),
+                fetched_count=len(beneficiaries),
+            )
+        except Exception as e:
+            logger.warning(
+                "transfer_beneficiary_reload_failed",
+                user_id=str(user_id),
+                error=str(e),
+            )
+
     context_data = {
         "phone_number": ctx.state.phone_number,
         "user_id": ctx.state.loaded_context.get("user_id"),
         "accounts": ctx.state.loaded_context.get("accounts", []),
-        "beneficiaries": ctx.state.loaded_context.get("beneficiaries", []),
+        "beneficiaries": beneficiaries,
+        "recent_beneficiary_context": _has_recent_beneficiary_context(ctx.state.context_frames),
         "language": _state_locale(ctx.state),
         "required_fields": required_fields,
         "previous_response": previous_response,
