@@ -42,6 +42,12 @@ logger = get_logger(__name__)
 
 TERMINAL_STAGES = {TaskStage.COMPLETED, TaskStage.FAILED, TaskStage.CANCELLED}
 BLOCKING_DEPENDENCY_STAGES = {TaskStage.FAILED, TaskStage.CANCELLED}
+INPUT_MUTABLE_STAGES = {
+    TaskStage.DRAFT,
+    TaskStage.EXTRACTED,
+    TaskStage.RESOLVED,
+    TaskStage.VALIDATED,
+}
 
 
 def _build_mandate_gate_error(accounts: list[dict], locale: str) -> str:
@@ -97,6 +103,29 @@ def _build_actionable_payload(task: Any) -> dict[str, Any] | None:
             payload[key] = value
 
     return payload
+
+
+def _dedupe_task_ids(task_ids: list[str], current_wave: list[str]) -> list[str]:
+    """Deduplicate task ids while preserving current-wave order."""
+    requested = [task_id for task_id in task_ids if task_id]
+    if not requested:
+        return []
+
+    requested_set = set(requested)
+    seen: set[str] = set()
+    ordered: list[str] = []
+
+    for task_id in current_wave:
+        if task_id in requested_set and task_id not in seen:
+            ordered.append(task_id)
+            seen.add(task_id)
+
+    for task_id in requested:
+        if task_id not in seen:
+            ordered.append(task_id)
+            seen.add(task_id)
+
+    return ordered
 
 
 def _dependency_resolution(task: Any, all_tasks: dict[str, Any]) -> tuple[str, str | None]:
@@ -175,6 +204,23 @@ def _compact_prompt_for_options(prompt_text: str) -> str:
             last_normalized = normalized
     compact = "\n".join(deduped_lines).strip()
     return compact or prompt_text
+
+
+def _recipient_prompt_label(task_payload: dict[str, Any]) -> str | None:
+    """Build recipient display label for prompts: alias first, resolved name in parentheses."""
+    recipient_name_raw = task_payload.get("recipient_name")
+    resolved_name_raw = task_payload.get("recipient_resolved_name")
+
+    recipient_name = str(recipient_name_raw).strip() if isinstance(recipient_name_raw, str) else ""
+    resolved_name = str(resolved_name_raw).strip() if isinstance(resolved_name_raw, str) else ""
+
+    if recipient_name and resolved_name and recipient_name.casefold() != resolved_name.casefold():
+        return f"{recipient_name} ({resolved_name})"
+    if recipient_name:
+        return recipient_name
+    if resolved_name:
+        return resolved_name
+    return None
 
 
 def _build_planning_signature(task_payload: dict[str, Any]) -> dict[str, Any]:
@@ -412,6 +458,33 @@ async def advance_wave(state: OrchestratorState, config: RunnableConfig) -> dict
         if task.stage in TERMINAL_STAGES:
             continue
 
+        if task.stage == TaskStage.AWAITING_CONFIRMATION:
+            agg.needs_confirm_tasks.append(task_id)
+            progressed = True
+            continue
+
+        if task.stage == TaskStage.AWAITING_AUTH:
+            agg.needs_auth_tasks.append(task_id)
+            progressed = True
+            continue
+
+        # During an input interrupt turn, only execute the task(s) currently collecting user input.
+        # This prevents non-focused tasks in the same wave from drifting state and cross-contaminating
+        # multi-transfer slot filling.
+        if (
+            state.last_interrupt
+            and state.last_interrupt.kind == "input"
+            and state.last_interrupt.task_ids
+            and task_id not in state.last_interrupt.task_ids
+            and task.stage in INPUT_MUTABLE_STAGES
+        ):
+            logger.info(
+                "task_deferred_during_input_interrupt",
+                task_id=task_id,
+                active_task_ids=state.last_interrupt.task_ids,
+            )
+            continue
+
         dep_status, dep_id = _dependency_resolution(task, state.tasks)
         if dep_status == "cancel":
             task.stage = TaskStage.CANCELLED
@@ -599,9 +672,7 @@ async def advance_wave(state: OrchestratorState, config: RunnableConfig) -> dict
                         if tid not in agg.missing_fields_by_task and state.tasks.get(tid):
                             just_resolved_tid = tid
                             rt = state.tasks[just_resolved_tid]
-                            just_resolved_name = rt.payload.get("recipient_resolved_name") or rt.payload.get(
-                                "recipient_name"
-                            )
+                            just_resolved_name = _recipient_prompt_label(cast(dict[str, Any], rt.payload))
                             just_resolved_bank = rt.payload.get("recipient_bank_name")
                             break
 
@@ -612,9 +683,7 @@ async def advance_wave(state: OrchestratorState, config: RunnableConfig) -> dict
                         if not task or task.stage in TERMINAL_STAGES:
                             continue
                         if tid not in agg.missing_fields_by_task:
-                            if name := task.payload.get("recipient_resolved_name") or task.payload.get(
-                                "recipient_name"
-                            ):
+                            if name := _recipient_prompt_label(cast(dict[str, Any], task.payload)):
                                 if name not in found_names:
                                     found_names.append(name)
 
@@ -683,7 +752,7 @@ async def advance_wave(state: OrchestratorState, config: RunnableConfig) -> dict
 
                 # Collect names for "I found X" (only if hasn't been announced to UI yet)
                 if not task.payload.get("recipient_ui_confirmed"):
-                    name = task.payload.get("recipient_resolved_name") or task.payload.get("recipient_name")
+                    name = _recipient_prompt_label(cast(dict[str, Any], task.payload))
                     if name and name not in found_names:
                         found_names.append(name)
 
@@ -727,7 +796,7 @@ async def advance_wave(state: OrchestratorState, config: RunnableConfig) -> dict
                 task = state.tasks.get(tid)
                 if not task:
                     continue
-                name = task.payload.get("recipient_resolved_name") or task.payload.get("recipient_name")
+                name = _recipient_prompt_label(cast(dict[str, Any], task.payload))
                 if name and name in found_names:
                     task.payload["recipient_ui_confirmed"] = True
 
@@ -770,13 +839,19 @@ async def advance_wave(state: OrchestratorState, config: RunnableConfig) -> dict
 
     # [Confirmation Aggregation]
     if agg.needs_confirm_tasks:
+        confirm_task_ids = _dedupe_task_ids(
+            [task_id for task_id in agg.needs_confirm_tasks if task_id in state.tasks],
+            current_wave,
+        )
+        if not confirm_task_ids:
+            return cast(dict[str, Any], updates)
         total_amount = 0.0
         source_account_info = None
         summaries = []
         accounts_raw = state.loaded_context.get("accounts") or []
         accounts = [account for account in accounts_raw if isinstance(account, dict)]
 
-        for tid in agg.needs_confirm_tasks:
+        for tid in confirm_task_ids:
             task = state.tasks[tid]
             t_payload = task.payload.get("confirmation") or {}
             snap = t_payload.get("snapshot") or {}
@@ -794,8 +869,8 @@ async def advance_wave(state: OrchestratorState, config: RunnableConfig) -> dict
             if s := t_payload.get("summary"):
                 summaries.append(s)
 
-        if len(agg.needs_confirm_tasks) == 1:
-            single_task = state.tasks[agg.needs_confirm_tasks[0]]
+        if len(confirm_task_ids) == 1:
+            single_task = state.tasks[confirm_task_ids[0]]
             canonical_summary = build_confirmation_summary(
                 task_payload=single_task.payload,
                 locale=locale,
@@ -804,20 +879,20 @@ async def advance_wave(state: OrchestratorState, config: RunnableConfig) -> dict
             summ = canonical_summary or (summaries[0] if summaries else "")
         else:
             summ = format_batch_transfer_summary(
-                num_transfers=len(agg.needs_confirm_tasks),
+                num_transfers=len(confirm_task_ids),
                 total_amount=total_amount,
                 source_account_info=source_account_info,
                 summaries=summaries,
                 locale=locale,
             )
 
-        first_task_payload = state.tasks[agg.needs_confirm_tasks[0]].payload.get("confirmation", {})
+        first_task_payload = state.tasks[confirm_task_ids[0]].payload.get("confirmation", {})
         snap = first_task_payload.get("snapshot", {})
         update_msg = first_task_payload.get("update_message")
 
         interrupt = PendingInterrupt(
             kind="confirmation",
-            task_ids=agg.needs_confirm_tasks,
+            task_ids=confirm_task_ids,
             prompt=summ,
         )
 
@@ -828,14 +903,14 @@ async def advance_wave(state: OrchestratorState, config: RunnableConfig) -> dict
         outbox.append(
             {
                 "type": "request_confirmation",
-                "task_ids": agg.needs_confirm_tasks,
+                "task_ids": confirm_task_ids,
                 "summary": summ,
                 "snapshot": snap,
-                "idempotency_key": state.tasks[agg.needs_confirm_tasks[0]].payload.get(
+                "idempotency_key": state.tasks[confirm_task_ids[0]].payload.get(
                     "idempotency_key",
                     "unknown",
                 ),
-                "actionable_payload": _build_actionable_payload(state.tasks[agg.needs_confirm_tasks[0]]),
+                "actionable_payload": _build_actionable_payload(state.tasks[confirm_task_ids[0]]),
             }
         )
 
@@ -844,7 +919,14 @@ async def advance_wave(state: OrchestratorState, config: RunnableConfig) -> dict
         return cast(dict[str, Any], updates)
 
     if agg.needs_auth_tasks:
-        first_task = state.tasks[agg.needs_auth_tasks[0]]
+        auth_task_ids = _dedupe_task_ids(
+            [task_id for task_id in agg.needs_auth_tasks if task_id in state.tasks],
+            current_wave,
+        )
+        if not auth_task_ids:
+            return cast(dict[str, Any], updates)
+
+        first_task = state.tasks[auth_task_ids[0]]
         summ = first_task.payload.get("confirmation", {}).get(
             "summary",
             render_message("orchestrator.execution.pin_prompt_default", locale),
@@ -856,12 +938,12 @@ async def advance_wave(state: OrchestratorState, config: RunnableConfig) -> dict
         task_type = first_task.type
         reason = format_auth_reason(task_type, locale=locale)
 
-        interrupt = PendingInterrupt(kind="auth", task_ids=agg.needs_auth_tasks, auth_method="pin", prompt=summ)
+        interrupt = PendingInterrupt(kind="auth", task_ids=auth_task_ids, auth_method="pin", prompt=summ)
         updates["outbox"] = [
             {
                 "type": "auth_request",
                 "method": "pin",
-                "task_ids": agg.needs_auth_tasks,
+                "task_ids": auth_task_ids,
                 "idempotency_key": idem_key,
                 "header": reason,
                 "summary": summ,

@@ -51,6 +51,8 @@ class _MockTransferNeedsInputWorker:
         self.details = details or {}
         self.last_context: dict | None = None
         self.last_user_message: str | None = None
+        self.call_count = 0
+        self.called_with_payloads: list[dict] = []
 
     async def run(
         self,
@@ -59,7 +61,9 @@ class _MockTransferNeedsInputWorker:
         user_message: str | None = None,
         pin_verified: bool = False,
     ) -> TransactionResult:
-        del payload, pin_verified
+        del pin_verified
+        self.call_count += 1
+        self.called_with_payloads.append(dict(payload))
         self.last_context = context
         self.last_user_message = user_message
         return TransactionResult(
@@ -78,6 +82,73 @@ class _MockBeneficiaryRepo:
     async def get_by_user(self, user_id: str, beneficiary_type: str | None = None) -> list[dict]:
         self.calls.append((user_id, beneficiary_type))
         return self.beneficiaries
+
+
+class _MockTransferResolveThenPromptWorker:
+    async def run(
+        self,
+        payload: dict,
+        context: dict,
+        user_message: str | None = None,
+        pin_verified: bool = False,
+    ) -> TransactionResult:
+        del context, user_message, pin_verified
+        recipient_name = payload.get("recipient_name")
+        if recipient_name == "Mum":
+            return TransactionResult(
+                outcome=TransactionOutcome.OK,
+                patch={
+                    "recipient_name": "Mum",
+                    "recipient_resolved_name": "MERCY JOHNSON",
+                    "recipient_account": "8162511023",
+                    "recipient_bank_name": "Opay",
+                },
+            )
+        return TransactionResult(
+            outcome=TransactionOutcome.NEEDS_INPUT,
+            required_fields=["recipient_account", "recipient_bank_name"],
+            prompt="What's tolu's account number and bank?",
+        )
+
+
+class _MockTransferMixedConfirmWorker:
+    def __init__(self) -> None:
+        self.call_count = 0
+        self.calls: list[str] = []
+        self._tolu_first_turn = True
+
+    async def run(
+        self,
+        payload: dict,
+        context: dict,
+        user_message: str | None = None,
+        pin_verified: bool = False,
+    ) -> TransactionResult:
+        del context, user_message, pin_verified
+        self.call_count += 1
+        recipient_name = str(payload.get("recipient_name") or "")
+        self.calls.append(recipient_name)
+
+        if recipient_name.casefold() == "mum":
+            return TransactionResult(
+                outcome=TransactionOutcome.NEEDS_CONFIRMATION,
+                confirmation_snapshot={"amount": 10000, "recipient_name": "Mum"},
+                confirmation_summary="Confirm Mum",
+            )
+
+        if self._tolu_first_turn:
+            self._tolu_first_turn = False
+            return TransactionResult(
+                outcome=TransactionOutcome.NEEDS_INPUT,
+                required_fields=["recipient_account", "recipient_bank_name"],
+                prompt="What's tolu's account number and bank?",
+            )
+
+        return TransactionResult(
+            outcome=TransactionOutcome.NEEDS_CONFIRMATION,
+            confirmation_snapshot={"amount": 10000, "recipient_name": "Tolu"},
+            confirmation_summary="Confirm Tolu",
+        )
 
 
 def _build_state(
@@ -175,6 +246,117 @@ async def test_bank_only_follow_up_prompts_for_account_number() -> None:
     assert worker.last_context["previous_response"] == previous_prompt
     assert "account number for Tolu" in text
     assert "Which bank is that for?" not in text
+
+
+async def test_amount_follow_up_preserves_raw_amount_reply_when_source_already_selected() -> None:
+    worker = _MockTransferNeedsInputWorker(["amount"], prompt="How much would you like to send?")
+    state = _build_state(
+        last_interrupt=PendingInterrupt(
+            kind="input",
+            task_ids=["t1"],
+            fields_by_task={"t1": ["amount"]},
+            prompt="How much would you like to send?",
+        ),
+        last_message_text="20k",
+    )
+    state.tasks["t1"].payload.update(
+        {
+            "recipient_name": "Mum",
+            "source_account_id": "acct-1",
+            "amount": None,
+        }
+    )
+    config: RunnableConfig = {"configurable": {"services": {"transfer": worker}}, "recursion_limit": 50}
+
+    await advance_wave(state, config)
+
+    assert worker.last_context is not None
+    assert worker.last_context["required_fields"] == ["amount"]
+    assert worker.last_user_message == "20k"
+
+
+async def test_account_bank_follow_up_preserves_raw_reply_when_source_already_selected() -> None:
+    worker = _MockTransferNeedsInputWorker(
+        ["recipient_account", "recipient_bank_name"],
+        prompt="What's Tolu's account number and bank?",
+    )
+    state = _build_state(
+        last_interrupt=PendingInterrupt(
+            kind="input",
+            task_ids=["t1"],
+            fields_by_task={"t1": ["recipient_account", "recipient_bank_name"]},
+            prompt="What's Tolu's account number and bank?",
+        ),
+        last_message_text="816 251 1027 First Bank",
+    )
+    state.tasks["t1"].payload.update(
+        {
+            "recipient_name": "Tolu",
+            "source_account_id": "acct-1",
+            "amount": 10000,
+        }
+    )
+    config: RunnableConfig = {"configurable": {"services": {"transfer": worker}}, "recursion_limit": 50}
+
+    await advance_wave(state, config)
+
+    assert worker.last_context is not None
+    assert worker.last_context["required_fields"] == ["recipient_account", "recipient_bank_name"]
+    assert worker.last_user_message == "816 251 1027 First Bank"
+
+
+async def test_multi_transfer_prompt_shows_alias_then_resolved_name_in_parentheses() -> None:
+    worker = _MockTransferResolveThenPromptWorker()
+    state = OrchestratorState(
+        user_id="u_multi_names",
+        phone_number="2348000000112",
+        channel="whatsapp",
+        tasks={
+            "t1": TaskSpec(
+                id="t1",
+                type="transfer",
+                stage=TaskStage.EXTRACTED,
+                payload={"recipient_name": "Mum", "amount": 10000},
+            ),
+            "t2": TaskSpec(
+                id="t2",
+                type="transfer",
+                stage=TaskStage.EXTRACTED,
+                payload={"recipient_name": "tolu", "amount": 10000},
+            ),
+        },
+        waves=[["t1", "t2"]],
+        current_wave_index=0,
+        loaded_context={
+            "language": "en",
+            "accounts": [
+                {
+                    "id": "acct-1",
+                    "bank_name": "Zenith Bank",
+                    "account_number": "0000009384",
+                    "mandate_status": "ready",
+                    "mandate_id": "m1",
+                }
+            ],
+        },
+        last_interrupt=PendingInterrupt(
+            kind="input",
+            task_ids=["t1", "t2"],
+            fields_by_task={
+                "t1": ["recipient_account", "recipient_bank_name"],
+                "t2": ["recipient_account", "recipient_bank_name"],
+            },
+            prompt="What's the account number and bank?",
+        ),
+        last_message_text="Mum 8162511023 Opay; still need tolu",
+    )
+    config: RunnableConfig = {"configurable": {"services": {"transfer": worker}}, "recursion_limit": 50}
+
+    updates = await advance_wave(state, config)
+    text = updates["outbox"][0]["text"]
+
+    assert "Mum (MERCY JOHNSON)" in text
+    assert "tolu's account number and bank" in text.lower()
 
 
 async def test_transfer_handler_reloads_beneficiaries_when_context_list_is_empty() -> None:
@@ -386,3 +568,117 @@ async def test_non_transfer_task_uses_worker_prompt_not_transfer_formatter() -> 
 
     assert text == airtime_prompt
     assert "account details" not in text
+
+
+async def test_multi_transfer_input_turn_executes_only_focused_interrupt_task() -> None:
+    worker = _MockTransferNeedsInputWorker(["recipient_account", "recipient_bank_name"])
+    state = OrchestratorState(
+        user_id="u_multi_focus",
+        phone_number="2348000000111",
+        channel="whatsapp",
+        tasks={
+            "t1": TaskSpec(
+                id="t1",
+                type="transfer",
+                stage=TaskStage.EXTRACTED,
+                payload={"recipient_name": "Mum", "amount": 10000, "source_account_id": "acct-1"},
+            ),
+            "t2": TaskSpec(
+                id="t2",
+                type="transfer",
+                stage=TaskStage.EXTRACTED,
+                payload={"recipient_name": "Tolu", "amount": 10000, "source_account_id": "acct-1"},
+            ),
+        },
+        waves=[["t1", "t2"]],
+        current_wave_index=0,
+        loaded_context={
+            "language": "en",
+            "accounts": [
+                {
+                    "id": "acct-1",
+                    "bank_name": "Test Bank",
+                    "account_number": "0000000001",
+                    "mandate_status": "ready",
+                    "mandate_id": "m1",
+                }
+            ],
+        },
+        last_interrupt=PendingInterrupt(
+            kind="input",
+            task_ids=["t2"],
+            fields_by_task={"t2": ["recipient_account", "recipient_bank_name"]},
+            prompt="What's Tolu's account number and bank?",
+        ),
+        last_message_text="816 251 1027 First Bank",
+    )
+    config: RunnableConfig = {"configurable": {"services": {"transfer": worker}}, "recursion_limit": 50}
+
+    await advance_wave(state, config)
+
+    assert worker.call_count == 1
+    assert worker.called_with_payloads[0].get("recipient_name") == "Tolu"
+    assert worker.last_user_message == "816 251 1027 First Bank"
+
+
+async def test_multi_transfer_confirmation_preserves_existing_waiting_task() -> None:
+    worker = _MockTransferMixedConfirmWorker()
+    state = OrchestratorState(
+        user_id="u_multi_confirm_set",
+        phone_number="2348000000113",
+        channel="whatsapp",
+        tasks={
+            "t1": TaskSpec(
+                id="t1",
+                type="transfer",
+                stage=TaskStage.EXTRACTED,
+                payload={"recipient_name": "Mum", "amount": 10000, "source_account_id": "acct-1"},
+            ),
+            "t2": TaskSpec(
+                id="t2",
+                type="transfer",
+                stage=TaskStage.EXTRACTED,
+                payload={"recipient_name": "Tolu", "amount": 10000, "source_account_id": "acct-1"},
+            ),
+        },
+        waves=[["t1", "t2"]],
+        current_wave_index=0,
+        loaded_context={
+            "language": "en",
+            "accounts": [
+                {
+                    "id": "acct-1",
+                    "bank_name": "Zenith Bank",
+                    "account_number": "0000009384",
+                    "mandate_status": "ready",
+                    "mandate_id": "m1",
+                }
+            ],
+        },
+    )
+    config: RunnableConfig = {"configurable": {"services": {"transfer": worker}}, "recursion_limit": 50}
+
+    first_updates = await advance_wave(state, config)
+    assert first_updates["pending_interrupt"].kind == "input"
+    assert first_updates["pending_interrupt"].task_ids == ["t2"]
+    assert first_updates["tasks"]["t1"].stage == TaskStage.AWAITING_CONFIRMATION
+    assert first_updates["tasks"]["t2"].stage == TaskStage.EXTRACTED
+
+    state.tasks = first_updates["tasks"]
+    state.last_interrupt = first_updates["pending_interrupt"]
+    state.pending_interrupt = None
+    state.last_message_text = "816 251 1027 First Bank"
+
+    second_updates = await advance_wave(state, config)
+
+    assert worker.call_count == 3
+    assert worker.calls.count("Mum") == 1
+
+    second_interrupt = second_updates["pending_interrupt"]
+    assert second_interrupt.kind == "confirmation"
+    assert set(second_interrupt.task_ids) == {"t1", "t2"}
+
+    confirmation_entry = next(entry for entry in second_updates["outbox"] if entry["type"] == "request_confirmation")
+    assert set(confirmation_entry["task_ids"]) == {"t1", "t2"}
+    assert "Confirm Mum" in confirmation_entry["summary"]
+    assert "Confirm Tolu" in confirmation_entry["summary"]
