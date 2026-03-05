@@ -16,6 +16,7 @@ from apps.core.src.agent.orchestrator.models.domain import (
 from apps.core.src.agent.orchestrator.models.state import OrchestratorState
 from apps.core.src.agent.orchestrator.services.context_manager import OrchestratorContextManager
 from shared.i18n import LocaleManager, render_message
+from shared.utils.serialization import sqlalchemy_to_dict
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -74,6 +75,16 @@ class ExecutionContext:
 
 def _state_locale(state: OrchestratorState) -> str:
     return cast(str, LocaleManager.normalize(state.loaded_context.get("language")).value)
+
+
+def _normalize_beneficiary_rows(rows: list[Any]) -> list[dict[str, Any]]:
+    normalized: list[dict[str, Any]] = []
+    for row in rows:
+        if isinstance(row, dict):
+            normalized.append(row)
+        else:
+            normalized.append(sqlalchemy_to_dict(row))
+    return normalized
 
 
 def _is_resume_prompt_frame(frame: ContextFrame) -> bool:
@@ -221,11 +232,42 @@ async def handle_transfer_task(task: Any, task_id: str, ctx: ExecutionContext) -
         required_fields = [field for field in raw_required_fields if isinstance(field, str)]
         previous_response = ctx.state.last_interrupt.prompt
 
+    beneficiaries = ctx.state.loaded_context.get("beneficiaries", [])
+    if not isinstance(beneficiaries, list):
+        beneficiaries = []
+
+    recipient_name = task.payload.get("recipient_name")
+    beneficiary_repo = ctx.config["configurable"].get("beneficiary_repo")
+    user_id = ctx.state.loaded_context.get("user_id")
+    if (
+        isinstance(recipient_name, str)
+        and recipient_name.strip()
+        and not beneficiaries
+        and beneficiary_repo
+        and user_id
+    ):
+        try:
+            fetched_rows = await beneficiary_repo.get_by_user(str(user_id), beneficiary_type="transfer")
+            beneficiaries = _normalize_beneficiary_rows(fetched_rows if isinstance(fetched_rows, list) else [])
+            if isinstance(ctx.state.loaded_context, dict):
+                ctx.state.loaded_context["beneficiaries"] = beneficiaries
+            logger.info(
+                "transfer_beneficiaries_reloaded_for_resolution",
+                user_id=str(user_id),
+                fetched_count=len(beneficiaries),
+            )
+        except Exception as e:
+            logger.warning(
+                "transfer_beneficiary_reload_failed",
+                user_id=str(user_id),
+                error=str(e),
+            )
+
     context_data = {
         "phone_number": ctx.state.phone_number,
         "user_id": ctx.state.loaded_context.get("user_id"),
         "accounts": ctx.state.loaded_context.get("accounts", []),
-        "beneficiaries": ctx.state.loaded_context.get("beneficiaries", []),
+        "beneficiaries": beneficiaries,
         "language": _state_locale(ctx.state),
         "required_fields": required_fields,
         "previous_response": previous_response,

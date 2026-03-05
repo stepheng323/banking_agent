@@ -161,6 +161,14 @@ def _compute_missing_recipient_fields(payload: TransferPayload) -> list[str]:
     return required_fields
 
 
+def _is_transfer_beneficiary_record(record: dict[str, Any]) -> bool:
+    """Allow transfer beneficiaries and legacy records without a type field."""
+    beneficiary_type = record.get("beneficiary_type")
+    if beneficiary_type is None:
+        return True
+    return str(beneficiary_type).strip().lower() == "transfer"
+
+
 def _ask_account_and_bank_prompt(locale: str, recipient_name: str | None) -> str:
     fallback_name = recipient_name or render_message("response.common.recipient_fallback", locale)
     return render_message(
@@ -391,7 +399,8 @@ async def resolve_beneficiary(
             )
 
     matcher = BeneficiaryMatcher()
-    beneficiaries = [Beneficiary(**b) for b in ctx.beneficiaries]
+    transfer_beneficiaries_raw = [b for b in ctx.beneficiaries if _is_transfer_beneficiary_record(b)]
+    beneficiaries = [Beneficiary(**b) for b in transfer_beneficiaries_raw]
     logger.info(
         "beneficiary_match_attempt",
         recipient_name=payload.recipient_name,
