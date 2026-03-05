@@ -8,7 +8,7 @@ locals {
     "receipt-worker" = {
       handler = "apps.core.src.lambda_handlers.receipt_worker_handler.handler"
       timeout = 90
-      memory  = 1024
+      memory  = 2048
     }
   }
 
@@ -23,6 +23,7 @@ locals {
       queue_arn    = var.queue_arns[queue_key]
       batch_size   = lookup(var.batch_size_by_queue, queue_key, 5)
       batch_window = lookup(var.batch_window_by_queue, queue_key, 1)
+      max_conc     = lookup(var.max_concurrency_by_queue, queue_key, null)
     }
   }
 }
@@ -123,13 +124,14 @@ resource "aws_cloudwatch_log_group" "workers" {
 resource "aws_lambda_function" "workers" {
   for_each = local.workers
 
-  function_name = "${var.project_name}-${each.key}-${var.environment}"
-  role          = aws_iam_role.lambda_worker_role.arn
-  package_type  = "Image"
-  image_uri     = var.worker_lambda_image_urls[each.key]
-  timeout       = each.value.timeout
-  memory_size   = each.value.memory
-  publish       = true
+  function_name                  = "${var.project_name}-${each.key}-${var.environment}"
+  role                           = aws_iam_role.lambda_worker_role.arn
+  package_type                   = "Image"
+  image_uri                      = var.worker_lambda_image_urls[each.key]
+  timeout                        = each.value.timeout
+  memory_size                    = each.value.memory
+  publish                        = true
+  reserved_concurrent_executions = lookup(var.reserved_concurrency_by_worker, each.key, null)
 
   image_config {
     command = [each.value.handler]
@@ -162,4 +164,11 @@ resource "aws_lambda_event_source_mapping" "async_queue_mappings" {
   batch_size                         = each.value.batch_size
   maximum_batching_window_in_seconds = each.value.batch_window
   function_response_types            = ["ReportBatchItemFailures"]
+
+  dynamic "scaling_config" {
+    for_each = each.value.max_conc == null ? [] : [each.value.max_conc]
+    content {
+      maximum_concurrency = scaling_config.value
+    }
+  }
 }

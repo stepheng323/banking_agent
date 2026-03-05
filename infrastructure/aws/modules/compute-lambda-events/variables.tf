@@ -66,7 +66,7 @@ variable "batch_size_by_queue" {
   type        = map(number)
   default = {
     "transactions" = 5
-    "receipts"     = 5
+    "receipts"     = 1
   }
 }
 
@@ -75,7 +75,23 @@ variable "batch_window_by_queue" {
   type        = map(number)
   default = {
     "transactions" = 2
-    "receipts"     = 1
+    "receipts"     = 0
+  }
+}
+
+variable "reserved_concurrency_by_worker" {
+  description = "Optional Lambda reserved concurrency by worker name"
+  type        = map(number)
+  default = {
+    "receipt-worker" = 10
+  }
+}
+
+variable "max_concurrency_by_queue" {
+  description = "Optional event source max concurrency by queue key"
+  type        = map(number)
+  default = {
+    "receipts" = 10
   }
 }
 

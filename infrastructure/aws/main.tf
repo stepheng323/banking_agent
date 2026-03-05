@@ -221,6 +221,20 @@ module "compute_lambda_events" {
   queue_arns            = module.messaging.queue_arns
   sns_topic_arn         = module.messaging.sns_topic_arn
   log_retention_in_days = var.lambda_log_retention_in_days
+  batch_size_by_queue = {
+    "transactions" = 5
+    "receipts"     = 1
+  }
+  batch_window_by_queue = {
+    "transactions" = 2
+    "receipts"     = 0
+  }
+  reserved_concurrency_by_worker = {
+    "receipt-worker" = 10
+  }
+  max_concurrency_by_queue = {
+    "receipts" = 10
+  }
 
   worker_lambda_image_urls = {
     "transaction-worker" = "${module.ecr.core_repository_url}:lambda-transaction-latest"
