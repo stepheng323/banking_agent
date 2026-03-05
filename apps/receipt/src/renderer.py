@@ -14,6 +14,14 @@ logger = get_logger(__name__)
 
 TEMPLATE_DIR = Path(__file__).parent / "templates"
 RECEIPT_WIDTH = 480
+CHROMIUM_LAUNCH_ARGS = [
+    "--no-sandbox",
+    "--disable-setuid-sandbox",
+    "--disable-dev-shm-usage",
+    "--no-zygote",
+    "--single-process",
+    "--disable-gpu",
+]
 
 
 class ReceiptRenderer:
@@ -37,7 +45,8 @@ class ReceiptRenderer:
             self._playwright = await async_playwright().start()
             self._browser = await self._playwright.chromium.launch(
                 headless=True,
-                args=["--no-sandbox", "--disable-dev-shm-usage"],
+                args=CHROMIUM_LAUNCH_ARGS,
+                chromium_sandbox=False,
             )
             logger.info("playwright_browser_launched")
         return self._browser
