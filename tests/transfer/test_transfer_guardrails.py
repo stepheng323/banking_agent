@@ -23,6 +23,12 @@ class _MockBankingProvider:
         )
 
 
+class _MockUnresolvedBankingProvider:
+    async def resolve_account(self, account_number: str, bank_code: str) -> SimpleNamespace:
+        del account_number, bank_code
+        return SimpleNamespace(success=False, account=None)
+
+
 class _MockTxRepo:
     def __init__(self, amounts: list[float]) -> None:
         self.amounts = amounts
@@ -135,6 +141,93 @@ async def test_saved_beneficiary_shortcut_is_dropped_when_recipient_changes() ->
     assert result.outcome.value == "needs_input"
     assert "recipient_account" in result.required_fields
     assert payload.beneficiary_id is None
+
+
+async def test_name_only_single_beneficiary_match_autofills_recipient_details() -> None:
+    payload = TransferPayload(
+        amount=6000,
+        recipient_name="Mum",
+    )
+    ctx = TransferContext(
+        phone_number="2348000000000",
+        language="en",
+        beneficiaries=[
+            {
+                "id": "bene-2",
+                "alias": "Mum",
+                "account_name": "Mama Nkechi",
+                "account_number": "2010000002",
+                "bank_name": "GTBank",
+                "bank_code": "058",
+            }
+        ],
+        accounts=[],
+    )
+
+    result = await resolve_beneficiary(payload, ctx, resolver_provider=None, bank_cache=None)
+
+    assert result.outcome.value == "ok"
+    assert result.patch["resolved_from_saved_beneficiary"] is True
+    assert result.patch["recipient_account"] == "2010000002"
+    assert result.patch["recipient_bank_name"] == "GTBank"
+
+
+async def test_verification_failure_requests_account_and_bank_not_recipient_name() -> None:
+    payload = TransferPayload(
+        recipient_account="1234567890",
+        recipient_bank_name="Access Bank",
+        recipient_bank_code="044",
+    )
+    ctx = TransferContext(phone_number="2348000000000", language="en", beneficiaries=[], accounts=[])
+
+    result = await resolve_beneficiary(
+        payload,
+        ctx,
+        resolver_provider=_MockUnresolvedBankingProvider(),
+        bank_cache=None,
+    )
+
+    assert result.outcome.value == "needs_input"
+    assert result.required_fields == ["recipient_account", "recipient_bank_name"]
+    assert "recipient_name" not in result.required_fields
+    assert result.prompt is not None
+    assert "account number and bank" in result.prompt.lower()
+
+
+async def test_no_recipient_details_requests_account_and_bank_together() -> None:
+    payload = TransferPayload()
+    ctx = TransferContext(phone_number="2348000000000", language="en", beneficiaries=[], accounts=[])
+
+    result = await resolve_beneficiary(payload, ctx, resolver_provider=None, bank_cache=None)
+
+    assert result.outcome.value == "needs_input"
+    assert result.required_fields == ["recipient_account", "recipient_bank_name"]
+    assert result.prompt is not None
+    assert "account number and bank" in result.prompt.lower()
+
+
+async def test_only_bank_missing_requests_bank_only() -> None:
+    payload = TransferPayload(recipient_account="1234567890")
+    ctx = TransferContext(phone_number="2348000000000", language="en", beneficiaries=[], accounts=[])
+
+    result = await resolve_beneficiary(payload, ctx, resolver_provider=None, bank_cache=None)
+
+    assert result.outcome.value == "needs_input"
+    assert result.required_fields == ["recipient_bank_name"]
+    assert result.prompt is not None
+    assert "bank" in result.prompt.lower()
+
+
+async def test_only_account_missing_requests_account_only() -> None:
+    payload = TransferPayload(recipient_bank_name="Access Bank")
+    ctx = TransferContext(phone_number="2348000000000", language="en", beneficiaries=[], accounts=[])
+
+    result = await resolve_beneficiary(payload, ctx, resolver_provider=None, bank_cache=None)
+
+    assert result.outcome.value == "needs_input"
+    assert result.required_fields == ["recipient_account"]
+    assert result.prompt is not None
+    assert "account number" in result.prompt.lower()
 
 
 async def test_dynamic_risk_patch_flags_large_unsaved_transfer() -> None:

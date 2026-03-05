@@ -152,6 +152,24 @@ def _clear_stale_beneficiary_binding(payload: TransferPayload, selected: dict[st
         payload.recipient_bank_name = None
 
 
+def _compute_missing_recipient_fields(payload: TransferPayload) -> list[str]:
+    required_fields: list[str] = []
+    if not payload.recipient_account:
+        required_fields.append("recipient_account")
+    if not payload.recipient_bank_name and not payload.recipient_bank_code:
+        required_fields.append("recipient_bank_name")
+    return required_fields
+
+
+def _ask_account_and_bank_prompt(locale: str, recipient_name: str | None) -> str:
+    fallback_name = recipient_name or render_message("response.common.recipient_fallback", locale)
+    return render_message(
+        "response.templates.ask_account_number_and_bank",
+        locale,
+        {"recipient_name": fallback_name},
+    )
+
+
 class ResolutionStep(TransferStep):
     """Resolves beneficiary details."""
 
@@ -256,7 +274,7 @@ async def resolve_beneficiary(
                 )
 
         if not payload.recipient_name and not payload.recipient_resolved_name:
-            # Logic to ask for name will trigger below if we don't return OK here
+            # If account verification fails below, request account+bank re-entry.
             pass
 
     if not payload.recipient_name:
@@ -284,26 +302,32 @@ async def resolve_beneficiary(
                     ),
                 )
 
-            # If we have Code + Account but still no Name -> Resolution Failed (Network or Invalid Account)
-            # We fail gracefully by asking for the name manually, or treating it as a failure?
-            # Better to ask for name to allow manual override, but warn.
+            # If we have bank code + account but still cannot resolve, request a full re-entry.
             return TransactionResult(
                 outcome=TransactionOutcome.NEEDS_INPUT,
-                required_fields=["recipient_name"],
+                required_fields=["recipient_account", "recipient_bank_name"],
+                prompt=(
+                    f"{render_message('response.templates.account_validation_failed', locale)} "
+                    f"{_ask_account_and_bank_prompt(locale, payload.recipient_name)}"
+                ),
+            )
+
+        if payload.recipient_bank_name or payload.recipient_bank_code:
+            fallback_name = render_message("response.common.recipient_fallback", locale)
+            return TransactionResult(
+                outcome=TransactionOutcome.NEEDS_INPUT,
+                required_fields=["recipient_account"],
                 prompt=render_message(
-                    "transfer.resolve.account_verification_failed_need_name",
+                    "response.templates.ask_account_number",
                     locale,
-                    {
-                        "recipient_account": payload.recipient_account,
-                        "recipient_bank_name": payload.recipient_bank_name or "",
-                    },
+                    {"recipient_name": fallback_name},
                 ),
             )
 
         return TransactionResult(
             outcome=TransactionOutcome.NEEDS_INPUT,
-            required_fields=["recipient_name"],
-            prompt=render_message("transfer.resolve.ask_recipient", locale),
+            required_fields=["recipient_account", "recipient_bank_name"],
+            prompt=_ask_account_and_bank_prompt(locale, payload.recipient_name),
         )
 
     bank_term = (payload.recipient_bank_name or "").lower()
@@ -443,10 +467,11 @@ async def resolve_beneficiary(
             },
         )
 
+    required_fields = _compute_missing_recipient_fields(payload)
     missing = []
-    if not payload.recipient_account:
+    if "recipient_account" in required_fields:
         missing.append(render_message("transfer.resolve.missing_account_number", locale))
-    if not payload.recipient_bank_name and not payload.recipient_bank_code:
+    if "recipient_bank_name" in required_fields:
         missing.append(render_message("transfer.resolve.missing_bank_name", locale))
 
     if missing:
@@ -473,7 +498,7 @@ async def resolve_beneficiary(
 
         return TransactionResult(
             outcome=TransactionOutcome.NEEDS_INPUT,
-            required_fields=["recipient_account", "recipient_bank_name"],
+            required_fields=required_fields,
             prompt=prompt,
         )
 
