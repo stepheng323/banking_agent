@@ -375,9 +375,7 @@ async def advance_wave(state: OrchestratorState, config: RunnableConfig) -> dict
                 if isinstance(a, dict)
             ],
         )
-        state.loaded_context["accounts"] = [
-            a for a in mandate_gate_accounts if a.get("mandate_status") == "ready"
-        ]
+        state.loaded_context["accounts"] = [a for a in mandate_gate_accounts if a.get("mandate_status") == "ready"]
         logger.info(
             "mandate_gate_post_filter",
             ready_count=len(state.loaded_context["accounts"]),
@@ -626,8 +624,13 @@ async def advance_wave(state: OrchestratorState, config: RunnableConfig) -> dict
                 has_structured_options = isinstance(focused_details, dict) and isinstance(
                     focused_details.get("options"), list
                 )
+                transfer_recipient_fields = {"recipient_account", "recipient_bank_name"}
+                is_transfer_recipient_prompt = bool(set(focused_missing_fields) & transfer_recipient_fields)
                 if focused_worker_prompt and ("beneficiary_id" in focused_missing_fields or has_structured_options):
                     prompt_text = _compact_prompt_for_options(focused_worker_prompt)
+                elif focused_worker_prompt and not is_transfer_recipient_prompt:
+                    # Non-transfer fields (e.g. airtime recipient_phone, amount): use the worker's own prompt.
+                    prompt_text = focused_worker_prompt
                 else:
                     prompt_text = format_single_transfer_recipient_prompt(
                         focused_name=focused_name,

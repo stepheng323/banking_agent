@@ -54,9 +54,11 @@ def format_single_transfer_recipient_prompt(
 ) -> str:
     """Format the prompt for requesting account details for a single transfer in focus."""
     normalized_missing = set(focused_missing_fields)
-    needs_account = normalized_missing == {"recipient_account"}
-    needs_bank = normalized_missing == {"recipient_bank_name"}
-    needs_account_and_bank = normalized_missing == {"recipient_account", "recipient_bank_name"}
+    has_account = "recipient_account" in normalized_missing
+    has_bank = "recipient_bank_name" in normalized_missing
+    needs_account_and_bank = has_account and has_bank
+    needs_account = has_account and not has_bank
+    needs_bank = has_bank and not has_account
 
     ask_lines: list[str] = []
     if needs_account_and_bank:

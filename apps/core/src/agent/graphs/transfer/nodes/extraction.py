@@ -1,5 +1,6 @@
 """Extraction logic."""
 
+import re
 from typing import Any
 
 from apps.core.src.agent.graphs.__shared__.beneficiary.matcher import BeneficiaryMatcher
@@ -239,6 +240,34 @@ class ExtractionStep(TransferStep):
                 outcome=TransactionOutcome.OK,
                 patch=numeric_patch,
             )
+
+        # [DETERMINISTIC FAST-PATH] Account number + bank name
+        # When user replies with e.g. "8067892221 Opay" and we're waiting for account+bank,
+        # parse deterministically instead of relying on the LLM.
+        awaiting_account_and_bank = "recipient_account" in required_fields and "recipient_bank_name" in required_fields
+        if awaiting_account_and_bank and self.user_message:
+            m = re.match(r"^\s*(\d{7,11})\s+(.+?)\s*$", self.user_message.strip())
+            if m:
+                acct, bank = m.group(1), m.group(2).strip()
+                if bank and not bank.isdigit():
+                    logger.info(
+                        "deterministic_account_bank_fastpath",
+                        account=acct,
+                        bank=bank,
+                    )
+                    return TransactionResult(
+                        outcome=TransactionOutcome.OK,
+                        patch={
+                            "recipient_account": acct,
+                            "recipient_bank_name": bank,
+                            "recipient_bank_code": None,
+                            "recipient_resolved_name": None,
+                            "name_mismatch": False,
+                            "name_match_score": None,
+                            "name_mismatch_warning": None,
+                            "confirmation": {"confirmed": False},
+                        },
+                    )
 
         if not worker_context.extractor:
             logger.info("transfer_extraction_skipped", reason="extractor_unavailable")

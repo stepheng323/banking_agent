@@ -267,3 +267,49 @@ async def test_skip_extraction_override_parses_account_and_bank_from_account_lik
     assert result.patch["recipient_account"] == "8162511023"
     assert result.patch["recipient_bank_name"] == "Access Bank"
     assert result.patch["skip_extraction"] is False
+
+
+async def test_deterministic_account_bank_fastpath() -> None:
+    """When awaiting account+bank and user sends '8067892221 Opay', parse deterministically."""
+
+    class _NeverCalledExtractor:
+        def __init__(self) -> None:
+            self.called = False
+
+        async def extract(self, text: str, smart_context: dict | None = None) -> TransferExtractionResult:
+            self.called = True
+            return TransferExtractionResult()
+
+    extractor = _NeverCalledExtractor()
+    step = ExtractionStep(user_message="8067892221 Opay")
+    payload = TransferPayload(recipient_name="Mum")
+    context = TransferContext(phone_number="2348000000999", language="en", beneficiaries=[], accounts=[])
+    worker_context = SimpleNamespace(
+        extractor=extractor,
+        required_fields=["recipient_account", "recipient_bank_name"],
+        previous_response="What's mum's account number and bank?",
+    )
+
+    result = await step.execute(payload, context, TransferGates(), worker_context)
+
+    assert result.outcome == TransactionOutcome.OK
+    assert result.patch["recipient_account"] == "8067892221"
+    assert result.patch["recipient_bank_name"] == "Opay"
+    assert extractor.called is False
+
+
+async def test_deterministic_fastpath_does_not_trigger_for_pure_digits() -> None:
+    """The fast-path requires a non-digit bank token; pure digit strings should fall through to LLM."""
+    extractor = _CaptureExtractor()
+    step = ExtractionStep(user_message="8067892221")
+    payload = TransferPayload(recipient_name="Mum")
+    context = TransferContext(phone_number="2348000000999", language="en", beneficiaries=[], accounts=[])
+    worker_context = SimpleNamespace(
+        extractor=extractor,
+        required_fields=["recipient_account", "recipient_bank_name"],
+        previous_response="What's mum's account number and bank?",
+    )
+
+    result = await step.execute(payload, context, TransferGates(), worker_context)
+    assert result.outcome == TransactionOutcome.OK
+    assert extractor.last_user_message == "8067892221"
