@@ -120,6 +120,7 @@ def _dedupe_task_ids(task_ids: list[str], current_wave: list[str]) -> list[str]:
             ordered.append(task_id)
             seen.add(task_id)
 
+
     for task_id in requested:
         if task_id not in seen:
             ordered.append(task_id)
