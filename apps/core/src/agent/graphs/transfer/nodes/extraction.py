@@ -22,6 +22,10 @@ logger = get_logger(__name__)
 
 _ACCOUNT_BANK_ACCOUNT_FIRST_PATTERN = re.compile(r"^\s*(?P<account>(?:\d[\s,.\-]?){10,11})\s+(?P<bank>.+?)\s*$")
 _ACCOUNT_BANK_BANK_FIRST_PATTERN = re.compile(r"^\s*(?P<bank>.+?)\s+(?P<account>(?:\d[\s,.\-]?){10,11})\s*$")
+_AMOUNT_REPLY_PATTERN = re.compile(
+    r"^\s*(?:₦|ngn)?\s*(?P<amount>\d[\d,]*(?:\.\d+)?)\s*(?P<suffix>[kKhH]?)\s*$",
+    re.IGNORECASE,
+)
 
 
 def _canonical_beneficiary_id(value: str) -> str:
@@ -155,6 +159,25 @@ def _parse_account_and_bank_input(user_message: str) -> tuple[str, str] | None:
     return None
 
 
+def _parse_amount_input(user_message: str) -> float | None:
+    """Parse shorthand amount replies like '20k', '20000', '₦20,000'."""
+    match = _AMOUNT_REPLY_PATTERN.match(user_message.strip())
+    if not match:
+        return None
+
+    try:
+        value = float(match.group("amount").replace(",", ""))
+    except ValueError:
+        return None
+
+    suffix = match.group("suffix").lower()
+    multiplier = 1000.0 if suffix == "k" else 100.0 if suffix == "h" else 1.0
+    amount = value * multiplier
+    if amount <= 0:
+        return None
+    return amount
+
+
 class ExtractionStep(TransferStep):
     """Refines transfer data from user message."""
 
@@ -171,6 +194,13 @@ class ExtractionStep(TransferStep):
         if not self.user_message:
             return TransactionResult(outcome=TransactionOutcome.OK, patch={})
 
+        def _with_skip_patch(patch: dict[str, Any] | None = None) -> dict[str, Any] | None:
+            if not data.skip_extraction:
+                return patch
+            merged = dict(patch or {})
+            merged.setdefault("skip_extraction", False)
+            return merged
+
         raw_required_fields = getattr(worker_context, "required_fields", [])
         required_fields = raw_required_fields if isinstance(raw_required_fields, list) else []
         awaiting_amount = "amount" in required_fields
@@ -179,37 +209,59 @@ class ExtractionStep(TransferStep):
             if reply == "1":
                 return TransactionResult(
                     outcome=TransactionOutcome.OK,
-                    patch={
+                    patch=_with_skip_patch(
+                        {
                         "amount": float(data.suggested_amount),
                         "suggested_amount": None,
                         "confirmation": {"confirmed": False},
-                    },
+                        }
+                    ),
                 )
             if reply == "2":
                 return TransactionResult(
                     outcome=TransactionOutcome.OK,
-                    patch={
+                    patch=_with_skip_patch(
+                        {
                         "suggested_amount": None,
                         "confirmation": {"confirmed": False},
-                    },
+                        }
+                    ),
                 )
             affirmation = AffirmationService.classify_sync(self.user_message)
             if affirmation.is_approval:
                 return TransactionResult(
                     outcome=TransactionOutcome.OK,
-                    patch={
+                    patch=_with_skip_patch(
+                        {
                         "amount": float(data.suggested_amount),
                         "suggested_amount": None,
                         "confirmation": {"confirmed": False},
-                    },
+                        }
+                    ),
                 )
             if affirmation.is_rejection:
                 return TransactionResult(
                     outcome=TransactionOutcome.OK,
-                    patch={
+                    patch=_with_skip_patch(
+                        {
                         "suggested_amount": None,
                         "confirmation": {"confirmed": False},
-                    },
+                        }
+                    ),
+                )
+        if awaiting_amount:
+            parsed_amount = _parse_amount_input(self.user_message)
+            if parsed_amount is not None:
+                logger.info("deterministic_amount_fastpath", amount=parsed_amount)
+                return TransactionResult(
+                    outcome=TransactionOutcome.OK,
+                    patch=_with_skip_patch(
+                        {
+                            "amount": parsed_amount,
+                            "suggested_amount": None,
+                            "confirmation": {"confirmed": False},
+                        }
+                    ),
                 )
 
         # Optimization: Phase 4 (Planner-as-Extractor)
@@ -233,7 +285,7 @@ class ExtractionStep(TransferStep):
             if beneficiary_patch:
                 return TransactionResult(
                     outcome=TransactionOutcome.OK,
-                    patch=beneficiary_patch,
+                    patch=_with_skip_patch(beneficiary_patch),
                 )
             if invalid_candidates:
                 retry_prompt = _render_beneficiary_retry_prompt(
@@ -245,7 +297,7 @@ class ExtractionStep(TransferStep):
                     outcome=TransactionOutcome.NEEDS_INPUT,
                     required_fields=["beneficiary_id"],
                     prompt=retry_prompt,
-                    patch={"beneficiary_candidates": invalid_candidates},
+                    patch=_with_skip_patch({"beneficiary_candidates": invalid_candidates}),
                     details={
                         "ambiguity": "MULTIPLE_BENEFICIARIES",
                         "candidates": invalid_candidates,
@@ -266,7 +318,7 @@ class ExtractionStep(TransferStep):
         if numeric_patch:
             return TransactionResult(
                 outcome=TransactionOutcome.OK,
-                patch=numeric_patch,
+                patch=_with_skip_patch(numeric_patch),
             )
 
         # [DETERMINISTIC FAST-PATH] Account number + bank name
@@ -284,7 +336,8 @@ class ExtractionStep(TransferStep):
                 )
                 return TransactionResult(
                     outcome=TransactionOutcome.OK,
-                    patch={
+                    patch=_with_skip_patch(
+                        {
                         "recipient_account": acct,
                         "recipient_bank_name": bank,
                         "recipient_bank_code": None,
@@ -293,12 +346,13 @@ class ExtractionStep(TransferStep):
                         "name_match_score": None,
                         "name_mismatch_warning": None,
                         "confirmation": {"confirmed": False},
-                    },
+                        }
+                    ),
                 )
 
         if not worker_context.extractor:
             logger.info("transfer_extraction_skipped", reason="extractor_unavailable")
-            patch = {"skip_extraction": False} if data.skip_extraction else {}
+            patch = _with_skip_patch({})
             return TransactionResult(outcome=TransactionOutcome.OK, patch=patch)
 
         res = await _extract_transfer_update(
@@ -321,7 +375,7 @@ class ExtractionStep(TransferStep):
             },
         )
         if data.skip_extraction:
-            res.patch["skip_extraction"] = False
+            res.patch = _with_skip_patch(res.patch)
 
         return res
 

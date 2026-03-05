@@ -385,6 +385,87 @@ async def test_deterministic_account_bank_fastpath_account_first_with_separators
     assert extractor.called is False
 
 
+async def test_deterministic_account_bank_fastpath_clears_skip_extraction_flag() -> None:
+    """Account+bank deterministic path should clear skip_extraction for next user turn."""
+
+    class _NeverCalledExtractor:
+        def __init__(self) -> None:
+            self.called = False
+
+        async def extract(self, text: str, smart_context: dict | None = None) -> TransferExtractionResult:
+            self.called = True
+            return TransferExtractionResult()
+
+    extractor = _NeverCalledExtractor()
+    step = ExtractionStep(user_message="Opay 8162511023")
+    payload = TransferPayload(recipient_name="8162511023 Opay", skip_extraction=True)
+    context = TransferContext(phone_number="2348000000999", language="en", beneficiaries=[], accounts=[])
+    worker_context = SimpleNamespace(
+        extractor=extractor,
+        required_fields=["recipient_account", "recipient_bank_name"],
+        previous_response="What's mum's account number and bank?",
+    )
+
+    result = await step.execute(payload, context, TransferGates(), worker_context)
+
+    assert result.outcome == TransactionOutcome.OK
+    assert result.patch["recipient_account"] == "8162511023"
+    assert result.patch["recipient_bank_name"] == "Opay"
+    assert result.patch["skip_extraction"] is False
+    assert extractor.called is False
+
+
+async def test_deterministic_amount_fastpath_parses_shorthand_reply() -> None:
+    """When awaiting amount, shorthand replies like '20k' should parse deterministically."""
+    extractor = _CaptureExtractor()
+    step = ExtractionStep(user_message="20k")
+    payload = TransferPayload(recipient_name="Mum")
+    context = TransferContext(phone_number="2348000000999", language="en", beneficiaries=[], accounts=[])
+    worker_context = SimpleNamespace(
+        extractor=extractor,
+        required_fields=["amount"],
+        previous_response="How much would you like to send?",
+    )
+
+    result = await step.execute(payload, context, TransferGates(), worker_context)
+
+    assert result.outcome == TransactionOutcome.OK
+    assert result.patch["amount"] == 20000
+    assert result.patch["suggested_amount"] is None
+    assert extractor.last_user_message is None
+
+
+async def test_account_then_amount_turns_do_not_get_stuck_due_to_skip_extraction() -> None:
+    """Regression: after account+bank deterministic parse, next amount turn should still extract."""
+    extractor = _CaptureExtractor()
+    context = TransferContext(phone_number="2348000000999", language="en", beneficiaries=[], accounts=[])
+    payload = TransferPayload(recipient_name="8162511023 Opay", skip_extraction=True)
+
+    account_step = ExtractionStep(user_message="Opay 8162511023")
+    account_ctx = SimpleNamespace(
+        extractor=extractor,
+        required_fields=["recipient_account", "recipient_bank_name"],
+        previous_response="What's mum's account number and bank?",
+    )
+    account_result = await account_step.execute(payload, context, TransferGates(), account_ctx)
+
+    next_payload = payload.model_copy(update=account_result.patch)
+    amount_step = ExtractionStep(user_message="20k")
+    amount_ctx = SimpleNamespace(
+        extractor=extractor,
+        required_fields=["amount"],
+        previous_response="How much would you like to send?",
+    )
+    amount_result = await amount_step.execute(next_payload, context, TransferGates(), amount_ctx)
+
+    assert account_result.outcome == TransactionOutcome.OK
+    assert account_result.patch["recipient_account"] == "8162511023"
+    assert account_result.patch["recipient_bank_name"] == "Opay"
+    assert account_result.patch["skip_extraction"] is False
+    assert amount_result.outcome == TransactionOutcome.OK
+    assert amount_result.patch["amount"] == 20000
+
+
 async def test_deterministic_fastpath_invalid_normalized_account_falls_back_to_extractor() -> None:
     """Invalid normalized account length should skip deterministic fast-path."""
     extractor = _CaptureExtractor()
