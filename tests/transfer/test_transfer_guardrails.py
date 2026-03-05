@@ -297,6 +297,148 @@ async def test_only_account_missing_requests_account_only() -> None:
     assert "account number" in result.prompt.lower()
 
 
+async def test_pronoun_with_recent_beneficiary_context_single_match_autofills() -> None:
+    payload = TransferPayload(amount=10000, recipient_name="her")
+    ctx = TransferContext(
+        phone_number="2348000000000",
+        language="en",
+        recent_beneficiary_context=True,
+        beneficiaries=[
+            {
+                "id": "bene-1",
+                "beneficiary_type": "transfer",
+                "alias": "Mum",
+                "account_name": "Mama Nkechi",
+                "account_number": "2010000002",
+                "bank_name": "Opay",
+                "bank_code": "100004",
+            }
+        ],
+        accounts=[],
+    )
+
+    result = await resolve_beneficiary(payload, ctx, resolver_provider=None, bank_cache=None)
+
+    assert result.outcome.value == "ok"
+    assert result.patch["beneficiary_id"] == "bene-1"
+    assert result.patch["recipient_bank_name"] == "Opay"
+
+
+async def test_pronoun_with_recent_beneficiary_context_multiple_candidates_clarifies() -> None:
+    payload = TransferPayload(amount=10000, recipient_name="her")
+    ctx = TransferContext(
+        phone_number="2348000000000",
+        language="en",
+        recent_beneficiary_context=True,
+        beneficiaries=[
+            {
+                "id": "bene-1",
+                "beneficiary_type": "transfer",
+                "alias": "Mum",
+                "account_name": "Mama Nkechi",
+                "account_number": "2010000002",
+                "bank_name": "Opay",
+                "bank_code": "100004",
+            },
+            {
+                "id": "bene-2",
+                "beneficiary_type": "transfer",
+                "alias": "Dad",
+                "account_name": "Papa Nkechi",
+                "account_number": "2010000003",
+                "bank_name": "GTBank",
+                "bank_code": "058",
+            },
+        ],
+        accounts=[],
+    )
+
+    result = await resolve_beneficiary(payload, ctx, resolver_provider=None, bank_cache=None)
+
+    assert result.outcome.value == "needs_input"
+    assert result.required_fields == ["beneficiary_id"]
+    assert result.details.get("ambiguity") == "MULTIPLE_BENEFICIARIES"
+
+
+async def test_pronoun_without_recent_beneficiary_context_does_not_autoresolve() -> None:
+    payload = TransferPayload(amount=10000, recipient_name="her")
+    ctx = TransferContext(
+        phone_number="2348000000000",
+        language="en",
+        recent_beneficiary_context=False,
+        beneficiaries=[
+            {
+                "id": "bene-1",
+                "beneficiary_type": "transfer",
+                "alias": "Mum",
+                "account_name": "Mama Nkechi",
+                "account_number": "2010000002",
+                "bank_name": "Opay",
+                "bank_code": "100004",
+            }
+        ],
+        accounts=[],
+    )
+
+    result = await resolve_beneficiary(payload, ctx, resolver_provider=None, bank_cache=None)
+
+    assert result.outcome.value == "needs_input"
+    assert result.required_fields == ["recipient_account", "recipient_bank_name"]
+
+
+async def test_reference_index_resolves_transfer_beneficiary() -> None:
+    payload = TransferPayload(
+        amount=10000,
+        recipient_name="the second one",
+        recipient_reference={"selector": "index", "index": 2},
+    )
+    ctx = TransferContext(
+        phone_number="2348000000000",
+        language="en",
+        recent_beneficiary_context=True,
+        beneficiaries=[
+            {
+                "id": "bene-1",
+                "beneficiary_type": "transfer",
+                "alias": "Mum",
+                "account_name": "Mama Nkechi",
+                "account_number": "2010000002",
+                "bank_name": "Opay",
+                "bank_code": "100004",
+            },
+            {
+                "id": "bene-2",
+                "beneficiary_type": "transfer",
+                "alias": "Dad",
+                "account_name": "Papa Nkechi",
+                "account_number": "2010000003",
+                "bank_name": "GTBank",
+                "bank_code": "058",
+            },
+        ],
+        accounts=[],
+    )
+
+    result = await resolve_beneficiary(payload, ctx, resolver_provider=None, bank_cache=None)
+
+    assert result.outcome.value == "ok"
+    assert result.patch["beneficiary_id"] == "bene-2"
+    assert result.patch["recipient_account"] == "2010000003"
+
+
+async def test_invalid_recipient_placeholder_uses_generic_account_prompt() -> None:
+    payload = TransferPayload(amount=8000, recipient_name="send's")
+    ctx = TransferContext(phone_number="2348000000000", language="en", beneficiaries=[], accounts=[])
+
+    result = await resolve_beneficiary(payload, ctx, resolver_provider=None, bank_cache=None)
+
+    assert result.outcome.value == "needs_input"
+    assert result.required_fields == ["recipient_account", "recipient_bank_name"]
+    assert result.prompt is not None
+    assert "send's" not in result.prompt.lower()
+    assert "her's" not in result.prompt.lower()
+
+
 async def test_dynamic_risk_patch_flags_large_unsaved_transfer() -> None:
     payload = TransferPayload(
         amount=70000,

@@ -5,7 +5,7 @@ from apps.core.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
 from shared.utils.sanitize import normalize_bank_account_number
 
 _TRANSFER_VERB_TOKENS = {"send", "transfer", "pay", "remit"}
-_RECIPIENT_NOISE_TOKENS = _TRANSFER_VERB_TOKENS | {"to", "for", "money", "cash", "funds"}
+_RECIPIENT_NOISE_TOKENS = _TRANSFER_VERB_TOKENS | {"to", "for", "money", "cash", "funds", "s"}
 
 
 def apply_source_account_fields(payload: dict[str, Any], plan_item: Any) -> None:
@@ -21,7 +21,8 @@ def apply_source_account_fields(payload: dict[str, Any], plan_item: Any) -> None
 def _normalize_text(value: str | None) -> str:
     if not value:
         return ""
-    return re.sub(r"[^a-z0-9]+", " ", value.lower()).strip()
+    lowered = re.sub(r"([a-z])['’]s\b", r"\1", value.lower())
+    return re.sub(r"[^a-z0-9]+", " ", lowered).strip()
 
 
 def _is_plausible_recipient_candidate(candidate: str | None) -> bool:
@@ -78,6 +79,9 @@ def _apply_transfer_payload_fields(
 ) -> None:
     if plan_item.executor != "transfer":
         return
+
+    if plan_item.parameters and plan_item.parameters.reference:
+        payload["recipient_reference"] = plan_item.parameters.reference.model_dump(exclude_none=True)
 
     # Planner schema uses `bank_name`; transfer runtime expects `recipient_bank_name`.
     bank_name = payload.pop("bank_name", None)

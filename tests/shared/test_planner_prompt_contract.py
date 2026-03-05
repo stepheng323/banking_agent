@@ -58,3 +58,10 @@ def test_follow_up_referent_binding_rules_present() -> None:
     assert "bind to the most recent domain from Recent Chat / Recent Domain Focus" in BASE_PLANNER_SYSTEM_PROMPT
     assert 'Recent Chat last turn was account_count answer, User="List them"' in BASE_PLANNER_SYSTEM_PROMPT
     assert 'Recent Chat last turn was beneficiary_count answer, User="List them"' in BASE_PLANNER_SYSTEM_PROMPT
+
+
+def test_transfer_pronoun_reference_continuity_rules_present() -> None:
+    """Prompt should preserve beneficiary pronoun continuity with reference semantics."""
+    assert "keep transfer continuity by setting `reference`" in BASE_PLANNER_SYSTEM_PROMPT
+    assert "reference={\"selector\":\"previous\"}" in BASE_PLANNER_SYSTEM_PROMPT
+    assert "resolver clarifies if needed" in BASE_PLANNER_SYSTEM_PROMPT

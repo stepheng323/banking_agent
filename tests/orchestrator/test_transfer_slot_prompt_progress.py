@@ -1,7 +1,10 @@
 """Transfer slot-filling prompt progression tests."""
 
+import time
+
 from langchain_core.runnables import RunnableConfig
 
+from apps.core.src.agent.orchestrator.context.models import ContextEntity, ContextFrame, ContextFrameType, EntityType
 from apps.core.src.agent.orchestrator.models.domain import (
     PendingInterrupt,
     TaskSpec,
@@ -302,6 +305,47 @@ async def test_superset_missing_fields_still_prompts_for_account_and_bank() -> N
 
     assert "account number and bank" in text
     assert "I need account details for Tolu." not in text
+
+
+async def test_unsafe_recipient_name_falls_back_to_generic_prompt_label() -> None:
+    worker = _MockTransferNeedsInputWorker(["recipient_account", "recipient_bank_name"])
+    state = _build_state()
+    state.tasks["t1"].payload["recipient_name"] = "send's"
+    config: RunnableConfig = {"configurable": {"services": {"transfer": worker}}, "recursion_limit": 50}
+
+    updates = await advance_wave(state, config)
+    text = updates["outbox"][0]["text"].lower()
+
+    assert "send's account number and bank" not in text
+    assert "what's recipient's account number and bank?" in text
+
+
+async def test_transfer_handler_passes_recent_beneficiary_context_to_worker() -> None:
+    worker = _MockTransferNeedsInputWorker(["recipient_account", "recipient_bank_name"])
+    state = _build_state()
+    now = int(time.time())
+    state.context_frames = [
+        ContextFrame(
+            frame_id="frame_bene_recent",
+            frame_type=ContextFrameType.BENEFICIARY_LIST,
+            items=[
+                ContextEntity(
+                    entity_type=EntityType.BENEFICIARY,
+                    entity_id="bene-1",
+                    label="Mum",
+                    data={"id": "bene-1", "alias": "Mum"},
+                )
+            ],
+            created_at_ts=now,
+            ttl_seconds=600,
+        )
+    ]
+    config: RunnableConfig = {"configurable": {"services": {"transfer": worker}}, "recursion_limit": 50}
+
+    await advance_wave(state, config)
+
+    assert worker.last_context is not None
+    assert worker.last_context.get("recent_beneficiary_context") is True
 
 
 async def test_non_transfer_task_uses_worker_prompt_not_transfer_formatter() -> None:

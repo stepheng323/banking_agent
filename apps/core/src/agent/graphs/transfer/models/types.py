@@ -36,6 +36,7 @@ class TransferPayload(BaseModel):
     recipient_bank_code: str | None = None
     recipient_bank_name: str | None = None
     recipient_resolved_name: str | None = None
+    recipient_reference: dict[str, Any] | None = None
     beneficiary_id: str | None = None
     beneficiary_candidates: list[dict[str, Any]] = Field(default_factory=list)
     is_self: bool = False
@@ -77,6 +78,7 @@ class TransferContext(BaseModel):
     language: str = "en"
     beneficiaries: list[dict[str, Any]] = Field(default_factory=list)
     accounts: list[dict[str, Any]] = Field(default_factory=list)
+    recent_beneficiary_context: bool = False
 
 
 class TransferRecipient(TypedDict):

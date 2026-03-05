@@ -14,11 +14,15 @@ from apps.core.src.agent.graphs.transfer.models.types import (
 from apps.core.src.agent.graphs.transfer.pipeline.base import TransferStep
 from apps.core.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
 from shared.database.models import Beneficiary
+from shared.formatters.prompts import sanitize_recipient_display_name
 from shared.i18n import render_message
 from shared.policy.loader import get_cached_policy
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
+
+_RECIPIENT_PRONOUN_TOKENS = {"her", "him", "them", "that", "it", "this", "previous"}
+_UNSAFE_RECIPIENT_TOKENS = _RECIPIENT_PRONOUN_TOKENS | {"send", "transfer", "pay", "recipient", "s"}
 
 
 def _canonical_beneficiary_id(value: str | None) -> str | None:
@@ -36,6 +40,25 @@ def _normalize_name(value: str | None) -> str:
     decomposed = unicodedata.normalize("NFKD", value)
     without_marks = "".join(ch for ch in decomposed if not unicodedata.combining(ch))
     return re.sub(r"[^a-z0-9]+", " ", without_marks.lower()).strip()
+
+
+def _recipient_tokens(value: str | None) -> list[str]:
+    if not value:
+        return []
+    lowered = value.strip().lower()
+    lowered = re.sub(r"([a-z])['’]s\b", r"\1", lowered)
+    normalized = re.sub(r"[^a-z0-9]+", " ", lowered).strip()
+    return [token for token in normalized.split() if token]
+
+
+def _is_pronoun_recipient(value: str | None) -> bool:
+    tokens = _recipient_tokens(value)
+    return bool(tokens) and all(token in _RECIPIENT_PRONOUN_TOKENS for token in tokens)
+
+
+def _is_unsafe_recipient_placeholder(value: str | None) -> bool:
+    tokens = _recipient_tokens(value)
+    return bool(tokens) and all(token in _UNSAFE_RECIPIENT_TOKENS for token in tokens)
 
 
 def _similarity_score(left: str | None, right: str | None) -> float:
@@ -65,6 +88,8 @@ def _build_name_consistency_patch(payload: TransferPayload, resolved_name: str |
 
     requested_name = (payload.recipient_name or "").strip()
     if not requested_name:
+        return {"name_mismatch": False, "name_match_score": None, "name_mismatch_warning": None}
+    if _is_unsafe_recipient_placeholder(requested_name):
         return {"name_mismatch": False, "name_match_score": None, "name_mismatch_warning": None}
 
     # Skip mismatch check if the "name" is actually an account number.
@@ -169,8 +194,101 @@ def _is_transfer_beneficiary_record(record: dict[str, Any]) -> bool:
     return str(beneficiary_type).strip().lower() == "transfer"
 
 
+def _resolve_beneficiary_from_reference(
+    payload: TransferPayload,
+    candidates: list[Beneficiary],
+    *,
+    recent_beneficiary_context: bool,
+) -> Beneficiary | None:
+    reference = payload.recipient_reference if isinstance(payload.recipient_reference, dict) else None
+    if not reference:
+        return None
+
+    selector = str(reference.get("selector") or "").strip().lower()
+    if selector == "index":
+        try:
+            index = int(reference.get("index"))
+        except (TypeError, ValueError):
+            return None
+        if 1 <= index <= len(candidates):
+            return candidates[index - 1]
+        return None
+
+    if selector == "previous":
+        if not recent_beneficiary_context or not candidates:
+            return None
+        return candidates[-1]
+
+    return None
+
+
+def _build_single_beneficiary_patch(single: Beneficiary, recipient_name: str | None) -> dict[str, Any]:
+    return {
+        "recipient_account": str(single.account_number),
+        "recipient_bank_code": str(single.bank_code),
+        "recipient_bank_name": single.bank_name,
+        "recipient_resolved_name": single.account_name or single.alias or recipient_name,
+        "beneficiary_id": str(single.id),
+        "resolved_from_saved_beneficiary": True,
+        "name_mismatch": False,
+        "name_match_score": None,
+        "name_mismatch_warning": None,
+        "beneficiary_candidates": [],
+    }
+
+
+def _build_beneficiary_clarify_result(
+    recipient_name: str | None,
+    candidates: list[Beneficiary],
+    locale: str,
+) -> TransactionResult:
+    candidate_list = []
+    options = []
+    for idx, candidate in enumerate(candidates, start=1):
+        beneficiary_id = str(candidate.id)
+        option_id = f"bene:{beneficiary_id}"
+        label = f"{candidate.account_name or candidate.alias} • {candidate.bank_name} • ****{str(candidate.account_number)[-4:]}"
+        candidate_list.append(
+            {
+                "index": idx,
+                "beneficiary_id": beneficiary_id,
+                "option_id": option_id,
+                "label": label,
+            }
+        )
+        options.append({"id": option_id, "title": label})
+
+    numbered_lines = [f"{candidate['index']}. {candidate['label']}" for candidate in candidate_list]
+    candidates_list = "\n".join(numbered_lines)
+    prompt = render_message(
+        "response.templates.clarify_beneficiary",
+        locale,
+        {
+            "recipient_name": recipient_name or render_message("response.common.recipient_fallback", locale),
+            "candidates_list": candidates_list,
+        },
+    )
+    reply_hint = render_message("query.clarify.reply_number_or_rephrase", locale)
+    logger.info(
+        "beneficiary_ambiguity_prompted",
+        recipient_name=recipient_name,
+        candidate_count=len(candidate_list),
+    )
+    return TransactionResult(
+        outcome=TransactionOutcome.NEEDS_INPUT,
+        required_fields=["beneficiary_id"],
+        prompt=f"{prompt}\n{reply_hint}",
+        patch={"beneficiary_candidates": candidate_list},
+        details={
+            "ambiguity": "MULTIPLE_BENEFICIARIES",
+            "candidates": candidate_list,
+            "options": options,
+        },
+    )
+
+
 def _ask_account_and_bank_prompt(locale: str, recipient_name: str | None) -> str:
-    fallback_name = recipient_name or render_message("response.common.recipient_fallback", locale)
+    fallback_name = sanitize_recipient_display_name(recipient_name, locale)
     return render_message(
         "response.templates.ask_account_number_and_bank",
         locale,
@@ -235,6 +353,9 @@ async def resolve_beneficiary(
     if payload.recipient_resolved_name:
         return TransactionResult(outcome=TransactionOutcome.OK)
 
+    raw_recipient_name = payload.recipient_name
+    recipient_name_for_match = None if _is_unsafe_recipient_placeholder(raw_recipient_name) else raw_recipient_name
+
     # 1b. Resolve Bank Code if missing
     if payload.recipient_bank_name and not payload.recipient_bank_code:
         if bank_cache:
@@ -266,7 +387,7 @@ async def resolve_beneficiary(
                         "recipient_bank_code": resolved.account.bank_code or payload.recipient_bank_code,
                         "resolved_from_saved_beneficiary": False,
                     }
-                    if not payload.recipient_name and resolved_name:
+                    if (not payload.recipient_name or _is_unsafe_recipient_placeholder(payload.recipient_name)) and resolved_name:
                         patch["recipient_name"] = resolved_name
                     patch.update(_build_name_consistency_patch(payload, resolved_name, locale))
                     return TransactionResult(
@@ -285,7 +406,34 @@ async def resolve_beneficiary(
             # If account verification fails below, request account+bank re-entry.
             pass
 
-    if not payload.recipient_name:
+    transfer_beneficiaries_raw = [b for b in ctx.beneficiaries if _is_transfer_beneficiary_record(b)]
+    beneficiaries = [Beneficiary(**b) for b in transfer_beneficiaries_raw]
+
+    beneficiary_from_reference = _resolve_beneficiary_from_reference(
+        payload,
+        beneficiaries,
+        recent_beneficiary_context=ctx.recent_beneficiary_context,
+    )
+    if beneficiary_from_reference:
+        return TransactionResult(
+            outcome=TransactionOutcome.OK,
+            patch=_build_single_beneficiary_patch(beneficiary_from_reference, recipient_name_for_match),
+        )
+
+    if _is_pronoun_recipient(raw_recipient_name):
+        if not ctx.recent_beneficiary_context:
+            recipient_name_for_match = None
+        elif len(beneficiaries) == 1:
+            return TransactionResult(
+                outcome=TransactionOutcome.OK,
+                patch=_build_single_beneficiary_patch(beneficiaries[0], recipient_name_for_match),
+            )
+        elif len(beneficiaries) > 1:
+            return _build_beneficiary_clarify_result(recipient_name_for_match, beneficiaries, locale)
+        else:
+            recipient_name_for_match = None
+
+    if not recipient_name_for_match:
         # 2b. If we have an account number, we tried resolution above and failed (or bank was missing)
         if payload.recipient_account:
             if not payload.recipient_bank_code and not payload.recipient_bank_name:
@@ -316,12 +464,12 @@ async def resolve_beneficiary(
                 required_fields=["recipient_account", "recipient_bank_name"],
                 prompt=(
                     f"{render_message('response.templates.account_validation_failed', locale)} "
-                    f"{_ask_account_and_bank_prompt(locale, payload.recipient_name)}"
+                    f"{_ask_account_and_bank_prompt(locale, raw_recipient_name)}"
                 ),
             )
 
         if payload.recipient_bank_name or payload.recipient_bank_code:
-            fallback_name = render_message("response.common.recipient_fallback", locale)
+            fallback_name = sanitize_recipient_display_name(raw_recipient_name, locale)
             return TransactionResult(
                 outcome=TransactionOutcome.NEEDS_INPUT,
                 required_fields=["recipient_account"],
@@ -335,7 +483,7 @@ async def resolve_beneficiary(
         return TransactionResult(
             outcome=TransactionOutcome.NEEDS_INPUT,
             required_fields=["recipient_account", "recipient_bank_name"],
-            prompt=_ask_account_and_bank_prompt(locale, payload.recipient_name),
+            prompt=_ask_account_and_bank_prompt(locale, raw_recipient_name),
         )
 
     bank_term = (payload.recipient_bank_name or "").lower()
@@ -399,15 +547,13 @@ async def resolve_beneficiary(
             )
 
     matcher = BeneficiaryMatcher()
-    transfer_beneficiaries_raw = [b for b in ctx.beneficiaries if _is_transfer_beneficiary_record(b)]
-    beneficiaries = [Beneficiary(**b) for b in transfer_beneficiaries_raw]
     logger.info(
         "beneficiary_match_attempt",
-        recipient_name=payload.recipient_name,
+        recipient_name=recipient_name_for_match,
         beneficiary_count=len(beneficiaries),
     )
 
-    status, single, candidates = matcher.match(payload.recipient_name, beneficiaries)
+    status, single, candidates = matcher.match(recipient_name_for_match, beneficiaries)
     logger.info(
         "beneficiary_match_result",
         status=status,
@@ -418,63 +564,10 @@ async def resolve_beneficiary(
     if status == "single" and single:
         return TransactionResult(
             outcome=TransactionOutcome.OK,
-            patch={
-                "recipient_account": str(single.account_number),
-                "recipient_bank_code": str(single.bank_code),
-                "recipient_bank_name": single.bank_name,
-                "recipient_resolved_name": single.account_name or single.alias or payload.recipient_name,
-                "beneficiary_id": str(single.id),
-                "resolved_from_saved_beneficiary": True,
-                "name_mismatch": False,
-                "name_match_score": None,
-                "name_mismatch_warning": None,
-                "beneficiary_candidates": [],
-            },
+            patch=_build_single_beneficiary_patch(single, recipient_name_for_match),
         )
     elif status == "clarify" and candidates:
-        candidate_list = []
-        options = []
-        for idx, candidate in enumerate(candidates, start=1):
-            beneficiary_id = str(candidate.id)
-            option_id = f"bene:{beneficiary_id}"
-            label = f"{candidate.account_name or candidate.alias} • {candidate.bank_name} • ****{str(candidate.account_number)[-4:]}"
-            candidate_list.append(
-                {
-                    "index": idx,
-                    "beneficiary_id": beneficiary_id,
-                    "option_id": option_id,
-                    "label": label,
-                }
-            )
-            options.append({"id": option_id, "title": label})
-
-        numbered_lines = [f"{candidate['index']}. {candidate['label']}" for candidate in candidate_list]
-        candidates_list = "\n".join(numbered_lines)
-        prompt = render_message(
-            "response.templates.clarify_beneficiary",
-            locale,
-            {
-                "recipient_name": payload.recipient_name or "",
-                "candidates_list": candidates_list,
-            },
-        )
-        reply_hint = render_message("query.clarify.reply_number_or_rephrase", locale)
-        logger.info(
-            "beneficiary_ambiguity_prompted",
-            recipient_name=payload.recipient_name,
-            candidate_count=len(candidate_list),
-        )
-        return TransactionResult(
-            outcome=TransactionOutcome.NEEDS_INPUT,
-            required_fields=["beneficiary_id"],
-            prompt=f"{prompt}\n{reply_hint}",
-            patch={"beneficiary_candidates": candidate_list},
-            details={
-                "ambiguity": "MULTIPLE_BENEFICIARIES",
-                "candidates": candidate_list,
-                "options": options,
-            },
-        )
+        return _build_beneficiary_clarify_result(recipient_name_for_match, candidates, locale)
 
     required_fields = _compute_missing_recipient_fields(payload)
     missing = []
@@ -488,7 +581,8 @@ async def resolve_beneficiary(
 
         # [UX] Conversational Prompt
         # Acknowledge what we know (Recipient + Amount) before asking for what's missing.
-        base = render_message("transfer.resolve.ready_to_send", locale, {"recipient_name": payload.recipient_name})
+        recipient_display_name = sanitize_recipient_display_name(recipient_name_for_match, locale)
+        base = render_message("transfer.resolve.ready_to_send", locale, {"recipient_name": recipient_display_name})
         if payload.amount:
             amt = payload.amount
             if isinstance(amt, (int, float)):
@@ -496,7 +590,7 @@ async def resolve_beneficiary(
             base = render_message(
                 "transfer.resolve.can_send_amount",
                 locale,
-                {"amount": str(amt), "recipient_name": payload.recipient_name},
+                {"amount": str(amt), "recipient_name": recipient_display_name},
             )
 
         prompt = render_message(

@@ -1,3 +1,4 @@
+import time
 from dataclasses import dataclass
 from typing import Any, Literal, cast
 
@@ -95,6 +96,18 @@ def _is_resume_prompt_frame(frame: ContextFrame) -> bool:
 def _clear_resume_prompt_frames(frames: list[ContextFrame]) -> list[ContextFrame]:
     """Remove stale resume prompt frames after accept/decline."""
     return [frame for frame in frames if not _is_resume_prompt_frame(frame)]
+
+
+def _has_recent_beneficiary_context(frames: list[ContextFrame]) -> bool:
+    """True when a non-expired beneficiary-list frame exists with entries."""
+    now = int(time.time())
+    for frame in reversed(frames):
+        if frame.frame_type != ContextFrameType.BENEFICIARY_LIST:
+            continue
+        if (frame.created_at_ts + frame.ttl_seconds) <= now:
+            continue
+        return bool(frame.items)
+    return False
 
 
 def _maybe_user_message(task: Any, state: OrchestratorState) -> str | None:
@@ -268,6 +281,7 @@ async def handle_transfer_task(task: Any, task_id: str, ctx: ExecutionContext) -
         "user_id": ctx.state.loaded_context.get("user_id"),
         "accounts": ctx.state.loaded_context.get("accounts", []),
         "beneficiaries": beneficiaries,
+        "recent_beneficiary_context": _has_recent_beneficiary_context(ctx.state.context_frames),
         "language": _state_locale(ctx.state),
         "required_fields": required_fields,
         "previous_response": previous_response,

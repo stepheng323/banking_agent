@@ -225,3 +225,47 @@ def test_transfer_recipient_derivation_prefers_preposition_target() -> None:
     )
 
     assert spec.payload.get("recipient_name") == "tolu"
+
+
+def test_transfer_reference_is_mapped_to_recipient_reference() -> None:
+    plan_item = PlannedTask(
+        task_id="t1",
+        action="send_money",
+        executor="transfer",
+        instruction="Send 10k to her",
+        parameters=TaskParameters(amount=10000, recipient="her", reference={"selector": "previous"}),
+        risk="MONEY_MOVE",
+    )
+
+    spec = build_task_spec_from_plan_item(
+        plan_item,
+        "send 10k to her",
+        preserve_existing_action_instruction=True,
+        include_skip_extraction=True,
+        strip_transfer_recipient_suffix=True,
+        format_narration_requires_recipient_field=False,
+    )
+
+    assert spec.payload.get("recipient_reference") == {"selector": "previous"}
+
+
+def test_transfer_possessive_command_verb_is_not_used_as_recipient_name() -> None:
+    plan_item = PlannedTask(
+        task_id="t1",
+        action="send_money",
+        executor="transfer",
+        instruction="I want to send money",
+        parameters=TaskParameters(amount=8000, recipient="send's"),
+        risk="MONEY_MOVE",
+    )
+
+    spec = build_task_spec_from_plan_item(
+        plan_item,
+        "I want to send money",
+        preserve_existing_action_instruction=True,
+        include_skip_extraction=True,
+        strip_transfer_recipient_suffix=True,
+        format_narration_requires_recipient_field=False,
+    )
+
+    assert not spec.payload.get("recipient_name")

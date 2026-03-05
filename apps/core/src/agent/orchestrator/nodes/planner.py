@@ -1,12 +1,15 @@
 import json
 import re
+import time
 from typing import Any, cast
 
 from langchain_core.runnables import RunnableConfig
 
+from apps.core.src.agent.orchestrator.context.models import ContextEntity, ContextFrame, ContextFrameType, EntityType
 from apps.core.src.agent.orchestrator.meta_reply import generate_meta_reply
 from apps.core.src.agent.orchestrator.models.domain import MetaIntent, TaskSpec, TaskStage
 from apps.core.src.agent.orchestrator.models.state import OrchestratorState
+from apps.core.src.agent.orchestrator.services.context_manager import OrchestratorContextManager
 from apps.core.src.agent.orchestrator.utils.task_payload import build_task_spec_from_plan_item
 from apps.core.src.agent.orchestrator.utils.waves import build_dependency_waves
 from shared.i18n import (
@@ -255,6 +258,56 @@ def _context_fastpath_shown_limit(subtype: str) -> int:
     if subtype == "beneficiary_name_match_preview":
         return BENEFICIARY_MATCH_PREVIEW_LIMIT
     return CONTEXT_READ_FASTPATH_LIST_LIMIT
+
+
+def _build_beneficiary_fastpath_context_updates(
+    state: OrchestratorState,
+    planner_output: Any,
+    subtype: str | None,
+) -> dict[str, Any]:
+    """Persist beneficiary fastpath entities as context frames for pronoun follow-ups."""
+    if subtype not in {"beneficiary_list", "beneficiary_name_match_preview"}:
+        return {}
+    if not planner_output or planner_output.primary_intent != "conversational" or getattr(planner_output, "tasks", None):
+        return {}
+    if not _has_context_for_fastpath_subtype(state, subtype):
+        return {}
+
+    raw_beneficiaries = (state.loaded_context or {}).get("beneficiaries")
+    if not isinstance(raw_beneficiaries, list):
+        return {}
+
+    entities: list[ContextEntity] = []
+    for item in raw_beneficiaries:
+        if not isinstance(item, dict):
+            continue
+        label = str(item.get("alias") or item.get("account_name") or item.get("name") or "Beneficiary").strip()
+        beneficiary_id = item.get("id")
+        entity_id = str(beneficiary_id).strip() if beneficiary_id is not None else None
+        data = {
+            "id": entity_id,
+            "alias": item.get("alias"),
+            "account_name": item.get("account_name"),
+            "account_number": item.get("account_number"),
+            "bank_name": item.get("bank_name"),
+            "bank_code": item.get("bank_code"),
+            "beneficiary_type": item.get("beneficiary_type"),
+        }
+        entities.append(ContextEntity(entity_type=EntityType.BENEFICIARY, entity_id=entity_id, label=label, data=data))
+
+    if not entities:
+        return {}
+
+    frame = ContextFrame(
+        frame_id=f"planner_beneficiaries_{int(time.time())}",
+        frame_type=ContextFrameType.BENEFICIARY_LIST,
+        items=entities,
+        created_at_ts=int(time.time()),
+        source_message_id=state.last_message_id,
+    )
+    OrchestratorContextManager().push_frame(state, frame)
+    logger.info("planner_fastpath_context_frame_pushed", subtype=subtype, count=len(entities))
+    return {"context_frames": state.context_frames}
 
 
 def _build_fastpath_fallback_task(subtype: str, message_text: str) -> PlannedTask | None:
@@ -999,8 +1052,6 @@ async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[s
         except Exception as e:
             logger.warning("active_flow_context_failed", error=str(e))
 
-    from apps.core.src.agent.orchestrator.services.context_manager import OrchestratorContextManager
-
     ctx_manager = OrchestratorContextManager()
     short_term_context = ctx_manager.build_llm_summary(state)
 
@@ -1030,6 +1081,8 @@ async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[s
         truncated=planner_context != planner_context_raw,
         sections=len(planner_context_parts),
     )
+
+    fastpath_context_updates: dict[str, Any] = {}
 
     try:
         planner_output = await task_planner.plan_tasks(state.phone_number, text, context=planner_context)
@@ -1128,6 +1181,12 @@ async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[s
                 await redis_client.delete(suggestion_key)
                 logger.info("cleared_stale_beneficiary_context", phone=state.phone_number)
 
+        fastpath_context_updates = _build_beneficiary_fastpath_context_updates(
+            state,
+            planner_output,
+            fastpath_subtype,
+        )
+
     except Exception as e:
         logger.error("planner_failed", error=str(e))
         return {}
@@ -1171,6 +1230,7 @@ async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[s
                 return {
                     "final_response": _localized_planner_response(planner_output.response),
                     **conversational_locale_updates,
+                    **fastpath_context_updates,
                 }
 
             response_key = planner_output.response_key
@@ -1180,6 +1240,7 @@ async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[s
                     return {
                         "final_response": _build_policy_aware_greeting(conversational_locale),
                         **conversational_locale_updates,
+                        **fastpath_context_updates,
                     }
 
                 meta_intent = _meta_intent_from_response_key(response_key)
@@ -1207,6 +1268,7 @@ async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[s
                         return {
                             "final_response": meta_message,
                             **conversational_locale_updates,
+                            **fastpath_context_updates,
                         }
                     logger.info(
                         "planner_meta_reply_fallback",
@@ -1217,6 +1279,7 @@ async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[s
                 return {
                     "final_response": render_message(response_key, conversational_locale),
                     **conversational_locale_updates,
+                    **fastpath_context_updates,
                 }
 
             logger.info(
@@ -1229,6 +1292,7 @@ async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[s
             return {
                 "final_response": render_message(fallback_key, conversational_locale),
                 **conversational_locale_updates,
+                **fastpath_context_updates,
             }
 
         if state.waves and planner_output and planner_output.primary_intent != "conversational":
@@ -1238,11 +1302,20 @@ async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[s
                     "waves": [],
                     "final_response": _localized_planner_response(planner_output.response),
                     **locale_updates,
+                    **fastpath_context_updates,
                 }
 
         if planner_output and planner_output.response:
-            return {"final_response": _localized_planner_response(planner_output.response), **locale_updates}
-        return {"final_response": render_safe_capability_fallback(current_locale), **locale_updates}
+            return {
+                "final_response": _localized_planner_response(planner_output.response),
+                **locale_updates,
+                **fastpath_context_updates,
+            }
+        return {
+            "final_response": render_safe_capability_fallback(current_locale),
+            **locale_updates,
+            **fastpath_context_updates,
+        }
 
     if state.waves and active_intent:
         if planner_output.primary_intent == active_intent and planner_output.primary_intent != "mixed":
