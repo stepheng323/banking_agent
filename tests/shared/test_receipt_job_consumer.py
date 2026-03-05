@@ -35,6 +35,7 @@ async def test_receipt_consumer_processes_top_level_payload() -> None:
     render_receipt.assert_awaited_once_with(
         transfer_data=job["transfer_data"],
         transaction_reference="TRX-001",
+        attempt=1,
     )
     delivery_service.deliver_intents.assert_awaited_once()
     assert delivery_service.deliver_intents.await_args is not None
@@ -78,6 +79,7 @@ async def test_receipt_consumer_processes_wrapped_payload() -> None:
     render_receipt.assert_awaited_once_with(
         transfer_data=job["payload"]["transfer_data"],
         transaction_reference="TRX-002",
+        attempt=1,
     )
     delivery_service.deliver_intents.assert_awaited_once()
     assert delivery_service.deliver_intents.await_args is not None
@@ -117,3 +119,66 @@ async def test_receipt_consumer_appends_beneficiary_suggestion_after_receipt() -
     intents = kwargs["intents"]
     assert intents[0]["type"] == "show_receipt"
     assert intents[1] == {"type": "say", "text": "Would you like to save Mercy Johnson?"}
+
+
+@pytest.mark.asyncio
+async def test_receipt_consumer_browser_closed_failure_retries_immediately(monkeypatch: pytest.MonkeyPatch) -> None:
+    delivery_service = cast(Any, SimpleNamespace(deliver_intents=AsyncMock(), deliver_text=AsyncMock()))
+    consumer = ReceiptJobConsumer(delivery_service=delivery_service, redis_client=None)
+
+    render_receipt = AsyncMock(
+        side_effect=[RuntimeError("Target page, context or browser has been closed"), b"png-bytes"],
+    )
+    consumer.renderer = cast(Any, SimpleNamespace(render_receipt=render_receipt))
+
+    sleep_mock = AsyncMock()
+    monkeypatch.setattr("apps.receipt.src.consumer.asyncio.sleep", sleep_mock)
+    monkeypatch.setattr("apps.receipt.src.consumer.random.uniform", lambda *_: 0.0)
+
+    job: dict[str, Any] = {
+        "phone_number": "2348000000004",
+        "transfer_data": {
+            "amount": 5000,
+            "recipient": {"name": "Mercy Johnson", "account_number": "8162511023", "bank_name": "Opay"},
+            "source": {"account_name": "Gaines"},
+        },
+        "transaction_reference": "TRX-004",
+    }
+
+    await consumer._process_job(job)
+
+    assert render_receipt.await_count == 2
+    first_call = render_receipt.await_args_list[0].kwargs
+    second_call = render_receipt.await_args_list[1].kwargs
+    assert first_call["attempt"] == 1
+    assert second_call["attempt"] == 2
+    sleep_mock.assert_not_awaited()
+    delivery_service.deliver_intents.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_receipt_consumer_non_browser_failure_uses_backoff(monkeypatch: pytest.MonkeyPatch) -> None:
+    delivery_service = cast(Any, SimpleNamespace(deliver_intents=AsyncMock(), deliver_text=AsyncMock()))
+    consumer = ReceiptJobConsumer(delivery_service=delivery_service, redis_client=None)
+
+    render_receipt = AsyncMock(side_effect=[RuntimeError("temporary timeout"), b"png-bytes"])
+    consumer.renderer = cast(Any, SimpleNamespace(render_receipt=render_receipt))
+
+    sleep_mock = AsyncMock()
+    monkeypatch.setattr("apps.receipt.src.consumer.asyncio.sleep", sleep_mock)
+    monkeypatch.setattr("apps.receipt.src.consumer.random.uniform", lambda *_: 0.0)
+
+    job: dict[str, Any] = {
+        "phone_number": "2348000000005",
+        "transfer_data": {
+            "amount": 5000,
+            "recipient": {"name": "Mercy Johnson", "account_number": "8162511023", "bank_name": "Opay"},
+            "source": {"account_name": "Gaines"},
+        },
+        "transaction_reference": "TRX-005",
+    }
+
+    await consumer._process_job(job)
+
+    sleep_mock.assert_awaited_once_with(1.0)
+    delivery_service.deliver_intents.assert_awaited_once()

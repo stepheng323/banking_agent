@@ -2,10 +2,15 @@
 
 import asyncio
 import base64
+import random
 from collections.abc import Awaitable
 from typing import Any, cast
 
-from apps.receipt.src.renderer import ReceiptRenderer
+from apps.receipt.src.renderer import (
+    ReceiptBrowserRuntimeClosedError,
+    ReceiptRenderer,
+    is_browser_runtime_closed_error,
+)
 from shared.cache.redis_client import Redis
 from shared.services.delivery_service import DeliveryService
 from shared.utils.logging import get_logger
@@ -13,7 +18,8 @@ from shared.utils.logging import get_logger
 logger = get_logger(__name__)
 
 MAX_RETRIES = 3
-RETRY_DELAY_SECONDS = 2
+RETRY_BASE_DELAY_SECONDS = 1
+RETRY_JITTER_MAX_SECONDS = 0.25
 
 
 class ReceiptJobConsumer:
@@ -95,6 +101,7 @@ class ReceiptJobConsumer:
                 logger.error("receipt_job_invalid_payload", phone=phone_number, error=last_error)
             else:
                 for attempt in range(1, MAX_RETRIES + 1):
+                    attempt_started = asyncio.get_running_loop().time()
                     try:
                         logger.info(
                             "receipt_generation_attempt",
@@ -105,7 +112,9 @@ class ReceiptJobConsumer:
                         image_bytes = await self.renderer.render_receipt(
                             transfer_data=transfer_data,
                             transaction_reference=reference,
+                            attempt=attempt,
                         )
+                        attempt_ms = (asyncio.get_running_loop().time() - attempt_started) * 1000
 
                         image_b64 = base64.b64encode(image_bytes).decode("ascii")
                         channel = payload.get("channel", "whatsapp")
@@ -133,19 +142,49 @@ class ReceiptJobConsumer:
                             dedupe_key=f"receipt:{reference}",
                             strict_actionable=True,
                         )
+                        logger.info(
+                            "receipt_generation_attempt_succeeded",
+                            phone=phone_number,
+                            attempt=attempt,
+                            attempt_ms=round(attempt_ms, 2),
+                        )
                         return
 
                     except Exception as e:
                         last_error = str(e)
+                        attempt_ms = (asyncio.get_running_loop().time() - attempt_started) * 1000
+                        browser_closed_error = isinstance(e, ReceiptBrowserRuntimeClosedError) or (
+                            is_browser_runtime_closed_error(e)
+                        )
                         logger.warning(
                             "receipt_generation_failed",
                             phone=phone_number,
                             attempt=attempt,
                             error=last_error,
+                            attempt_ms=round(attempt_ms, 2),
+                            error_class="browser_closed" if browser_closed_error else "other",
                         )
 
                         if attempt < MAX_RETRIES:
-                            await asyncio.sleep(RETRY_DELAY_SECONDS * attempt)
+                            if browser_closed_error and attempt == 1:
+                                logger.info(
+                                    "receipt_generation_retry_immediate",
+                                    phone=phone_number,
+                                    attempt=attempt,
+                                    reason="browser_closed",
+                                )
+                                continue
+                            delay = (RETRY_BASE_DELAY_SECONDS * (2 ** (attempt - 1))) + random.uniform(
+                                0,
+                                RETRY_JITTER_MAX_SECONDS,
+                            )
+                            logger.info(
+                                "receipt_generation_retry_scheduled",
+                                phone=phone_number,
+                                attempt=attempt,
+                                delay_seconds=round(delay, 3),
+                            )
+                            await asyncio.sleep(delay)
 
             logger.error(
                 "receipt_generation_all_retries_failed",

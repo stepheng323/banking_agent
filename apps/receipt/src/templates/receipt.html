@@ -5,12 +5,39 @@
   <meta charset="utf-8" />
   <meta content="width=device-width, initial-scale=1.0" name="viewport" />
   <title>Transfer Receipt</title>
-  <link
-    href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500&display=swap"
-    rel="stylesheet" />
-  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap"
-    rel="stylesheet" />
   <style>
+    @font-face {
+      font-family: "InterReceipt";
+      src: url("{{ inter_regular_font_url }}") format("truetype");
+      font-weight: 400;
+      font-style: normal;
+      font-display: swap;
+    }
+
+    @font-face {
+      font-family: "InterReceipt";
+      src: url("{{ inter_medium_font_url }}") format("truetype");
+      font-weight: 500;
+      font-style: normal;
+      font-display: swap;
+    }
+
+    @font-face {
+      font-family: "InterReceipt";
+      src: url("{{ inter_semibold_font_url }}") format("truetype");
+      font-weight: 600;
+      font-style: normal;
+      font-display: swap;
+    }
+
+    @font-face {
+      font-family: "InterReceipt";
+      src: url("{{ inter_bold_font_url }}") format("truetype");
+      font-weight: 700;
+      font-style: normal;
+      font-display: swap;
+    }
+
     * {
       margin: 0;
       padding: 0;
@@ -18,7 +45,7 @@
     }
 
     body {
-      font-family: "Inter", -apple-system, BlinkMacSystemFont, sans-serif;
+      font-family: "InterReceipt", -apple-system, BlinkMacSystemFont, sans-serif;
       background-color: #f7f7f7;
       color: #1e293b;
       -webkit-font-smoothing: antialiased;
@@ -104,7 +131,8 @@
     }
 
     .status-badge .icon {
-      font-size: 18px;
+      font-size: 14px;
+      font-weight: 700;
       color: #16a34a;
     }
 
@@ -208,7 +236,7 @@
       margin-left: -8px;
       border-radius: 4px;
       background-color: #f8fafc;
-      font-family: "JetBrains Mono", monospace;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
       font-size: 15px;
       font-weight: 500;
       color: #1e293b;
@@ -294,7 +322,7 @@
       <!-- Amount Section -->
       <div class="amount-section">
         <div class="status-badge">
-          <span class="material-symbols-outlined icon" style="font-variation-settings: 'FILL' 1">check_circle</span>
+          <span class="icon">✓</span>
           <span class="text">{{ status }}</span>
         </div>
         <h2 class="amount">
@@ -323,7 +351,7 @@
             <p class="value">{{ recipient_name }}</p>
             <p class="sub-value">{{ recipient_bank }}</p>
             <p class="sub-value" style="
-                  font-family: 'JetBrains Mono', monospace;
+                  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
                   font-size: 11px;
                 ">
               {{ recipient_account_masked }}
