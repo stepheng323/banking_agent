@@ -16,8 +16,12 @@ from shared.database.models import Beneficiary
 from shared.i18n import render_message
 from shared.services.affirmation.service import AffirmationService
 from shared.utils.logging import get_logger
+from shared.utils.sanitize import normalize_bank_account_number
 
 logger = get_logger(__name__)
+
+_ACCOUNT_BANK_ACCOUNT_FIRST_PATTERN = re.compile(r"^\s*(?P<account>(?:\d[\s,.\-]?){10,11})\s+(?P<bank>.+?)\s*$")
+_ACCOUNT_BANK_BANK_FIRST_PATTERN = re.compile(r"^\s*(?P<bank>.+?)\s+(?P<account>(?:\d[\s,.\-]?){10,11})\s*$")
 
 
 def _canonical_beneficiary_id(value: str) -> str:
@@ -125,6 +129,30 @@ def _should_override_skip_extraction(payload: TransferPayload) -> bool:
 
     digits_only = "".join(ch for ch in recipient_hint if ch.isdigit())
     return len(digits_only) >= 10
+
+
+def _parse_account_and_bank_input(user_message: str) -> tuple[str, str] | None:
+    """Parse account+bank in either order, normalizing account separators."""
+    text = user_message.strip()
+    if not text:
+        return None
+
+    for pattern in (_ACCOUNT_BANK_ACCOUNT_FIRST_PATTERN, _ACCOUNT_BANK_BANK_FIRST_PATTERN):
+        match = pattern.match(text)
+        if not match:
+            continue
+
+        normalized_account = normalize_bank_account_number(match.group("account"))
+        bank_name = match.group("bank").strip().strip(",.- ")
+
+        if len(normalized_account) != 10:
+            continue
+        if not bank_name or bank_name.isdigit():
+            continue
+
+        return normalized_account, bank_name
+
+    return None
 
 
 class ExtractionStep(TransferStep):
@@ -246,28 +274,27 @@ class ExtractionStep(TransferStep):
         # parse deterministically instead of relying on the LLM.
         awaiting_account_and_bank = "recipient_account" in required_fields and "recipient_bank_name" in required_fields
         if awaiting_account_and_bank and self.user_message:
-            m = re.match(r"^\s*(\d{7,11})\s+(.+?)\s*$", self.user_message.strip())
-            if m:
-                acct, bank = m.group(1), m.group(2).strip()
-                if bank and not bank.isdigit():
-                    logger.info(
-                        "deterministic_account_bank_fastpath",
-                        account=acct,
-                        bank=bank,
-                    )
-                    return TransactionResult(
-                        outcome=TransactionOutcome.OK,
-                        patch={
-                            "recipient_account": acct,
-                            "recipient_bank_name": bank,
-                            "recipient_bank_code": None,
-                            "recipient_resolved_name": None,
-                            "name_mismatch": False,
-                            "name_match_score": None,
-                            "name_mismatch_warning": None,
-                            "confirmation": {"confirmed": False},
-                        },
-                    )
+            parsed = _parse_account_and_bank_input(self.user_message)
+            if parsed:
+                acct, bank = parsed
+                logger.info(
+                    "deterministic_account_bank_fastpath",
+                    account=acct,
+                    bank=bank,
+                )
+                return TransactionResult(
+                    outcome=TransactionOutcome.OK,
+                    patch={
+                        "recipient_account": acct,
+                        "recipient_bank_name": bank,
+                        "recipient_bank_code": None,
+                        "recipient_resolved_name": None,
+                        "name_mismatch": False,
+                        "name_match_score": None,
+                        "name_mismatch_warning": None,
+                        "confirmation": {"confirmed": False},
+                    },
+                )
 
         if not worker_context.extractor:
             logger.info("transfer_extraction_skipped", reason="extractor_unavailable")
