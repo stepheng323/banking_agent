@@ -121,3 +121,45 @@ async def test_aggregate_phrases_hit_guardrail(message: str) -> None:
     assert continuation_type == "aggregate"
     assert data["reason"] == "deterministic_aggregate"
     assert data["confidence"] == 0.95
+
+
+@pytest.mark.asyncio
+async def test_time_delta_shortcut_skips_llm_for_yesterday_followup() -> None:
+    classifier = ContinuationClassifier(_FailingLLM())
+
+    continuation_type, data = await classifier.classify(
+        message="what about yesterday",
+        has_active_session=True,
+        today="2026-03-06",
+    )
+
+    assert continuation_type == "time_delta"
+    assert data["reason"] == "deterministic_time_delta"
+    assert data["delta_type"] == "time"
+    assert data["time_range"].start.isoformat() == "2026-03-05"
+    assert data["time_range"].end.isoformat() == "2026-03-05"
+
+
+@pytest.mark.asyncio
+async def test_filter_delta_shortcut_skips_llm_for_credit_debit_followups() -> None:
+    classifier = ContinuationClassifier(_FailingLLM())
+
+    continuation_type, data = await classifier.classify(
+        message="only debits",
+        has_active_session=True,
+        today="2026-03-06",
+    )
+
+    assert continuation_type == "filter_delta"
+    assert data["reason"] == "deterministic_tx_type_filter"
+    assert data["delta_type"] == "filter"
+    assert data["filters"].transaction_type == "debit"
+
+    continuation_type2, data2 = await classifier.classify(
+        message="what about credits",
+        has_active_session=True,
+        today="2026-03-06",
+    )
+
+    assert continuation_type2 == "filter_delta"
+    assert data2["filters"].transaction_type == "credit"

@@ -9,7 +9,8 @@ Uses LLM for multilingual continuation classification.
 """
 
 import re
-from datetime import date
+from calendar import monthrange
+from datetime import date, timedelta
 from typing import Any, Literal, cast
 
 from langchain_core.runnables import Runnable
@@ -153,16 +154,118 @@ class ContinuationClassifier:
     def _normalize_message(message: str) -> str:
         return " ".join(message.lower().strip().split())
 
+    @staticmethod
+    def _parse_today(today: str) -> date:
+        try:
+            return date.fromisoformat(today)
+        except Exception:
+            return date.today()
+
+    @staticmethod
+    def _strip_trailing_punctuation(text: str) -> str:
+        return re.sub(r"[?.!,]+$", "", text).strip()
+
+    def _resolve_time_delta_range(self, message: str, *, today: date) -> TimeRange | None:
+        normalized = self._strip_trailing_punctuation(self._normalize_message(message))
+        candidate = normalized
+        for prefix in ("what about ", "how about ", "for ", "in "):
+            if candidate.startswith(prefix):
+                candidate = candidate[len(prefix) :].strip()
+                break
+
+        if candidate == "today":
+            return TimeRange(start=today, end=today, granularity="day")
+        if candidate == "yesterday":
+            yesterday = today - timedelta(days=1)
+            return TimeRange(start=yesterday, end=yesterday, granularity="day")
+        if candidate in {"this week", "current week"}:
+            week_start = today - timedelta(days=today.weekday())
+            return TimeRange(start=week_start, end=today, granularity="week")
+        if candidate in {"last week", "previous week"}:
+            this_week_start = today - timedelta(days=today.weekday())
+            week_end = this_week_start - timedelta(days=1)
+            week_start = week_end - timedelta(days=6)
+            return TimeRange(start=week_start, end=week_end, granularity="week")
+        if candidate in {"this month", "current month"}:
+            month_start = date(today.year, today.month, 1)
+            return TimeRange(start=month_start, end=today, granularity="month")
+        if candidate in {"last month", "previous month"}:
+            year = today.year
+            month = today.month - 1
+            if month == 0:
+                month = 12
+                year -= 1
+            month_end = monthrange(year, month)[1]
+            return TimeRange(start=date(year, month, 1), end=date(year, month, month_end), granularity="month")
+        if candidate in {"this year", "current year"}:
+            return TimeRange(start=date(today.year, 1, 1), end=today, granularity="month")
+        if candidate in {"last year", "previous year"}:
+            year = today.year - 1
+            return TimeRange(start=date(year, 1, 1), end=date(year, 12, 31), granularity="month")
+
+        match = re.match(r"^(last|past)\s+(\d{1,3})\s+days?$", candidate)
+        if match:
+            days = max(1, int(match.group(2)))
+            start = today - timedelta(days=days - 1)
+            return TimeRange(start=start, end=today, granularity="day")
+
+        return None
+
+    def _resolve_tx_type_filter(self, message: str) -> Filters | None:
+        normalized = self._strip_trailing_punctuation(self._normalize_message(message))
+
+        debit_forms = r"(debit|debits)"
+        credit_forms = r"(credit|credits)"
+
+        debit_patterns = (
+            rf"^(only|just)\s+{debit_forms}$",
+            rf"^{debit_forms}\s+only$",
+            rf"^(is there any|any|what about|how about)\s+{debit_forms}$",
+            rf"^show\s+{debit_forms}$",
+        )
+        credit_patterns = (
+            rf"^(only|just)\s+{credit_forms}$",
+            rf"^{credit_forms}\s+only$",
+            rf"^(is there any|any|what about|how about)\s+{credit_forms}$",
+            rf"^show\s+{credit_forms}$",
+        )
+
+        if any(re.match(pattern, normalized) for pattern in debit_patterns):
+            return Filters(transaction_type="debit")
+        if any(re.match(pattern, normalized) for pattern in credit_patterns):
+            return Filters(transaction_type="credit")
+        return None
+
     def _guardrail_classify(
         self,
         *,
         message: str,
+        today: str,
         surface: ResultSurface | None,
         language: str,
     ) -> tuple[str, dict[str, Any]] | None:
         normalized = self._normalize_message(message)
         if not normalized:
             return None
+
+        parsed_today = self._parse_today(today)
+        time_delta_range = self._resolve_time_delta_range(message, today=parsed_today)
+        if time_delta_range is not None:
+            return ContinuationType.TIME_DELTA, {
+                "confidence": 0.98,
+                "reason": "deterministic_time_delta",
+                "delta_type": "time",
+                "time_range": time_delta_range,
+            }
+
+        tx_type_filters = self._resolve_tx_type_filter(message)
+        if tx_type_filters is not None:
+            return ContinuationType.FILTER_DELTA, {
+                "confidence": 0.98,
+                "reason": "deterministic_tx_type_filter",
+                "delta_type": "filter",
+                "filters": tx_type_filters,
+            }
 
         if normalized in _SHOW_MORE_EXACT:
             return ContinuationType.SHOW_MORE, {"confidence": 1.0, "reason": "deterministic_show_more"}
@@ -223,7 +326,7 @@ class ContinuationClassifier:
         if not has_active_session:
             return ContinuationType.NEW_QUERY, {}
 
-        guarded = self._guardrail_classify(message=message, surface=surface, language=language)
+        guarded = self._guardrail_classify(message=message, today=today, surface=surface, language=language)
         if guarded is not None:
             continuation_type, guarded_data = guarded
             logger.info("continuation_guardrail_hit", type=continuation_type, reason=guarded_data.get("reason"))
