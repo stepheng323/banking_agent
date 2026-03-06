@@ -340,7 +340,7 @@ def build_task_spec_from_plan_item(
             payload["instruction"] = plan_item.instruction
 
     if plan_item.executor == "query" and not payload.get("message"):
-        payload["message"] = plan_item.instruction or fallback_message
+        payload["message"] = fallback_message or plan_item.instruction or ""
 
     if include_skip_extraction and plan_item.executor in ("transfer", "airtime", "data"):
         payload["skip_extraction"] = True

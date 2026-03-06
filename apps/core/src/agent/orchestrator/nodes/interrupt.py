@@ -1,4 +1,5 @@
 import json
+import time
 from typing import Any, cast
 
 from langchain_core.runnables import RunnableConfig
@@ -285,6 +286,7 @@ def _stash_current_session(
         "current_wave_index": state.current_wave_index,
         "pending_interrupt": interrupt,
         "intent": intent,
+        "stashed_at_ts": int(time.time()),
     }
     return cast(list[dict[str, Any]], state.stashed_sessions + [current_session])
 

@@ -333,3 +333,25 @@ def test_transfer_send_money_infers_schedule_action_from_text() -> None:
     assert spec.payload.get("action") == "schedule_transfer"
     assert spec.payload.get("schedule_time_local") == "09:00"
     assert spec.payload.get("schedule_timezone") == "Africa/Lagos"
+
+
+def test_query_payload_prefers_user_message_over_planner_instruction() -> None:
+    plan_item = PlannedTask(
+        task_id="q1",
+        action="transaction_search",
+        executor="query",
+        instruction="Check today's spending",
+        parameters=TaskParameters(),
+        risk="READ_ONLY",
+    )
+
+    spec = build_task_spec_from_plan_item(
+        plan_item,
+        "How much did I spend today",
+        preserve_existing_action_instruction=True,
+        include_skip_extraction=True,
+        strip_transfer_recipient_suffix=True,
+        format_narration_requires_recipient_field=False,
+    )
+
+    assert spec.payload.get("message") == "How much did I spend today"

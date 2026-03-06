@@ -23,6 +23,7 @@ def _config() -> RunnableConfig:
 
 
 def _stashed(intent: str = "transfer") -> list[dict]:
+    now_ts = int(time.time())
     return [
         {
             "tasks": {"t_stashed": TaskSpec(id="t_stashed", type="transfer", stage=TaskStage.EXTRACTED, payload={})},
@@ -35,6 +36,7 @@ def _stashed(intent: str = "transfer") -> list[dict]:
                 "prompt": "Enter amount",
             },
             "intent": intent,
+            "stashed_at_ts": now_ts,
         }
     ]
 
@@ -158,7 +160,12 @@ async def test_finalize_stale_stash_does_not_prompt_resume_and_cleans_stash() ->
             "tasks": {"t_stashed": TaskSpec(id="t_stashed", type="transfer", stage=TaskStage.EXTRACTED, payload={})},
             "waves": [["t_stashed"]],
             "current_wave_index": 0,
-            "pending_interrupt": None,
+            "pending_interrupt": {
+                "kind": "input",
+                "task_ids": ["t_stashed"],
+                "fields_by_task": {"t_stashed": ["amount"]},
+                "prompt": "Enter amount",
+            },
             "intent": "transfer",
         }
     ]

@@ -22,6 +22,7 @@ from shared.utils.logging import get_logger
 logger = get_logger(__name__)
 TRANSACTION_TASK_TYPES = {"transfer", "airtime", "data"}
 TERMINAL_TASK_STAGES = {TaskStage.COMPLETED.value, TaskStage.FAILED.value, TaskStage.CANCELLED.value}
+STASH_RESUME_TTL_SECONDS = 1800
 
 
 def _extract_interrupt_task_ids(pending_interrupt: Any) -> list[str]:
@@ -49,7 +50,13 @@ def _extract_task_stage_value(task: Any) -> str | None:
     return None
 
 
-def _is_resumable_stashed_session(stashed_session: dict[str, Any]) -> bool:
+def _is_resumable_stashed_session(stashed_session: dict[str, Any], *, now_ts: int) -> bool:
+    stashed_at_ts = stashed_session.get("stashed_at_ts")
+    if not isinstance(stashed_at_ts, int):
+        return False
+    if stashed_at_ts + STASH_RESUME_TTL_SECONDS <= now_ts:
+        return False
+
     pending_interrupt = stashed_session.get("pending_interrupt")
     task_ids = _extract_interrupt_task_ids(pending_interrupt)
     if not task_ids:
@@ -125,10 +132,12 @@ async def finalize(state: OrchestratorState, config: RunnableConfig) -> dict[str
     # Check for stashed sessions and prompt
     context_updates = {}
     has_completed_non_transaction = any(task.type not in TRANSACTION_TASK_TYPES for task in completed_tasks)
+    now_ts = int(time.time())
     resumable_stashed_sessions = [
         session
         for session in state.stashed_sessions
-        if isinstance(session, dict) and _is_resumable_stashed_session(cast(dict[str, Any], session))
+        if isinstance(session, dict)
+        and _is_resumable_stashed_session(cast(dict[str, Any], session), now_ts=now_ts)
     ]
     if len(resumable_stashed_sessions) != len(state.stashed_sessions):
         context_updates["stashed_sessions"] = resumable_stashed_sessions
