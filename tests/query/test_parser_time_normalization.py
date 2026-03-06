@@ -3,6 +3,7 @@ from datetime import date
 from apps.core.src.agent.graphs.query.models import (
     ExtractionIntent,
     QueryExtractionResult,
+    QueryIntent,
     QueryTimeRange,
     TimeReference,
 )
@@ -73,3 +74,35 @@ def test_received_query_keeps_credit_filter() -> None:
     assert normalized.filters is not None
     assert normalized.filters.transaction_type == "credit"
 
+
+def test_targeted_spend_total_cue_forces_analytics_summary_on_list_misclassification() -> None:
+    parser = QueryParser(_DummyLLM())
+    today = date(2026, 3, 6)
+    extraction = QueryExtractionResult(
+        intent=ExtractionIntent.TRANSACTION_LIST,
+        time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="today", days_back=0),
+        raw_query="How much did I spend today",
+    )
+
+    normalized = parser.convert_to_normalized(extraction, today=today)
+
+    assert normalized.intent == QueryIntent.ANALYTICS_SUMMARY
+    assert normalized.aggregation is not None
+    assert normalized.aggregation.type == "sum"
+    assert normalized.time_range is not None
+    assert normalized.time_range.start == today
+    assert normalized.time_range.end == today
+
+
+def test_non_aggregate_spend_phrase_stays_transaction_list() -> None:
+    parser = QueryParser(_DummyLLM())
+    today = date(2026, 3, 6)
+    extraction = QueryExtractionResult(
+        intent=ExtractionIntent.TRANSACTION_LIST,
+        time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="today", days_back=0),
+        raw_query="show my spent transactions today",
+    )
+
+    normalized = parser.convert_to_normalized(extraction, today=today)
+
+    assert normalized.intent == QueryIntent.TRANSACTION_LIST

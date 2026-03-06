@@ -10,6 +10,7 @@ from apps.core.src.agent.graphs.query.models import (
     SurfaceType,
     TimeRange,
 )
+from apps.core.src.agent.graphs.query.utils.timezone import lagos_today
 from shared.i18n import render_message
 from shared.utils.logging import get_logger
 
@@ -137,7 +138,7 @@ class QueryFormatter:
 
         time_suffix = ""
         if query_snapshot and query_snapshot.time_range:
-            if query_snapshot.time_range.start == query_snapshot.time_range.end == date.today():
+            if query_snapshot.time_range.start == query_snapshot.time_range.end == lagos_today():
                 time_suffix = render_message("query.format.no_results_time_suffix_today", locale)
             else:
                 time_suffix = render_message("query.format.no_results_time_suffix_period", locale)
@@ -160,7 +161,7 @@ class QueryFormatter:
         if not time_range:
             return None
 
-        today = date.today()
+        today = lagos_today()
         if time_range.start == time_range.end == today:
             return render_message("query.format.heading_period_today", locale)
 

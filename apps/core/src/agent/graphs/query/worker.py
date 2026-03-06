@@ -15,6 +15,7 @@ from apps.core.src.agent.graphs.query.nodes.execution import ExecutionStep
 from apps.core.src.agent.graphs.query.nodes.extraction import ExtractionStep
 from apps.core.src.agent.graphs.query.pipeline import QueryPipeline
 from apps.core.src.agent.graphs.query.session import QuerySessionManager
+from apps.core.src.agent.graphs.query.utils.timezone import lagos_today
 from apps.core.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
 from shared.clients.abstractions.banking import BankDataProvider
 from shared.i18n import LocaleManager, render_message
@@ -60,6 +61,9 @@ class QueryWorker:
             query_session = dict(cast(dict[str, Any], context["stashed_query_session"]))
             restored_from_stashed_query_session = True
 
+        today_context = context.get("today")
+        today = today_context if isinstance(today_context, date) else lagos_today()
+
         # Merge key session fields into state so continuation steps have context.
         session_defaults = {
             "query": query_session.get("query"),
@@ -88,7 +92,7 @@ class QueryWorker:
             # Default pagination params
             "current_page": query_session.get("current_page", 0),
             "page_size": 5,
-            "today": context.get("today") or date.today(),
+            "today": today,
         }
 
         for key, value in session_defaults.items():

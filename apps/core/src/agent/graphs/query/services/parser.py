@@ -20,6 +20,7 @@ from apps.core.src.agent.graphs.query.models import (
 )
 from apps.core.src.agent.graphs.query.prompts import QUERY_PARSER_PROMPT
 from apps.core.src.agent.graphs.query.services.resolver import Decision, resolve
+from apps.core.src.agent.graphs.query.utils.timezone import lagos_today
 from shared.i18n import render_message
 from shared.utils.logging import get_logger
 
@@ -138,6 +139,19 @@ class QueryParser:
             if RequestedCapability.TIME_ALL in extraction.requested_capabilities:
                 extraction.requested_capabilities.remove(RequestedCapability.TIME_ALL)
 
+    @staticmethod
+    def _has_targeted_aggregate_spend_or_receive_cue(raw_query: str) -> bool:
+        query_lower = raw_query.lower()
+        has_aggregate_cue = any(term in query_lower for term in ("how much", "total", "sum"))
+        if not has_aggregate_cue:
+            return False
+
+        spend_cue = any(term in query_lower for term in ("spend", "spent", "spending", "paid", "pay", "expense", "cost"))
+        receive_cue = any(
+            term in query_lower for term in ("receive", "received", "credited", "credit", "income", "salary", "earned")
+        )
+        return spend_cue or receive_cue
+
     def convert_to_normalized(
         self,
         extraction: "QueryExtractionResult",
@@ -149,10 +163,18 @@ class QueryParser:
             ExtractionIntent,
         )
 
-        today = today or date.today()
+        today = today or lagos_today()
+
+        effective_intent = extraction.intent
+        if (
+            extraction.intent == ExtractionIntent.TRANSACTION_LIST
+            and extraction.raw_query
+            and self._has_targeted_aggregate_spend_or_receive_cue(extraction.raw_query)
+        ):
+            effective_intent = ExtractionIntent.SPENDING_TOTAL
 
         result_limit = extraction.result_limit
-        if extraction.intent == ExtractionIntent.SINGLE_TRANSACTION:
+        if effective_intent == ExtractionIntent.SINGLE_TRANSACTION:
             result_limit = result_limit or 1
 
         if result_limit:
@@ -200,7 +222,7 @@ class QueryParser:
                     transaction_type = "credit"
 
                 # Force debit for specific intents OR if keywords are present
-                is_expense_query = not has_explicit_credit_intent and extraction.intent in (
+                is_expense_query = not has_explicit_credit_intent and effective_intent in (
                     ExtractionIntent.SPENDING_TOTAL,
                     ExtractionIntent.CATEGORY_BREAKDOWN,
                 )
@@ -230,7 +252,7 @@ class QueryParser:
         if extraction.aggregation:
             agg_type = extraction.aggregation.type or "sum"
             # Enforce breakdown type if intent matches, correcting LLM 'sum' hallucination
-            if extraction.intent == ExtractionIntent.CATEGORY_BREAKDOWN and agg_type == "sum":
+            if effective_intent == ExtractionIntent.CATEGORY_BREAKDOWN and agg_type == "sum":
                 agg_type = "breakdown"
 
             # Validate limit
@@ -279,7 +301,7 @@ class QueryParser:
             if agg_type == "breakdown" and not aggregation.group_by:
                 aggregation.group_by = "category"
 
-        elif extraction.intent == ExtractionIntent.SPENDING_TOTAL:
+        elif effective_intent == ExtractionIntent.SPENDING_TOTAL:
             # Check for largest/smallest/top keywords in raw query to upgrade intent
             agg_type = "sum"
             limit = 5
@@ -306,11 +328,11 @@ class QueryParser:
                 agg_type if agg_type in {"sum", "average", "count", "largest", "smallest", "breakdown"} else "sum",
             )
             aggregation = Aggregation(type=typed_agg_type, limit=limit)
-        elif extraction.intent == ExtractionIntent.CATEGORY_BREAKDOWN:
+        elif effective_intent == ExtractionIntent.CATEGORY_BREAKDOWN:
             aggregation = Aggregation(type="breakdown", group_by="category")
 
         return NormalizedQuery(
-            intent=intent_map.get(extraction.intent, QueryIntent.TRANSACTION_LIST),
+            intent=intent_map.get(effective_intent, QueryIntent.TRANSACTION_LIST),
             time_range=time_range or TimeRange(start=today - timedelta(days=30), end=today, granularity="day"),
             filters=filters,
             aggregation=aggregation,

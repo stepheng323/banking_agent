@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import time
+import uuid
 from typing import TYPE_CHECKING, Any, cast
 
 import redis.asyncio as redis
@@ -8,6 +10,7 @@ from langchain_core.runnables import RunnableConfig
 if TYPE_CHECKING:
     from apps.core.src.agent.graphs.__shared__.beneficiary.suggestion_service import BeneficiarySuggestionService
 
+from apps.core.src.agent.orchestrator.context.models import ContextEntity, ContextFrame, ContextFrameType, EntityType
 from apps.core.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
 from apps.core.src.agent.orchestrator.models.state import OrchestratorState
 from shared.formatters.transaction_summary import format_multi_action_summary
@@ -18,6 +21,61 @@ from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
 TRANSACTION_TASK_TYPES = {"transfer", "airtime", "data"}
+TERMINAL_TASK_STAGES = {TaskStage.COMPLETED.value, TaskStage.FAILED.value, TaskStage.CANCELLED.value}
+
+
+def _extract_interrupt_task_ids(pending_interrupt: Any) -> list[str]:
+    if isinstance(pending_interrupt, dict):
+        raw_task_ids = pending_interrupt.get("task_ids")
+    else:
+        raw_task_ids = getattr(pending_interrupt, "task_ids", None)
+    if not isinstance(raw_task_ids, list):
+        return []
+    return [str(task_id) for task_id in raw_task_ids if isinstance(task_id, str)]
+
+
+def _extract_task_stage_value(task: Any) -> str | None:
+    if isinstance(task, TaskSpec):
+        stage = task.stage
+    elif isinstance(task, dict):
+        stage = task.get("stage")
+    else:
+        stage = getattr(task, "stage", None)
+
+    if isinstance(stage, TaskStage):
+        return stage.value
+    if isinstance(stage, str):
+        return stage
+    return None
+
+
+def _is_resumable_stashed_session(stashed_session: dict[str, Any]) -> bool:
+    pending_interrupt = stashed_session.get("pending_interrupt")
+    task_ids = _extract_interrupt_task_ids(pending_interrupt)
+    if not task_ids:
+        return False
+
+    tasks = stashed_session.get("tasks")
+    if not isinstance(tasks, dict):
+        return False
+
+    for task_id in task_ids:
+        stage = _extract_task_stage_value(tasks.get(task_id))
+        if stage and stage not in TERMINAL_TASK_STAGES:
+            return True
+    return False
+
+
+def _has_live_resume_prompt_frame(frames: list[ContextFrame]) -> bool:
+    now = int(time.time())
+    for frame in frames:
+        if frame.frame_type != ContextFrameType.GENERIC:
+            continue
+        if frame.created_at_ts + frame.ttl_seconds <= now:
+            continue
+        if any(item.data.get("resume_prompt") is True for item in frame.items):
+            return True
+    return False
 
 
 async def finalize(state: OrchestratorState, config: RunnableConfig) -> dict[str, Any]:
@@ -67,8 +125,20 @@ async def finalize(state: OrchestratorState, config: RunnableConfig) -> dict[str
     # Check for stashed sessions and prompt
     context_updates = {}
     has_completed_non_transaction = any(task.type not in TRANSACTION_TASK_TYPES for task in completed_tasks)
-    if state.stashed_sessions and has_completed_non_transaction:
-        last_session = state.stashed_sessions[-1]
+    resumable_stashed_sessions = [
+        session
+        for session in state.stashed_sessions
+        if isinstance(session, dict) and _is_resumable_stashed_session(cast(dict[str, Any], session))
+    ]
+    if len(resumable_stashed_sessions) != len(state.stashed_sessions):
+        context_updates["stashed_sessions"] = resumable_stashed_sessions
+
+    if (
+        resumable_stashed_sessions
+        and has_completed_non_transaction
+        and not _has_live_resume_prompt_frame(state.context_frames)
+    ):
+        last_session = resumable_stashed_sessions[-1]
         intent = last_session.get("intent", render_message("orchestrator.session.default_intent", locale))
         resume_prompt = render_message("orchestrator.finalize.resume_prompt", locale, {"intent": intent})
 
@@ -79,16 +149,6 @@ async def finalize(state: OrchestratorState, config: RunnableConfig) -> dict[str
             outbox.append({"type": "say", "text": resume_prompt})
 
         # Add Context Frame to signal active prompt
-        import time
-        import uuid
-
-        from apps.core.src.agent.orchestrator.context.models import (
-            ContextEntity,
-            ContextFrame,
-            ContextFrameType,
-            EntityType,
-        )
-
         frame = ContextFrame(
             frame_id=str(uuid.uuid4()),
             frame_type=ContextFrameType.GENERIC,

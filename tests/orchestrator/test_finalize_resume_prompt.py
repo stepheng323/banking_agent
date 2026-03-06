@@ -1,8 +1,12 @@
 """Finalize node tests for stashed session resume prompts."""
 
+import time
+import uuid
+
 import pytest
 from langchain_core.runnables import RunnableConfig
 
+from apps.core.src.agent.orchestrator.context.models import ContextEntity, ContextFrame, ContextFrameType, EntityType
 from apps.core.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
 from apps.core.src.agent.orchestrator.models.state import OrchestratorState
 from apps.core.src.agent.orchestrator.nodes.finalize import finalize
@@ -24,7 +28,12 @@ def _stashed(intent: str = "transfer") -> list[dict]:
             "tasks": {"t_stashed": TaskSpec(id="t_stashed", type="transfer", stage=TaskStage.EXTRACTED, payload={})},
             "waves": [["t_stashed"]],
             "current_wave_index": 0,
-            "pending_interrupt": None,
+            "pending_interrupt": {
+                "kind": "input",
+                "task_ids": ["t_stashed"],
+                "fields_by_task": {"t_stashed": ["amount"]},
+                "prompt": "Enter amount",
+            },
             "intent": intent,
         }
     ]
@@ -139,4 +148,62 @@ async def test_finalize_stashed_and_completed_transfer_does_not_prompt_resume() 
 
     assert updates["outbox"], "Completed transfer should emit processing text."
     assert "Would you like to resume your" not in updates["outbox"][-1]["text"]
+    assert "context_frames" not in updates
+
+
+@pytest.mark.asyncio
+async def test_finalize_stale_stash_does_not_prompt_resume_and_cleans_stash() -> None:
+    stale_stash = [
+        {
+            "tasks": {"t_stashed": TaskSpec(id="t_stashed", type="transfer", stage=TaskStage.EXTRACTED, payload={})},
+            "waves": [["t_stashed"]],
+            "current_wave_index": 0,
+            "pending_interrupt": None,
+            "intent": "transfer",
+        }
+    ]
+    state = OrchestratorState(
+        user_id="u_resume_7",
+        phone_number="2348000000017",
+        channel="whatsapp",
+        tasks={"t1": TaskSpec(id="t1", type="account", stage=TaskStage.COMPLETED, payload={})},
+        stashed_sessions=stale_stash,
+    )
+
+    updates = await finalize(state, _config())
+
+    assert updates["outbox"] == []
+    assert "context_frames" not in updates
+    assert updates["stashed_sessions"] == []
+
+
+@pytest.mark.asyncio
+async def test_finalize_does_not_repeat_resume_prompt_with_live_resume_frame() -> None:
+    now_ts = int(time.time())
+    existing_frame = ContextFrame(
+        frame_id=str(uuid.uuid4()),
+        frame_type=ContextFrameType.GENERIC,
+        items=[
+            ContextEntity(
+                entity_type=EntityType.GENERIC,
+                entity_id="resumption_prompt",
+                label="Resume transfer",
+                data={"intent": "transfer", "resume_prompt": True},
+            )
+        ],
+        created_at_ts=now_ts,
+        ttl_seconds=300,
+    )
+    state = OrchestratorState(
+        user_id="u_resume_8",
+        phone_number="2348000000018",
+        channel="whatsapp",
+        tasks={"t1": TaskSpec(id="t1", type="account", stage=TaskStage.COMPLETED, payload={})},
+        stashed_sessions=_stashed(intent="transfer"),
+        context_frames=[existing_frame],
+    )
+
+    updates = await finalize(state, _config())
+
+    assert updates["outbox"] == []
     assert "context_frames" not in updates

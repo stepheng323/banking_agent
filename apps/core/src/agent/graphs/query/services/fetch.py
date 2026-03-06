@@ -7,6 +7,7 @@ from datetime import date, datetime
 from typing import Any, cast
 
 from apps.core.src.agent.graphs.query.models import Filters, NormalizedQuery, match_category
+from apps.core.src.agent.graphs.query.utils.timezone import lagos_today, to_lagos_date
 from shared.clients.abstractions.banking import BankDataProvider
 from shared.i18n import render_message
 from shared.utils.logging import get_logger
@@ -17,11 +18,11 @@ logger = get_logger(__name__)
 def parse_date(date_str: str) -> date:
     """Parse date string to date object."""
     if not date_str:
-        return date.today()
+        return lagos_today()
     try:
         return datetime.strptime(date_str[:10], "%Y-%m-%d").date()
     except ValueError:
-        return date.today()
+        return lagos_today()
 
 
 def extract_counterparty(narration: str, locale: str = "en") -> str:
@@ -118,8 +119,9 @@ def resolve_query_date_bounds(query: NormalizedQuery) -> tuple[str, str]:
     from datetime import timedelta
 
     days = 30 if query.intent == "analytics_summary" else 7
-    end = date.today().isoformat()
-    start = (date.today() - timedelta(days=days)).isoformat()
+    today = lagos_today()
+    end = today.isoformat()
+    start = (today - timedelta(days=days)).isoformat()
     return start, end
 
 
@@ -217,6 +219,9 @@ async def fetch_transactions_base(
         txns = await provider.get_transactions(account_id, start_date=start, end_date=end, limit=100)
         transactions = [to_dict(t) for t in txns]
 
+    start_bound = date.fromisoformat(start)
+    end_bound = date.fromisoformat(end)
+
     # --- MERGE LOCAL TRANSACTIONS ---
     if user_id:
         try:
@@ -227,6 +232,12 @@ async def fetch_transactions_base(
                     local_txns = await uow.transactions.get_by_user(user_id, limit=20)
                     for l_txn in local_txns:
                         raw_date = l_txn.created_at
+                        if not isinstance(raw_date, datetime):
+                            continue
+                        lagos_date = to_lagos_date(raw_date)
+                        if lagos_date < start_bound or lagos_date > end_bound:
+                            continue
+
                         recipient_name = l_txn.recipient_name or render_message("query.common.transaction", language)
                         txn_dict = {
                             "id": str(l_txn.id),
@@ -241,7 +252,7 @@ async def fetch_transactions_base(
                                 language,
                                 {"recipient": recipient_name},
                             ),
-                            "date": raw_date.isoformat(),
+                            "date": lagos_date.isoformat(),
                             "currency": l_txn.currency,
                             "status": l_txn.status,
                             "transaction_id": l_txn.transaction_id,

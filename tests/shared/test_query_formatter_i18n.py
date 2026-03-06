@@ -13,6 +13,7 @@ from apps.core.src.agent.graphs.query.models import (
     TimeRange,
 )
 from apps.core.src.agent.graphs.query.services.formatter import QueryFormatter
+from apps.core.src.agent.graphs.query.utils.timezone import lagos_today
 
 
 def test_formatter_returns_summary_for_summary_surface() -> None:
@@ -89,7 +90,7 @@ def test_formatter_uses_rank_metadata_without_english_summary() -> None:
 
 
 def test_formatter_no_results_with_type_for_today() -> None:
-    today = date.today()
+    today = lagos_today()
     result = QueryResult(
         summary_text="",
         items=[],
@@ -176,7 +177,7 @@ def test_formatter_heading_uses_category_spending_for_debit() -> None:
 
 
 def test_formatter_heading_appends_account_and_today_suffix() -> None:
-    today = date.today()
+    today = lagos_today()
     result = _sample_list_result(
         NormalizedQuery(
             intent=QueryIntent.TRANSACTION_LIST,

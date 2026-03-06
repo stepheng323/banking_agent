@@ -20,6 +20,7 @@ from apps.core.src.agent.graphs.query.services.continuity import (
     apply_time_delta,
 )
 from apps.core.src.agent.graphs.query.services.parser import QueryParser
+from apps.core.src.agent.graphs.query.utils.timezone import lagos_today
 from apps.core.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
 from shared.i18n import LocaleManager, render_message
 from shared.utils.logging import get_logger
@@ -76,6 +77,8 @@ class ExtractionStep(QueryStep):
     async def _handle_continuation(self, state: dict[str, Any], session: dict[str, Any]) -> dict[str, Any]:
         """Handle possible continuation of previous query."""
         message = state.get("message", "")
+        today_state = state.get("today")
+        today = today_state if isinstance(today_state, date) else lagos_today()
 
         # Reconstruct items for context if available
         items = []
@@ -97,7 +100,7 @@ class ExtractionStep(QueryStep):
         cont_type, data = await self.classifier.classify(
             message,
             has_active_session=True,
-            today=date.today().isoformat(),
+            today=today.isoformat(),
             items=items,
             surface=surface,
             language=LocaleManager.normalize(state.get("language")).value,
@@ -257,7 +260,8 @@ class ExtractionStep(QueryStep):
     async def _parse_new_query(self, state: dict[str, Any]) -> dict[str, Any]:
         """Parse a fresh query."""
         message = state.get("message", "")
-        today = state.get("today", date.today())
+        today_state = state.get("today")
+        today = today_state if isinstance(today_state, date) else lagos_today()
         language = LocaleManager.normalize(state.get("language")).value
 
         result = await self.parser.parse(message, today=today, language=language)
