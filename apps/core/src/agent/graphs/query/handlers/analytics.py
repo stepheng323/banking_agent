@@ -1,7 +1,7 @@
 """Analytics and breakdown handlers."""
 
 from collections import defaultdict
-from datetime import date
+from datetime import date, timedelta
 from typing import Any
 
 from apps.core.src.agent.graphs.query.models import (
@@ -16,6 +16,7 @@ from apps.core.src.agent.graphs.query.services.fetch import (
     fetch_and_filter,
     parse_date,
 )
+from apps.core.src.agent.graphs.query.utils.timezone import lagos_today
 from shared.clients.abstractions.banking import BankDataProvider
 from shared.i18n import render_message
 
@@ -51,6 +52,16 @@ async def handle_analytics(
         total = sum(abs(t.get("amount", 0)) for t in transactions)
         count = len(transactions)
         if count == 0:
+            tx_type = query.filters.transaction_type if query.filters else None
+            timeframe = _build_timeframe_suffix(query, language)
+            if tx_type == "credit":
+                return QueryResult(
+                    summary_text=render_message("query.analytics.no_income", language, {"timeframe": timeframe})
+                )
+            if tx_type == "debit":
+                return QueryResult(
+                    summary_text=render_message("query.analytics.no_spending", language, {"timeframe": timeframe})
+                )
             return QueryResult(summary_text=render_message("query.format.no_matching_transactions", language))
         merchant = query.filters.merchant[0] if query.filters and query.filters.merchant else None
 
@@ -85,10 +96,11 @@ async def handle_analytics(
                 "query.analytics.summary_spent",
                 language,
                 {
-                    "total": f"{total:,.2f}",
+                    "total": f"{total:,.0f}",
                     "target_description": target_description,
                     "timeframe": timeframe,
                     "count": count,
+                    "transaction_label": _transaction_label(count, language),
                 },
             ),
             items=items,
@@ -273,6 +285,18 @@ async def handle_analytics(
 
 def _build_timeframe_suffix(query: NormalizedQuery, locale: str) -> str:
     if query.time_range:
+        today = lagos_today()
+        if query.time_range.start == query.time_range.end == today:
+            return render_message("query.analytics.timeframe_today", locale)
+        yesterday = today - timedelta(days=1)
+        if query.time_range.start == query.time_range.end == yesterday:
+            return render_message("query.analytics.timeframe_yesterday", locale)
+        if query.time_range.start == query.time_range.end:
+            return render_message(
+                "query.analytics.timeframe_on_date",
+                locale,
+                {"date": query.time_range.start.strftime("%b %d")},
+            )
         return render_message(
             "query.analytics.timeframe_range",
             locale,
@@ -282,6 +306,12 @@ def _build_timeframe_suffix(query: NormalizedQuery, locale: str) -> str:
             },
         )
     return render_message("query.analytics.timeframe_default", locale)
+
+
+def _transaction_label(count: int, locale: str) -> str:
+    if count == 1:
+        return render_message("query.analytics.transaction_singular", locale)
+    return render_message("query.analytics.transaction_plural", locale)
 
 
 async def _aggregate_breakdown(transactions: list[dict], query: NormalizedQuery, language: str = "en") -> QueryResult:

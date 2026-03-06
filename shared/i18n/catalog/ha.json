@@ -268,10 +268,14 @@
     "analytics": {
       "no_aggregation": "No aggregation specified.",
       "no_transactions": "No transactions found.",
+      "no_spending": "You didn't spend anything{timeframe}.",
+      "no_income": "You didn't receive any inflow{timeframe}.",
       "target_merchant": " on {merchant}",
-      "summary_spent": "You spent *₦{total}*{target_description}{timeframe} ({count} transaction(s)).",
+      "summary_spent": "You spent *₦{total}*{target_description}{timeframe}, across {count} {transaction_label}.",
       "summary_average": "Your average transaction is *₦{average}*{timeframe} ({count} transaction(s)).\\n\\n_'show transactions' to see details_",
       "summary_count": "You made *{count}* transaction(s){timeframe}.",
+      "transaction_singular": "transaction",
+      "transaction_plural": "transactions",
       "single_expense": "Your {adjective} expense{timeframe}",
       "label_expenses": "Expenses",
       "label_transactions": "Transactions",
@@ -283,8 +287,11 @@
       "ranked_top": "Top {limit} {adj_title} {label}",
       "aggregation_completed": "Aggregation completed.",
       "breakdown_by": "Breakdown by {group_by}",
-      "timeframe_default": " (last 30 days)",
-      "timeframe_range": " ({start} - {end})"
+      "timeframe_default": " in the last 30 days",
+      "timeframe_today": " today",
+      "timeframe_yesterday": " yesterday",
+      "timeframe_on_date": " on {date}",
+      "timeframe_range": " from {start} to {end}"
     },
     "beneficiary": {
       "heading_most_frequent": "Most Frequent",

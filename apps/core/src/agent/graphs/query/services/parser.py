@@ -204,9 +204,19 @@ class QueryParser:
             elif extraction.time_range.reference_type == TimeReference.UNSPECIFIED:
                 days_back = 30
 
+            range_start = today - timedelta(days=days_back)
+            range_end = today
+            if period_lower == "today":
+                range_start = today
+                range_end = today
+            elif period_lower == "yesterday":
+                yesterday = today - timedelta(days=1)
+                range_start = yesterday
+                range_end = yesterday
+
             time_range = TimeRange(
-                start=today - timedelta(days=days_back),
-                end=today,
+                start=range_start,
+                end=range_end,
                 granularity="day",
             )
 

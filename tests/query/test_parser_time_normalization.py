@@ -43,7 +43,7 @@ def test_yesterday_period_uses_previous_day_window() -> None:
     normalized = parser.convert_to_normalized(extraction, today=today)
     assert normalized.time_range is not None
     assert normalized.time_range.start == date(2026, 3, 2)
-    assert normalized.time_range.end == today
+    assert normalized.time_range.end == date(2026, 3, 2)
 
 
 def test_days_back_zero_is_not_defaulted_to_thirty_days() -> None:
