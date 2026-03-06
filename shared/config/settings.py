@@ -66,6 +66,10 @@ class Settings:
 
         self.soul_policy_path: str = os.getenv("SOUL_POLICY_PATH", "config/soul_policy.json")
         self.enable_channel_option_ux_v2: bool = os.getenv("ENABLE_CHANNEL_OPTION_UX_V2", "false").lower() == "true"
+        self.enable_transfer_scheduling: bool = os.getenv("ENABLE_TRANSFER_SCHEDULING", "true").lower() == "true"
+        self.schedule_dispatcher_batch_size: int = int(os.getenv("SCHEDULE_DISPATCHER_BATCH_SIZE", "25"))
+        self.schedule_max_due_per_tick: int = int(os.getenv("SCHEDULE_MAX_DUE_PER_TICK", "25"))
+        self.schedule_retry_delay_minutes: int = int(os.getenv("SCHEDULE_RETRY_DELAY_MINUTES", "1"))
 
         self._validate_critical_runtime_config()
         self._validate_whatsapp_config()

@@ -31,6 +31,8 @@ class TaskParameters(BaseModel):
     schedule: str | None = None
     scheduled: str | None = None
     recurring: bool | None = None
+    schedule_id: str | None = None
+    schedule_selector: str | None = None
     international: bool | None = None
     alias: str | None = None
     reference: ContextReference | None = None

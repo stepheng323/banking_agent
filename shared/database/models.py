@@ -25,6 +25,10 @@ from shared.database.enums import (
     FundedTransferStatusEnum,
     FundingStepStatusEnum,
     MandateStatusEnum,
+    RecurrenceTypeEnum,
+    ScheduledInstructionStatusEnum,
+    ScheduleDomainEnum,
+    ScheduledRunStatusEnum,
     SupportTicketPriorityEnum,
     SupportTicketStatusEnum,
     TransactionTypeEnum,
@@ -62,6 +66,7 @@ class User(Base):
     accounts = relationship("Account", back_populates="user")
     beneficiaries = relationship("Beneficiary", back_populates="user")
     transactions = relationship("Transaction", back_populates="user")
+    scheduled_instructions = relationship("ScheduledInstruction", back_populates="user")
     channel_identities = relationship("UserChannelIdentity", back_populates="user", cascade="all, delete-orphan")
 
     def __repr__(self):
@@ -328,6 +333,78 @@ class ActionableMessage(Base):
 
     def __repr__(self):
         return f"<ActionableMessage(id={self.id}, channel_msg_id={self.channel_message_id}, type={self.message_type})>"
+
+
+class ScheduledInstruction(Base):
+    """Scheduled instruction for recurring and one-time future transactions."""
+
+    __tablename__ = "scheduled_instructions"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    user_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", name="fk_scheduled_instructions_user_id"),
+        nullable=False,
+        index=True,
+    )
+    domain = Column(String, default=ScheduleDomainEnum.TRANSFER.value, nullable=False, index=True)
+    status = Column(String, default=ScheduledInstructionStatusEnum.ACTIVE.value, nullable=False, index=True)
+    action = Column(String, nullable=False)
+    payload_snapshot = Column(JSON, nullable=False, default={})
+    timezone = Column(String, nullable=False, default="Africa/Lagos")
+    recurrence_type = Column(String, default=RecurrenceTypeEnum.ONE_TIME.value, nullable=False, index=True)
+    start_date = Column(String, nullable=False)
+    local_time = Column(String, nullable=False)
+    day_of_week = Column(Integer, nullable=True)
+    day_of_month = Column(Integer, nullable=True)
+    end_date = Column(String, nullable=True)
+    next_run_at_utc = Column(DateTime, nullable=False, index=True)
+    last_run_at_utc = Column(DateTime, nullable=True)
+    cancelled_at = Column(DateTime, nullable=True)
+    channel = Column(String, nullable=False, default="whatsapp")
+    channel_identity = Column(String, nullable=True)
+    created_at = Column(DateTime, server_default=text("now()"), nullable=False, index=True)
+    updated_at = Column(DateTime, server_default=text("now()"), onupdate=datetime.utcnow, nullable=False)
+
+    user = relationship("User", back_populates="scheduled_instructions")
+    runs = relationship("ScheduledRun", back_populates="schedule", order_by="ScheduledRun.due_at_utc")
+
+    def __repr__(self):
+        return (
+            f"<ScheduledInstruction(id={self.id}, domain={self.domain}, status={self.status}, "
+            f"recurrence={self.recurrence_type})>"
+        )
+
+
+class ScheduledRun(Base):
+    """Single execution attempt for a scheduled instruction."""
+
+    __tablename__ = "scheduled_runs"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    schedule_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("scheduled_instructions.id", name="fk_scheduled_runs_schedule_id"),
+        nullable=False,
+        index=True,
+    )
+    due_at_utc = Column(DateTime, nullable=False, index=True)
+    status = Column(String, default=ScheduledRunStatusEnum.QUEUED.value, nullable=False, index=True)
+    attempt = Column(Integer, nullable=False, default=1)
+    transaction_id = Column(String, nullable=True)
+    idempotency_key = Column(String, nullable=False, unique=True, index=True)
+    error_message = Column(String, nullable=True)
+    created_at = Column(DateTime, server_default=text("now()"), nullable=False, index=True)
+    updated_at = Column(DateTime, server_default=text("now()"), onupdate=datetime.utcnow, nullable=False)
+    completed_at = Column(DateTime, nullable=True)
+
+    schedule = relationship("ScheduledInstruction", back_populates="runs")
+
+    def __repr__(self):
+        return (
+            f"<ScheduledRun(id={self.id}, schedule_id={self.schedule_id}, "
+            f"status={self.status}, due={self.due_at_utc})>"
+        )
 
 
 class FAQEntry(Base):

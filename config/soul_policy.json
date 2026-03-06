@@ -143,14 +143,16 @@
           "supported": true
         },
         "schedule_transfer": {
-          "supported": false,
-          "limitation_message": "I can't schedule transfers yet here in chat, but I can send it now as a one-time transfer. Want me to proceed?",
-          "alternative": "send_money"
+          "supported": true
         },
         "recurring_transfer": {
-          "supported": false,
-          "limitation_message": "Recurring transfers aren't available yet here. I can make this a one-time transfer right now if you want.",
-          "alternative": "send_money"
+          "supported": true
+        },
+        "list_scheduled_transfers": {
+          "supported": true
+        },
+        "cancel_scheduled_transfer": {
+          "supported": true
         },
         "international_transfer": {
           "supported": false,

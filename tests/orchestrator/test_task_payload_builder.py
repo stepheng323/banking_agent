@@ -1,6 +1,7 @@
 from apps.core.src.agent.orchestrator.utils.task_payload import (
     _derive_recipient_from_user_text,
     _derive_recipients_from_user_text,
+    _derive_transfer_schedule_fields,
     build_task_spec_from_plan_item,
 )
 from shared.types.planner import PlannedTask, TaskParameters
@@ -283,3 +284,52 @@ def test_transfer_possessive_command_verb_is_not_used_as_recipient_name() -> Non
     )
 
     assert not spec.payload.get("recipient_name")
+
+
+def test_schedule_fields_parse_weekly_with_default_time() -> None:
+    fields = _derive_transfer_schedule_fields(
+        "send 10k to mum every friday",
+        schedule_text=None,
+        scheduled_text=None,
+        recurring_flag=True,
+    )
+    assert fields["recurrence_type"] == "weekly"
+    assert fields["schedule_day_of_week"] == 4
+    assert fields["schedule_time_local"] == "09:00"
+    assert fields["schedule_timezone"] == "Africa/Lagos"
+
+
+def test_schedule_fields_parse_one_time_with_explicit_time() -> None:
+    fields = _derive_transfer_schedule_fields(
+        "send 10k to mum tomorrow 8pm",
+        schedule_text=None,
+        scheduled_text=None,
+        recurring_flag=False,
+    )
+    assert fields["recurrence_type"] == "one_time"
+    assert fields["schedule_time_local"] == "20:00"
+    assert "schedule_start_date" in fields
+
+
+def test_transfer_send_money_infers_schedule_action_from_text() -> None:
+    plan_item = PlannedTask(
+        task_id="t1",
+        action="send_money",
+        executor="transfer",
+        instruction="Send 10k to mum tomorrow 9am",
+        parameters=TaskParameters(amount=10000, recipient="mum"),
+        risk="MONEY_MOVE",
+    )
+
+    spec = build_task_spec_from_plan_item(
+        plan_item,
+        "send 10k to mum tomorrow 9am",
+        preserve_existing_action_instruction=True,
+        include_skip_extraction=True,
+        strip_transfer_recipient_suffix=True,
+        format_narration_requires_recipient_field=False,
+    )
+
+    assert spec.payload.get("action") == "schedule_transfer"
+    assert spec.payload.get("schedule_time_local") == "09:00"
+    assert spec.payload.get("schedule_timezone") == "Africa/Lagos"

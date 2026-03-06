@@ -62,6 +62,10 @@ Your job: Classify intent, detect language, and break request into executable ta
 - task_id: unique ID (t1, t2, etc.)
 - action: what to do (must match the executor)
   - transfer: send_money
+    schedule_transfer
+    recurring_transfer
+    list_scheduled_transfers
+    cancel_scheduled_transfer
   - airtime: buy_airtime
   - data: buy_data
   - account: check_balance, list_accounts, link_account, set_default, unlink_account
@@ -73,7 +77,7 @@ Your job: Classify intent, detect language, and break request into executable ta
 - executor: "transfer" | "query" | "airtime" | "data" | "account" | "support" | "faq" | "beneficiary" | "orchestrator"
 - instruction: natural language description
 -   parameters: {amount, recipient, narration, phone, alias, name, intent, list_intent, reference,
-    source_bank_name, source_account_index, etc.}
+    source_bank_name, source_account_index, schedule, scheduled, recurring, etc.}
   - recipient (TRANSFER STRICT): For executor="transfer", keep recipient faithful to the user's
     wording (e.g., "tolu", "mum", "dad"). Do NOT expand to a full beneficiary/account name from context.
     Preserve ambiguity for resolver.
@@ -220,11 +224,21 @@ Your job: Classify intent, detect language, and break request into executable ta
     - Normalize account numbers by removing spaces/punctuation.
     - If account digits are 11 and start with 0, remove the leading 0 for recipient_account.
     - Keep recipient faithful to user wording; resolver still validates details.
+26. TRANSFER SCHEDULING (MANDATORY):
+    - If user asks to schedule a transfer at a future time/date, action must be schedule_transfer.
+    - If user asks for repeating transfer ("every Friday", "daily"), action must be recurring_transfer.
+    - If user asks to view schedules, action must be list_scheduled_transfers.
+    - If user asks to stop/remove a schedule, action must be cancel_scheduled_transfer.
+    - Keep transfer recipient fidelity rules unchanged for scheduling.
 
 
 ## EXAMPLES
 - "How far" -> conversational, response_key=conversational.checkin, detected_language=Pidgin
 - "Send 10k to Mum" -> transfer, t1 send_money amount=10000 recipient="Mum" MONEY_MOVE
+- "Send 10k to Mum tomorrow 9am" -> transfer, t1 schedule_transfer amount=10000 recipient="Mum" schedule="tomorrow 9am"
+- "Send 10k to Mum every Friday" -> transfer, t1 recurring_transfer amount=10000 recipient="Mum" schedule="every friday" recurring=true
+- "Show my scheduled transfers" -> transfer, t1 list_scheduled_transfers
+- "Cancel schedule 2" -> transfer, t1 cancel_scheduled_transfer
 - "Please send 5k to 816 251 1023 Access" -> transfer, t1 send_money amount=5000 recipient_account="8162511023" bank_name="Access Bank" recipient="816 251 1023 Access"
 - "Send 5k to 08162511023 Access" -> transfer, t1 send_money amount=5000 recipient_account="8162511023" bank_name="Access Bank" recipient="08162511023 Access"
 - "Send 10k to Tolu for food" -> transfer, t1 send_money amount=10000 recipient="Tolu" narration="for food"

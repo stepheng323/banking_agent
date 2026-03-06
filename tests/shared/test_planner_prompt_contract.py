@@ -65,3 +65,12 @@ def test_transfer_pronoun_reference_continuity_rules_present() -> None:
     assert "keep transfer continuity by setting `reference`" in BASE_PLANNER_SYSTEM_PROMPT
     assert "reference={\"selector\":\"previous\"}" in BASE_PLANNER_SYSTEM_PROMPT
     assert "resolver clarifies if needed" in BASE_PLANNER_SYSTEM_PROMPT
+
+
+def test_transfer_scheduling_rules_present() -> None:
+    """Prompt should include schedule/recurring transfer action contracts."""
+    assert "TRANSFER SCHEDULING (MANDATORY)" in BASE_PLANNER_SYSTEM_PROMPT
+    assert "schedule_transfer" in BASE_PLANNER_SYSTEM_PROMPT
+    assert "recurring_transfer" in BASE_PLANNER_SYSTEM_PROMPT
+    assert "list_scheduled_transfers" in BASE_PLANNER_SYSTEM_PROMPT
+    assert "cancel_scheduled_transfer" in BASE_PLANNER_SYSTEM_PROMPT

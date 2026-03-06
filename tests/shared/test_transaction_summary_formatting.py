@@ -39,7 +39,7 @@ def test_multi_action_summary_uses_compact_transfer_line_with_alias_and_resolved
 
     summary = format_multi_action_summary(tasks, locale="en")
 
-    assert "✓ ₦10,000 → Mum (MERCY JOHNSON) • Opay • 8162511023" in summary
+    assert "✓ ₦10,000 → Mum (Mercy Johnson) • Opay • 8162511023" in summary
     assert "₦10,000.00" not in summary
 
 
@@ -65,6 +65,8 @@ def test_multi_action_summary_total_spent_is_compact_for_multiple_tasks() -> Non
 
     summary = format_multi_action_summary(tasks, locale="en")
 
+    assert "✓ ₦10,000 → Mum (Mercy Johnson) • Opay • 8162511023" in summary
+    assert "✓ ₦10,000 → Tolu (Tolu Adedayo) • Access • 0760505261" in summary
     assert "*Total Spent:* ₦20,000" in summary
     assert "₦20,000.00" not in summary
 
@@ -84,6 +86,23 @@ def test_multi_action_summary_transfer_line_uses_safe_bank_and_account_fallbacks
     summary = format_multi_action_summary(tasks, locale="en")
 
     assert "✓ ₦5,000 → Tolu • Bank • N/A" in summary
+
+
+def test_multi_action_summary_resolved_only_line_is_title_cased() -> None:
+    tasks = [
+        _transfer_task(
+            task_id="t1",
+            amount=10000,
+            recipient_name=None,
+            recipient_resolved_name="GRACE NGOZI ADEBAYO",
+            bank="Access Bank",
+            account="0762511023",
+        )
+    ]
+
+    summary = format_multi_action_summary(tasks, locale="en")
+
+    assert "✓ ₦10,000 → Grace Ngozi Adebayo • Access Bank • 0762511023" in summary
 
 
 def test_batch_confirmation_summary_uses_compact_total_amount() -> None:

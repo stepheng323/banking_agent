@@ -14,6 +14,7 @@ from apps.core.src.agent.orchestrator.models.domain import (
 )
 from apps.core.src.agent.orchestrator.models.state import OrchestratorState
 from apps.core.src.agent.orchestrator.nodes.execution import advance_wave
+from apps.core.src.agent.orchestrator.nodes.finalize import finalize
 from shared.config.settings import settings
 
 
@@ -741,3 +742,114 @@ async def test_multi_transfer_fanout_task_ids_keep_all_recipients_in_confirmatio
     assert set(confirmation_entry["task_ids"]) == {"t1", "t1_r2"}
     assert "Confirm Mum" in confirmation_entry["summary"]
     assert "Confirm Tolu" in confirmation_entry["summary"]
+
+
+async def test_batch_confirmation_strips_name_mismatch_warning_line() -> None:
+    warning = "You asked to send to Tolu, but the account resolved as TOLU ADEDAYO."
+    state = OrchestratorState(
+        user_id="u_multi_confirm_warning_strip",
+        phone_number="2348000000115",
+        channel="whatsapp",
+        tasks={
+            "t1": TaskSpec(
+                id="t1",
+                type="transfer",
+                stage=TaskStage.AWAITING_CONFIRMATION,
+                payload={
+                    "recipient_name": "Tolu",
+                    "name_mismatch_warning": warning,
+                    "confirmation": {
+                        "summary": f"{warning}\n\n₦10,000 → Tolu (Tolu Adedayo)\nAccess • 0760505261",
+                        "snapshot": {"amount": 10000, "recipient_name": "Tolu"},
+                    },
+                    "source_account_id": "acct-1",
+                },
+            ),
+            "t2": TaskSpec(
+                id="t2",
+                type="transfer",
+                stage=TaskStage.AWAITING_CONFIRMATION,
+                payload={
+                    "recipient_name": "Mum",
+                    "confirmation": {
+                        "summary": "₦10,000 → Mum (Mercy Johnson)\nOpay • 8162511023",
+                        "snapshot": {"amount": 10000, "recipient_name": "Mum"},
+                    },
+                    "source_account_id": "acct-1",
+                },
+            ),
+        },
+        waves=[["t1", "t2"]],
+        current_wave_index=0,
+        loaded_context={
+            "language": "en",
+            "accounts": [
+                {
+                    "id": "acct-1",
+                    "bank_name": "Zenith Bank",
+                    "account_number": "0000009384",
+                    "mandate_status": "ready",
+                    "mandate_id": "m1",
+                }
+            ],
+        },
+    )
+
+    config: RunnableConfig = {"configurable": {"services": {}}, "recursion_limit": 50}
+    updates = await advance_wave(state, config)
+
+    confirmation_entry = next(entry for entry in updates["outbox"] if entry["type"] == "request_confirmation")
+    summary = confirmation_entry["summary"]
+
+    assert "Confirm Transfers (2)" in summary
+    assert warning not in summary
+    assert "Tolu (Tolu Adedayo)" in summary
+    assert "Mum (Mercy Johnson)" in summary
+
+
+async def test_finalize_multi_transfer_summary_uses_alias_resolved_with_title_case() -> None:
+    state = OrchestratorState(
+        user_id="u_finalize_multi_case",
+        phone_number="2348000000116",
+        channel="whatsapp",
+        tasks={
+            "t1": TaskSpec(
+                id="t1",
+                type="transfer",
+                stage=TaskStage.COMPLETED,
+                payload={
+                    "amount": 10000,
+                    "recipient_name": "mum",
+                    "recipient_resolved_name": "MERCY JOHNSON",
+                    "recipient_bank_name": "Opay",
+                    "recipient_account": "8162511023",
+                },
+            ),
+            "t2": TaskSpec(
+                id="t2",
+                type="transfer",
+                stage=TaskStage.COMPLETED,
+                payload={
+                    "amount": 10000,
+                    "recipient_name": "tolu",
+                    "recipient_resolved_name": "GRACE NGOZI ADEBAYO",
+                    "recipient_bank_name": "Access Bank",
+                    "recipient_account": "0762511023",
+                },
+            ),
+        },
+        loaded_context={"language": "en"},
+    )
+    config: RunnableConfig = {
+        "configurable": {
+            "beneficiary_suggestion_service": None,
+            "redis_client": None,
+            "queue": None,
+        }
+    }
+
+    updates = await finalize(state, config)
+
+    summary = updates["outbox"][0]["text"]
+    assert "✓ ₦10,000 → Mum (Mercy Johnson) • Opay • 8162511023" in summary
+    assert "✓ ₦10,000 → Tolu (Grace Ngozi Adebayo) • Access Bank • 0762511023" in summary

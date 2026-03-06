@@ -46,6 +46,10 @@ locals {
       TELEGRAM_MINI_APP_BASE_URL     = var.telegram_mini_app_base_url
       SOUL_POLICY_PATH               = var.soul_policy_path
       ENABLE_CHANNEL_OPTION_UX_V2    = var.enable_channel_option_ux_v2
+      ENABLE_TRANSFER_SCHEDULING     = var.enable_transfer_scheduling
+      SCHEDULE_DISPATCHER_BATCH_SIZE = var.schedule_dispatcher_batch_size
+      SCHEDULE_MAX_DUE_PER_TICK      = var.schedule_max_due_per_tick
+      SCHEDULE_RETRY_DELAY_MINUTES   = var.schedule_retry_delay_minutes
     },
     var.non_secret_config_values
   )
@@ -232,6 +236,8 @@ module "compute_lambda_events" {
   max_concurrency_by_queue = {
     "receipts" = 10
   }
+  enable_schedule_dispatcher   = var.enable_schedule_dispatcher
+  schedule_dispatch_expression = var.schedule_dispatch_expression
 
   worker_lambda_image_urls = {
     "transaction-worker" = "${module.ecr.core_repository_url}:lambda-transaction-latest"

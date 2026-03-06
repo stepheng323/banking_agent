@@ -1,12 +1,27 @@
 import re
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from apps.core.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
+from shared.services.scheduling.recurrence import (
+    DEFAULT_SCHEDULE_TIME_TEXT,
+    SCHEDULE_TIMEZONE,
+    normalize_time_local,
+)
 from shared.utils.sanitize import normalize_bank_account_number
 
 _TRANSFER_VERB_TOKENS = {"send", "transfer", "pay", "remit"}
 _RECIPIENT_NOISE_TOKENS = _TRANSFER_VERB_TOKENS | {"to", "for", "money", "cash", "funds", "s"}
 _RECIPIENT_SEGMENT_BOUNDARY = re.compile(r"\b(?:then|from|using|with|via|through|while)\b")
+_WEEKDAY_NAME_TO_INDEX = {
+    "monday": 0,
+    "tuesday": 1,
+    "wednesday": 2,
+    "thursday": 3,
+    "friday": 4,
+    "saturday": 5,
+    "sunday": 6,
+}
 
 
 def apply_source_account_fields(payload: dict[str, Any], plan_item: Any) -> None:
@@ -112,6 +127,8 @@ def _apply_transfer_payload_fields(
     if plan_item.executor != "transfer":
         return
 
+    action_name = str(payload.get("action") or "")
+
     if plan_item.parameters and plan_item.parameters.reference:
         payload["recipient_reference"] = plan_item.parameters.reference.model_dump(exclude_none=True)
 
@@ -164,6 +181,139 @@ def _apply_transfer_payload_fields(
         payload.get("narration"),
         payload.get("recipient_resolved_name") or payload.get("recipient_name"),
     )
+
+    inferred_schedule_action = _infer_schedule_action_from_text(fallback_message)
+    if action_name == "send_money" and inferred_schedule_action:
+        payload["action"] = inferred_schedule_action
+        action_name = inferred_schedule_action
+
+    if action_name in {"schedule_transfer", "recurring_transfer"}:
+        schedule_patch = _derive_transfer_schedule_fields(
+            fallback_message,
+            schedule_text=(plan_item.parameters.schedule if plan_item.parameters else None),
+            scheduled_text=(plan_item.parameters.scheduled if plan_item.parameters else None),
+            recurring_flag=(plan_item.parameters.recurring if plan_item.parameters else None),
+        )
+        payload.update(schedule_patch)
+    elif action_name == "cancel_scheduled_transfer":
+        if payload.get("schedule_id") and not payload.get("schedule_selector"):
+            payload["schedule_selector"] = payload.get("schedule_id")
+        schedule_selector = _derive_schedule_selector_from_user_text(fallback_message)
+        if schedule_selector:
+            payload["schedule_selector"] = schedule_selector
+
+
+def _infer_schedule_action_from_text(user_text: str) -> str | None:
+    normalized = user_text.lower()
+    if re.search(r"\b(?:every|daily|weekly|monthly)\b", normalized):
+        return "recurring_transfer"
+    if re.search(r"\b(?:tomorrow|today|later|next\s+\w+|on\s+\d{4}-\d{2}-\d{2})\b", normalized):
+        return "schedule_transfer"
+    return None
+
+
+def _derive_schedule_selector_from_user_text(user_text: str) -> str | None:
+    match = re.search(r"\b(?:schedule\s+)?(\d{1,3})\b", user_text.lower())
+    if match:
+        return match.group(1)
+    return None
+
+
+def _derive_transfer_schedule_fields(
+    user_text: str,
+    *,
+    schedule_text: str | None,
+    scheduled_text: str | None,
+    recurring_flag: bool | None,
+) -> dict[str, Any]:
+    raw_text = " ".join(filter(None, [user_text, schedule_text, scheduled_text])).strip().lower()
+    now_local = datetime.now(UTC) + timedelta(hours=1)  # Africa/Lagos UTC+1
+
+    time_local = _extract_time_local(raw_text) or DEFAULT_SCHEDULE_TIME_TEXT
+    is_recurring = bool(recurring_flag) or "every " in raw_text or "daily" in raw_text or "weekly" in raw_text
+    recurrence_type = "one_time"
+    schedule_mode = "one_time"
+    schedule_start_date: str | None = None
+    schedule_day_of_week: int | None = None
+    schedule_day_of_month: int | None = None
+
+    if is_recurring:
+        schedule_mode = "recurring"
+        recurrence_type = "daily"
+
+        weekday_match = re.search(
+            r"\bevery\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b",
+            raw_text,
+        )
+        if weekday_match:
+            recurrence_type = "weekly"
+            schedule_day_of_week = _WEEKDAY_NAME_TO_INDEX.get(weekday_match.group(1))
+
+        monthly_match = re.search(r"\bevery\s+month(?:\s+on)?\s+(\d{1,2})(?:st|nd|rd|th)?\b", raw_text)
+        if monthly_match:
+            recurrence_type = "monthly"
+            schedule_day_of_month = max(1, min(31, int(monthly_match.group(1))))
+
+        if "every day" in raw_text or "daily" in raw_text:
+            recurrence_type = "daily"
+
+        schedule_start_date = _extract_date(raw_text, now_local=now_local) or now_local.date().isoformat()
+    else:
+        recurrence_type = "one_time"
+        schedule_mode = "one_time"
+        schedule_start_date = _extract_date(raw_text, now_local=now_local)
+
+    patch: dict[str, Any] = {
+        "schedule_mode": schedule_mode,
+        "recurrence_type": recurrence_type,
+        "schedule_timezone": SCHEDULE_TIMEZONE,
+        "schedule_time_local": time_local,
+    }
+    if schedule_start_date:
+        patch["schedule_start_date"] = schedule_start_date
+    if schedule_day_of_week is not None:
+        patch["schedule_day_of_week"] = schedule_day_of_week
+    if schedule_day_of_month is not None:
+        patch["schedule_day_of_month"] = schedule_day_of_month
+    return patch
+
+
+def _extract_time_local(text: str) -> str | None:
+    ampm_match = re.search(r"\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b", text)
+    if ampm_match:
+        hour = int(ampm_match.group(1)) % 12
+        minute = int(ampm_match.group(2) or 0)
+        if ampm_match.group(3) == "pm":
+            hour += 12
+        return f"{hour:02d}:{minute:02d}"
+
+    hour_match = re.search(r"\b(\d{1,2}):(\d{2})\b", text)
+    if hour_match:
+        normalized = normalize_time_local(f"{hour_match.group(1)}:{hour_match.group(2)}")
+        return normalized
+    return None
+
+
+def _extract_date(text: str, *, now_local: datetime) -> str | None:
+    if "tomorrow" in text:
+        return (now_local.date() + timedelta(days=1)).isoformat()
+    if "today" in text:
+        return now_local.date().isoformat()
+
+    iso_match = re.search(r"\b(\d{4}-\d{2}-\d{2})\b", text)
+    if iso_match:
+        return iso_match.group(1)
+
+    dmy_match = re.search(r"\b(\d{1,2})[/-](\d{1,2})[/-](\d{4})\b", text)
+    if dmy_match:
+        day = int(dmy_match.group(1))
+        month = int(dmy_match.group(2))
+        year = int(dmy_match.group(3))
+        try:
+            return datetime(year=year, month=month, day=day).date().isoformat()
+        except ValueError:
+            return None
+    return None
 
 
 def build_task_spec_from_plan_item(

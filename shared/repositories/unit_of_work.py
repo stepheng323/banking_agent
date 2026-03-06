@@ -8,6 +8,8 @@ from shared.repositories.actionable_message_repository import ActionableMessageR
 from shared.repositories.beneficiary_repository import BeneficiaryRepository
 from shared.repositories.funded_transfer_repository import FundedTransferRepository
 from shared.repositories.funding_step_repository import FundingStepRepository
+from shared.repositories.scheduled_instruction_repository import ScheduledInstructionRepository
+from shared.repositories.scheduled_run_repository import ScheduledRunRepository
 from shared.repositories.transaction_repository import TransactionRepository
 from shared.repositories.user_repository import UserRepository
 
@@ -23,6 +25,8 @@ class UnitOfWork:
         self.transactions: TransactionRepository | None = None
         self.funded_transfers: FundedTransferRepository | None = None
         self.funding_steps: FundingStepRepository | None = None
+        self.scheduled_instructions: ScheduledInstructionRepository | None = None
+        self.scheduled_runs: ScheduledRunRepository | None = None
         self.actionable_messages: ActionableMessageRepository | None = None
         self._rolled_back = False
 
@@ -35,6 +39,8 @@ class UnitOfWork:
         self.transactions = TransactionRepository(self.db)
         self.funded_transfers = FundedTransferRepository(self.db)
         self.funding_steps = FundingStepRepository(self.db)
+        self.scheduled_instructions = ScheduledInstructionRepository(self.db)
+        self.scheduled_runs = ScheduledRunRepository(self.db)
         self.actionable_messages = ActionableMessageRepository(self.db)
         return self
 

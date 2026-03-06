@@ -195,7 +195,7 @@ async def test_transfer_worker_blocks_unsupported_action_from_policy() -> None:
     )
 
     result = await worker.run(
-        payload={"action": "schedule_transfer", "amount": 10000, "recipient_name": "Tolu"},
+        payload={"action": "international_transfer", "amount": 10000, "recipient_name": "Tolu"},
         context={"phone_number": "2348000000000"},
     )
 

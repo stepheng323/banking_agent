@@ -103,3 +103,37 @@ class SupportChannelEnum(str, Enum):
     WHATSAPP = "whatsapp"
     WEB = "web"
     APP = "app"
+
+
+class ScheduleDomainEnum(str, Enum):
+    """Domain enum for scheduled instructions."""
+
+    TRANSFER = "transfer"
+    AIRTIME = "airtime"
+    DATA = "data"
+
+
+class RecurrenceTypeEnum(str, Enum):
+    """Recurrence enum for scheduled instructions."""
+
+    ONE_TIME = "one_time"
+    DAILY = "daily"
+    WEEKLY = "weekly"
+    MONTHLY = "monthly"
+
+
+class ScheduledInstructionStatusEnum(str, Enum):
+    """Status enum for scheduled instructions."""
+
+    ACTIVE = "active"
+    CANCELLED = "cancelled"
+    COMPLETED = "completed"
+
+
+class ScheduledRunStatusEnum(str, Enum):
+    """Status enum for individual scheduled runs."""
+
+    QUEUED = "queued"
+    PROCESSING = "processing"
+    SUCCESSFUL = "successful"
+    FAILED = "failed"

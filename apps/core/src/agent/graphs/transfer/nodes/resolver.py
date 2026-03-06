@@ -223,11 +223,18 @@ def _resolve_beneficiary_from_reference(
 
 
 def _build_single_beneficiary_patch(single: Beneficiary, recipient_name: str | None) -> dict[str, Any]:
+    requested_alias = str(recipient_name or "").strip()
+    beneficiary_alias = str(single.alias or "").strip()
+    account_name = str(single.account_name or "").strip()
+    resolved_name = account_name or beneficiary_alias or requested_alias or None
+    alias_name = requested_alias or beneficiary_alias or account_name or None
+
     return {
         "recipient_account": str(single.account_number),
         "recipient_bank_code": str(single.bank_code),
         "recipient_bank_name": single.bank_name,
-        "recipient_resolved_name": single.account_name or single.alias or recipient_name,
+        "recipient_name": alias_name,
+        "recipient_resolved_name": resolved_name,
         "beneficiary_id": str(single.id),
         "resolved_from_saved_beneficiary": True,
         "name_mismatch": False,
@@ -334,14 +341,19 @@ async def resolve_beneficiary(
                 )
                 _clear_stale_beneficiary_binding(payload, selected)
             else:
+                current_name = str(payload.recipient_name or "").strip()
+                selected_alias = str(selected.get("alias") or "").strip()
+                selected_account_name = str(selected.get("account_name") or "").strip()
+                recipient_name = current_name or selected_alias or selected_account_name or None
+                resolved_name = selected_account_name or selected_alias or current_name or None
                 return TransactionResult(
                     outcome=TransactionOutcome.OK,
                     patch={
                         "recipient_account": str(selected.get("account_number")),
                         "recipient_bank_code": str(selected.get("bank_code")),
                         "recipient_bank_name": selected.get("bank_name"),
-                        "recipient_resolved_name": selected.get("account_name") or selected.get("alias"),
-                        "recipient_name": selected.get("account_name") or selected.get("alias"),  # Update name too
+                        "recipient_name": recipient_name,
+                        "recipient_resolved_name": resolved_name,
                         "resolved_from_saved_beneficiary": True,
                         "name_mismatch": False,
                         "name_match_score": None,

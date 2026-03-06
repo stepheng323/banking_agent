@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from shared.formatters.recipient_display import format_recipient_display_label
+from shared.formatters.recipient_display import format_summary_recipient_display_label
 from shared.i18n import render_message
 
 
@@ -102,7 +102,7 @@ def format_multi_action_summary(completed_tasks: list, locale: str = "en") -> st
                     amount = float(r.get("amount", 0) or 0)
                     total_spent += amount
                     recipient = (
-                        format_recipient_display_label(
+                        format_summary_recipient_display_label(
                             r.get("recipient_name") or r.get("alias"),
                             r.get("recipient_resolved_name") or r.get("name"),
                         )
@@ -134,7 +134,7 @@ def format_multi_action_summary(completed_tasks: list, locale: str = "en") -> st
             else:
                 amount = float(task.payload.get("amount", 0) or 0)
                 recipient = (
-                    format_recipient_display_label(
+                    format_summary_recipient_display_label(
                         task.payload.get("recipient_name"),
                         task.payload.get("recipient_resolved_name"),
                     )

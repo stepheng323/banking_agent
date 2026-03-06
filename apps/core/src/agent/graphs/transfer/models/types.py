@@ -70,6 +70,19 @@ class TransferPayload(BaseModel):
     confirmation: TransferConfirmation = Field(default_factory=TransferConfirmation)
     skip_extraction: bool = False
 
+    # Scheduling fields (phase 1 transfer scheduling)
+    schedule_mode: Literal["one_time", "recurring"] | None = None
+    recurrence_type: Literal["one_time", "daily", "weekly", "monthly"] | None = None
+    schedule_timezone: str | None = None
+    schedule_start_date: str | None = None
+    schedule_time_local: str | None = None
+    schedule_day_of_week: int | None = None
+    schedule_day_of_month: int | None = None
+    schedule_end_date: str | None = None
+    schedule_id: str | None = None
+    schedule_selector: str | None = None
+    schedule_operation_note: str | None = None
+
 
 class TransferContext(BaseModel):
     """Read-only context injected into pure nodes."""
@@ -79,6 +92,8 @@ class TransferContext(BaseModel):
     beneficiaries: list[dict[str, Any]] = Field(default_factory=list)
     accounts: list[dict[str, Any]] = Field(default_factory=list)
     recent_beneficiary_context: bool = False
+    channel: str = "whatsapp"
+    channel_identity: str | None = None
 
 
 class TransferRecipient(TypedDict):

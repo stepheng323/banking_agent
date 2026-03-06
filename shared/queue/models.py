@@ -31,6 +31,24 @@ class ReceiptJobPayload(TypedDict):
     beneficiary_suggestion_message: NotRequired[str]
 
 
+class TransferScheduledMeta(TypedDict):
+    schedule_id: str
+    schedule_run_id: str
+    run_source: Literal["scheduled"]
+    attempt: int
+    channel: str
+    channel_identity: NotRequired[str | None]
+
+
+class TransferJobPayload(TypedDict):
+    type: Literal["execute_transfer"]
+    idempotency_key: str
+    transaction_id: str
+    phone_number: str
+    transfer_data: dict[str, Any]
+    scheduled_meta: NotRequired[TransferScheduledMeta]
+
+
 class RefundJobPayload(TypedDict):
     funding_step_id: str
     funded_transfer_id: str

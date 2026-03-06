@@ -77,6 +77,18 @@ class TransferPayload(BaseModel):
     idempotency_key: str | None = None
     funding_plan: dict[str, Any] | None = None
 
+    # Scheduling (transfer phase 1)
+    schedule_mode: Literal["one_time", "recurring"] | None = None
+    recurrence_type: Literal["one_time", "daily", "weekly", "monthly"] | None = None
+    schedule_timezone: str | None = None
+    schedule_start_date: str | None = None
+    schedule_time_local: str | None = None
+    schedule_day_of_week: int | None = None
+    schedule_day_of_month: int | None = None
+    schedule_end_date: str | None = None
+    schedule_id: str | None = None
+    schedule_selector: str | None = None
+
     # Confirmation sub-state
     confirmation: TransferConfirmation = Field(default_factory=TransferConfirmation)
 

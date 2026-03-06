@@ -128,8 +128,12 @@ async def _handle_completed_tasks(
 ) -> None:
     """Handle completed tasks and generate receipts or summaries."""
     locale = LocaleManager.normalize((state.loaded_context or {}).get("language")).value
+    visible_tasks = [task for task in completed_tasks if not task.payload.get("skip_finalize_summary")]
+    if not visible_tasks:
+        return
+
     logger.info("handling_completed_tasks", count=len(completed_tasks), tasks=[t.type for t in completed_tasks])
-    for t in completed_tasks:
+    for t in visible_tasks:
         logger.info(
             "completed_task_detail",
             type=t.type,
@@ -137,20 +141,20 @@ async def _handle_completed_tasks(
             payload_keys=list(t.payload.keys()),
         )
     is_single_transfer = (
-        len(completed_tasks) == 1
-        and completed_tasks[0].type == "transfer"
-        and not completed_tasks[0].payload.get("is_batch", False)
-        and len(completed_tasks[0].payload.get("recipients", [])) <= 1
+        len(visible_tasks) == 1
+        and visible_tasks[0].type == "transfer"
+        and not visible_tasks[0].payload.get("is_batch", False)
+        and len(visible_tasks[0].payload.get("recipients", [])) <= 1
     )
 
     read_only_task_types = {"account", "query", "faq", "support", "beneficiary"}
-    all_read_only = all(task.type in read_only_task_types for task in completed_tasks)
+    all_read_only = all(task.type in read_only_task_types for task in visible_tasks)
 
     # Check for single async transaction (Airtime/Data)
-    is_async_transaction = len(completed_tasks) == 1 and completed_tasks[0].type in ("airtime", "data")
+    is_async_transaction = len(visible_tasks) == 1 and visible_tasks[0].type in ("airtime", "data")
 
     if is_single_transfer:
-        task = completed_tasks[0]
+        task = visible_tasks[0]
         beneficiary_suggestion_message: str | None = None
         if beneficiary_service:
             beneficiary_suggestion_message = await _build_beneficiary_suggestion(
@@ -187,7 +191,7 @@ async def _handle_completed_tasks(
         )
 
     elif is_async_transaction:
-        task = completed_tasks[0]
+        task = visible_tasks[0]
         receipt = task.payload.get("receipt", {})
         status = receipt.get("status", "").title()
         message = receipt.get("message", render_message("orchestrator.finalize.transaction_completed", locale))
@@ -209,7 +213,7 @@ async def _handle_completed_tasks(
     elif all_read_only:
         pass
     else:
-        summary_text = format_multi_action_summary(completed_tasks, locale=locale)
+        summary_text = format_multi_action_summary(visible_tasks, locale=locale)
         outbox.append({"type": "say", "text": summary_text})
 
 

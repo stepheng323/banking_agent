@@ -110,6 +110,8 @@ async def test_saved_beneficiary_shortcut_is_used_when_recipient_not_changed() -
     assert result.outcome.value == "ok"
     assert result.patch["resolved_from_saved_beneficiary"] is True
     assert result.patch["recipient_account"] == "2010000001"
+    assert result.patch["recipient_name"] == "Tolu Adebayo"
+    assert result.patch["recipient_resolved_name"] == "Tolu Adebayo"
 
 
 async def test_saved_beneficiary_shortcut_is_dropped_when_recipient_changes() -> None:
@@ -171,6 +173,39 @@ async def test_name_only_single_beneficiary_match_autofills_recipient_details() 
     assert result.patch["resolved_from_saved_beneficiary"] is True
     assert result.patch["recipient_account"] == "2010000002"
     assert result.patch["recipient_bank_name"] == "GTBank"
+    assert result.patch["recipient_name"] == "Mum"
+    assert result.patch["recipient_resolved_name"] == "Mama Nkechi"
+
+
+async def test_selected_beneficiary_prefers_alias_when_payload_name_missing() -> None:
+    payload = TransferPayload(
+        amount=6000,
+        beneficiary_id="bene-1",
+        recipient_account="2010000001",
+        recipient_bank_name="Access Bank",
+        recipient_bank_code="044",
+    )
+    ctx = TransferContext(
+        phone_number="2348000000000",
+        language="en",
+        beneficiaries=[
+            {
+                "id": "bene-1",
+                "alias": "Tolu",
+                "account_name": "Tolu Adebayo",
+                "account_number": "2010000001",
+                "bank_name": "Access Bank",
+                "bank_code": "044",
+            }
+        ],
+        accounts=[],
+    )
+
+    result = await resolve_beneficiary(payload, ctx, resolver_provider=None, bank_cache=None)
+
+    assert result.outcome.value == "ok"
+    assert result.patch["recipient_name"] == "Tolu"
+    assert result.patch["recipient_resolved_name"] == "Tolu Adebayo"
 
 
 async def test_name_only_airtime_beneficiary_does_not_autofill_transfer() -> None:

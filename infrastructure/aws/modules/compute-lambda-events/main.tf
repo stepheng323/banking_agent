@@ -10,6 +10,11 @@ locals {
       timeout = 90
       memory  = 2048
     }
+    "scheduler-dispatcher" = {
+      handler = "apps.core.src.lambda_handlers.scheduler_dispatcher_handler.handler"
+      timeout = 60
+      memory  = 1024
+    }
   }
 
   queue_worker_map = {
@@ -127,7 +132,7 @@ resource "aws_lambda_function" "workers" {
   function_name                  = "${var.project_name}-${each.key}-${var.environment}"
   role                           = aws_iam_role.lambda_worker_role.arn
   package_type                   = "Image"
-  image_uri                      = var.worker_lambda_image_urls[each.key]
+  image_uri                      = lookup(var.worker_lambda_image_urls, each.key, var.worker_lambda_image_urls["transaction-worker"])
   timeout                        = each.value.timeout
   memory_size                    = each.value.memory
   publish                        = true
@@ -153,6 +158,31 @@ resource "aws_lambda_function" "workers" {
   }
 
   depends_on = [aws_cloudwatch_log_group.workers]
+}
+
+resource "aws_cloudwatch_event_rule" "schedule_dispatcher" {
+  count = var.enable_schedule_dispatcher ? 1 : 0
+
+  name                = "${var.project_name}-scheduler-dispatch-${var.environment}"
+  schedule_expression = var.schedule_dispatch_expression
+}
+
+resource "aws_cloudwatch_event_target" "schedule_dispatcher" {
+  count = var.enable_schedule_dispatcher ? 1 : 0
+
+  rule      = aws_cloudwatch_event_rule.schedule_dispatcher[0].name
+  target_id = "scheduler-dispatcher"
+  arn       = aws_lambda_function.workers["scheduler-dispatcher"].arn
+}
+
+resource "aws_lambda_permission" "allow_eventbridge_schedule_dispatcher" {
+  count = var.enable_schedule_dispatcher ? 1 : 0
+
+  statement_id  = "AllowExecutionFromEventBridgeSchedulerDispatcher"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.workers["scheduler-dispatcher"].function_name
+  principal     = "events.amazonaws.com"
+  source_arn    = aws_cloudwatch_event_rule.schedule_dispatcher[0].arn
 }
 
 resource "aws_lambda_event_source_mapping" "async_queue_mappings" {

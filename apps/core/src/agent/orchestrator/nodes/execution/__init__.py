@@ -179,6 +179,30 @@ def _recipient_prompt_label(task_payload: dict[str, Any]) -> str | None:
     )
 
 
+def _strip_batch_name_mismatch_warning(summary: str, task_payload: dict[str, Any]) -> str:
+    """Remove verbose name-mismatch warning from batch confirmations while preserving the core summary."""
+    warning = task_payload.get("name_mismatch_warning")
+    if not isinstance(warning, str) or not warning.strip():
+        return summary
+
+    cleaned = summary.strip()
+    warning_text = warning.strip()
+    if not cleaned:
+        return ""
+
+    if cleaned == warning_text:
+        return ""
+
+    for pattern in (f"{warning_text}\n\n", f"{warning_text}\n"):
+        if cleaned.startswith(pattern):
+            return cleaned[len(pattern) :].strip()
+
+    if cleaned.startswith(warning_text):
+        return cleaned[len(warning_text) :].lstrip("\n").strip()
+
+    return cleaned
+
+
 def _build_planning_signature(task_payload: dict[str, Any]) -> dict[str, Any]:
     explicit_split_raw = task_payload.get("explicit_split")
     explicit_split = explicit_split_raw if isinstance(explicit_split_raw, dict) else {}
@@ -820,7 +844,10 @@ async def advance_wave(state: OrchestratorState, config: RunnableConfig) -> dict
                 )
 
             if s := t_payload.get("summary"):
-                summaries.append(s)
+                if isinstance(s, str):
+                    cleaned_summary = _strip_batch_name_mismatch_warning(s, task.payload)
+                    if cleaned_summary:
+                        summaries.append(cleaned_summary)
 
         if len(confirm_task_ids) == 1:
             single_task = state.tasks[confirm_task_ids[0]]

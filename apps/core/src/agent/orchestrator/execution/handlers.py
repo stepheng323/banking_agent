@@ -181,8 +181,8 @@ def _handle_transaction_outcome(
     default_error: str | None,
 ) -> None:
     if result.outcome == TransactionOutcome.OK:
+        task.stage = TaskStage.COMPLETED
         if result.receipt:
-            task.stage = TaskStage.COMPLETED
             task.payload["receipt"] = result.receipt
 
     elif result.outcome == TransactionOutcome.NEEDS_INPUT:
@@ -276,6 +276,8 @@ async def handle_transfer_task(task: Any, task_id: str, ctx: ExecutionContext) -
 
     context_data = {
         "phone_number": ctx.state.phone_number,
+        "channel": ctx.state.channel,
+        "channel_identity": ctx.state.channel_identity,
         "user_id": ctx.state.loaded_context.get("user_id"),
         "accounts": ctx.state.loaded_context.get("accounts", []),
         "beneficiaries": beneficiaries,
@@ -302,6 +304,8 @@ async def handle_transfer_task(task: Any, task_id: str, ctx: ExecutionContext) -
     )
 
     _apply_result_patch(task, result)
+    if result.response:
+        ctx.agg.say(result.response)
 
     if result.outcome == TransactionOutcome.OK and result.receipt:
         logger.info("transfer_worker_ok_branch", has_receipt=bool(result.receipt))

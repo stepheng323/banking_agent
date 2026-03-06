@@ -49,6 +49,7 @@ def setup_transaction_worker_consumers() -> tuple[
         direct_debit_provider=direct_debit_provider,
         account_repo=account_repository,
         transaction_repo=transaction_repository,
+        publisher=queue_publisher,
     )
     data_executor = DataExecutor(
         bill_provider=bill_provider,

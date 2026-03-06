@@ -98,3 +98,15 @@ variable "log_retention_in_days" {
   type        = number
   default     = 7
 }
+
+variable "enable_schedule_dispatcher" {
+  description = "Whether to enable periodic schedule dispatcher lambda and EventBridge trigger."
+  type        = bool
+  default     = true
+}
+
+variable "schedule_dispatch_expression" {
+  description = "EventBridge schedule expression for the dispatcher."
+  type        = string
+  default     = "rate(1 minute)"
+}

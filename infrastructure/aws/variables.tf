@@ -188,6 +188,42 @@ variable "enable_channel_option_ux_v2" {
   default     = "false"
 }
 
+variable "enable_transfer_scheduling" {
+  description = "Feature flag for transfer scheduling actions"
+  type        = string
+  default     = "true"
+}
+
+variable "schedule_dispatcher_batch_size" {
+  description = "Batch size for one scheduler dispatch tick."
+  type        = string
+  default     = "25"
+}
+
+variable "schedule_max_due_per_tick" {
+  description = "Max due schedules to process per dispatcher tick."
+  type        = string
+  default     = "25"
+}
+
+variable "schedule_retry_delay_minutes" {
+  description = "Retry delay (minutes) for failed scheduled runs."
+  type        = string
+  default     = "1"
+}
+
+variable "enable_schedule_dispatcher" {
+  description = "Enable EventBridge-driven schedule dispatcher lambda."
+  type        = bool
+  default     = true
+}
+
+variable "schedule_dispatch_expression" {
+  description = "EventBridge schedule expression for dispatcher."
+  type        = string
+  default     = "rate(1 minute)"
+}
+
 variable "lambda_log_retention_in_days" {
   description = "Retention period for Lambda log groups."
   type        = number
