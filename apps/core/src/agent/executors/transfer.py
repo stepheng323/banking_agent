@@ -33,7 +33,17 @@ class TransferExecutor:
         self.account_repo = account_repo
         self.transaction_repo = transaction_repo
         self.publisher = publisher
-        self.delivery_service = delivery_service or DeliveryService()
+        self.delivery_service = delivery_service
+
+    def _resolve_delivery_service(self) -> DeliveryService | None:
+        if self.delivery_service is not None:
+            return self.delivery_service
+        try:
+            self.delivery_service = DeliveryService()
+            return self.delivery_service
+        except Exception as exc:
+            logger.warning("delivery_service_unavailable", error=str(exc))
+            return None
 
     @staticmethod
     def _scheduled_meta(data: dict[str, Any]) -> dict[str, Any]:
@@ -82,8 +92,11 @@ class TransferExecutor:
         outbox_phone = str(data.get("channel_identity") or data.get("phone_number") or "")
         if not outbox_phone:
             return
+        delivery = self._resolve_delivery_service()
+        if not delivery:
+            return
         try:
-            await self.delivery_service.deliver_text(
+            await delivery.deliver_text(
                 phone_number=outbox_phone,
                 channel=channel,
                 text=f"Scheduled transfer failed: {error_message}",
