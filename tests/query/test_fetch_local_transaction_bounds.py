@@ -5,7 +5,13 @@ from typing import Any
 import pytest
 
 from apps.core.src.agent.graphs.query.handlers.transactions import handle_transaction_list
-from apps.core.src.agent.graphs.query.models import Filters, NormalizedQuery, QueryIntent, TimeRange
+from apps.core.src.agent.graphs.query.models import (
+    Filters,
+    NormalizedQuery,
+    QueryExecutionContract,
+    QueryIntent,
+    TimeRange,
+)
 from apps.core.src.agent.graphs.query.services.formatter import QueryFormatter
 
 
@@ -82,7 +88,7 @@ async def test_local_rows_are_filtered_by_lagos_date_window(monkeypatch: pytest.
 
     result = await handle_transaction_list(
         _Provider(),  # type: ignore[arg-type]
-        _query_for_today(query_day),
+        QueryExecutionContract.from_normalized_query(_query_for_today(query_day)),
         account_id="acc_1",
         account_ids=["acc_1"],
         user_id="user_1",
@@ -111,7 +117,7 @@ async def test_today_query_with_only_out_of_window_local_rows_returns_no_results
     query = _query_for_today(query_day)
     result = await handle_transaction_list(
         _Provider(),  # type: ignore[arg-type]
-        query,
+        QueryExecutionContract.from_normalized_query(query),
         account_id="acc_1",
         account_ids=["acc_1"],
         user_id="user_1",
@@ -120,4 +126,3 @@ async def test_today_query_with_only_out_of_window_local_rows_returns_no_results
     result.query_snapshot = query
 
     assert QueryFormatter.format(result, locale="en") == "No debit transactions found today."
-

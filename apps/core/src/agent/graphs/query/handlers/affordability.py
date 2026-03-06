@@ -2,20 +2,21 @@
 
 from typing import Any
 
-from apps.core.src.agent.graphs.query.models import NormalizedQuery, QueryResult
+from apps.core.src.agent.graphs.query.models import QueryExecutionContract, QueryResult
 from shared.clients.abstractions.banking import BankDataProvider
 from shared.i18n import render_message
 
 
 async def handle_affordability(
     provider: BankDataProvider,
-    query: NormalizedQuery,
+    contract: QueryExecutionContract,
     account_id: str,
     account_ids: list[str],
     **kwargs: Any,
 ) -> QueryResult:
     """Handle affordability queries."""
     language = kwargs.get("language", "en")
+    query = contract.normalized_query
 
     # Get balance
     balance = await provider.get_balance(account_id, real_time=True)

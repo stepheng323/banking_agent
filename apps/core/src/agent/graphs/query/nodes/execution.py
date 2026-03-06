@@ -4,6 +4,7 @@ from typing import Any
 
 from apps.core.src.agent.graphs.query.actions import handle_drill_down
 from apps.core.src.agent.graphs.query.executor import QueryExecutor
+from apps.core.src.agent.graphs.query.models import QueryExecutionContract
 from apps.core.src.agent.graphs.query.pipeline import QueryStep
 from apps.core.src.agent.graphs.query.services.formatter import QueryFormatter
 from apps.core.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
@@ -26,11 +27,9 @@ class ExecutionStep(QueryStep):
             return TransactionResult(outcome=TransactionOutcome.OK, patch={})
         locale = LocaleManager.normalize(state.get("language")).value
 
-        query = state.get("query")
-        if isinstance(query, dict):
-            from apps.core.src.agent.graphs.query.models import NormalizedQuery
-
-            query = NormalizedQuery.model_validate(query)
+        query_contract = state.get("query_contract")
+        if isinstance(query_contract, dict):
+            query_contract = QueryExecutionContract.model_validate(query_contract)
 
         account_id = state.get("account_id")
         account_ids_raw = state.get("account_ids")
@@ -71,7 +70,7 @@ class ExecutionStep(QueryStep):
         if "selected_item_index" in state and state.get("query_session"):
             return await handle_drill_down(state)
 
-        if not query or not account_id:
+        if not query_contract or not account_id:
             return TransactionResult(
                 outcome=TransactionOutcome.FAILED,
                 error=render_message("query.error.missing_params", locale),
@@ -81,7 +80,7 @@ class ExecutionStep(QueryStep):
         resolved_account_id = str(account_id)
 
         result = await executor.execute(
-            query=query,
+            query=query_contract,
             account_id=resolved_account_id,
             account_ids=account_ids,
             accounts_info=accounts_info,
@@ -110,10 +109,10 @@ class ExecutionStep(QueryStep):
             response=formatted_response,
             patch={
                 "query_result": result,
+                "query_contract": query_contract,
                 "surface": result.surface,  # Persist surface state
                 "session_active": True,
                 "flow_state": "complete",
-                "last_successful_query": query,
                 "cached_transactions": result.cached_transactions,
                 "cache_fetched_at": result.cache_fetched_at,
                 "cache_fingerprint": result.cache_fingerprint,

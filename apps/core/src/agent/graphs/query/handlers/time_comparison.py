@@ -8,7 +8,8 @@ from datetime import timedelta
 from typing import Any
 
 from apps.core.src.agent.graphs.query.models import (
-    NormalizedQuery,
+    ComparisonDirective,
+    QueryExecutionContract,
     QueryResult,
     QueryResultItem,
     TimeRange,
@@ -20,7 +21,7 @@ from shared.i18n import render_message
 
 async def handle_time_comparison(
     provider: BankDataProvider,
-    query: NormalizedQuery,
+    contract: QueryExecutionContract,
     account_id: str,
     account_ids: list[str],
     accounts_info: list[dict] | None = None,
@@ -30,12 +31,13 @@ async def handle_time_comparison(
     language: str = "en",
 ) -> QueryResult:
     """Handle time comparison queries (this month vs last month, etc.)."""
+    query = contract.normalized_query
     if not query.time_range:
         return QueryResult(summary_text=render_message("query.time_comparison.prompt_specify_period", language))
 
     # Get current period data
     current_period = query.time_range
-    comparison_period = _get_comparison_period(current_period)
+    comparison_period = _get_comparison_period(current_period, directive=contract.comparison)
 
     # Create a modified query for the comparison period
     comparison_query = query.model_copy(update={"time_range": comparison_period})
@@ -144,8 +146,31 @@ async def handle_time_comparison(
     )
 
 
-def _get_comparison_period(current: TimeRange) -> TimeRange:
-    """Calculate the comparison period (same duration, earlier timeframe)."""
+def _safe_shift_year(day: TimeRange, years_back: int = 1) -> TimeRange:
+    """Shift a range backwards by years with leap-day safety."""
+    try:
+        return TimeRange(
+            start=day.start.replace(year=day.start.year - years_back),
+            end=day.end.replace(year=day.end.year - years_back),
+            granularity=day.granularity,
+        )
+    except ValueError:
+        # Handle leap-day and similar edge-cases by clamping to previous day.
+        return TimeRange(
+            start=(day.start - timedelta(days=1)).replace(year=day.start.year - years_back),
+            end=(day.end - timedelta(days=1)).replace(year=day.end.year - years_back),
+            granularity=day.granularity,
+        )
+
+
+def _get_comparison_period(current: TimeRange, directive: ComparisonDirective | None = None) -> TimeRange:
+    """Calculate comparison period from the contract directive."""
+    if directive and directive.mode == "explicit_range" and directive.explicit_range:
+        return directive.explicit_range
+    if directive and directive.mode == "year_ago":
+        return _safe_shift_year(current, years_back=1)
+
+    # Default: same duration, immediately previous timeframe.
     duration = (current.end - current.start).days + 1
 
     # Shift back by the same duration

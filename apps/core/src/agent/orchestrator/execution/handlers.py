@@ -612,7 +612,7 @@ async def handle_query_task(task: Any, task_id: str, ctx: ExecutionContext) -> N
     )
 
     _apply_result_patch(task, result)
-    if result.patch and isinstance(result.patch, dict) and result.patch.get("restored_from_stashed_query_session"):
+    if ctx.state.stashed_query_session is not None:
         ctx.agg.updates["stashed_query_session"] = None
     handoff_payload = None
     if result.patch and isinstance(result.patch, dict):

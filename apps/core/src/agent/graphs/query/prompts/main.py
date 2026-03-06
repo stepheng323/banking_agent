@@ -46,6 +46,13 @@ AGGREGATION RULES
 - time_comparison → aggregation.type = sum unless user implies otherwise
 - transaction_list / single_transaction → no aggregation
 
+COMPARISON DIRECTIVE (for time_comparison intent)
+- Populate `comparison` when intent=time_comparison:
+  - default: mode="previous_equivalent" (same duration immediately before the current period)
+  - "same period last year", "year ago", "vs last year" -> mode="year_ago"
+  - explicit second period ("vs last month", "compared to last week") -> mode="explicit_period", set `period`
+- If user does not specify a second period, keep mode="previous_equivalent".
+
 RESULT LIMIT
 - If user asks for "last/latest/most recent" N transactions/transfers/payments, set result_limit = N.
 - If singular ("last transaction", "most recent transfer"), set result_limit = 1.

@@ -1,5 +1,6 @@
-"""Query parsing service - extracts NormalizedQuery from natural language."""
+"""Query parsing service - extracts QueryIR/QueryExecutionContract from natural language."""
 
+from calendar import monthrange
 from datetime import date, timedelta
 from typing import Any, Literal, cast
 
@@ -10,9 +11,12 @@ from apps.core.src.agent.graphs.query.capabilities import (
 )
 from apps.core.src.agent.graphs.query.models import (
     Aggregation,
+    ComparisonDirective,
     NormalizedQuery,
+    QueryExecutionContract,
     QueryExtractionResult,
     QueryIntent,
+    QueryIR,
     QueryParseResult,
     ResolverOutcome,
     TimeRange,
@@ -28,7 +32,7 @@ logger = get_logger(__name__)
 
 
 class QueryParser:
-    """Parse natural language financial questions into NormalizedQuery."""
+    """Parse natural language financial questions into QueryExecutionContract."""
 
     def __init__(self, llm: Runnable):
         self.llm = llm
@@ -49,10 +53,6 @@ class QueryParser:
         Returns:
             QueryParseResult with outcome and extraction details
         """
-        from apps.core.src.agent.graphs.query.models import (
-            QueryParseResult,
-        )
-
         prompt = QUERY_PARSER_PROMPT.format(
             today=today.isoformat(),
             question=question,
@@ -97,9 +97,18 @@ class QueryParser:
                     )
                 )
 
+            query_ir = self.build_query_ir_from_extraction(
+                decision.extraction,
+                today=today,
+                language=language,
+            )
+            query_contract = self.build_execution_contract_from_ir(query_ir)
+
             return QueryParseResult(
                 outcome=outcome,
                 extraction=decision.extraction,
+                query_ir=query_ir.model_dump(),
+                query_contract=query_contract.model_dump(),
                 resolver_message=message,
                 notices=notices,
                 patch={},
@@ -152,6 +161,120 @@ class QueryParser:
         )
         return spend_cue or receive_cue
 
+    @staticmethod
+    def _has_targeted_comparison_cue(raw_query: str) -> bool:
+        query_lower = raw_query.lower()
+        comparison_terms = (" vs ", " versus ", " compared to ", " compare ", " comparison ", " difference ")
+        return any(term in f" {query_lower} " for term in comparison_terms)
+
+    def build_query_ir_from_extraction(
+        self,
+        extraction: "QueryExtractionResult",
+        *,
+        today: date | None = None,
+        language: str = "en",
+        continuation_type: str | None = None,
+        continuation_delta_type: str | None = None,
+    ) -> QueryIR:
+        """Compile LLM extraction into the intermediate query representation."""
+        normalized = self.convert_to_normalized(extraction, today=today)
+        base_today = today or lagos_today()
+        if normalized.time_range is None:
+            normalized.time_range = TimeRange(start=base_today - timedelta(days=30), end=base_today, granularity="day")
+
+        comparison = self._build_comparison_directive(
+            extraction,
+            intent=normalized.intent,
+            current_range=normalized.time_range,
+            today=base_today,
+        )
+
+        return QueryIR(
+            intent=normalized.intent,
+            raw_query=extraction.raw_query,
+            language=language,
+            timezone="Africa/Lagos",
+            time_range=normalized.time_range,
+            filters=normalized.filters,
+            aggregation=normalized.aggregation,
+            accounts_scope=normalized.accounts_scope,
+            account_name=normalized.account_name,
+            amount_check=normalized.amount_check,
+            item_name=normalized.item_name,
+            analysis_type=normalized.analysis_type,
+            result_limit=normalized.result_limit,
+            result_reference=normalized.result_reference,
+            comparison=comparison,
+            continuation_type=continuation_type,
+            continuation_delta_type=continuation_delta_type,
+        )
+
+    @staticmethod
+    def _resolve_period_to_range(period: str, *, today: date) -> TimeRange | None:
+        token = period.strip().lower().replace("-", "_").replace(" ", "_")
+        if token in {"today"}:
+            return TimeRange(start=today, end=today, granularity="day")
+        if token in {"yesterday"}:
+            day = today - timedelta(days=1)
+            return TimeRange(start=day, end=day, granularity="day")
+        if token in {"this_week", "week", "current_week"}:
+            week_start = today - timedelta(days=today.weekday())
+            return TimeRange(start=week_start, end=today, granularity="week")
+        if token in {"last_week", "previous_week"}:
+            this_week_start = today - timedelta(days=today.weekday())
+            week_end = this_week_start - timedelta(days=1)
+            week_start = week_end - timedelta(days=6)
+            return TimeRange(start=week_start, end=week_end, granularity="week")
+        if token in {"this_month", "current_month", "month"}:
+            month_start = date(today.year, today.month, 1)
+            return TimeRange(start=month_start, end=today, granularity="month")
+        if token in {"last_month", "previous_month"}:
+            year = today.year
+            month = today.month - 1
+            if month == 0:
+                month = 12
+                year -= 1
+            last_day = monthrange(year, month)[1]
+            return TimeRange(start=date(year, month, 1), end=date(year, month, last_day), granularity="month")
+        if token in {"this_year", "current_year", "year"}:
+            return TimeRange(start=date(today.year, 1, 1), end=today, granularity="month")
+        if token in {"last_year", "previous_year"}:
+            year = today.year - 1
+            return TimeRange(start=date(year, 1, 1), end=date(year, 12, 31), granularity="month")
+        return None
+
+    def _build_comparison_directive(
+        self,
+        extraction: "QueryExtractionResult",
+        *,
+        intent: QueryIntent,
+        current_range: TimeRange,
+        today: date,
+    ) -> ComparisonDirective | None:
+        if intent != QueryIntent.TIME_COMPARISON:
+            return None
+
+        comparison = extraction.comparison
+        if comparison is None:
+            return ComparisonDirective(mode="previous_equivalent")
+
+        if comparison.mode == "year_ago":
+            return ComparisonDirective(mode="year_ago")
+
+        if comparison.mode == "explicit_period" and comparison.period:
+            explicit_range = self._resolve_period_to_range(comparison.period, today=today)
+            if explicit_range is not None:
+                return ComparisonDirective(mode="explicit_range", explicit_range=explicit_range)
+            # Invalid explicit period falls back deterministically.
+            return ComparisonDirective(mode="previous_equivalent")
+
+        # Keep a deterministic default for underspecified comparison directives.
+        return ComparisonDirective(mode="previous_equivalent")
+
+    def build_execution_contract_from_ir(self, query_ir: QueryIR) -> QueryExecutionContract:
+        """Compile runtime contract from QueryIR."""
+        return QueryExecutionContract.from_query_ir(query_ir)
+
     def convert_to_normalized(
         self,
         extraction: "QueryExtractionResult",
@@ -172,6 +295,12 @@ class QueryParser:
             and self._has_targeted_aggregate_spend_or_receive_cue(extraction.raw_query)
         ):
             effective_intent = ExtractionIntent.SPENDING_TOTAL
+        elif (
+            extraction.intent != ExtractionIntent.TIME_COMPARISON
+            and extraction.raw_query
+            and self._has_targeted_comparison_cue(extraction.raw_query)
+        ):
+            effective_intent = ExtractionIntent.TIME_COMPARISON
 
         result_limit = extraction.result_limit
         if effective_intent == ExtractionIntent.SINGLE_TRANSACTION:

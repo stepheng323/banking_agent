@@ -1422,7 +1422,7 @@ async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[s
     ):
         stash_keys = (
             "session_active",
-            "query",
+            "query_contract",
             "query_result",
             "surface",
             "show_expanded",

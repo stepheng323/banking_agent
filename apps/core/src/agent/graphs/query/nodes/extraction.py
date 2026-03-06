@@ -7,6 +7,7 @@ from langchain_core.runnables import Runnable
 
 from apps.core.src.agent.graphs.query.models import (
     NormalizedQuery,
+    QueryExecutionContract,
     QueryResultItem,
     ResolverOutcome,
     ResultSurface,
@@ -36,6 +37,17 @@ class ExtractionStep(QueryStep):
     def __init__(self, llm: Runnable):
         self.parser = QueryParser(llm)
         self.classifier = ContinuationClassifier(llm)
+
+    def _load_session_query_contract(self, session: dict[str, Any]) -> QueryExecutionContract | None:
+        raw_contract = session.get("query_contract")
+        if isinstance(raw_contract, QueryExecutionContract):
+            return raw_contract
+        if isinstance(raw_contract, dict):
+            try:
+                return QueryExecutionContract.model_validate(raw_contract)
+            except Exception:
+                return None
+        return None
 
     async def run(self, state: dict[str, Any], worker_context: Any = None) -> TransactionResult:
         """Run extraction logic."""
@@ -79,6 +91,7 @@ class ExtractionStep(QueryStep):
         message = state.get("message", "")
         today_state = state.get("today")
         today = today_state if isinstance(today_state, date) else lagos_today()
+        session_query_contract = self._load_session_query_contract(session)
 
         # Reconstruct items for context if available
         items = []
@@ -138,26 +151,24 @@ class ExtractionStep(QueryStep):
             updates["current_page"] = session.get("current_page", 0) + 1
 
         elif cont_type == "time_delta":
-            original_query = session.get("query")
+            original_query = session_query_contract.normalized_query if session_query_contract else None
             if original_query:
-                if isinstance(original_query, dict):
-                    original_query = NormalizedQuery.model_validate(original_query)
-
                 new_query = apply_time_delta(original_query, data["time_range"])
                 if "result_limit" in data:
                     new_query.result_limit = data["result_limit"]
                 if "result_reference" in data:
                     new_query.result_reference = data["result_reference"]
-                updates["query"] = new_query
+                updates["query_contract"] = QueryExecutionContract.from_normalized_query(
+                    new_query,
+                    continuation_type=cont_type,
+                    continuation_delta_type=data.get("delta_type"),
+                )
                 updates["current_page"] = 0
                 updates["show_expanded"] = False
 
         elif cont_type == "filter_delta":
-            original_query = session.get("query")
+            original_query = session_query_contract.normalized_query if session_query_contract else None
             if original_query:
-                if isinstance(original_query, dict):
-                    original_query = NormalizedQuery.model_validate(original_query)
-
                 delta_type = data.get("delta_type")
                 allow_limit = delta_type in (None, "limit", "reference")
                 allow_reference = delta_type in (None, "reference", "limit")
@@ -168,7 +179,11 @@ class ExtractionStep(QueryStep):
                     new_query.result_limit = data["result_limit"]
                 if "result_reference" in data and allow_reference:
                     new_query.result_reference = data["result_reference"]
-                updates["query"] = new_query
+                updates["query_contract"] = QueryExecutionContract.from_normalized_query(
+                    new_query,
+                    continuation_type=cont_type,
+                    continuation_delta_type=data.get("delta_type"),
+                )
                 updates["current_page"] = 0
                 updates["show_expanded"] = False
 
@@ -188,11 +203,8 @@ class ExtractionStep(QueryStep):
                     # Convert to filter_delta
                     from apps.core.src.agent.graphs.query.models import Filters
 
-                    original_query = session.get("query")
+                    original_query = session_query_contract.normalized_query if session_query_contract else None
                     if original_query:
-                        if isinstance(original_query, dict):
-                            original_query = NormalizedQuery.model_validate(original_query)
-
                         # Apply category filter
                         # Normalize category name (lowercase, handle 'Other' if needed)
                         cat_filter = category_name.lower()
@@ -212,7 +224,11 @@ class ExtractionStep(QueryStep):
                         # Setting aggregation to None will switch to Transaction List.
                         new_query.aggregation = None
 
-                        updates["query"] = new_query
+                        updates["query_contract"] = QueryExecutionContract.from_normalized_query(
+                            new_query,
+                            continuation_type=cont_type,
+                            continuation_delta_type=data.get("delta_type"),
+                        )
                         updates["current_page"] = 0
                         updates["show_expanded"] = False
 
@@ -227,14 +243,15 @@ class ExtractionStep(QueryStep):
             if recipient_name:
                 from apps.core.src.agent.graphs.query.models import Filters
 
-                original_query = session.get("query")
+                original_query = session_query_contract.normalized_query if session_query_contract else None
                 if original_query:
-                    if isinstance(original_query, dict):
-                        original_query = NormalizedQuery.model_validate(original_query)
-
                     new_filters = Filters(merchant=[recipient_name])
                     new_query = apply_filter_delta(original_query, new_filters)
-                    updates["query"] = new_query
+                    updates["query_contract"] = QueryExecutionContract.from_normalized_query(
+                        new_query,
+                        continuation_type=cont_type,
+                        continuation_delta_type=data.get("delta_type"),
+                    )
                     updates["current_page"] = 0
                     updates["show_expanded"] = False
 
@@ -292,8 +309,19 @@ class ExtractionStep(QueryStep):
                 "flow_state": "parsing",
             }
 
-        # Convert to NormalizedQuery
-        query = self.parser.convert_to_normalized(result.extraction, today=today)
+        query_contract = None
+        if isinstance(result.query_contract, dict):
+            try:
+                query_contract = QueryExecutionContract.model_validate(result.query_contract)
+            except Exception:
+                query_contract = None
+
+        if query_contract is None:
+            query_ir = self.parser.build_query_ir_from_extraction(result.extraction, today=today, language=language)
+            query_contract = self.parser.build_execution_contract_from_ir(query_ir)
+
+        # Derived legacy view for existing downstream formatters and compatibility.
+        query = query_contract.normalized_query
 
         # If this is a fresh parse with unspecified time, inherit prior active-session window.
         query_session = state.get("query_session")
@@ -302,11 +330,10 @@ class ExtractionStep(QueryStep):
             and query_session.get("session_active")
             and result.extraction.time_range.reference_type == TimeReference.UNSPECIFIED
         ):
-            previous_query = query_session.get("query")
+            previous_contract = self._load_session_query_contract(query_session)
+            previous_query = previous_contract.normalized_query if previous_contract else None
             if previous_query:
                 try:
-                    if isinstance(previous_query, dict):
-                        previous_query = NormalizedQuery.model_validate(previous_query)
                     if isinstance(previous_query, NormalizedQuery) and previous_query.time_range:
                         old_start = query.time_range.start.isoformat() if query.time_range else None
                         old_end = query.time_range.end.isoformat() if query.time_range else None
@@ -318,11 +345,12 @@ class ExtractionStep(QueryStep):
                             replaced_start=old_start,
                             replaced_end=old_end,
                         )
+                        query_contract = QueryExecutionContract.from_normalized_query(query)
                 except Exception as exc:
                     logger.warning("query_time_range_inheritance_failed", error=str(exc))
 
         return {
-            "query": query,
+            "query_contract": query_contract,
             "resolver_message": resolver_msg,
             "flow_state": "executing",
             "current_page": 0,

@@ -1,11 +1,11 @@
-"""Query executor - thin dispatch layer for normalized queries."""
+"""Query executor - thin dispatch layer for query execution contracts."""
 
 from collections.abc import Awaitable, Callable
 from typing import cast
 
 from apps.core.src.agent.graphs.__shared__.account_selection.service import find_account_by_bank_name
 from apps.core.src.agent.graphs.query.handlers import HANDLER_REGISTRY
-from apps.core.src.agent.graphs.query.models import NormalizedQuery, QueryIntent, QueryResult
+from apps.core.src.agent.graphs.query.models import QueryExecutionContract, QueryIntent, QueryResult
 from shared.clients.abstractions.banking import BankDataProvider
 from shared.i18n import render_message
 from shared.utils.logging import get_logger
@@ -26,7 +26,7 @@ class QueryExecutor:
 
     async def execute(
         self,
-        query: NormalizedQuery,
+        query: QueryExecutionContract,
         account_id: str,
         account_ids: list[str] | None = None,
         accounts_info: list[dict] | None = None,
@@ -39,10 +39,10 @@ class QueryExecutor:
         session_cache: dict[str, object] | None = None,
     ) -> QueryResult:
         """
-        Execute a normalized query.
+        Execute a query execution contract.
 
         Args:
-            query: The normalized query to execute
+            query: The query contract to execute
             account_id: Primary account ID
             account_ids: All account IDs for multi-account queries
             accounts_info: Account details for name resolution
@@ -106,7 +106,8 @@ class QueryExecutor:
                     user_id=user_id,  # Explicitly passing it
                     language=language,
                 )
-            result.query_snapshot = query
+            result.query_snapshot = query.normalized_query
+            result.query_contract = query
             return result
         except Exception as e:
             logger.error("query_execution_error", intent=query.intent, error=str(e))

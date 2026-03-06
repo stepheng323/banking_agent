@@ -92,6 +92,13 @@ class QueryAggregation(BaseModel):
     limit: int | None = Field(default=None, description="Max items (1 for singular, N for plural)")
 
 
+class QueryComparison(BaseModel):
+    """Structured comparison directive for time-comparison queries."""
+
+    mode: Literal["previous_equivalent", "year_ago", "explicit_period"] = Field(default="previous_equivalent")
+    period: str | None = Field(default=None, description="Explicit comparison period when mode=explicit_period")
+
+
 class QueryExtractionResult(BaseModel):
     """Pure query extraction with requested_capabilities."""
 
@@ -101,6 +108,7 @@ class QueryExtractionResult(BaseModel):
 
     filters: QueryFilters = Field(default_factory=QueryFilters)
     time_range: QueryTimeRange = Field(default_factory=QueryTimeRange)
+    comparison: QueryComparison | None = Field(default=None)
     aggregation: QueryAggregation | None = Field(default=None)
     result_limit: int | None = Field(default=None, ge=1, le=100, description="Max results to return")
     result_reference: Literal["latest", "oldest"] | None = Field(
@@ -134,6 +142,8 @@ class QueryParseResult(BaseModel):
 
     outcome: ResolverOutcome
     extraction: QueryExtractionResult | None = None
+    query_ir: dict[str, Any] | None = Field(default=None, description="Compiled query IR snapshot")
+    query_contract: dict[str, Any] | None = Field(default=None, description="Compiled execution contract snapshot")
     resolver_message: str | None = Field(default=None, description="Message to show user (e.g. clarification)")
     notices: list[str] = Field(default_factory=list, description="Infos like 'Clamped to 30 days'")
     patch: dict[str, Any] | None = Field(default=None, description="State updates")

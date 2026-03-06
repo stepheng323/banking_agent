@@ -5,7 +5,13 @@ from typing import Any
 import pytest
 
 from apps.core.src.agent.graphs.query.handlers.transactions import handle_transaction_list
-from apps.core.src.agent.graphs.query.models import Filters, NormalizedQuery, QueryIntent, TimeRange
+from apps.core.src.agent.graphs.query.models import (
+    Filters,
+    NormalizedQuery,
+    QueryExecutionContract,
+    QueryIntent,
+    TimeRange,
+)
 from apps.core.src.agent.graphs.query.services.fetch import build_cache_fingerprint
 
 
@@ -41,7 +47,7 @@ async def test_filter_delta_reuses_fresh_cached_transactions() -> None:
 
     result = await handle_transaction_list(
         provider,  # type: ignore[arg-type]
-        query,
+        QueryExecutionContract.from_normalized_query(query),
         "acc_1",
         ["acc_1"],
         continuation_type="filter_delta",
@@ -73,7 +79,7 @@ async def test_filter_delta_does_not_reuse_stale_cache() -> None:
 
     result = await handle_transaction_list(
         provider,  # type: ignore[arg-type]
-        query,
+        QueryExecutionContract.from_normalized_query(query),
         "acc_1",
         ["acc_1"],
         continuation_type="filter_delta",
@@ -101,7 +107,7 @@ async def test_time_delta_never_reuses_cache_even_when_fresh() -> None:
 
     result = await handle_transaction_list(
         provider,  # type: ignore[arg-type]
-        query,
+        QueryExecutionContract.from_normalized_query(query),
         "acc_1",
         ["acc_1"],
         continuation_type="filter_delta",

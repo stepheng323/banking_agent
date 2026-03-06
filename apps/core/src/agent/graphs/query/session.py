@@ -5,7 +5,7 @@ from typing import Any
 
 import redis.asyncio as redis
 
-from apps.core.src.agent.graphs.query.models import NormalizedQuery, QueryResult
+from apps.core.src.agent.graphs.query.models import QueryExecutionContract, QueryResult
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -33,12 +33,12 @@ class QuerySessionManager:
                 return None
             session: dict[str, Any] = loaded
 
-            if session.get("query") and isinstance(session["query"], dict):
+            if session.get("query_contract") and isinstance(session["query_contract"], dict):
                 try:
-                    session["query"] = NormalizedQuery.model_validate(session["query"])
+                    session["query_contract"] = QueryExecutionContract.model_validate(session["query_contract"])
                 except Exception as e:
-                    logger.warning("query_restore_error", error=str(e))
-                    session["query"] = None
+                    logger.warning("query_contract_restore_error", error=str(e))
+                    session["query_contract"] = None
 
             if session.get("query_result") and isinstance(session["query_result"], dict):
                 try:
@@ -86,12 +86,11 @@ class QuerySessionManager:
                 "cache_fingerprint",
                 "language",
                 "session_active",
-                "query",
+                "query_contract",
                 "query_result",
                 "pending_support_item",
                 "show_expanded",
                 "clarification_attempts",
-                "last_successful_query",
                 "confidence_level",
                 "recipient_name",
                 "filters",
@@ -100,7 +99,7 @@ class QuerySessionManager:
             for k, v in state.items():
                 if k not in allowed_keys:
                     continue
-                if k in ("query", "query_result", "surface") and v and hasattr(v, "model_dump"):
+                if k in ("query_contract", "query_result", "surface") and v and hasattr(v, "model_dump"):
                     save_state[k] = v.model_dump()
                 elif k == "cached_transactions" and v:
                     save_state[k] = [t.model_dump() if hasattr(t, "model_dump") else t for t in v]

@@ -29,9 +29,16 @@ class _RedisWithLiveQuerySession:
                     "session_active": True,
                     "current_page": 0,
                     "query_result": {"summary_text": "You spent ₦5,000 today."},
-                    "query": {
+                    "query_contract": {
                         "intent": "transaction_list",
-                        "time_range": {"start": "2026-03-04", "end": "2026-03-04", "granularity": "day"},
+                        "time_start": "2026-03-04",
+                        "time_end": "2026-03-04",
+                        "timezone": "Africa/Lagos",
+                        "normalized_query": {
+                            "intent": "transaction_list",
+                            "time_range": {"start": "2026-03-04", "end": "2026-03-04", "granularity": "day"},
+                            "accounts_scope": "all",
+                        },
                     },
                 }
             )
@@ -102,6 +109,7 @@ async def test_planner_stashes_live_query_session_when_switching_to_transfer() -
     assert isinstance(stashed, dict)
     assert stashed.get("session_active") is True
     assert isinstance(stashed.get("query_result"), dict)
+    assert isinstance(stashed.get("query_contract"), dict)
 
 
 @pytest.mark.asyncio

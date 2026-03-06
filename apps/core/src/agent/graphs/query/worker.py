@@ -11,6 +11,7 @@ from typing import Any, cast
 
 from langchain_core.runnables import Runnable
 
+from apps.core.src.agent.graphs.query.models import QueryExecutionContract
 from apps.core.src.agent.graphs.query.nodes.execution import ExecutionStep
 from apps.core.src.agent.graphs.query.nodes.extraction import ExtractionStep
 from apps.core.src.agent.graphs.query.pipeline import QueryPipeline
@@ -57,16 +58,35 @@ class QueryWorker:
         session_key = f"query:session:{phone_number}"
         query_session = await self.session_manager.load(session_key) or {}
         restored_from_stashed_query_session = False
+        if query_session and not query_session.get("query_contract"):
+            logger.warning("query_session_missing_contract_cleared")
+            await self.session_manager.clear(session_key)
+            query_session = {}
+
         if not query_session and isinstance(context.get("stashed_query_session"), dict):
-            query_session = dict(cast(dict[str, Any], context["stashed_query_session"]))
-            restored_from_stashed_query_session = True
+            stashed_query_session = dict(cast(dict[str, Any], context["stashed_query_session"]))
+            raw_contract = stashed_query_session.get("query_contract")
+            if raw_contract:
+                try:
+                    contract = (
+                        raw_contract
+                        if isinstance(raw_contract, QueryExecutionContract)
+                        else QueryExecutionContract.model_validate(raw_contract)
+                    )
+                    stashed_query_session["query_contract"] = contract.model_dump()
+                    query_session = stashed_query_session
+                    restored_from_stashed_query_session = True
+                except Exception:
+                    logger.warning("stashed_query_session_invalid_contract_ignored")
+            else:
+                logger.info("stashed_query_session_without_contract_ignored")
 
         today_context = context.get("today")
         today = today_context if isinstance(today_context, date) else lagos_today()
 
         # Merge key session fields into state so continuation steps have context.
         session_defaults = {
-            "query": query_session.get("query"),
+            "query_contract": query_session.get("query_contract"),
             "query_result": query_session.get("query_result"),
             "show_expanded": query_session.get("show_expanded"),
             "current_page": query_session.get("current_page"),

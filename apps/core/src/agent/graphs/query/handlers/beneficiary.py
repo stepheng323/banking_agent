@@ -5,7 +5,7 @@ from datetime import date
 from typing import Any
 
 from apps.core.src.agent.graphs.query.models import (
-    NormalizedQuery,
+    QueryExecutionContract,
     QueryResult,
     QueryResultItem,
     ResultSurface,
@@ -18,7 +18,7 @@ from shared.i18n import render_message
 
 async def handle_beneficiary_summary(
     provider: BankDataProvider,
-    query: NormalizedQuery,
+    contract: QueryExecutionContract,
     account_id: str,
     account_ids: list[str],
     accounts_info: list[dict] | None = None,
@@ -28,6 +28,7 @@ async def handle_beneficiary_summary(
     language: str = "en",
 ) -> QueryResult:
     """Handle beneficiary summary queries."""
+    query = contract.normalized_query
     transactions = await fetch_and_filter(
         provider,
         query,

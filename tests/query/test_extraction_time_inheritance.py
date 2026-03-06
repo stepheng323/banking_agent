@@ -5,6 +5,7 @@ import pytest
 from apps.core.src.agent.graphs.query.models import (
     ExtractionIntent,
     NormalizedQuery,
+    QueryExecutionContract,
     QueryExtractionResult,
     QueryIntent,
     QueryParseResult,
@@ -58,17 +59,22 @@ async def test_parse_new_query_inherits_time_range_for_unspecified_time() -> Non
         intent=QueryIntent.TRANSACTION_LIST,
         time_range=TimeRange(start=today, end=today),
     )
+    session_contract = QueryExecutionContract.from_normalized_query(session_query)
 
     updates = await step._parse_new_query(
         {
             "message": "show my transfers",
             "today": today,
             "language": "en",
-            "query_session": {"session_active": True, "query": session_query.model_dump()},
+            "query_session": {
+                "session_active": True,
+                "query": session_query.model_dump(),
+                "query_contract": session_contract.model_dump(),
+            },
         }
     )
 
-    query = updates["query"]
+    query = updates["query_contract"].normalized_query
     assert query.time_range is not None
     assert query.time_range.start == today
     assert query.time_range.end == today
@@ -104,17 +110,67 @@ async def test_parse_new_query_does_not_inherit_when_time_is_explicit() -> None:
         intent=QueryIntent.TRANSACTION_LIST,
         time_range=TimeRange(start=today, end=today),
     )
+    session_contract = QueryExecutionContract.from_normalized_query(session_query)
 
     updates = await step._parse_new_query(
         {
             "message": "show my transfers this month",
             "today": today,
             "language": "en",
-            "query_session": {"session_active": True, "query": session_query.model_dump()},
+            "query_session": {
+                "session_active": True,
+                "query": session_query.model_dump(),
+                "query_contract": session_contract.model_dump(),
+            },
         }
     )
 
-    query = updates["query"]
+    query = updates["query_contract"].normalized_query
     assert query.time_range is not None
     assert query.time_range.start == today - timedelta(days=7)
     assert query.time_range.end == today
+
+
+@pytest.mark.asyncio
+async def test_time_delta_follow_up_preserves_time_comparison_intent() -> None:
+    step = ExtractionStep(_DummyLLM())
+    today = date(2026, 3, 6)
+    session_query = NormalizedQuery(
+        intent=QueryIntent.TIME_COMPARISON,
+        time_range=TimeRange(start=today - timedelta(days=6), end=today),
+    )
+    session_contract = QueryExecutionContract.from_normalized_query(session_query)
+
+    async def _fake_classify(
+        message: str,
+        has_active_session: bool,
+        today: str,
+        items: list | None = None,
+        surface: object | None = None,
+        language: str = "en",
+    ) -> tuple[str, dict]:
+        del message, has_active_session, today, items, surface, language
+        return (
+            "time_delta",
+            {
+                "time_range": TimeRange(start=date(2026, 3, 5), end=date(2026, 3, 5)),
+                "delta_type": "time",
+                "confidence": 0.9,
+                "reason": "User asked for yesterday",
+            },
+        )
+
+    step.classifier.classify = _fake_classify  # type: ignore[method-assign]
+
+    updates = await step._handle_continuation(
+        {"message": "what about yesterday", "today": today, "language": "en"},
+        {
+            "session_active": True,
+            "query_contract": session_contract.model_dump(),
+            "query_result": {"items": []},
+        },
+    )
+
+    assert updates["flow_state"] == "executing"
+    assert updates["query_contract"].intent == QueryIntent.TIME_COMPARISON
+    assert updates["query_contract"].normalized_query.intent == QueryIntent.TIME_COMPARISON

@@ -6,6 +6,7 @@ from typing import Any
 
 from apps.core.src.agent.graphs.query.models import (
     NormalizedQuery,
+    QueryExecutionContract,
     QueryResult,
     QueryResultItem,
     ResultSurface,
@@ -23,7 +24,7 @@ from shared.i18n import render_message
 
 async def handle_analytics(
     provider: BankDataProvider,
-    query: NormalizedQuery,
+    contract: QueryExecutionContract,
     account_id: str,
     account_ids: list[str],
     accounts_info: list[dict] | None = None,
@@ -33,6 +34,7 @@ async def handle_analytics(
     language: str = "en",
 ) -> QueryResult:
     """Handle analytics summary queries."""
+    query = contract.normalized_query
     transactions = await fetch_and_filter(
         provider,
         query,
@@ -53,7 +55,7 @@ async def handle_analytics(
         count = len(transactions)
         if count == 0:
             tx_type = query.filters.transaction_type if query.filters else None
-            timeframe = _build_timeframe_suffix(query, language)
+            timeframe = _build_timeframe_suffix(contract, language)
             if tx_type == "credit":
                 return QueryResult(
                     summary_text=render_message("query.analytics.no_income", language, {"timeframe": timeframe})
@@ -68,7 +70,7 @@ async def handle_analytics(
         target_description = (
             render_message("query.analytics.target_merchant", language, {"merchant": merchant}) if merchant else ""
         )
-        timeframe = _build_timeframe_suffix(query, language)
+        timeframe = _build_timeframe_suffix(contract, language)
 
         items = [
             QueryResultItem(
@@ -112,7 +114,7 @@ async def handle_analytics(
             avg = sum(abs(t.get("amount", 0)) for t in transactions) / len(transactions)
             count = len(transactions)
 
-            timeframe = _build_timeframe_suffix(query, language)
+            timeframe = _build_timeframe_suffix(contract, language)
 
             items = [
                 QueryResultItem(
@@ -152,7 +154,7 @@ async def handle_analytics(
 
     elif agg_type == "count":
         count = len(transactions)
-        timeframe = _build_timeframe_suffix(query, language)
+        timeframe = _build_timeframe_suffix(contract, language)
 
         surface = ResultSurface(
             type=SurfaceType.SUMMARY,
@@ -175,7 +177,7 @@ async def handle_analytics(
 
         sorted_txns = sorted(transactions, key=lambda t: abs(t.get("amount", 0)), reverse=reverse_sort)
 
-        timeframe = _build_timeframe_suffix(query, language)
+        timeframe = _build_timeframe_suffix(contract, language)
 
         # Pagination for ranked surface:
         # Page 0: Uses 'limit' (e.g. 1)
@@ -283,26 +285,27 @@ async def handle_analytics(
     return QueryResult(summary_text=render_message("query.analytics.aggregation_completed", language))
 
 
-def _build_timeframe_suffix(query: NormalizedQuery, locale: str) -> str:
-    if query.time_range:
+def _build_timeframe_suffix(query: QueryExecutionContract, locale: str) -> str:
+    time_range = query.normalized_query.time_range
+    if time_range:
         today = lagos_today()
-        if query.time_range.start == query.time_range.end == today:
+        if time_range.start == time_range.end == today:
             return render_message("query.analytics.timeframe_today", locale)
         yesterday = today - timedelta(days=1)
-        if query.time_range.start == query.time_range.end == yesterday:
+        if time_range.start == time_range.end == yesterday:
             return render_message("query.analytics.timeframe_yesterday", locale)
-        if query.time_range.start == query.time_range.end:
+        if time_range.start == time_range.end:
             return render_message(
                 "query.analytics.timeframe_on_date",
                 locale,
-                {"date": query.time_range.start.strftime("%b %d")},
+                {"date": time_range.start.strftime("%b %d")},
             )
         return render_message(
             "query.analytics.timeframe_range",
             locale,
             {
-                "start": query.time_range.start.strftime("%b %d"),
-                "end": query.time_range.end.strftime("%b %d"),
+                "start": time_range.start.strftime("%b %d"),
+                "end": time_range.end.strftime("%b %d"),
             },
         )
     return render_message("query.analytics.timeframe_default", locale)

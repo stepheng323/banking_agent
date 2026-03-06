@@ -4,7 +4,7 @@ import time
 from typing import Any, cast
 
 from apps.core.src.agent.graphs.query.models import (
-    NormalizedQuery,
+    QueryExecutionContract,
     QueryIntent,
     QueryResult,
     QueryResultItem,
@@ -40,7 +40,7 @@ def _coerce_session_cache(session_cache: dict[str, Any] | None) -> tuple[list[di
 
 async def handle_transaction_list(
     provider: BankDataProvider,
-    query: NormalizedQuery,
+    contract: QueryExecutionContract,
     account_id: str,
     account_ids: list[str],
     accounts_info: list[dict] | None = None,
@@ -53,6 +53,7 @@ async def handle_transaction_list(
     session_cache: dict[str, Any] | None = None,
 ) -> QueryResult:
     """Handle transaction list queries."""
+    query = contract.normalized_query
     cache_fingerprint = build_cache_fingerprint(query, account_id, account_ids, user_id=user_id)
     cached_transactions, cache_fetched_at, cached_fingerprint = _coerce_session_cache(session_cache)
     cache_age_seconds = (time.time() - cache_fetched_at) if cache_fetched_at is not None else None
@@ -159,7 +160,7 @@ async def handle_transaction_list(
 
 async def handle_transaction_search(
     provider: BankDataProvider,
-    query: NormalizedQuery,
+    contract: QueryExecutionContract,
     account_id: str,
     account_ids: list[str],
     accounts_info: list[dict] | None = None,
@@ -174,7 +175,7 @@ async def handle_transaction_search(
     """Handle transaction search (same as list but with merchant filter)."""
     return await handle_transaction_list(
         provider,
-        query,
+        contract,
         account_id,
         account_ids,
         accounts_info,

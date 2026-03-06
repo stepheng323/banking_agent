@@ -52,9 +52,9 @@ class Aggregation(BaseModel):
 
 class NormalizedQuery(BaseModel):
     """
-    Canonical query structure - all LLM output compiles into this.
+    Legacy-compatible normalized query snapshot used by formatters/session continuity.
 
-    This is the single source of truth for query execution.
+    QueryExecutionContract is the runtime source of truth for execution.
     """
 
     intent: QueryIntent
@@ -74,6 +74,134 @@ class NormalizedQuery(BaseModel):
     result_reference: Literal["latest", "oldest"] | None = Field(
         default=None, description="Relative positioning for results when user asks for most recent/oldest"
     )
+
+
+class ComparisonDirective(BaseModel):
+    """Structured comparison behavior for time-comparison execution."""
+
+    mode: Literal["previous_equivalent", "year_ago", "explicit_range"] = Field(default="previous_equivalent")
+    explicit_range: TimeRange | None = None
+
+
+class QueryIR(BaseModel):
+    """LLM-facing interpretation model before runtime contract compilation."""
+
+    intent: QueryIntent
+    raw_query: str | None = None
+    language: str = "en"
+    timezone: str = "Africa/Lagos"
+    time_range: TimeRange
+    filters: Filters | None = None
+    aggregation: Aggregation | None = None
+    accounts_scope: Literal["single", "all"] = Field(default="all")
+    account_name: str | None = None
+    amount_check: float | None = None
+    item_name: str | None = None
+    analysis_type: Literal["immediate", "relative", "simulated", "remainder"] = "immediate"
+    result_limit: int | None = Field(default=None, ge=1, le=100)
+    result_reference: Literal["latest", "oldest"] | None = None
+    comparison: ComparisonDirective | None = None
+    continuation_type: str | None = None
+    continuation_delta_type: str | None = None
+
+    def to_normalized_query(self) -> NormalizedQuery:
+        """Build legacy-compatible NormalizedQuery view from IR."""
+        return NormalizedQuery(
+            intent=self.intent,
+            time_range=self.time_range,
+            filters=self.filters,
+            aggregation=self.aggregation,
+            accounts_scope=self.accounts_scope,
+            account_name=self.account_name,
+            amount_check=self.amount_check,
+            item_name=self.item_name,
+            analysis_type=self.analysis_type,
+            result_limit=self.result_limit,
+            result_reference=self.result_reference,
+        )
+
+
+class QueryExecutionContract(BaseModel):
+    """Runtime-facing contract consumed by query handlers."""
+
+    intent: QueryIntent
+    time_start: date
+    time_end: date
+    timezone: str = "Africa/Lagos"
+    filters: Filters | None = None
+    aggregation: Aggregation | None = None
+    accounts_scope: Literal["single", "all"] = Field(default="all")
+    account_name: str | None = None
+    amount_check: float | None = None
+    item_name: str | None = None
+    analysis_type: Literal["immediate", "relative", "simulated", "remainder"] = "immediate"
+    result_limit: int | None = Field(default=None, ge=1, le=100)
+    result_reference: Literal["latest", "oldest"] | None = None
+    comparison: ComparisonDirective | None = None
+    continuation_type: str | None = None
+    continuation_delta_type: str | None = None
+    normalized_query: NormalizedQuery
+
+    @classmethod
+    def from_query_ir(cls, ir: QueryIR) -> "QueryExecutionContract":
+        """Compile runtime contract from QueryIR."""
+        normalized = ir.to_normalized_query()
+        return cls(
+            intent=ir.intent,
+            time_start=ir.time_range.start,
+            time_end=ir.time_range.end,
+            timezone=ir.timezone,
+            filters=ir.filters,
+            aggregation=ir.aggregation,
+            accounts_scope=ir.accounts_scope,
+            account_name=ir.account_name,
+            amount_check=ir.amount_check,
+            item_name=ir.item_name,
+            analysis_type=ir.analysis_type,
+            result_limit=ir.result_limit,
+            result_reference=ir.result_reference,
+            comparison=ir.comparison,
+            continuation_type=ir.continuation_type,
+            continuation_delta_type=ir.continuation_delta_type,
+            normalized_query=normalized,
+        )
+
+    @classmethod
+    def from_normalized_query(
+        cls,
+        query: NormalizedQuery,
+        *,
+        timezone: str = "Africa/Lagos",
+        comparison: ComparisonDirective | None = None,
+        continuation_type: str | None = None,
+        continuation_delta_type: str | None = None,
+    ) -> "QueryExecutionContract":
+        """Build runtime contract from legacy NormalizedQuery."""
+        time_range = query.time_range
+        if time_range is None:
+            raise ValueError("NormalizedQuery.time_range is required for QueryExecutionContract")
+
+        ir = QueryIR(
+            intent=query.intent,
+            timezone=timezone,
+            time_range=time_range,
+            filters=query.filters,
+            aggregation=query.aggregation,
+            accounts_scope=query.accounts_scope,
+            account_name=query.account_name,
+            amount_check=query.amount_check,
+            item_name=query.item_name,
+            analysis_type=query.analysis_type,
+            result_limit=query.result_limit,
+            result_reference=query.result_reference,
+            comparison=comparison,
+            continuation_type=continuation_type,
+            continuation_delta_type=continuation_delta_type,
+        )
+        contract = cls.from_query_ir(ir)
+        # Preserve the exact input query snapshot for formatter/session compatibility.
+        contract.normalized_query = query
+        return contract
 
 
 class SurfaceType(str, Enum):
@@ -118,6 +246,7 @@ class QueryResult(BaseModel):
     context_key: str = Field(default_factory=lambda: f"qr:{uuid4()}")
     has_more: bool = False
     query_snapshot: NormalizedQuery | None = None  # For follow-up deltas
+    query_contract: QueryExecutionContract | None = None
     surface: ResultSurface | None = None  # UI/Interaction surface state
     cached_transactions: list[dict[str, Any]] | None = None
     cache_fetched_at: float | None = None

@@ -4,7 +4,14 @@ from typing import Any
 import pytest
 
 from apps.core.src.agent.graphs.query.handlers.analytics import handle_analytics
-from apps.core.src.agent.graphs.query.models import Aggregation, Filters, NormalizedQuery, QueryIntent, TimeRange
+from apps.core.src.agent.graphs.query.models import (
+    Aggregation,
+    Filters,
+    NormalizedQuery,
+    QueryExecutionContract,
+    QueryIntent,
+    TimeRange,
+)
 
 
 class _Provider:
@@ -30,11 +37,13 @@ async def test_analytics_sum_response_is_compact_and_human(monkeypatch: pytest.M
 
     result = await handle_analytics(
         _Provider(),  # type: ignore[arg-type]
-        NormalizedQuery(
-            intent=QueryIntent.ANALYTICS_SUMMARY,
-            aggregation=Aggregation(type="sum"),
-            filters=Filters(transaction_type="debit"),
-            time_range=TimeRange(start=date(2026, 3, 5), end=date(2026, 3, 5)),
+        QueryExecutionContract.from_normalized_query(
+            NormalizedQuery(
+                intent=QueryIntent.ANALYTICS_SUMMARY,
+                aggregation=Aggregation(type="sum"),
+                filters=Filters(transaction_type="debit"),
+                time_range=TimeRange(start=date(2026, 3, 5), end=date(2026, 3, 5)),
+            )
         ),
         account_id="acc_1",
         account_ids=["acc_1"],
@@ -58,11 +67,13 @@ async def test_analytics_sum_no_spending_today_is_humanized(monkeypatch: pytest.
 
     result = await handle_analytics(
         _Provider(),  # type: ignore[arg-type]
-        NormalizedQuery(
-            intent=QueryIntent.ANALYTICS_SUMMARY,
-            aggregation=Aggregation(type="sum"),
-            filters=Filters(transaction_type="debit"),
-            time_range=TimeRange(start=date(2026, 3, 6), end=date(2026, 3, 6)),
+        QueryExecutionContract.from_normalized_query(
+            NormalizedQuery(
+                intent=QueryIntent.ANALYTICS_SUMMARY,
+                aggregation=Aggregation(type="sum"),
+                filters=Filters(transaction_type="debit"),
+                time_range=TimeRange(start=date(2026, 3, 6), end=date(2026, 3, 6)),
+            )
         ),
         account_id="acc_1",
         account_ids=["acc_1"],
