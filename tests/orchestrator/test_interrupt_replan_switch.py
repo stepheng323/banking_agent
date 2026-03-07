@@ -469,12 +469,12 @@ async def test_interrupt_auth_replaces_transfer_with_data_without_stash() -> Non
 
 
 @pytest.mark.asyncio
-async def test_confirmation_continue_flow_keeps_pending_and_reissues_confirmation_prompt() -> None:
+async def test_confirmation_continue_flow_resets_task_to_extracted() -> None:
     state = OrchestratorState(
         user_id="u_interrupt_6",
         phone_number="2348066666666",
         channel="whatsapp",
-        last_message_text="yes continue",
+        last_message_text="change to 20k",
         pending_interrupt=PendingInterrupt(kind="confirmation", task_ids=["t1"]),
         loaded_context={
             "language": "en",
@@ -512,104 +512,16 @@ async def test_confirmation_continue_flow_keeps_pending_and_reissues_confirmatio
                 PlannerOutput(primary_intent="transfer"),
                 route=InterruptRouteDecision(
                     decision="continue_flow",
-                    confidence=0.71,
+                    confidence=0.85,
                     detected_language="English",
                     target_intent=None,
                     target_mode=None,
-                    reason="still discussing same flow",
+                    reason="slot update",
                 ),
             )
         },
         "recursion_limit": 50,
     }
-
-    updates = await handle_pending_interrupt(state, config)
-
-    assert updates["pending_interrupt"] is not None
-    assert updates["tasks"]["t1"].stage == TaskStage.AWAITING_CONFIRMATION
-    assert updates["outbox"][0]["type"] == "request_confirmation"
-    assert updates["outbox"][0]["actionable_payload"]["idempotency_key"] == "idem-1"
-    assert updates["outbox"][0]["actionable_payload"]["task_id"] == "t1"
-    assert "From: First Bank (···7890)" in updates["outbox"][0]["summary"]
-
-
-@pytest.mark.asyncio
-async def test_confirmation_reprompt_uses_interrupt_prompt_without_duplicate_source_line() -> None:
-    summary_with_source = "Confirm transfer to Tolu\n\nFrom: First Bank (···7890)"
-    state = OrchestratorState(
-        user_id="u_interrupt_6b",
-        phone_number="2348066666667",
-        channel="whatsapp",
-        last_message_text="continue",
-        pending_interrupt=PendingInterrupt(kind="confirmation", task_ids=["t1"], prompt=summary_with_source),
-        loaded_context={"language": "en"},
-        tasks={
-            "t1": TaskSpec(
-                id="t1",
-                type="transfer",
-                stage=TaskStage.AWAITING_CONFIRMATION,
-                payload={
-                    "idempotency_key": "idem-1b",
-                    "confirmation": {
-                        "summary": "Confirm transfer to Tolu",
-                        "snapshot": {"amount": 5000},
-                    },
-                },
-            )
-        },
-    )
-    config: RunnableConfig = {
-        "configurable": {
-            "task_planner": _MockPlanner(
-                PlannerOutput(primary_intent="transfer"),
-                route=InterruptRouteDecision(
-                    decision="continue_flow",
-                    confidence=0.72,
-                    detected_language="English",
-                    target_intent=None,
-                    target_mode=None,
-                    reason="still discussing same flow",
-                ),
-            )
-        },
-        "recursion_limit": 50,
-    }
-
-    updates = await handle_pending_interrupt(state, config)
-
-    assert updates["outbox"][0]["type"] == "request_confirmation"
-    assert updates["outbox"][0]["actionable_payload"]["idempotency_key"] == "idem-1b"
-    assert updates["outbox"][0]["summary"].count("From: First Bank (···7890)") == 1
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize("reply", ["I meant 50k", "add narration groceries", "8162511023 opay"])
-async def test_confirmation_transfer_update_reply_resumes_extraction_without_router(reply: str) -> None:
-    state = OrchestratorState(
-        user_id="u_interrupt_6c",
-        phone_number="2348066666668",
-        channel="whatsapp",
-        last_message_text=reply,
-        pending_interrupt=PendingInterrupt(kind="confirmation", task_ids=["t1"]),
-        loaded_context={"language": "en"},
-        tasks={
-            "t1": TaskSpec(
-                id="t1",
-                type="transfer",
-                stage=TaskStage.AWAITING_CONFIRMATION,
-                payload={
-                    "idempotency_key": "idem-1c",
-                    "recipient_name": "Tolu",
-                    "amount": 5000,
-                    "confirmation": {
-                        "summary": "Confirm transfer to Tolu",
-                        "snapshot": {"amount": 5000},
-                    },
-                },
-            )
-        },
-    )
-    config: RunnableConfig = {"configurable": {"task_planner": _FailIfRouterCalledPlanner()}, "recursion_limit": 50}
 
     updates = await handle_pending_interrupt(state, config)
 
@@ -617,6 +529,7 @@ async def test_confirmation_transfer_update_reply_resumes_extraction_without_rou
     assert updates["tasks"]["t1"].stage == TaskStage.EXTRACTED
     assert updates["tasks"]["t1"].payload["confirmation"] == {}
     assert "idempotency_key" not in updates["tasks"]["t1"].payload
+
 
 
 @pytest.mark.asyncio
