@@ -2,6 +2,7 @@ from datetime import date
 
 from apps.core.src.agent.graphs.query.models import (
     ExtractionIntent,
+    QueryAggregation,
     QueryExtractionResult,
     QueryIntent,
     QueryTimeRange,
@@ -106,3 +107,66 @@ def test_non_aggregate_spend_phrase_stays_transaction_list() -> None:
     normalized = parser.convert_to_normalized(extraction, today=today)
 
     assert normalized.intent == QueryIntent.TRANSACTION_LIST
+
+
+def test_spending_total_defaults_transaction_type_to_debit() -> None:
+    parser = QueryParser(_DummyLLM())
+    today = date(2026, 3, 6)
+    extraction = QueryExtractionResult(
+        intent=ExtractionIntent.SPENDING_TOTAL,
+        time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="today", days_back=0),
+        raw_query="how much did I spend today",
+    )
+
+    normalized = parser.convert_to_normalized(extraction, today=today)
+
+    assert normalized.filters is not None
+    assert normalized.filters.transaction_type == "debit"
+
+
+def test_credit_keywords_take_precedence_over_spending_keywords() -> None:
+    parser = QueryParser(_DummyLLM())
+    today = date(2026, 3, 6)
+    extraction = QueryExtractionResult(
+        intent=ExtractionIntent.SPENDING_TOTAL,
+        time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="today", days_back=0),
+        raw_query="how much salary did I receive and spend today",
+    )
+
+    normalized = parser.convert_to_normalized(extraction, today=today)
+
+    assert normalized.filters is not None
+    assert normalized.filters.transaction_type == "credit"
+
+
+def test_singular_largest_expense_defaults_limit_to_one() -> None:
+    parser = QueryParser(_DummyLLM())
+    today = date(2026, 3, 6)
+    extraction = QueryExtractionResult(
+        intent=ExtractionIntent.SPENDING_TOTAL,
+        time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="this_month", days_back=30),
+        raw_query="what is my largest expense this month",
+    )
+
+    normalized = parser.convert_to_normalized(extraction, today=today)
+
+    assert normalized.aggregation is not None
+    assert normalized.aggregation.type == "largest"
+    assert normalized.aggregation.limit == 1
+
+
+def test_singular_smallest_transaction_overrides_provided_limit() -> None:
+    parser = QueryParser(_DummyLLM())
+    today = date(2026, 3, 6)
+    extraction = QueryExtractionResult(
+        intent=ExtractionIntent.SPENDING_TOTAL,
+        time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="this_month", days_back=30),
+        aggregation=QueryAggregation(type="smallest", limit=7),
+        raw_query="show my smallest transaction this month",
+    )
+
+    normalized = parser.convert_to_normalized(extraction, today=today)
+
+    assert normalized.aggregation is not None
+    assert normalized.aggregation.type == "smallest"
+    assert normalized.aggregation.limit == 1

@@ -12,6 +12,8 @@ from apps.core.src.agent.graphs.query.capabilities import (
 from apps.core.src.agent.graphs.query.models import (
     Aggregation,
     ComparisonDirective,
+    ExtractionIntent,
+    Filters,
     NormalizedQuery,
     QueryExecutionContract,
     QueryExtractionResult,
@@ -275,6 +277,204 @@ class QueryParser:
         """Compile runtime contract from QueryIR."""
         return QueryExecutionContract.from_query_ir(query_ir)
 
+    def _resolve_effective_intent(self, extraction: "QueryExtractionResult") -> ExtractionIntent:
+        raw_query = extraction.raw_query or ""
+        if (
+            extraction.intent == ExtractionIntent.TRANSACTION_LIST
+            and raw_query
+            and self._has_targeted_aggregate_spend_or_receive_cue(raw_query)
+        ):
+            return ExtractionIntent.SPENDING_TOTAL
+
+        if (
+            extraction.intent != ExtractionIntent.TIME_COMPARISON
+            and raw_query
+            and self._has_targeted_comparison_cue(raw_query)
+        ):
+            return ExtractionIntent.TIME_COMPARISON
+
+        return extraction.intent
+
+    @staticmethod
+    def _resolve_result_limit(raw_limit: int | None, *, effective_intent: ExtractionIntent) -> int | None:
+        result_limit = raw_limit
+        if effective_intent == ExtractionIntent.SINGLE_TRANSACTION:
+            result_limit = result_limit or 1
+
+        if result_limit:
+            result_limit = min(result_limit, QUERY_LIMITS["max_results"])
+
+        return result_limit
+
+    @staticmethod
+    def _build_time_range(extraction: "QueryExtractionResult", *, today: date) -> TimeRange | None:
+        if not extraction.time_range:
+            return None
+
+        days_back = extraction.time_range.days_back
+        period_lower = (extraction.time_range.period or "").strip().lower()
+        if period_lower == "today":
+            days_back = 0
+        elif period_lower == "yesterday":
+            days_back = 1
+        if days_back is None:
+            days_back = 30
+        if extraction.time_range.reference_type == TimeReference.ALL_TIME:
+            days_back = QUERY_LIMITS["max_lookback_days"]
+        elif extraction.time_range.reference_type == TimeReference.UNSPECIFIED:
+            days_back = 30
+
+        range_start = today - timedelta(days=days_back)
+        range_end = today
+        if period_lower == "today":
+            range_start = today
+            range_end = today
+        elif period_lower == "yesterday":
+            yesterday = today - timedelta(days=1)
+            range_start = yesterday
+            range_end = yesterday
+
+        return TimeRange(start=range_start, end=range_end, granularity="day")
+
+    @staticmethod
+    def _infer_transaction_type(
+        *,
+        extracted_transaction_type: str | None,
+        raw_query: str | None,
+        effective_intent: ExtractionIntent,
+    ) -> Literal["credit", "debit"] | None:
+        transaction_type = (extracted_transaction_type or "").strip().lower() or None
+        if not transaction_type:
+            raw_lower = (raw_query or "").lower()
+            has_explicit_credit_intent = any(k in raw_lower for k in ("received", "credited", "income", "salary"))
+            if has_explicit_credit_intent:
+                transaction_type = "credit"
+
+            is_expense_query = not has_explicit_credit_intent and effective_intent in (
+                ExtractionIntent.SPENDING_TOTAL,
+                ExtractionIntent.CATEGORY_BREAKDOWN,
+            )
+
+            if not is_expense_query and raw_lower:
+                if any(k in raw_lower for k in ("spending", "expense", "spent", "cost", "paid")):
+                    is_expense_query = True
+
+            if is_expense_query:
+                transaction_type = "debit"
+
+        if transaction_type in {"credit", "debit"}:
+            return cast(Literal["credit", "debit"], transaction_type)
+        return None
+
+    def _build_filters(self, extraction: "QueryExtractionResult", *, effective_intent: ExtractionIntent) -> Filters | None:
+        if not extraction.filters:
+            return None
+
+        transaction_type = self._infer_transaction_type(
+            extracted_transaction_type=extraction.filters.transaction_type,
+            raw_query=extraction.raw_query,
+            effective_intent=effective_intent,
+        )
+
+        return Filters(
+            merchant=[extraction.filters.recipient] if extraction.filters.recipient else None,
+            category=[extraction.filters.category] if extraction.filters.category else None,
+            min_amount=extraction.filters.min_amount,
+            max_amount=extraction.filters.max_amount,
+            transaction_type=transaction_type,
+            account_filter=extraction.filters.bank,
+        )
+
+    @staticmethod
+    def _is_singular_superlative_query(raw_query: str | None, *, include_spending: bool) -> bool:
+        raw_lower = (raw_query or "").lower()
+        if not raw_lower:
+            return False
+
+        singular_plural_pairs = [("expense", "expenses"), ("transaction", "transactions")]
+        if include_spending:
+            singular_plural_pairs.append(("spending", "spendings"))
+
+        is_singular = any(singular in raw_lower and plural not in raw_lower for singular, plural in singular_plural_pairs)
+        return is_singular or " one" in raw_lower
+
+    @staticmethod
+    def _coerce_aggregation_type(agg_type: str) -> Literal["sum", "average", "count", "largest", "smallest", "breakdown"]:
+        return cast(
+            Literal["sum", "average", "count", "largest", "smallest", "breakdown"],
+            agg_type if agg_type in {"sum", "average", "count", "largest", "smallest", "breakdown"} else "sum",
+        )
+
+    @staticmethod
+    def _coerce_group_by(group_by: str | None) -> Literal["category", "merchant", "day", "account"] | None:
+        if group_by in {"category", "merchant", "day", "account"}:
+            return cast(Literal["category", "merchant", "day", "account"], group_by)
+        return None
+
+    def _build_aggregation_from_extracted(
+        self,
+        extraction: "QueryExtractionResult",
+        *,
+        effective_intent: ExtractionIntent,
+    ) -> Aggregation | None:
+        if not extraction.aggregation:
+            return None
+
+        agg_type = extraction.aggregation.type or "sum"
+        if effective_intent == ExtractionIntent.CATEGORY_BREAKDOWN and agg_type == "sum":
+            agg_type = "breakdown"
+
+        limit = extraction.aggregation.limit
+        if agg_type in ("largest", "smallest") and self._is_singular_superlative_query(
+            extraction.raw_query, include_spending=True
+        ):
+            limit = 1
+
+        aggregation = Aggregation(
+            type=self._coerce_aggregation_type(agg_type),
+            group_by=self._coerce_group_by(extraction.aggregation.group_by),
+            limit=limit or 5,
+        )
+        if agg_type == "breakdown" and not aggregation.group_by:
+            aggregation.group_by = "category"
+        return aggregation
+
+    def _build_default_aggregation(
+        self,
+        extraction: "QueryExtractionResult",
+        *,
+        effective_intent: ExtractionIntent,
+    ) -> Aggregation | None:
+        if effective_intent == ExtractionIntent.SPENDING_TOTAL:
+            agg_type = "sum"
+            limit = 5
+            raw_lower = (extraction.raw_query or "").lower()
+            if any(x in raw_lower for x in ("largest", "biggest", "highest", "top")):
+                agg_type = "largest"
+            elif any(x in raw_lower for x in ("smallest", "least", "lowest")):
+                agg_type = "smallest"
+
+            if self._is_singular_superlative_query(extraction.raw_query, include_spending=False):
+                limit = 1
+
+            return Aggregation(type=self._coerce_aggregation_type(agg_type), limit=limit)
+
+        if effective_intent == ExtractionIntent.CATEGORY_BREAKDOWN:
+            return Aggregation(type="breakdown", group_by="category")
+
+        return None
+
+    def _build_aggregation(
+        self,
+        extraction: "QueryExtractionResult",
+        *,
+        effective_intent: ExtractionIntent,
+    ) -> Aggregation | None:
+        extracted_aggregation = self._build_aggregation_from_extracted(extraction, effective_intent=effective_intent)
+        if extracted_aggregation is not None:
+            return extracted_aggregation
+        return self._build_default_aggregation(extraction, effective_intent=effective_intent)
+
     def convert_to_normalized(
         self,
         extraction: "QueryExtractionResult",
@@ -282,32 +482,9 @@ class QueryParser:
     ) -> NormalizedQuery:
         """Convert QueryExtractionResult to NormalizedQuery for handlers."""
 
-        from apps.core.src.agent.graphs.query.models import (
-            ExtractionIntent,
-        )
-
         today = today or lagos_today()
-
-        effective_intent = extraction.intent
-        if (
-            extraction.intent == ExtractionIntent.TRANSACTION_LIST
-            and extraction.raw_query
-            and self._has_targeted_aggregate_spend_or_receive_cue(extraction.raw_query)
-        ):
-            effective_intent = ExtractionIntent.SPENDING_TOTAL
-        elif (
-            extraction.intent != ExtractionIntent.TIME_COMPARISON
-            and extraction.raw_query
-            and self._has_targeted_comparison_cue(extraction.raw_query)
-        ):
-            effective_intent = ExtractionIntent.TIME_COMPARISON
-
-        result_limit = extraction.result_limit
-        if effective_intent == ExtractionIntent.SINGLE_TRANSACTION:
-            result_limit = result_limit or 1
-
-        if result_limit:
-            result_limit = min(result_limit, QUERY_LIMITS["max_results"])
+        effective_intent = self._resolve_effective_intent(extraction)
+        result_limit = self._resolve_result_limit(extraction.result_limit, effective_intent=effective_intent)
 
         intent_map = {
             ExtractionIntent.TRANSACTION_LIST: QueryIntent.TRANSACTION_LIST,
@@ -318,157 +495,9 @@ class QueryParser:
             ExtractionIntent.AFFORDABILITY: QueryIntent.AFFORDABILITY,
         }
 
-        time_range = None
-        if extraction.time_range:
-            days_back = extraction.time_range.days_back
-            period_lower = (extraction.time_range.period or "").strip().lower()
-            if period_lower == "today":
-                days_back = 0
-            elif period_lower == "yesterday":
-                days_back = 1
-            if days_back is None:
-                days_back = 30
-            if extraction.time_range.reference_type == TimeReference.ALL_TIME:
-                days_back = QUERY_LIMITS["max_lookback_days"]
-            elif extraction.time_range.reference_type == TimeReference.UNSPECIFIED:
-                days_back = 30
-
-            range_start = today - timedelta(days=days_back)
-            range_end = today
-            if period_lower == "today":
-                range_start = today
-                range_end = today
-            elif period_lower == "yesterday":
-                yesterday = today - timedelta(days=1)
-                range_start = yesterday
-                range_end = yesterday
-
-            time_range = TimeRange(
-                start=range_start,
-                end=range_end,
-                granularity="day",
-            )
-
-        filters = None
-        if extraction.filters:
-            from apps.core.src.agent.graphs.query.models import Filters
-
-            transaction_type = (extraction.filters.transaction_type or "").strip().lower() or None
-            if not transaction_type:
-                raw_lower = (extraction.raw_query or "").lower()
-                has_explicit_credit_intent = any(k in raw_lower for k in ("received", "credited", "income", "salary"))
-                if has_explicit_credit_intent:
-                    transaction_type = "credit"
-
-                # Force debit for specific intents OR if keywords are present
-                is_expense_query = not has_explicit_credit_intent and effective_intent in (
-                    ExtractionIntent.SPENDING_TOTAL,
-                    ExtractionIntent.CATEGORY_BREAKDOWN,
-                )
-
-                # Check for expense keywords in raw query if not already explicit
-                if not is_expense_query and raw_lower:
-                    if any(k in raw_lower for k in ("spending", "expense", "spent", "cost", "paid")):
-                        is_expense_query = True
-
-                if is_expense_query:
-                    transaction_type = "debit"
-
-            typed_transaction_type = (
-                cast(Literal["credit", "debit"], transaction_type) if transaction_type in {"credit", "debit"} else None
-            )
-
-            filters = Filters(
-                merchant=[extraction.filters.recipient] if extraction.filters.recipient else None,
-                category=[extraction.filters.category] if extraction.filters.category else None,
-                min_amount=extraction.filters.min_amount,
-                max_amount=extraction.filters.max_amount,
-                transaction_type=typed_transaction_type,
-                account_filter=extraction.filters.bank,
-            )
-
-        aggregation = None
-        if extraction.aggregation:
-            agg_type = extraction.aggregation.type or "sum"
-            # Enforce breakdown type if intent matches, correcting LLM 'sum' hallucination
-            if effective_intent == ExtractionIntent.CATEGORY_BREAKDOWN and agg_type == "sum":
-                agg_type = "breakdown"
-
-            # Validate limit
-            limit = extraction.aggregation.limit
-
-            # Programmatic fallback for singular superlatives if limit is missing or >1
-            if agg_type in ("largest", "smallest") and extraction.raw_query:
-                raw_lower = extraction.raw_query.lower()
-                # If singular "expense" or "transaction" appearing without "s" at end
-                # Heuristic: check if "expense" is present but "expenses" is NOT (or similar for transaction)
-
-                is_singular = False
-                for singular, plural in [
-                    ("expense", "expenses"),
-                    ("transaction", "transactions"),
-                    ("spending", "spendings"),
-                ]:
-                    if singular in raw_lower and plural not in raw_lower:
-                        is_singular = True
-                        break
-
-                # Also check "largest one", "top one"
-                if " one" in raw_lower:
-                    is_singular = True
-
-                if is_singular:
-                    limit = 1
-
-            typed_agg_type = cast(
-                Literal["sum", "average", "count", "largest", "smallest", "breakdown"],
-                agg_type if agg_type in {"sum", "average", "count", "largest", "smallest", "breakdown"} else "sum",
-            )
-            typed_group_by = (
-                cast(Literal["category", "merchant", "day", "account"], extraction.aggregation.group_by)
-                if extraction.aggregation.group_by in {"category", "merchant", "day", "account"}
-                else None
-            )
-
-            aggregation = Aggregation(
-                type=typed_agg_type,
-                group_by=typed_group_by,
-                limit=limit or 5,  # Default to 5 if still None
-            )
-
-            # Default group_by for breakdown if missing
-            if agg_type == "breakdown" and not aggregation.group_by:
-                aggregation.group_by = "category"
-
-        elif effective_intent == ExtractionIntent.SPENDING_TOTAL:
-            # Check for largest/smallest/top keywords in raw query to upgrade intent
-            agg_type = "sum"
-            limit = 5
-
-            if extraction.raw_query:
-                raw_lower = extraction.raw_query.lower()
-                if any(x in raw_lower for x in ("largest", "biggest", "highest", "top")):
-                    agg_type = "largest"
-                elif any(x in raw_lower for x in ("smallest", "least", "lowest")):
-                    agg_type = "smallest"
-
-                # Check singular
-                is_singular = False
-                for singular, plural in [("expense", "expenses"), ("transaction", "transactions")]:
-                    if singular in raw_lower and plural not in raw_lower:
-                        is_singular = True
-                        break
-
-                if is_singular:
-                    limit = 1
-
-            typed_agg_type = cast(
-                Literal["sum", "average", "count", "largest", "smallest", "breakdown"],
-                agg_type if agg_type in {"sum", "average", "count", "largest", "smallest", "breakdown"} else "sum",
-            )
-            aggregation = Aggregation(type=typed_agg_type, limit=limit)
-        elif effective_intent == ExtractionIntent.CATEGORY_BREAKDOWN:
-            aggregation = Aggregation(type="breakdown", group_by="category")
+        time_range = self._build_time_range(extraction, today=today)
+        filters = self._build_filters(extraction, effective_intent=effective_intent)
+        aggregation = self._build_aggregation(extraction, effective_intent=effective_intent)
 
         return NormalizedQuery(
             intent=intent_map.get(effective_intent, QueryIntent.TRANSACTION_LIST),

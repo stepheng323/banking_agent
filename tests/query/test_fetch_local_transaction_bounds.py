@@ -106,6 +106,7 @@ async def test_today_query_with_only_out_of_window_local_rows_returns_no_results
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     query_day = date(2026, 3, 6)
+    monkeypatch.setattr("apps.core.src.agent.graphs.query.services.formatter.lagos_today", lambda: query_day)
     rows = [
         _local_row(id_="out", created_at=datetime(2026, 3, 5, 10, 0), amount=5_000, narration="Payment to Mum"),
     ]
