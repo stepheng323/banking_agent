@@ -236,7 +236,12 @@ async def handle_transfer_task(task: Any, task_id: str, ctx: ExecutionContext) -
 
     awaiting_raw_slot_input = bool(required_fields)
     needs_account_selection = not task.payload.get("source_account_id")
-    if task.payload.get("recipient_name") and not needs_account_selection and not awaiting_raw_slot_input:
+    if (
+        (not user_msg or not user_msg.strip())
+        and task.payload.get("recipient_name")
+        and not needs_account_selection
+        and not awaiting_raw_slot_input
+    ):
         r_name = task.payload["recipient_name"]
         if isinstance(r_name, str) and r_name.lower() not in ("him", "her", "them", "that", "it", "this", "previous"):
             amt = task.payload.get("amount") or ""
