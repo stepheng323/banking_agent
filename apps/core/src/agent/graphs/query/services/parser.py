@@ -99,6 +99,15 @@ class QueryParser:
                     )
                 )
 
+            if self._requires_time_comparison_period(decision.extraction):
+                return QueryParseResult(
+                    outcome=ResolverOutcome.NEEDS_INPUT,
+                    extraction=decision.extraction,
+                    resolver_message=render_message("query.time_comparison.prompt_specify_period", language),
+                    notices=notices,
+                    patch={},
+                )
+
             query_ir = self.build_query_ir_from_extraction(
                 decision.extraction,
                 today=today,
@@ -169,6 +178,13 @@ class QueryParser:
         comparison_terms = (" vs ", " versus ", " compared to ", " compare ", " comparison ", " difference ")
         return any(term in f" {query_lower} " for term in comparison_terms)
 
+    def _requires_time_comparison_period(self, extraction: "QueryExtractionResult") -> bool:
+        """Ensure time-comparison requests include an explicit comparison window."""
+        effective_intent = self._resolve_effective_intent(extraction)
+        if effective_intent != ExtractionIntent.TIME_COMPARISON:
+            return False
+        return extraction.time_range.reference_type == TimeReference.UNSPECIFIED
+
     def build_query_ir_from_extraction(
         self,
         extraction: "QueryExtractionResult",
@@ -212,7 +228,17 @@ class QueryParser:
         )
 
     @staticmethod
-    def _resolve_period_to_range(period: str, *, today: date) -> TimeRange | None:
+    def _resolve_period_to_range(
+        period: str,
+        *,
+        today: date,
+        current_range: TimeRange | None = None,
+    ) -> TimeRange | None:
+        def _duration_days(range_value: TimeRange | None) -> int:
+            if range_value is None:
+                return 0
+            return max(1, (range_value.end - range_value.start).days + 1)
+
         token = period.strip().lower().replace("-", "_").replace(" ", "_")
         if token in {"today"}:
             return TimeRange(start=today, end=today, granularity="day")
@@ -226,7 +252,11 @@ class QueryParser:
             this_week_start = today - timedelta(days=today.weekday())
             week_end = this_week_start - timedelta(days=1)
             week_start = week_end - timedelta(days=6)
-            return TimeRange(start=week_start, end=week_end, granularity="week")
+            duration = _duration_days(current_range)
+            if duration <= 0:
+                return TimeRange(start=week_start, end=week_end, granularity="week")
+            aligned_end = min(week_end, week_start + timedelta(days=duration - 1))
+            return TimeRange(start=week_start, end=aligned_end, granularity="week")
         if token in {"this_month", "current_month", "month"}:
             month_start = date(today.year, today.month, 1)
             return TimeRange(start=month_start, end=today, granularity="month")
@@ -237,7 +267,13 @@ class QueryParser:
                 month = 12
                 year -= 1
             last_day = monthrange(year, month)[1]
-            return TimeRange(start=date(year, month, 1), end=date(year, month, last_day), granularity="month")
+            month_start = date(year, month, 1)
+            month_end = date(year, month, last_day)
+            duration = _duration_days(current_range)
+            if duration <= 0:
+                return TimeRange(start=month_start, end=month_end, granularity="month")
+            aligned_end = min(month_end, month_start + timedelta(days=duration - 1))
+            return TimeRange(start=month_start, end=aligned_end, granularity="month")
         if token in {"this_year", "current_year", "year"}:
             return TimeRange(start=date(today.year, 1, 1), end=today, granularity="month")
         if token in {"last_year", "previous_year"}:
@@ -264,7 +300,11 @@ class QueryParser:
             return ComparisonDirective(mode="year_ago")
 
         if comparison.mode == "explicit_period" and comparison.period:
-            explicit_range = self._resolve_period_to_range(comparison.period, today=today)
+            explicit_range = self._resolve_period_to_range(
+                comparison.period,
+                today=today,
+                current_range=current_range,
+            )
             if explicit_range is not None:
                 return ComparisonDirective(mode="explicit_range", explicit_range=explicit_range)
             # Invalid explicit period falls back deterministically.

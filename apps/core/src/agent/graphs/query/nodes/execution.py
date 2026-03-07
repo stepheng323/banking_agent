@@ -20,6 +20,45 @@ class ExecutionStep(QueryStep):
     def __init__(self) -> None:
         pass
 
+    @staticmethod
+    def _build_interpretation(
+        query_contract: QueryExecutionContract,
+        *,
+        continuation_type: str | None = None,
+        continuation_delta_type: str | None = None,
+    ) -> dict[str, Any]:
+        """Build compact debug metadata from the execution contract."""
+        time_granularity = None
+        if query_contract.normalized_query.time_range:
+            time_granularity = query_contract.normalized_query.time_range.granularity
+
+        time_window: dict[str, Any] = {
+            "start": query_contract.time_start.isoformat(),
+            "end": query_contract.time_end.isoformat(),
+            "timezone": query_contract.timezone,
+        }
+        if time_granularity:
+            time_window["granularity"] = time_granularity
+
+        comparison_payload: dict[str, Any] | None = None
+        if query_contract.comparison:
+            comparison_payload = {"mode": query_contract.comparison.mode}
+            if query_contract.comparison.explicit_range:
+                comparison_payload["start"] = query_contract.comparison.explicit_range.start.isoformat()
+                comparison_payload["end"] = query_contract.comparison.explicit_range.end.isoformat()
+
+        return {
+            "intent": query_contract.intent.value,
+            "time_window": time_window,
+            "comparison": comparison_payload,
+            "filters": query_contract.filters.model_dump(exclude_none=True) if query_contract.filters else None,
+            "aggregation": query_contract.aggregation.model_dump(exclude_none=True) if query_contract.aggregation else None,
+            "result_limit": query_contract.result_limit,
+            "result_reference": query_contract.result_reference,
+            "continuation_type": query_contract.continuation_type or continuation_type,
+            "continuation_delta_type": query_contract.continuation_delta_type or continuation_delta_type,
+        }
+
     async def run(self, state: dict[str, Any], worker_context: Any = None) -> TransactionResult:
         """Run execution logic."""
         flow_state = state.get("flow_state")
@@ -91,6 +130,11 @@ class ExecutionStep(QueryStep):
             continuation_type=state.get("continuation_type"),
             continuation_delta_type=state.get("continuation_delta_type"),
             session_cache=session_cache,
+        )
+        result.interpretation = self._build_interpretation(
+            query_contract,
+            continuation_type=state.get("continuation_type"),
+            continuation_delta_type=state.get("continuation_delta_type"),
         )
 
         formatted_response = QueryFormatter.format(

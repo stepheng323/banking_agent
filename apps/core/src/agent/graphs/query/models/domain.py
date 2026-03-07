@@ -247,6 +247,7 @@ class QueryResult(BaseModel):
     has_more: bool = False
     query_snapshot: NormalizedQuery | None = None  # For follow-up deltas
     query_contract: QueryExecutionContract | None = None
+    interpretation: dict[str, Any] | None = None
     surface: ResultSurface | None = None  # UI/Interaction surface state
     cached_transactions: list[dict[str, Any]] | None = None
     cache_fetched_at: float | None = None

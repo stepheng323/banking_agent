@@ -1,7 +1,9 @@
 import json
+from datetime import date
 
 import pytest
 
+from apps.core.src.agent.graphs.query.models import QueryResult, QueryResultItem
 from apps.core.src.agent.graphs.query.session import SESSION_TTL, QuerySessionManager
 
 
@@ -23,6 +25,24 @@ class _RedisExpireFails(_RedisStub):
     async def expire(self, key: str, ttl: int) -> bool:
         self.expire_calls.append((key, ttl))
         raise RuntimeError("boom")
+
+
+class _RedisStoreStub(_RedisStub):
+    def __init__(self) -> None:
+        super().__init__(None)
+        self.saved: dict[str, str] = {}
+
+    async def get(self, key: str) -> str | None:
+        return self.saved.get(key)
+
+    async def set(self, key: str, value: str, ex: int | None = None) -> bool:
+        del ex
+        self.saved[key] = value
+        return True
+
+    async def delete(self, key: str) -> int:
+        self.saved.pop(key, None)
+        return 1
 
 
 @pytest.mark.asyncio
@@ -60,3 +80,34 @@ async def test_load_expire_failure_is_non_fatal() -> None:
     assert isinstance(loaded, dict)
     assert loaded.get("session_active") is True
     assert redis.expire_calls == [(key, SESSION_TTL)]
+
+
+@pytest.mark.asyncio
+async def test_query_result_interpretation_round_trips_through_session_storage() -> None:
+    redis = _RedisStoreStub()
+    manager = QuerySessionManager(redis)  # type: ignore[arg-type]
+    key = "query:session:2348000000003"
+
+    query_result = QueryResult(
+        summary_text="summary",
+        items=[QueryResultItem(description="item", amount=1000, date=date(2026, 3, 7))],
+        interpretation={
+            "intent": "time_comparison",
+            "time_window": {"start": "2026-03-01", "end": "2026-03-07", "timezone": "Africa/Lagos"},
+        },
+    )
+
+    await manager.save(
+        key,
+        {
+            "session_active": True,
+            "query_result": query_result,
+        },
+    )
+    loaded = await manager.load(key)
+
+    assert isinstance(loaded, dict)
+    restored_result = loaded.get("query_result")
+    assert isinstance(restored_result, QueryResult)
+    assert restored_result.interpretation is not None
+    assert restored_result.interpretation["intent"] == "time_comparison"

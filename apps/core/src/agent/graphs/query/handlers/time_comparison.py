@@ -4,6 +4,7 @@ Compares spending/transactions between two time periods.
 Example: "How did my spending this month compare to last month?"
 """
 
+from calendar import monthrange
 from datetime import timedelta
 from typing import Any
 
@@ -229,9 +230,20 @@ def _format_change(change: float, pct_change: float | None, locale: str = "en") 
 
 def _format_period_label(period: TimeRange) -> str:
     """Format a time range as a readable label."""
-    if period.start.month == period.end.month and period.start.year == period.end.year:
+    is_same_month = period.start.month == period.end.month and period.start.year == period.end.year
+    if is_same_month and _is_full_month_window(period):
         return period.start.strftime("%B %Y")
-    return f"{period.start.strftime('%b %d')} - {period.end.strftime('%b %d')}"
+    if period.start.year == period.end.year:
+        return f"{period.start.strftime('%b %d')} - {period.end.strftime('%b %d')}"
+    return f"{period.start.strftime('%b %d, %Y')} - {period.end.strftime('%b %d, %Y')}"
+
+
+def _is_full_month_window(period: TimeRange) -> bool:
+    """Return True when range spans a complete calendar month."""
+    if period.start.year != period.end.year or period.start.month != period.end.month:
+        return False
+    expected_last_day = monthrange(period.start.year, period.start.month)[1]
+    return period.start.day == 1 and period.end.day == expected_last_day
 
 
 def _build_summary(

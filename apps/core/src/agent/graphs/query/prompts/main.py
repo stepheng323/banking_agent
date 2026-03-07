@@ -34,6 +34,7 @@ TIME NORMALIZATION
   - "yesterday" → days_back=1
 - vague ("recently", "sometime ago") → reference_type=vague, estimate days_back
 - no time mentioned → reference_type=unspecified
+- for time_comparison intent, the primary period must be explicit; if missing, keep reference_type=unspecified
 
 AGGREGATION RULES
 - spending_total → aggregation.type = sum
@@ -52,6 +53,7 @@ COMPARISON DIRECTIVE (for time_comparison intent)
   - "same period last year", "year ago", "vs last year" -> mode="year_ago"
   - explicit second period ("vs last month", "compared to last week") -> mode="explicit_period", set `period`
 - If user does not specify a second period, keep mode="previous_equivalent".
+- For explicit second period values like last_month/last_week, expect the system to align to-date duration against the current period.
 
 RESULT LIMIT
 - If user asks for "last/latest/most recent" N transactions/transfers/payments, set result_limit = N.

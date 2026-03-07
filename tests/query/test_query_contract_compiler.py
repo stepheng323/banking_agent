@@ -110,6 +110,27 @@ def test_structured_comparison_explicit_period_compiles_to_explicit_range() -> N
     assert contract.comparison.mode == "explicit_range"
 
 
+def test_structured_comparison_last_month_aligns_to_current_window_duration() -> None:
+    parser = QueryParser(_DummyLLM())
+    extraction = QueryExtractionResult(
+        intent=ExtractionIntent.TIME_COMPARISON,
+        time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="this_month", days_back=6),
+        comparison=QueryComparison(mode="explicit_period", period="last_month"),
+        raw_query="compare this month vs last month",
+    )
+
+    query_ir = parser.build_query_ir_from_extraction(extraction, today=date(2026, 3, 7), language="en")
+    contract = parser.build_execution_contract_from_ir(query_ir)
+
+    assert query_ir.comparison is not None
+    assert query_ir.comparison.mode == "explicit_range"
+    assert query_ir.comparison.explicit_range is not None
+    assert query_ir.comparison.explicit_range.start == date(2026, 2, 1)
+    assert query_ir.comparison.explicit_range.end == date(2026, 2, 7)
+    assert contract.comparison is not None
+    assert contract.comparison.mode == "explicit_range"
+
+
 def test_structured_comparison_last_week_compiles_to_explicit_range() -> None:
     parser = QueryParser(_DummyLLM())
     extraction = QueryExtractionResult(
@@ -127,6 +148,27 @@ def test_structured_comparison_last_week_compiles_to_explicit_range() -> None:
     assert query_ir.comparison.explicit_range is not None
     assert query_ir.comparison.explicit_range.start == date(2026, 2, 23)
     assert query_ir.comparison.explicit_range.end == date(2026, 3, 1)
+    assert contract.comparison is not None
+    assert contract.comparison.mode == "explicit_range"
+
+
+def test_structured_comparison_last_week_aligns_to_current_window_duration() -> None:
+    parser = QueryParser(_DummyLLM())
+    extraction = QueryExtractionResult(
+        intent=ExtractionIntent.TIME_COMPARISON,
+        time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="this_week", days_back=4),
+        comparison=QueryComparison(mode="explicit_period", period="last_week"),
+        raw_query="compare this week vs last week",
+    )
+
+    query_ir = parser.build_query_ir_from_extraction(extraction, today=date(2026, 3, 6), language="en")
+    contract = parser.build_execution_contract_from_ir(query_ir)
+
+    assert query_ir.comparison is not None
+    assert query_ir.comparison.mode == "explicit_range"
+    assert query_ir.comparison.explicit_range is not None
+    assert query_ir.comparison.explicit_range.start == date(2026, 2, 23)
+    assert query_ir.comparison.explicit_range.end == date(2026, 2, 27)
     assert contract.comparison is not None
     assert contract.comparison.mode == "explicit_range"
 
