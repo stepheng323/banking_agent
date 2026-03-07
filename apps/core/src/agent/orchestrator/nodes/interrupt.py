@@ -1,4 +1,5 @@
 import json
+import re
 import time
 from typing import Any, cast
 
@@ -38,6 +39,26 @@ PLANNER_SWITCH_INTENTS = {
 INTERRUPT_CONTEXT_MAX_CHARS = 1800
 INTERRUPT_REQUIRED_FIELDS_MAX_CHARS = 700
 INTERRUPT_PROMPT_MAX_CHARS = 300
+
+_CONFIRMATION_UPDATE_VERB_RE = re.compile(
+    r"\b(change|update|edit|instead|set|make(?:\s+it)?|replace|correct|meant|add|use)\b",
+    re.IGNORECASE,
+)
+_CONFIRMATION_UPDATE_FIELD_RE = re.compile(
+    r"\b(amount|bank|account|recipient|beneficiary|narration|memo|note|description)\b",
+    re.IGNORECASE,
+)
+_CONFIRMATION_NOTE_FIELD_RE = re.compile(r"\b(narration|memo|note|description)\b", re.IGNORECASE)
+_CONFIRMATION_ITS_FOR_RE = re.compile(r"^\s*(?:it'?s|its)\s+for\b", re.IGNORECASE)
+_CONFIRMATION_AMOUNT_RE = re.compile(
+    r"(?:^|\s)(?:₦|ngn)?\s*\d[\d,]*(?:\.\d+)?\s*[kKhH]?(?:\s|$)",
+    re.IGNORECASE,
+)
+_CONFIRMATION_ACCOUNT_BANK_REPLY_RE = re.compile(r"[a-zA-Z].*\d[\d\s,.\-]{8,}|\d[\d\s,.\-]{8,}.*[a-zA-Z]")
+_NON_TRANSFER_INTENT_HINT_RE = re.compile(
+    r"\b(airtime|data|bundle|balance|statement|support|faq|ticket|complaint)\b",
+    re.IGNORECASE,
+)
 
 
 def _clip_text(value: str, max_chars: int) -> str:
@@ -152,6 +173,39 @@ def _route_fallback(reason: str) -> InterruptRouteDecision:
         status_query_type=None,
         reason=reason,
     )
+
+
+def _looks_like_transfer_confirmation_update(text: str) -> bool:
+    normalized = text.strip().lower()
+    if not normalized:
+        return False
+    if _NON_TRANSFER_INTENT_HINT_RE.search(normalized):
+        return False
+    if _CONFIRMATION_ITS_FOR_RE.search(normalized):
+        return True
+    if _CONFIRMATION_AMOUNT_RE.search(normalized):
+        return True
+    if _CONFIRMATION_ACCOUNT_BANK_REPLY_RE.search(normalized):
+        return True
+    has_field = bool(_CONFIRMATION_UPDATE_FIELD_RE.search(normalized))
+    has_verb = bool(_CONFIRMATION_UPDATE_VERB_RE.search(normalized))
+    if has_field and has_verb:
+        return True
+    if _CONFIRMATION_NOTE_FIELD_RE.search(normalized):
+        return True
+    return False
+
+
+def _is_transfer_confirmation_update_turn(state: OrchestratorState, interrupt: Any, text: str) -> bool:
+    if getattr(interrupt, "kind", None) != "confirmation":
+        return False
+    task_ids = getattr(interrupt, "task_ids", None)
+    if not isinstance(task_ids, list) or not task_ids:
+        return False
+    has_transfer_task = any((task := state.tasks.get(task_id)) and task.type == "transfer" for task_id in task_ids)
+    if not has_transfer_task:
+        return False
+    return _looks_like_transfer_confirmation_update(text)
 
 
 def _is_beneficiary_clarification_interrupt(interrupt: Any) -> bool:
@@ -870,6 +924,20 @@ async def handle_pending_interrupt(state: OrchestratorState, config: RunnableCon
     current_task_types = _current_task_types(state, interrupt.task_ids)
     active_type = _active_intent(current_task_types)
     task_planner = config["configurable"].get("task_planner")
+
+    if _is_transfer_confirmation_update_turn(state, interrupt, text):
+        logger.info("confirmation_update_detected", tasks=interrupt.task_ids)
+        reset_tasks_to_extracted(
+            state.tasks,
+            interrupt.task_ids,
+            copy_task=True,
+            clear_idempotency=True,
+        )
+        return {
+            "pending_interrupt": None,
+            "last_interrupt": interrupt,
+            "tasks": state.tasks,
+        }
 
     if _is_verified_pin_callback(state) and interrupt.kind in {"confirmation", "auth"}:
         flow_matches, callback_flow_type = _callback_flow_matches_interrupt(state, current_task_types)

@@ -425,7 +425,9 @@ async def _extract_transfer_update(
             extracted_data["description"] = f"Transfer to {name.title()}"
 
         if "narration" in extracted_data:
-            extracted_data["user_note"] = extracted_data.pop("narration")
+            # Keep the execution-facing narration while also preserving a user-authored note
+            # for confirmation summaries.
+            extracted_data["user_note"] = extracted_data["narration"]
 
         needs_source = (
             current_payload.recipient_account

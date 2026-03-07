@@ -4,7 +4,11 @@ from types import SimpleNamespace
 from uuid import uuid4
 
 from apps.core.src.agent.graphs.transfer.models.entities import TransferEntities
-from apps.core.src.agent.graphs.transfer.models.extraction import TransferExtractionResult
+from apps.core.src.agent.graphs.transfer.models.extraction import (
+    Correction,
+    CorrectionField,
+    TransferExtractionResult,
+)
 from apps.core.src.agent.graphs.transfer.models.types import TransferContext, TransferGates, TransferPayload
 from apps.core.src.agent.graphs.transfer.nodes.extraction import ExtractionStep
 from apps.core.src.agent.graphs.transfer.services.extractor import TransferEntityExtractor
@@ -433,6 +437,32 @@ async def test_deterministic_amount_fastpath_parses_shorthand_reply() -> None:
     assert result.patch["amount"] == 20000
     assert result.patch["suggested_amount"] is None
     assert extractor.last_user_message is None
+
+
+async def test_narration_correction_updates_narration_and_user_note() -> None:
+    class _NarrationCorrectionExtractor:
+        async def extract(self, text: str, smart_context: dict | None = None) -> TransferExtractionResult:
+            del text, smart_context
+            return TransferExtractionResult(
+                correction=Correction(field=CorrectionField.NARRATION, new_value="groceries"),
+                acknowledgment="Updated narration.",
+            )
+
+    step = ExtractionStep(user_message="it's for groceries")
+    payload = TransferPayload(recipient_name="Tolu", recipient_resolved_name="Tolu")
+    context = TransferContext(phone_number="2348000000999", language="en", beneficiaries=[], accounts=[])
+    worker_context = SimpleNamespace(
+        extractor=_NarrationCorrectionExtractor(),
+        required_fields=[],
+        previous_response=None,
+    )
+
+    result = await step.execute(payload, context, TransferGates(), worker_context)
+
+    assert result.outcome == TransactionOutcome.OK
+    assert result.patch["narration"] == "groceries"
+    assert result.patch["user_note"] == "groceries"
+    assert result.patch["_extraction_ack"] == "Updated narration."
 
 
 async def test_account_then_amount_turns_do_not_get_stuck_due_to_skip_extraction() -> None:
