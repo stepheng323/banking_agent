@@ -203,6 +203,14 @@ def _apply_transfer_payload_fields(
             payload["schedule_selector"] = schedule_selector
 
 
+def _apply_airtime_payload_fields(payload: dict[str, Any], plan_item: Any) -> None:
+    if plan_item.executor != "airtime":
+        return
+    phone = payload.get("phone")
+    if isinstance(phone, str) and phone.strip() and not payload.get("recipient_phone"):
+        payload["recipient_phone"] = phone
+
+
 def _infer_schedule_action_from_text(user_text: str) -> str | None:
     normalized = user_text.lower()
     if re.search(r"\b(?:every|daily|weekly|monthly)\b", normalized):
@@ -352,6 +360,7 @@ def build_task_spec_from_plan_item(
         strip_recipient_suffix=strip_transfer_recipient_suffix,
         format_narration_requires_recipient_field=format_narration_requires_recipient_field,
     )
+    _apply_airtime_payload_fields(payload, plan_item)
     apply_source_account_fields(payload, plan_item)
 
     return TaskSpec(

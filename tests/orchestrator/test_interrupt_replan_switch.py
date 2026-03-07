@@ -797,6 +797,48 @@ async def test_callback_flow_type_mismatch_reprompts_confirmation_without_advanc
 
 
 @pytest.mark.asyncio
+async def test_input_cancel_shortcut_cancels_all_active_transaction_tasks() -> None:
+    state = OrchestratorState(
+        user_id="u_interrupt_cancel_all",
+        phone_number="2348010101099",
+        channel="whatsapp",
+        last_message_text="cancel",
+        loaded_context={"language": "en"},
+        pending_interrupt=PendingInterrupt(kind="input", task_ids=["t_transfer"], fields_by_task={"t_transfer": ["amount"]}),
+        tasks={
+            "t_transfer": TaskSpec(
+                id="t_transfer",
+                type="transfer",
+                stage=TaskStage.EXTRACTED,
+                payload={"recipient_name": "Mum", "amount": 10000},
+            ),
+            "t_airtime": TaskSpec(
+                id="t_airtime",
+                type="airtime",
+                stage=TaskStage.DRAFT,
+                payload={"amount": 5000},
+            ),
+            "t_account": TaskSpec(
+                id="t_account",
+                type="account",
+                stage=TaskStage.EXTRACTED,
+                payload={"action": "check_balance"},
+            ),
+        },
+        waves=[["t_transfer", "t_airtime", "t_account"]],
+        current_wave_index=0,
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": _FailIfRouterCalledPlanner()}, "recursion_limit": 50}
+
+    updates = await handle_pending_interrupt(state, config)
+
+    assert updates["pending_interrupt"] is None
+    assert updates["tasks"]["t_transfer"].stage == TaskStage.CANCELLED
+    assert updates["tasks"]["t_airtime"].stage == TaskStage.CANCELLED
+    assert updates["tasks"]["t_account"].stage == TaskStage.EXTRACTED
+
+
+@pytest.mark.asyncio
 async def test_text_abort_does_not_autoapprove_when_no_callback_payload() -> None:
     state = OrchestratorState(
         user_id="u_interrupt_13",

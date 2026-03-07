@@ -779,8 +779,23 @@ def _status_query_updates(
     }
 
 
-def _cancel_updates(state: OrchestratorState, interrupt: Any) -> dict[str, Any]:
-    set_tasks_cancelled(state.tasks, interrupt.task_ids, copy_task=True)
+def _cancel_updates(state: OrchestratorState, interrupt: Any, current_task_types: set[str]) -> dict[str, Any]:
+    terminal_stages = {TaskStage.COMPLETED, TaskStage.FAILED, TaskStage.CANCELLED}
+
+    if current_task_types and current_task_types.issubset(TRANSACTION_INTENTS):
+        task_ids_to_cancel = [
+            task_id
+            for task_id, task in state.tasks.items()
+            if task.type in TRANSACTION_INTENTS and task.stage not in terminal_stages
+        ]
+    else:
+        task_ids_to_cancel = [
+            task_id
+            for task_id in interrupt.task_ids
+            if task_id in state.tasks and state.tasks[task_id].stage not in terminal_stages
+        ]
+
+    set_tasks_cancelled(state.tasks, task_ids_to_cancel, copy_task=True)
     return {
         "pending_interrupt": None,
         "last_interrupt": interrupt,
@@ -845,7 +860,7 @@ async def _switch_via_planner(
         return _reprompt_updates(state, interrupt)
 
     if getattr(planner_output, "is_cancellation", False):
-        return _cancel_updates(state, interrupt)
+        return _cancel_updates(state, interrupt, current_task_types)
 
     if not planner_output.tasks:
         locale = _state_locale(state)
@@ -948,10 +963,10 @@ async def handle_pending_interrupt(state: OrchestratorState, config: RunnableCon
         )
 
     if route.decision == "cancel":
-        return _cancel_updates(state, interrupt)
+        return _cancel_updates(state, interrupt, current_task_types)
 
     if route.decision == "reject_flow":
-        return _cancel_updates(state, interrupt)
+        return _cancel_updates(state, interrupt, current_task_types)
 
     if route.decision == "approve_flow":
         if interrupt.kind == "confirmation":

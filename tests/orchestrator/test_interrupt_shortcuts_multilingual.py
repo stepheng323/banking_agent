@@ -75,6 +75,13 @@ def test_auth_yes_text_is_not_confirmation_shortcutted() -> None:
     assert route is None
 
 
+@pytest.mark.parametrize("kind", ["input", "confirmation", "auth"])
+def test_explicit_cancel_shortcuts_work_for_all_interrupt_kinds(kind: str) -> None:
+    route = resolve_interrupt_shortcut(text="abort", interrupt_kind=kind, locale=LocaleCode.EN)
+    assert route is not None
+    assert route.decision == "cancel"
+
+
 def test_unknown_or_unsupported_locale_falls_back() -> None:
     assert resolve_shortcut_locale("french") is None
     assert resolve_interrupt_shortcut(text="proceed", interrupt_kind="confirmation", locale=None) is None

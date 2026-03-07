@@ -48,11 +48,19 @@ CONFIRM_APPROVE_PHRASES: dict[LocaleCode, set[str]] = {
 }
 
 CONFIRM_REJECT_PHRASES: dict[LocaleCode, set[str]] = {
-    LocaleCode.EN: {"no", "cancel", "stop", "not now", "later", "do not proceed", "don't proceed"},
-    LocaleCode.PCM: {"no o", "no abeg", "not now", "later", "cancel"},
+    LocaleCode.EN: {"no", "not now", "later", "do not proceed", "don't proceed"},
+    LocaleCode.PCM: {"no o", "no abeg", "not now", "later"},
     LocaleCode.YO: {"rara", "ma se", "dawoduro", "ko to bayi"},
     LocaleCode.HA: {"a'a", "a a", "dakatar", "ba yanzu ba"},
     LocaleCode.IG: {"mba", "kwusi", "ugbua a"},
+}
+
+CANCEL_PHRASES: dict[LocaleCode, set[str]] = {
+    LocaleCode.EN: {"cancel", "abort", "stop", "nevermind", "never mind"},
+    LocaleCode.PCM: {"cancel", "abort", "stop", "commot", "no do again"},
+    LocaleCode.YO: {"fagile", "da duro", "ma se", "dawoduro"},
+    LocaleCode.HA: {"soke", "dakatar"},
+    LocaleCode.IG: {"kagbuo", "kwusi"},
 }
 
 STATUS_RECAP_PHRASES: dict[LocaleCode, set[str]] = {
@@ -139,6 +147,17 @@ def _resolve_interrupt_shortcut(
                 decision="status_query",
                 status_query_type="requirements",
                 reason="shortcut_status_requirements",
+            ),
+            "matched",
+        )
+
+    # Explicit cancel/abort should work across interrupt kinds.
+    if normalized in CANCEL_PHRASES.get(locale, set()):
+        return (
+            _build_decision(
+                locale=locale,
+                decision="cancel",
+                reason="shortcut_cancel",
             ),
             "matched",
         )
