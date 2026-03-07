@@ -141,6 +141,22 @@ async def test_time_delta_shortcut_skips_llm_for_yesterday_followup() -> None:
 
 
 @pytest.mark.asyncio
+async def test_recipient_ranking_followup_forces_new_query_override() -> None:
+    classifier = ContinuationClassifier(_FailingLLM())
+
+    continuation_type, data = await classifier.classify(
+        message="Who did I send money to the most this week",
+        has_active_session=True,
+        today="2026-03-07",
+    )
+
+    assert continuation_type == "new_query"
+    assert data["reason"] == "deterministic_recipient_ranking_new_query"
+    assert data["is_new_query_override"] is True
+    assert data["restates_query"] is True
+
+
+@pytest.mark.asyncio
 async def test_filter_delta_shortcut_skips_llm_for_credit_debit_followups() -> None:
     classifier = ContinuationClassifier(_FailingLLM())
 

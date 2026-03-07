@@ -15,6 +15,7 @@ class ExtractionIntent(str, Enum):
     TRANSACTION_LIST = "transaction_list"  # Show me transactions
     SPENDING_TOTAL = "spending_total"  # How much did I spend
     CATEGORY_BREAKDOWN = "category_breakdown"  # Breakdown by category
+    BENEFICIARY_SUMMARY = "beneficiary_summary"  # Top recipients
     TIME_COMPARISON = "time_comparison"  # Compare periods
     SINGLE_TRANSACTION = "single_transaction"  # Find specific transaction
     AFFORDABILITY = "affordability"  # Can I afford X

@@ -329,6 +329,7 @@ class ExtractionStep(QueryStep):
             isinstance(query_session, dict)
             and query_session.get("session_active")
             and result.extraction.time_range.reference_type == TimeReference.UNSPECIFIED
+            and self._should_inherit_unspecified_time(message)
         ):
             previous_contract = self._load_session_query_contract(query_session)
             previous_query = previous_contract.normalized_query if previous_contract else None
@@ -369,3 +370,40 @@ class ExtractionStep(QueryStep):
 
         word_count = len(message.split())
         return word_count >= 3
+
+    @staticmethod
+    def _should_inherit_unspecified_time(message: str) -> bool:
+        """Allow inheritance only for short, clearly follow-up phrasing."""
+        normalized = " ".join(message.lower().split())
+        if not normalized:
+            return True
+
+        short_followups = {
+            "show them",
+            "show transactions",
+            "show my transactions",
+            "list them",
+            "list transactions",
+            "which ones",
+            "more",
+            "next",
+            "continue",
+            "show more",
+            "next page",
+            "another page",
+        }
+        if normalized in short_followups:
+            return True
+
+        if normalized.startswith(("what about ", "how about ", "and ", "also ", "then ")):
+            return True
+
+        tokens = normalized.split()
+        if not tokens:
+            return True
+
+        standalone_starters = {"who", "what", "when", "where", "why", "how"}
+        if tokens[0] in standalone_starters:
+            return False
+
+        return len(tokens) <= 4

@@ -65,6 +65,14 @@ _AGGREGATE_PATTERNS = (
     r"\bsum\s*(it|them)?\s*(up)?\b",
     r"\bhow many\b",
 )
+_RECIPIENT_RANKING_PATTERNS = (
+    r"\bwho did i (send money|transfer) to the most\b",
+    r"\bwho do i (send money|transfer) to the most\b",
+    r"\btop recipients?\b",
+    r"\bmost frequent recipients?\b",
+    r"\bmost frequent transfer to\b",
+    r"\brecipient ranking\b",
+)
 
 
 class ContinuationType:
@@ -236,6 +244,13 @@ class ContinuationClassifier:
             return Filters(transaction_type="credit")
         return None
 
+    @staticmethod
+    def _is_recipient_ranking_request(message: str) -> bool:
+        normalized = " ".join(message.lower().split())
+        if not normalized:
+            return False
+        return any(re.search(pattern, normalized) for pattern in _RECIPIENT_RANKING_PATTERNS)
+
     def _guardrail_classify(
         self,
         *,
@@ -275,6 +290,14 @@ class ContinuationClassifier:
                 "confidence": 1.0,
                 "reason": "deterministic_end_session",
                 "end_session_response": render_message("query.session.you_are_welcome", language),
+            }
+
+        if self._is_recipient_ranking_request(message):
+            return ContinuationType.NEW_QUERY, {
+                "confidence": 0.99,
+                "reason": "deterministic_recipient_ranking_new_query",
+                "is_new_query_override": True,
+                "restates_query": True,
             }
 
         if surface and surface.type in {SurfaceType.SUMMARY, SurfaceType.BREAKDOWN} and normalized in _EXPAND_EXACT:

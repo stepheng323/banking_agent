@@ -14,6 +14,7 @@ Choose the best intent:
 - single_transaction → one specific transaction ("that 15k", "the Uber one")
 - spending_total → totals/sums ("how much did I spend/pay")
 - category_breakdown → breakdown/split/categorize ("break down my spending", "split by merchant", "how did I spend")
+- beneficiary_summary → recipient ranking ("who did I send money to the most", "top recipients")
 - time_comparison → compare periods ("this month vs last month")
 - affordability → "can I afford", "do I have enough"
 
@@ -44,6 +45,9 @@ AGGREGATION RULES
 - category_breakdown → aggregation.type = breakdown (default group_by=category)
     - "breakdown by merchant" → group_by=merchant
     - "spending by bank" → group_by=account
+- beneficiary_summary → aggregation.type = sum, group by recipient/merchant for ranking
+    - default sort intent is frequency/count ("who did I send money to the most")
+    - amount cues ("most money", "largest amount to") imply amount ranking
 - time_comparison → aggregation.type = sum unless user implies otherwise
 - transaction_list / single_transaction → no aggregation
 
@@ -139,6 +143,8 @@ OR if user issues a fresh command unrelated to the current view:
 "Break down my spending", "Show me transfers", "Check airtime"
 OR if user restates a full query such as:
 "show my last transaction", "show my last 5 transfers", "list my transactions"
+OR if user asks recipient-ranking questions:
+"who did i send money to the most this week", "top recipients this month"
 => continuation_type="new_query" AND is_new_query_override=true.
 Also set restates_query=true when the message stands alone as a full query.
 EXCEPTION: If surface is SUMMARY or BREAKDOWN and user asks to see items

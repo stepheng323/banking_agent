@@ -178,6 +178,30 @@ class QueryParser:
         comparison_terms = (" vs ", " versus ", " compared to ", " compare ", " comparison ", " difference ")
         return any(term in f" {query_lower} " for term in comparison_terms)
 
+    @staticmethod
+    def _has_targeted_beneficiary_summary_cue(raw_query: str) -> bool:
+        query_lower = " ".join(raw_query.lower().split())
+        has_ranking_cue = any(
+            term in query_lower
+            for term in (
+                "who did i send money to the most",
+                "who did i transfer to the most",
+                "top recipient",
+                "top recipients",
+                "most frequent recipient",
+                "most frequent transfer",
+            )
+        )
+        has_send_cue = any(term in query_lower for term in ("send money", "sent money", "transfer to", "sent to"))
+        return has_ranking_cue or (has_send_cue and "most" in query_lower and "who" in query_lower)
+
+    @staticmethod
+    def _infer_beneficiary_sort_by(raw_query: str | None) -> Literal["amount", "count"]:
+        raw_lower = (raw_query or "").lower()
+        if any(term in raw_lower for term in ("highest amount", "largest amount", "most money", "by amount", "total")):
+            return "amount"
+        return "count"
+
     def _requires_time_comparison_period(self, extraction: "QueryExtractionResult") -> bool:
         """Ensure time-comparison requests include an explicit comparison window."""
         effective_intent = self._resolve_effective_intent(extraction)
@@ -319,12 +343,22 @@ class QueryParser:
 
     def _resolve_effective_intent(self, extraction: "QueryExtractionResult") -> ExtractionIntent:
         raw_query = extraction.raw_query or ""
+        if extraction.intent == ExtractionIntent.BENEFICIARY_SUMMARY:
+            return extraction.intent
+
         if (
             extraction.intent == ExtractionIntent.TRANSACTION_LIST
             and raw_query
             and self._has_targeted_aggregate_spend_or_receive_cue(raw_query)
         ):
             return ExtractionIntent.SPENDING_TOTAL
+
+        if (
+            extraction.intent == ExtractionIntent.TRANSACTION_LIST
+            and raw_query
+            and self._has_targeted_beneficiary_summary_cue(raw_query)
+        ):
+            return ExtractionIntent.BENEFICIARY_SUMMARY
 
         if (
             extraction.intent != ExtractionIntent.TIME_COMPARISON
@@ -393,6 +427,7 @@ class QueryParser:
             is_expense_query = not has_explicit_credit_intent and effective_intent in (
                 ExtractionIntent.SPENDING_TOTAL,
                 ExtractionIntent.CATEGORY_BREAKDOWN,
+                ExtractionIntent.BENEFICIARY_SUMMARY,
             )
 
             if not is_expense_query and raw_lower:
@@ -474,6 +509,11 @@ class QueryParser:
             type=self._coerce_aggregation_type(agg_type),
             group_by=self._coerce_group_by(extraction.aggregation.group_by),
             limit=limit or 5,
+            sort_by=(
+                self._infer_beneficiary_sort_by(extraction.raw_query)
+                if effective_intent == ExtractionIntent.BENEFICIARY_SUMMARY
+                else None
+            ),
         )
         if agg_type == "breakdown" and not aggregation.group_by:
             aggregation.group_by = "category"
@@ -501,6 +541,9 @@ class QueryParser:
 
         if effective_intent == ExtractionIntent.CATEGORY_BREAKDOWN:
             return Aggregation(type="breakdown", group_by="category")
+
+        if effective_intent == ExtractionIntent.BENEFICIARY_SUMMARY:
+            return Aggregation(type="sum", limit=5, sort_by=self._infer_beneficiary_sort_by(extraction.raw_query))
 
         return None
 
@@ -530,6 +573,7 @@ class QueryParser:
             ExtractionIntent.TRANSACTION_LIST: QueryIntent.TRANSACTION_LIST,
             ExtractionIntent.SPENDING_TOTAL: QueryIntent.ANALYTICS_SUMMARY,
             ExtractionIntent.CATEGORY_BREAKDOWN: QueryIntent.ANALYTICS_SUMMARY,
+            ExtractionIntent.BENEFICIARY_SUMMARY: QueryIntent.BENEFICIARY_SUMMARY,
             ExtractionIntent.TIME_COMPARISON: QueryIntent.TIME_COMPARISON,
             ExtractionIntent.SINGLE_TRANSACTION: QueryIntent.TRANSACTION_SEARCH,
             ExtractionIntent.AFFORDABILITY: QueryIntent.AFFORDABILITY,

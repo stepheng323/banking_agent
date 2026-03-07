@@ -52,6 +52,28 @@ def test_targeted_comparison_cue_upgrades_misclassified_list_to_time_comparison(
     assert contract.intent == QueryIntent.TIME_COMPARISON
 
 
+def test_targeted_recipient_ranking_cue_upgrades_to_beneficiary_summary() -> None:
+    parser = QueryParser(_DummyLLM())
+    today = date(2026, 3, 7)
+    extraction = QueryExtractionResult(
+        intent=ExtractionIntent.TRANSACTION_LIST,
+        time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="this_week", days_back=5),
+        raw_query="Who did I send money to the most this week",
+    )
+
+    query_ir = parser.build_query_ir_from_extraction(extraction, today=today, language="en")
+    contract = parser.build_execution_contract_from_ir(query_ir)
+
+    assert query_ir.intent == QueryIntent.BENEFICIARY_SUMMARY
+    assert contract.intent == QueryIntent.BENEFICIARY_SUMMARY
+    assert query_ir.aggregation is not None
+    assert query_ir.aggregation.sort_by == "count"
+    assert contract.aggregation is not None
+    assert contract.aggregation.sort_by == "count"
+    assert query_ir.time_range.start == date(2026, 3, 2)
+    assert query_ir.time_range.end == today
+
+
 def test_contract_compiles_from_legacy_normalized_query() -> None:
     parser = QueryParser(_DummyLLM())
     normalized = parser.convert_to_normalized(
