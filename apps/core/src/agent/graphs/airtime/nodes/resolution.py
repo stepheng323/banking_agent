@@ -13,7 +13,7 @@ from apps.core.src.agent.orchestrator.models.domain import TransactionOutcome, T
 from shared.database.models import Beneficiary
 from shared.i18n import render_message
 from shared.utils.logging import get_logger
-from shared.utils.network_utils import normalize_phone, resolve_network_from_phone
+from shared.utils.network_utils import normalize_network_name, normalize_nigerian_phone, resolve_network_from_phone
 
 logger = get_logger(__name__)
 
@@ -31,7 +31,7 @@ class ResolutionStep(AirtimeStep):
         locale = context.language
         patch = {}
 
-        if data.is_self:
+        if data.is_self and not data.recipient_phone:
             if context.phone_number:
                 patch["recipient_phone"] = context.phone_number
                 patch["recipient_name"] = "My Number"
@@ -66,19 +66,42 @@ class ResolutionStep(AirtimeStep):
 
         if current_phone:
             try:
-                formatted = normalize_phone(current_phone)
-                network = resolve_network_from_phone(formatted)
+                formatted = normalize_nigerian_phone(str(current_phone))
+                network = resolve_network_from_phone(str(current_phone))
+                provided_network = normalize_network_name(data.network) if data.network else None
 
                 logger.info("network_inference", formatted=formatted, network=network)
 
                 if formatted:
                     patch["recipient_phone"] = formatted
 
+                if network and provided_network and provided_network != network:
+                    return TransactionResult(
+                        outcome=TransactionOutcome.NEEDS_INPUT,
+                        required_fields=["network"],
+                        prompt=render_message(
+                            "response.templates.ask_network",
+                            locale,
+                            {"phone_masked": formatted or str(current_phone)},
+                        ),
+                        update_message=render_message("response.templates.invalid_network", locale),
+                        details={
+                            "conflict": "NETWORK_PHONE_MISMATCH",
+                            "inferred_network": network,
+                            "provided_network": provided_network,
+                        },
+                    )
+
                 if network:
                     patch["network"] = network
 
             except Exception as e:
                 logger.warning("network_inference_failed", error=str(e))
+
+        if not patch.get("network") and data.network:
+            normalized_network = normalize_network_name(data.network)
+            if normalized_network:
+                patch["network"] = normalized_network
 
         if patch:
             return TransactionResult(outcome=TransactionOutcome.OK, patch=patch)

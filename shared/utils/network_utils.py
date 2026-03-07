@@ -1,5 +1,7 @@
 """Network utilities for Nigerian mobile networks."""
 
+import re
+
 NETWORK_PREFIXES = {
     # MTN Nigeria
     "0803": "MTN",
@@ -36,43 +38,74 @@ NETWORK_PREFIXES = {
     "0908": "9MOBILE",
 }
 
+NETWORK_ALIASES = {
+    "mtn": "MTN",
+    "airtel": "AIRTEL",
+    "glo": "GLO",
+    "globacom": "GLO",
+    "glomobile": "GLO",
+    "9mobile": "9MOBILE",
+    "etisalat": "9MOBILE",
+}
+
+
+def _digits_only(value: str) -> str:
+    return re.sub(r"\D+", "", value or "")
+
+
+def normalize_nigerian_phone(phone: str) -> str | None:
+    """Return canonical local Nigerian number (0XXXXXXXXXX) when valid."""
+    digits = _digits_only(phone)
+    if not digits:
+        return None
+
+    if len(digits) == 13 and digits.startswith("234"):
+        digits = f"0{digits[3:]}"
+    elif len(digits) == 10:
+        digits = f"0{digits}"
+
+    if len(digits) == 11 and digits.startswith("0"):
+        return digits
+    return None
+
+
+def is_valid_nigerian_phone(phone: str) -> bool:
+    """Return True when phone can be normalized to local Nigerian format."""
+    return normalize_nigerian_phone(phone) is not None
+
+
+def normalize_network_name(network: str | None) -> str | None:
+    """Normalize network aliases to canonical provider names."""
+    if not network:
+        return None
+    token = network.strip().lower()
+    return NETWORK_ALIASES.get(token)
+
 
 def resolve_network_from_phone(phone: str) -> str | None:
     """
     Resolve network provider from Nigerian phone number prefix.
 
     Args:
-        phone: Phone number in any format (+234..., 234..., 0...)
+        phone: Phone number in any format (+234..., 234..., 0..., spaced)
 
     Returns:
         Network name (MTN, AIRTEL, GLO, 9MOBILE) or None if unknown
     """
-    cleaned = phone.strip()
-    if cleaned.startswith("+234"):
-        cleaned = "0" + cleaned[4:]
-    elif cleaned.startswith("234"):
-        cleaned = "0" + cleaned[3:]
-
-    if len(cleaned) >= 4:
-        prefix = cleaned[:4]
-        return NETWORK_PREFIXES.get(prefix)
-
-    return None
+    normalized = normalize_nigerian_phone(phone)
+    if not normalized:
+        return None
+    return NETWORK_PREFIXES.get(normalized[:4])
 
 
 def normalize_phone(phone: str) -> str:
     """
-    Normalize phone number to local Nigerian format (0XXX...).
+    Normalize phone number to local Nigerian format (0XXXXXXXXXX) where possible.
 
-    Args:
-        phone: Phone number in any format
-
-    Returns:
-        Phone number in local format (0XXX...)
+    Falls back to digits-only content when normalization is not possible.
     """
-    cleaned = phone.strip()
-    if cleaned.startswith("+234"):
-        return "0" + cleaned[4:]
-    elif cleaned.startswith("234"):
-        return "0" + cleaned[3:]
-    return cleaned
+    normalized = normalize_nigerian_phone(phone)
+    if normalized:
+        return normalized
+    digits = _digits_only(phone)
+    return digits if digits else phone.strip()
