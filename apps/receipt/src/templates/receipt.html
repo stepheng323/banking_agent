@@ -46,7 +46,7 @@
 
     body {
       font-family: "InterReceipt", -apple-system, BlinkMacSystemFont, sans-serif;
-      background-color: #f7f7f7;
+      background-color: #eef2f7;
       color: #1e293b;
       -webkit-font-smoothing: antialiased;
     }
@@ -63,19 +63,15 @@
 
     .watermark {
       position: absolute;
-      inset: 0;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      overflow: hidden;
-      opacity: 0.03;
+      right: 24px;
+      bottom: 96px;
+      opacity: 0.02;
       pointer-events: none;
     }
 
     .watermark svg {
-      width: 120%;
-      height: 120%;
-      transform: rotate(12deg);
+      width: 200px;
+      height: 200px;
     }
 
     .content {
@@ -108,7 +104,7 @@
       font-weight: 600;
       letter-spacing: 0.2em;
       text-transform: uppercase;
-      color: #94a3b8;
+      color: #64748b;
     }
 
     .amount-section {
@@ -116,32 +112,31 @@
       flex-direction: column;
       align-items: center;
       text-align: center;
-      margin-bottom: 48px;
+      margin-bottom: 40px;
     }
 
     .status-badge {
       display: inline-flex;
       align-items: center;
       gap: 6px;
-      padding: 4px 12px;
+      padding: 5px 14px;
       margin-bottom: 16px;
-      border: 1px solid #dcfce7;
       border-radius: 9999px;
-      background-color: #f0fdf4;
+      background-color: #dcfce7;
     }
 
     .status-badge .icon {
       font-size: 14px;
       font-weight: 700;
-      color: #16a34a;
+      color: #15803d;
     }
 
     .status-badge .text {
       font-size: 11px;
-      font-weight: 500;
+      font-weight: 600;
       letter-spacing: 0.05em;
       text-transform: uppercase;
-      color: #15803d;
+      color: #166534;
     }
 
     .amount {
@@ -149,43 +144,56 @@
       font-weight: 700;
       line-height: 1.1;
       letter-spacing: -0.02em;
-      color: #1e293b;
+      color: #0f172a;
     }
 
     .amount .currency {
-      margin-right: 4px;
+      margin-right: 8px;
       font-weight: 500;
-      color: #64748b;
+      color: #475569;
     }
 
     .amount .decimal {
       font-size: 24px;
       font-weight: 500;
-      color: #94a3b8;
+      color: #64748b;
     }
 
     .subtitle {
       margin-top: 4px;
-      font-size: 14px;
+      font-size: 18px;
+      font-weight: 500;
+      color: #334155;
+    }
+
+    .subtitle-note {
+      margin-top: 6px;
+      font-size: 12px;
       color: #64748b;
     }
 
     .divider {
       width: 100%;
       height: 1px;
-      margin-bottom: 40px;
-      background: linear-gradient(to right,
-          transparent,
-          #e2e8f0,
-          transparent);
+      margin-bottom: 32px;
+      background: linear-gradient(to right, transparent, #cbd5e1, transparent);
+    }
+
+    .details-panel {
+      width: 100%;
+      max-width: 404px;
+      margin: 0 auto;
+      padding: 24px;
+      border-radius: 12px;
+      border: 1px solid #e2e8f0;
+      background-color: #f8fafc;
     }
 
     .details {
       display: flex;
       flex-direction: column;
-      gap: 24px;
+      gap: 20px;
       width: 100%;
-      max-width: 340px;
       margin: 0 auto;
     }
 
@@ -199,47 +207,45 @@
     .row.grid {
       display: grid;
       grid-template-columns: 1fr 1fr;
-      gap: 32px;
+      gap: 20px;
     }
 
     .row .label {
       font-size: 11px;
-      font-weight: 500;
-      letter-spacing: 0.15em;
+      font-weight: 600;
+      letter-spacing: 0.14em;
       text-transform: uppercase;
-      color: #94a3b8;
-    }
-
-    .row .value {
-      font-size: 16px;
-      font-weight: 400;
-      color: #1e293b;
-    }
-
-    .row .sub-value {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      margin-top: 2px;
-      font-size: 12px;
       color: #64748b;
     }
 
-    .row .sub-value .dot {
-      font-size: 10px;
-      color: #cbd5e1;
+    .row .value {
+      font-size: 18px;
+      font-weight: 500;
+      line-height: 1.3;
+      color: #0f172a;
+    }
+
+    .row .value.recipient-name {
+      margin-bottom: 4px;
+    }
+
+    .row .sub-value {
+      margin-top: 2px;
+      font-size: 13px;
+      color: #475569;
     }
 
     .reference-box {
-      display: inline-block;
-      padding: 4px 8px;
-      margin-left: -8px;
-      border-radius: 4px;
-      background-color: #f8fafc;
+      display: block;
+      width: 100%;
+      padding: 8px 10px;
+      border-radius: 6px;
+      background-color: #e2e8f0;
+      word-break: break-all;
       font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
       font-size: 15px;
-      font-weight: 500;
-      color: #1e293b;
+      font-weight: 600;
+      color: #0f172a;
     }
 
     .narration {
@@ -250,10 +256,103 @@
       color: #1e293b;
     }
 
+    .verification {
+      margin-top: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      border: 1px solid #dbeafe;
+      border-radius: 12px;
+      background-color: #f8fbff;
+      padding: 14px;
+    }
+
+    .verification-body {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+    }
+
+    .verification-qr {
+      width: 74px;
+      height: 74px;
+      border-radius: 8px;
+      border: 1px solid #cbd5e1;
+      background-color: #ffffff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      flex-shrink: 0;
+    }
+
+    .verification-qr img {
+      width: 64px;
+      height: 64px;
+    }
+
+    .verification-qr-fallback {
+      font-size: 10px;
+      font-weight: 600;
+      color: #64748b;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .verification-copy {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      min-width: 0;
+    }
+
+    .verification-title {
+      font-size: 12px;
+      font-weight: 600;
+      color: #1e3a8a;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+
+    .verification-link {
+      font-size: 11px;
+      color: #334155;
+      word-break: break-all;
+    }
+
+    .verification-meta {
+      font-size: 11px;
+      color: #475569;
+    }
+
+    .action-chips {
+      margin-top: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .action-chip {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 6px 10px;
+      border-radius: 9999px;
+      border: 1px solid #dbeafe;
+      background-color: #eff6ff;
+      color: #1e40af;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
+    }
+
     .footer {
-      margin-top: 48px;
-      padding-top: 32px;
-      border-top: 1px dashed #e2e8f0;
+      margin-top: 28px;
+      padding-top: 24px;
+      border-top: 1px dashed #cbd5e1;
       text-align: center;
     }
 
@@ -268,38 +367,28 @@
     .footer-brand svg {
       width: 16px;
       height: 16px;
-      color: #cbd5e1;
+      color: #94a3b8;
     }
 
     .footer-brand .name {
       font-size: 11px;
       font-weight: 600;
       letter-spacing: 0.05em;
-      color: #94a3b8;
+      color: #64748b;
     }
 
     .footer-text {
-      max-width: 280px;
+      max-width: 300px;
       margin: 0 auto;
-      font-size: 10px;
-      line-height: 1.5;
-      color: #94a3b8;
-    }
-
-    .bottom-bar {
-      position: absolute;
-      bottom: 0;
-      left: 0;
-      width: 100%;
-      height: 6px;
-      background: linear-gradient(to right, #60a5fa, #3b82f6);
+      font-size: 11px;
+      line-height: 1.6;
+      color: #64748b;
     }
   </style>
 </head>
 
 <body>
   <div class="receipt-container" id="receipt-container">
-    <!-- Watermark -->
     <div class="watermark">
       <svg fill="none" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
         <path clip-rule="evenodd" d="M24 4H6V17.3333V30.6667H24V44H42V30.6667V17.3333H24V4Z" fill="currentColor"
@@ -308,7 +397,6 @@
     </div>
 
     <div class="content">
-      <!-- Header -->
       <div class="header">
         <div class="logo">
           <svg fill="none" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
@@ -319,60 +407,102 @@
         <h1 class="tagline">Payments Simplified</h1>
       </div>
 
-      <!-- Amount Section -->
       <div class="amount-section">
         <div class="status-badge">
           <span class="icon">✓</span>
           <span class="text">{{ status }}</span>
         </div>
         <h2 class="amount">
-          <span class="currency">{{ currency_symbol }}</span>{{ amount }}<span class="decimal">{{ amount_decimal
-            }}</span>
+          <span class="currency">{{ currency_symbol }}</span>{{ amount }}<span class="decimal">{{ amount_decimal }}</span>
         </h2>
-        <p class="subtitle">Transfer Complete</p>
+        <p class="subtitle">Transfer Successful</p>
+        <p class="subtitle-note">Funds delivered to beneficiary bank</p>
       </div>
 
       <div class="divider"></div>
 
-      <!-- Details -->
-      <div class="details">
-        <div class="row">
-          <label class="label">Date & Time</label>
-          <p class="value">{{ date_time }}</p>
-        </div>
-
-        <div class="row grid">
+      <div class="details-panel">
+        <div class="details">
           <div class="row">
-            <label class="label">From</label>
-            <p class="value">{{ sender_name }}</p>
+            <label class="label">Date & Time</label>
+            <p class="value">{{ date_time }}</p>
           </div>
+
+          <div class="row grid">
+            <div class="row">
+              <label class="label">From</label>
+              <p class="value">{{ sender_name }}</p>
+              <p class="sub-value">{{ source_bank }}</p>
+              <p class="sub-value" style="font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;">
+                {{ source_account_masked }}
+              </p>
+            </div>
+            <div class="row">
+              <label class="label">To</label>
+              <p class="value recipient-name">{{ recipient_name }}</p>
+              <p class="sub-value">{{ recipient_bank }}</p>
+              <p class="sub-value" style="font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;">
+                {{ recipient_account_masked }}
+              </p>
+            </div>
+          </div>
+
+          <div class="row grid">
+            <div class="row">
+              <label class="label">Channel</label>
+              <p class="value">{{ channel }}</p>
+            </div>
+            <div class="row">
+              <label class="label">Processor / Session ID</label>
+              <p class="sub-value">{{ processor_name }}</p>
+              <p class="sub-value" style="font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;">
+                {{ session_id }}
+              </p>
+            </div>
+          </div>
+
           <div class="row">
-            <label class="label">To</label>
-            <p class="value">{{ recipient_name }}</p>
-            <p class="sub-value">{{ recipient_bank }}</p>
-            <p class="sub-value" style="
-                  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
-                  font-size: 11px;
-                ">
-              {{ recipient_account_masked }}
-            </p>
+            <label class="label">Transaction Reference</label>
+            <p class="reference-box">#{{ transaction_reference }}</p>
+          </div>
+
+          {% if narration %}
+          <div class="row">
+            <label class="label">Narration</label>
+            <p class="narration">"{{ narration }}"</p>
+          </div>
+          {% endif %}
+        </div>
+
+        <div class="verification">
+          <div class="verification-body">
+            <div class="verification-qr">
+              {% if verification_qr_data_uri %}
+              <img src="{{ verification_qr_data_uri }}" alt="Verification QR code" />
+              {% else %}
+              <span class="verification-qr-fallback">Verify</span>
+              {% endif %}
+            </div>
+
+            <div class="verification-copy">
+              <p class="verification-title">Verify Receipt</p>
+              {% if verification_url %}
+              <p class="verification-link">{{ verification_url }}</p>
+              {% else %}
+              <p class="verification-link">Verification URL unavailable</p>
+              {% endif %}
+              <p class="verification-meta">Processed by {{ processor_name }}</p>
+            </div>
           </div>
         </div>
 
-        <div class="row">
-          <label class="label">Transaction Reference</label>
-          <p class="reference-box">#{{ transaction_reference }}</p>
+        <div class="action-chips">
+          <span class="action-chip">Share</span>
+          <span class="action-chip">Download PDF</span>
+          <span class="action-chip">Report Issue</span>
         </div>
-
-        {% if narration %}
-        <div class="row">
-          <label class="label">Narration</label>
-          <p class="narration">"{{ narration }}"</p>
-        </div>
-        {% endif %}
       </div>
 
-      <!-- Footer -->
       <div class="footer">
         <div class="footer-brand">
           <svg fill="none" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
@@ -382,14 +512,11 @@
           <span class="name">FUSEPAY INC.</span>
         </div>
         <p class="footer-text">
-          This receipt is electronically generated and is valid without a
-          signature. Transaction verified by Fusepay Secure Gateway.
+          This receipt is electronically generated and is valid without a signature. Transaction verified by Fusepay
+          Secure Gateway.
         </p>
       </div>
     </div>
-
-    <!-- Bottom accent bar -->
-    <div class="bottom-bar"></div>
   </div>
 </body>
 

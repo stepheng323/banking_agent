@@ -5,11 +5,19 @@ from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
 from typing import Any, Literal
+from urllib.parse import quote, urlencode
+from zoneinfo import ZoneInfo
 
 from jinja2 import Environment, FileSystemLoader
 from playwright.async_api import Browser, Playwright, async_playwright
 
+from shared.config.settings import settings
 from shared.utils.logging import get_logger
+
+try:
+    import segno
+except Exception:  # pragma: no cover - optional dependency fallback
+    segno = None
 
 logger = get_logger(__name__)
 
@@ -29,6 +37,9 @@ CHROMIUM_LAUNCH_ARGS = [
     "--single-process",
     "--disable-gpu",
 ]
+RECEIPT_TIMEZONE = ZoneInfo("Africa/Lagos")
+DEFAULT_PROCESSOR_NAME = "Fusepay Secure Gateway"
+NOT_AVAILABLE = "N/A"
 
 
 class ReceiptBrowserRuntimeClosedError(RuntimeError):
@@ -126,25 +137,41 @@ class ReceiptRenderer:
                 attempt=attempt,
             )
 
-            recipient = transfer_data.get("recipient", {})
-            source = transfer_data.get("source", {})
+            recipient_raw = transfer_data.get("recipient")
+            source_raw = transfer_data.get("source")
+            recipient = recipient_raw if isinstance(recipient_raw, dict) else {}
+            source = source_raw if isinstance(source_raw, dict) else {}
             amount = transfer_data.get("amount", 0)
 
             sender_name = source.get("account_name") or source.get("name", "Unknown")
             recipient_name = recipient.get("name", "Unknown")
+            session_id = transfer_data.get("session_id") or transaction_reference
+            verification_url = self._build_verification_url(
+                settings.receipt_verification_base_url,
+                transaction_reference=transaction_reference,
+                session_id=session_id,
+            )
+            verification_qr_data_uri = self._build_verification_qr_data_uri(verification_url)
 
             template_data = {
                 "status": "Successful",
                 "amount": self._format_amount(amount),
                 "amount_decimal": ".00",
                 "currency_symbol": "₦",
-                "date_time": datetime.now().strftime("%b %d, %Y at %I:%M %p"),
-                "sender_name": sender_name,
-                "recipient_name": recipient_name,
-                "recipient_bank": recipient.get("bank_name", ""),
-                "recipient_account_masked": self._mask_account(recipient.get("account_number", "")),
+                "date_time": datetime.now(RECEIPT_TIMEZONE).strftime("%b %d, %Y at %I:%M %p %Z"),
+                "sender_name": self._display_value(sender_name),
+                "source_bank": self._display_value(source.get("name")),
+                "source_account_masked": self._display_value(self._mask_account(source.get("account_number"))),
+                "recipient_name": self._display_value(recipient_name),
+                "recipient_bank": self._display_value(recipient.get("bank_name")),
+                "recipient_account_masked": self._display_value(self._mask_account(recipient.get("account_number"))),
+                "channel": self._display_value(transfer_data.get("channel")),
+                "processor_name": self._display_value(transfer_data.get("processor_name"), DEFAULT_PROCESSOR_NAME),
+                "session_id": self._display_value(session_id),
                 "transaction_reference": transaction_reference,
                 "narration": transfer_data.get("narration", ""),
+                "verification_url": verification_url,
+                "verification_qr_data_uri": verification_qr_data_uri,
                 "inter_regular_font_url": self._font_file_url("Inter-Regular.ttf"),
                 "inter_medium_font_url": self._font_file_url("Inter-Medium.ttf"),
                 "inter_semibold_font_url": self._font_file_url("Inter-SemiBold.ttf"),
@@ -227,13 +254,45 @@ class ReceiptRenderer:
 
     def _format_amount(self, amount: float | Decimal) -> str:
         """Format amount with thousand separators."""
-        return f"{float(amount):,.0f}"
+        try:
+            return f"{float(amount):,.0f}"
+        except (TypeError, ValueError):
+            return "0"
 
     def _font_file_url(self, file_name: str) -> str:
         return FONTS_DIR.joinpath(file_name).resolve().as_uri()
 
-    def _mask_account(self, account_number: str) -> str:
+    def _mask_account(self, account_number: str | None) -> str:
         """Mask account number showing only last 4 digits."""
-        if len(account_number) >= 4:
-            return f"**** {account_number[-4:]}"
-        return account_number
+        if not account_number:
+            return ""
+        normalized = str(account_number).strip()
+        if len(normalized) >= 4:
+            return f"**** {normalized[-4:]}"
+        return normalized
+
+    def _display_value(self, value: Any, default: str = NOT_AVAILABLE) -> str:
+        if value is None:
+            return default
+        normalized = str(value).strip()
+        return normalized if normalized else default
+
+    def _build_verification_url(self, base_url: str, transaction_reference: str, session_id: str) -> str:
+        normalized_base = base_url.strip().rstrip("/")
+        if not normalized_base:
+            return ""
+        path_reference = quote(transaction_reference, safe="")
+        url = f"{normalized_base}/{path_reference}"
+        if session_id and session_id != transaction_reference:
+            url = f"{url}?{urlencode({'session_id': session_id})}"
+        return url
+
+    def _build_verification_qr_data_uri(self, verification_url: str) -> str:
+        if not verification_url or segno is None:
+            return ""
+        try:
+            qr = segno.make(verification_url)
+            return str(qr.svg_data_uri(scale=3, border=1))
+        except Exception as exc:  # pragma: no cover - best effort rendering
+            logger.warning("receipt_verification_qr_generation_failed", error=str(exc))
+            return ""

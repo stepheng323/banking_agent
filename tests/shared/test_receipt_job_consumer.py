@@ -23,8 +23,11 @@ async def test_receipt_consumer_processes_top_level_payload() -> None:
         "transfer_data": {
             "amount": 5000,
             "recipient": {"name": "Pastor Bright", "account_number": "0760505261", "bank_name": "Access Bank"},
-            "source": {"name": "First Bank", "account_name": "Gaines"},
+            "source": {"name": "First Bank", "account_name": "Gaines", "account_number": "0123456789"},
             "narration": "offering",
+            "channel": "whatsapp",
+            "session_id": "session-123",
+            "processor_name": "Fusepay Gateway",
         },
         "transaction_reference": "TRX-001",
         "signal_key": "receipt:signal:test-1",

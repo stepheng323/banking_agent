@@ -309,6 +309,7 @@ async def _queue_single_transfer_receipt(
         "source": {
             "name": cast(str | None, task.payload.get("source_bank_name")),
             "account_name": cast(str | None, task.payload.get("source_account_name")),
+            "account_number": cast(str | None, task.payload.get("source_account_number")),
         },
         "recipient": {
             "name": cast(str | None, task.payload.get("recipient_resolved_name") or task.payload.get("recipient_name")),
@@ -316,6 +317,9 @@ async def _queue_single_transfer_receipt(
             "bank_name": cast(str | None, task.payload.get("recipient_bank_name")),
         },
         "narration": cast(str | None, task.payload.get("narration")),
+        "channel": state.channel,
+        "session_id": cast(str | None, task.payload.get("idempotency_key") or task.payload.get("transaction_id")),
+        "processor_name": cast(str | None, task.payload.get("processor_name")),
     }
     job_payload: ReceiptJobPayload = {
         "phone_number": state.phone_number,

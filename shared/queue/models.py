@@ -12,6 +12,7 @@ class ReceiptTransferDataRecipient(TypedDict):
 class ReceiptTransferDataSource(TypedDict):
     name: str | None
     account_name: str | None
+    account_number: NotRequired[str | None]
 
 
 class ReceiptTransferData(TypedDict):
@@ -19,6 +20,9 @@ class ReceiptTransferData(TypedDict):
     source: ReceiptTransferDataSource
     recipient: ReceiptTransferDataRecipient
     narration: str | None
+    channel: NotRequired[str | None]
+    session_id: NotRequired[str | None]
+    processor_name: NotRequired[str | None]
 
 
 class ReceiptJobPayload(TypedDict):

@@ -63,12 +63,24 @@ async def test_render_receipt_uses_fast_wait_and_local_font_html(monkeypatch: py
         return browser
 
     monkeypatch.setattr(renderer, "_get_browser", _get_browser)
+    monkeypatch.setattr(
+        "apps.receipt.src.renderer.settings.receipt_verification_base_url",
+        "https://verify.fusepay.example/receipt",
+    )
+    monkeypatch.setattr(
+        renderer,
+        "_build_verification_qr_data_uri",
+        lambda *_: "data:image/svg+xml;base64,abc",
+    )
 
     screenshot = await renderer.render_receipt(
         transfer_data={
             "amount": 1000,
             "recipient": {"name": "Jane", "account_number": "1234567890", "bank_name": "Opay"},
-            "source": {"account_name": "John"},
+            "source": {"account_name": "John", "name": "First Bank", "account_number": "0987654321"},
+            "channel": "whatsapp",
+            "session_id": "SESSION-FAST-1",
+            "processor_name": "Fusepay Gateway",
             "narration": "Test transfer",
         },
         transaction_reference="TRX-FAST-1",
@@ -85,10 +97,55 @@ async def test_render_receipt_uses_fast_wait_and_local_font_html(monkeypatch: py
     html_content = page.set_content.await_args.args[0]
     assert "fonts.googleapis.com" not in html_content
     assert "file://" in html_content
+    assert "Transfer Successful" in html_content
+    assert "Funds delivered to beneficiary bank" in html_content
+    assert "WAT" in html_content
+    assert "Download PDF" in html_content
+    assert "Report Issue" in html_content
+    assert "https://verify.fusepay.example/receipt/TRX-FAST-1?session_id=SESSION-FAST-1" in html_content
+    assert "data:image/svg+xml;base64,abc" in html_content
+    assert "bottom-bar" not in html_content
     assert page.set_content.await_args.kwargs["wait_until"] == "domcontentloaded"
     page.wait_for_selector.assert_awaited_once_with("#receipt-container", state="visible", timeout=3000)
     element.screenshot.assert_awaited_once_with(type="png")
     page.close.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_render_receipt_renders_safe_fallbacks_when_optional_fields_missing(monkeypatch: pytest.MonkeyPatch) -> None:
+    renderer = ReceiptRenderer()
+
+    element = cast(Any, SimpleNamespace(screenshot=AsyncMock(return_value=b"png-bytes")))
+    page = cast(
+        Any,
+        SimpleNamespace(
+            set_default_timeout=Mock(),
+            set_content=AsyncMock(),
+            wait_for_selector=AsyncMock(),
+            query_selector=AsyncMock(return_value=element),
+            screenshot=AsyncMock(return_value=b"full-page"),
+            close=AsyncMock(),
+        ),
+    )
+    browser = cast(Any, SimpleNamespace(new_page=AsyncMock(return_value=page)))
+
+    async def _get_browser() -> Any:
+        return browser
+
+    monkeypatch.setattr(renderer, "_get_browser", _get_browser)
+    monkeypatch.setattr("apps.receipt.src.renderer.settings.receipt_verification_base_url", "")
+    monkeypatch.setattr(renderer, "_build_verification_qr_data_uri", lambda *_: "")
+
+    await renderer.render_receipt(
+        transfer_data={"amount": 1000, "recipient": {}, "source": {}},
+        transaction_reference="TRX-FALLBACK-1",
+        attempt=1,
+    )
+
+    assert page.set_content.await_args is not None
+    html_content = page.set_content.await_args.args[0]
+    assert "Verification URL unavailable" in html_content
+    assert ">N/A<" in html_content
 
 
 @pytest.mark.asyncio

@@ -119,8 +119,9 @@ class TransferExecutor:
             "transfer_data": {
                 "amount": transfer_data.get("amount"),
                 "source": {
-                    "name": source_data.get("bank_name"),
+                    "name": source_data.get("bank_name") or source_data.get("name"),
                     "account_name": source_data.get("account_name"),
+                    "account_number": source_data.get("account_number"),
                 },
                 "recipient": {
                     "name": recipient_data.get("name"),
@@ -128,6 +129,9 @@ class TransferExecutor:
                     "bank_name": recipient_data.get("bank_name"),
                 },
                 "narration": transfer_data.get("narration"),
+                "channel": data.get("channel", "whatsapp"),
+                "session_id": data.get("idempotency_key") or data.get("transaction_id"),
+                "processor_name": transfer_data.get("processor_name"),
             },
             "transaction_reference": data.get("transaction_id"),
             "signal_key": f"scheduled:receipt:{data.get('transaction_id')}",
