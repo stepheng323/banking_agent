@@ -85,3 +85,22 @@ def test_explicit_cancel_shortcuts_work_for_all_interrupt_kinds(kind: str) -> No
 def test_unknown_or_unsupported_locale_falls_back() -> None:
     assert resolve_shortcut_locale("french") is None
     assert resolve_interrupt_shortcut(text="proceed", interrupt_kind="confirmation", locale=None) is None
+
+
+def test_confirmation_correction_phrase_stays_in_flow() -> None:
+    route = resolve_interrupt_shortcut(
+        text="No, I mean split btw them",
+        interrupt_kind="confirmation",
+        locale=LocaleCode.EN,
+    )
+    assert route is not None
+    assert route.decision == "continue_flow"
+
+
+def test_confirmation_correction_without_transfer_cue_falls_back_to_llm() -> None:
+    route = resolve_interrupt_shortcut(
+        text="No, I mean what is my balance",
+        interrupt_kind="confirmation",
+        locale=LocaleCode.EN,
+    )
+    assert route is None

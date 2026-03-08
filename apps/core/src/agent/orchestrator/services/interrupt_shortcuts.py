@@ -80,6 +80,10 @@ STATUS_REQUIREMENTS_PHRASES: dict[LocaleCode, set[str]] = {
 }
 
 _UPDATE_HINT_RE = re.compile(r"\b(change|update|edit|instead|amount|bank|account|recipient|beneficiary)\b")
+_CONFIRMATION_TRANSFER_CORRECTION_RE = re.compile(
+    r"^(?:no[, ]+)?i mean\b.*\b(split|between|btw|amount|bank|account|recipient|beneficiary|narration|memo|note)\b"
+    r"|^split\b.*\b(between|btw)\b"
+)
 
 
 def _normalize_text(text: str) -> str:
@@ -165,6 +169,17 @@ def _resolve_interrupt_shortcut(
     # Confirmation shortcuts only.
     if interrupt_kind != "confirmation":
         return None, "no_match"
+
+    # Short confirmation corrections should stay in-flow, not switch intent.
+    if _CONFIRMATION_TRANSFER_CORRECTION_RE.search(normalized):
+        return (
+            _build_decision(
+                locale=locale,
+                decision="continue_flow",
+                reason="shortcut_confirmation_correction",
+            ),
+            "matched",
+        )
 
     tokens = normalized.split()
     if len(tokens) > 6 or len(normalized) > 64:
