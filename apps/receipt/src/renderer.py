@@ -14,10 +14,13 @@ from playwright.async_api import Browser, Playwright, async_playwright
 from shared.config.settings import settings
 from shared.utils.logging import get_logger
 
+segno: Any | None
 try:
-    import segno
+    import segno as _segno
 except Exception:  # pragma: no cover - optional dependency fallback
     segno = None
+else:
+    segno = _segno
 
 logger = get_logger(__name__)
 
