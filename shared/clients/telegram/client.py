@@ -18,14 +18,15 @@ def _format_telegram_html(text: str) -> str:
     """Convert lightweight markdown-like syntax to Telegram-safe HTML."""
     escaped = html.escape(text or "")
     escaped = re.sub(r"`([^`\n]+)`", r"<code>\1</code>", escaped)
-    escaped = re.sub(r"\*(.+?)\*", r"<b>\1</b>", escaped)
+    escaped = re.sub(r"\*\*([^*\n]+)\*\*", r"<b>\1</b>", escaped)
+    escaped = re.sub(r"(?<!\*)\*([^*\n]+)\*(?!\*)", r"<b>\1</b>", escaped)
 
     def _italic_repl(match: re.Match[str]) -> str:
         prefix = match.group(1) or ""
         content = match.group(2) or ""
         return f"{prefix}<i>{content}</i>"
 
-    escaped = re.sub(r"(^|[\s(])_(.+?)_(?=[\s).,!?:;]|$)", _italic_repl, escaped)
+    escaped = re.sub(r"(^|[\s(])_(?!_)([^_\n]+?)_(?=[\s).,!?:;]|$)", _italic_repl, escaped)
     return escaped
 
 

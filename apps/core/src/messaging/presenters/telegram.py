@@ -15,6 +15,7 @@ from apps.core.src.agent.orchestrator.models.intents import (
 )
 from apps.core.src.messaging.presenters.base import PresentationContext, PresentationResult, Presenter
 from shared.clients.abstractions.messaging import MessagingClient
+from shared.clients.telegram.client import _format_telegram_html
 from shared.repositories.unit_of_work import UnitOfWork
 from shared.utils.logging import get_logger
 
@@ -117,13 +118,7 @@ class TelegramPresenter(Presenter):
             prefix = "data"
 
         flow_token = f"{prefix}-pin-{intent.correlation_id}-{context.phone_number}"
-
-        import re
-
-        html_summary = intent.summary or "Please enter your PIN to proceed."
-        html_summary = html.escape(html_summary)
-        # Convert simple markdown bold (*) to html (<b>)
-        html_summary = re.sub(r"\*(.*?)\*", r"<b>\1</b>", html_summary)
+        html_summary = _format_telegram_html(intent.summary or "Please enter your PIN to proceed.")
 
         # Use Mini App for secure PIN entry
         resp = await self.client.send_flow(
@@ -151,13 +146,7 @@ class TelegramPresenter(Presenter):
             prefix = "data"
 
         flow_token = f"{prefix}-pin-{intent.correlation_id}-{context.phone_number}"
-
-        import re
-
-        html_summary = intent.summary or ""
-        html_summary = html.escape(html_summary)
-        # Convert simple markdown bold (*) to html (<b>)
-        html_summary = re.sub(r"\*(.*?)\*", r"<b>\1</b>", html_summary)
+        html_summary = _format_telegram_html(intent.summary or "")
 
         # Use Mini App for PIN-based confirmation
         resp = await self.client.send_flow(

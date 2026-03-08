@@ -20,6 +20,11 @@ def test_telegram_html_formatter_does_not_break_plain_text() -> None:
     assert rendered == "Which account would you like to use?"
 
 
+def test_telegram_html_formatter_handles_double_asterisk_bold() -> None:
+    rendered = _format_telegram_html("**Ticket:** 123\n*Total:* **₦30,000**")
+    assert rendered == "<b>Ticket:</b> 123\n<b>Total:</b> <b>₦30,000</b>"
+
+
 @pytest.mark.asyncio
 async def test_send_message_draft_calls_telegram_draft_endpoint(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "telegram_bot_token", "test-token")
