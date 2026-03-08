@@ -38,6 +38,8 @@ def test_interrupt_status_query_contract_present() -> None:
     )
     assert "status_query_type: recap | requirements | null" in INTERRUPT_ROUTER_SYSTEM_PROMPT
     assert "decision=status_query" in INTERRUPT_ROUTER_SYSTEM_PROMPT
+    assert '"make it 20k"' in INTERRUPT_ROUTER_SYSTEM_PROMPT
+    assert "target_intent=null" in INTERRUPT_ROUTER_SYSTEM_PROMPT
 
 
 def test_transfer_recipient_fidelity_rules_present() -> None:

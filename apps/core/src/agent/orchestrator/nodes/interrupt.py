@@ -40,6 +40,7 @@ PLANNER_SWITCH_INTENTS = {
 INTERRUPT_CONTEXT_MAX_CHARS = 1800
 INTERRUPT_REQUIRED_FIELDS_MAX_CHARS = 700
 INTERRUPT_PROMPT_MAX_CHARS = 300
+INTERRUPT_ACTIVE_TASK_STATE_MAX_CHARS = 700
 
 _CONFIRMATION_UPDATE_VERB_RE = re.compile(
     r"\b(change|update|edit|instead|set|make(?:\s+it)?|replace|correct|meant|add|use)\b",
@@ -144,6 +145,11 @@ def _build_interrupt_context(
     fields_by_task: dict[str, list[str]],
     prompt: str | None,
 ) -> str:
+    active_task_state = _build_active_task_router_state(state=state, task_ids=task_ids)
+    active_task_state_text = _clip_text(
+        json.dumps(active_task_state, ensure_ascii=True),
+        INTERRUPT_ACTIVE_TASK_STATE_MAX_CHARS,
+    )
     required_fields_text = _clip_text(
         json.dumps(fields_by_task, ensure_ascii=True),
         INTERRUPT_REQUIRED_FIELDS_MAX_CHARS,
@@ -152,6 +158,7 @@ def _build_interrupt_context(
     parts = [
         f"Active Flow: {kind} required for tasks {task_ids} "
         f"(types: {', '.join(sorted(current_task_types))}).\n"
+        f"active_task_state={active_task_state_text}\n"
         f"required_fields={required_fields_text}\n"
         f"prompt={prompt_text}"
     ]
@@ -174,6 +181,73 @@ def _route_fallback(reason: str) -> InterruptRouteDecision:
         status_query_type=None,
         reason=reason,
     )
+
+
+def _compact_task_payload_for_interrupt_router(payload: dict[str, Any]) -> dict[str, Any]:
+    # Keep only stable routing signals to avoid noisy or sensitive prompt context.
+    compact: dict[str, Any] = {}
+    scalar_fields = (
+        "action",
+        "amount",
+        "recipient_name",
+        "recipient_resolved_name",
+        "recipient_phone",
+        "network",
+        "beneficiary_id",
+        "source_account_id",
+        "source_bank_name",
+        "source_account_number",
+    )
+    for field in scalar_fields:
+        value = payload.get(field)
+        if isinstance(value, (str, int, float, bool)) and value not in ("", None):
+            compact[field] = value
+
+    # Expose destination presence semantically without copying raw account digits into prompt context.
+    compact["has_recipient_account"] = bool(payload.get("recipient_account"))
+    compact["has_recipient_bank_name"] = bool(payload.get("recipient_bank_name"))
+
+    confirmation = payload.get("confirmation")
+    if isinstance(confirmation, dict):
+        summary = confirmation.get("summary")
+        snapshot = confirmation.get("snapshot")
+        confirmation_view: dict[str, Any] = {}
+        if isinstance(summary, str) and summary:
+            confirmation_view["summary"] = summary
+        if isinstance(snapshot, dict):
+            confirmation_view["snapshot"] = {
+                key: snapshot.get(key)
+                for key in (
+                    "amount",
+                    "recipient_name",
+                    "recipient_phone",
+                    "recipient_account",
+                    "recipient_bank_name",
+                    "sourceBank",
+                    "sourceAccount",
+                )
+                if key in snapshot and isinstance(snapshot.get(key), (str, int, float, bool))
+            }
+        if confirmation_view:
+            compact["confirmation"] = confirmation_view
+
+    return compact
+
+
+def _build_active_task_router_state(*, state: OrchestratorState, task_ids: list[str]) -> dict[str, Any]:
+    task_state: dict[str, Any] = {}
+    for task_id in task_ids:
+        task = state.tasks.get(task_id)
+        if not task:
+            continue
+        task_state[task_id] = {
+            "type": str(task.type),
+            "stage": str(task.stage),
+            "payload": _compact_task_payload_for_interrupt_router(cast(dict[str, Any], task.payload)),
+        }
+    return task_state
+
+
 def _is_beneficiary_clarification_interrupt(interrupt: Any) -> bool:
     if not interrupt or getattr(interrupt, "kind", None) != "input":
         return False

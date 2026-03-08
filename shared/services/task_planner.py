@@ -342,6 +342,9 @@ Rules:
     - status_query_type=recap for progress/recap asks
     - status_query_type=requirements for asks about missing input/next required action
     - Keep target_intent=null and target_mode=null for status_query.
+14) In confirmation/auth transaction flows, treat concise correction replies as continue_flow
+    (target_intent=null), not switch_intent. Examples: "make it 20k", "change amount to 13k",
+    "use opay instead", "it's for feeding".
 """
 
 INTERRUPT_ROUTER_USER_PROMPT_TEMPLATE = """User phone: {phone_number}

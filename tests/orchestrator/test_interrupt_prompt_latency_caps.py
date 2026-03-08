@@ -1,5 +1,6 @@
 """Latency guard tests for interrupt routing context prompt growth."""
 
+from apps.core.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
 from apps.core.src.agent.orchestrator.models.state import OrchestratorState
 from apps.core.src.agent.orchestrator.nodes.interrupt import (
     INTERRUPT_CONTEXT_MAX_CHARS,
@@ -41,6 +42,7 @@ def test_interrupt_context_is_bounded_and_keeps_prefix_fields() -> None:
 
     assert len(context) <= INTERRUPT_CONTEXT_MAX_CHARS
     assert context.startswith("Active Flow:")
+    assert "active_task_state=" in context
     assert "required_fields=" in context
     assert "prompt=" in context
     assert "...[truncated]" in context
@@ -79,4 +81,44 @@ def test_interrupt_context_prefix_survives_tail_truncation() -> None:
 
     assert len(context) <= INTERRUPT_CONTEXT_MAX_CHARS
     assert "Active Flow: confirmation required for tasks ['t3']" in context
+    assert "active_task_state=" in context
     assert "required_fields=" in context
+
+
+def test_interrupt_context_includes_compact_active_task_state() -> None:
+    state = OrchestratorState(
+        user_id="u_interrupt_cap_3",
+        phone_number="2348099999993",
+        channel="whatsapp",
+        tasks={
+            "t9": TaskSpec(
+                id="t9",
+                type="transfer",
+                stage=TaskStage.AWAITING_CONFIRMATION,
+                payload={
+                    "amount": 16000,
+                    "recipient_name": "Mum",
+                    "recipient_account": "8162511023",
+                    "recipient_bank_name": "Opay",
+                    "confirmation": {
+                        "summary": "Confirm transfer",
+                        "snapshot": {"amount": 16000, "recipient_name": "Mum"},
+                    },
+                },
+            ),
+        },
+    )
+
+    context = _build_interrupt_context(
+        state=state,
+        kind="confirmation",
+        task_ids=["t9"],
+        current_task_types={"transfer"},
+        fields_by_task={"t9": []},
+        prompt="Confirm transfer",
+    )
+
+    assert "active_task_state=" in context
+    assert "\"t9\"" in context
+    assert "\"recipient_name\": \"Mum\"" in context
+    assert "\"has_recipient_account\": true" in context
