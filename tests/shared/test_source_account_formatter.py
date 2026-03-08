@@ -1,6 +1,6 @@
 from shared.formatters.accounts import format_source_account_info_from_account_number
 from shared.formatters.airtime import format_airtime_summary
-from shared.formatters.transfer import format_transfer_summary
+from shared.formatters.transfer import format_multi_source_transfer_summary, format_transfer_summary
 
 
 def test_source_account_info_from_number_with_balance() -> None:
@@ -41,3 +41,40 @@ def test_airtime_summary_uses_shared_source_line_formatter() -> None:
         locale="en",
     )
     assert "From: First Bank (···7890)" in summary
+
+
+def test_transfer_summary_narration_is_plain_text_without_markdown_italics() -> None:
+    summary = format_transfer_summary(
+        {
+            "amount": 5000,
+            "recipientName": "Fatima Zahra Musa",
+            "recipientBank": "Access Bank",
+            "recipientAccount": "8067892221",
+            "sourceBank": "First Bank",
+            "sourceAccount": "1234567890",
+            "user_note": "feeding",
+        },
+        include_source=True,
+        locale="en",
+    )
+    assert "Narration: Feeding" in summary
+    assert "Narration: _Feeding_" not in summary
+
+
+def test_multi_source_summary_narration_is_plain_text_without_markdown_italics() -> None:
+    summary = format_multi_source_transfer_summary(
+        {
+            "amount": 50000,
+            "recipientName": "John Doe",
+            "recipientBank": "GTBank",
+            "recipientAccount": "1234567890",
+            "funding_sources": [
+                {"bank_name": "UBA", "account_number": "1111111111", "amount": 30000},
+                {"bank_name": "Access", "account_number": "2222222222", "amount": 20000},
+            ],
+            "narration": "feeding",
+        },
+        locale="en",
+    )
+    assert "Narration: Feeding" in summary
+    assert "Narration: _Feeding_" not in summary

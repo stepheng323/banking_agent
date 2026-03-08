@@ -543,7 +543,7 @@
         "last4_fallback": "????",
         "title": "*{amount} → {recipient_name}*",
         "recipient_line": "{recipient_bank} • {recipient_account}",
-        "user_note": "Narration: _{user_note}_",
+        "user_note": "Narration: {user_note}",
         "source_line": "From: {source_bank} (···{last4})"
       },
       "multi_source_summary": {
@@ -551,7 +551,7 @@
         "field_to": "*To:* {recipient_name}",
         "field_bank": "*Bank:* {recipient_bank}",
         "field_account": "*Account:* `{recipient_account}`",
-        "narration": "Narration: _{narration}_",
+        "narration": "Narration: {narration}",
         "funding_header": "*Funding from:*",
         "bank_fallback": "Account",
         "funding_item": "  • {bank} (···{last4}): {amount}",
