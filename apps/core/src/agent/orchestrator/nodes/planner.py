@@ -936,6 +936,26 @@ def _expand_underproduced_transfer_tasks(
     )
 
 
+def _should_replan_active_wave(state: OrchestratorState) -> bool:
+    """Allow replanning active waves only for explicit pre-execution update turns."""
+    if not state.waves or state.pending_interrupt is not None:
+        return False
+    if not (state.last_message_text or "").strip():
+        return False
+    if state.current_wave_index >= len(state.waves):
+        return False
+
+    current_wave = state.waves[state.current_wave_index]
+    if not current_wave:
+        return False
+
+    replannable_stages = {TaskStage.AWAITING_CONFIRMATION, TaskStage.AWAITING_AUTH}
+    active_tasks = [state.tasks.get(task_id) for task_id in current_wave if state.tasks.get(task_id) is not None]
+    if not active_tasks:
+        return False
+    return all(task.stage in replannable_stages for task in active_tasks)
+
+
 def _strip_transactional_depends_on_edges(
     planned_tasks: list[PlannedTask],
 ) -> tuple[list[PlannedTask], list[tuple[str, str]]]:
@@ -973,7 +993,7 @@ async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[s
     1. If new request (no active waves), call Planner to create TaskSpecs.
     2. If existing waves, this is a pass-through (or bulk extraction update).
     """
-    if state.waves and state.pending_interrupt is None:
+    if state.waves and state.pending_interrupt is None and not _should_replan_active_wave(state):
         return {}
 
     task_planner = config["configurable"].get("task_planner")
