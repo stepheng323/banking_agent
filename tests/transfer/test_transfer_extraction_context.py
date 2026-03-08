@@ -465,6 +465,42 @@ async def test_narration_correction_updates_narration_and_user_note() -> None:
     assert result.patch["_extraction_ack"] == "Updated narration."
 
 
+async def test_amount_update_does_not_clear_recipient_binding_when_name_matches_resolved_identity() -> None:
+    class _AmountCorrectionExtractor:
+        async def extract(self, text: str, smart_context: dict | None = None) -> TransferExtractionResult:
+            del text, smart_context
+            return TransferExtractionResult(
+                entities=TransferEntities(amount=20000, recipient_name="Mercy Johnson"),
+                correction=Correction(field=CorrectionField.AMOUNT, new_value=20000),
+                acknowledgment="Updated amount.",
+            )
+
+    step = ExtractionStep(user_message="Change amount to 20k")
+    payload = TransferPayload(
+        recipient_name="Mum",
+        recipient_resolved_name="Mercy Johnson",
+        recipient_account="8162511023",
+        recipient_bank_name="Opay",
+        recipient_bank_code="100004",
+        beneficiary_id="bene-1",
+    )
+    context = TransferContext(phone_number="2348000000999", language="en", beneficiaries=[], accounts=[])
+    worker_context = SimpleNamespace(
+        extractor=_AmountCorrectionExtractor(),
+        required_fields=[],
+        previous_response=None,
+    )
+
+    result = await step.execute(payload, context, TransferGates(), worker_context)
+
+    assert result.outcome == TransactionOutcome.OK
+    assert result.patch["amount"] == 20000
+    assert result.patch["recipient_name"] == "Mercy Johnson"
+    assert "recipient_account" not in result.patch
+    assert "recipient_bank_name" not in result.patch
+    assert "beneficiary_id" not in result.patch
+
+
 async def test_account_then_amount_turns_do_not_get_stuck_due_to_skip_extraction() -> None:
     """Regression: after account+bank deterministic parse, next amount turn should still extract."""
     extractor = _CaptureExtractor()

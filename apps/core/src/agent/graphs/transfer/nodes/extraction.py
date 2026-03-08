@@ -178,6 +178,35 @@ def _parse_amount_input(user_message: str) -> float | None:
     return amount
 
 
+def _normalize_name_token(value: str | None) -> str:
+    if not value:
+        return ""
+    return re.sub(r"[^a-z0-9]+", " ", value.lower()).strip()
+
+
+def _recipient_name_matches_existing_binding(new_name: str | None, current_payload: TransferPayload) -> bool:
+    normalized_new = _normalize_name_token(new_name)
+    if not normalized_new:
+        return False
+
+    normalized_known = {
+        _normalize_name_token(current_payload.recipient_name),
+        _normalize_name_token(current_payload.recipient_resolved_name),
+    }
+    normalized_known.discard("")
+    if not normalized_known:
+        return False
+
+    if normalized_new in normalized_known:
+        return True
+
+    new_tokens = set(normalized_new.split())
+    if len(new_tokens) != 1:
+        return False
+    single_token = next(iter(new_tokens))
+    return any(single_token in set(known.split()) for known in normalized_known)
+
+
 class ExtractionStep(TransferStep):
     """Refines transfer data from user message."""
 
@@ -496,9 +525,7 @@ async def _extract_transfer_update(
             # This prevents re-extraction (e.g. from proper nouns in synthesized messages)
             # from wiping out valid account details we just collected.
             new_name = extracted_data["recipient_name"]
-            current_name = current_payload.recipient_name or ""
-
-            names_match = new_name and current_name and new_name.lower().strip() == current_name.lower().strip()
+            names_match = _recipient_name_matches_existing_binding(new_name, current_payload)
 
             if not names_match:
                 extracted_data["recipient_account"] = None
