@@ -131,6 +131,64 @@ def test_transfer_maps_planner_bank_name_and_normalizes_recipient_account() -> N
     assert spec.payload.get("recipient_bank_name") == "Access Bank"
 
 
+def test_transfer_drops_ungrounded_planner_destination_account_and_bank() -> None:
+    plan_item = PlannedTask(
+        task_id="t1",
+        action="send_money",
+        executor="transfer",
+        instruction="Send 5k to Mum",
+        parameters=TaskParameters(
+            amount=5000,
+            recipient="Mum",
+            recipient_account="8162511023",
+            bank_name="Zenith Bank",
+        ),
+        risk="MONEY_MOVE",
+    )
+
+    spec = build_task_spec_from_plan_item(
+        plan_item,
+        "send 5k to mum",
+        preserve_existing_action_instruction=True,
+        include_skip_extraction=True,
+        strip_transfer_recipient_suffix=True,
+        format_narration_requires_recipient_field=False,
+    )
+
+    assert spec.payload.get("recipient_name") == "Mum"
+    assert "recipient_account" not in spec.payload
+    assert "recipient_bank_name" not in spec.payload
+
+
+def test_transfer_keeps_grounded_bank_and_drops_ungrounded_account() -> None:
+    plan_item = PlannedTask(
+        task_id="t1",
+        action="send_money",
+        executor="transfer",
+        instruction="Send 5k to Mum via Zenith Bank",
+        parameters=TaskParameters(
+            amount=5000,
+            recipient="Mum",
+            recipient_account="8162511023",
+            bank_name="Zenith Bank",
+        ),
+        risk="MONEY_MOVE",
+    )
+
+    spec = build_task_spec_from_plan_item(
+        plan_item,
+        "send 5k to mum via zenith bank",
+        preserve_existing_action_instruction=True,
+        include_skip_extraction=True,
+        strip_transfer_recipient_suffix=True,
+        format_narration_requires_recipient_field=False,
+    )
+
+    assert spec.payload.get("recipient_name") == "Mum"
+    assert "recipient_account" not in spec.payload
+    assert spec.payload.get("recipient_bank_name") == "Zenith Bank"
+
+
 def test_transfer_keeps_10_digit_account_starting_with_zero() -> None:
     plan_item = PlannedTask(
         task_id="t1",

@@ -220,3 +220,20 @@ def resolve_shortcut_locale(value: str | LocaleCode | None) -> LocaleCode | None
 
     normalized = LocaleManager.normalize(token)
     return normalized if normalized in SUPPORTED_SHORTCUT_LOCALES else None
+
+
+def is_explicit_confirmation_approval(text: str, locale: LocaleCode | None) -> bool:
+    """Return True when text is an explicit confirmation approval phrase."""
+    normalized = _normalize_text(text)
+    if not normalized:
+        return False
+
+    # Fallback so explicit approvals still work even when locale metadata is unavailable.
+    locales_to_check: list[LocaleCode] = (
+        [locale] if locale in SUPPORTED_SHORTCUT_LOCALES else [LocaleCode.EN]
+    )
+
+    for candidate_locale in locales_to_check:
+        if normalized in CONFIRM_APPROVE_PHRASES.get(candidate_locale, set()):
+            return True
+    return False

@@ -131,6 +131,72 @@ async def test_transaction_switch_target_invokes_planner_call() -> None:
 
 
 @pytest.mark.asyncio
+async def test_transaction_switch_drops_ungrounded_destination_fields_from_new_transfer_task() -> None:
+    state = OrchestratorState(
+        user_id="u_budget_2b",
+        phone_number="2348100000020",
+        channel="whatsapp",
+        last_message_text="send 5k to mum",
+        loaded_context={"language": "en"},
+        pending_interrupt=PendingInterrupt(kind="auth", task_ids=["t1"], auth_method="pin", prompt="Enter your PIN"),
+        tasks={
+            "t1": TaskSpec(
+                id="t1",
+                type="transfer",
+                stage=TaskStage.AWAITING_AUTH,
+                payload={
+                    "recipient_name": "Mercy",
+                    "recipient_account": "8162511023",
+                    "recipient_bank_name": "Opay",
+                    "amount": 5000,
+                },
+            )
+        },
+        waves=[["t1"]],
+        current_wave_index=0,
+    )
+    planner = _CountingPlanner(
+        route=InterruptRouteDecision(
+            decision="switch_intent",
+            confidence=0.96,
+            detected_language="English",
+            target_intent="transfer",
+            target_mode="new",
+            reason="fresh transfer request",
+        ),
+        output=PlannerOutput(
+            primary_intent="transfer",
+            tasks=[
+                PlannedTask(
+                    task_id="t2",
+                    action="send_money",
+                    executor="transfer",
+                    instruction="Send 5000 to Mum",
+                    parameters=TaskParameters(
+                        amount=5000,
+                        recipient="Mum",
+                        recipient_account="8162511023",
+                        bank_name="Zenith Bank",
+                    ),
+                    risk="MONEY_MOVE",
+                )
+            ],
+        ),
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await handle_pending_interrupt(state, config)
+
+    assert planner.route_calls == 1
+    assert planner.plan_calls == 1
+    assert list(updates["tasks"].keys()) == ["t2"]
+    payload = updates["tasks"]["t2"].payload
+    assert payload.get("recipient_name") == "Mum"
+    assert "recipient_account" not in payload
+    assert "recipient_bank_name" not in payload
+
+
+@pytest.mark.asyncio
 async def test_confirmation_shortcut_skips_router_and_planner_calls() -> None:
     state = OrchestratorState(
         user_id="u_budget_3",
@@ -164,6 +230,91 @@ async def test_confirmation_shortcut_skips_router_and_planner_calls() -> None:
     updates = await handle_pending_interrupt(state, config)
 
     assert planner.route_calls == 0
+    assert planner.plan_calls == 0
+    assert updates["pending_interrupt"] is None
+    assert updates["tasks"]["t1"].stage == TaskStage.AWAITING_AUTH
+
+
+@pytest.mark.asyncio
+async def test_confirmation_non_explicit_text_never_auto_approves_even_if_router_says_approve() -> None:
+    state = OrchestratorState(
+        user_id="u_budget_3b",
+        phone_number="2348100000031",
+        channel="whatsapp",
+        last_message_text="Add it for feeding",
+        loaded_context={"language": "en"},
+        pending_interrupt=PendingInterrupt(kind="confirmation", task_ids=["t1"]),
+        tasks={
+            "t1": TaskSpec(
+                id="t1",
+                type="transfer",
+                stage=TaskStage.AWAITING_CONFIRMATION,
+                payload={
+                    "amount": 5000,
+                    "recipient_name": "Mum",
+                    "confirmation": {"summary": "Confirm transfer"},
+                    "idempotency_key": "idem-old",
+                },
+            )
+        },
+    )
+    planner = _CountingPlanner(
+        route=InterruptRouteDecision(
+            decision="approve_flow",
+            confidence=0.93,
+            detected_language="English",
+            target_intent=None,
+            target_mode=None,
+            reason="misclassified_update_as_approval",
+        ),
+        output=PlannerOutput(primary_intent="transfer"),
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await handle_pending_interrupt(state, config)
+
+    assert planner.route_calls == 1
+    assert planner.plan_calls == 0
+    assert updates["pending_interrupt"] is None
+    assert updates["tasks"]["t1"].stage == TaskStage.EXTRACTED
+    assert updates["tasks"]["t1"].payload.get("confirmation") == {}
+    assert "idempotency_key" not in updates["tasks"]["t1"].payload
+
+
+@pytest.mark.asyncio
+async def test_confirmation_explicit_approval_still_advances_on_llm_route_path() -> None:
+    state = OrchestratorState(
+        user_id="u_budget_3c",
+        phone_number="2348100000032",
+        channel="whatsapp",
+        last_message_text="yes",
+        loaded_context={"language": "fr"},
+        pending_interrupt=PendingInterrupt(kind="confirmation", task_ids=["t1"]),
+        tasks={
+            "t1": TaskSpec(
+                id="t1",
+                type="transfer",
+                stage=TaskStage.AWAITING_CONFIRMATION,
+                payload={"amount": 5000, "recipient_name": "Mum"},
+            )
+        },
+    )
+    planner = _CountingPlanner(
+        route=InterruptRouteDecision(
+            decision="approve_flow",
+            confidence=0.95,
+            detected_language="French",
+            target_intent=None,
+            target_mode=None,
+            reason="explicit_confirmation_approval",
+        ),
+        output=PlannerOutput(primary_intent="transfer"),
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await handle_pending_interrupt(state, config)
+
+    assert planner.route_calls == 1
     assert planner.plan_calls == 0
     assert updates["pending_interrupt"] is None
     assert updates["tasks"]["t1"].stage == TaskStage.AWAITING_AUTH

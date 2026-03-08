@@ -8,6 +8,7 @@ from shared.services.scheduling.recurrence import (
     SCHEDULE_TIMEZONE,
     normalize_time_local,
 )
+from shared.utils.bank_aliases import get_bank_search_terms
 from shared.utils.sanitize import normalize_bank_account_number
 
 _TRANSFER_VERB_TOKENS = {"send", "transfer", "pay", "remit"}
@@ -39,6 +40,46 @@ def _normalize_text(value: str | None) -> str:
         return ""
     lowered = re.sub(r"([a-z])['’]s\b", r"\1", value.lower())
     return re.sub(r"[^a-z0-9]+", " ", lowered).strip()
+
+
+def _digits_only(value: str | None) -> str:
+    if not value:
+        return ""
+    return re.sub(r"\D+", "", value)
+
+
+def _recipient_account_grounded_in_user_text(recipient_account: str | None, user_text: str) -> bool:
+    account_digits = _digits_only(recipient_account)
+    if len(account_digits) < 10:
+        return False
+    text_digits = _digits_only(user_text)
+    if not text_digits:
+        return False
+    if account_digits in text_digits:
+        return True
+    normalized_account = normalize_bank_account_number(account_digits) or ""
+    return bool(normalized_account and normalized_account in text_digits)
+
+
+def _recipient_bank_grounded_in_user_text(recipient_bank_name: str | None, user_text: str) -> bool:
+    norm_bank = _normalize_text(recipient_bank_name)
+    norm_text = _normalize_text(user_text)
+    if not norm_bank or not norm_text:
+        return False
+    if re.search(rf"\b{re.escape(norm_bank)}\b", norm_text):
+        return True
+
+    base_bank = re.sub(r"\bbank\b", "", norm_bank).strip()
+    if base_bank and re.search(rf"\b{re.escape(base_bank)}\b", norm_text):
+        return True
+
+    for term in get_bank_search_terms(recipient_bank_name or ""):
+        norm_term = _normalize_text(term)
+        if not norm_term:
+            continue
+        if re.search(rf"\b{re.escape(norm_term)}\b", norm_text):
+            return True
+    return False
 
 
 def _is_plausible_recipient_candidate(candidate: str | None) -> bool:
@@ -171,6 +212,21 @@ def _apply_transfer_payload_fields(
             payload["recipient_name"] = derived
         else:
             payload.pop("recipient_name", None)
+
+    # Guard destination fields against stale planner context leakage.
+    recipient_account = payload.get("recipient_account")
+    if isinstance(recipient_account, str) and recipient_account:
+        if not _recipient_account_grounded_in_user_text(recipient_account, fallback_message):
+            payload.pop("recipient_account", None)
+            payload.pop("recipient_resolved_name", None)
+            payload.pop("recipient_bank_code", None)
+
+    recipient_bank_name = payload.get("recipient_bank_name")
+    if isinstance(recipient_bank_name, str) and recipient_bank_name:
+        if not _recipient_bank_grounded_in_user_text(recipient_bank_name, fallback_message):
+            payload.pop("recipient_bank_name", None)
+            payload.pop("recipient_bank_code", None)
+            payload.pop("recipient_resolved_name", None)
 
     if format_narration_requires_recipient_field and not has_recipient_field:
         return

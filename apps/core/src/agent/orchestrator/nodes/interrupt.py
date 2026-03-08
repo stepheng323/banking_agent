@@ -9,6 +9,7 @@ from apps.core.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
 from apps.core.src.agent.orchestrator.models.state import OrchestratorState
 from apps.core.src.agent.orchestrator.nodes.planner import _build_user_state_summary
 from apps.core.src.agent.orchestrator.services.interrupt_shortcuts import (
+    is_explicit_confirmation_approval,
     resolve_interrupt_shortcut_with_reason,
     resolve_shortcut_locale,
 )
@@ -821,6 +822,28 @@ def _cancel_updates(state: OrchestratorState, interrupt: Any, current_task_types
     }
 
 
+def _continue_flow_updates(state: OrchestratorState, interrupt: Any) -> dict[str, Any]:
+    if interrupt.kind in {"input", "confirmation"}:
+        logger.info("confirmation_update_detected_via_llm", tasks=interrupt.task_ids)
+        reset_tasks_to_extracted(
+            state.tasks,
+            interrupt.task_ids,
+            copy_task=True,
+            clear_idempotency=True,
+        )
+        return {
+            "pending_interrupt": None,
+            "last_interrupt": interrupt,
+            "tasks": state.tasks,
+        }
+    return _reprompt_updates(state, interrupt)
+
+
+def _is_explicit_confirmation_approval_text(state: OrchestratorState, text: str) -> bool:
+    shortcut_locale = resolve_shortcut_locale((state.loaded_context or {}).get("language"))
+    return is_explicit_confirmation_approval(text=text, locale=shortcut_locale)
+
+
 def _approve_confirmation_updates(state: OrchestratorState, interrupt: Any) -> dict[str, Any]:
     new_tasks = state.tasks.copy()
     logger.info("confirmation_confirmed", tasks=interrupt.task_ids, via_pin=state.pin_verified)
@@ -1114,6 +1137,12 @@ async def handle_pending_interrupt(state: OrchestratorState, config: RunnableCon
 
     if route.decision == "approve_flow":
         if interrupt.kind == "confirmation":
+            if not _is_explicit_confirmation_approval_text(state, text):
+                logger.info(
+                    "confirmation_approve_blocked_non_explicit_text",
+                    tasks=interrupt.task_ids,
+                )
+                return _continue_flow_updates(state, interrupt)
             return _approve_confirmation_updates(state, interrupt)
         if interrupt.kind == "auth":
             return _approve_auth_updates(state, interrupt)
@@ -1121,20 +1150,7 @@ async def handle_pending_interrupt(state: OrchestratorState, config: RunnableCon
         return _reprompt_updates(state, interrupt)
 
     if route.decision == "continue_flow":
-        if interrupt.kind in {"input", "confirmation"}:
-            logger.info("confirmation_update_detected_via_llm", tasks=interrupt.task_ids)
-            reset_tasks_to_extracted(
-                state.tasks,
-                interrupt.task_ids,
-                copy_task=True,
-                clear_idempotency=True,
-            )
-            return {
-                "pending_interrupt": None,
-                "last_interrupt": interrupt,
-                "tasks": state.tasks,
-            }
-        return _reprompt_updates(state, interrupt)
+        return _continue_flow_updates(state, interrupt)
 
     if route.decision == "switch_intent":
         return await _handle_switch_intent_route(
