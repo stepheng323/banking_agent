@@ -15,6 +15,8 @@ async def ingest_message(state: OrchestratorState) -> dict[str, Any]:
         "final_response": None,
         "policy_notice": None,
         "fast_path_triggered": False,
+        "preplanner_expected_transaction_executors": [],
+        "last_interrupt": None,
     }
 
     if state.last_callback:
