@@ -25,7 +25,11 @@ from apps.core.src.agent.orchestrator.utils.actionable_payload import build_acti
 from shared.formatters.accounts import (
     format_accounts_list,
 )
-from shared.formatters.confirmation import build_confirmation_summary, build_source_account_info
+from shared.formatters.confirmation import (
+    append_source_account_info,
+    build_confirmation_summary,
+    build_source_account_info,
+)
 from shared.formatters.prompts import (
     format_auth_reason,
     format_batch_transfer_source_prompt,
@@ -51,6 +55,7 @@ INPUT_MUTABLE_STAGES = {
     TaskStage.RESOLVED,
     TaskStage.VALIDATED,
 }
+TRANSACTION_TASK_TYPES = {"transfer", "airtime", "data"}
 
 
 def _build_mandate_gate_error(accounts: list[dict], locale: str) -> str:
@@ -201,6 +206,154 @@ def _strip_batch_name_mismatch_warning(summary: str, task_payload: dict[str, Any
         return cleaned[len(warning_text) :].lstrip("\n").strip()
 
     return cleaned
+
+
+def _render_task_confirmation_summary(
+    *,
+    task: Any,
+    locale: str,
+    accounts: list[dict[str, Any]],
+) -> str:
+    canonical = build_confirmation_summary(
+        task_payload=task.payload,
+        locale=locale,
+        accounts=accounts,
+    )
+    if canonical:
+        cleaned = _strip_batch_name_mismatch_warning(canonical, task.payload)
+        if cleaned:
+            return cleaned
+
+    confirmation_payload = task.payload.get("confirmation") or {}
+    raw_summary = confirmation_payload.get("summary")
+    if isinstance(raw_summary, str):
+        cleaned = _strip_batch_name_mismatch_warning(raw_summary, task.payload)
+        if cleaned:
+            source_account_info = build_source_account_info(
+                task_payload=task.payload,
+                snapshot=confirmation_payload.get("snapshot")
+                if isinstance(confirmation_payload.get("snapshot"), dict)
+                else {},
+                accounts=accounts,
+                locale=locale,
+            )
+            return append_source_account_info(cleaned, source_account_info, locale=locale)
+
+    return format_intent_line(task.type, task.payload, locale=locale)
+
+
+def _build_confirmation_gate_summary(
+    *,
+    state: OrchestratorState,
+    task_ids: list[str],
+    locale: str,
+    accounts: list[dict[str, Any]],
+) -> str:
+    if not task_ids:
+        return ""
+
+    if len(task_ids) == 1:
+        task = state.tasks[task_ids[0]]
+        return _render_task_confirmation_summary(task=task, locale=locale, accounts=accounts)
+
+    task_types = {state.tasks[tid].type for tid in task_ids if tid in state.tasks}
+    if task_types == {"transfer"}:
+        total_amount = 0.0
+        source_account_info: str | None = None
+        summaries: list[str] = []
+        for tid in task_ids:
+            task = state.tasks[tid]
+            confirmation_payload = task.payload.get("confirmation") or {}
+            snapshot = confirmation_payload.get("snapshot") or {}
+            if isinstance(snapshot, dict):
+                amount = snapshot.get("amount", 0)
+                if isinstance(amount, (int, float)):
+                    total_amount += float(amount)
+            if source_account_info is None:
+                source_account_info = build_source_account_info(
+                    task_payload=task.payload,
+                    snapshot=snapshot if isinstance(snapshot, dict) else {},
+                    accounts=accounts,
+                    locale=locale,
+                )
+            raw_summary = confirmation_payload.get("summary")
+            task_summary = ""
+            if isinstance(raw_summary, str):
+                task_summary = _strip_batch_name_mismatch_warning(raw_summary, task.payload)
+            if not task_summary:
+                task_summary = _render_task_confirmation_summary(task=task, locale=locale, accounts=accounts)
+            if task_summary:
+                summaries.append(task_summary)
+        return format_batch_transfer_summary(
+            num_transfers=len(task_ids),
+            total_amount=total_amount,
+            source_account_info=source_account_info,
+            summaries=summaries,
+            locale=locale,
+        )
+
+    summaries = [
+        _render_task_confirmation_summary(task=state.tasks[tid], locale=locale, accounts=accounts)
+        for tid in task_ids
+        if tid in state.tasks
+    ]
+    non_empty = [summary for summary in summaries if summary]
+    return "\n\n".join(non_empty)
+
+
+def _auth_header_for_tasks(state: OrchestratorState, task_ids: list[str], *, locale: str) -> str:
+    task_types = {state.tasks[task_id].type for task_id in task_ids if task_id in state.tasks}
+    if len(task_types) == 1:
+        return format_auth_reason(next(iter(task_types)), locale=locale)
+    return format_auth_reason("mixed", locale=locale)
+
+
+def _queued_transaction_tasks_for_focus(
+    *,
+    state: OrchestratorState,
+    current_wave: list[str],
+    focused_tid: str,
+) -> list[Any]:
+    queued: list[Any] = []
+    for tid in current_wave:
+        if tid == focused_tid:
+            continue
+        task = state.tasks.get(tid)
+        if not task or task.type not in TRANSACTION_TASK_TYPES:
+            continue
+        if task.stage in TERMINAL_STAGES:
+            continue
+        queued.append(task)
+    return queued
+
+
+def _append_queued_notice(
+    *,
+    prompt_text: str,
+    queued_tasks: list[Any],
+    locale: str,
+) -> tuple[str, dict[str, Any] | None]:
+    if not queued_tasks:
+        return prompt_text, None
+
+    queued_lines = [format_intent_line(task.type, task.payload, locale=locale) for task in queued_tasks]
+    queued_lines = [line for line in queued_lines if line]
+    if not queued_lines:
+        return prompt_text, None
+
+    queued_text = "\n".join(f"• {line}" for line in queued_lines)
+    queue_notice = render_message(
+        "orchestrator.execution.queued_next_notice",
+        locale,
+        {"queued_intents": queued_text},
+    )
+    merged_prompt = f"{prompt_text}\n\n{queue_notice}" if prompt_text else queue_notice
+    queue_meta = {
+        "queued_task_ids": [task.id for task in queued_tasks],
+        "queued_task_types": [task.type for task in queued_tasks],
+        "queued_intents": queued_lines,
+    }
+    return merged_prompt, queue_meta
 
 
 def _build_planning_signature(task_payload: dict[str, Any]) -> dict[str, Any]:
@@ -686,6 +839,16 @@ async def advance_wave(state: OrchestratorState, config: RunnableConfig) -> dict
                         found_names=found_names,
                         locale=locale,
                     )
+                queued_tasks = _queued_transaction_tasks_for_focus(
+                    state=state,
+                    current_wave=current_wave,
+                    focused_tid=focused_tid,
+                )
+                prompt_text, queue_meta = _append_queued_notice(
+                    prompt_text=prompt_text,
+                    queued_tasks=queued_tasks,
+                    locale=locale,
+                )
 
                 # Mark recipients we mentioned as announced (found_names + just_resolved)
                 for tid in current_wave:
@@ -711,6 +874,8 @@ async def advance_wave(state: OrchestratorState, config: RunnableConfig) -> dict
                     focused_missing_fields=focused_missing_fields,
                 )
                 outbox_entries = [options_entry] if options_entry else [{"type": "say", "text": prompt_text}]
+                if queue_meta is not None:
+                    outbox_entries[0]["queue"] = queue_meta
                 return {
                     "pending_interrupt": interrupt,
                     "tasks": state.tasks,
@@ -822,53 +987,21 @@ async def advance_wave(state: OrchestratorState, config: RunnableConfig) -> dict
         )
         if not confirm_task_ids:
             return cast(dict[str, Any], updates)
-        total_amount = 0.0
-        source_account_info = None
-        summaries = []
         accounts_raw = state.loaded_context.get("accounts") or []
         accounts = [account for account in accounts_raw if isinstance(account, dict)]
-
-        for tid in confirm_task_ids:
-            task = state.tasks[tid]
-            t_payload = task.payload.get("confirmation") or {}
-            snap = t_payload.get("snapshot") or {}
-            total_amount += snap.get("amount", 0)
-
-            # Extract source info from the first task (assume batch shares source)
-            if source_account_info is None:
-                source_account_info = build_source_account_info(
-                    task_payload=task.payload,
-                    snapshot=snap if isinstance(snap, dict) else {},
-                    accounts=accounts,
-                    locale=locale,
-                )
-
-            if s := t_payload.get("summary"):
-                if isinstance(s, str):
-                    cleaned_summary = _strip_batch_name_mismatch_warning(s, task.payload)
-                    if cleaned_summary:
-                        summaries.append(cleaned_summary)
-
-        if len(confirm_task_ids) == 1:
-            single_task = state.tasks[confirm_task_ids[0]]
-            canonical_summary = build_confirmation_summary(
-                task_payload=single_task.payload,
-                locale=locale,
-                accounts=accounts,
-            )
-            summ = canonical_summary or (summaries[0] if summaries else "")
-        else:
-            summ = format_batch_transfer_summary(
-                num_transfers=len(confirm_task_ids),
-                total_amount=total_amount,
-                source_account_info=source_account_info,
-                summaries=summaries,
-                locale=locale,
-            )
+        summ = _build_confirmation_gate_summary(
+            state=state,
+            task_ids=confirm_task_ids,
+            locale=locale,
+            accounts=accounts,
+        )
 
         first_task_payload = state.tasks[confirm_task_ids[0]].payload.get("confirmation", {})
         snap = first_task_payload.get("snapshot", {})
         update_msg = first_task_payload.get("update_message")
+        snapshots_by_task = {
+            tid: state.tasks[tid].payload.get("confirmation", {}).get("snapshot", {}) for tid in confirm_task_ids
+        }
 
         interrupt = PendingInterrupt(
             kind="confirmation",
@@ -886,6 +1019,7 @@ async def advance_wave(state: OrchestratorState, config: RunnableConfig) -> dict
                 "task_ids": confirm_task_ids,
                 "summary": summ,
                 "snapshot": snap,
+                "snapshots_by_task": snapshots_by_task,
                 "idempotency_key": state.tasks[confirm_task_ids[0]].payload.get(
                     "idempotency_key",
                     "unknown",
@@ -907,16 +1041,24 @@ async def advance_wave(state: OrchestratorState, config: RunnableConfig) -> dict
             return cast(dict[str, Any], updates)
 
         first_task = state.tasks[auth_task_ids[0]]
-        summ = first_task.payload.get("confirmation", {}).get(
-            "summary",
-            render_message("orchestrator.execution.pin_prompt_default", locale),
+        accounts_raw = state.loaded_context.get("accounts") or []
+        accounts = [account for account in accounts_raw if isinstance(account, dict)]
+        summ = _build_confirmation_gate_summary(
+            state=state,
+            task_ids=auth_task_ids,
+            locale=locale,
+            accounts=accounts,
         )
+        if not summ:
+            summ = render_message("orchestrator.execution.pin_prompt_default", locale)
         snap = first_task.payload.get("confirmation", {}).get("snapshot", {})
+        snapshots_by_task = {
+            tid: state.tasks[tid].payload.get("confirmation", {}).get("snapshot", {}) for tid in auth_task_ids
+        }
 
         idem_key = first_task.payload.get("idempotency_key", "no-key")
 
-        task_type = first_task.type
-        reason = format_auth_reason(task_type, locale=locale)
+        reason = _auth_header_for_tasks(state, auth_task_ids, locale=locale)
 
         interrupt = PendingInterrupt(kind="auth", task_ids=auth_task_ids, auth_method="pin", prompt=summ)
         updates["outbox"] = [
@@ -927,6 +1069,8 @@ async def advance_wave(state: OrchestratorState, config: RunnableConfig) -> dict
                 "idempotency_key": idem_key,
                 "header": reason,
                 "summary": summ,
+                "snapshot": snap,
+                "snapshots_by_task": snapshots_by_task,
                 "actionable_payload": build_actionable_payload(first_task),
             }
         ]

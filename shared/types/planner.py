@@ -80,6 +80,10 @@ PlannerResponseKey: TypeAlias = Literal[
     "planner.cancelled",
 ]
 
+TransactionExecutor: TypeAlias = Literal["transfer", "airtime", "data"]
+
+TurnRoutingDecision: TypeAlias = Literal["go_planner", "respond_directly", "query_continuation"]
+
 ContextFastpathSubtype: TypeAlias = Literal[
     "account_count",
     "linked_accounts_summary",
@@ -129,6 +133,24 @@ class InterruptRouteDecision(BaseModel):
     status_query_type: Literal["recap", "requirements"] | None = Field(
         default=None,
         description="Subtype when decision=status_query",
+    )
+    reason: str | None = Field(default=None, description="Short explanation for observability/debugging")
+
+
+class TurnRouteDecision(BaseModel):
+    """LLM decision for low-cost pre-planner routing."""
+
+    decision: TurnRoutingDecision = Field(default="go_planner", description="Routing action before planner")
+    confidence: float = Field(default=0.0, description="Confidence in routing decision (0.0-1.0)")
+    detected_language: str | None = Field(default=None, description="Detected language for this turn")
+    response_key: PlannerResponseKey | None = Field(
+        default=None,
+        description="Deterministic keyed response when decision=respond_directly",
+    )
+    response: str | None = Field(default=None, description="Direct response text when keyed response is unavailable")
+    expected_transaction_executors: list[TransactionExecutor] = Field(
+        default_factory=list,
+        description="Explicit transaction executors expected from planner, when known",
     )
     reason: str | None = Field(default=None, description="Short explanation for observability/debugging")
 

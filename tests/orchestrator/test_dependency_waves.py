@@ -31,6 +31,43 @@ class _AccountWorker:
         return AccountResult(outcome=AccountOutcome.OK, response="balance")
 
 
+class _PlannerWithLegacyRepairMethods:
+    def __init__(self, output: PlannerOutput) -> None:
+        self._output = output
+        self.plan_calls = 0
+        self.review_calls = 0
+        self.repair_calls = 0
+
+    async def plan_tasks(self, phone_number: str, text: str, context: str = "None") -> PlannerOutput:
+        del phone_number, text, context
+        self.plan_calls += 1
+        return self._output
+
+    async def review_task_completeness(self, *args: object, **kwargs: object) -> object:
+        del args, kwargs
+        self.review_calls += 1
+        raise AssertionError("planner review path should not be invoked")
+
+    async def repair_underproduced_plan(self, *args: object, **kwargs: object) -> object:
+        del args, kwargs
+        self.repair_calls += 1
+        raise AssertionError("planner repair path should not be invoked")
+
+
+class _RetryAwarePlanner:
+    def __init__(self, first: PlannerOutput, second: PlannerOutput) -> None:
+        self._first = first
+        self._second = second
+        self.plan_calls = 0
+
+    async def plan_tasks(self, phone_number: str, text: str, context: str = "None") -> PlannerOutput:
+        del phone_number, text, context
+        self.plan_calls += 1
+        if self.plan_calls == 1:
+            return self._first
+        return self._second
+
+
 @pytest.mark.asyncio
 async def test_planner_builds_dependency_aware_waves_for_mixed_request() -> None:
     planner_output = PlannerOutput(
@@ -78,6 +115,100 @@ async def test_planner_builds_dependency_aware_waves_for_mixed_request() -> None
     updates = await plan_tasks(state, config)
 
     assert updates["waves"] == [["t1", "t2"], ["t3"]]
+
+
+@pytest.mark.asyncio
+async def test_planner_does_not_call_legacy_review_or_repair_paths() -> None:
+    planner_output = PlannerOutput(
+        primary_intent="transfer",
+        is_complex=False,
+        tasks=[
+            PlannedTask(
+                task_id="t1",
+                action="send_money",
+                executor="transfer",
+                instruction="Send 10k to Mum",
+                parameters=TaskParameters(amount=10000, recipient="Mum"),
+                risk="MONEY_MOVE",
+            ),
+        ],
+    )
+    planner = _PlannerWithLegacyRepairMethods(planner_output)
+    state = OrchestratorState(
+        user_id="u_dep_lowcall_1",
+        phone_number="2348111111110",
+        channel="whatsapp",
+        last_message_text="send 10k to mum",
+    )
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "redis_client": None},
+        "recursion_limit": 50,
+    }
+
+    updates = await plan_tasks(state, config)
+
+    assert planner.plan_calls == 1
+    assert planner.review_calls == 0
+    assert planner.repair_calls == 0
+    assert list(updates["tasks"].keys()) == ["t1"]
+
+
+@pytest.mark.asyncio
+async def test_planner_retries_when_gate_expected_executor_is_missing() -> None:
+    first_output = PlannerOutput(
+        primary_intent="transfer",
+        is_complex=False,
+        tasks=[
+            PlannedTask(
+                task_id="t1",
+                action="send_money",
+                executor="transfer",
+                instruction="Send 10k to Mum",
+                parameters=TaskParameters(amount=10000, recipient="Mum"),
+                risk="MONEY_MOVE",
+            ),
+        ],
+    )
+    second_output = PlannerOutput(
+        primary_intent="mixed",
+        is_complex=True,
+        tasks=[
+            PlannedTask(
+                task_id="t1",
+                action="send_money",
+                executor="transfer",
+                instruction="Send 10k to Mum",
+                parameters=TaskParameters(amount=10000, recipient="Mum"),
+                risk="MONEY_MOVE",
+            ),
+            PlannedTask(
+                task_id="t2",
+                action="buy_airtime",
+                executor="airtime",
+                instruction="Buy 5k airtime",
+                parameters=TaskParameters(amount=5000, is_self=True),
+                risk="MONEY_MOVE",
+            ),
+        ],
+    )
+    planner = _RetryAwarePlanner(first_output, second_output)
+    state = OrchestratorState(
+        user_id="u_dep_retry_1",
+        phone_number="2348111111111",
+        channel="whatsapp",
+        last_message_text="send 10k to mum and buy me 5k airtime",
+        preplanner_expected_transaction_executors=["transfer", "airtime"],
+    )
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "redis_client": None},
+        "recursion_limit": 50,
+    }
+
+    updates = await plan_tasks(state, config)
+
+    assert planner.plan_calls == 2
+    assert set(updates["tasks"].keys()) == {"t1", "t2"}
+    assert updates["waves"] == [["t1", "t2"]]
 
 
 @pytest.mark.asyncio

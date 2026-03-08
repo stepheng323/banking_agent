@@ -19,7 +19,6 @@ from shared.i18n import (
     LanguageDetectionSignal,
     LocaleManager,
     MessageKey,
-    render_locale_switched,
     render_message,
     render_policy_notice,
     render_safe_capability_fallback,
@@ -52,8 +51,16 @@ CONTEXT_BENEFICIARY_PREVIEW_LIMIT = 5
 CONTEXT_ACCOUNT_PREVIEW_LIMIT = 5
 CONTEXT_HISTORY_PREVIEW_LIMIT = 5
 CONTEXT_HISTORY_ITEM_MAX_CHARS = 150
-CONTEXT_USER_STATE_MAX_CHARS = 1800
-PLANNER_CONTEXT_MAX_CHARS = 3500
+CONTEXT_USER_STATE_MAX_CHARS = 1200
+PLANNER_CONTEXT_MAX_CHARS = 2800
+PLANNER_MIN_SECTION_CHARS = 100
+PLANNER_CONTEXT_SECTION_SEPARATOR = "\n\n"
+PLANNER_CONTEXT_BENEFICIARY_SUGGESTION_MAX_CHARS = 420
+PLANNER_CONTEXT_QUERY_SESSION_MAX_CHARS = 640
+PLANNER_CONTEXT_ACTIVE_FLOW_MAX_CHARS = 700
+PLANNER_CONTEXT_SHORT_TERM_MAX_CHARS = 700
+PLANNER_CONTEXT_RECENT_DOMAIN_MAX_CHARS = 220
+PLANNER_CONTEXT_USER_STATE_MAX_CHARS = 900
 PLANNER_ACTIVE_TASK_DATA_MAX_CHARS = 900
 PLANNER_ACTIVE_TASK_MAX_KEYS = 12
 PLANNER_ACTIVE_TASK_MAX_ITEMS = 5
@@ -123,6 +130,15 @@ QUERY_CONTINUATION_SHORTCUT_BLOCKLIST_PATTERNS = (
     r"\bhelp\b",
     r"\bsend\b",
     r"\btransfer\b",
+)
+
+QUERY_SESSION_CONTEXT_HEADER = "Active Query Session: The user recently viewed transaction results."
+QUERY_SESSION_CONTEXT_GUIDANCE = (
+    "- Continuation/refinement/analytics on shown transactions stay in query "
+    "(for example: 'more', 'next', 'details', 'receipt', 'any credits?', "
+    "'any debit?', 'only debits', 'last month', 'how much did I spend?', 'total spending').\n"
+    "- Fresh transaction-history asks are also query tasks.\n"
+    "- Data questions are NOT conversational questions. Always route them as query tasks."
 )
 
 
@@ -495,6 +511,52 @@ def _build_user_state_summary(state: OrchestratorState) -> str | None:
             parts.append(f'- {role}: "{content}"')
 
     return _clip_text("\n".join(parts), CONTEXT_USER_STATE_MAX_CHARS)
+
+
+def _build_query_session_context(summary_text: str | None) -> str:
+    summary_snippet = ""
+    if summary_text:
+        summary_snippet = f' Last summary: "{_clip_text(summary_text, 180)}".'
+    return f"{QUERY_SESSION_CONTEXT_HEADER}{summary_snippet}\n{QUERY_SESSION_CONTEXT_GUIDANCE}"
+
+
+def _assemble_planner_context(
+    sections: list[tuple[str, str]],
+    *,
+    max_chars: int = PLANNER_CONTEXT_MAX_CHARS,
+) -> tuple[str, list[str], list[str], list[str]]:
+    assembled: list[str] = []
+    included: list[str] = []
+    clipped: list[str] = []
+    dropped: list[str] = []
+    current_len = 0
+
+    for name, section in sections:
+        section_text = section.strip()
+        if not section_text:
+            continue
+
+        separator_len = len(PLANNER_CONTEXT_SECTION_SEPARATOR) if assembled else 0
+        remaining = max_chars - current_len - separator_len
+        if remaining <= 0:
+            dropped.append(name)
+            continue
+
+        next_text = section_text
+        if len(next_text) > remaining:
+            if remaining < PLANNER_MIN_SECTION_CHARS:
+                dropped.append(name)
+                continue
+            next_text = _clip_text(next_text, remaining)
+            clipped.append(name)
+
+        assembled.append(next_text)
+        included.append(name)
+        current_len += separator_len + len(next_text)
+
+    if not assembled:
+        return "None", included, clipped, dropped
+    return PLANNER_CONTEXT_SECTION_SEPARATOR.join(assembled), included, clipped, dropped
 
 
 def _filter_spurious_affirmation_tasks(
@@ -891,18 +953,6 @@ async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[s
         logger.error("task_planner_missing")
         return {"final_response": render_safe_capability_fallback(current_locale)}
 
-    explicit_locale = LocaleManager.parse_explicit_switch_command(text)
-    if explicit_locale:
-        if redis_client:
-            resolved = await LocaleManager.set_locale(state.phone_number, explicit_locale, source="user_command")
-            next_locale = resolved.value
-        else:
-            next_locale = explicit_locale.value
-        locale_updates = _build_locale_update(state, next_locale)
-        return {
-            "final_response": render_locale_switched(next_locale),
-            **locale_updates,
-        }
     locale_updates = _build_locale_update(state, current_locale)
 
     if state.has_quote and state.quoted_message_id and hasattr(task_planner, "interpret_quoted_replay"):
@@ -966,7 +1016,7 @@ async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[s
         except Exception as exc:
             logger.warning("quoted_replay_shortcut_failed", error=str(exc))
 
-    planner_context_parts: list[str] = []
+    planner_context_sections: list[tuple[str, str]] = []
     query_session_snapshot: dict[str, Any] | None = None
     query_session_source: str | None = None
     current_flow_type: str | None = None
@@ -994,13 +1044,20 @@ async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[s
 
                 data = json.loads(suggestion_data)
                 name = data.get("recipient_name") or data.get("alias_suggested") or "Unknown"
-                planner_context_parts.append(
-                    f"Active Context: User was asked to save beneficiary '{name}'.\n"
-                    f"- Reply 'yes'/'save' -> Save with name '{name}'.\n"
-                    "- Reply with an explicit alias intent (e.g., 'save as Mum')"
-                    " or a clear contact-style alias -> Save with that alias.\n"
-                    "- Greetings/check-ins/thanks (e.g., 'hi', 'how far')"
-                    " are NOT save intent."
+                planner_context_sections.append(
+                    (
+                        "beneficiary_suggestion",
+                        _clip_text(
+                            (
+                                f"Active Context: User was asked to save beneficiary '{name}'.\n"
+                                f"- Reply 'yes'/'save' -> Save with name '{name}'.\n"
+                                "- Reply with explicit alias intent (e.g., 'save as Mum')"
+                                " -> Save with that alias.\n"
+                                "- Greetings/check-ins/thanks are NOT save intent."
+                            ),
+                            PLANNER_CONTEXT_BENEFICIARY_SUGGESTION_MAX_CHARS,
+                        ),
+                    )
                 )
                 logger.info("planner_context_injected", context="beneficiary_suggestion")
 
@@ -1045,25 +1102,16 @@ async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[s
                 query_result = session.get("query_result")
                 if isinstance(query_result, dict):
                     summary_text = query_result.get("summary_text")
-                summary_snippet = f' Last summary: "{summary_text[:200]}".' if summary_text else ""
-                planner_context_parts.append(
-                    "Active Query Session: The user recently viewed transaction results."
-                    f"{summary_snippet}\n"
-                    "- If the user asks to continue, navigate, or refine results"
-                    " (e.g., 'more', 'next', 'show transactions', 'details', 'receipt',"
-                    " 'any credits?', 'is there any debit?', 'only debits',"
-                    " 'last month', 'just food', 'over 10k'),"
-                    " or asks analytical/summary questions about the data"
-                    " (e.g., 'how much did I spend', 'what is the total',"
-                    " 'total spending', 'sum it up'),"
-                    " create a query task (executor='query') so the continuation handler"
-                    " can process it.\n"
-                    "- If the user asks a fresh query (e.g., 'show my recent transactions'),"
-                    " still create a query task as a new query.\n"
-                    "- IMPORTANT: Questions about the data ('any credits?', 'how about debits?',"
-                    " 'how much did I spend?') are analytical or filter refinements on the"
-                    " active session, NOT conversational questions."
-                    " Always route them as query tasks."
+                planner_context_sections.append(
+                    (
+                        "query_session",
+                        _clip_text(
+                            _build_query_session_context(
+                                cast(str | None, summary_text) if isinstance(summary_text, str) else None
+                            ),
+                            PLANNER_CONTEXT_QUERY_SESSION_MAX_CHARS,
+                        ),
+                    )
                 )
                 logger.info("planner_context_injected", context="query_session")
             elif query_session_snapshot and is_transactional_flow:
@@ -1080,25 +1128,16 @@ async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[s
         query_result = query_session_snapshot.get("query_result")
         if isinstance(query_result, dict):
             summary_text = query_result.get("summary_text")
-        summary_snippet = f' Last summary: "{summary_text[:200]}".' if summary_text else ""
-        planner_context_parts.append(
-            "Active Query Session: The user recently viewed transaction results."
-            f"{summary_snippet}\n"
-            "- If the user asks to continue, navigate, or refine results"
-            " (e.g., 'more', 'next', 'show transactions', 'details', 'receipt',"
-            " 'any credits?', 'is there any debit?', 'only debits',"
-            " 'last month', 'just food', 'over 10k'),"
-            " or asks analytical/summary questions about the data"
-            " (e.g., 'how much did I spend', 'what is the total',"
-            " 'total spending', 'sum it up'),"
-            " create a query task (executor='query') so the continuation handler"
-            " can process it.\n"
-            "- If the user asks a fresh query (e.g., 'show my recent transactions'),"
-            " still create a query task as a new query.\n"
-            "- IMPORTANT: Questions about the data ('any credits?', 'how about debits?',"
-            " 'how much did I spend?') are analytical or filter refinements on the"
-            " active session, NOT conversational questions."
-            " Always route them as query tasks."
+        planner_context_sections.append(
+            (
+                "query_session_stashed",
+                _clip_text(
+                    _build_query_session_context(
+                        cast(str | None, summary_text) if isinstance(summary_text, str) else None
+                    ),
+                    PLANNER_CONTEXT_QUERY_SESSION_MAX_CHARS,
+                ),
+            )
         )
         logger.info("planner_context_injected", context="query_session_stashed")
     elif query_session_snapshot and query_session_source == "stashed" and is_transactional_flow:
@@ -1119,13 +1158,20 @@ async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[s
                     }
                     payload_preview = _compact_payload_for_prompt(payload_view)
 
-                    planner_context_parts.append(
-                        f"Active Flow: {active_intent.upper()} (User is currently in this flow).\n"
-                        f"Current Task Data: {payload_preview}\n"
-                        "Review Rule 9 (CONTEXT OVERRIDE):"
-                        f"- If input is slot-filling or update (e.g. 'Mum', '5k'), KEEP intent='{active_intent}'.\n"
-                        "- If input is CLEARLY unrelated (e.g. 'Show beneficiaries', 'Balance'),"
-                        " CHANGE intent to new one."
+                    planner_context_sections.append(
+                        (
+                            "active_flow",
+                            _clip_text(
+                                (
+                                    f"Active Flow: {active_intent.upper()} (User is currently in this flow).\n"
+                                    f"Current Task Data: {payload_preview}\n"
+                                    "Review Rule 9 (CONTEXT OVERRIDE):"
+                                    f"- Slot-filling/updates keep intent='{active_intent}'.\n"
+                                    "- Clearly unrelated asks switch intent."
+                                ),
+                                PLANNER_CONTEXT_ACTIVE_FLOW_MAX_CHARS,
+                            ),
+                        )
                     )
                     logger.info("planner_context_active_flow_injected", intent=active_intent)
         except Exception as e:
@@ -1135,30 +1181,46 @@ async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[s
     short_term_context = ctx_manager.build_llm_summary(state)
 
     if short_term_context:
-        planner_context_parts.append(short_term_context)
+        planner_context_sections.append(
+            ("short_term_memory", _clip_text(short_term_context, PLANNER_CONTEXT_SHORT_TERM_MAX_CHARS))
+        )
         logger.info("planner_context_injected", context="short_term_memory")
 
     recent_domain_focus = _infer_recent_domain_focus(state)
     if recent_domain_focus:
-        planner_context_parts.append(
-            f"Recent Domain Focus: {recent_domain_focus}\n"
-            "- If the user sends a referential/underspecified follow-up, keep this domain.\n"
-            "- Switch domains only when the user clearly asks for a different domain."
+        planner_context_sections.append(
+            (
+                "recent_domain_focus",
+                _clip_text(
+                    (
+                        f"Recent Domain Focus: {recent_domain_focus}\n"
+                        "- Referential/underspecified follow-ups should keep this domain.\n"
+                        "- Switch only when user clearly asks another domain."
+                    ),
+                    PLANNER_CONTEXT_RECENT_DOMAIN_MAX_CHARS,
+                ),
+            )
         )
         logger.info("planner_context_injected", context="recent_domain_focus", domain=recent_domain_focus)
 
     user_state_summary = _build_user_state_summary(state)
     if user_state_summary:
-        planner_context_parts.append(user_state_summary)
+        planner_context_sections.append(
+            ("user_state_history", _clip_text(user_state_summary, PLANNER_CONTEXT_USER_STATE_MAX_CHARS))
+        )
         logger.info("planner_context_injected", context="user_state_history")
 
-    planner_context_raw = "\n\n".join(planner_context_parts) if planner_context_parts else "None"
-    planner_context = _clip_text(planner_context_raw, PLANNER_CONTEXT_MAX_CHARS)
+    planner_context, included_sections, clipped_sections, dropped_sections = _assemble_planner_context(
+        planner_context_sections,
+        max_chars=PLANNER_CONTEXT_MAX_CHARS,
+    )
     logger.info(
         "planner_context_size",
         chars=len(planner_context),
-        truncated=planner_context != planner_context_raw,
-        sections=len(planner_context_parts),
+        truncated=bool(clipped_sections),
+        sections=len(included_sections),
+        clipped_sections=clipped_sections,
+        dropped_sections=dropped_sections,
     )
 
     fastpath_context_updates: dict[str, Any] = {}
@@ -1413,6 +1475,58 @@ async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[s
             recipient_names=fanout_meta["recipient_names"],
         )
 
+    expected_executors = {
+        str(item)
+        for item in (state.preplanner_expected_transaction_executors or [])
+        if str(item) in TRANSACTION_EXECUTORS
+    }
+    if expected_executors:
+        planned_executors = {task.executor for task in planner_output.tasks if task.executor in TRANSACTION_EXECUTORS}
+        missing_executors = sorted(expected_executors - planned_executors)
+        if missing_executors:
+            retry_context = _clip_text(
+                (
+                    f"{planner_context}\n\nPre-planner expected explicit transaction executors: "
+                    f"{', '.join(sorted(expected_executors))}. "
+                    f"Ensure all explicit executors are represented in tasks."
+                ),
+                PLANNER_CONTEXT_MAX_CHARS,
+            )
+            try:
+                retry_output = await task_planner.plan_tasks(state.phone_number, text, context=retry_context)
+                retry_output = _filter_spurious_affirmation_tasks(
+                    retry_output,
+                    active_intent=active_intent,
+                    pending_interrupt_kind=state.pending_interrupt.kind if state.pending_interrupt else None,
+                )
+                retry_output = _deescalate_mandate_acknowledgement(
+                    retry_output,
+                    loaded_context=state.loaded_context,
+                    locale=current_locale,
+                )
+                retry_executors = {
+                    task.executor for task in retry_output.tasks if task.executor in TRANSACTION_EXECUTORS
+                }
+                if expected_executors.issubset(retry_executors):
+                    planner_output = retry_output
+                    logger.info(
+                        "planner_expected_executor_retry_applied",
+                        expected_executors=sorted(expected_executors),
+                        missing_executors=missing_executors,
+                    )
+                else:
+                    logger.warning(
+                        "planner_expected_executor_retry_rejected",
+                        expected_executors=sorted(expected_executors),
+                        retry_executors=sorted(retry_executors),
+                    )
+            except Exception as exc:
+                logger.warning(
+                    "planner_expected_executor_retry_failed",
+                    error=str(exc),
+                    expected_executors=sorted(expected_executors),
+                    missing_executors=missing_executors,
+                )
     stashed_query_session_update: dict[str, Any] | None = None
     if (
         query_session_source == "redis"

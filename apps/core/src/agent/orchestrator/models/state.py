@@ -52,6 +52,7 @@ class OrchestratorState(BaseModel):
     outbox: list[dict[str, Any]] = Field(default_factory=list)
     final_response: str | None = None
     policy_notice: str | None = None
+    preplanner_expected_transaction_executors: list[str] = Field(default_factory=list)
 
     # Context Frames (Upstream)
     context_frames: list[ContextFrame] = Field(default_factory=list)

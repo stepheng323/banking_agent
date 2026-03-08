@@ -493,11 +493,22 @@ def _build_confirmation_reprompt_outbox(
     if not summary:
         accounts_raw = state.loaded_context.get("accounts") or []
         accounts = [account for account in accounts_raw if isinstance(account, dict)]
-        summary = build_confirmation_summary(
-            task_payload=first_task.payload,
-            locale=locale,
-            accounts=accounts,
-        )
+        if len(task_ids) == 1:
+            summary = build_confirmation_summary(
+                task_payload=first_task.payload,
+                locale=locale,
+                accounts=accounts,
+            )
+        else:
+            parts: list[str] = []
+            for task_id in task_ids:
+                task = state.tasks.get(task_id)
+                if not task:
+                    continue
+                rendered = build_confirmation_summary(task_payload=task.payload, locale=locale, accounts=accounts)
+                if rendered:
+                    parts.append(rendered)
+            summary = "\n\n".join(parts)
     if not summary:
         return []
 
@@ -513,6 +524,13 @@ def _build_confirmation_reprompt_outbox(
             "actionable_payload": build_actionable_payload(first_task),
         }
     ]
+
+
+def _auth_header_for_task_ids(state: OrchestratorState, task_ids: list[str], locale: str) -> str:
+    task_types = {state.tasks[task_id].type for task_id in task_ids if task_id in state.tasks}
+    if len(task_types) == 1:
+        return format_auth_reason(next(iter(task_types)), locale=locale)
+    return format_auth_reason("mixed", locale=locale)
 
 
 def _build_auth_reprompt_outbox(state: OrchestratorState, interrupt: Any) -> list[dict[str, Any]]:
@@ -533,7 +551,7 @@ def _build_auth_reprompt_outbox(state: OrchestratorState, interrupt: Any) -> lis
             "method": interrupt.auth_method or "pin",
             "task_ids": interrupt.task_ids,
             "idempotency_key": first_task.payload.get("idempotency_key", "unknown"),
-            "header": format_auth_reason(first_task.type, locale=locale),
+            "header": _auth_header_for_task_ids(state, interrupt.task_ids, locale),
             "summary": summary,
             "actionable_payload": build_actionable_payload(first_task),
         }
@@ -892,6 +910,67 @@ async def _switch_via_planner(
     )
 
 
+async def _handle_switch_intent_route(
+    *,
+    state: OrchestratorState,
+    interrupt: Any,
+    route: InterruptRouteDecision,
+    task_planner: Any,
+    text: str,
+    active_type: str,
+    current_task_types: set[str],
+) -> dict[str, Any]:
+    if _is_beneficiary_clarification_interrupt(interrupt):
+        logger.info(
+            "interrupt_switch_blocked",
+            reason="beneficiary_disambiguation_pending",
+            target_intent=route.target_intent,
+            tasks=interrupt.task_ids,
+        )
+        return _reprompt_updates(state, interrupt)
+
+    target_intent = (route.target_intent or "").strip().lower()
+    if target_intent in DIRECT_SWITCH_INTENTS:
+        new_tasks, waves, new_task_types = _build_direct_switch_tasks(
+            state=state,
+            text=text,
+            target_intent=target_intent,
+            route=route,
+        )
+        return _switch_updates(
+            state=state,
+            interrupt=interrupt,
+            active_type=active_type,
+            current_task_types=current_task_types,
+            new_tasks=new_tasks,
+            waves=waves,
+            new_task_types=new_task_types,
+            text=text,
+            planner_output=None,
+            primary_intent=target_intent,
+        )
+
+    if target_intent in PLANNER_SWITCH_INTENTS or not target_intent:
+        return await _switch_via_planner(
+            state=state,
+            interrupt=interrupt,
+            task_planner=task_planner,
+            text=text,
+            active_type=active_type,
+            current_task_types=current_task_types,
+        )
+
+    # Unknown targets are planner-mediated for safety.
+    return await _switch_via_planner(
+        state=state,
+        interrupt=interrupt,
+        task_planner=task_planner,
+        text=text,
+        active_type=active_type,
+        current_task_types=current_task_types,
+    )
+
+
 async def handle_pending_interrupt(state: OrchestratorState, config: RunnableConfig) -> dict[str, Any]:
     """Process user input against the pending interrupt (if any)."""
     interrupt = state.pending_interrupt
@@ -919,6 +998,71 @@ async def handle_pending_interrupt(state: OrchestratorState, config: RunnableCon
         if interrupt.kind == "confirmation":
             return _approve_confirmation_updates(state, interrupt)
         return _approve_auth_updates(state, interrupt)
+
+    if interrupt.kind == "auth":
+        shortcut_locale = resolve_shortcut_locale((state.loaded_context or {}).get("language"))
+        shortcut_route, miss_reason = resolve_interrupt_shortcut_with_reason(
+            text=text,
+            interrupt_kind=interrupt.kind,
+            locale=shortcut_locale,
+        )
+
+        if shortcut_route is not None and shortcut_route.decision == "cancel":
+            logger.info(
+                "interrupt_shortcut_hit",
+                kind=interrupt.kind,
+                decision=shortcut_route.decision,
+                status_query_type=shortcut_route.status_query_type,
+                locale=shortcut_locale.value if shortcut_locale else None,
+            )
+            return _cancel_updates(state, interrupt, current_task_types)
+
+        if shortcut_route is not None:
+            logger.info(
+                "interrupt_auth_shortcut_ignored",
+                decision=shortcut_route.decision,
+                locale=shortcut_locale.value if shortcut_locale else None,
+            )
+        else:
+            logger.info(
+                "interrupt_shortcut_miss",
+                kind=interrupt.kind,
+                locale=shortcut_locale.value if shortcut_locale else None,
+                reason=miss_reason,
+            )
+
+        route = await _route_interrupt(
+            task_planner=task_planner,
+            state=state,
+            text=text,
+            kind=interrupt.kind,
+            task_ids=interrupt.task_ids,
+            current_task_types=current_task_types,
+            fields_by_task=interrupt.fields_by_task,
+            prompt=interrupt.prompt,
+        )
+
+        if route.decision in {"cancel", "reject_flow"}:
+            return _cancel_updates(state, interrupt, current_task_types)
+
+        if route.decision == "switch_intent":
+            return await _handle_switch_intent_route(
+                state=state,
+                interrupt=interrupt,
+                route=route,
+                task_planner=task_planner,
+                text=text,
+                active_type=active_type,
+                current_task_types=current_task_types,
+            )
+
+        # Auth approval is callback-only for PIN. Non-PIN auth (e.g., OTP) can
+        # still advance via explicit approve_flow from router classification.
+        if route.decision == "approve_flow" and (interrupt.auth_method or "").lower() != "pin":
+            return _approve_auth_updates(state, interrupt)
+
+        # For PIN auth, free text cannot advance authorization.
+        return _reprompt_updates(state, interrupt)
 
     shortcut_locale = resolve_shortcut_locale((state.loaded_context or {}).get("language"))
     shortcut_route, miss_reason = resolve_interrupt_shortcut_with_reason(
@@ -992,51 +1136,11 @@ async def handle_pending_interrupt(state: OrchestratorState, config: RunnableCon
             }
         return _reprompt_updates(state, interrupt)
 
-    if route.decision == "switch_intent" and _is_beneficiary_clarification_interrupt(interrupt):
-        logger.info(
-            "interrupt_switch_blocked",
-            reason="beneficiary_disambiguation_pending",
-            target_intent=route.target_intent,
-            tasks=interrupt.task_ids,
-        )
-        return _reprompt_updates(state, interrupt)
-
     if route.decision == "switch_intent":
-        target_intent = (route.target_intent or "").strip().lower()
-        if target_intent in DIRECT_SWITCH_INTENTS:
-            new_tasks, waves, new_task_types = _build_direct_switch_tasks(
-                state=state,
-                text=text,
-                target_intent=target_intent,
-                route=route,
-            )
-            return _switch_updates(
-                state=state,
-                interrupt=interrupt,
-                active_type=active_type,
-                current_task_types=current_task_types,
-                new_tasks=new_tasks,
-                waves=waves,
-                new_task_types=new_task_types,
-                text=text,
-                planner_output=None,
-                primary_intent=target_intent,
-            )
-
-        if target_intent in PLANNER_SWITCH_INTENTS or not target_intent:
-            return await _switch_via_planner(
-                state=state,
-                interrupt=interrupt,
-                task_planner=task_planner,
-                text=text,
-                active_type=active_type,
-                current_task_types=current_task_types,
-            )
-
-        # Unknown targets are planner-mediated for safety.
-        return await _switch_via_planner(
+        return await _handle_switch_intent_route(
             state=state,
             interrupt=interrupt,
+            route=route,
             task_planner=task_planner,
             text=text,
             active_type=active_type,

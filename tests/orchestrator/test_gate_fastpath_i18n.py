@@ -5,6 +5,7 @@ from langchain_core.runnables import RunnableConfig
 from apps.core.src.agent.orchestrator.models.domain import ActiveSession, PendingInterrupt
 from apps.core.src.agent.orchestrator.models.state import OrchestratorState
 from apps.core.src.agent.orchestrator.nodes.gate import session_gate_fastpath
+from shared.types.planner import TurnRouteDecision
 
 
 async def test_gate_defers_greeting_meta_to_planner() -> None:
@@ -60,3 +61,89 @@ async def test_gate_query_fast_path_still_applies_without_pending_interrupt() ->
     updates = await session_gate_fastpath(state, config)
     assert updates.get("fast_path_triggered") is True
     assert updates.get("waves") == [["fast_query_resume"]]
+
+
+async def test_gate_handles_explicit_locale_switch_before_planner() -> None:
+    state = OrchestratorState(
+        user_id="u_gate_4",
+        phone_number="2348000000004",
+        channel="whatsapp",
+        last_message_text="switch to pidgin",
+        loaded_context={"language": "en"},
+    )
+    config: RunnableConfig = {"configurable": {"redis_client": None}, "recursion_limit": 50}
+
+    updates = await session_gate_fastpath(state, config)
+
+    assert updates["fast_path_triggered"] is True
+    assert updates["loaded_context"]["language"] == "pcm"
+    assert updates["loaded_context"]["detected_language"] == "pcm"
+    assert isinstance(updates.get("final_response"), str)
+
+
+class _RouteTurnPlanner:
+    def __init__(self, decision: TurnRouteDecision) -> None:
+        self._decision = decision
+        self.route_calls = 0
+
+    async def route_turn(self, phone_number: str, text: str, context: str = "None") -> TurnRouteDecision:
+        del phone_number, text, context
+        self.route_calls += 1
+        return self._decision
+
+
+async def test_gate_turn_router_can_bypass_planner_with_direct_response() -> None:
+    planner = _RouteTurnPlanner(
+        TurnRouteDecision(
+            decision="respond_directly",
+            confidence=0.95,
+            detected_language="Pidgin",
+            response_key="conversational.checkin",
+            response=None,
+            expected_transaction_executors=[],
+            reason="short check-in",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_gate_5",
+        phone_number="2348000000005",
+        channel="whatsapp",
+        last_message_text="how far",
+        loaded_context={"language": "en"},
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await session_gate_fastpath(state, config)
+
+    assert planner.route_calls == 1
+    assert updates["fast_path_triggered"] is True
+    assert isinstance(updates.get("final_response"), str)
+    assert updates["loaded_context"]["language"] == "pcm"
+
+
+async def test_gate_turn_router_passes_expected_executors_without_fastpath() -> None:
+    planner = _RouteTurnPlanner(
+        TurnRouteDecision(
+            decision="go_planner",
+            confidence=0.91,
+            detected_language="English",
+            response_key=None,
+            response=None,
+            expected_transaction_executors=["transfer", "airtime"],
+            reason="explicit mixed transaction request",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_gate_6",
+        phone_number="2348000000006",
+        channel="whatsapp",
+        last_message_text="send 10k and buy 5k airtime",
+        loaded_context={"language": "en"},
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await session_gate_fastpath(state, config)
+
+    assert planner.route_calls == 1
+    assert updates.get("fast_path_triggered") is None
+    assert updates["preplanner_expected_transaction_executors"] == ["transfer", "airtime"]
