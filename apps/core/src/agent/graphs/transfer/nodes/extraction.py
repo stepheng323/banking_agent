@@ -201,10 +201,17 @@ def _recipient_name_matches_existing_binding(new_name: str | None, current_paylo
         return True
 
     new_tokens = set(normalized_new.split())
-    if len(new_tokens) != 1:
+    if not new_tokens:
         return False
-    single_token = next(iter(new_tokens))
-    return any(single_token in set(known.split()) for known in normalized_known)
+
+    for known in normalized_known:
+        known_tokens = set(known.split())
+        if not known_tokens:
+            continue
+        if known_tokens.issubset(new_tokens) or new_tokens.issubset(known_tokens):
+            return True
+
+    return False
 
 
 class ExtractionStep(TransferStep):
