@@ -212,6 +212,100 @@ async def test_planner_retries_when_gate_expected_executor_is_missing() -> None:
 
 
 @pytest.mark.asyncio
+async def test_planner_strips_transaction_depends_on_for_batch_auth_collection() -> None:
+    planner_output = PlannerOutput(
+        primary_intent="mixed",
+        is_complex=True,
+        tasks=[
+            PlannedTask(
+                task_id="t1",
+                action="send_money",
+                executor="transfer",
+                instruction="Send 10k to Mum",
+                parameters=TaskParameters(amount=10000, recipient="Mum"),
+                risk="MONEY_MOVE",
+            ),
+            PlannedTask(
+                task_id="t2",
+                action="buy_airtime",
+                executor="airtime",
+                instruction="Buy me 5k airtime",
+                parameters=TaskParameters(amount=5000, is_self=True),
+                depends_on=["t1"],
+                risk="MONEY_MOVE",
+            ),
+        ],
+    )
+    state = OrchestratorState(
+        user_id="u_dep_strip_1",
+        phone_number="2348111111112",
+        channel="whatsapp",
+        last_message_text="send 10k to mum then buy me 5k airtime",
+    )
+    config: RunnableConfig = {
+        "configurable": {"task_planner": _MockPlanner(planner_output), "redis_client": None},
+        "recursion_limit": 50,
+    }
+
+    updates = await plan_tasks(state, config)
+
+    assert updates["waves"] == [["t1", "t2"]]
+    assert updates["tasks"]["t2"].depends_on == []
+
+
+@pytest.mark.asyncio
+async def test_planner_keeps_non_transaction_dependencies_when_stripping_transaction_edges() -> None:
+    planner_output = PlannerOutput(
+        primary_intent="mixed",
+        is_complex=True,
+        tasks=[
+            PlannedTask(
+                task_id="t1",
+                action="send_money",
+                executor="transfer",
+                instruction="Send 10k to Mum",
+                parameters=TaskParameters(amount=10000, recipient="Mum"),
+                risk="MONEY_MOVE",
+            ),
+            PlannedTask(
+                task_id="t2",
+                action="buy_airtime",
+                executor="airtime",
+                instruction="Buy me 5k airtime",
+                parameters=TaskParameters(amount=5000, is_self=True),
+                depends_on=["t1"],
+                risk="MONEY_MOVE",
+            ),
+            PlannedTask(
+                task_id="t3",
+                action="check_balance",
+                executor="account",
+                instruction="Show my balance",
+                parameters=TaskParameters(),
+                depends_on=["t1", "t2"],
+                risk="READ_ONLY",
+            ),
+        ],
+    )
+    state = OrchestratorState(
+        user_id="u_dep_strip_2",
+        phone_number="2348111111113",
+        channel="whatsapp",
+        last_message_text="send 10k to mum then buy me 5k airtime then show my balance",
+    )
+    config: RunnableConfig = {
+        "configurable": {"task_planner": _MockPlanner(planner_output), "redis_client": None},
+        "recursion_limit": 50,
+    }
+
+    updates = await plan_tasks(state, config)
+
+    assert updates["tasks"]["t2"].depends_on == []
+    assert updates["tasks"]["t3"].depends_on == ["t1", "t2"]
+    assert updates["waves"] == [["t1", "t2"], ["t3"]]
+
+
+@pytest.mark.asyncio
 async def test_planner_fans_out_single_transfer_when_text_has_multiple_recipients() -> None:
     planner_output = PlannerOutput(
         primary_intent="transfer",

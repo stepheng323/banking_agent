@@ -56,6 +56,8 @@ def _has_resolved_network(network: str | None) -> bool:
 
 def _skip_override_reason(payload: AirtimePayload, message: str) -> str | None:
     normalized_phone = normalize_nigerian_phone(str(payload.recipient_phone or ""))
+    if normalized_phone is None and _matches_self_airtime_phrase(message):
+        return "missing_recipient_phone_with_self_signal"
     if normalized_phone is None and _has_phone_signal(message):
         return "missing_recipient_phone_with_phone_signal"
     if not _has_resolved_network(payload.network) and _has_network_signal(message):

@@ -182,6 +182,22 @@ async def test_airtime_skip_extraction_overrides_for_network_signal() -> None:
 
 
 @pytest.mark.asyncio
+async def test_airtime_skip_extraction_overrides_for_self_signal() -> None:
+    step = ExtractionStep("buy me 5k airtime")
+    payload = AirtimePayload(amount=5000, skip_extraction=True)
+    context = AirtimeContext(phone_number="2348000000000", language="en")
+    gates = AirtimeGates()
+    extractor = _ExtractorStub({"entities": {}, "correction": None})
+    worker_context = SimpleNamespace(required_fields=[], extractor=extractor)
+
+    result = await step.execute(payload, context, gates, worker_context)
+
+    assert result.outcome == TransactionOutcome.OK
+    assert extractor.calls == 1
+    assert result.patch == {"is_self": True, "skip_extraction": False}
+
+
+@pytest.mark.asyncio
 async def test_airtime_skip_extraction_skips_without_strong_signal() -> None:
     step = ExtractionStep("okay")
     payload = AirtimePayload(amount=5000, skip_extraction=True)

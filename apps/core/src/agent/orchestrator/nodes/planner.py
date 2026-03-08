@@ -936,6 +936,37 @@ def _expand_underproduced_transfer_tasks(
     )
 
 
+def _strip_transactional_depends_on_edges(
+    planned_tasks: list[PlannedTask],
+) -> tuple[list[PlannedTask], list[tuple[str, str]]]:
+    """Remove depends_on edges between transaction tasks for single-batch auth collection."""
+    executor_by_task_id = {task.task_id: task.executor for task in planned_tasks}
+    stripped_edges: list[tuple[str, str]] = []
+    normalized_tasks: list[PlannedTask] = []
+
+    for task in planned_tasks:
+        copy_task = task.model_copy(deep=True)
+        if copy_task.executor not in TRANSACTION_EXECUTORS:
+            normalized_tasks.append(copy_task)
+            continue
+
+        next_depends_on: list[str] = []
+        seen: set[str] = set()
+        for dep_task_id in copy_task.depends_on:
+            dep_executor = executor_by_task_id.get(dep_task_id)
+            if dep_executor in TRANSACTION_EXECUTORS:
+                stripped_edges.append((dep_task_id, copy_task.task_id))
+                continue
+            if dep_task_id in seen:
+                continue
+            seen.add(dep_task_id)
+            next_depends_on.append(dep_task_id)
+        copy_task.depends_on = next_depends_on
+        normalized_tasks.append(copy_task)
+
+    return normalized_tasks, stripped_edges
+
+
 async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[str, Any]:
     """Planner Node.
 
@@ -1459,10 +1490,7 @@ async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[s
         }
 
     if state.waves and active_intent:
-        if planner_output.primary_intent == active_intent and planner_output.primary_intent != "mixed":
-            logger.info("planner_intent_match_active", intent=active_intent, action="pass_through")
-            return locale_updates
-        logger.info("planner_intent_switch", old=active_intent, new=planner_output.primary_intent)
+        logger.info("planner_intent_switch_or_update", old=active_intent, new=planner_output.primary_intent)
 
     fanout_tasks, fanout_meta = _expand_underproduced_transfer_tasks(planner_output.tasks, text)
     if fanout_meta:
@@ -1473,6 +1501,17 @@ async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[s
             source_task_id=fanout_meta["source_task_id"],
             recipient_count=fanout_meta["recipient_count"],
             recipient_names=fanout_meta["recipient_names"],
+        )
+
+    normalized_tasks, stripped_edges = _strip_transactional_depends_on_edges(planner_output.tasks)
+    if stripped_edges:
+        planner_output.tasks = normalized_tasks
+        logger.info(
+            "txn_dep_removed_for_batch_auth",
+            source_task_ids=sorted({source for source, _ in stripped_edges}),
+            target_task_ids=sorted({target for _, target in stripped_edges}),
+            removed_edges=[f"{source}->{target}" for source, target in stripped_edges],
+            removed_count=len(stripped_edges),
         )
 
     expected_executors = {

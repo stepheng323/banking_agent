@@ -64,6 +64,14 @@ class _BlankAirtimeExtractor:
         return {"entities": {}}
 
 
+class _NetworkFollowupAirtimeExtractor:
+    async def run(self, state: dict) -> dict:
+        message = str(state.get("message") or "").lower()
+        if "mtn" in message:
+            return {"entities": {"network": "mtn"}}
+        return {"entities": {}}
+
+
 class _TransferNeedsConfirmationWorker:
     async def run(
         self,
@@ -115,6 +123,22 @@ class _TransferNeedsInputWorker:
             outcome=TransactionOutcome.NEEDS_INPUT,
             required_fields=["recipient_account", "recipient_bank_name"],
             prompt="Need transfer details.",
+        )
+
+
+class _AirtimeNeedsNetworkInputWorker:
+    async def run(
+        self,
+        payload: dict,
+        context: dict,
+        user_message: str | None = None,
+        pin_verified: bool = False,
+    ) -> TransactionResult:
+        del payload, context, user_message, pin_verified
+        return TransactionResult(
+            outcome=TransactionOutcome.NEEDS_INPUT,
+            required_fields=["network"],
+            prompt="Need airtime network.",
         )
 
 
@@ -306,6 +330,47 @@ async def test_mixed_input_prompt_includes_queued_next_notice_for_sibling_transa
 
 
 @pytest.mark.asyncio
+async def test_mixed_auth_is_deferred_until_sibling_slots_are_collected() -> None:
+    state = _base_state().model_copy(
+        update={
+            "tasks": {
+                "t_transfer": TaskSpec(
+                    id="t_transfer",
+                    type="transfer",
+                    stage=TaskStage.AWAITING_AUTH,
+                    payload={
+                        "amount": 10000,
+                        "recipient_name": "Mum",
+                        "source_account_id": "acct-1",
+                        "confirmation": {"summary": "Confirm transfer task", "snapshot": {"amount": 10000}},
+                    },
+                ),
+                "t_airtime": TaskSpec(
+                    id="t_airtime",
+                    type="airtime",
+                    stage=TaskStage.EXTRACTED,
+                    payload={"amount": 5000, "source_account_id": "acct-1"},
+                ),
+            }
+        }
+    )
+    config: RunnableConfig = {
+        "configurable": {"services": {"airtime": _AirtimeNeedsNetworkInputWorker()}},
+        "recursion_limit": 50,
+    }
+
+    updates = await advance_wave(state, config)
+
+    assert updates["pending_interrupt"].kind == "input"
+    assert updates["pending_interrupt"].task_ids == ["t_airtime"]
+    assert "auth_request" not in {entry.get("type") for entry in updates.get("outbox", [])}
+    say_entry = updates["outbox"][0]
+    assert say_entry["type"] == "say"
+    assert "Queued next after this step" in say_entry["text"]
+    assert say_entry["queue"]["queued_task_ids"] == ["t_transfer"]
+
+
+@pytest.mark.asyncio
 async def test_mixed_authorized_wave_continues_when_first_task_fails() -> None:
     transfer_worker = _TransferFailWorker()
     airtime_worker = _AirtimeSuccessWorker()
@@ -346,7 +411,7 @@ async def test_mixed_authorized_wave_continues_when_first_task_fails() -> None:
 
 
 @pytest.mark.asyncio
-async def test_cancelled_mixed_flow_then_fresh_airtime_normalizes_phone() -> None:
+async def test_cancelled_mixed_flow_then_fresh_self_airtime_reuses_context_phone() -> None:
     first_plan = PlannerOutput(
         primary_intent="mixed",
         confidence=0.95,
@@ -427,7 +492,7 @@ async def test_cancelled_mixed_flow_then_fresh_airtime_normalizes_phone() -> Non
     assert list(state.tasks.keys()) == ["t_airtime_restart"]
 
     airtime_worker = AirtimeWorker(
-        extractor=_BlankAirtimeExtractor(),
+        extractor=_NetworkFollowupAirtimeExtractor(),
         bill_provider=None,
         transaction_repo=None,
         publisher=None,
@@ -446,12 +511,16 @@ async def test_cancelled_mixed_flow_then_fresh_airtime_normalizes_phone() -> Non
     assert state.pending_interrupt is not None
     assert state.pending_interrupt.kind == "input"
     assert state.pending_interrupt.task_ids == ["t_airtime_restart"]
-    assert "recipient_phone" in state.pending_interrupt.fields_by_task.get("t_airtime_restart", [])
+    assert "recipient_phone" not in state.pending_interrupt.fields_by_task.get("t_airtime_restart", [])
+    assert state.pending_interrupt.fields_by_task.get("t_airtime_restart", []) == ["network"]
+    assert state.tasks["t_airtime_restart"].payload.get("recipient_phone") == "08000000900"
 
-    state = state.model_copy(update={"last_message_text": "816 251 1023"})
+    state = state.model_copy(update={"last_message_text": "mtn"})
     state = _apply(state, await handle_pending_interrupt(state, execution_config))
     state = _apply(state, await advance_wave(state, execution_config))
 
     airtime_payload = state.tasks["t_airtime_restart"].payload
-    assert airtime_payload.get("recipient_phone") == "08162511023"
+    assert state.pending_interrupt is not None
+    assert state.pending_interrupt.kind == "confirmation"
+    assert airtime_payload.get("recipient_phone") == "08000000900"
     assert airtime_payload.get("network") == "MTN"
