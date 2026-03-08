@@ -1,30 +1,33 @@
 """Contract tests for planner prompt guidance."""
 
-from shared.services.task_planner import BASE_PLANNER_SYSTEM_PROMPT, INTERRUPT_ROUTER_SYSTEM_PROMPT
+from shared.services.task_planner import (
+    INTERRUPT_ROUTER_SYSTEM_PROMPT,
+    PLANNER_RULE_ATOMS,
+    PLANNER_RUNTIME_BASELINE_PROMPT,
+    TURN_ROUTER_SYSTEM_PROMPT,
+    build_runtime_planner_system_prompt,
+)
 
 
 def test_beneficiary_reactive_save_requires_explicit_intent() -> None:
     """Prompt should prevent greeting text from being treated as save consent."""
-    assert "BENEFICIARY SAVING (Reactive)" in BASE_PLANNER_SYSTEM_PROMPT
-    assert "Treat greetings/check-ins/thanks" in BASE_PLANNER_SYSTEM_PROMPT
-    expected = 'Context="Asked to save beneficiary", User="Hi" -> conversational, response_key=conversational.greeting'
-    assert expected in BASE_PLANNER_SYSTEM_PROMPT
+    runtime_prompt, _ = build_runtime_planner_system_prompt("Save as Gaines", "Asked to save beneficiary")
+    assert PLANNER_RULE_ATOMS["R12_BENEFICIARY_HANDLING"] in runtime_prompt
+    assert 'Asked to save beneficiary + "Hi" -> conversational' in runtime_prompt
 
 
 def test_context_read_fastpath_rules_present() -> None:
     """Prompt must define context-read fastpath + fallback contract."""
-    assert "CONTEXT-READ FASTPATH V2" in BASE_PLANNER_SYSTEM_PROMPT
-    assert 'primary_intent="conversational", tasks=[]' in BASE_PLANNER_SYSTEM_PROMPT
-    assert "context_fastpath_subtype" in BASE_PLANNER_SYSTEM_PROMPT
-    assert "beneficiary list (compact, max 5)" in BASE_PLANNER_SYSTEM_PROMPT
-    assert "beneficiary name match preview (compact, max 3)" in BASE_PLANNER_SYSTEM_PROMPT
-    assert "account_mandate_readiness_summary" in BASE_PLANNER_SYSTEM_PROMPT
-    assert "account_linked_bank_existence_check" in BASE_PLANNER_SYSTEM_PROMPT
-    assert "beneficiary_name_match_preview" in BASE_PLANNER_SYSTEM_PROMPT
-    assert "flow_recap" in BASE_PLANNER_SYSTEM_PROMPT
-    assert "flow_missing_requirements" in BASE_PLANNER_SYSTEM_PROMPT
-    assert "FASTPATH FALLBACK (MANDATORY)" in BASE_PLANNER_SYSTEM_PROMPT
-    assert "DO NOT guess. Route to worker with a domain task instead" in BASE_PLANNER_SYSTEM_PROMPT
+    runtime_prompt, _ = build_runtime_planner_system_prompt("Which account is default?", "User State has default account")
+    assert PLANNER_RULE_ATOMS["R16_FASTPATH_CONTEXT_READ"] in runtime_prompt
+    assert PLANNER_RULE_ATOMS["R17_FASTPATH_FALLBACK"] in runtime_prompt
+    assert PLANNER_RULE_ATOMS["R18_FASTPATH_SUBTYPE"] in runtime_prompt
+    assert "context_fastpath_subtype" in runtime_prompt
+    assert "account_mandate_readiness_summary" in runtime_prompt
+    assert "account_linked_bank_existence_check" in runtime_prompt
+    assert "beneficiary_name_match_preview" in runtime_prompt
+    assert "flow_recap" in runtime_prompt
+    assert "flow_missing_requirements" in runtime_prompt
 
 
 def test_interrupt_status_query_contract_present() -> None:
@@ -39,38 +42,125 @@ def test_interrupt_status_query_contract_present() -> None:
 
 def test_transfer_recipient_fidelity_rules_present() -> None:
     """Prompt must preserve typed transfer recipient names for resolver disambiguation."""
-    assert "TRANSFER RECIPIENT FIDELITY (MANDATORY)" in BASE_PLANNER_SYSTEM_PROMPT
-    assert 'keep recipient="tolu" even if User State has "Tolu Adebayo"' in BASE_PLANNER_SYSTEM_PROMPT
-    assert "Resolver handles disambiguation; planner must preserve ambiguity." in BASE_PLANNER_SYSTEM_PROMPT
-    assert 'Never set transfer recipient to instruction verbs/placeholders (for example: "send", "transfer", "pay", "recipient").' in BASE_PLANNER_SYSTEM_PROMPT
-    assert '"I want to send 8k" -> transfer, t1 send_money amount=8000 (recipient omitted)' in BASE_PLANNER_SYSTEM_PROMPT
+    runtime_prompt, _ = build_runtime_planner_system_prompt("Send 5k to tolu", "None")
+    assert PLANNER_RULE_ATOMS["R19_TRANSFER_FIDELITY"] in runtime_prompt
+    assert "send_money amount=8000" in runtime_prompt
+    assert "recipient omitted" in runtime_prompt
 
 
 def test_multilingual_safety_rules_present() -> None:
     """Prompt should state language-agnostic routing and disambiguation boundaries."""
-    assert "MULTILINGUAL SAFETY" in BASE_PLANNER_SYSTEM_PROMPT
-    assert "Never rely on English-only keyword assumptions" in BASE_PLANNER_SYSTEM_PROMPT
+    runtime_prompt, _ = build_runtime_planner_system_prompt("How far", "None")
+    assert PLANNER_RULE_ATOMS["R23_MULTILINGUAL_SAFETY"] in runtime_prompt
 
 
 def test_follow_up_referent_binding_rules_present() -> None:
     """Prompt should anchor vague follow-ups to the most recent discussed domain."""
-    assert "FOLLOW-UP REFERENT BINDING (MANDATORY)" in BASE_PLANNER_SYSTEM_PROMPT
-    assert "bind to the most recent domain from Recent Chat / Recent Domain Focus" in BASE_PLANNER_SYSTEM_PROMPT
-    assert 'Recent Chat last turn was account_count answer, User="List them"' in BASE_PLANNER_SYSTEM_PROMPT
-    assert 'Recent Chat last turn was beneficiary_count answer, User="List them"' in BASE_PLANNER_SYSTEM_PROMPT
+    runtime_prompt, _ = build_runtime_planner_system_prompt(
+        "Send 10k to her",
+        "Recent Chat last turn was beneficiary_count answer",
+    )
+    assert PLANNER_RULE_ATOMS["R14_REFERENCE_BINDING"] in runtime_prompt
+    assert 'Recent Chat account_count + "List them"' in runtime_prompt
+    assert 'Recent Chat beneficiary_count + "List them"' in runtime_prompt
 
 
 def test_transfer_pronoun_reference_continuity_rules_present() -> None:
     """Prompt should preserve beneficiary pronoun continuity with reference semantics."""
-    assert "keep transfer continuity by setting `reference`" in BASE_PLANNER_SYSTEM_PROMPT
-    assert "reference={\"selector\":\"previous\"}" in BASE_PLANNER_SYSTEM_PROMPT
-    assert "resolver clarifies if needed" in BASE_PLANNER_SYSTEM_PROMPT
+    runtime_prompt, _ = build_runtime_planner_system_prompt(
+        "Send 10k to her",
+        "Recent Chat last turn listed beneficiaries",
+    )
+    assert PLANNER_RULE_ATOMS["R14_REFERENCE_BINDING"] in runtime_prompt
+    assert '{"selector":"previous"}' in runtime_prompt
+    assert '{"selector":"index","index":N}' in runtime_prompt
 
 
 def test_transfer_scheduling_rules_present() -> None:
     """Prompt should include schedule/recurring transfer action contracts."""
-    assert "TRANSFER SCHEDULING (MANDATORY)" in BASE_PLANNER_SYSTEM_PROMPT
-    assert "schedule_transfer" in BASE_PLANNER_SYSTEM_PROMPT
-    assert "recurring_transfer" in BASE_PLANNER_SYSTEM_PROMPT
-    assert "list_scheduled_transfers" in BASE_PLANNER_SYSTEM_PROMPT
-    assert "cancel_scheduled_transfer" in BASE_PLANNER_SYSTEM_PROMPT
+    runtime_prompt, _ = build_runtime_planner_system_prompt("Send 10k to Mum tomorrow 9am", "None")
+    assert PLANNER_RULE_ATOMS["R21_TRANSFER_SCHEDULING"] in runtime_prompt
+    assert "schedule_transfer" in runtime_prompt
+    assert "recurring_transfer" in runtime_prompt
+    assert "list_scheduled_transfers" in runtime_prompt
+    assert "cancel_scheduled_transfer" in runtime_prompt
+
+
+def test_mixed_money_move_coverage_rules_present() -> None:
+    """Prompt should force full task coverage for explicit mixed money-move requests."""
+    runtime_prompt, _ = build_runtime_planner_system_prompt("Send 10k to Mum and buy me 5k airtime", "None")
+    assert PLANNER_RULE_ATOMS["R22_MIXED_MONEY_MOVE"] in runtime_prompt
+    assert "TARGETED EXAMPLES (MONEY_MOVE)" in runtime_prompt
+    assert "send_money" in runtime_prompt
+    assert "buy_airtime" in runtime_prompt
+
+
+def test_turn_router_expected_executor_coverage_rules_present() -> None:
+    """Turn-router prompt should require all explicit mixed transaction executors."""
+    assert "expected_transaction_executors" in TURN_ROUTER_SYSTEM_PROMPT
+    assert "explicit mixed transaction requests" in TURN_ROUTER_SYSTEM_PROMPT
+    assert "include every mentioned executor" in TURN_ROUTER_SYSTEM_PROMPT
+    assert '["transfer","airtime"]' in TURN_ROUTER_SYSTEM_PROMPT
+
+
+def test_runtime_planner_prompt_is_compact_for_generic_turns() -> None:
+    """Runtime prompt should remain minimal for simple turns."""
+    runtime_prompt, profile = build_runtime_planner_system_prompt("hello", "None")
+    expanded_prompt, _ = build_runtime_planner_system_prompt(
+        "Send 10k to Mum and buy 5k airtime and show transactions",
+        "Active Query Session. Asked to save beneficiary. Recent Chat.",
+    )
+    assert "## COMPILED RULE ATOMS" in runtime_prompt
+    assert "R22_MIXED_MONEY_MOVE" in runtime_prompt
+    assert "TARGETED EXAMPLES (COMMON)" in runtime_prompt
+    assert "TARGETED EXAMPLES (MONEY_MOVE)" not in runtime_prompt
+    assert "TARGETED EXAMPLES (QUERY)" not in runtime_prompt
+    assert "TARGETED EXAMPLES (CONTEXT)" not in runtime_prompt
+    assert "schema" in profile
+    assert "ex_common" in profile
+    assert len(runtime_prompt) <= len(PLANNER_RUNTIME_BASELINE_PROMPT)
+    assert len(runtime_prompt) < len(expanded_prompt)
+
+
+def test_runtime_planner_prompt_size_budget_targets() -> None:
+    """Runtime prompt stays within agreed size ceilings after optimization."""
+    generic_prompt, _ = build_runtime_planner_system_prompt("hello", "None")
+    expanded_prompt, _ = build_runtime_planner_system_prompt(
+        "Send 10k to Mum and buy 5k airtime and show transactions",
+        "Active Query Session. Asked to save beneficiary. Recent Chat.",
+    )
+    assert len(generic_prompt) <= 6780
+    assert len(expanded_prompt) <= 8687
+
+
+def test_runtime_planner_prompt_adds_money_move_examples_when_relevant() -> None:
+    """Runtime prompt should include money-move examples for transaction turns."""
+    runtime_prompt, profile = build_runtime_planner_system_prompt(
+        "Send 10k to mum and buy me 5k airtime",
+        "None",
+    )
+    assert "TARGETED EXAMPLES (MONEY_MOVE)" in runtime_prompt
+    assert "ex_money_move" in profile
+    assert "R09_CONTEXT_OVERRIDE" in runtime_prompt
+
+
+def test_runtime_planner_prompt_adds_query_examples_when_relevant() -> None:
+    """Runtime prompt should include query examples and query-specific rule atoms for query turns."""
+    runtime_prompt, profile = build_runtime_planner_system_prompt(
+        "How much did I spend last week?",
+        "None",
+    )
+    assert "TARGETED EXAMPLES (QUERY)" in runtime_prompt
+    assert "R13_QUERY_CONTINUATION" in runtime_prompt
+    assert "ex_query" in profile
+
+
+def test_runtime_planner_prompt_adds_context_examples_when_contextful() -> None:
+    """Runtime prompt should include context examples when planner context indicates active flow memory."""
+    runtime_prompt, profile = build_runtime_planner_system_prompt(
+        "List them",
+        "Recent Chat last turn was account_count answer",
+    )
+    assert "TARGETED EXAMPLES (CONTEXT)" in runtime_prompt
+    assert "R15_RESUMPTION" in runtime_prompt
+    assert "ex_context" in profile

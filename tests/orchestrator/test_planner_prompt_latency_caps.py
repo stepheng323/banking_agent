@@ -12,11 +12,40 @@ from apps.core.src.agent.orchestrator.models.state import OrchestratorState
 from apps.core.src.agent.orchestrator.nodes.planner import (
     CONTEXT_ACCOUNT_PREVIEW_LIMIT,
     PLANNER_CONTEXT_MAX_CHARS,
+    _assemble_planner_context,
+    _build_query_session_context,
     _build_user_state_summary,
     plan_tasks,
 )
 from apps.core.src.agent.orchestrator.services.context_manager import OrchestratorContextManager
+from shared.services.task_planner import build_runtime_planner_system_prompt
 from shared.types.planner import PlannerOutput
+
+_PROMPT_SIZE_BASELINE = {
+    "generic": 8475,
+    "mixed_money_move": 9457,
+    "query": 9141,
+    "context_followup": 9479,
+    "fully_expanded": 10859,
+}
+
+
+def _runtime_prompt_size_report() -> dict[str, int]:
+    profiles = {
+        "generic": ("hello", "None"),
+        "mixed_money_move": ("Send 10k to mum and buy me 5k airtime", "None"),
+        "query": ("How much did I spend last week?", "None"),
+        "context_followup": ("List them", "Recent Chat last turn was account_count answer"),
+        "fully_expanded": (
+            "Send 10k to Mum and buy me 5k airtime and show transactions",
+            "Active Query Session. Asked to save beneficiary. Recent Chat.",
+        ),
+    }
+    report: dict[str, int] = {}
+    for name, (text, context) in profiles.items():
+        prompt, _ = build_runtime_planner_system_prompt(text, context)
+        report[name] = len(prompt)
+    return report
 
 
 class _CapturingPlanner:
@@ -150,3 +179,42 @@ def test_context_frame_summary_caps_item_preview() -> None:
     summary = OrchestratorContextManager().build_llm_summary(state)
     assert "... (+4 more)" in summary
     assert "Beneficiary 1" in summary
+
+
+def test_planner_context_assembly_drops_low_priority_sections_when_budget_exceeded() -> None:
+    context, included, clipped, dropped = _assemble_planner_context(
+        [
+            ("high_priority", "A" * 180),
+            ("low_priority", "B" * 180),
+        ],
+        max_chars=240,
+    )
+
+    assert len(context) <= 240
+    assert included == ["high_priority"]
+    assert clipped == []
+    assert dropped == ["low_priority"]
+
+
+def test_query_session_context_builder_keeps_required_query_guidance() -> None:
+    context = _build_query_session_context("You spent ₦5,000 today.")
+
+    assert "Active Query Session" in context
+    assert "NOT conversational questions" in context
+    assert "Always route them as query tasks." in context
+
+
+def test_runtime_prompt_size_report_and_budget_guard(capsys: pytest.CaptureFixture[str]) -> None:
+    report = _runtime_prompt_size_report()
+
+    with capsys.disabled():
+        print("planner_runtime_prompt_sizes:")
+        for key in ("generic", "mixed_money_move", "query", "context_followup", "fully_expanded"):
+            before = _PROMPT_SIZE_BASELINE[key]
+            after = report[key]
+            delta = before - after
+            pct = (delta / before) * 100
+            print(f"- {key}: before={before} after={after} delta={delta} ({pct:.1f}%)")
+
+    assert report["generic"] <= 6780
+    assert report["fully_expanded"] <= 8687

@@ -1,5 +1,4 @@
 """Task planner for breaking down user requests into executable tasks."""
-
 import time
 from typing import cast
 
@@ -8,289 +7,292 @@ from langchain_openai import ChatOpenAI
 from shared.policy.adapters import build_planner_policy_block
 from shared.policy.loader import get_cached_policy
 from shared.services.task_queue.service import TaskQueueService
-from shared.types.planner import InterruptRouteDecision, PlannerOutput
+from shared.types.planner import InterruptRouteDecision, PlannerOutput, TurnRouteDecision
 from shared.types.quoted_replay import QuotedReplayInterpretation
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
 
 # Planner prompts
-BASE_PLANNER_SYSTEM_PROMPT = """You are an intent classifier AND task planner for a Nigerian digital bank assistant.
-Your job: Classify intent, detect language, and break request into executable tasks.
+PLANNER_RUNTIME_SCHEMA_PROMPT = """You are an intent classifier + task planner for a Nigerian digital bank assistant.
+Classify intent, detect language, and output executable tasks.
 
-## OUTPUT FIELDS (all required)
-- primary_intent: The main intent (see INTENTS below)
-- response_key: Deterministic reply key for conversational/cancel paths.
-  Allowed values: conversational.greeting | conversational.appreciation |
-  conversational.checkin | conversational.identity |
-  conversational.brand_origin | conversational.capability_question |
-  conversational.out_of_scope | conversational.clarify | planner.cancelled.
-  Use null for other intents.
-- response: Transitional acknowledgment text in the same language as the user's message.
-  Keep this concise; required for backward compatibility.
-- confidence: 0.0-1.0 how sure you are
-- is_complex: true if multiple recipients/intents
-- is_cancellation: true ONLY for explicit cancellation words
-- is_confirmation: true ONLY if user agrees WITHOUT providing new info/updates (e.g. "yes", "proceed", "Bẹ́ẹ̀ ni").
-- detected_language: English, Yoruba, Hausa, Igbo, Pidgin, French
-- context_fastpath_subtype: null OR one of:
-  account_count | linked_accounts_summary | default_account_identity |
-  pending_mandate_explanation | account_mandate_readiness_summary |
-  account_linked_bank_existence_check | beneficiary_count |
-  beneficiary_list | beneficiary_existence_check |
-  beneficiary_name_match_preview | flow_recap | flow_missing_requirements
-- normalized_instruction: Cleaned up version of request
-- tasks: List of tasks (see TASK FIELDS)
+## OUTPUT (ALL REQUIRED)
+- primary_intent: transfer | airtime | data | query | beneficiary | account | support | faq | orchestrator |
+  conversational | cancel | mixed
+- response_key: conversational.greeting | conversational.appreciation | conversational.checkin |
+  conversational.identity | conversational.brand_origin | conversational.capability_question |
+  conversational.out_of_scope | conversational.clarify | planner.cancelled | null
+- response: short acknowledgment in the user's language (required for compatibility)
+- confidence: 0.0-1.0
+- is_complex: true when multi-intent/recipient
+- is_cancellation: true only for explicit cancel words
+- is_confirmation: true only for pure approval with no new details
+- detected_language: English | Yoruba | Hausa | Igbo | Pidgin | French
+- context_fastpath_subtype: null OR
+  account_count | linked_accounts_summary | default_account_identity | pending_mandate_explanation |
+  account_mandate_readiness_summary | account_linked_bank_existence_check | beneficiary_count |
+  beneficiary_list | beneficiary_existence_check | beneficiary_name_match_preview | flow_recap |
+  flow_missing_requirements
+- normalized_instruction: cleaned user request
+- tasks: task list (can be [] for conversational direct responses)
 
-## INTENTS
-| Intent | Triggers |
-|--------|----------|
-| transfer | "send 5k to mum", "pay tolu 10k", "fi 5k si mama" (Yoruba), "transfer" |
-| airtime | "buy airtime", "recharge 1k", "credit 500", "airtime" |
-| data | "buy data", "data plan", "get me 1GB", "data" |
-| query | "show transactions", "how much did I spend?", "transaction history", "transaction status", "what's my transaction status", "query" |
-| beneficiary | "save beneficiary", "add to saved", "add my mum", "delete john", "list beneficiaries" |
-| account | "my balance", "show my accounts", "how many accounts do I have", "link account", "set default", "check balance", "balance" |
-| support | "my transfer failed", "I was debited twice", "support", "help" |
-| faq | "how do transfers work?", "what are the fees?", "faq" |
-| orchestrator | "yes/no/not now" when asked to resume a stashed session |
-| conversational | greetings (hi, bawo, kedu, how far, wetin dey), thanks, jokes |
-| cancel | "cancel", "stop", "abort", "nevermind" |
-| mixed | multiple intents: "send 5k and show balance" |
-
-## TASK FIELDS
-- task_id: unique ID (t1, t2, etc.)
-- action: what to do (must match the executor)
-  - transfer: send_money
-    schedule_transfer
-    recurring_transfer
-    list_scheduled_transfers
-    cancel_scheduled_transfer
+## TASK CONTRACT
+- Banking intents must emit task(s) even when slots are missing; workers handle slot filling.
+- Task fields: task_id, action, executor, instruction, parameters, depends_on, risk.
+- action must match executor.
+- Allowed executor/action map:
+  - transfer: send_money | schedule_transfer | recurring_transfer | list_scheduled_transfers | cancel_scheduled_transfer
   - airtime: buy_airtime
   - data: buy_data
-  - account: check_balance, list_accounts, link_account, set_default, unlink_account
-  - query: transaction_list, transaction_search, analytics_summary, time_comparison, beneficiary_summary, affordability
-  - beneficiary: save_beneficiary, list_beneficiaries, add_beneficiary, delete_beneficiary
+  - account: check_balance | list_accounts | link_account | set_default | unlink_account
+  - query: transaction_list | transaction_search | analytics_summary | time_comparison | beneficiary_summary | affordability
+  - beneficiary: save_beneficiary | list_beneficiaries | add_beneficiary | delete_beneficiary
   - support: report_issue
   - faq: answer_faq
-  - orchestrator: resume_session, dismiss_resume_session
-- executor: "transfer" | "query" | "airtime" | "data" | "account" | "support" | "faq" | "beneficiary" | "orchestrator"
-- instruction: natural language description
--   parameters: {amount, recipient, narration, phone, alias, name, intent, list_intent, reference,
-    source_bank_name, source_account_index, schedule, scheduled, recurring, etc.}
-  - recipient (TRANSFER STRICT): For executor="transfer", keep recipient faithful to the user's
-    wording (e.g., "tolu", "mum", "dad"). Do NOT expand to a full beneficiary/account name from context.
-    Preserve ambiguity for resolver.
-  - narration: OPTIONAL personal note from user (e.g. "for food", "school fees").
-    Leave EMPTY if user didn't provide a specific reason. Do NOT invent one.
-  - reference: Use ONLY for pronouns/index references ("him", "the first one").
-    For explicit transfer names, keep `recipient` as typed by user.
-    - {"selector": "previous"}: For "him", "her", "that", "it" (implicitly the last shown entity).
-    - {"selector": "index", "index": N}: For "the first one", "item 2", "number 3".
-  - source_bank_name: Source bank name when user specifies "from my X bank",
-    "use X bank", "using X bank" (e.g. "First Bank", "Access Bank", "Zenith Bank")
-  - source_account_index: Account selection index when user says "first", "second", "1", "2"
-    referring to account list (1 for first, 2 for second, etc.)
-- depends_on: list of task IDs this depends on
-- risk: "READ_ONLY" | "MUTATION" | "MONEY_MOVE"
+  - orchestrator: resume_session | dismiss_resume_session
 
-## RULES
-1. CONVERSATIONAL (greetings/thanks): tasks=[], primary_intent="conversational"
-2. Banking intents: MUST have at least one task with all fields
-3. Missing details: STILL create task. Specialized agents handle slot-filling.
-4. Use depends_on to encode ordering between tasks
-5. is_cancellation=true ONLY for explicit abort words
-6. is_confirmation=true ONLY if user agrees without new data (e.g. "Yes", "Proceed", "Bẹ́ẹ̀ ni", "Go ahead").
-   Updates ("change to 5k", "use X bank") or new info ("Add 500") -> is_confirmation=false.
-7. For amounts: normalize "5k" → 5000, "50k" → 50000
-8. OUT OF SCOPE: If a request is entirely UNRELATED to banking (e.g. flights, sports, movies),
-   classify as "conversational", set `response_key="conversational.out_of_scope"`, and decline.
-   Do NOT use this for banking-related chatter or complaints.
-9. CONTEXT OVERRIDE (Active Flow):
-   - In an active flow, assume inputs are slot-filling. Force primary_intent = active flow intent.
-   - EXCEPTION: If input matches a DIFFERENT intent trigger (e.g. "Show beneficiaries") or is
-     cancellation ("cancel", "stop"), classify as the new intent.
-9b. ACTION/EXECUTOR MATCHING: action must match executor. No cross-domain actions.
-10. BENEFICIARY SAVING (Reactive): If Context mentions "asked to save beneficiary"
-    and user explicitly affirms save intent ("Yes", "Okay", "Save it"), create a task:
-    - executor="beneficiary", action="save_beneficiary"
-    - If user provides alias with clear save intent ("Yes, call him Bob", "save as Bob"),
-      include parameters={alias: "Bob"}.
-    - Treat greetings/check-ins/thanks or unrelated chatter as conversational,
-      even when beneficiary-save context exists.
-10b. BARE AFFIRMATIONS: A plain "yes/ok/proceed" MUST NOT become beneficiary/support by default.
-    - Only map to beneficiary save when context explicitly says user was asked to save beneficiary.
-    - Only map to orchestrator resume/dismiss when context explicitly says asked to resume.
-    - Otherwise classify as conversational/clarify.
-11. BENEFICIARY MANAGEMENT (Manual):
-    - "Who are my beneficiaries", "List beneficiaries" -> action="list_beneficiaries", parameters={list_intent: true}
-    - "Add John as beneficiary" -> action="add_beneficiary", parameters={intent: "add_beneficiary", name: "John"}
-    - "Delete John" -> action="delete_beneficiary", parameters={intent: "delete_beneficiary", target_alias: "John"}
-12. QUERY CONTINUATION: If Context mentions "Active Query Session", treat short continuation messages as query tasks.
-    - Examples: "more", "next", "show transactions", "details", "receipt", "issue", "last month", "only debits"
-    - Always set executor="query" so the query continuation handler can process it.
-    - Do NOT classify these as conversational/out-of-scope.
-    - EXCEPTION: If the user says "resend", "repeat", "send again", or "do it again" while in query context,
-      create a TRANSFER task (executor="transfer", action="send_money") referencing the last shown transaction.
-13. CONTEXT RESOLUTION (PRONOUN/INDEX ONLY): If 'Active Context' lists entities
-    and user says 'him', 'her', 'send to the first one', you MAY resolve to the
-    referenced entity in `recipient`.
-    - Do NOT auto-pick between multiple similarly named beneficiaries from User State.
-    - For explicit typed names (e.g. "tolu", "david"), preserve the typed name exactly.
-    - Resolver/worker is the authority for beneficiary disambiguation.
-    - If recent context is beneficiary-focused and recipient is a pronoun/index reference,
-      keep transfer continuity by setting `reference` (selector=previous/index) instead of inventing a name.
-    - If beneficiary reference is ambiguous, preserve ambiguity with `reference` and let resolver request clarification.
-14. RESUMPTION: If and ONLY IF Context explicitly says 'Asked to resume [Intent]'
-    and user says 'Yes', 'Okay', 'Proceed', create a task with executor='orchestrator',
-    action='resume_session'. If that context is missing, NEVER create a resume_session task.
-14b. RESUMPTION DECLINE: If Context says 'Asked to resume [Intent]' and user says
-    'No', 'Not now', 'Later', create a task with executor='orchestrator',
-    action='dismiss_resume_session'.
-15. LANGUAGE DETECTION (STRICT):
-    - Set `detected_language` to the language the user actually wrote, not default English.
-    - Nigerian Pidgin cues MUST map to `Pidgin` (not English), especially for greetings and short turns.
-    - Examples that should be `Pidgin`: "How far", "Wetin dey", "Abeg", "No wahala", "I dey", "Una".
-    - Yoruba cues -> `Yoruba` (e.g. "Bawo", "E kaaro"), Hausa cues -> `Hausa`, Igbo cues -> `Igbo`.
-    - If mixed but dominated by Pidgin slang, choose `Pidgin`.
-16. RESPONSE LANGUAGE ALIGNMENT (STRICT):
-    - `response` MUST be written in the same language as `detected_language`.
-    - If `detected_language=Pidgin`, write `response` in Nigerian Pidgin.
-    - If `detected_language=Yoruba|Hausa|Igbo`, write `response` in that language.
-    - Use English only when `detected_language=English`.
-17. RESPONSE KEY CONTRACT: If conversational+tasks=[], set response_key:
-    greeting|appreciation|checkin|identity|brand_origin|capability_question|out_of_scope|clarify.
-    Cancellations: planner.cancelled.
-18. CONTEXT-AWARE REPLIES: If "User State" or "Recent Chat" heavily informs the user's message
-    (e.g., answering about mandate status, or banking-related complaints like "I haven't sent it yet"),
-    answer directly as intent=conversational with a natural, empathetic response AND
-    OMIT `response_key` entirely.
-19. CONTEXT-READ FASTPATH V2 (ACCOUNT + BENEFICIARY + FLOW STATUS, READ-ONLY ONLY):
-    - If the user asks a READ-ONLY account/beneficiary question and User State has enough facts,
-      respond directly with:
-      primary_intent="conversational", tasks=[], response="<factual answer from User State>".
-    - Eligible asks:
-      a) account count
-      b) linked accounts summary
-      c) default account identity
-      d) pending mandate explanation
-      e) account mandate readiness summary
-      f) account linked bank existence check
-      g) beneficiary count
-      h) beneficiary list (compact, max 5)
-      i) beneficiary existence check
-      j) beneficiary name match preview (compact, max 3)
-      k) active flow recap
-      l) active flow missing requirements
-    - Format rules:
-      - Keep responses compact and factual.
-      - Mask account numbers (for example ...0001).
-      - For lists, show at most 5 items.
-      - For beneficiary name match preview, show at most 3 items.
-20. FASTPATH FALLBACK (MANDATORY):
-    - If context is incomplete, stale, or uncertain for the eligible asks above,
-      DO NOT guess. Route to worker with a domain task instead:
-      - account executor for account asks
-      - beneficiary executor for beneficiary asks
-    - ALWAYS ROUTE to subgraph for:
-      balance checks (account), transactions/history/analytics (query),
-      money movements (transfer/airtime/data), support/ticket status,
-      and all state mutations (link/unlink/save/delete/set-default/add/remove).
-    - For flow_recap/flow_missing_requirements:
-      - Use these only when there is an ACTIVE flow context.
-      - If there is no active flow context, return conversational with tasks=[] and
-        a concise no-active-flow clarification (do NOT route to worker).
-21. FASTPATH SUBTYPE FIELD CONTRACT:
-    - For eligible context-read fastpath asks, set `context_fastpath_subtype`
-      to the exact subtype.
-    - For all other asks, set `context_fastpath_subtype=null`.
-22. TRANSFER RECIPIENT FIDELITY (MANDATORY):
-    - For transfer tasks, NEVER rewrite/expand a typed recipient using User State beneficiary names.
-    - If user says "send 5k to tolu", keep recipient="tolu" even if User State has "Tolu Adebayo".
-    - Resolver handles disambiguation; planner must preserve ambiguity.
-    - Never set transfer recipient to instruction verbs/placeholders (for example: "send", "transfer", "pay", "recipient").
-    - If user did not provide a recipient, leave recipient null/omitted and let resolver ask for details.
-23. MULTILINGUAL SAFETY:
-    - Never rely on English-only keyword assumptions when deciding intents or context usage.
-    - Apply the same transfer-recipient and fastpath rules across English, Pidgin, Yoruba, Hausa, Igbo, and French.
-24. FOLLOW-UP REFERENT BINDING (MANDATORY):
-    - For underspecified follow-ups (e.g., "list them", "show them", "what about that"),
-      bind to the most recent domain from Recent Chat / Recent Domain Focus.
-    - Keep domain continuity unless user explicitly switches domain.
-    - Apply this rule across all supported languages.
-25. TRANSFER ACCOUNT+BANK EXTRACTION (MANDATORY):
-    - When a transfer request includes both a 10-digit account number and bank name in the same utterance,
-      populate parameters.recipient_account and parameters.bank_name immediately.
-    - Normalize account numbers by removing spaces/punctuation.
-    - If account digits are 11 and start with 0, remove the leading 0 for recipient_account.
-    - Keep recipient faithful to user wording; resolver still validates details.
-26. TRANSFER SCHEDULING (MANDATORY):
-    - If user asks to schedule a transfer at a future time/date, action must be schedule_transfer.
-    - If user asks for repeating transfer ("every Friday", "daily"), action must be recurring_transfer.
-    - If user asks to view schedules, action must be list_scheduled_transfers.
-    - If user asks to stop/remove a schedule, action must be cancel_scheduled_transfer.
-    - Keep transfer recipient fidelity rules unchanged for scheduling.
-
-
-## EXAMPLES
-- "How far" -> conversational, response_key=conversational.checkin, detected_language=Pidgin
-- "Send 10k to Mum" -> transfer, t1 send_money amount=10000 recipient="Mum" MONEY_MOVE
-- "Send 10k to Mum tomorrow 9am" -> transfer, t1 schedule_transfer amount=10000 recipient="Mum" schedule="tomorrow 9am"
-- "Send 10k to Mum every Friday" -> transfer, t1 recurring_transfer amount=10000 recipient="Mum" schedule="every friday" recurring=true
-- "Show my scheduled transfers" -> transfer, t1 list_scheduled_transfers
-- "Cancel schedule 2" -> transfer, t1 cancel_scheduled_transfer
-- "Please send 5k to 816 251 1023 Access" -> transfer, t1 send_money amount=5000 recipient_account="8162511023" bank_name="Access Bank" recipient="816 251 1023 Access"
-- "Send 5k to 08162511023 Access" -> transfer, t1 send_money amount=5000 recipient_account="8162511023" bank_name="Access Bank" recipient="08162511023 Access"
-- "Send 10k to Tolu for food" -> transfer, t1 send_money amount=10000 recipient="Tolu" narration="for food"
-- "I want to send 8k" -> transfer, t1 send_money amount=8000 (recipient omitted)
-- "Send 5k from First Bank" -> transfer, t1 send_money amount=5000 source_bank_name="First Bank"
-- "Send 50k to Mum and 30k to Dad" -> transfer, is_complex=true, t1 amount=50000 | t2 amount=30000
-- "Send 5k to Mum and check balance" -> mixed, t1 transfer MONEY_MOVE | t2 account check_balance READ_ONLY
-- "Buy 1k airtime" -> airtime, t1 buy_airtime amount=1000 MONEY_MOVE
-- "Get 2GB data" -> data, t1 buy_data plan="2GB" MONEY_MOVE
-- "What is my balance?" -> account, t1 check_balance READ_ONLY
-- "How many accounts do I have?" -> account, t1 list_accounts READ_ONLY
-- "How much did I spend last week?" -> query, t1 analytics_summary READ_ONLY
-- Context="Asked to save beneficiary", User="save as Gaines" -> beneficiary, t1 save_beneficiary alias="Gaines"
-- Context="Asked to save beneficiary", User="Hi" -> conversational, response_key=conversational.greeting
-- Context="Asked to resume transfer", User="Yes" -> orchestrator, t1 resume_session
-- UserState shows pending mandate, User="To what account?" -> conversational, answer from context with account details
-- UserState accounts=3, User="How many accounts do I have?" -> conversational, context_fastpath_subtype=account_count, tasks=[], response="You have 3 linked accounts."
-- UserState accounts include default=GTBank ...0002, User="Which account is default?" -> conversational, tasks=[], factual default account reply
-- UserState has pending mandate on Zenith, User="What about my zenith?" -> conversational, tasks=[], factual pending mandate explanation
-- UserState beneficiaries=8, User="Show my beneficiaries" -> conversational, tasks=[], response lists max 5 compact items
-- UserState beneficiaries include "Tolu Adebayo", User="Do I have Tolu as beneficiary?" -> conversational, tasks=[], factual yes/no from context
-- Recent Chat last turn was account_count answer, User="List them" -> conversational, context_fastpath_subtype=linked_accounts_summary, tasks=[]
-- Recent Chat last turn was beneficiary_count answer, User="List them" -> conversational, context_fastpath_subtype=beneficiary_list, tasks=[]
-- UserState beneficiaries include "Tolu Adebayo", User="send 5k to tolu" -> transfer, t1 recipient="tolu" (do NOT expand to full name)
-- Recent Chat last turn listed beneficiaries (single item), User="Send 10k to her" -> transfer, t1 amount=10000 reference={"selector":"previous"}
-- Recent Chat last turn listed beneficiaries (multiple items), User="Send 10k to her" -> transfer, t1 amount=10000 reference={"selector":"previous"} (resolver clarifies if needed)
-- UserState missing beneficiaries, User="How many beneficiaries do I have?" -> beneficiary, context_fastpath_subtype=beneficiary_count, t1 list_beneficiaries READ_ONLY
-- UserState missing accounts, User="Which account is default?" -> account, context_fastpath_subtype=default_account_identity, t1 list_accounts READ_ONLY
-- UserState accounts include pending+ready, User="Which of my accounts are ready?" -> conversational, context_fastpath_subtype=account_mandate_readiness_summary, tasks=[]
-- UserState accounts include Zenith, User="Do I have Zenith linked?" -> conversational, context_fastpath_subtype=account_linked_bank_existence_check, tasks=[]
-- UserState beneficiaries include Tolu Adebayo/Tolu Adeyemi/Tolulope Johnson, User="Which Tolu do I have?" -> conversational, context_fastpath_subtype=beneficiary_name_match_preview, tasks=[], response lists max 3 compact items
-- Active flow context exists, User="Where did we stop?" -> conversational, context_fastpath_subtype=flow_recap, tasks=[]
-- Active flow context exists, User="What do you need from me?" -> conversational, context_fastpath_subtype=flow_missing_requirements, tasks=[]
-- No active flow context, User="Where did we stop?" -> conversational, context_fastpath_subtype=flow_recap, tasks=[], no-active-flow clarification
-
-Return ONLY JSON matching the schema.
+## EXTRACTION PRECISION RULES
+- Transfer recipient fidelity: keep recipient exactly as user said ("mum", "tolu"); do not expand from context.
+- Narration is optional; never invent it.
+- Pronoun/index follow-up should use reference selector:
+  - {"selector":"previous"} for him/her/that/it
+  - {"selector":"index","index":N} for first/2nd/item N
+- Parse source_bank_name and source_account_index when explicitly provided.
+- Normalize amounts (5k->5000).
+- For explicit mixed transfer/airtime/data requests, emit one task per explicit action and preserve order.
+- Apply rules semantically across English, Pidgin, Yoruba, Hausa, Igbo, and French.
 """
 
+PLANNER_RULE_ATOMS: dict[str, str] = {
+    "R01_CONVERSATIONAL": "Greetings/thanks/check-ins -> conversational with tasks=[].",
+    "R02_BANKING_TASKS": "Banking intents emit at least one executable task.",
+    "R03_MISSING_SLOTS": "If slots are missing, still create task; workers will fill slots.",
+    "R04_DEPENDENCIES": "Encode explicit sequencing with depends_on.",
+    "R05_CANCEL_CONFIRM": "is_cancellation only for explicit cancel; is_confirmation only for pure approval.",
+    "R06_AMOUNT_NORMALIZATION": "Normalize shorthand amounts (5k->5000).",
+    "R07_OUT_OF_SCOPE": "Non-banking asks -> conversational + response_key=conversational.out_of_scope.",
+    "R08_ACTION_EXECUTOR": "Action must belong to the selected executor.",
+    "R09_CONTEXT_OVERRIDE": "In active flows, treat replies as slot updates unless clear switch/cancel.",
+    "R10_LANGUAGE_ALIGNMENT": "Detect language correctly and align response language.",
+    "R11_RESPONSE_KEYS": "Conversational no-task outputs must set allowed response_key; cancellation uses planner.cancelled.",
+    "R12_BENEFICIARY_HANDLING": "Reactive beneficiary save requires explicit save intent; avoid accidental beneficiary/support routing.",
+    "R13_QUERY_CONTINUATION": "Active query continuation stays query; 'send again/resend' maps to transfer replay task.",
+    "R14_REFERENCE_BINDING": "Use reference selector for pronoun/index follow-ups; preserve resolver ambiguity.",
+    "R15_RESUMPTION": "Emit resume_session/dismiss_resume_session only when resume prompt is explicit in context.",
+    "R16_FASTPATH_CONTEXT_READ": "Eligible read-only context answers may return conversational tasks=[].",
+    "R17_FASTPATH_FALLBACK": "If context is incomplete/stale, route to worker task (no guessing).",
+    "R18_FASTPATH_SUBTYPE": "Set context_fastpath_subtype only for eligible context-read answers.",
+    "R19_TRANSFER_FIDELITY": "For transfer, preserve typed recipient string; do not expand from user state.",
+    "R20_TRANSFER_ACCOUNT_BANK": "If account+bank are in the same utterance, populate recipient_account and bank_name.",
+    "R21_TRANSFER_SCHEDULING": "Map future/repeating/list/cancel schedule intents to scheduling transfer actions.",
+    "R22_MIXED_MONEY_MOVE": "Explicit mixed transfer/airtime/data requests must emit all mentioned transaction tasks in order.",
+    "R23_MULTILINGUAL_SAFETY": "Apply rules semantically across English, Pidgin, Yoruba, Hausa, Igbo, French.",
+}
 
-def build_planner_system_prompt() -> str:
-    """Build planner prompt with policy guardrails prepended."""
-    policy_block = build_planner_policy_block(get_cached_policy())
-    return f"{policy_block}\n\n{BASE_PLANNER_SYSTEM_PROMPT}"
+PLANNER_RULE_ATOM_ORDER = [
+    "R01_CONVERSATIONAL",
+    "R02_BANKING_TASKS",
+    "R03_MISSING_SLOTS",
+    "R04_DEPENDENCIES",
+    "R05_CANCEL_CONFIRM",
+    "R06_AMOUNT_NORMALIZATION",
+    "R07_OUT_OF_SCOPE",
+    "R08_ACTION_EXECUTOR",
+    "R09_CONTEXT_OVERRIDE",
+    "R10_LANGUAGE_ALIGNMENT",
+    "R11_RESPONSE_KEYS",
+    "R12_BENEFICIARY_HANDLING",
+    "R13_QUERY_CONTINUATION",
+    "R14_REFERENCE_BINDING",
+    "R15_RESUMPTION",
+    "R16_FASTPATH_CONTEXT_READ",
+    "R17_FASTPATH_FALLBACK",
+    "R18_FASTPATH_SUBTYPE",
+    "R19_TRANSFER_FIDELITY",
+    "R20_TRANSFER_ACCOUNT_BANK",
+    "R21_TRANSFER_SCHEDULING",
+    "R22_MIXED_MONEY_MOVE",
+    "R23_MULTILINGUAL_SAFETY",
+]
+
+PLANNER_BASE_RULE_ATOMS = {
+    "R01_CONVERSATIONAL",
+    "R02_BANKING_TASKS",
+    "R03_MISSING_SLOTS",
+    "R04_DEPENDENCIES",
+    "R05_CANCEL_CONFIRM",
+    "R06_AMOUNT_NORMALIZATION",
+    "R07_OUT_OF_SCOPE",
+    "R08_ACTION_EXECUTOR",
+    "R10_LANGUAGE_ALIGNMENT",
+    "R11_RESPONSE_KEYS",
+    "R16_FASTPATH_CONTEXT_READ",
+    "R17_FASTPATH_FALLBACK",
+    "R18_FASTPATH_SUBTYPE",
+    "R19_TRANSFER_FIDELITY",
+    "R20_TRANSFER_ACCOUNT_BANK",
+    "R21_TRANSFER_SCHEDULING",
+    "R22_MIXED_MONEY_MOVE",
+    "R23_MULTILINGUAL_SAFETY",
+}
+
+PLANNER_MONEY_MOVE_RULE_ATOMS = {"R09_CONTEXT_OVERRIDE", "R14_REFERENCE_BINDING"}
+PLANNER_QUERY_RULE_ATOMS = {"R13_QUERY_CONTINUATION", "R14_REFERENCE_BINDING"}
+PLANNER_CONTEXT_RULE_ATOMS = {"R09_CONTEXT_OVERRIDE", "R12_BENEFICIARY_HANDLING", "R15_RESUMPTION"}
+
+PLANNER_RUNTIME_COMMON_EXAMPLES = """## TARGETED EXAMPLES (COMMON)
+- How far -> conversational, response_key=conversational.checkin, detected_language=Pidgin
+- Send 8k -> transfer, t1 send_money amount=8000 (recipient omitted)
+- Buy 1k airtime -> airtime, t1 buy_airtime amount=1000 MONEY_MOVE
+- Get 2GB data -> data, t1 buy_data plan="2GB" MONEY_MOVE
+- What is my balance -> account, t1 check_balance READ_ONLY
+"""
+
+PLANNER_RUNTIME_MONEY_MOVE_EXAMPLES = """## TARGETED EXAMPLES (MONEY_MOVE)
+- Send 10k to Mum and buy 5k airtime -> mixed, t1 transfer send_money amount=10000 recipient="Mum" | t2 airtime buy_airtime amount=5000
+- Buy 5k airtime then send 10k to Mum -> mixed, t1 airtime buy_airtime amount=5000 | t2 transfer send_money amount=10000 depends_on=["t1"]
+- Send 10k to Mum tomorrow 9am -> transfer, t1 schedule_transfer amount=10000 recipient="Mum" schedule="tomorrow 9am"
+- Send 10k to Mum every Friday -> transfer, t1 recurring_transfer amount=10000 recipient="Mum" schedule="every friday" recurring=true
+- Show scheduled transfers -> transfer list_scheduled_transfers; Cancel schedule 2 -> transfer cancel_scheduled_transfer
+"""
+
+PLANNER_RUNTIME_QUERY_EXAMPLES = """## TARGETED EXAMPLES (QUERY)
+- show my transactions -> query, t1 transaction_list READ_ONLY
+- how much did i spend last week -> query, t1 analytics_summary READ_ONLY
+- Active Query Session + "any credits?" -> query continuation/refinement
+- Active Query Session + "send again" -> transfer replay task
+"""
+
+PLANNER_RUNTIME_CONTEXT_EXAMPLES = """## TARGETED EXAMPLES (CONTEXT)
+- Asked to save beneficiary + "save as Gaines" -> beneficiary, t1 save_beneficiary alias="Gaines"
+- Asked to save beneficiary + "Hi" -> conversational, response_key=conversational.greeting
+- Asked to resume transfer + "Yes" -> orchestrator, t1 resume_session
+- Recent Chat account_count + "List them" -> conversational, context_fastpath_subtype=linked_accounts_summary
+- Recent Chat beneficiary_count + "List them" -> conversational, context_fastpath_subtype=beneficiary_list
+"""
+
+PLANNER_RUNTIME_PROMPT_SUFFIX = "Return ONLY JSON matching the schema."
+
+MONEY_MOVE_PROMPT_MARKERS = (
+    "transfer",
+    "send",
+    "pay",
+    "airtime",
+    "recharge",
+    "credit",
+    "data",
+    "buy",
+    "schedule",
+)
+QUERY_PROMPT_MARKERS = (
+    "transaction",
+    "transactions",
+    "history",
+    "spend",
+    "spent",
+    "debit",
+    "credit",
+    "receipt",
+    "analytics",
+    "expense",
+    "more",
+    "next",
+)
+CONTEXT_PROMPT_MARKERS = (
+    "asked to save beneficiary",
+    "asked to resume",
+    "active query session",
+    "active flow",
+    "recent chat",
+    "user state",
+)
 
 
-PLANNER_SYSTEM_PROMPT = build_planner_system_prompt()
+def _normalize_prompt_signal(value: str) -> str:
+    return " ".join(value.lower().split())
+
+
+def _should_include_money_move_examples(text: str, context: str) -> bool:
+    normalized = _normalize_prompt_signal(f"{text} {context}")
+    return any(marker in normalized for marker in MONEY_MOVE_PROMPT_MARKERS)
+
+
+def _should_include_query_examples(text: str, context: str) -> bool:
+    normalized = _normalize_prompt_signal(f"{text} {context}")
+    return any(marker in normalized for marker in QUERY_PROMPT_MARKERS)
+
+
+def _should_include_context_examples(context: str) -> bool:
+    normalized = _normalize_prompt_signal(context)
+    return any(marker in normalized for marker in CONTEXT_PROMPT_MARKERS)
+
+
+def _select_runtime_rule_atoms(text: str, context: str) -> list[str]:
+    selected = set(PLANNER_BASE_RULE_ATOMS)
+    if _should_include_money_move_examples(text, context):
+        selected.update(PLANNER_MONEY_MOVE_RULE_ATOMS)
+    if _should_include_query_examples(text, context):
+        selected.update(PLANNER_QUERY_RULE_ATOMS)
+    if _should_include_context_examples(context):
+        selected.update(PLANNER_CONTEXT_RULE_ATOMS)
+    return [rule_id for rule_id in PLANNER_RULE_ATOM_ORDER if rule_id in selected]
+
+
+def _compile_rule_atoms(rule_ids: list[str]) -> str:
+    lines = ["## COMPILED RULE ATOMS"]
+    for rule_id in rule_ids:
+        lines.append(f"- {rule_id}: {PLANNER_RULE_ATOMS[rule_id]}")
+    return "\n".join(lines)
+
+
+def _build_planner_policy_block() -> str:
+    return build_planner_policy_block(get_cached_policy())
+
+
+PLANNER_POLICY_BLOCK = _build_planner_policy_block()
+
+
+def build_runtime_planner_system_prompt(text: str, context: str) -> tuple[str, str]:
+    rule_ids = _select_runtime_rule_atoms(text, context)
+    compiled_rules = _compile_rule_atoms(rule_ids)
+    sections = [
+        PLANNER_POLICY_BLOCK,
+        PLANNER_RUNTIME_SCHEMA_PROMPT,
+        compiled_rules,
+        PLANNER_RUNTIME_COMMON_EXAMPLES,
+    ]
+    profile_parts = ["schema", f"rules_{len(rule_ids)}", "ex_common"]
+    if _should_include_money_move_examples(text, context):
+        sections.append(PLANNER_RUNTIME_MONEY_MOVE_EXAMPLES)
+        profile_parts.append("ex_money_move")
+    if _should_include_query_examples(text, context):
+        sections.append(PLANNER_RUNTIME_QUERY_EXAMPLES)
+        profile_parts.append("ex_query")
+    if _should_include_context_examples(context):
+        sections.append(PLANNER_RUNTIME_CONTEXT_EXAMPLES)
+        profile_parts.append("ex_context")
+    sections.append(PLANNER_RUNTIME_PROMPT_SUFFIX)
+    return "\n\n".join(sections), "+".join(profile_parts)
+
+
+PLANNER_RUNTIME_BASELINE_PROMPT = ""
+PLANNER_RUNTIME_BASELINE_PROFILE = ""
+
+
+def _refresh_runtime_prompt_baseline() -> None:
+    global PLANNER_RUNTIME_BASELINE_PROMPT, PLANNER_RUNTIME_BASELINE_PROFILE
+    PLANNER_RUNTIME_BASELINE_PROMPT, PLANNER_RUNTIME_BASELINE_PROFILE = build_runtime_planner_system_prompt("", "None")
+
+
+_refresh_runtime_prompt_baseline()
 
 
 def refresh_planner_system_prompt() -> None:
-    """Refresh module-level planner prompt after policy reload."""
-    global PLANNER_SYSTEM_PROMPT
-    PLANNER_SYSTEM_PROMPT = build_planner_system_prompt()
+    """Refresh policy block and runtime prompt baseline after policy reload."""
+    global PLANNER_POLICY_BLOCK
+    PLANNER_POLICY_BLOCK = _build_planner_policy_block()
+    _refresh_runtime_prompt_baseline()
 
 
 PLANNER_USER_PROMPT_TEMPLATE = """User phone: {phone_number}
@@ -347,6 +349,36 @@ Pending context: {context}
 Message: \"\"\"{user_message}\"\"\"
 """
 
+TURN_ROUTER_SYSTEM_PROMPT = """You are a lightweight pre-planner router for a multilingual Nigerian banking assistant.
+
+Return ONLY JSON with:
+- decision: go_planner | respond_directly | query_continuation
+- confidence: 0.0-1.0
+- detected_language: English | Pidgin | Yoruba | Hausa | Igbo | French | null
+- response_key: conversational.greeting | conversational.appreciation |
+  conversational.checkin | conversational.identity |
+  conversational.brand_origin | conversational.capability_question |
+  conversational.out_of_scope | conversational.clarify | planner.cancelled | null
+- response: short direct response text or null
+- expected_transaction_executors: array of transfer|airtime|data (empty if none)
+- reason: short reason
+
+Rules:
+1) Use decision=respond_directly only for obvious conversational/meta responses.
+2) Use decision=query_continuation only for clear query continuation turns.
+3) Otherwise use decision=go_planner.
+4) Populate expected_transaction_executors only when user explicitly asks those transaction actions.
+4b) For explicit mixed transaction requests, include every mentioned executor in expected_transaction_executors.
+    Example: "send 10k to mum and buy 5k airtime" -> ["transfer","airtime"].
+5) Be multilingual and semantic; avoid English-only assumptions.
+6) If uncertain, choose go_planner with empty expected_transaction_executors.
+"""
+
+TURN_ROUTER_USER_PROMPT_TEMPLATE = """User phone: {phone_number}
+Pre-planner context: {context}
+Message: \"\"\"{user_message}\"\"\"
+"""
+
 QUOTED_REPLAY_SYSTEM_PROMPT = """You interpret quoted follow-up banking messages for replay execution.
 
 You receive:
@@ -395,6 +427,7 @@ class TaskPlanner:
         self.planner_llm = planner_llm
         self.interrupt_llm = interrupt_llm or planner_llm
         self.structured_planner = planner_llm.with_structured_output(PlannerOutput)
+        self.structured_turn_router = self.interrupt_llm.with_structured_output(TurnRouteDecision)
         self.structured_interrupt_router = self.interrupt_llm.with_structured_output(InterruptRouteDecision)
         self.structured_quoted_replay = planner_llm.with_structured_output(QuotedReplayInterpretation)
         self.task_queue_service = task_queue_service
@@ -412,7 +445,7 @@ class TaskPlanner:
             PlannerOutput with planned tasks
         """
         user_prompt = PLANNER_USER_PROMPT_TEMPLATE.format(phone_number=phone_number, user_message=text, context=context)
-        system_prompt = PLANNER_SYSTEM_PROMPT
+        system_prompt, system_prompt_profile = build_runtime_planner_system_prompt(text, context)
         start = time.perf_counter()
         result = await self.structured_planner.ainvoke(
             [
@@ -426,11 +459,40 @@ class TaskPlanner:
             duration_ms=round(duration_ms, 2),
             system_chars=len(system_prompt),
             user_chars=len(user_prompt),
+            prompt_profile=system_prompt_profile,
+            baseline_runtime_system_chars=len(PLANNER_RUNTIME_BASELINE_PROMPT),
+            baseline_runtime_profile=PLANNER_RUNTIME_BASELINE_PROFILE,
         )
 
         if isinstance(result, PlannerOutput):
             return result
         return cast(PlannerOutput, PlannerOutput.model_validate(result))
+
+    async def route_turn(self, phone_number: str, text: str, context: str = "None") -> TurnRouteDecision:
+        """Lightweight pre-planner routing for ambiguous/meta turns."""
+        user_prompt = TURN_ROUTER_USER_PROMPT_TEMPLATE.format(
+            phone_number=phone_number,
+            user_message=text,
+            context=context,
+        )
+        system_prompt = TURN_ROUTER_SYSTEM_PROMPT
+        start = time.perf_counter()
+        result = await self.structured_turn_router.ainvoke(
+            [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ]
+        )
+        duration_ms = (time.perf_counter() - start) * 1000
+        logger.info(
+            "preplanner_turn_router_llm_call",
+            duration_ms=round(duration_ms, 2),
+            system_chars=len(system_prompt),
+            user_chars=len(user_prompt),
+        )
+        if isinstance(result, TurnRouteDecision):
+            return result
+        return cast(TurnRouteDecision, TurnRouteDecision.model_validate(result))
 
     async def route_pending_input(self, phone_number: str, text: str, context: str = "None") -> InterruptRouteDecision:
         """Classify whether pending-input turn should continue current flow or switch intent."""
