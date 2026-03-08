@@ -16,6 +16,9 @@ from shared.utils.logging import get_logger
 from shared.utils.network_utils import normalize_network_name, normalize_nigerian_phone
 
 logger = get_logger(__name__)
+_NETWORK_CANONICAL = {"MTN", "AIRTEL", "GLO", "9MOBILE"}
+_PHONE_CANDIDATE_PATTERN = re.compile(r"(?:\+?234|0)?(?:[\s().-]*\d){10,13}")
+_NETWORK_TOKEN_PATTERN = re.compile(r"[A-Za-z0-9]+")
 
 
 def _matches_self_airtime_phrase(message: str) -> bool:
@@ -26,6 +29,38 @@ def _matches_self_airtime_phrase(message: str) -> bool:
         return True
 
     return re.search(r"\bbuy me\b[\w\s]{0,80}\bairtime\b", lowered) is not None
+
+
+def _has_phone_signal(message: str) -> bool:
+    return any(normalize_nigerian_phone(candidate) for candidate in _PHONE_CANDIDATE_PATTERN.findall(message))
+
+
+def _has_network_signal(message: str) -> bool:
+    for token in _NETWORK_TOKEN_PATTERN.findall(message):
+        normalized = normalize_network_name(token)
+        if normalized:
+            return True
+        if token.strip().upper() in _NETWORK_CANONICAL:
+            return True
+    return False
+
+
+def _has_resolved_network(network: str | None) -> bool:
+    if not network:
+        return False
+    normalized = normalize_network_name(network)
+    if normalized:
+        return True
+    return network.strip().upper() in _NETWORK_CANONICAL
+
+
+def _skip_override_reason(payload: AirtimePayload, message: str) -> str | None:
+    normalized_phone = normalize_nigerian_phone(str(payload.recipient_phone or ""))
+    if normalized_phone is None and _has_phone_signal(message):
+        return "missing_recipient_phone_with_phone_signal"
+    if not _has_resolved_network(payload.network) and _has_network_signal(message):
+        return "missing_network_with_network_signal"
+    return None
 
 
 class ExtractionStep(AirtimeStep):
@@ -45,9 +80,14 @@ class ExtractionStep(AirtimeStep):
         if not self.user_message:
             return TransactionResult(outcome=TransactionOutcome.OK)
 
-        if data.skip_extraction:
-            logger.info("skip_redundant_extraction", task="airtime")
-            return TransactionResult(outcome=TransactionOutcome.OK, patch={"skip_extraction": False})
+        skip_requested = data.skip_extraction
+
+        def _with_skip_patch(patch: dict[str, Any] | None = None) -> dict[str, Any] | None:
+            if not skip_requested:
+                return patch
+            merged = dict(patch or {})
+            merged.setdefault("skip_extraction", False)
+            return merged
 
         # [DETERMINISTIC FALLBACK] Numeric index selection
         # If user replies with "1" or "2" while selecting source account, map it directly.
@@ -59,13 +99,20 @@ class ExtractionStep(AirtimeStep):
         if numeric_patch:
             return TransactionResult(
                 outcome=TransactionOutcome.OK,
-                patch=numeric_patch,
+                patch=_with_skip_patch(numeric_patch),
             )
+
+        if skip_requested:
+            override_reason = _skip_override_reason(data, self.user_message)
+            if override_reason is None:
+                logger.info("skip_redundant_extraction", task="airtime", reason="no_override_signal")
+                return TransactionResult(outcome=TransactionOutcome.OK, patch=_with_skip_patch({}))
+            logger.info("override_skip_extraction", task="airtime", reason=override_reason)
 
         extractor = worker_context.extractor
         if not extractor:
             logger.warning("airtime_extractor_missing")
-            return TransactionResult(outcome=TransactionOutcome.OK)
+            return TransactionResult(outcome=TransactionOutcome.OK, patch=_with_skip_patch({}))
 
         temp_state = {
             "message": self.user_message,
@@ -136,6 +183,7 @@ class ExtractionStep(AirtimeStep):
                             {"feature_name": feature_name},
                         ),
                         details={"limitation": f"{unsupported[0]}_UNSUPPORTED"},
+                        patch=_with_skip_patch({}),
                     )
 
             raw_is_self = entities.get("is_self")
@@ -152,9 +200,9 @@ class ExtractionStep(AirtimeStep):
 
             return TransactionResult(
                 outcome=TransactionOutcome.OK,
-                patch=patch,
+                patch=_with_skip_patch(patch),
             )
 
         except Exception as e:
             logger.error("airtime_extraction_failed", error=str(e))
-            return TransactionResult(outcome=TransactionOutcome.OK)
+            return TransactionResult(outcome=TransactionOutcome.OK, patch=_with_skip_patch({}))

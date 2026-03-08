@@ -11,8 +11,10 @@ from apps.core.src.agent.orchestrator.models.domain import TransactionOutcome
 class _ExtractorStub:
     def __init__(self, result: dict) -> None:
         self._result = result
+        self.calls = 0
 
     async def run(self, _state: dict) -> dict:
+        self.calls += 1
         return self._result
 
 
@@ -145,3 +147,51 @@ async def test_airtime_validation_rejects_invalid_network_name() -> None:
     assert result.outcome == TransactionOutcome.NEEDS_INPUT
     assert result.required_fields == ["network"]
     assert "Invalid network." in (result.prompt or "")
+
+
+@pytest.mark.asyncio
+async def test_airtime_skip_extraction_overrides_for_phone_signal() -> None:
+    step = ExtractionStep("816 251 1023")
+    payload = AirtimePayload(amount=5000, skip_extraction=True)
+    context = AirtimeContext(phone_number="2348000000000", language="en")
+    gates = AirtimeGates()
+    extractor = _ExtractorStub({"entities": {"recipient_phone": "08162511023"}, "correction": None})
+    worker_context = SimpleNamespace(required_fields=[], extractor=extractor)
+
+    result = await step.execute(payload, context, gates, worker_context)
+
+    assert result.outcome == TransactionOutcome.OK
+    assert extractor.calls == 1
+    assert result.patch == {"recipient_phone": "08162511023", "skip_extraction": False}
+
+
+@pytest.mark.asyncio
+async def test_airtime_skip_extraction_overrides_for_network_signal() -> None:
+    step = ExtractionStep("mtn")
+    payload = AirtimePayload(amount=5000, recipient_phone="08162511023", skip_extraction=True)
+    context = AirtimeContext(phone_number="2348000000000", language="en")
+    gates = AirtimeGates()
+    extractor = _ExtractorStub({"entities": {"network": "mtn"}, "correction": None})
+    worker_context = SimpleNamespace(required_fields=[], extractor=extractor)
+
+    result = await step.execute(payload, context, gates, worker_context)
+
+    assert result.outcome == TransactionOutcome.OK
+    assert extractor.calls == 1
+    assert result.patch == {"network": "MTN", "skip_extraction": False}
+
+
+@pytest.mark.asyncio
+async def test_airtime_skip_extraction_skips_without_strong_signal() -> None:
+    step = ExtractionStep("okay")
+    payload = AirtimePayload(amount=5000, skip_extraction=True)
+    context = AirtimeContext(phone_number="2348000000000", language="en")
+    gates = AirtimeGates()
+    extractor = _ExtractorStub({"entities": {"recipient_phone": "08162511023"}, "correction": None})
+    worker_context = SimpleNamespace(required_fields=[], extractor=extractor)
+
+    result = await step.execute(payload, context, gates, worker_context)
+
+    assert result.outcome == TransactionOutcome.OK
+    assert extractor.calls == 0
+    assert result.patch == {"skip_extraction": False}

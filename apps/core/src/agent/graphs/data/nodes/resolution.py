@@ -4,6 +4,7 @@ from apps.core.src.agent.graphs.data.models.types import DataContext, DataGates,
 from apps.core.src.agent.graphs.data.pipeline.base import PipelineStep
 from apps.core.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
 from shared.i18n import render_message
+from shared.utils.network_utils import normalize_network_name, normalize_nigerian_phone, resolve_network_from_phone
 
 
 class ResolutionStep(PipelineStep):
@@ -30,10 +31,23 @@ class ResolutionStep(PipelineStep):
                 patch=payload.model_dump(exclude_none=True),
             )
 
+        normalized_phone = normalize_nigerian_phone(str(payload.target_phone))
+        if normalized_phone:
+            payload.target_phone = normalized_phone
+
         # 2. Resolve Network
+        normalized_network = normalize_network_name(payload.network) if payload.network else None
+        if normalized_network:
+            payload.network = normalized_network
+        elif payload.network:
+            payload.network = payload.network.strip().upper()
+
         if not payload.network:
-            # Try to lookup network (mock or real provider check)
-            # For now, if missing, ask
+            inferred_network = resolve_network_from_phone(payload.target_phone)
+            if inferred_network:
+                payload.network = inferred_network
+
+        if not payload.network:
             return TransactionResult(
                 outcome=TransactionOutcome.NEEDS_INPUT,
                 required_fields=["network"],
