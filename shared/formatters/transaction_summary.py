@@ -168,12 +168,17 @@ def format_multi_action_summary(completed_tasks: list, locale: str = "en") -> st
     # Handle airtime purchases
     if airtime_tasks:
         for task in airtime_tasks:
-            amount = task.payload.get("amount", 0)
-            phone = task.payload.get("phone_number") or render_message(
-                "transaction_summary.multi.phone_fallback",
-                locale,
+            amount = float(task.payload.get("amount", 0) or 0)
+            raw_phone = (
+                task.payload.get("phone_number")
+                or task.payload.get("recipient_phone")
+                or task.payload.get("recipientPhone")
+                or task.payload.get("phone")
             )
-            network = task.payload.get("network", "")
+            phone = str(raw_phone).strip() if raw_phone else ""
+            if not phone:
+                phone = render_message("transaction_summary.multi.phone_fallback", locale)
+            network = str(task.payload.get("network") or "")
             total_spent += amount
             lines.append(
                 render_message(
@@ -264,3 +269,4 @@ def format_intent_line(task_type: str, payload: dict[str, Any], locale: str = "e
         phone = payload.get("target_phone") or render_message("transaction_summary.intent.phone_fallback", locale)
         return render_message("transaction_summary.intent.data", locale, {"plan": plan, "phone": phone})
     return render_message("transaction_summary.intent.generic", locale, {"task_type": task_type.title()})
+

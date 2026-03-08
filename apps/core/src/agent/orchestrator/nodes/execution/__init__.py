@@ -29,6 +29,7 @@ from shared.formatters.confirmation import (
     append_source_account_info,
     build_confirmation_summary,
     build_source_account_info,
+    strip_source_account_info_lines,
 )
 from shared.formatters.prompts import (
     format_auth_reason,
@@ -282,6 +283,7 @@ def _build_confirmation_gate_summary(
                 task_summary = _strip_batch_name_mismatch_warning(raw_summary, task.payload)
             if not task_summary:
                 task_summary = _render_task_confirmation_summary(task=task, locale=locale, accounts=accounts)
+            task_summary = strip_source_account_info_lines(task_summary, locale=locale)
             if task_summary:
                 summaries.append(task_summary)
         return format_batch_transfer_summary(
@@ -298,6 +300,31 @@ def _build_confirmation_gate_summary(
         if tid in state.tasks
     ]
     non_empty = [summary for summary in summaries if summary]
+    if not non_empty:
+        return ""
+
+    source_infos: list[str] = []
+    for tid in task_ids:
+        task = state.tasks.get(tid)
+        if not task:
+            continue
+        confirmation_payload = task.payload.get("confirmation") or {}
+        snapshot = confirmation_payload.get("snapshot")
+        source_info = build_source_account_info(
+            task_payload=task.payload,
+            snapshot=snapshot if isinstance(snapshot, dict) else {},
+            accounts=accounts,
+            locale=locale,
+        )
+        if source_info:
+            source_infos.append(source_info)
+
+    if source_infos and len(set(source_infos)) == 1 and len(non_empty) > 1:
+        stripped = [strip_source_account_info_lines(summary, locale=locale) for summary in non_empty]
+        stripped_non_empty = [summary for summary in stripped if summary]
+        merged = "\n\n".join(stripped_non_empty)
+        return append_source_account_info(merged, source_infos[0], locale=locale)
+
     return "\n\n".join(non_empty)
 
 

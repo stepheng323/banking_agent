@@ -16,7 +16,15 @@ from apps.core.src.agent.orchestrator.nodes.finalize import finalize
 from apps.core.src.agent.orchestrator.nodes.ingest import ingest_message
 from apps.core.src.agent.orchestrator.nodes.interrupt import handle_pending_interrupt
 from apps.core.src.agent.orchestrator.nodes.planner import plan_tasks
+from shared.formatters.accounts import format_source_account_info_from_account_number
 from shared.types.planner import InterruptRouteDecision, PlannedTask, PlannerOutput, TaskParameters
+
+SHARED_SOURCE_LINE = format_source_account_info_from_account_number(
+    bank="Zenith Bank",
+    account_number="0000009384",
+    locale="en",
+    balance=None,
+)
 
 
 class _MockPlanner:
@@ -87,6 +95,8 @@ class _TransferNeedsConfirmationWorker:
             confirmation_snapshot={
                 "amount": payload.get("amount", 0),
                 "recipient_name": payload.get("recipient_name"),
+                "sourceBank": "Zenith Bank",
+                "sourceAccount": "0000009384",
             },
         )
 
@@ -106,6 +116,8 @@ class _AirtimeNeedsConfirmationWorker:
             confirmation_snapshot={
                 "amount": payload.get("amount", 0),
                 "recipient_phone": payload.get("recipient_phone"),
+                "sourceBank": "Zenith Bank",
+                "sourceAccount": "0000009384",
             },
         )
 
@@ -268,6 +280,7 @@ async def test_mixed_transfer_airtime_uses_single_confirmation_and_single_auth_g
     assert set(confirmation_entry["task_ids"]) == {"t_transfer", "t_airtime"}
     assert "Confirm transfer task" in confirmation_entry["summary"]
     assert "Confirm airtime task" in confirmation_entry["summary"]
+    assert confirmation_entry["summary"].count(SHARED_SOURCE_LINE) == 1
     assert set(confirmation_entry["snapshots_by_task"].keys()) == {"t_transfer", "t_airtime"}
 
     post_confirm_state = state.model_copy(update=first_updates)
@@ -285,6 +298,7 @@ async def test_mixed_transfer_airtime_uses_single_confirmation_and_single_auth_g
     assert auth_entry["header"] == "Authorize Transaction"
     assert "Confirm transfer task" in auth_entry["summary"]
     assert "Confirm airtime task" in auth_entry["summary"]
+    assert auth_entry["summary"].count(SHARED_SOURCE_LINE) == 1
 
 
 @pytest.mark.asyncio

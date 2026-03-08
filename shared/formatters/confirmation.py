@@ -126,6 +126,28 @@ def append_source_account_info(summary: str, source_account_info: str | None, *,
     return f"{summary}\n\n{source_account_info}"
 
 
+def strip_source_account_info_lines(summary: str, *, locale: str) -> str:
+    """Remove source-account lines from a summary while preserving readable spacing."""
+    if not summary:
+        return summary
+
+    prefix = _source_line_prefix(locale)
+    if not prefix:
+        return summary.strip()
+
+    kept_lines = [line for line in summary.splitlines() if not line.strip().startswith(prefix)]
+    compacted_lines: list[str] = []
+    last_blank = False
+    for line in kept_lines:
+        is_blank = not line.strip()
+        if is_blank and last_blank:
+            continue
+        compacted_lines.append(line)
+        last_blank = is_blank
+
+    return "\n".join(compacted_lines).strip()
+
+
 def build_confirmation_summary(
     *,
     task_payload: dict[str, Any],

@@ -694,7 +694,7 @@
       "bank_fallback": "Bank",
       "account_fallback": "N/A",
       "phone_fallback": "N/A",
-      "airtime_line": "*Airtime:* {amount} for {phone} ({network})",
+      "airtime_line": "\u2713 *Airtime:* {amount} for {phone} ({network})",
       "data_plan_fallback": "data",
       "data_line": "*Data:* {plan} - {amount} for {phone}",
       "other_completed_line": "*{task_type}:* Completed",
@@ -835,3 +835,4 @@
     }
   }
 }
+

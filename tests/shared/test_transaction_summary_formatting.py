@@ -24,6 +24,28 @@ def _transfer_task(
         },
     )
 
+def _airtime_task(
+    *,
+    task_id: str,
+    amount: float,
+    recipient_phone: str | None = None,
+    phone_number: str | None = None,
+    network: str | None = None,
+) -> TaskSpec:
+    payload: dict[str, str | float] = {"amount": amount}
+    if recipient_phone is not None:
+        payload["recipient_phone"] = recipient_phone
+    if phone_number is not None:
+        payload["phone_number"] = phone_number
+    if network is not None:
+        payload["network"] = network
+    return TaskSpec(
+        id=task_id,
+        type="airtime",
+        stage=TaskStage.COMPLETED,
+        payload=payload,
+    )
+
 
 def test_multi_action_summary_uses_compact_transfer_line_with_alias_and_resolved() -> None:
     tasks = [
@@ -104,6 +126,22 @@ def test_multi_action_summary_resolved_only_line_is_title_cased() -> None:
 
     assert "✓ ₦10,000 → Grace Ngozi Adebayo • Access Bank • 0762511023" in summary
 
+
+def test_multi_action_summary_airtime_line_uses_checkmark() -> None:
+    tasks = [_airtime_task(task_id="a1", amount=1000, phone_number="08162511023", network="MTN")]
+
+    summary = format_multi_action_summary(tasks, locale="en")
+
+    assert "\u2713 *Airtime:*" in summary
+    assert "for 08162511023 (MTN)" in summary
+
+
+def test_multi_action_summary_airtime_uses_recipient_phone_fallback() -> None:
+    tasks = [_airtime_task(task_id="a1", amount=1000, recipient_phone="08162511023", network="MTN")]
+
+    summary = format_multi_action_summary(tasks, locale="en")
+
+    assert "for 08162511023 (MTN)" in summary
 
 def test_batch_confirmation_summary_uses_compact_total_amount() -> None:
     summary = format_batch_transfer_summary(
