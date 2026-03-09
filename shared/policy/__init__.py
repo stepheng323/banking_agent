@@ -3,6 +3,7 @@
 from shared.policy.adapters import (
     build_meta_policy_payload,
     build_planner_policy_block,
+    build_planner_policy_summary,
     build_system_profile,
     resolve_capability_alternative,
     resolve_capability_message,
@@ -35,6 +36,7 @@ __all__ = [
     "get_cached_policy",
     "build_system_profile",
     "build_planner_policy_block",
+    "build_planner_policy_summary",
     "build_meta_policy_payload",
     "resolve_capability_rule",
     "resolve_capability_message",

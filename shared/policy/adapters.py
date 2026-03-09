@@ -42,6 +42,42 @@ def build_planner_policy_block(policy: SoulPolicy) -> str:
     )
 
 
+def build_planner_policy_summary(policy: SoulPolicy) -> str:
+    """Build planner-only policy summary focused on extraction behavior."""
+    def _preview(items: list[str]) -> str:
+        if not items:
+            return "None"
+        first = items[0]
+        remaining = len(items) - 1
+        return f"{first} (+{remaining})" if remaining > 0 else first
+
+    def _clip(text: str, *, limit: int = 56) -> str:
+        compact = " ".join(text.strip().split())
+        if len(compact) <= limit:
+            return compact
+        return compact[: limit - 1].rstrip() + "…"
+
+    tone_rule = (
+        policy.tone.response_rules[0]
+        if policy.tone.response_rules
+        else policy.tone.style
+    )
+    safety_rule = (
+        policy.safety_rules[0]
+        if policy.safety_rules
+        else "Prioritize banking/support workflows only"
+    )
+
+    return (
+        "## POLICY\n"
+        f"- Supported(policy): {_preview(policy.supported_domains).replace(' (+', '(+')}; "
+        f"Unsupported(policy): {_preview(policy.unsupported_capabilities).replace(' (+', '(+')}.\n"
+        f"- Tone/Safety: {_clip(tone_rule, limit=24)} | {_clip(safety_rule, limit=24)}.\n"
+        "- OOS -> conversational.out_of_scope.\n"
+        "- Reply in user language."
+    )
+
+
 def resolve_capability_rule(domain: str, action: str, policy: SoulPolicy | None = None) -> CapabilityRule | None:
     """Resolve capability rule for a domain action."""
     effective_policy = policy or get_cached_policy()

@@ -4,6 +4,7 @@ import time
 from typing import Any
 
 import pytest
+import tiktoken
 from langchain_core.runnables import RunnableConfig
 
 from apps.core.src.agent.orchestrator.context.models import ContextEntity, ContextFrame, ContextFrameType, EntityType
@@ -70,6 +71,46 @@ def _runtime_prompt_size_report() -> dict[str, int]:
             PlannerPromptBuildInput(text=text, context=context, signals=signals)
         )
         report[name] = len(result.system_prompt)
+    return report
+
+
+def _runtime_prompt_token_report() -> dict[str, int]:
+    encoding = tiktoken.get_encoding("o200k_base")
+    profiles = {
+        "generic": ("hello", "None", PlannerPromptSignals()),
+        "mixed_money_move": (
+            "Send 10k to mum and buy me 5k airtime",
+            "None",
+            PlannerPromptSignals(expected_transaction_executors=("transfer", "airtime")),
+        ),
+        "query": (
+            "How much did I spend last week?",
+            "None",
+            PlannerPromptSignals(query_session_active=True, recent_domain_focus="query"),
+        ),
+        "context_followup": (
+            "List them",
+            "Recent Chat last turn was account_count answer",
+            PlannerPromptSignals(active_flow_type="account", has_beneficiary_suggestion=True),
+        ),
+        "fully_expanded": (
+            "Send 10k to Mum and buy me 5k airtime and show transactions",
+            "Active Query Session. Asked to save beneficiary. Recent Chat.",
+            PlannerPromptSignals(
+                active_flow_type="transfer",
+                query_session_active=True,
+                recent_domain_focus="query",
+                has_beneficiary_suggestion=True,
+                expected_transaction_executors=("transfer", "airtime"),
+            ),
+        ),
+    }
+    report: dict[str, int] = {}
+    for name, (text, context, signals) in profiles.items():
+        result = build_planner_system_prompt(
+            PlannerPromptBuildInput(text=text, context=context, signals=signals)
+        )
+        report[name] = len(encoding.encode(result.system_prompt))
     return report
 
 
@@ -231,6 +272,7 @@ def test_query_session_context_builder_keeps_required_query_guidance() -> None:
 
 def test_runtime_prompt_size_report_and_budget_guard(capsys: pytest.CaptureFixture[str]) -> None:
     report = _runtime_prompt_size_report()
+    token_report = _runtime_prompt_token_report()
 
     with capsys.disabled():
         print("planner_runtime_prompt_sizes:")
@@ -240,6 +282,18 @@ def test_runtime_prompt_size_report_and_budget_guard(capsys: pytest.CaptureFixtu
             delta = before - after
             pct = (delta / before) * 100
             print(f"- {key}: before={before} after={after} delta={delta} ({pct:.1f}%)")
+        print("planner_runtime_prompt_tokens:")
+        for key in ("generic", "mixed_money_move", "query", "context_followup", "fully_expanded"):
+            print(f"- {key}: tokens={token_report[key]}")
 
-    assert report["generic"] <= 5227
-    assert report["fully_expanded"] <= 6981
+    assert report["generic"] <= 1600
+    assert report["mixed_money_move"] <= 2350
+    assert report["query"] <= 1850
+    assert report["context_followup"] <= 2000
+    assert report["fully_expanded"] <= 2890
+
+    assert token_report["generic"] <= 370
+    assert token_report["mixed_money_move"] <= 565
+    assert token_report["query"] <= 435
+    assert token_report["context_followup"] <= 475
+    assert token_report["fully_expanded"] <= 700
