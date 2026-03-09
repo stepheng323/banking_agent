@@ -1,4 +1,4 @@
-from typing import Any, cast
+from typing import Any
 
 from langchain_core.runnables import RunnableConfig
 
@@ -32,21 +32,14 @@ from apps.core.src.agent.orchestrator.nodes.planner_postprocess import (
     _should_replan_active_wave,
     _strip_transactional_depends_on_edges,
 )
+from apps.core.src.agent.orchestrator.nodes.planner_quoted_flow import _handle_quoted_replay_shortcut
 from apps.core.src.agent.orchestrator.nodes.planner_quoted_replay import (
     QUOTED_REPLAY_MIN_CONFIDENCE as _QUOTED_REPLAY_MIN_CONFIDENCE,
-)
-from apps.core.src.agent.orchestrator.nodes.planner_quoted_replay import (
-    _build_quoted_replay_context,
-    _build_quoted_replay_context_with_payload,
-    _build_quoted_replay_execution_updates,
-    _load_quoted_actionable_payload,
-    _quoted_replay_clarify_response,
 )
 from apps.core.src.agent.orchestrator.nodes.planner_response_flow import _build_non_task_response
 from apps.core.src.agent.orchestrator.utils.task_payload import build_task_spec_from_plan_item
 from apps.core.src.agent.orchestrator.utils.waves import build_dependency_waves
-from shared.i18n import LocaleManager, render_message, render_safe_capability_fallback
-from shared.types.quoted_replay import QuotedReplayInterpretation
+from shared.i18n import LocaleManager, render_safe_capability_fallback
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -74,66 +67,17 @@ async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[s
 
     locale_updates = _build_locale_update(state, current_locale)
 
-    if state.has_quote and state.quoted_message_id and hasattr(task_planner, "interpret_quoted_replay"):
-        quoted_payload = await _load_quoted_actionable_payload(state, config)
-        quoted_context = (
-            _build_quoted_replay_context_with_payload(state, quoted_payload)
-            if quoted_payload is not None
-            else _build_quoted_replay_context(state)
-        )
-        try:
-            interpretation = cast(
-                QuotedReplayInterpretation,
-                await task_planner.interpret_quoted_replay(state.phone_number, text, context=quoted_context),
-            )
-            if interpretation.decision == "clarify":
-                logger.info("quoted_replay_shortcut_clarify", reason=interpretation.reason)
-                return {
-                    "final_response": _quoted_replay_clarify_response(interpretation, current_locale),
-                    "normalized_instruction": text,
-                    **locale_updates,
-                }
-            if interpretation.decision == "execute":
-                if interpretation.confidence < QUOTED_REPLAY_MIN_CONFIDENCE:
-                    logger.info(
-                        "quoted_replay_confidence_low",
-                        decision=interpretation.decision,
-                        confidence=interpretation.confidence,
-                        min_confidence=QUOTED_REPLAY_MIN_CONFIDENCE,
-                    )
-                    return {
-                        "final_response": _quoted_replay_clarify_response(interpretation, current_locale),
-                        "normalized_instruction": text,
-                        **locale_updates,
-                    }
-                if quoted_payload is None:
-                    logger.info("quoted_replay_actionable_payload_missing", quoted_message_id=state.quoted_message_id)
-                    return {
-                        "final_response": render_message("conversational.clarify", current_locale),
-                        "normalized_instruction": text,
-                        **locale_updates,
-                    }
-                replay_updates = _build_quoted_replay_execution_updates(
-                    state=state,
-                    text=text,
-                    interpretation=interpretation,
-                    locale_updates=locale_updates,
-                )
-                if replay_updates is not None:
-                    return replay_updates
-                logger.info(
-                    "quoted_replay_insufficient_payload",
-                    decision=interpretation.decision,
-                    reason=interpretation.reason,
-                )
-                return {
-                    "final_response": _quoted_replay_clarify_response(interpretation, current_locale),
-                    "normalized_instruction": text,
-                    **locale_updates,
-                }
-            logger.info("quoted_replay_shortcut_miss", decision=interpretation.decision, reason=interpretation.reason)
-        except Exception as exc:
-            logger.warning("quoted_replay_shortcut_failed", error=str(exc))
+    quoted_replay_updates = await _handle_quoted_replay_shortcut(
+        state=state,
+        config=config,
+        task_planner=task_planner,
+        text=text,
+        current_locale=current_locale,
+        locale_updates=locale_updates,
+        quoted_replay_min_confidence=QUOTED_REPLAY_MIN_CONFIDENCE,
+    )
+    if quoted_replay_updates is not None:
+        return quoted_replay_updates
 
     context_result = await _build_planner_context(
         state=state,
