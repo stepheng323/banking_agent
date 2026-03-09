@@ -5,10 +5,11 @@ from typing import cast
 from langchain_openai import ChatOpenAI
 
 from shared.services.task_planner_prompts import (
+    PLANNER_PROMPT_BASELINE_RESULT,
     PLANNER_RULE_ATOMS,
-    PLANNER_RUNTIME_BASELINE_PROFILE,
-    PLANNER_RUNTIME_BASELINE_PROMPT,
-    build_runtime_planner_system_prompt,
+    PlannerPromptBuildInput,
+    PlannerPromptSignals,
+    build_planner_system_prompt,
     refresh_planner_system_prompt,
 )
 from shared.services.task_planner_router_prompts import (
@@ -49,7 +50,14 @@ class TaskPlanner:
         self.structured_quoted_replay = planner_llm.with_structured_output(QuotedReplayInterpretation)
         self.task_queue_service = task_queue_service
 
-    async def plan_tasks(self, phone_number: str, text: str, context: str = "None") -> PlannerOutput:
+    async def plan_tasks(
+        self,
+        phone_number: str,
+        text: str,
+        *,
+        context: str = "None",
+        prompt_signals: PlannerPromptSignals,
+    ) -> PlannerOutput:
         """
         Use planner to break down request into tasks.
 
@@ -62,7 +70,9 @@ class TaskPlanner:
             PlannerOutput with planned tasks
         """
         user_prompt = PLANNER_USER_PROMPT_TEMPLATE.format(phone_number=phone_number, user_message=text, context=context)
-        system_prompt, system_prompt_profile = build_runtime_planner_system_prompt(text, context)
+        prompt_input = PlannerPromptBuildInput(text=text, context=context, signals=prompt_signals)
+        prompt_result = build_planner_system_prompt(prompt_input)
+        system_prompt = prompt_result.system_prompt
         start = time.perf_counter()
         result = await self.structured_planner.ainvoke(
             [
@@ -76,9 +86,11 @@ class TaskPlanner:
             duration_ms=round(duration_ms, 2),
             system_chars=len(system_prompt),
             user_chars=len(user_prompt),
-            prompt_profile=system_prompt_profile,
-            baseline_runtime_system_chars=len(PLANNER_RUNTIME_BASELINE_PROMPT),
-            baseline_runtime_profile=PLANNER_RUNTIME_BASELINE_PROFILE,
+            prompt_profile=prompt_result.profile,
+            prompt_bundles=list(prompt_result.selected_bundle_ids),
+            prompt_rule_count=len(prompt_result.selected_rule_ids),
+            baseline_runtime_system_chars=PLANNER_PROMPT_BASELINE_RESULT.char_count,
+            baseline_runtime_profile=PLANNER_PROMPT_BASELINE_RESULT.profile,
         )
 
         if isinstance(result, PlannerOutput):
@@ -178,13 +190,14 @@ OrchestratorTaskPlanner = TaskPlanner
 
 __all__ = [
     "INTERRUPT_ROUTER_SYSTEM_PROMPT",
+    "PLANNER_PROMPT_BASELINE_RESULT",
     "PLANNER_RULE_ATOMS",
-    "PLANNER_RUNTIME_BASELINE_PROFILE",
-    "PLANNER_RUNTIME_BASELINE_PROMPT",
+    "PlannerPromptBuildInput",
+    "PlannerPromptSignals",
     "QUOTED_REPLAY_SYSTEM_PROMPT",
     "TaskPlanner",
     "TURN_ROUTER_SYSTEM_PROMPT",
-    "build_runtime_planner_system_prompt",
+    "build_planner_system_prompt",
     "refresh_planner_system_prompt",
     "OrchestratorTaskPlanner",
 ]

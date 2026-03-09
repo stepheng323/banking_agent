@@ -23,6 +23,8 @@ from apps.core.src.agent.orchestrator.nodes.planner_query_shortcuts import (
     _next_query_continuation_task_id,
 )
 from apps.core.src.agent.orchestrator.services.context_manager import OrchestratorContextManager
+from shared.services.task_planner_prompt_models import PlannerPromptSignals
+from shared.types.planner import TransactionExecutor
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -41,6 +43,7 @@ class PlannerContextBuildResult:
     active_intent: str | None
     query_session_snapshot: dict[str, Any] | None
     query_session_source: str | None
+    prompt_signals: PlannerPromptSignals
     shortcut_updates: dict[str, Any] | None = None
 
 
@@ -54,6 +57,11 @@ async def _build_planner_context(
     planner_context_sections: list[tuple[str, str]] = []
     query_session_snapshot: dict[str, Any] | None = None
     query_session_source: str | None = None
+    query_session_active = False
+    has_beneficiary_suggestion = False
+    has_short_term_memory = False
+    has_user_state_summary = False
+    recent_domain_focus: str | None = None
     current_flow_type: str | None = None
     if state.waves and state.current_wave_index < len(state.waves):
         current_wave = state.waves[state.current_wave_index]
@@ -78,6 +86,7 @@ async def _build_planner_context(
             if suggestion_data:
                 data = json.loads(suggestion_data)
                 name = data.get("recipient_name") or data.get("alias_suggested") or "Unknown"
+                has_beneficiary_suggestion = True
                 planner_context_sections.append(
                     (
                         "beneficiary_suggestion",
@@ -104,6 +113,7 @@ async def _build_planner_context(
             if query_session_snapshot and not is_transactional_flow:
                 session = query_session_snapshot
                 session_active = bool(session.get("session_active"))
+                query_session_active = session_active
                 if (
                     session_active
                     and state.pending_interrupt is None
@@ -127,6 +137,7 @@ async def _build_planner_context(
                         active_intent=None,
                         query_session_snapshot=query_session_snapshot,
                         query_session_source=query_session_source,
+                        prompt_signals=PlannerPromptSignals(),
                         shortcut_updates={
                             "tasks": {shortcut_task_id: shortcut_task},
                             "waves": [[shortcut_task_id]],
@@ -162,6 +173,7 @@ async def _build_planner_context(
         query_session_source = "stashed"
 
     if query_session_snapshot and query_session_source == "stashed" and not is_transactional_flow:
+        query_session_active = bool(query_session_snapshot.get("session_active"))
         summary_text = None
         query_result = query_session_snapshot.get("query_result")
         if isinstance(query_result, dict):
@@ -218,6 +230,7 @@ async def _build_planner_context(
     ctx_manager = OrchestratorContextManager()
     short_term_context = ctx_manager.build_llm_summary(state)
     if short_term_context:
+        has_short_term_memory = True
         planner_context_sections.append(
             ("short_term_memory", _clip_text(short_term_context, PLANNER_CONTEXT_SHORT_TERM_MAX_CHARS))
         )
@@ -242,6 +255,7 @@ async def _build_planner_context(
 
     user_state_summary = _build_user_state_summary(state)
     if user_state_summary:
+        has_user_state_summary = True
         planner_context_sections.append(
             ("user_state_history", _clip_text(user_state_summary, PLANNER_CONTEXT_USER_STATE_MAX_CHARS))
         )
@@ -259,11 +273,30 @@ async def _build_planner_context(
         clipped_sections=clipped_sections,
         dropped_sections=dropped_sections,
     )
+    expected_executors = tuple(
+        cast(TransactionExecutor, item)
+        for item in state.preplanner_expected_transaction_executors
+        if item in TRANSACTION_EXECUTORS
+    )
+    prompt_signals = PlannerPromptSignals(
+        active_flow_type=active_intent,
+        pending_interrupt_kind=state.pending_interrupt.kind if state.pending_interrupt else None,
+        query_session_active=query_session_active,
+        query_session_source=query_session_source,
+        recent_domain_focus=recent_domain_focus,
+        has_beneficiary_suggestion=has_beneficiary_suggestion,
+        has_user_state_summary=has_user_state_summary,
+        has_short_term_memory=has_short_term_memory,
+        has_quote=state.has_quote and bool(state.quoted_message_id),
+        expected_transaction_executors=expected_executors,
+    )
+
     return PlannerContextBuildResult(
         planner_context=planner_context,
         active_intent=active_intent,
         query_session_snapshot=query_session_snapshot,
         query_session_source=query_session_source,
+        prompt_signals=prompt_signals,
     )
 
 

@@ -26,7 +26,7 @@ class _MockPlanner:
         self._output = output
         self._route = route
 
-    async def plan_tasks(self, phone_number: str, text: str, context: str = "None") -> PlannerOutput:
+    async def plan_tasks(self, phone_number: str, text: str, *, context: str = "None", prompt_signals: object | None = None) -> PlannerOutput:
         del phone_number, text, context
         return self._output
 
@@ -62,7 +62,7 @@ class _RouteOnlyPlanner:
         del phone_number, text, context
         return self._route
 
-    async def plan_tasks(self, phone_number: str, text: str, context: str = "None") -> PlannerOutput:
+    async def plan_tasks(self, phone_number: str, text: str, *, context: str = "None", prompt_signals: object | None = None) -> PlannerOutput:
         del phone_number, text, context
         raise AssertionError("plan_tasks should not be called for direct switch targets")
 
@@ -77,7 +77,7 @@ class _FailIfRouterCalledPlanner:
         del phone_number, text, context
         raise AssertionError("route_pending_input should not be called for callback auto-approve")
 
-    async def plan_tasks(self, phone_number: str, text: str, context: str = "None") -> PlannerOutput:
+    async def plan_tasks(self, phone_number: str, text: str, *, context: str = "None", prompt_signals: object | None = None) -> PlannerOutput:
         del phone_number, text, context
         raise AssertionError("plan_tasks should not be called for callback auto-approve")
 

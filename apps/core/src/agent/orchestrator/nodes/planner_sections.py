@@ -10,7 +10,6 @@ from apps.core.src.agent.orchestrator.nodes.planner_context_flow import (
 from apps.core.src.agent.orchestrator.nodes.planner_execution_flow import (
     PlannerExecutionResult,
     _execute_planner_with_context,
-    _retry_expected_executors_if_needed,
 )
 from apps.core.src.agent.orchestrator.nodes.planner_response_flow import _build_non_task_response
 
@@ -20,5 +19,4 @@ __all__ = [
     "_build_non_task_response",
     "_build_planner_context",
     "_execute_planner_with_context",
-    "_retry_expected_executors_if_needed",
 ]

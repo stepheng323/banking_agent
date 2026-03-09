@@ -3,9 +3,6 @@
 from typing import Any
 
 from apps.core.src.agent.orchestrator.models.state import OrchestratorState
-from apps.core.src.agent.orchestrator.nodes.planner_execution_flow import (
-    _retry_expected_executors_if_needed,
-)
 from apps.core.src.agent.orchestrator.nodes.planner_fastpath import TRANSACTION_EXECUTORS
 from apps.core.src.agent.orchestrator.nodes.planner_postprocess import (
     _expand_underproduced_transfer_tasks,
@@ -21,12 +18,8 @@ logger = get_logger(__name__)
 async def _build_planner_task_updates(
     *,
     state: OrchestratorState,
-    task_planner: Any,
     planner_output: Any,
     text: str,
-    planner_context: str,
-    active_intent: str | None,
-    current_locale: str,
     query_session_source: str | None,
     query_session_snapshot: dict[str, Any] | None,
 ) -> dict[str, Any]:
@@ -51,16 +44,6 @@ async def _build_planner_task_updates(
             removed_edges=[f"{source}->{target}" for source, target in stripped_edges],
             removed_count=len(stripped_edges),
         )
-
-    planner_output = await _retry_expected_executors_if_needed(
-        state=state,
-        task_planner=task_planner,
-        planner_output=planner_output,
-        text=text,
-        planner_context=planner_context,
-        active_intent=active_intent,
-        current_locale=current_locale,
-    )
 
     stashed_query_session_update: dict[str, Any] | None = None
     if (

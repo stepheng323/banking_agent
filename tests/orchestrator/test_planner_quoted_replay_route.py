@@ -19,7 +19,7 @@ class _QuotedPlannerStub:
         self.quoted_called = True
         return self.interpretation
 
-    async def plan_tasks(self, phone_number: str, text: str, context: str = "None") -> PlannerOutput:
+    async def plan_tasks(self, phone_number: str, text: str, *, context: str = "None", prompt_signals: object | None = None) -> PlannerOutput:
         del phone_number, text, context
         self.plan_called = True
         return PlannerOutput(

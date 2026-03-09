@@ -21,7 +21,8 @@ from shared.formatters.confirmation import build_confirmation_summary
 from shared.formatters.prompts import format_auth_reason, sanitize_recipient_display_name
 from shared.formatters.recipient_display import format_recipient_display_label
 from shared.i18n import LocaleManager, render_message
-from shared.types.planner import InterruptRouteDecision, PlannerOutput
+from shared.services.task_planner_prompt_models import PlannerPromptSignals
+from shared.types.planner import InterruptRouteDecision, PlannerOutput, TransactionExecutor
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -968,8 +969,30 @@ async def _switch_via_planner(
         fields_by_task=interrupt.fields_by_task,
         prompt=interrupt.prompt,
     )
+    expected_executors = tuple(
+        cast(TransactionExecutor, item)
+        for item in state.preplanner_expected_transaction_executors
+        if item in TRANSACTION_INTENTS
+    )
+    prompt_signals = PlannerPromptSignals(
+        active_flow_type=active_type,
+        pending_interrupt_kind=interrupt.kind,
+        query_session_active=False,
+        query_session_source=None,
+        recent_domain_focus=state.active_domain,
+        has_beneficiary_suggestion=False,
+        has_user_state_summary=bool(_build_user_state_summary(state)),
+        has_short_term_memory=False,
+        has_quote=state.has_quote and bool(state.quoted_message_id),
+        expected_transaction_executors=expected_executors,
+    )
     try:
-        planner_output = await task_planner.plan_tasks(state.phone_number, text, context=context_summary)
+        planner_output = await task_planner.plan_tasks(
+            state.phone_number,
+            text,
+            context=context_summary,
+            prompt_signals=prompt_signals,
+        )
     except Exception as exc:
         logger.warning("interrupt_switch_planner_failed", kind=interrupt.kind, error=str(exc))
         return _reprompt_updates(state, interrupt)

@@ -15,7 +15,7 @@ class _PlannerStub:
         del phone_number, text, context
         return self.interpretation
 
-    async def plan_tasks(self, phone_number: str, text: str, context: str = "None") -> Any:
+    async def plan_tasks(self, phone_number: str, text: str, *, context: str = "None", prompt_signals: object | None = None) -> Any:
         del phone_number, text, context
         raise AssertionError("main planner should not be called for execute replay hit")
 

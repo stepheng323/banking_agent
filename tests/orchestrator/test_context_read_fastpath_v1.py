@@ -19,7 +19,7 @@ class _MockPlanner:
         self._output = output
         self.planner_llm = object()
 
-    async def plan_tasks(self, phone_number: str, text: str, context: str = "None") -> PlannerOutput:
+    async def plan_tasks(self, phone_number: str, text: str, *, context: str = "None", prompt_signals: object | None = None) -> PlannerOutput:
         del phone_number, text, context
         return self._output
 
@@ -29,7 +29,7 @@ class _CapturingPlanner(_MockPlanner):
         super().__init__(output)
         self.last_context: str | None = None
 
-    async def plan_tasks(self, phone_number: str, text: str, context: str = "None") -> PlannerOutput:
+    async def plan_tasks(self, phone_number: str, text: str, *, context: str = "None", prompt_signals: object | None = None) -> PlannerOutput:
         del phone_number, text
         self.last_context = context
         return self._output

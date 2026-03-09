@@ -14,7 +14,7 @@ class _MockPlanner:
     def __init__(self, output: PlannerOutput) -> None:
         self._output = output
 
-    async def plan_tasks(self, phone_number: str, text: str, context: str = "None") -> PlannerOutput:
+    async def plan_tasks(self, phone_number: str, text: str, *, context: str = "None", prompt_signals: object | None = None) -> PlannerOutput:
         del phone_number, text, context
         return self._output
 
@@ -38,7 +38,7 @@ class _PlannerWithLegacyRepairMethods:
         self.review_calls = 0
         self.repair_calls = 0
 
-    async def plan_tasks(self, phone_number: str, text: str, context: str = "None") -> PlannerOutput:
+    async def plan_tasks(self, phone_number: str, text: str, *, context: str = "None", prompt_signals: object | None = None) -> PlannerOutput:
         del phone_number, text, context
         self.plan_calls += 1
         return self._output
@@ -54,18 +54,17 @@ class _PlannerWithLegacyRepairMethods:
         raise AssertionError("planner repair path should not be invoked")
 
 
-class _RetryAwarePlanner:
-    def __init__(self, first: PlannerOutput, second: PlannerOutput) -> None:
-        self._first = first
-        self._second = second
+class _SignalAwarePlanner:
+    def __init__(self, output: PlannerOutput) -> None:
+        self._output = output
         self.plan_calls = 0
+        self.last_prompt_signals: object | None = None
 
-    async def plan_tasks(self, phone_number: str, text: str, context: str = "None") -> PlannerOutput:
+    async def plan_tasks(self, phone_number: str, text: str, *, context: str = "None", prompt_signals: object | None = None) -> PlannerOutput:
         del phone_number, text, context
         self.plan_calls += 1
-        if self.plan_calls == 1:
-            return self._first
-        return self._second
+        self.last_prompt_signals = prompt_signals
+        return self._output
 
 
 @pytest.mark.asyncio
@@ -154,22 +153,8 @@ async def test_planner_does_not_call_legacy_review_or_repair_paths() -> None:
 
 
 @pytest.mark.asyncio
-async def test_planner_retries_when_gate_expected_executor_is_missing() -> None:
-    first_output = PlannerOutput(
-        primary_intent="transfer",
-        is_complex=False,
-        tasks=[
-            PlannedTask(
-                task_id="t1",
-                action="send_money",
-                executor="transfer",
-                instruction="Send 10k to Mum",
-                parameters=TaskParameters(amount=10000, recipient="Mum"),
-                risk="MONEY_MOVE",
-            ),
-        ],
-    )
-    second_output = PlannerOutput(
+async def test_planner_uses_expected_executor_signals_in_single_call() -> None:
+    planner_output = PlannerOutput(
         primary_intent="mixed",
         is_complex=True,
         tasks=[
@@ -191,7 +176,7 @@ async def test_planner_retries_when_gate_expected_executor_is_missing() -> None:
             ),
         ],
     )
-    planner = _RetryAwarePlanner(first_output, second_output)
+    planner = _SignalAwarePlanner(planner_output)
     state = OrchestratorState(
         user_id="u_dep_retry_1",
         phone_number="2348111111111",
@@ -206,9 +191,11 @@ async def test_planner_retries_when_gate_expected_executor_is_missing() -> None:
 
     updates = await plan_tasks(state, config)
 
-    assert planner.plan_calls == 2
+    assert planner.plan_calls == 1
     assert set(updates["tasks"].keys()) == {"t1", "t2"}
     assert updates["waves"] == [["t1", "t2"]]
+    assert planner.last_prompt_signals is not None
+    assert getattr(planner.last_prompt_signals, "expected_transaction_executors", ()) == ("transfer", "airtime")
 
 
 @pytest.mark.asyncio

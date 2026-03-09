@@ -18,7 +18,11 @@ from apps.core.src.agent.orchestrator.nodes.planner import (
     plan_tasks,
 )
 from apps.core.src.agent.orchestrator.services.context_manager import OrchestratorContextManager
-from shared.services.task_planner import build_runtime_planner_system_prompt
+from shared.services.task_planner import (
+    PlannerPromptBuildInput,
+    PlannerPromptSignals,
+    build_planner_system_prompt,
+)
 from shared.types.planner import PlannerOutput
 
 _PROMPT_SIZE_BASELINE = {
@@ -32,19 +36,40 @@ _PROMPT_SIZE_BASELINE = {
 
 def _runtime_prompt_size_report() -> dict[str, int]:
     profiles = {
-        "generic": ("hello", "None"),
-        "mixed_money_move": ("Send 10k to mum and buy me 5k airtime", "None"),
-        "query": ("How much did I spend last week?", "None"),
-        "context_followup": ("List them", "Recent Chat last turn was account_count answer"),
+        "generic": ("hello", "None", PlannerPromptSignals()),
+        "mixed_money_move": (
+            "Send 10k to mum and buy me 5k airtime",
+            "None",
+            PlannerPromptSignals(expected_transaction_executors=("transfer", "airtime")),
+        ),
+        "query": (
+            "How much did I spend last week?",
+            "None",
+            PlannerPromptSignals(query_session_active=True, recent_domain_focus="query"),
+        ),
+        "context_followup": (
+            "List them",
+            "Recent Chat last turn was account_count answer",
+            PlannerPromptSignals(active_flow_type="account", has_beneficiary_suggestion=True),
+        ),
         "fully_expanded": (
             "Send 10k to Mum and buy me 5k airtime and show transactions",
             "Active Query Session. Asked to save beneficiary. Recent Chat.",
+            PlannerPromptSignals(
+                active_flow_type="transfer",
+                query_session_active=True,
+                recent_domain_focus="query",
+                has_beneficiary_suggestion=True,
+                expected_transaction_executors=("transfer", "airtime"),
+            ),
         ),
     }
     report: dict[str, int] = {}
-    for name, (text, context) in profiles.items():
-        prompt, _ = build_runtime_planner_system_prompt(text, context)
-        report[name] = len(prompt)
+    for name, (text, context, signals) in profiles.items():
+        result = build_planner_system_prompt(
+            PlannerPromptBuildInput(text=text, context=context, signals=signals)
+        )
+        report[name] = len(result.system_prompt)
     return report
 
 
@@ -56,7 +81,7 @@ class _CapturingPlanner:
         self.planner_llm = object()
         self.last_context: str | None = None
 
-    async def plan_tasks(self, phone_number: str, text: str, context: str = "None") -> PlannerOutput:
+    async def plan_tasks(self, phone_number: str, text: str, *, context: str = "None", prompt_signals: object | None = None) -> PlannerOutput:
         del phone_number, text
         self.last_context = context
         return self._output
@@ -216,5 +241,5 @@ def test_runtime_prompt_size_report_and_budget_guard(capsys: pytest.CaptureFixtu
             pct = (delta / before) * 100
             print(f"- {key}: before={before} after={after} delta={delta} ({pct:.1f}%)")
 
-    assert report["generic"] <= 6780
-    assert report["fully_expanded"] <= 8687
+    assert report["generic"] <= 5227
+    assert report["fully_expanded"] <= 6981

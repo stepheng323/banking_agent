@@ -31,7 +31,7 @@ class _MockPlanner:
     def __init__(self, output: PlannerOutput) -> None:
         self._output = output
 
-    async def plan_tasks(self, phone_number: str, text: str, context: str = "None") -> PlannerOutput:
+    async def plan_tasks(self, phone_number: str, text: str, *, context: str = "None", prompt_signals: object | None = None) -> PlannerOutput:
         del phone_number, text, context
         return self._output
 
@@ -41,7 +41,7 @@ class _SequentialPlanner:
         self._outputs = outputs
         self._idx = 0
 
-    async def plan_tasks(self, phone_number: str, text: str, context: str = "None") -> PlannerOutput:
+    async def plan_tasks(self, phone_number: str, text: str, *, context: str = "None", prompt_signals: object | None = None) -> PlannerOutput:
         del phone_number, text, context
         if not self._outputs:
             raise AssertionError("expected at least one planner output")

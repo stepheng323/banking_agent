@@ -1,14 +1,12 @@
-"""Planner execution and retry flow helpers."""
+"""Planner execution flow helpers."""
 
 from dataclasses import dataclass
 from typing import Any
 
 from apps.core.src.agent.orchestrator.models.state import OrchestratorState
-from apps.core.src.agent.orchestrator.nodes.planner_context import PLANNER_CONTEXT_MAX_CHARS, _clip_text
 from apps.core.src.agent.orchestrator.nodes.planner_fastpath import (
     CONTEXT_FASTPATH_FLOW_SUBTYPES,
     NO_ACTIVE_FLOW_FASTPATH_MESSAGE,
-    TRANSACTION_EXECUTORS,
     _build_beneficiary_fastpath_context_updates,
     _build_fastpath_fallback_task,
     _context_fastpath_shown_limit,
@@ -21,6 +19,7 @@ from apps.core.src.agent.orchestrator.nodes.planner_guardrails import (
     _filter_spurious_affirmation_tasks,
 )
 from shared.i18n import LanguageDetectionSignal, LocaleManager
+from shared.services.task_planner_prompt_models import PlannerPromptSignals
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -39,11 +38,17 @@ async def _execute_planner_with_context(
     task_planner: Any,
     text: str,
     planner_context: str,
+    prompt_signals: PlannerPromptSignals,
     active_intent: str | None,
     current_locale: str,
     redis_client: Any | None,
 ) -> PlannerExecutionResult:
-    planner_output = await task_planner.plan_tasks(state.phone_number, text, context=planner_context)
+    planner_output = await task_planner.plan_tasks(
+        state.phone_number,
+        text,
+        context=planner_context,
+        prompt_signals=prompt_signals,
+    )
     planner_output = _filter_spurious_affirmation_tasks(
         planner_output,
         active_intent=active_intent,
@@ -143,74 +148,7 @@ async def _execute_planner_with_context(
     )
 
 
-async def _retry_expected_executors_if_needed(
-    *,
-    state: OrchestratorState,
-    task_planner: Any,
-    planner_output: Any,
-    text: str,
-    planner_context: str,
-    active_intent: str | None,
-    current_locale: str,
-) -> Any:
-    expected_executors = {
-        str(item)
-        for item in (state.preplanner_expected_transaction_executors or [])
-        if str(item) in TRANSACTION_EXECUTORS
-    }
-    if not expected_executors:
-        return planner_output
-
-    planned_executors = {task.executor for task in planner_output.tasks if task.executor in TRANSACTION_EXECUTORS}
-    missing_executors = sorted(expected_executors - planned_executors)
-    if not missing_executors:
-        return planner_output
-
-    retry_context = _clip_text(
-        (
-            f"{planner_context}\n\nPre-planner expected explicit transaction executors: "
-            f"{', '.join(sorted(expected_executors))}. "
-            f"Ensure all explicit executors are represented in tasks."
-        ),
-        PLANNER_CONTEXT_MAX_CHARS,
-    )
-    try:
-        retry_output = await task_planner.plan_tasks(state.phone_number, text, context=retry_context)
-        retry_output = _filter_spurious_affirmation_tasks(
-            retry_output,
-            active_intent=active_intent,
-            pending_interrupt_kind=state.pending_interrupt.kind if state.pending_interrupt else None,
-        )
-        retry_output = _deescalate_mandate_acknowledgement(
-            retry_output,
-            loaded_context=state.loaded_context,
-            locale=current_locale,
-        )
-        retry_executors = {task.executor for task in retry_output.tasks if task.executor in TRANSACTION_EXECUTORS}
-        if expected_executors.issubset(retry_executors):
-            logger.info(
-                "planner_expected_executor_retry_applied",
-                expected_executors=sorted(expected_executors),
-                missing_executors=missing_executors,
-            )
-            return retry_output
-        logger.warning(
-            "planner_expected_executor_retry_rejected",
-            expected_executors=sorted(expected_executors),
-            retry_executors=sorted(retry_executors),
-        )
-    except Exception as exc:
-        logger.warning(
-            "planner_expected_executor_retry_failed",
-            error=str(exc),
-            expected_executors=sorted(expected_executors),
-            missing_executors=missing_executors,
-        )
-    return planner_output
-
-
 __all__ = [
     "PlannerExecutionResult",
     "_execute_planner_with_context",
-    "_retry_expected_executors_if_needed",
 ]

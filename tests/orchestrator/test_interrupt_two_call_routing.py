@@ -26,7 +26,7 @@ class _CountingPlanner:
         self.route_calls += 1
         return self._route
 
-    async def plan_tasks(self, phone_number: str, text: str, context: str = "None") -> PlannerOutput:
+    async def plan_tasks(self, phone_number: str, text: str, *, context: str = "None", prompt_signals: object | None = None) -> PlannerOutput:
         del phone_number, text, context
         self.plan_calls += 1
         return self._output

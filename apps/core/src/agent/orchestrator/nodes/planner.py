@@ -83,6 +83,7 @@ async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[s
     active_intent = context_result.active_intent
     query_session_snapshot = context_result.query_session_snapshot
     query_session_source = context_result.query_session_source
+    prompt_signals = context_result.prompt_signals
 
     try:
         execution_result = await _execute_planner_with_context(
@@ -90,6 +91,7 @@ async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[s
             task_planner=task_planner,
             text=text,
             planner_context=planner_context,
+            prompt_signals=prompt_signals,
             active_intent=active_intent,
             current_locale=current_locale,
             redis_client=redis_client,
@@ -121,12 +123,8 @@ async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[s
 
     task_updates = await _build_planner_task_updates(
         state=state,
-        task_planner=task_planner,
         planner_output=planner_output,
         text=text,
-        planner_context=planner_context,
-        active_intent=active_intent,
-        current_locale=current_locale,
         query_session_source=query_session_source,
         query_session_snapshot=query_session_snapshot,
     )

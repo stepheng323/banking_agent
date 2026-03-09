@@ -9,7 +9,7 @@ from apps.core.src.agent.orchestrator.nodes.planner import plan_tasks
 
 
 class _FailingPlanner:
-    async def plan_tasks(self, phone_number: str, text: str, context: str = "None") -> Any:
+    async def plan_tasks(self, phone_number: str, text: str, *, context: str = "None", prompt_signals: object | None = None) -> Any:
         del phone_number, text, context
         raise AssertionError("planner LLM should not run for deterministic query-continuation shortcut")
 
