@@ -134,7 +134,7 @@ PLANNER_RUNTIME_QUERY_EXAMPLES = """## TARGETED EXAMPLES (QUERY)
 
 PLANNER_RUNTIME_CONTEXT_EXAMPLES = """## TARGETED EXAMPLES (CONTEXT)
 - Asked to save beneficiary + "Hi" -> conversational.
-- Recent Chat account_count + "List them" -> executor=account action=list_accounts OR context_fastpath_subtype=linked_accounts_summary.
+- Recent Chat account_count + "List them" -> account.list_accounts OR context_fastpath_subtype=linked_accounts_summary.
 - Recent Chat beneficiary_count + "List them" -> context_fastpath_subtype=beneficiary_list."""
 
 PLANNER_RUNTIME_PROMPT_SUFFIX = "Return schema JSON"
