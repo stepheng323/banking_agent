@@ -182,8 +182,13 @@ async def test_filter_delta_shortcut_skips_llm_for_credit_debit_followups() -> N
 
 
 @pytest.mark.asyncio
-async def test_balance_phrase_forces_new_query_override_without_llm() -> None:
-    classifier = ContinuationClassifier(_FailingLLM())
+async def test_balance_phrase_uses_llm_path_when_session_is_active() -> None:
+    llm_result = ContinuationClassification(
+        continuation_type="new_query",
+        confidence=0.81,
+        reason="llm_balance_new_query",
+    )
+    classifier = ContinuationClassifier(_DummyLLM(llm_result))
 
     continuation_type, data = await classifier.classify(
         message="check my balance",
@@ -192,5 +197,4 @@ async def test_balance_phrase_forces_new_query_override_without_llm() -> None:
     )
 
     assert continuation_type == "new_query"
-    assert data["reason"] == "deterministic_account_balance_new_query"
-    assert data["is_new_query_override"] is True
+    assert data["reason"] == "llm_balance_new_query"

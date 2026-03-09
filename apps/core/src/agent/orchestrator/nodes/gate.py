@@ -28,6 +28,13 @@ ACCOUNT_BALANCE_REQUEST_PATTERNS = (
     r"\bhow\s+much\s+do\s+i\s+have\b",
     r"\bhow\s+much\s+is\s+in\s+my\s+account\b",
 )
+EXPLICIT_CANCEL_PATTERNS = (
+    r"\bcancel\b",
+    r"\babort\b",
+    r"\bstop\b",
+    r"\bnevermind\b",
+    r"\bnever\s+mind\b",
+)
 
 
 def _next_fast_query_task_id(existing_tasks: dict[str, TaskSpec]) -> str:
@@ -36,6 +43,15 @@ def _next_fast_query_task_id(existing_tasks: dict[str, TaskSpec]) -> str:
     while task_id in existing_tasks:
         idx += 1
         task_id = f"fast_query_resume_{idx}"
+    return task_id
+
+
+def _next_fast_account_task_id(existing_tasks: dict[str, TaskSpec]) -> str:
+    idx = 1
+    task_id = "fast_account_balance"
+    while task_id in existing_tasks:
+        idx += 1
+        task_id = f"fast_account_balance_{idx}"
     return task_id
 
 
@@ -73,6 +89,13 @@ def _is_account_balance_request(message_text: str) -> bool:
     if not normalized:
         return False
     return any(re.search(pattern, normalized) for pattern in ACCOUNT_BALANCE_REQUEST_PATTERNS)
+
+
+def _has_explicit_cancel(message_text: str) -> bool:
+    normalized = re.sub(r"\s+", " ", message_text.strip().lower())
+    if not normalized:
+        return False
+    return any(re.search(pattern, normalized) for pattern in EXPLICIT_CANCEL_PATTERNS)
 
 
 async def _clear_query_session(redis_client: Any | None, phone_number: str) -> None:
@@ -131,6 +154,33 @@ async def session_gate_fastpath(state: OrchestratorState, config: RunnableConfig
                 "final_response": render_locale_switched(next_locale),
                 **_locale_update(state, next_locale),
             }
+
+    if not state.pending_interrupt and _is_account_balance_request(message_text):
+        cleanup_updates: dict[str, Any] = {}
+        if _has_explicit_cancel(message_text):
+            cleanup_updates = await _build_cancel_cleanup_updates(state, redis_client)
+
+        task_id = _next_fast_account_task_id(state.tasks)
+        spec = TaskSpec(
+            id=task_id,
+            type="account",
+            stage=TaskStage.DRAFT,
+            payload={
+                "action": "check_balance",
+                "message": state.last_message_text,
+                "instruction": state.last_message_text,
+            },
+        )
+        logger.info("gate_fast_account_balance", task_id=task_id, with_cleanup=bool(cleanup_updates))
+        return {
+            **cleanup_updates,
+            "tasks": {task_id: spec},
+            "waves": [[task_id]],
+            "current_wave_index": 0,
+            "planner_output": None,
+            "pending_interrupt": None,
+            "fast_path_triggered": True,
+        }
 
     if not state.pending_interrupt and session:
         message_lowered = message_text.lower()

@@ -158,7 +158,7 @@ async def test_gate_turn_router_passes_expected_executors_without_fastpath() -> 
     assert updates["preplanner_expected_transaction_executors"] == ["transfer", "airtime"]
 
 
-async def test_gate_turn_router_blocks_balance_from_query_continuation() -> None:
+async def test_gate_fast_path_routes_balance_request_without_turn_router() -> None:
     planner = _RouteTurnPlanner(
         TurnRouteDecision(
             decision="query_continuation",
@@ -183,8 +183,12 @@ async def test_gate_turn_router_blocks_balance_from_query_continuation() -> None
 
     updates = await session_gate_fastpath(state, config)
 
-    assert planner.route_calls == 1
-    assert updates == {}
+    assert planner.route_calls == 0
+    assert updates["fast_path_triggered"] is True
+    assert updates["waves"] == [["fast_account_balance"]]
+    task = updates["tasks"]["fast_account_balance"]
+    assert task.type == "account"
+    assert task.payload["action"] == "check_balance"
 
 
 async def test_gate_turn_router_cancel_response_clears_query_state() -> None:
@@ -230,3 +234,33 @@ async def test_gate_turn_router_cancel_response_clears_query_state() -> None:
     assert updates["active_domain"] is None
     assert updates["stashed_query_session"] is None
     assert redis_client.deleted_keys == ["query:session:2348000000008"]
+
+
+async def test_gate_fast_path_cancel_and_balance_cleans_query_and_runs_balance() -> None:
+    redis_client = _TrackingRedis()
+    state = OrchestratorState(
+        user_id="u_gate_9",
+        phone_number="2348000000009",
+        channel="whatsapp",
+        last_message_text="cancel and check my balance",
+        loaded_context={"language": "en"},
+        session_stack=[ActiveSession(domain="query", state="RUNNING", interrupt_policy="ALLOW")],
+        active_domain="query",
+        tasks={"t1": TaskSpec(id="t1", type="query", stage=TaskStage.DRAFT, payload={"message": "more"})},
+        waves=[["t1"]],
+        current_wave_index=0,
+        stashed_query_session={"session_active": True},
+    )
+    config: RunnableConfig = {"configurable": {"redis_client": redis_client}, "recursion_limit": 50}
+
+    updates = await session_gate_fastpath(state, config)
+
+    assert updates["fast_path_triggered"] is True
+    assert updates["waves"] == [["fast_account_balance"]]
+    task = updates["tasks"]["fast_account_balance"]
+    assert task.type == "account"
+    assert task.payload["action"] == "check_balance"
+    assert updates["session_stack"] == []
+    assert updates["active_domain"] is None
+    assert updates["stashed_query_session"] is None
+    assert redis_client.deleted_keys == ["query:session:2348000000009"]
