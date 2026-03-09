@@ -1,14 +1,18 @@
 """Contract tests for planner prompt guidance."""
 
+from typing import get_args
+
+import tiktoken
+
 from shared.services.task_planner import (
     INTERRUPT_ROUTER_SYSTEM_PROMPT,
     PLANNER_PROMPT_BASELINE_RESULT,
-    PLANNER_RULE_ATOMS,
     TURN_ROUTER_SYSTEM_PROMPT,
     PlannerPromptBuildInput,
     PlannerPromptSignals,
     build_planner_system_prompt,
 )
+from shared.types.planner import ContextFastpathSubtype
 
 
 def _build_prompt(
@@ -30,22 +34,24 @@ def test_beneficiary_reactive_save_requires_explicit_intent() -> None:
         PlannerPromptSignals(has_beneficiary_suggestion=True),
     )
     assert "context" in bundles
-    assert PLANNER_RULE_ATOMS["R12_BENEFICIARY_HANDLING"] in runtime_prompt
+    assert "R12_BENEFICIARY_HANDLING" in runtime_prompt
     assert 'Asked to save beneficiary + "Hi" -> conversational' in runtime_prompt
 
 
 def test_context_read_fastpath_rules_present() -> None:
     """Prompt must define context-read fastpath + fallback contract."""
     runtime_prompt, _, _ = _build_prompt("Which account is default?", "User State has default account")
-    assert PLANNER_RULE_ATOMS["R16_FASTPATH_CONTEXT_READ"] in runtime_prompt
-    assert PLANNER_RULE_ATOMS["R17_FASTPATH_FALLBACK"] in runtime_prompt
-    assert PLANNER_RULE_ATOMS["R18_FASTPATH_SUBTYPE"] in runtime_prompt
+    assert "R16_FASTPATH_CONTEXT_READ" in runtime_prompt
+    assert "R17_FASTPATH_FALLBACK" in runtime_prompt
+    assert "R17:context_missing|stale->worker_task" in runtime_prompt
+    assert "R18_FASTPATH_SUBTYPE" in runtime_prompt
     assert "context_fastpath_subtype" in runtime_prompt
-    assert "account_mandate_readiness_summary" in runtime_prompt
-    assert "account_linked_bank_existence_check" in runtime_prompt
-    assert "beneficiary_name_match_preview" in runtime_prompt
-    assert "flow_recap" in runtime_prompt
-    assert "flow_missing_requirements" in runtime_prompt
+    fastpath_values = set(get_args(ContextFastpathSubtype))
+    assert "account_mandate_readiness_summary" in fastpath_values
+    assert "account_linked_bank_existence_check" in fastpath_values
+    assert "beneficiary_name_match_preview" in fastpath_values
+    assert "flow_recap" in fastpath_values
+    assert "flow_missing_requirements" in fastpath_values
 
 
 def test_interrupt_status_query_contract_present() -> None:
@@ -68,7 +74,7 @@ def test_transfer_recipient_fidelity_rules_present() -> None:
         PlannerPromptSignals(active_flow_type="transfer"),
     )
     assert "money_move" in bundles
-    assert PLANNER_RULE_ATOMS["R19_TRANSFER_FIDELITY"] in runtime_prompt
+    assert "R19_TRANSFER_FIDELITY" in runtime_prompt
     assert "send_money amount=8000" in runtime_prompt
     assert "recipient omitted" in runtime_prompt
 
@@ -76,7 +82,7 @@ def test_transfer_recipient_fidelity_rules_present() -> None:
 def test_multilingual_safety_rules_present() -> None:
     """Prompt should state language-agnostic routing and disambiguation boundaries."""
     runtime_prompt, _, _ = _build_prompt("How far", "None")
-    assert PLANNER_RULE_ATOMS["R23_MULTILINGUAL_SAFETY"] in runtime_prompt
+    assert "R23_MULTILINGUAL_SAFETY" in runtime_prompt
 
 
 def test_follow_up_referent_binding_rules_present() -> None:
@@ -87,7 +93,8 @@ def test_follow_up_referent_binding_rules_present() -> None:
         PlannerPromptSignals(recent_domain_focus="query", active_flow_type="query"),
     )
     assert "query" in bundles
-    assert PLANNER_RULE_ATOMS["R14_REFERENCE_BINDING"] in runtime_prompt
+    assert "R14_REFERENCE_BINDING" in runtime_prompt
+    assert "R14:pronoun|index->selector_ref" in runtime_prompt
     assert 'Recent Chat account_count + "List them"' in runtime_prompt
     assert 'Recent Chat beneficiary_count + "List them"' in runtime_prompt
 
@@ -99,7 +106,7 @@ def test_transfer_pronoun_reference_continuity_rules_present() -> None:
         "Recent Chat last turn listed beneficiaries",
         PlannerPromptSignals(active_flow_type="transfer"),
     )
-    assert PLANNER_RULE_ATOMS["R14_REFERENCE_BINDING"] in runtime_prompt
+    assert "R14_REFERENCE_BINDING" in runtime_prompt
     assert '{"selector":"previous"}' in runtime_prompt
     assert '{"selector":"index","index":N}' in runtime_prompt
 
@@ -111,7 +118,7 @@ def test_transfer_scheduling_rules_present() -> None:
         "None",
         PlannerPromptSignals(active_flow_type="transfer"),
     )
-    assert PLANNER_RULE_ATOMS["R21_TRANSFER_SCHEDULING"] in runtime_prompt
+    assert "R21_TRANSFER_SCHEDULING" in runtime_prompt
     assert "schedule_transfer" in runtime_prompt
     assert "recurring_transfer" in runtime_prompt
     assert "list_scheduled_transfers" in runtime_prompt
@@ -127,7 +134,7 @@ def test_mixed_money_move_coverage_rules_present() -> None:
     )
     assert "money_move" in bundles
     assert "executor_coverage_guard" in bundles
-    assert PLANNER_RULE_ATOMS["R22_MIXED_MONEY_MOVE"] in runtime_prompt
+    assert "R22_MIXED_MONEY_MOVE" in runtime_prompt
     assert "TARGETED EXAMPLES (MONEY_MOVE)" in runtime_prompt
     assert "send_money" in runtime_prompt
     assert "buy_airtime" in runtime_prompt
@@ -156,7 +163,7 @@ def test_runtime_planner_prompt_is_compact_for_generic_turns() -> None:
             expected_transaction_executors=("transfer", "airtime"),
         ),
     )
-    assert "## COMPILED RULE ATOMS" in runtime_prompt
+    assert "## RULE IDS" in runtime_prompt
     assert "TARGETED EXAMPLES (COMMON)" in runtime_prompt
     assert "TARGETED EXAMPLES (MONEY_MOVE)" not in runtime_prompt
     assert "TARGETED EXAMPLES (QUERY)" not in runtime_prompt
@@ -183,8 +190,11 @@ def test_runtime_planner_prompt_size_budget_targets() -> None:
             expected_transaction_executors=("transfer", "airtime"),
         ),
     )
-    assert len(generic_prompt) <= 5227
-    assert len(expanded_prompt) <= 6981
+    assert len(generic_prompt) <= 1600
+    assert len(expanded_prompt) <= 2890
+    encoding = tiktoken.get_encoding("o200k_base")
+    assert len(encoding.encode(generic_prompt)) <= 370
+    assert len(encoding.encode(expanded_prompt)) <= 700
 
 
 def test_runtime_planner_prompt_adds_money_move_examples_when_relevant() -> None:

@@ -1,0 +1,93 @@
+[
+  {
+    "id": "greeting_pidgin",
+    "text": "How far",
+    "context": "None",
+    "signals": {}
+  },
+  {
+    "id": "greeting_yoruba",
+    "text": "Bawo ni",
+    "context": "None",
+    "signals": {}
+  },
+  {
+    "id": "greeting_hausa",
+    "text": "Sannu",
+    "context": "None",
+    "signals": {}
+  },
+  {
+    "id": "greeting_igbo",
+    "text": "Kedu",
+    "context": "None",
+    "signals": {}
+  },
+  {
+    "id": "transfer_missing_slots",
+    "text": "Send 8k",
+    "context": "None",
+    "signals": {
+      "active_flow_type": "transfer"
+    }
+  },
+  {
+    "id": "transfer_missing_slots_pidgin",
+    "text": "Abeg send 8k",
+    "context": "None",
+    "signals": {
+      "active_flow_type": "transfer"
+    }
+  },
+  {
+    "id": "mixed_transfer_airtime",
+    "text": "Send 10k to Mum and buy 5k airtime",
+    "context": "None",
+    "signals": {
+      "expected_transaction_executors": ["transfer", "airtime"]
+    }
+  },
+  {
+    "id": "query_continuation_any_credits",
+    "text": "any credits?",
+    "context": "Active Query Session. Last summary: \"You spent 5000 yesterday.\"",
+    "signals": {
+      "query_session_active": true,
+      "recent_domain_focus": "query"
+    }
+  },
+  {
+    "id": "query_send_again_replay",
+    "text": "send again",
+    "context": "Active Query Session. Last summary: \"Sent 10000 to Tolu.\"",
+    "signals": {
+      "query_session_active": true,
+      "recent_domain_focus": "query"
+    }
+  },
+  {
+    "id": "context_list_them_accounts",
+    "text": "List them",
+    "context": "Recent Chat last turn was account_count answer",
+    "signals": {
+      "active_flow_type": "account",
+      "has_beneficiary_suggestion": true
+    }
+  },
+  {
+    "id": "schedule_transfer",
+    "text": "Send 10k to Mum tomorrow 9am",
+    "context": "None",
+    "signals": {
+      "active_flow_type": "transfer"
+    }
+  },
+  {
+    "id": "beneficiary_save_greeting_guard",
+    "text": "Hi",
+    "context": "Asked to save beneficiary",
+    "signals": {
+      "has_beneficiary_suggestion": true
+    }
+  }
+]
