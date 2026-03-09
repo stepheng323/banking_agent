@@ -531,6 +531,136 @@ async def test_confirmation_continue_flow_resets_task_to_extracted() -> None:
     assert "idempotency_key" not in updates["tasks"]["t1"].payload
 
 
+def _build_multi_transfer_confirmation_state(message_text: str) -> OrchestratorState:
+    return OrchestratorState(
+        user_id="u_interrupt_multi_confirm",
+        phone_number="2348066666777",
+        channel="whatsapp",
+        last_message_text=message_text,
+        pending_interrupt=PendingInterrupt(kind="confirmation", task_ids=["t_mum", "t_gaines"]),
+        tasks={
+            "t_mum": TaskSpec(
+                id="t_mum",
+                type="transfer",
+                stage=TaskStage.AWAITING_CONFIRMATION,
+                payload={
+                    "recipient_name": "Mum",
+                    "idempotency_key": "idem-mum",
+                    "confirmation": {"summary": "Confirm Mum", "snapshot": {"amount": 10000, "recipient_name": "Mum"}},
+                },
+            ),
+            "t_gaines": TaskSpec(
+                id="t_gaines",
+                type="transfer",
+                stage=TaskStage.AWAITING_CONFIRMATION,
+                payload={
+                    "recipient_name": "Gaines",
+                    "idempotency_key": "idem-gaines",
+                    "confirmation": {
+                        "summary": "Confirm Gaines",
+                        "snapshot": {"amount": 5000, "recipient_name": "Gaines"},
+                    },
+                },
+            ),
+        },
+    )
+
+
+@pytest.mark.asyncio
+async def test_confirmation_continue_flow_targets_only_matching_recipient_task() -> None:
+    state = _build_multi_transfer_confirmation_state("change amount for gaines to 10k too")
+    config: RunnableConfig = {
+        "configurable": {
+            "task_planner": _MockPlanner(
+                PlannerOutput(primary_intent="transfer"),
+                route=InterruptRouteDecision(
+                    decision="continue_flow",
+                    confidence=0.9,
+                    detected_language="English",
+                    target_intent=None,
+                    target_mode=None,
+                    reason="recipient-scoped update",
+                ),
+            )
+        },
+        "recursion_limit": 50,
+    }
+
+    updates = await handle_pending_interrupt(state, config)
+
+    assert updates["pending_interrupt"] is None
+    assert updates["tasks"]["t_mum"].stage == TaskStage.AWAITING_CONFIRMATION
+    assert updates["tasks"]["t_mum"].payload["confirmation"]["summary"] == "Confirm Mum"
+    assert updates["tasks"]["t_mum"].payload["idempotency_key"] == "idem-mum"
+    assert updates["tasks"]["t_gaines"].stage == TaskStage.EXTRACTED
+    assert updates["tasks"]["t_gaines"].payload["confirmation"] == {}
+    assert "idempotency_key" not in updates["tasks"]["t_gaines"].payload
+    assert updates["last_interrupt"].task_ids == ["t_gaines"]
+
+
+@pytest.mark.asyncio
+async def test_confirmation_continue_flow_ambiguous_update_resets_all_tasks() -> None:
+    state = _build_multi_transfer_confirmation_state("change amount to 10k")
+    config: RunnableConfig = {
+        "configurable": {
+            "task_planner": _MockPlanner(
+                PlannerOutput(primary_intent="transfer"),
+                route=InterruptRouteDecision(
+                    decision="continue_flow",
+                    confidence=0.9,
+                    detected_language="English",
+                    target_intent=None,
+                    target_mode=None,
+                    reason="ambiguous update",
+                ),
+            )
+        },
+        "recursion_limit": 50,
+    }
+
+    updates = await handle_pending_interrupt(state, config)
+
+    assert updates["pending_interrupt"] is None
+    assert updates["tasks"]["t_mum"].stage == TaskStage.EXTRACTED
+    assert updates["tasks"]["t_mum"].payload["confirmation"] == {}
+    assert "idempotency_key" not in updates["tasks"]["t_mum"].payload
+    assert updates["tasks"]["t_gaines"].stage == TaskStage.EXTRACTED
+    assert updates["tasks"]["t_gaines"].payload["confirmation"] == {}
+    assert "idempotency_key" not in updates["tasks"]["t_gaines"].payload
+    assert set(updates["last_interrupt"].task_ids) == {"t_mum", "t_gaines"}
+
+
+@pytest.mark.asyncio
+async def test_confirmation_continue_flow_collective_update_resets_all_tasks() -> None:
+    state = _build_multi_transfer_confirmation_state("add narration for both as monthly allowance")
+    config: RunnableConfig = {
+        "configurable": {
+            "task_planner": _MockPlanner(
+                PlannerOutput(primary_intent="transfer"),
+                route=InterruptRouteDecision(
+                    decision="continue_flow",
+                    confidence=0.9,
+                    detected_language="English",
+                    target_intent=None,
+                    target_mode=None,
+                    reason="collective update",
+                ),
+            )
+        },
+        "recursion_limit": 50,
+    }
+
+    updates = await handle_pending_interrupt(state, config)
+
+    assert updates["pending_interrupt"] is None
+    assert updates["tasks"]["t_mum"].stage == TaskStage.EXTRACTED
+    assert updates["tasks"]["t_mum"].payload["confirmation"] == {}
+    assert "idempotency_key" not in updates["tasks"]["t_mum"].payload
+    assert updates["tasks"]["t_gaines"].stage == TaskStage.EXTRACTED
+    assert updates["tasks"]["t_gaines"].payload["confirmation"] == {}
+    assert "idempotency_key" not in updates["tasks"]["t_gaines"].payload
+    assert set(updates["last_interrupt"].task_ids) == {"t_mum", "t_gaines"}
+
 
 @pytest.mark.asyncio
 async def test_confirmation_switch_to_account_is_direct_and_stashes_transfer() -> None:

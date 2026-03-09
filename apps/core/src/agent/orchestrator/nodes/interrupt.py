@@ -62,6 +62,10 @@ _NON_TRANSFER_INTENT_HINT_RE = re.compile(
     r"\b(airtime|data|bundle|balance|statement|support|faq|ticket|complaint)\b",
     re.IGNORECASE,
 )
+_CONFIRMATION_COLLECTIVE_SCOPE_RE = re.compile(
+    r"\b(both|all|everyone|everybody|all of them|for both)\b",
+    re.IGNORECASE,
+)
 
 
 def _clip_text(value: str, max_chars: int) -> str:
@@ -890,25 +894,121 @@ def _cancel_updates(state: OrchestratorState, interrupt: Any, current_task_types
         ]
 
     set_tasks_cancelled(state.tasks, task_ids_to_cancel, copy_task=True)
-    return {
+    updates: dict[str, Any] = {
         "pending_interrupt": None,
         "last_interrupt": interrupt,
         "tasks": state.tasks,
     }
+    if "query" in current_task_types:
+        cleaned_stack = [session for session in state.session_stack if session.domain != "query"]
+        updates["session_stack"] = cleaned_stack
+        updates["active_domain"] = cleaned_stack[-1].domain if cleaned_stack else None
+        updates["stashed_query_session"] = None
+    return {
+        **updates,
+    }
+
+
+def _normalize_recipient_match_text(value: str | None) -> str:
+    if not value:
+        return ""
+    return re.sub(r"[^a-z0-9]+", " ", value.lower()).strip()
+
+
+def _digits_only(value: str | None) -> str:
+    if not value:
+        return ""
+    return re.sub(r"\D+", "", value)
+
+
+def _message_targets_transfer_task(message_text: str, task: TaskSpec) -> bool:
+    payload = task.payload if isinstance(task.payload, dict) else {}
+    normalized_message = _normalize_recipient_match_text(message_text)
+    if not normalized_message:
+        return False
+
+    message_digits = _digits_only(message_text)
+    recipient_account = _digits_only(str(payload.get("recipient_account") or ""))
+    if len(recipient_account) >= 10 and recipient_account in message_digits:
+        return True
+
+    recipient_names = [
+        str(payload.get("recipient_name") or "").strip(),
+        str(payload.get("recipient_resolved_name") or "").strip(),
+    ]
+    for candidate in recipient_names:
+        normalized_candidate = _normalize_recipient_match_text(candidate)
+        if not normalized_candidate:
+            continue
+        if re.search(rf"\b{re.escape(normalized_candidate)}\b", normalized_message):
+            return True
+
+        tokens = [token for token in normalized_candidate.split() if len(token) >= 3]
+        if len(tokens) < 2:
+            continue
+        token_hits = sum(1 for token in tokens if re.search(rf"\b{re.escape(token)}\b", normalized_message))
+        if token_hits >= 2:
+            return True
+
+    return False
+
+
+def _select_confirmation_continue_flow_task_ids(
+    state: OrchestratorState,
+    interrupt: Any,
+) -> tuple[list[str], str, list[str]]:
+    task_ids = [str(task_id) for task_id in getattr(interrupt, "task_ids", []) if str(task_id) in state.tasks]
+    if len(task_ids) < 2:
+        return task_ids, "single_or_empty_batch", []
+
+    if any(state.tasks[task_id].type != "transfer" for task_id in task_ids):
+        return task_ids, "non_transfer_batch", []
+
+    message_text = (state.last_message_text or "").strip()
+    if not message_text:
+        return task_ids, "empty_message", []
+
+    if _CONFIRMATION_COLLECTIVE_SCOPE_RE.search(message_text):
+        return task_ids, "collective_scope", []
+
+    matched_task_ids = [task_id for task_id in task_ids if _message_targets_transfer_task(message_text, state.tasks[task_id])]
+    if 0 < len(matched_task_ids) < len(task_ids):
+        return matched_task_ids, "matched_subset", matched_task_ids
+    if not matched_task_ids:
+        return task_ids, "no_recipient_match", []
+    return task_ids, "matched_all", matched_task_ids
 
 
 def _continue_flow_updates(state: OrchestratorState, interrupt: Any) -> dict[str, Any]:
     if interrupt.kind in {"input", "confirmation"}:
-        logger.info("confirmation_update_detected_via_llm", tasks=interrupt.task_ids)
+        task_ids_to_reset = [str(task_id) for task_id in interrupt.task_ids]
+        selection_reason = "input_flow"
+        matched_task_ids: list[str] = []
+        if interrupt.kind == "confirmation":
+            task_ids_to_reset, selection_reason, matched_task_ids = _select_confirmation_continue_flow_task_ids(
+                state,
+                interrupt,
+            )
+        logger.info(
+            "confirmation_update_detected_via_llm",
+            tasks=interrupt.task_ids,
+            reset_task_ids=task_ids_to_reset,
+            selection_reason=selection_reason,
+            matched_task_ids=matched_task_ids,
+        )
         reset_tasks_to_extracted(
             state.tasks,
-            interrupt.task_ids,
+            task_ids_to_reset,
             copy_task=True,
             clear_idempotency=True,
         )
+        last_interrupt = interrupt
+        if interrupt.kind == "confirmation" and task_ids_to_reset != [str(task_id) for task_id in interrupt.task_ids]:
+            if hasattr(interrupt, "model_copy"):
+                last_interrupt = interrupt.model_copy(update={"task_ids": task_ids_to_reset})
         return {
             "pending_interrupt": None,
-            "last_interrupt": interrupt,
+            "last_interrupt": last_interrupt,
             "tasks": state.tasks,
         }
     return _reprompt_updates(state, interrupt)
