@@ -1,4 +1,3 @@
-import re
 from typing import Any, cast
 
 from langchain_core.runnables import RunnableConfig
@@ -35,6 +34,11 @@ from apps.core.src.agent.orchestrator.nodes.planner_policy import (
     _build_policy_notice,
     _detected_locale_value,
     _meta_intent_from_response_key,
+)
+from apps.core.src.agent.orchestrator.nodes.planner_query_shortcuts import (
+    _is_query_continuation_blocked,
+    _looks_like_explicit_query_continuation,
+    _next_query_continuation_task_id,
 )
 from apps.core.src.agent.orchestrator.nodes.planner_quoted_replay import (
     QUOTED_REPLAY_MIN_CONFIDENCE as _QUOTED_REPLAY_MIN_CONFIDENCE,
@@ -78,39 +82,6 @@ PLANNER_CONTEXT_SHORT_TERM_MAX_CHARS = 700
 PLANNER_CONTEXT_RECENT_DOMAIN_MAX_CHARS = 220
 PLANNER_CONTEXT_USER_STATE_MAX_CHARS = 900
 QUOTED_REPLAY_MIN_CONFIDENCE = _QUOTED_REPLAY_MIN_CONFIDENCE
-QUERY_CONTINUATION_SHORTCUT_EXACT = {
-    "more",
-    "next",
-    "show more",
-    "next page",
-    "show transactions",
-    "show my transactions",
-    "list transactions",
-    "show them",
-    "which ones",
-    "details",
-    "show details",
-    "receipt",
-    "issue",
-    "report issue",
-    "last month",
-    "this month",
-    "yesterday",
-    "today",
-    "only debits",
-    "only credits",
-}
-QUERY_CONTINUATION_SHORTCUT_BLOCKLIST_PATTERNS = (
-    r"\bbalance\b",
-    r"\baccounts?\b",
-    r"\bairtime\b",
-    r"\bdata\b",
-    r"\bbeneficiar(?:y|ies)\b",
-    r"\bsupport\b",
-    r"\bhelp\b",
-    r"\bsend\b",
-    r"\btransfer\b",
-)
 
 
 def _filter_spurious_affirmation_tasks(
@@ -209,37 +180,6 @@ def _deescalate_mandate_acknowledgement(
         original_task_count=len(tasks),
     )
     return planner_output
-
-
-def _normalize_shortcut_message(message: str) -> str:
-    return " ".join(message.lower().strip().split())
-
-
-def _looks_like_explicit_query_continuation(message_text: str) -> bool:
-    normalized = _normalize_shortcut_message(message_text)
-    if not normalized:
-        return False
-    if normalized in QUERY_CONTINUATION_SHORTCUT_EXACT:
-        return True
-    if re.fullmatch(r"(only|just)\s+(credits?|debits?)", normalized):
-        return True
-    if re.fullmatch(r"(last|recent)\s+\d+", normalized):
-        return True
-    return False
-
-
-def _is_query_continuation_blocked(message_text: str) -> bool:
-    normalized = _normalize_shortcut_message(message_text)
-    return any(re.search(pattern, normalized) for pattern in QUERY_CONTINUATION_SHORTCUT_BLOCKLIST_PATTERNS)
-
-
-def _next_query_continuation_task_id(existing_tasks: dict[str, TaskSpec]) -> str:
-    idx = 1
-    task_id = f"query_continuation_{idx}"
-    while task_id in existing_tasks:
-        idx += 1
-        task_id = f"query_continuation_{idx}"
-    return task_id
 
 
 def _next_transfer_fanout_task_id(base_task_id: str, index: int, existing_ids: set[str]) -> str:
