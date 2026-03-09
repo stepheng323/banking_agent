@@ -20,6 +20,14 @@ TRANSACTION_EXECUTORS = {"transfer", "airtime", "data"}
 TURN_ROUTER_MAX_WORDS = 6
 TURN_ROUTER_MAX_CHARS = 64
 TURN_ROUTER_MULTI_CLAUSE_MARKERS = (" and ", " & ", " then ", ",")
+ACCOUNT_BALANCE_REQUEST_PATTERNS = (
+    r"\bbalance\b",
+    r"\baccount\s+balance\b",
+    r"\bcheck\s+my\s+balance\b",
+    r"\bwhat(?:'s| is)\s+my\s+balance\b",
+    r"\bhow\s+much\s+do\s+i\s+have\b",
+    r"\bhow\s+much\s+is\s+in\s+my\s+account\b",
+)
 
 
 def _next_fast_query_task_id(existing_tasks: dict[str, TaskSpec]) -> str:
@@ -58,6 +66,36 @@ def _build_turn_router_context(state: OrchestratorState, session_domain: str | N
         f"session_domain={session_part}; "
         f"expected_transaction_executors={','.join(expected) if expected else 'none'}"
     )
+
+
+def _is_account_balance_request(message_text: str) -> bool:
+    normalized = re.sub(r"\s+", " ", message_text.strip().lower())
+    if not normalized:
+        return False
+    return any(re.search(pattern, normalized) for pattern in ACCOUNT_BALANCE_REQUEST_PATTERNS)
+
+
+async def _clear_query_session(redis_client: Any | None, phone_number: str) -> None:
+    if not redis_client:
+        return
+    try:
+        await redis_client.delete(f"query:session:{phone_number}")
+    except Exception as exc:
+        logger.warning("gate_cancel_query_session_clear_failed", error=str(exc))
+
+
+async def _build_cancel_cleanup_updates(state: OrchestratorState, redis_client: Any | None) -> dict[str, Any]:
+    await _clear_query_session(redis_client, state.phone_number)
+    cleaned_stack = [session for session in state.session_stack if session.domain != "query"]
+    return {
+        "tasks": {},
+        "waves": [],
+        "current_wave_index": 0,
+        "pending_interrupt": None,
+        "session_stack": cleaned_stack,
+        "active_domain": cleaned_stack[-1].domain if cleaned_stack else None,
+        "stashed_query_session": None,
+    }
 
 
 async def session_gate_fastpath(state: OrchestratorState, config: RunnableConfig) -> dict[str, Any]:
@@ -192,6 +230,8 @@ async def session_gate_fastpath(state: OrchestratorState, config: RunnableConfig
                 else:
                     text = route.response or render_message("conversational.clarify", locale)
                 logger.info("gate_turn_router_direct_response", response_key=route.response_key, locale=locale)
+                if route.response_key == "planner.cancelled":
+                    updates.update(await _build_cancel_cleanup_updates(state, redis_client))
                 return {
                     "fast_path_triggered": True,
                     "final_response": text,
@@ -199,6 +239,13 @@ async def session_gate_fastpath(state: OrchestratorState, config: RunnableConfig
                 }
 
             if route.decision == "query_continuation":
+                if _is_account_balance_request(message_text):
+                    logger.info("gate_turn_router_query_continuation_blocked_account_request", message=message_text)
+                    if updates:
+                        logger.info("gate_turn_router_expected_executors", executors=expected_executors)
+                        return updates
+                    logger.info("gate_fallback_to_planner", reason="query_continuation_blocked_account_request")
+                    return {}
                 task_id = _next_fast_query_task_id(state.tasks)
                 spec = TaskSpec(
                     id=task_id,

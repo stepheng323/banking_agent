@@ -69,6 +69,9 @@ Return ONLY JSON with:
 Rules:
 1) Use decision=respond_directly only for obvious conversational/meta responses.
 2) Use decision=query_continuation only for clear query continuation turns.
+2b) Balance/account-status asks are NOT query_continuation.
+    Examples: "check my balance", "what's my balance", "how much do I have".
+    For these, use decision=go_planner.
 3) Otherwise use decision=go_planner.
 4) Populate expected_transaction_executors only when user explicitly asks those transaction actions.
 4b) For explicit mixed transaction requests, include every mentioned executor in expected_transaction_executors.

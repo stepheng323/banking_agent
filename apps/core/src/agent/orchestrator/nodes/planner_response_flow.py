@@ -16,6 +16,15 @@ from shared.utils.logging import get_logger
 logger = get_logger(__name__)
 
 
+async def _clear_query_session(redis_client: Any | None, phone_number: str) -> None:
+    if not redis_client:
+        return
+    try:
+        await redis_client.delete(f"query:session:{phone_number}")
+    except Exception as exc:
+        logger.warning("planner_cancel_query_session_clear_failed", error=str(exc))
+
+
 async def _build_non_task_response(
     *,
     state: OrchestratorState,
@@ -41,6 +50,8 @@ async def _build_non_task_response(
         cancel_locale_updates = locale_updates if cancel_locale == current_locale else _build_locale_update(
             state, cancel_locale
         )
+        await _clear_query_session(redis_client, state.phone_number)
+        cleaned_stack = [session for session in state.session_stack if session.domain != "query"]
         if planner_output.response_key == "planner.cancelled":
             logger.info("planner_response_key_used", key=planner_output.response_key, locale=cancel_locale)
             cancel_message = render_message(planner_output.response_key, cancel_locale)
@@ -49,7 +60,13 @@ async def _build_non_task_response(
                 "planner.cancelled", cancel_locale
             )
         return {
+            "tasks": {},
             "waves": [],
+            "current_wave_index": 0,
+            "pending_interrupt": None,
+            "session_stack": cleaned_stack,
+            "active_domain": cleaned_stack[-1].domain if cleaned_stack else None,
+            "stashed_query_session": None,
             "final_response": cancel_message,
             **cancel_locale_updates,
         }

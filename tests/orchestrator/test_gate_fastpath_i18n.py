@@ -2,7 +2,7 @@
 
 from langchain_core.runnables import RunnableConfig
 
-from apps.core.src.agent.orchestrator.models.domain import ActiveSession, PendingInterrupt
+from apps.core.src.agent.orchestrator.models.domain import ActiveSession, PendingInterrupt, TaskSpec, TaskStage
 from apps.core.src.agent.orchestrator.models.state import OrchestratorState
 from apps.core.src.agent.orchestrator.nodes.gate import session_gate_fastpath
 from shared.types.planner import TurnRouteDecision
@@ -92,6 +92,15 @@ class _RouteTurnPlanner:
         return self._decision
 
 
+class _TrackingRedis:
+    def __init__(self) -> None:
+        self.deleted_keys: list[str] = []
+
+    async def delete(self, key: str) -> int:
+        self.deleted_keys.append(key)
+        return 1
+
+
 async def test_gate_turn_router_can_bypass_planner_with_direct_response() -> None:
     planner = _RouteTurnPlanner(
         TurnRouteDecision(
@@ -147,3 +156,77 @@ async def test_gate_turn_router_passes_expected_executors_without_fastpath() -> 
     assert planner.route_calls == 1
     assert updates.get("fast_path_triggered") is None
     assert updates["preplanner_expected_transaction_executors"] == ["transfer", "airtime"]
+
+
+async def test_gate_turn_router_blocks_balance_from_query_continuation() -> None:
+    planner = _RouteTurnPlanner(
+        TurnRouteDecision(
+            decision="query_continuation",
+            confidence=0.95,
+            detected_language="English",
+            response_key=None,
+            response=None,
+            expected_transaction_executors=[],
+            reason="misrouted continuation",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_gate_7",
+        phone_number="2348000000007",
+        channel="whatsapp",
+        last_message_text="check my balance",
+        loaded_context={"language": "en"},
+        session_stack=[ActiveSession(domain="query", state="RUNNING", interrupt_policy="ALLOW")],
+        active_domain="query",
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await session_gate_fastpath(state, config)
+
+    assert planner.route_calls == 1
+    assert updates == {}
+
+
+async def test_gate_turn_router_cancel_response_clears_query_state() -> None:
+    planner = _RouteTurnPlanner(
+        TurnRouteDecision(
+            decision="respond_directly",
+            confidence=0.98,
+            detected_language="English",
+            response_key="planner.cancelled",
+            response=None,
+            expected_transaction_executors=[],
+            reason="explicit cancel",
+        )
+    )
+    redis_client = _TrackingRedis()
+    state = OrchestratorState(
+        user_id="u_gate_8",
+        phone_number="2348000000008",
+        channel="whatsapp",
+        last_message_text="abort",
+        loaded_context={"language": "en"},
+        session_stack=[ActiveSession(domain="query", state="RUNNING", interrupt_policy="ALLOW")],
+        active_domain="query",
+        tasks={"t1": TaskSpec(id="t1", type="query", stage=TaskStage.DRAFT, payload={"message": "more"})},
+        waves=[["t1"]],
+        current_wave_index=0,
+        stashed_query_session={"session_active": True},
+    )
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "redis_client": redis_client},
+        "recursion_limit": 50,
+    }
+
+    updates = await session_gate_fastpath(state, config)
+
+    assert planner.route_calls == 1
+    assert updates["fast_path_triggered"] is True
+    assert updates["final_response"] == "Cancelled."
+    assert updates["tasks"] == {}
+    assert updates["waves"] == []
+    assert updates["current_wave_index"] == 0
+    assert updates["session_stack"] == []
+    assert updates["active_domain"] is None
+    assert updates["stashed_query_session"] is None
+    assert redis_client.deleted_keys == ["query:session:2348000000008"]

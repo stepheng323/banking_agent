@@ -73,6 +73,14 @@ _RECIPIENT_RANKING_PATTERNS = (
     r"\bmost frequent transfer to\b",
     r"\brecipient ranking\b",
 )
+_ACCOUNT_BALANCE_PATTERNS = (
+    r"\bbalance\b",
+    r"\baccount\s+balance\b",
+    r"\bcheck\s+my\s+balance\b",
+    r"\bwhat(?:'s| is)\s+my\s+balance\b",
+    r"\bhow\s+much\s+do\s+i\s+have\b",
+    r"\bhow\s+much\s+is\s+in\s+my\s+account\b",
+)
 
 
 class ContinuationType:
@@ -262,6 +270,14 @@ class ContinuationClassifier:
         normalized = self._normalize_message(message)
         if not normalized:
             return None
+
+        if any(re.search(pattern, normalized) for pattern in _ACCOUNT_BALANCE_PATTERNS):
+            return ContinuationType.NEW_QUERY, {
+                "confidence": 0.99,
+                "reason": "deterministic_account_balance_new_query",
+                "is_new_query_override": True,
+                "restates_query": True,
+            }
 
         parsed_today = self._parse_today(today)
         time_delta_range = self._resolve_time_delta_range(message, today=parsed_today)

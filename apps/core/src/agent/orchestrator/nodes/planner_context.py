@@ -25,7 +25,8 @@ QUERY_SESSION_CONTEXT_GUIDANCE = (
     "(for example: 'more', 'next', 'details', 'receipt', 'any credits?', "
     "'any debit?', 'only debits', 'last month', 'how much did I spend?', 'total spending').\n"
     "- Fresh transaction-history asks are also query tasks.\n"
-    "- Data questions are NOT conversational questions. Always route them as query tasks."
+    "- Data questions are NOT conversational questions. Always route them as query tasks.\n"
+    "- Balance/account-status asks are NOT query continuation; route them to account tasks."
 )
 
 

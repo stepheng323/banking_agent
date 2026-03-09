@@ -179,3 +179,18 @@ async def test_filter_delta_shortcut_skips_llm_for_credit_debit_followups() -> N
 
     assert continuation_type2 == "filter_delta"
     assert data2["filters"].transaction_type == "credit"
+
+
+@pytest.mark.asyncio
+async def test_balance_phrase_forces_new_query_override_without_llm() -> None:
+    classifier = ContinuationClassifier(_FailingLLM())
+
+    continuation_type, data = await classifier.classify(
+        message="check my balance",
+        has_active_session=True,
+        today="2026-03-06",
+    )
+
+    assert continuation_type == "new_query"
+    assert data["reason"] == "deterministic_account_balance_new_query"
+    assert data["is_new_query_override"] is True
