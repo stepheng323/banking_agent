@@ -121,10 +121,53 @@ def test_planner_policy_summary_is_compact_and_extraction_focused() -> None:
     """Planner summary should stay compact while preserving extraction constraints."""
     policy = get_cached_policy(path=POLICY_PATH, force_reload=True)
     summary = build_planner_policy_summary(policy)
-    assert "Scope: banking/support workflows only." in summary
+    assert "Supported(policy): Send money" in summary
+    assert "Unsupported(policy): Financial advice" in summary
     assert "conversational.out_of_scope" in summary
-    assert "Never claim unsupported features" in summary
+    assert policy.tone.response_rules[0][:10] in summary
+    assert policy.safety_rules[0][:10] in summary
     assert len(summary) < 400
+
+
+def test_planner_policy_summary_uses_input_policy_values() -> None:
+    """Planner summary must derive from the passed policy object, not fixed text."""
+    policy = load_policy(POLICY_PATH).model_copy(deep=True)
+    policy.supported_domains = ["Card freeze", "Send money"]
+    policy.unsupported_capabilities = ["Crypto staking", "Investments"]
+    policy.tone.response_rules = ["State limits directly"]
+    policy.safety_rules = ["Banking tasks only"]
+
+    summary = build_planner_policy_summary(policy)
+    assert "Supported(policy): Card freeze(+1)" in summary
+    assert "Unsupported(policy): Crypto staking(+1)" in summary
+    assert "State limits directly" in summary
+    assert "Banking tasks only" in summary
+
+
+def test_planner_prompt_refresh_reloads_policy_summary_block(tmp_path: Path) -> None:
+    """Prompt refresh should pick up policy reload changes in planner policy block."""
+    from shared.services import task_planner_prompts
+
+    raw = load_policy(POLICY_PATH).model_dump()
+    raw["supported_domains"][0] = "Card freeze"
+    raw["unsupported_capabilities"][0] = "Crypto staking"
+    raw["tone"]["response_rules"] = ["State limits directly"]
+    raw["safety_rules"] = ["Banking tasks only"]
+
+    custom_policy_path = tmp_path / "soul_custom.json"
+    custom_policy_path.write_text(json.dumps(raw, ensure_ascii=True, indent=2), encoding="utf-8")
+
+    try:
+        get_cached_policy(path=str(custom_policy_path), force_reload=True)
+        task_planner_prompts.refresh_planner_system_prompt()
+        policy_block = task_planner_prompts.PLANNER_POLICY_BLOCK
+        assert "Supported(policy): Card freeze(+6)" in policy_block
+        assert "Unsupported(policy): Crypto staking(+6)" in policy_block
+        assert "State limits directly" in policy_block
+        assert "Banking tasks only" in policy_block
+    finally:
+        get_cached_policy(path=POLICY_PATH, force_reload=True)
+        task_planner_prompts.refresh_planner_system_prompt()
 
 
 def test_capability_resolution_uses_policy_matrix() -> None:

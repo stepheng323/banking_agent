@@ -79,6 +79,13 @@ PLANNER_RULE_ATOM_ORDER = [
     "R23_MULTILINGUAL_SAFETY",
 ]
 
+# Critical rules whose semantics must be explicit in the compiled prompt to prevent drift.
+PLANNER_RULE_SEMANTIC_GUARD_IDS = {
+    "R05_CANCEL_CONFIRM",
+    "R14_REFERENCE_BINDING",
+    "R17_FASTPATH_FALLBACK",
+}
+
 PLANNER_BASE_RULE_ATOMS = {
     "R01_CONVERSATIONAL",
     "R02_BANKING_TASKS",
@@ -127,7 +134,7 @@ PLANNER_RUNTIME_QUERY_EXAMPLES = """## TARGETED EXAMPLES (QUERY)
 
 PLANNER_RUNTIME_CONTEXT_EXAMPLES = """## TARGETED EXAMPLES (CONTEXT)
 - Asked to save beneficiary + "Hi" -> conversational.
-- Recent Chat account_count + "List them" -> account/list_accounts or linked_accounts_summary.
+- Recent Chat account_count + "List them" -> executor=account action=list_accounts OR context_fastpath_subtype=linked_accounts_summary.
 - Recent Chat beneficiary_count + "List them" -> context_fastpath_subtype=beneficiary_list."""
 
 PLANNER_RUNTIME_PROMPT_SUFFIX = "Return schema JSON"

@@ -43,6 +43,7 @@ def test_context_read_fastpath_rules_present() -> None:
     runtime_prompt, _, _ = _build_prompt("Which account is default?", "User State has default account")
     assert "R16_FASTPATH_CONTEXT_READ" in runtime_prompt
     assert "R17_FASTPATH_FALLBACK" in runtime_prompt
+    assert "R17:context_missing|stale->worker_task" in runtime_prompt
     assert "R18_FASTPATH_SUBTYPE" in runtime_prompt
     assert "context_fastpath_subtype" in runtime_prompt
     fastpath_values = set(get_args(ContextFastpathSubtype))
@@ -93,6 +94,7 @@ def test_follow_up_referent_binding_rules_present() -> None:
     )
     assert "query" in bundles
     assert "R14_REFERENCE_BINDING" in runtime_prompt
+    assert "R14:pronoun|index->selector_ref" in runtime_prompt
     assert 'Recent Chat account_count + "List them"' in runtime_prompt
     assert 'Recent Chat beneficiary_count + "List them"' in runtime_prompt
 
@@ -188,11 +190,11 @@ def test_runtime_planner_prompt_size_budget_targets() -> None:
             expected_transaction_executors=("transfer", "airtime"),
         ),
     )
-    assert len(generic_prompt) <= 1500
-    assert len(expanded_prompt) <= 2700
+    assert len(generic_prompt) <= 1600
+    assert len(expanded_prompt) <= 2890
     encoding = tiktoken.get_encoding("o200k_base")
-    assert len(encoding.encode(generic_prompt)) <= 350
-    assert len(encoding.encode(expanded_prompt)) <= 650
+    assert len(encoding.encode(generic_prompt)) <= 370
+    assert len(encoding.encode(expanded_prompt)) <= 700
 
 
 def test_runtime_planner_prompt_adds_money_move_examples_when_relevant() -> None:

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from shared.services.task_planner_prompt_atoms import (
     PLANNER_EXECUTOR_COVERAGE_GUARD_PROMPT,
+    PLANNER_RULE_ATOMS,
+    PLANNER_RULE_SEMANTIC_GUARD_IDS,
     PLANNER_RUNTIME_COMMON_EXAMPLES,
     PLANNER_RUNTIME_CONTEXT_EXAMPLES,
     PLANNER_RUNTIME_MONEY_MOVE_EXAMPLES,
@@ -20,7 +22,15 @@ from shared.services.task_planner_prompt_selector import select_prompt_bundles, 
 
 
 def _compile_rule_atoms(rule_ids: tuple[str, ...]) -> str:
-    return "## RULE IDS\n" + ",".join(rule_ids)
+    rule_id_section = "## RULE IDS\n" + ",".join(rule_ids)
+    semantic_fragments = [
+        f"{rule_id.split('_')[0]}:{PLANNER_RULE_ATOMS[rule_id]}"
+        for rule_id in rule_ids
+        if rule_id in PLANNER_RULE_SEMANTIC_GUARD_IDS
+    ]
+    if not semantic_fragments:
+        return rule_id_section
+    return rule_id_section + "\nSEM:" + ";".join(semantic_fragments)
 
 
 def _coverage_guard_section(expected_executors: tuple[str, ...]) -> str:
