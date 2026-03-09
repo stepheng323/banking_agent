@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from shared.policy.adapters import build_planner_policy_block
+from shared.policy.adapters import build_planner_policy_summary
 from shared.policy.loader import get_cached_policy
 from shared.services.task_planner_prompt_atoms import PLANNER_RULE_ATOMS
 from shared.services.task_planner_prompt_compiler import build_planner_system_prompt as _build_compiled_prompt
@@ -14,7 +14,7 @@ from shared.services.task_planner_prompt_models import (
 
 
 def _build_planner_policy_block() -> str:
-    return build_planner_policy_block(get_cached_policy())
+    return build_planner_policy_summary(get_cached_policy())
 
 
 PLANNER_POLICY_BLOCK = _build_planner_policy_block()

@@ -42,6 +42,18 @@ def build_planner_policy_block(policy: SoulPolicy) -> str:
     )
 
 
+def build_planner_policy_summary(policy: SoulPolicy) -> str:
+    """Build planner-only policy summary focused on extraction behavior."""
+    del policy
+    return (
+        "## POLICY\n"
+        "- Scope: banking/support workflows only.\n"
+        "- Out-of-scope asks -> conversational.out_of_scope + supported redirect.\n"
+        "- Never claim unsupported features or provide financial advice.\n"
+        "- Keep replies short and in detected language."
+    )
+
+
 def resolve_capability_rule(domain: str, action: str, policy: SoulPolicy | None = None) -> CapabilityRule | None:
     """Resolve capability rule for a domain action."""
     effective_policy = policy or get_cached_policy()

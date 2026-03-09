@@ -14,7 +14,12 @@ from apps.core.src.agent.graphs.query import capabilities as query_capabilities
 from apps.core.src.agent.graphs.transfer.worker import TransferWorker
 from apps.core.src.agent.orchestrator.models.domain import AccountOutcome, TransactionOutcome
 from apps.core.src.agent.orchestrator.nodes.planner import _build_policy_notice
-from shared.policy.adapters import build_planner_policy_block, resolve_capability_message, resolve_capability_rule
+from shared.policy.adapters import (
+    build_planner_policy_block,
+    build_planner_policy_summary,
+    resolve_capability_message,
+    resolve_capability_rule,
+)
 from shared.policy.loader import get_cached_policy, load_policy, load_soul_policy
 from shared.policy.validation import validate_policy_coverage
 
@@ -110,6 +115,16 @@ def test_planner_policy_block_contains_guardrails() -> None:
     assert "SOUL POLICY" in block
     assert "Supported domains" in block
     assert "Unsupported capabilities" in block
+
+
+def test_planner_policy_summary_is_compact_and_extraction_focused() -> None:
+    """Planner summary should stay compact while preserving extraction constraints."""
+    policy = get_cached_policy(path=POLICY_PATH, force_reload=True)
+    summary = build_planner_policy_summary(policy)
+    assert "Scope: banking/support workflows only." in summary
+    assert "conversational.out_of_scope" in summary
+    assert "Never claim unsupported features" in summary
+    assert len(summary) < 400
 
 
 def test_capability_resolution_uses_policy_matrix() -> None:

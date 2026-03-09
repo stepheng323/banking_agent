@@ -515,6 +515,57 @@ async def test_conversational_response_key_localizes_for_yoruba() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("detected_language", "expected_locale", "message_text"),
+    [
+        ("English", "en", "hello"),
+        ("Pidgin", "pcm", "abeg i dey here"),
+        ("Yoruba", "yo", "mo wa nibi"),
+        ("Hausa", "ha", "ina nan"),
+        ("Igbo", "ig", "ano m ebe a"),
+    ],
+)
+async def test_conversational_checkin_response_localizes_for_detected_language(
+    detected_language: str,
+    expected_locale: str,
+    message_text: str,
+) -> None:
+    """Check-in response key should render in the planner-detected language."""
+    planner_output = PlannerOutput(
+        primary_intent="conversational",
+        response="",
+        response_key="conversational.checkin",
+        confidence=0.9,
+        is_complex=False,
+        is_cancellation=False,
+        is_confirmation=False,
+        detected_language=detected_language,
+        normalized_instruction=message_text,
+        tasks=[],
+    )
+
+    state = OrchestratorState(
+        user_id=f"u_lang_{expected_locale}",
+        phone_number=f"23489000000{len(expected_locale)}{len(message_text)}",
+        channel="whatsapp",
+        last_message_text=message_text,
+    )
+    config: RunnableConfig = {
+        "configurable": {
+            "task_planner": _MockPlanner(planner_output, planner_llm=object()),
+            "services": {},
+            "redis_client": None,
+        },
+        "recursion_limit": 50,
+    }
+
+    state = _apply(state, await ingest_message(state))
+    state = _apply(state, await plan_tasks(state, config))
+
+    assert state.final_response == render_message("conversational.checkin", expected_locale)
+
+
+@pytest.mark.asyncio
 async def test_conversational_missing_response_key_uses_deterministic_clarify() -> None:
     """Missing conversational response_key should always use deterministic clarify fallback."""
     planner_output = PlannerOutput(
