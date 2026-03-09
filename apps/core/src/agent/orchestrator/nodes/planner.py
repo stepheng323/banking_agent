@@ -11,11 +11,7 @@ from apps.core.src.agent.orchestrator.nodes.planner_context import (
     _build_user_state_summary,
 )
 from apps.core.src.agent.orchestrator.nodes.planner_context_flow import _build_planner_context
-from apps.core.src.agent.orchestrator.nodes.planner_execution_flow import (
-    _execute_planner_with_context,
-    _retry_expected_executors_if_needed,
-)
-from apps.core.src.agent.orchestrator.nodes.planner_fastpath import TRANSACTION_EXECUTORS
+from apps.core.src.agent.orchestrator.nodes.planner_execution_flow import _execute_planner_with_context
 from apps.core.src.agent.orchestrator.nodes.planner_guardrails import (
     _deescalate_mandate_acknowledgement,
     _filter_spurious_affirmation_tasks,
@@ -27,18 +23,13 @@ from apps.core.src.agent.orchestrator.nodes.planner_policy import (
     _detected_locale_value,
     _meta_intent_from_response_key,
 )
-from apps.core.src.agent.orchestrator.nodes.planner_postprocess import (
-    _expand_underproduced_transfer_tasks,
-    _should_replan_active_wave,
-    _strip_transactional_depends_on_edges,
-)
+from apps.core.src.agent.orchestrator.nodes.planner_postprocess import _should_replan_active_wave
 from apps.core.src.agent.orchestrator.nodes.planner_quoted_flow import _handle_quoted_replay_shortcut
 from apps.core.src.agent.orchestrator.nodes.planner_quoted_replay import (
     QUOTED_REPLAY_MIN_CONFIDENCE as _QUOTED_REPLAY_MIN_CONFIDENCE,
 )
 from apps.core.src.agent.orchestrator.nodes.planner_response_flow import _build_non_task_response
-from apps.core.src.agent.orchestrator.utils.task_payload import build_task_spec_from_plan_item
-from apps.core.src.agent.orchestrator.utils.waves import build_dependency_waves
+from apps.core.src.agent.orchestrator.nodes.planner_task_flow import _build_planner_task_updates
 from shared.i18n import LocaleManager, render_safe_capability_fallback
 from shared.utils.logging import get_logger
 
@@ -128,29 +119,7 @@ async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[s
     if state.waves and active_intent:
         logger.info("planner_intent_switch_or_update", old=active_intent, new=planner_output.primary_intent)
 
-    fanout_tasks, fanout_meta = _expand_underproduced_transfer_tasks(planner_output.tasks, text)
-    if fanout_meta:
-        planner_output.tasks = fanout_tasks
-        planner_output.is_complex = True
-        logger.info(
-            "planner_transfer_multi_recipient_fanout_applied",
-            source_task_id=fanout_meta["source_task_id"],
-            recipient_count=fanout_meta["recipient_count"],
-            recipient_names=fanout_meta["recipient_names"],
-        )
-
-    normalized_tasks, stripped_edges = _strip_transactional_depends_on_edges(planner_output.tasks)
-    if stripped_edges:
-        planner_output.tasks = normalized_tasks
-        logger.info(
-            "txn_dep_removed_for_batch_auth",
-            source_task_ids=sorted({source for source, _ in stripped_edges}),
-            target_task_ids=sorted({target for _, target in stripped_edges}),
-            removed_edges=[f"{source}->{target}" for source, target in stripped_edges],
-            removed_count=len(stripped_edges),
-        )
-
-    planner_output = await _retry_expected_executors_if_needed(
+    task_updates = await _build_planner_task_updates(
         state=state,
         task_planner=task_planner,
         planner_output=planner_output,
@@ -158,57 +127,13 @@ async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[s
         planner_context=planner_context,
         active_intent=active_intent,
         current_locale=current_locale,
+        query_session_source=query_session_source,
+        query_session_snapshot=query_session_snapshot,
     )
-
-    stashed_query_session_update: dict[str, Any] | None = None
-    if (
-        query_session_source == "redis"
-        and query_session_snapshot
-        and bool(query_session_snapshot.get("session_active"))
-        and any(getattr(task, "executor", None) in TRANSACTION_EXECUTORS for task in planner_output.tasks)
-    ):
-        stash_keys = (
-            "session_active",
-            "query_contract",
-            "query_result",
-            "surface",
-            "show_expanded",
-            "current_page",
-            "page_size",
-            "account_id",
-            "account_ids",
-            "cached_transactions",
-            "cache_fetched_at",
-            "cache_fingerprint",
-            "timestamp",
-        )
-        stashed_query_session_update = {
-            key: query_session_snapshot.get(key) for key in stash_keys if key in query_session_snapshot
-        }
-        stashed_query_session_update["session_active"] = True
-        logger.info(
-            "planner_query_session_stashed_for_transaction_switch",
-            keys=list(stashed_query_session_update.keys()),
-        )
-
-    new_tasks = {}
-    task_ids: list[str] = []
-    depends_on_by_task: dict[str, list[str]] = {}
-
-    for plan_item in planner_output.tasks:
-        spec = build_task_spec_from_plan_item(
-            plan_item,
-            text,
-            preserve_existing_action_instruction=True,
-            include_skip_extraction=True,
-            strip_transfer_recipient_suffix=True,
-            format_narration_requires_recipient_field=False,
-        )
-        new_tasks[spec.id] = spec
-        task_ids.append(spec.id)
-        depends_on_by_task[spec.id] = list(spec.depends_on)
-
-    waves = build_dependency_waves(task_ids, depends_on_by_task)
+    planner_output = task_updates["planner_output"]
+    new_tasks = task_updates["new_tasks"]
+    waves = task_updates["waves"]
+    stashed_query_session_update = task_updates["stashed_query_session_update"]
 
     policy_notice = _build_policy_notice(text, planner_output, current_locale)
     if policy_notice:
