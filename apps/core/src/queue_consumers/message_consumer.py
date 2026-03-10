@@ -9,6 +9,7 @@ from apps.core.src.agent.orchestrator.models.intents import (
     RequestAuth,
     RequestConfirmation,
     Say,
+    ShowFlow,
     ShowOptions,
     ShowReceipt,
     UiIntent,
@@ -24,6 +25,7 @@ from shared.utils.logging import get_logger
 from shared.utils.sanitize import is_suspicious_input, sanitize_message
 
 logger = get_logger(__name__)
+_TRANSACTION_PIN_FLOWS = {"transfer", "airtime", "data"}
 
 
 class _NoopPublisher:
@@ -121,10 +123,15 @@ class MessageConsumer:
             logger.warning("pin_verified_but_not_success", phone=phone_number, flow_type=flow_type)
             return
 
+        normalized_flow_type = flow_type.strip().lower()
+        if normalized_flow_type not in _TRANSACTION_PIN_FLOWS:
+            logger.info("pin_verified_non_transaction_flow_ignored", phone=phone_number, flow_type=flow_type)
+            return
+
         logger.info("resuming_via_orchestrator", phone=phone_number, flow=flow_type, channel=channel)
         response = await self.orchestrator.resume_transaction(
             phone_number=phone_number,
-            flow_type=flow_type,
+            flow_type=normalized_flow_type,
             pin_verified=True,
             channel=channel,
         )
@@ -225,7 +232,8 @@ class MessageConsumer:
             intents: list[UiIntent] = orchestrator_output.get("intents", [])
             response_text = orchestrator_output.get("text")
             has_primary_interaction = any(
-                isinstance(intent, (RequestAuth, RequestConfirmation, ShowReceipt, ShowOptions)) for intent in intents
+                isinstance(intent, (RequestAuth, RequestConfirmation, ShowReceipt, ShowOptions, ShowFlow))
+                for intent in intents
             )
             if response_text and not has_primary_interaction and not any(isinstance(intent, Say) for intent in intents):
                 intents.append(Say(text=response_text))

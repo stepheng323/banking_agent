@@ -1,3 +1,5 @@
+import json
+
 import httpx
 import pytest
 
@@ -162,3 +164,38 @@ async def test_send_text_streamed_skips_draft_when_feature_disabled(monkeypatch:
     assert result.success is True
     assert result.message_id == "101"
     assert calls == ["sendMessage"]
+
+
+@pytest.mark.asyncio
+async def test_send_mini_app_routes_link_tokens_to_onboarding(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "telegram_bot_token", "test-token")
+    monkeypatch.setattr(settings, "telegram_mini_app_base_url", "https://mini.fusepay.dev")
+    client = TelegramClient()
+
+    calls: list[dict[str, object]] = []
+
+    async def _fake_call(
+        method: str,
+        payload: dict[str, object] | None = None,
+        files: dict[str, object] | None = None,
+        max_retries: int = 3,
+    ) -> dict[str, object]:
+        del files, max_retries
+        assert method == "sendMessage"
+        calls.append(payload or {})
+        return {"ok": True, "result": {"message_id": 55}}
+
+    monkeypatch.setattr(client, "_call", _fake_call)
+
+    await client.send_mini_app(to="12345", flow_token="link-12345-1700000000")
+    await client.send_mini_app(to="12345", flow_token="transfer-pin-idem-12345")
+
+    assert len(calls) == 2
+
+    first_markup = json.loads(str(calls[0]["reply_markup"]))
+    first_url = first_markup["inline_keyboard"][0][0]["web_app"]["url"]
+    assert "/static/telegram/onboarding.html" in first_url
+
+    second_markup = json.loads(str(calls[1]["reply_markup"]))
+    second_url = second_markup["inline_keyboard"][0][0]["web_app"]["url"]
+    assert "/static/telegram/pin_entry.html" in second_url

@@ -7,7 +7,7 @@ from typing import Any
 
 import pytest
 
-from apps.core.src.agent.orchestrator.models.intents import Say
+from apps.core.src.agent.orchestrator.models.intents import Say, ShowFlow
 from apps.core.src.queue_consumers.message_consumer import MessageConsumer
 from shared.cache.rate_limiter import RateLimitResult
 from shared.database.models import UserOnboardingStatusEnum
@@ -59,10 +59,20 @@ class _ContextManagerStub:
 
 
 class _OrchestratorStub:
-    def __init__(self, context_manager: _ContextManagerStub, *, should_fail: bool = False) -> None:
+    def __init__(
+        self,
+        context_manager: _ContextManagerStub,
+        *,
+        should_fail: bool = False,
+        output: dict[str, Any] | None = None,
+        resume_output: dict[str, Any] | None = None,
+    ) -> None:
         self.context_manager = context_manager
         self.should_fail = should_fail
+        self.output = output
+        self.resume_output = resume_output or {"text": "ok", "outbox": []}
         self.invoke_calls = 0
+        self.resume_calls: list[dict[str, str]] = []
 
     async def invoke(
         self,
@@ -80,7 +90,26 @@ class _OrchestratorStub:
         self.invoke_calls += 1
         if self.should_fail:
             raise RuntimeError("invoke failed")
+        if self.output is not None:
+            return self.output
         return {"intents": [Say(text="ok")], "text": "ok"}
+
+    async def resume_transaction(
+        self,
+        phone_number: str,
+        flow_type: str,
+        pin_verified: bool,
+        channel: str = "whatsapp",
+    ) -> dict[str, Any]:
+        self.resume_calls.append(
+            {
+                "phone_number": phone_number,
+                "flow_type": flow_type,
+                "pin_verified": str(pin_verified),
+                "channel": channel,
+            }
+        )
+        return self.resume_output
 
 
 def _message(message_id: str = "wamid-1") -> ChannelMessage:
@@ -150,3 +179,80 @@ async def test_claim_is_released_when_processing_fails(monkeypatch: pytest.Monke
         await consumer._handle_message(_message("wamid-fail"))
 
     assert context_manager.released == [("2348162511023", "wamid-fail")]
+
+
+@pytest.mark.asyncio
+async def test_message_consumer_does_not_append_say_for_show_flow(monkeypatch: pytest.MonkeyPatch) -> None:
+    context_manager = _ContextManagerStub(should_claim=True)
+    orchestrator = _OrchestratorStub(
+        context_manager,
+        output={
+            "intents": [
+                ShowFlow(
+                    flow_id="flow_123",
+                    flow_config={"header": "Link New Account"},
+                    fallback_text="Open flow",
+                )
+            ],
+            "text": "This should not become an extra Say",
+        },
+    )
+    consumer = MessageConsumer(
+        user_repository=_UserRepoStub(),
+        onboarding_executor=_OnboardingStub(),
+        orchestrator=orchestrator,
+    )
+
+    monkeypatch.setattr("apps.core.src.queue_consumers.message_consumer.message_rate_limiter", _RateLimiterAllow())
+    sent_payloads: list[list[Any]] = []
+
+    async def _enqueue_outbox_intents(*args: Any, **kwargs: Any) -> None:
+        del kwargs
+        sent_payloads.append(list(args))
+
+    monkeypatch.setattr(
+        "apps.core.src.queue_consumers.message_consumer.enqueue_outbox_intents",
+        _enqueue_outbox_intents,
+    )
+
+    response = await consumer._handle_message(_message("wamid-flow-1"))
+
+    assert response is not None
+    assert response["status"] == "success"
+    assert len(sent_payloads) == 1
+    intents = sent_payloads[0][3]
+    assert len(intents) == 1
+    assert isinstance(intents[0], ShowFlow)
+
+
+@pytest.mark.asyncio
+async def test_non_transaction_pin_verified_flow_is_ignored(monkeypatch: pytest.MonkeyPatch) -> None:
+    context_manager = _ContextManagerStub(should_claim=True)
+    orchestrator = _OrchestratorStub(context_manager)
+    consumer = MessageConsumer(
+        user_repository=_UserRepoStub(),
+        onboarding_executor=_OnboardingStub(),
+        orchestrator=orchestrator,
+    )
+
+    enqueue_calls: list[list[Any]] = []
+
+    async def _enqueue_outbox_intents(*args: Any, **kwargs: Any) -> None:
+        del kwargs
+        enqueue_calls.append(list(args))
+
+    monkeypatch.setattr(
+        "apps.core.src.queue_consumers.message_consumer.enqueue_outbox_intents",
+        _enqueue_outbox_intents,
+    )
+
+    await consumer._handle_pin_verified(
+        flow_type="link",
+        phone_number="2348162511023",
+        success=True,
+        channel="telegram",
+        extra_data={"chat_id": "98765"},
+    )
+
+    assert orchestrator.resume_calls == []
+    assert enqueue_calls == []

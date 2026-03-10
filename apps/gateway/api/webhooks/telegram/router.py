@@ -14,7 +14,7 @@ from shared.database.connection import get_db
 from shared.queue.factory import QueuePublisherFactory
 from shared.queue.messages import FlowEvent, FlowEventType
 from shared.repositories.user_repository import UserRepository
-from shared.services.onboarding import account_service, bvn_service
+from shared.services.onboarding import account_add_service, account_service, bvn_service
 from shared.utils.logging import get_logger
 
 router = APIRouter(prefix="/webhook", tags=["telegram"])
@@ -101,6 +101,40 @@ class MethodInput(BaseModel):
     method: str
 
 
+class LinkingSessionInput(BaseModel):
+    flow_token: str
+
+
+@router.post("/telegram/onboarding/linking_session")
+async def telegram_onboarding_linking_session(
+    data: LinkingSessionInput, user_data: dict = Depends(verify_telegram_init_data)
+) -> dict:
+    """Fetch pre-seeded account relinking session data for Telegram mini app."""
+    del user_data
+    flow_token = (data.flow_token or "").strip()
+    if not flow_token or not flow_token.startswith("link-"):
+        return {"success": False, "error": "Invalid linking session. Please start account linking again."}
+
+    session = await bvn_service.get_session_data(flow_token)
+    if not session:
+        return {"success": False, "error": "Linking session expired. Please start account linking again."}
+
+    if not bool(session.get("is_account_linking")):
+        return {"success": False, "error": "Invalid linking session. Please start account linking again."}
+
+    methods = session.get("methods", [])
+    if not isinstance(methods, list) or not methods:
+        return {"success": False, "error": "No verification methods found. Please restart account linking."}
+
+    return {
+        "success": True,
+        "data": {
+            "bvn": session.get("bvn", ""),
+            "methods": methods,
+        },
+    }
+
+
 @router.post("/telegram/onboarding/send_otp")
 async def telegram_send_otp(data: MethodInput, user_data: dict = Depends(verify_telegram_init_data)) -> dict:
     """Send OTP for Telegram Onboarding."""
@@ -128,6 +162,10 @@ class AccountInput(BaseModel):
 @router.post("/telegram/onboarding/account")
 async def telegram_onboarding_account(data: AccountInput, user_data: dict = Depends(verify_telegram_init_data)) -> dict:
     """Handle Account selection for Telegram Onboarding."""
+    del user_data
+    if data.flow_token.startswith("link-"):
+        return await account_add_service.add_account(data.flow_token, data.account_id)
+
     result = await account_service.select_account(data.flow_token, data.account_id)
     return result
 

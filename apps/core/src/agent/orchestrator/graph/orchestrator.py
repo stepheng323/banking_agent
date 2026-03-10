@@ -88,12 +88,18 @@ class OrchestratorAgent:
 
         result = await self.orchestrator_handler.invoke(context)
         result_locale = LocaleManager.normalize(result.get("locale") or fallback_locale).value
-        final_response = result.get("text") or render_message("orchestrator.fallback.processing_error", result_locale)
-        if not result.get("text"):
+        result_text = result.get("text")
+        has_interactive_output = bool(result.get("intents") or result.get("outbox"))
+        final_response = result_text
+        if not final_response and not has_interactive_output:
+            final_response = render_message("orchestrator.fallback.processing_error", result_locale)
             result["text"] = final_response
         result["locale"] = result_locale
 
         create_background_task(self.context_manager.add_conversation_turn(phone_number, "user", text))
-        create_background_task(self.context_manager.add_conversation_turn(phone_number, "assistant", final_response))
+        if final_response:
+            create_background_task(
+                self.context_manager.add_conversation_turn(phone_number, "assistant", final_response)
+            )
 
         return result

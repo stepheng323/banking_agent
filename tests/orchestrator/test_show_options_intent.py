@@ -1,6 +1,6 @@
 """Show-options intent mapping tests."""
 
-from apps.core.src.agent.orchestrator.models.intents import ShowOptions, reconstruct_intent
+from apps.core.src.agent.orchestrator.models.intents import ShowFlow, ShowOptions, reconstruct_intent
 from apps.core.src.agent.orchestrator.presentation.intents import map_outbox_to_intents
 
 
@@ -34,3 +34,19 @@ def test_map_outbox_to_intents_keeps_show_options_without_extra_say() -> None:
 
     assert len(intents) == 1
     assert isinstance(intents[0], ShowOptions)
+
+
+def test_map_outbox_to_intents_keeps_flow_without_extra_say() -> None:
+    outbox = [
+        {
+            "type": "flow",
+            "flow_id": "flow_123",
+            "flow_config": {"header": "Link New Account"},
+            "fallback_text": "Open the flow",
+        }
+    ]
+
+    intents = map_outbox_to_intents(outbox, response_text="Fallback text")
+
+    assert len(intents) == 1
+    assert isinstance(intents[0], ShowFlow)
