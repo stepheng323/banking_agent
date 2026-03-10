@@ -57,3 +57,59 @@ async def test_non_callback_turn_does_not_clear_text_fields() -> None:
 
     assert "last_message_text" not in updates
     assert "last_message_id" not in updates
+
+
+@pytest.mark.asyncio
+async def test_day_rollover_clears_stale_session_state(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("apps.core.src.agent.orchestrator.nodes.ingest._current_session_date", lambda: "2026-03-10")
+    state = OrchestratorState(
+        user_id="u_ingest_4",
+        phone_number="2348000000004",
+        channel="whatsapp",
+        last_message_text="hi",
+        last_activity_date="2026-03-09",
+        tasks={"t1": {"id": "t1", "type": "query", "stage": "draft", "payload": {"message": "more"}}},
+        waves=[["t1"]],
+        current_wave_index=0,
+        task_results={"t1": {"status": "done"}},
+        pending_interrupt={"kind": "input", "task_ids": ["t1"]},
+        pin_verified=True,
+        session_stack=[{"domain": "query", "state": "RUNNING", "interrupt_policy": "ALLOW"}],
+        active_domain="query",
+        stashed_sessions=[{"intent": "transfer", "tasks": {}}],
+        stashed_query_session={"session_active": True},
+    )
+
+    updates = await ingest_message(state)
+
+    assert updates["last_activity_date"] == "2026-03-10"
+    assert updates["tasks"] == {}
+    assert updates["waves"] == []
+    assert updates["current_wave_index"] == 0
+    assert updates["task_results"] == {}
+    assert updates["pending_interrupt"] is None
+    assert updates["pin_verified"] is False
+    assert updates["session_stack"] == []
+    assert updates["active_domain"] is None
+    assert updates["stashed_sessions"] == []
+    assert updates["stashed_query_session"] is None
+
+
+@pytest.mark.asyncio
+async def test_same_day_keeps_existing_session_state(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("apps.core.src.agent.orchestrator.nodes.ingest._current_session_date", lambda: "2026-03-10")
+    state = OrchestratorState(
+        user_id="u_ingest_5",
+        phone_number="2348000000005",
+        channel="whatsapp",
+        last_message_text="more",
+        last_activity_date="2026-03-10",
+        tasks={"t1": {"id": "t1", "type": "query", "stage": "draft", "payload": {"message": "more"}}},
+        waves=[["t1"]],
+    )
+
+    updates = await ingest_message(state)
+
+    assert updates["last_activity_date"] == "2026-03-10"
+    assert "tasks" not in updates
+    assert "waves" not in updates

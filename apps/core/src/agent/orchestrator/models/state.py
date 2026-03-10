@@ -33,6 +33,7 @@ class OrchestratorState(BaseModel):
 
     last_message_text: str | None = None
     last_message_id: str | None = None
+    last_activity_date: str | None = None
     last_callback: dict[str, Any] | None = None
     has_quote: bool = False
     quoted_message_id: str | None = None
