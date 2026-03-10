@@ -3,13 +3,14 @@
 PLANNER_RUNTIME_SCHEMA_PROMPT = """## OUTPUT JSON
 - Return only PlannerOutput JSON.
 - greeting/thanks/check-in -> conversational with tasks=[].
-- Banking asks emit >=1 task unless using context_fastpath_subtype.
-- action must be concrete and executor-matched.
+- Banking asks -> task+ unless context_fastpath_subtype.
 - transfer: send_money|schedule_transfer|recurring_transfer|list_scheduled_transfers|cancel_scheduled_transfer.
+- beneficiary: list_beneficiaries|add_beneficiary|delete_beneficiary|update_beneficiary|save_beneficiary.
 - query: transaction_list|transaction_search|analytics_summary|time_comparison|beneficiary_summary|affordability.
 - beneficiary_route:
-  beneficiary_list for saved-beneficiary list/manage; recipient_ranking for top recipients; else none.
-- account_action_hint: set intended account action for account asks (including fastpath tasks=[]), else none."""
+  beneficiary_list=list/manage, recipient_ranking=query.beneficiary_summary, none=save/other.
+- save_beneficiary only with beneficiary suggestion context.
+- account_action_hint: account asks incl. fastpath tasks=[]; else none."""
 
 PLANNER_TRANSFER_PRECISION_PROMPT = """## MONEY_MOVE PRECISION
 - Keep recipient exactly as typed; no context expansion.
@@ -124,9 +125,7 @@ PLANNER_CONTEXT_RULE_ATOMS = {
 }
 
 PLANNER_RUNTIME_COMMON_EXAMPLES = """## TARGETED EXAMPLES (COMMON)
-- How far -> conversational.checkin.
-- Send 8k -> send_money amount=8000 (recipient omitted).
-- Buy 1k airtime -> buy_airtime amount=1000."""
+- Send 8k -> send_money amount=8000, recipient omitted."""
 
 PLANNER_RUNTIME_MONEY_MOVE_EXAMPLES = """## TARGETED EXAMPLES (MONEY_MOVE)
 - Send 10k to Mum and buy 5k airtime -> send_money + buy_airtime.

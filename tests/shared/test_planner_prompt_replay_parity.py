@@ -98,6 +98,7 @@ def _critical_signature(output: PlannerOutput) -> dict[str, Any]:
 
     return {
         "primary_intent": normalized_intent,
+        "beneficiary_route": output.beneficiary_route,
         "is_cancellation": output.is_cancellation,
         "context_fastpath_subtype": normalized_fastpath_subtype,
         "task_count": len(tasks),
@@ -129,6 +130,27 @@ def _assert_case_signature(case_id: str, signature: dict[str, Any]) -> None:
     }:
         assert signature["primary_intent"] == "conversational", case_id
         assert signature["task_count"] == 0, case_id
+        return
+
+    if case_id == "beneficiary_list_saved":
+        assert signature["beneficiary_route"] == "beneficiary_list", case_id
+        if signature["task_count"] > 0:
+            assert first_task is not None and first_task["executor"] == "beneficiary", case_id
+            assert first_task["action"] == "list_beneficiaries", case_id
+        return
+
+    if case_id == "beneficiary_top_recipients":
+        assert signature["beneficiary_route"] == "recipient_ranking", case_id
+        assert signature["task_count"] >= 1, case_id
+        assert first_task is not None and first_task["executor"] == "query", case_id
+        assert first_task["action"] == "beneficiary_summary", case_id
+        return
+
+    if case_id == "beneficiary_save_after_suggestion":
+        assert signature["beneficiary_route"] == "none", case_id
+        assert signature["task_count"] >= 1, case_id
+        assert first_task is not None and first_task["executor"] == "beneficiary", case_id
+        assert first_task["action"] == "save_beneficiary", case_id
         return
 
     if case_id in {"transfer_missing_slots", "transfer_missing_slots_pidgin"}:
@@ -195,6 +217,9 @@ def test_replay_case_set_covers_core_planner_shapes() -> None:
     assert "greeting_hausa" in case_ids
     assert "greeting_igbo" in case_ids
     assert "transfer_missing_slots_pidgin" in case_ids
+    assert "beneficiary_list_saved" in case_ids
+    assert "beneficiary_top_recipients" in case_ids
+    assert "beneficiary_save_after_suggestion" in case_ids
 
 
 def test_compact_prompt_remains_bundle_driven() -> None:

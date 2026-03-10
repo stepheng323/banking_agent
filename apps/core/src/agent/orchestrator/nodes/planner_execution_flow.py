@@ -17,8 +17,8 @@ from apps.core.src.agent.orchestrator.nodes.planner_fastpath import (
 )
 from apps.core.src.agent.orchestrator.nodes.planner_guardrails import (
     _deescalate_mandate_acknowledgement,
+    _enforce_beneficiary_routing_contract,
     _filter_spurious_affirmation_tasks,
-    _repair_beneficiary_summary_misroute,
 )
 from shared.i18n import LanguageDetectionSignal, LocaleManager
 from shared.services.task_planner_prompt_models import PlannerPromptSignals
@@ -61,10 +61,11 @@ async def _execute_planner_with_context(
         loaded_context=state.loaded_context,
         locale=current_locale,
     )
-    planner_output = await _repair_beneficiary_summary_misroute(
+    planner_output = _enforce_beneficiary_routing_contract(
         planner_output,
+        message_id=state.last_message_id,
         user_text=text,
-        task_planner=task_planner,
+        has_beneficiary_suggestion=prompt_signals.has_beneficiary_suggestion,
     )
     logger.info("planner_tasks_generated", output=planner_output)
 

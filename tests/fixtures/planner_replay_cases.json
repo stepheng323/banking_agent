@@ -89,5 +89,28 @@
     "signals": {
       "has_beneficiary_suggestion": true
     }
+  },
+  {
+    "id": "beneficiary_list_saved",
+    "text": "Show saved beneficiaries",
+    "context": "None",
+    "signals": {}
+  },
+  {
+    "id": "beneficiary_top_recipients",
+    "text": "Who do I send money to the most?",
+    "context": "None",
+    "signals": {
+      "query_session_active": true,
+      "recent_domain_focus": "query"
+    }
+  },
+  {
+    "id": "beneficiary_save_after_suggestion",
+    "text": "Save as Mum",
+    "context": "Asked to save beneficiary",
+    "signals": {
+      "has_beneficiary_suggestion": true
+    }
   }
 ]
