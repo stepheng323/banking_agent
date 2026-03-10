@@ -5,6 +5,7 @@ from langchain_core.runnables import RunnableConfig
 from apps.core.src.agent.orchestrator.models.domain import ActiveSession, PendingInterrupt, TaskSpec, TaskStage
 from apps.core.src.agent.orchestrator.models.state import OrchestratorState
 from apps.core.src.agent.orchestrator.nodes.gate import session_gate_fastpath
+from shared.i18n import render_message
 from shared.types.planner import TurnRouteDecision
 
 
@@ -128,6 +129,60 @@ async def test_gate_turn_router_can_bypass_planner_with_direct_response() -> Non
     assert updates["fast_path_triggered"] is True
     assert isinstance(updates.get("final_response"), str)
     assert updates["loaded_context"]["language"] == "pcm"
+
+
+async def test_gate_turn_router_out_of_scope_includes_empathy_and_redirect() -> None:
+    planner = _RouteTurnPlanner(
+        TurnRouteDecision(
+            decision="respond_directly",
+            confidence=0.97,
+            detected_language="English",
+            response_key="conversational.out_of_scope",
+            response="I hear you.",
+            expected_transaction_executors=[],
+            reason="non-banking emotional turn",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_gate_oos_1",
+        phone_number="2348000000111",
+        channel="whatsapp",
+        last_message_text="I am very hungry",
+        loaded_context={"language": "en"},
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await session_gate_fastpath(state, config)
+
+    assert updates["fast_path_triggered"] is True
+    assert updates["final_response"] == "I hear you.\n" + render_message("conversational.out_of_scope", "en")
+
+
+async def test_gate_turn_router_out_of_scope_without_empathy_uses_redirect_only() -> None:
+    planner = _RouteTurnPlanner(
+        TurnRouteDecision(
+            decision="respond_directly",
+            confidence=0.97,
+            detected_language="English",
+            response_key="conversational.out_of_scope",
+            response=None,
+            expected_transaction_executors=[],
+            reason="non-banking out-of-scope",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_gate_oos_2",
+        phone_number="2348000000112",
+        channel="whatsapp",
+        last_message_text="book me a flight",
+        loaded_context={"language": "en"},
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await session_gate_fastpath(state, config)
+
+    assert updates["fast_path_triggered"] is True
+    assert updates["final_response"] == render_message("conversational.out_of_scope", "en")
 
 
 async def test_gate_turn_router_passes_expected_executors_without_fastpath() -> None:

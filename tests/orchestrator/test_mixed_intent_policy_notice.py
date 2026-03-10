@@ -393,7 +393,7 @@ async def test_conversational_capability_question_uses_meta_llm_when_available()
 
 
 @pytest.mark.asyncio
-async def test_conversational_out_of_scope_uses_meta_llm_when_available() -> None:
+async def test_conversational_out_of_scope_uses_meta_empathy_plus_redirect() -> None:
     planner_output = PlannerOutput(
         primary_intent="conversational",
         response="",
@@ -421,7 +421,7 @@ async def test_conversational_out_of_scope_uses_meta_llm_when_available() -> Non
                     {
                         "handoff": "meta",
                         "language": "en",
-                        "message": "I can’t book flights yet. I can help with transfers, airtime, or checking your account.",
+                        "message": "I can't book flights yet. I can help with transfers, airtime, or checking your account.",
                     }
                 ),
             ),
@@ -434,10 +434,43 @@ async def test_conversational_out_of_scope_uses_meta_llm_when_available() -> Non
     state = _apply(state, await ingest_message(state))
     state = _apply(state, await plan_tasks(state, config))
 
-    assert (
-        state.final_response
-        == "I can’t book flights yet. I can help with transfers, airtime, or checking your account."
+    assert state.final_response == "I can't book flights yet.\n" + render_message("conversational.out_of_scope", "en")
+
+
+@pytest.mark.asyncio
+async def test_conversational_out_of_scope_falls_back_to_redirect_when_no_empathy_source() -> None:
+    planner_output = PlannerOutput(
+        primary_intent="conversational",
+        response="",
+        response_key="conversational.out_of_scope",
+        confidence=0.9,
+        is_complex=False,
+        is_cancellation=False,
+        is_confirmation=False,
+        detected_language="English",
+        normalized_instruction="book me a flight",
+        tasks=[],
     )
+
+    state = OrchestratorState(
+        user_id="u_meta_4b",
+        phone_number="2348999999995",
+        channel="whatsapp",
+        last_message_text="book me a flight",
+    )
+    config: RunnableConfig = {
+        "configurable": {
+            "task_planner": _MockPlanner(planner_output, planner_llm=object()),
+            "services": {},
+            "redis_client": None,
+        },
+        "recursion_limit": 50,
+    }
+
+    state = _apply(state, await ingest_message(state))
+    state = _apply(state, await plan_tasks(state, config))
+
+    assert state.final_response == render_message("conversational.out_of_scope", "en")
 
 
 @pytest.mark.asyncio

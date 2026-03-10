@@ -9,6 +9,7 @@ from typing import Any
 
 from langchain_core.runnables import RunnableConfig
 
+from apps.core.src.agent.orchestrator.conversational_style import format_out_of_scope_reply
 from apps.core.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
 from apps.core.src.agent.orchestrator.models.state import OrchestratorState
 from shared.i18n import LocaleManager, render_locale_switched, render_message
@@ -276,7 +277,10 @@ async def session_gate_fastpath(state: OrchestratorState, config: RunnableConfig
                     locale = LocaleManager.from_detection(route.detected_language).value
                     updates.update(_locale_update(state, locale))
                 if route.response_key:
-                    text = render_message(route.response_key, locale)
+                    if route.response_key == "conversational.out_of_scope":
+                        text = format_out_of_scope_reply(locale, route.response)
+                    else:
+                        text = render_message(route.response_key, locale)
                 else:
                     text = route.response or render_message("conversational.clarify", locale)
                 logger.info("gate_turn_router_direct_response", response_key=route.response_key, locale=locale)

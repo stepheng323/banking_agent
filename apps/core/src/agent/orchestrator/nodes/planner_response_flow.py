@@ -2,6 +2,7 @@
 
 from typing import Any, cast
 
+from apps.core.src.agent.orchestrator.conversational_style import format_out_of_scope_reply
 from apps.core.src.agent.orchestrator.meta_reply import generate_meta_reply
 from apps.core.src.agent.orchestrator.models.state import OrchestratorState
 from apps.core.src.agent.orchestrator.nodes.planner_policy import (
@@ -81,6 +82,40 @@ async def _build_non_task_response(
             if conversational_locale == current_locale
             else _build_locale_update(state, conversational_locale)
         )
+        response_key = planner_output.response_key
+        if response_key == "conversational.out_of_scope":
+            empathy_source = _localized_planner_response(planner_output.response) if planner_output.response else None
+            meta_intent = _meta_intent_from_response_key(response_key)
+            llm = getattr(task_planner, "planner_llm", None)
+            if meta_intent and llm is not None and hasattr(llm, "with_structured_output"):
+                meta_message, handoff = await generate_meta_reply(
+                    llm,
+                    user_message=text,
+                    user_language_hint=conversational_locale,
+                    meta_intent=meta_intent,
+                    redis_client=redis_client,
+                )
+                if handoff == "meta" and meta_message:
+                    logger.info(
+                        "planner_meta_reply_used",
+                        response_key=response_key,
+                        locale=conversational_locale,
+                        intent=meta_intent.value,
+                    )
+                    empathy_source = meta_message
+                else:
+                    logger.info(
+                        "planner_meta_reply_fallback",
+                        response_key=response_key,
+                        locale=conversational_locale,
+                        handoff=handoff,
+                    )
+            return {
+                "final_response": format_out_of_scope_reply(conversational_locale, empathy_source),
+                **conversational_locale_updates,
+                **fastpath_context_updates,
+            }
+
         if planner_output.response:
             logger.info("planner_direct_response_used", locale=conversational_locale)
             return {
@@ -89,7 +124,6 @@ async def _build_non_task_response(
                 **fastpath_context_updates,
             }
 
-        response_key = planner_output.response_key
         if response_key:
             logger.info("planner_response_key_used", key=response_key, locale=conversational_locale)
             if response_key == "conversational.greeting":

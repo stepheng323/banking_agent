@@ -68,6 +68,10 @@ Return ONLY JSON with:
 
 Rules:
 1) Use decision=respond_directly only for obvious conversational/meta responses.
+1b) For out-of-scope/non-banking messages, ALWAYS set:
+    - response_key=conversational.out_of_scope
+    - response as one short empathy sentence (optional) or null
+    - Never use conversational.clarify for this case.
 2) Use decision=query_continuation only for clear query continuation turns.
 2b) Balance/account-status asks are NOT query_continuation.
     Examples: "check my balance", "what's my balance", "how much do I have".
