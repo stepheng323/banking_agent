@@ -1,28 +1,19 @@
 """Prompt atoms for planner system prompt compilation."""
 
 PLANNER_RUNTIME_SCHEMA_PROMPT = """## OUTPUT JSON
-- Return only PlannerOutput JSON; obey schema enums/shape.
+- Return only PlannerOutput JSON.
 - greeting/thanks/check-in -> conversational with tasks=[].
-- Context "Asked to save beneficiary" + greeting/thanks/check-in -> conversational with tasks=[].
-- Banking intents must emit >=1 task even if slots are missing.
-- context_fastpath_subtype only for context-read fastpath.
-- action must be concrete and executor-matched; never use family names.
+- Banking asks emit >=1 task unless using context_fastpath_subtype.
+- action must be concrete and executor-matched.
 - transfer: send_money|schedule_transfer|recurring_transfer|list_scheduled_transfers|cancel_scheduled_transfer.
-- beneficiary: list_beneficiaries|add_beneficiary|delete_beneficiary|update_beneficiary|save_beneficiary.
 - query: transaction_list|transaction_search|analytics_summary|time_comparison|beneficiary_summary|affordability.
-- For executor=query, action must be one query action above (never "query").
-- beneficiary_route must be beneficiary_list|recipient_ranking|none.
-- Ask to view/manage saved beneficiaries -> beneficiary.list_beneficiaries + beneficiary_route=beneficiary_list.
-- Ask top/most frequent recipients -> query.beneficiary_summary + beneficiary_route=recipient_ranking.
-- account_action_hint must be one of:
-  list|list_accounts|count|check_balance|balance|show_balance|overall_balance|link|unlink|set_default|unknown|none.
-- For account asks, set account_action_hint even when using context fastpath with tasks=[]."""
+- beneficiary_route:
+  beneficiary_list for saved-beneficiary list/manage; recipient_ranking for top recipients; else none.
+- account_action_hint: set intended account action for account asks (including fastpath tasks=[]), else none."""
 
 PLANNER_TRANSFER_PRECISION_PROMPT = """## MONEY_MOVE PRECISION
 - Keep recipient exactly as typed; no context expansion.
-- Person/alias recipient -> recipient_name=recipient verbatim.
 - recipient_name must be plain text only.
-- Never add narration.
 - Selector refs: {"selector":"previous"} or {"selector":"index","index":N}."""
 
 PLANNER_EXECUTOR_COVERAGE_GUARD_PROMPT = (
@@ -95,8 +86,6 @@ PLANNER_RULE_SEMANTIC_GUARD_IDS = {
     "R05_CANCEL_CONFIRM",
     "R14_REFERENCE_BINDING",
     "R17_FASTPATH_FALLBACK",
-    "R24_BENEFICIARY_ROUTE",
-    "R25_ACCOUNT_ACTION_HINT",
 }
 
 PLANNER_BASE_RULE_ATOMS = {
@@ -137,10 +126,7 @@ PLANNER_CONTEXT_RULE_ATOMS = {
 PLANNER_RUNTIME_COMMON_EXAMPLES = """## TARGETED EXAMPLES (COMMON)
 - How far -> conversational.checkin.
 - Send 8k -> send_money amount=8000 (recipient omitted).
-- Buy 1k airtime -> buy_airtime amount=1000.
-- "Show my beneficiaries" -> beneficiary.list_beneficiaries + beneficiary_route=beneficiary_list.
-- "Who do I send to most?" -> query.beneficiary_summary + beneficiary_route=recipient_ranking.
-- "Link account" + account fastpath context -> tasks=[] allowed, account_action_hint=link."""
+- Buy 1k airtime -> buy_airtime amount=1000."""
 
 PLANNER_RUNTIME_MONEY_MOVE_EXAMPLES = """## TARGETED EXAMPLES (MONEY_MOVE)
 - Send 10k to Mum and buy 5k airtime -> send_money + buy_airtime.
@@ -148,11 +134,11 @@ PLANNER_RUNTIME_MONEY_MOVE_EXAMPLES = """## TARGETED EXAMPLES (MONEY_MOVE)
 
 PLANNER_RUNTIME_QUERY_EXAMPLES = """## TARGETED EXAMPLES (QUERY)
 - Active Query Session + "any credits?" -> transaction_search.
-- Active Query Session + "send again"/"resend" -> send_money, is_confirmation=true."""
+- Active Query Session + "send again"/"resend" -> send_money."""
 
 PLANNER_RUNTIME_CONTEXT_EXAMPLES = """## TARGETED EXAMPLES (CONTEXT)
 - Asked to save beneficiary + "Hi" -> conversational.
-- Recent Chat account_count + "List them" -> account.list_accounts OR context_fastpath_subtype=linked_accounts_summary.
+- Recent Chat account_count + "List them" -> context_fastpath_subtype=linked_accounts_summary.
 - Recent Chat beneficiary_count + "List them" -> context_fastpath_subtype=beneficiary_list."""
 
 PLANNER_RUNTIME_PROMPT_SUFFIX = "Return schema JSON"
