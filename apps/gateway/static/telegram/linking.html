@@ -1,0 +1,430 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
+    />
+    <title>Link Account</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script src="/static/telegram/miniapp_theme.js?v=3"></script>
+    <link rel="stylesheet" href="/static/telegram/miniapp_shared.css?v=3" />
+    <style>
+      .linking-sheet {
+        min-height: 100%;
+      }
+
+      .linking-title {
+        font-size: 44px;
+      }
+
+      .linking-content {
+        display: flex;
+        flex-direction: column;
+        flex: 1;
+        min-height: 0;
+      }
+
+      .linking-footer {
+        margin-top: auto;
+      }
+
+      @media (max-width: 420px) {
+        .linking-title {
+          font-size: 38px;
+        }
+      }
+    </style>
+  </head>
+
+  <body>
+    <div class="mini-page">
+      <div class="mini-sheet">
+        <div class="mini-sheet-content linking-sheet">
+          <div class="mini-handle"></div>
+          <div class="mini-topbar">
+            <span class="mini-topbar-icon">←</span>
+            <span class="mini-topbar-title">Link New Account</span>
+            <span class="mini-topbar-icon">⋮</span>
+          </div>
+
+          <div class="mini-progress">
+            <div class="mini-progress-fill" id="progressFill"></div>
+          </div>
+
+          <div class="linking-content">
+            <div id="step-method" class="mini-step active">
+              <h1 class="mini-title linking-title">Choose verification method</h1>
+              <p class="mini-subtitle">How would you like to receive your verification code?</p>
+
+              <label class="mini-section-label">Verification Method</label>
+              <div class="mini-list" id="methodsList"></div>
+              <div class="mini-error" id="methodError"></div>
+            </div>
+
+            <div id="step-otp" class="mini-step">
+              <h1 class="mini-title linking-title">Enter verification code</h1>
+              <p class="mini-subtitle">We sent a 6-digit code to your selected method.</p>
+
+              <input
+                type="tel"
+                id="otpInput"
+                class="mini-input"
+                placeholder="Verification Code"
+                maxlength="6"
+              />
+              <div class="mini-error" id="otpError"></div>
+            </div>
+
+            <div id="step-account" class="mini-step">
+              <h1 class="mini-title linking-title">Select your account</h1>
+              <p class="mini-subtitle">Choose the bank account you want to link to Fusepay.</p>
+
+              <label class="mini-section-label">Bank Account</label>
+              <div class="mini-list" id="accountsList"></div>
+              <div class="mini-error" id="accountError"></div>
+            </div>
+
+            <div id="step-success" class="mini-step">
+              <div class="mini-success-wrap">
+                <div class="mini-success-badge">
+                  <svg
+                    width="40"
+                    height="40"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="white"
+                    stroke-width="3"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  >
+                    <polyline points="20 6 9 17 4 12"></polyline>
+                  </svg>
+                </div>
+                <h1 class="mini-title">Account Linked!</h1>
+                <p class="mini-subtitle">Your new bank account is now linked and ready to use.</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="linking-footer mini-footer" id="htmlBottomBar">
+            <button class="mini-btn" id="btnMainAction" disabled>
+              <span id="btnMainText">Continue</span>
+              <span class="mini-loader" id="btnMainLoader"></span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      const tg = window.Telegram.WebApp;
+      tg.ready();
+      tg.expand();
+      window.TelegramMiniAppTheme?.applyTheme({ accentFallback: "#21d07a" });
+
+      try {
+        if (tg.MainButton) {
+          tg.MainButton.hide();
+        }
+      } catch (e) {}
+
+      const params = new URLSearchParams(window.location.search);
+      const flowToken = params.get("flow_token") || "";
+
+      let currentStep = "method";
+      const historyStack = [];
+      let selectedMethod = "";
+      let selectedAccountId = "";
+
+      const btnMainAction = document.getElementById("btnMainAction");
+      const btnMainText = document.getElementById("btnMainText");
+      const btnMainLoader = document.getElementById("btnMainLoader");
+      const progressFill = document.getElementById("progressFill");
+
+      tg.BackButton.onClick(() => {
+        if (historyStack.length > 0) {
+          tg.HapticFeedback.impactOccurred("light");
+          const prevStep = historyStack.pop();
+          showStep(`step-${prevStep}`, false);
+        }
+      });
+
+      btnMainAction.addEventListener("click", () => {
+        if (!btnMainAction.disabled) {
+          handleMainAction();
+        }
+      });
+
+      function updateMainButton(text, isLoading, isVisible, isActive = true) {
+        const footer = document.getElementById("htmlBottomBar");
+        if (!isVisible || currentStep === "success") {
+          footer.style.display = "none";
+          return;
+        }
+
+        footer.style.display = "block";
+        btnMainText.textContent = text;
+        btnMainAction.disabled = isLoading || !isActive;
+        btnMainLoader.style.display = isLoading ? "inline-flex" : "none";
+        btnMainText.style.display = isLoading ? "none" : "inline";
+      }
+
+      function getProgressWidth(step) {
+        const map = {
+          method: "34%",
+          otp: "67%",
+          account: "100%",
+          success: "100%",
+        };
+        return map[step] || "34%";
+      }
+
+      function showStep(stepId, pushHistory = true) {
+        if (pushHistory && currentStep && currentStep !== "success") {
+          historyStack.push(currentStep);
+        }
+
+        currentStep = stepId.replace("step-", "");
+        document.querySelectorAll(".mini-step").forEach((el) => el.classList.remove("active"));
+        document.getElementById(stepId).classList.add("active");
+
+        if (progressFill) {
+          progressFill.style.width = getProgressWidth(currentStep);
+        }
+
+        if (currentStep === "success" || historyStack.length === 0) {
+          tg.BackButton.hide();
+        } else {
+          tg.BackButton.show();
+        }
+
+        if (currentStep === "success") {
+          tg.HapticFeedback.notificationOccurred("success");
+          updateMainButton("", false, false);
+          setTimeout(() => tg.close(), 2200);
+          return;
+        }
+
+        if (currentStep === "method") {
+          updateMainButton("Send Code", false, true, false);
+        } else if (currentStep === "otp") {
+          updateMainButton("Verify Code", false, true, false);
+        } else if (currentStep === "account") {
+          updateMainButton("Link Account", false, true, false);
+        }
+      }
+
+      async function makeApiCall(endpoint, data) {
+        const url = `${window.location.protocol}//${window.location.host}/webhook/telegram/linking/${endpoint}`;
+        try {
+          const response = await fetch(url, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Telegram-Init-Data": tg.initData || "",
+            },
+            body: JSON.stringify(data),
+          });
+          return await response.json();
+        } catch (err) {
+          return { success: false, error: "Network error. Please try again." };
+        }
+      }
+
+      function renderMethods(methods) {
+        const list = document.getElementById("methodsList");
+        list.innerHTML = "";
+
+        methods.forEach((m) => {
+          const label = document.createElement("label");
+          label.className = "mini-choice";
+
+          let displayTitle = "";
+          if (m.id === "sms") {
+            displayTitle = `SMS to ${m.title}`;
+          } else if (m.id === "email") {
+            displayTitle = `Email to ${m.title}`;
+          } else {
+            displayTitle = m.title ? `${m.id} - ${m.title}` : m.id;
+          }
+
+          label.innerHTML = `
+            <div class="mini-choice-text">
+              <span class="mini-choice-title">${displayTitle}</span>
+            </div>
+            <input type="radio" name="otp_method" class="mini-radio-input" value="${m.id}" />
+            <span class="mini-radio"></span>
+          `;
+
+          label.querySelector("input").addEventListener("change", () => {
+            selectedMethod = m.id;
+            updateMainButton("Send Code", false, true, true);
+          });
+
+          list.appendChild(label);
+        });
+      }
+
+      function renderAccounts(accounts) {
+        const container = document.getElementById("accountsList");
+        container.innerHTML = "";
+
+        accounts.forEach((acc) => {
+          const title = acc.title || acc.id || "Unknown Account";
+
+          const label = document.createElement("label");
+          label.className = "mini-choice";
+          label.innerHTML = `
+            <div class="mini-choice-text">
+              <span class="mini-choice-title">${title}</span>
+            </div>
+            <input type="radio" name="account_selection" class="mini-radio-input" value="${acc.id}" />
+            <span class="mini-radio"></span>
+          `;
+
+          label.querySelector("input").addEventListener("change", (e) => {
+            selectedAccountId = e.target.value;
+            updateMainButton("Link Account", false, true, true);
+          });
+
+          container.appendChild(label);
+        });
+      }
+
+      const otpInput = document.getElementById("otpInput");
+      otpInput.addEventListener("input", () => {
+        otpInput.value = otpInput.value.replace(/\D/g, "");
+        updateMainButton("Verify Code", false, true, otpInput.value.length === 6);
+      });
+
+      async function bootstrapSession() {
+        const methodError = document.getElementById("methodError");
+        methodError.textContent = "";
+
+        updateMainButton("Loading...", true, true, false);
+        const res = await makeApiCall("method", { flow_token: flowToken });
+
+        if (!res.success) {
+          updateMainButton("Send Code", false, false, false);
+          methodError.textContent = res.error || "Linking session expired. Please restart from chat.";
+          return;
+        }
+
+        const methods = res.data?.methods || [];
+        if (!methods.length) {
+          updateMainButton("Send Code", false, false, false);
+          methodError.textContent = "No verification method found. Please restart account linking from chat.";
+          return;
+        }
+
+        renderMethods(methods);
+        showStep("step-method", false);
+      }
+
+      async function handleMainAction() {
+        tg.HapticFeedback.impactOccurred("light");
+
+        if (currentStep === "method") {
+          const methodError = document.getElementById("methodError");
+          methodError.textContent = "";
+
+          if (!selectedMethod) {
+            methodError.textContent = "Please select a method";
+            return;
+          }
+
+          updateMainButton("Sending Code...", true, true);
+          const res = await makeApiCall("method", {
+            flow_token: flowToken,
+            method: selectedMethod,
+          });
+          updateMainButton("Send Code", false, true, true);
+
+          if (!res.success) {
+            tg.HapticFeedback.notificationOccurred("error");
+            methodError.textContent = res.error || "Failed to send OTP";
+            return;
+          }
+
+          showStep("step-otp");
+          return;
+        }
+
+        if (currentStep === "otp") {
+          const otpError = document.getElementById("otpError");
+          otpError.textContent = "";
+          const otp = otpInput.value.trim();
+
+          if (otp.length !== 6) {
+            otpError.textContent = "Enter a valid 6-digit code";
+            return;
+          }
+
+          updateMainButton("Verifying...", true, true);
+          const res = await makeApiCall("otp", {
+            flow_token: flowToken,
+            otp,
+          });
+          updateMainButton("Verify Code", false, true, true);
+
+          if (!res.success) {
+            tg.HapticFeedback.notificationOccurred("error");
+            otpError.textContent = res.error || "OTP verification failed";
+            return;
+          }
+
+          const accounts = res.data?.accounts || [];
+          if (!accounts.length) {
+            tg.HapticFeedback.notificationOccurred("error");
+            otpError.textContent = "No accounts found attached to this BVN.";
+            return;
+          }
+
+          renderAccounts(accounts);
+          showStep("step-account");
+          return;
+        }
+
+        if (currentStep === "account") {
+          const accountError = document.getElementById("accountError");
+          accountError.textContent = "";
+
+          if (!selectedAccountId) {
+            accountError.textContent = "Please select an account";
+            return;
+          }
+
+          updateMainButton("Linking...", true, true);
+          const res = await makeApiCall("account", {
+            flow_token: flowToken,
+            account_id: selectedAccountId,
+          });
+          updateMainButton("Link Account", false, true, true);
+
+          if (!res.success) {
+            tg.HapticFeedback.notificationOccurred("error");
+            accountError.textContent = res.error || "Linking failed";
+            return;
+          }
+
+          try {
+            tg.sendData(
+              JSON.stringify({
+                action: "onboarding_success",
+                flow_token: flowToken,
+                mode: "relink",
+              }),
+            );
+          } catch (e) {}
+
+          showStep("step-success");
+        }
+      }
+
+      showStep("step-method", false);
+      bootstrapSession();
+    </script>
+  </body>
+</html>

@@ -393,8 +393,12 @@ class TelegramClient(MessagingClient):
         if message_id:
             await self.send_typing_indicator(to)
 
-        is_onboarding_like_flow = ("onboarding" in flow_token) or flow_token.startswith("link-")
-        endpoint = "onboarding.html" if is_onboarding_like_flow else "pin_entry.html"
+        if flow_token.startswith("link-"):
+            endpoint = "linking.html"
+        elif "onboarding" in flow_token:
+            endpoint = "onboarding.html"
+        else:
+            endpoint = "pin_entry.html"
         import time
 
         mini_app_url = (

@@ -105,26 +105,46 @@ class LinkingSessionInput(BaseModel):
     flow_token: str
 
 
+def _invalid_linking_session_error() -> dict:
+    return {"success": False, "error": "Invalid linking session. Please start account linking again."}
+
+
+def _expired_linking_session_error() -> dict:
+    return {"success": False, "error": "Linking session expired. Please start account linking again."}
+
+
+def _no_linking_methods_error() -> dict:
+    return {"success": False, "error": "No verification methods found. Please restart account linking."}
+
+
+async def _get_valid_linking_session(flow_token: str) -> tuple[dict | None, dict | None]:
+    token = (flow_token or "").strip()
+    if not token or not token.startswith("link-"):
+        return None, _invalid_linking_session_error()
+
+    session = await bvn_service.get_session_data(token)
+    if not session:
+        return None, _expired_linking_session_error()
+
+    if not bool(session.get("is_account_linking")):
+        return None, _invalid_linking_session_error()
+
+    return session, None
+
+
 @router.post("/telegram/onboarding/linking_session")
 async def telegram_onboarding_linking_session(
     data: LinkingSessionInput, user_data: dict = Depends(verify_telegram_init_data)
 ) -> dict:
     """Fetch pre-seeded account relinking session data for Telegram mini app."""
     del user_data
-    flow_token = (data.flow_token or "").strip()
-    if not flow_token or not flow_token.startswith("link-"):
-        return {"success": False, "error": "Invalid linking session. Please start account linking again."}
-
-    session = await bvn_service.get_session_data(flow_token)
-    if not session:
-        return {"success": False, "error": "Linking session expired. Please start account linking again."}
-
-    if not bool(session.get("is_account_linking")):
-        return {"success": False, "error": "Invalid linking session. Please start account linking again."}
+    session, error = await _get_valid_linking_session(data.flow_token)
+    if error:
+        return error
 
     methods = session.get("methods", [])
     if not isinstance(methods, list) or not methods:
-        return {"success": False, "error": "No verification methods found. Please restart account linking."}
+        return _no_linking_methods_error()
 
     return {
         "success": True,
@@ -147,6 +167,69 @@ class OtpInput(BaseModel):
     otp: str
 
 
+class LinkingMethodInput(BaseModel):
+    flow_token: str
+    method: str | None = None
+
+
+@router.post("/telegram/linking/method")
+async def telegram_linking_method(
+    data: LinkingMethodInput, user_data: dict = Depends(verify_telegram_init_data)
+) -> dict:
+    """Handle METHOD_SELECTION step for Telegram relinking flow."""
+    del user_data
+
+    session, error = await _get_valid_linking_session(data.flow_token)
+    if error:
+        return error
+
+    if not data.method:
+        methods = session.get("methods", [])
+        if not isinstance(methods, list) or not methods:
+            return _no_linking_methods_error()
+        return {
+            "success": True,
+            "data": {
+                "bvn": session.get("bvn", ""),
+                "methods": methods,
+            },
+        }
+
+    return await bvn_service.send_otp(data.flow_token, data.method)
+
+
+class LinkingOtpInput(BaseModel):
+    flow_token: str
+    otp: str
+
+
+@router.post("/telegram/linking/otp")
+async def telegram_linking_otp(data: LinkingOtpInput, user_data: dict = Depends(verify_telegram_init_data)) -> dict:
+    """Handle OTP verification step for Telegram relinking flow."""
+    del user_data
+    _, error = await _get_valid_linking_session(data.flow_token)
+    if error:
+        return error
+    return await bvn_service.verify_otp(data.flow_token, data.otp)
+
+
+class LinkingAccountInput(BaseModel):
+    flow_token: str
+    account_id: str
+
+
+@router.post("/telegram/linking/account")
+async def telegram_linking_account(
+    data: LinkingAccountInput, user_data: dict = Depends(verify_telegram_init_data)
+) -> dict:
+    """Handle account selection step for Telegram relinking flow."""
+    del user_data
+    _, error = await _get_valid_linking_session(data.flow_token)
+    if error:
+        return error
+    return await account_add_service.add_account(data.flow_token, data.account_id)
+
+
 @router.post("/telegram/onboarding/otp")
 async def telegram_onboarding_otp(data: OtpInput, user_data: dict = Depends(verify_telegram_init_data)) -> dict:
     """Handle OTP verification for Telegram Onboarding."""
@@ -163,9 +246,6 @@ class AccountInput(BaseModel):
 async def telegram_onboarding_account(data: AccountInput, user_data: dict = Depends(verify_telegram_init_data)) -> dict:
     """Handle Account selection for Telegram Onboarding."""
     del user_data
-    if data.flow_token.startswith("link-"):
-        return await account_add_service.add_account(data.flow_token, data.account_id)
-
     result = await account_service.select_account(data.flow_token, data.account_id)
     return result
 
