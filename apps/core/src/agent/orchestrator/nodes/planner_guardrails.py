@@ -1,15 +1,27 @@
 """Planner guardrail helper functions."""
 
-import re
-from typing import Any
+from typing import Any, Literal
 
-from apps.core.src.agent.graphs.query.services.parser import QueryParser
+from pydantic import BaseModel, Field
+
 from apps.core.src.agent.orchestrator.nodes.planner_fastpath import TRANSACTION_EXECUTORS
 from shared.services.onboarding.mandate_messages import build_pending_mandate_message
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
-_BENEFICIARY_TERM_RE = re.compile(r"\bbeneficiar(?:y|ies)\b", re.IGNORECASE)
+
+
+class BeneficiaryRouteDecision(BaseModel):
+    """LLM disambiguation between beneficiary management and recipient analytics."""
+
+    route: Literal["beneficiary_list", "recipient_ranking", "other"] = Field(
+        default="other",
+        description=(
+            "Route beneficiary-like request either to beneficiary list management, "
+            "recipient ranking analytics, or other."
+        ),
+    )
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
 
 
 def _filter_spurious_affirmation_tasks(
@@ -110,41 +122,72 @@ def _deescalate_mandate_acknowledgement(
     return planner_output
 
 
-def _repair_beneficiary_summary_misroute(
+async def _repair_beneficiary_summary_misroute(
     planner_output: Any,
     *,
     user_text: str,
+    task_planner: Any,
 ) -> Any:
-    """Rewrite mistaken query beneficiary-summary tasks to beneficiary list-management tasks."""
+    """Rewrite mistaken query beneficiary-summary tasks using LLM-directed disambiguation."""
     if not planner_output or not getattr(planner_output, "tasks", None):
         return planner_output
 
-    normalized_text = (user_text or "").strip()
-    if not normalized_text:
-        return planner_output
-    if not _BENEFICIARY_TERM_RE.search(normalized_text):
-        return planner_output
-    if QueryParser._has_targeted_beneficiary_summary_cue(normalized_text):
+    text = (user_text or "").strip()
+    if not text:
         return planner_output
 
-    rewired = 0
-    for task in planner_output.tasks:
-        if getattr(task, "executor", None) == "query" and getattr(task, "action", None) == "beneficiary_summary":
-            task.executor = "beneficiary"
-            task.action = "list_beneficiaries"
-            task.risk = "READ_ONLY"
-            rewired += 1
-
-    if rewired == 0:
+    summary_tasks = [
+        task
+        for task in planner_output.tasks
+        if getattr(task, "executor", None) == "query" and getattr(task, "action", None) == "beneficiary_summary"
+    ]
+    if not summary_tasks:
         return planner_output
 
-    if len(planner_output.tasks) == 1:
+    planner_llm = getattr(task_planner, "planner_llm", None)
+    if planner_llm is None or not callable(getattr(planner_llm, "with_structured_output", None)):
+        return planner_output
+
+    try:
+        structured = planner_llm.with_structured_output(BeneficiaryRouteDecision)
+        decision = await structured.ainvoke(
+            [
+                {
+                    "role": "system",
+                    "content": (
+                        "Classify the user's intent for routing. "
+                        "Use 'beneficiary_list' when they ask to view/manage saved beneficiaries. "
+                        "Use 'recipient_ranking' when they ask who they send money to most/top recipients. "
+                        "Use 'other' otherwise."
+                    ),
+                },
+                {"role": "user", "content": text},
+            ]
+        )
+        parsed = decision if isinstance(decision, BeneficiaryRouteDecision) else BeneficiaryRouteDecision(**decision)
+    except Exception as exc:
+        logger.warning("beneficiary_route_disambiguation_failed", error=str(exc))
+        return planner_output
+
+    if parsed.route != "beneficiary_list":
+        return planner_output
+
+    for task in summary_tasks:
+        task.executor = "beneficiary"
+        task.action = "list_beneficiaries"
+        task.risk = "READ_ONLY"
+
+    if len(planner_output.tasks) == len(summary_tasks):
         planner_output.primary_intent = "beneficiary"
         planner_output.is_complex = False
 
     planner_output.response = ""
     planner_output.response_key = None
-    logger.info("beneficiary_summary_misroute_repaired", rewired_tasks=rewired)
+    logger.info(
+        "beneficiary_summary_misroute_repaired",
+        rewired_tasks=len(summary_tasks),
+        confidence=parsed.confidence,
+    )
     return planner_output
 
 

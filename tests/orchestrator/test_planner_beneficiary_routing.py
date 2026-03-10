@@ -26,6 +26,32 @@ class _MockPlanner:
         return self._output
 
 
+class _RouteStructured:
+    def __init__(self, route: str, confidence: float = 0.95) -> None:
+        self._route = route
+        self._confidence = confidence
+
+    async def ainvoke(self, prompt: object) -> dict[str, Any]:
+        del prompt
+        return {"route": self._route, "confidence": self._confidence}
+
+
+class _RouteLLM:
+    def __init__(self, route: str, confidence: float = 0.95) -> None:
+        self._route = route
+        self._confidence = confidence
+
+    def with_structured_output(self, schema: object) -> _RouteStructured:
+        del schema
+        return _RouteStructured(self._route, self._confidence)
+
+
+class _RoutingPlanner(_MockPlanner):
+    def __init__(self, output: PlannerOutput, route: str, confidence: float = 0.95) -> None:
+        super().__init__(output)
+        self.planner_llm = _RouteLLM(route, confidence)
+
+
 @pytest.mark.asyncio
 async def test_show_beneficiaries_rewrites_query_beneficiary_summary_to_beneficiary_list_task() -> None:
     planner_output = PlannerOutput(
@@ -58,7 +84,11 @@ async def test_show_beneficiaries_rewrites_query_beneficiary_summary_to_benefici
         loaded_context={"language": "en"},
     )
     config: RunnableConfig = {
-        "configurable": {"task_planner": _MockPlanner(planner_output), "services": {}, "redis_client": None},
+        "configurable": {
+            "task_planner": _RoutingPlanner(planner_output, route="beneficiary_list"),
+            "services": {},
+            "redis_client": None,
+        },
         "recursion_limit": 50,
     }
 
@@ -101,7 +131,11 @@ async def test_top_recipients_query_keeps_query_beneficiary_summary_task() -> No
         loaded_context={"language": "en"},
     )
     config: RunnableConfig = {
-        "configurable": {"task_planner": _MockPlanner(planner_output), "services": {}, "redis_client": None},
+        "configurable": {
+            "task_planner": _RoutingPlanner(planner_output, route="recipient_ranking"),
+            "services": {},
+            "redis_client": None,
+        },
         "recursion_limit": 50,
     }
 

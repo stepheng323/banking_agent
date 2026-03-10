@@ -78,9 +78,10 @@ async def _execute_planner_with_context(
         loaded_context=state.loaded_context,
         locale=current_locale,
     )
-    planner_output = _repair_beneficiary_summary_misroute(
+    planner_output = await _repair_beneficiary_summary_misroute(
         planner_output,
         user_text=text,
+        task_planner=task_planner,
     )
     logger.info("planner_tasks_generated", output=planner_output)
 
