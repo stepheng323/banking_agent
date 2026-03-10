@@ -1,5 +1,6 @@
 """Context read fastpath planner helpers."""
 
+import re
 import time
 from typing import Any, cast
 
@@ -37,6 +38,22 @@ TRANSACTION_EXECUTORS = {"transfer", "airtime", "data"}
 BENEFICIARY_MATCH_PREVIEW_LIMIT = 3
 BENEFICIARY_FASTPATH_PERSIST_SUBTYPES = {"beneficiary_list", "beneficiary_name_match_preview"}
 NO_ACTIVE_FLOW_FASTPATH_MESSAGE = "There is no active transfer flow right now. Start a transfer and I will guide you."
+ACCOUNT_LINK_PATTERNS = (
+    r"\blink\b",
+    r"\badd\b",
+    r"\bconnect\b",
+    r"\bnew\s+account\b",
+)
+ACCOUNT_UNLINK_PATTERNS = (
+    r"\bunlink\b",
+    r"\bremove\b",
+    r"\bdisconnect\b",
+)
+ACCOUNT_SET_DEFAULT_PATTERNS = (
+    r"\bset\b.*\bdefault\b",
+    r"\bmake\b.*\bdefault\b",
+    r"\bdefault\b.*\baccount\b",
+)
 
 
 def _infer_recent_domain_focus(state: OrchestratorState) -> str | None:
@@ -180,13 +197,17 @@ def _build_beneficiary_fastpath_context_updates(
 def _build_fastpath_fallback_task(subtype: str, message_text: str) -> PlannedTask | None:
     """Build a read-only worker task when fastpath should not answer directly."""
     if subtype in CONTEXT_FASTPATH_ACCOUNT_SUBTYPES:
+        action = _infer_account_fallback_action(message_text)
+        risk = "READ_ONLY"
+        if action in {"link", "unlink", "set_default"}:
+            risk = "MUTATION"
         return PlannedTask(
             task_id="t1",
-            action="list_accounts",
+            action=action,
             executor="account",
             instruction=message_text,
             parameters=TaskParameters(),
-            risk="READ_ONLY",
+            risk=risk,
         )
 
     if subtype in CONTEXT_FASTPATH_BENEFICIARY_SUBTYPES:
@@ -202,6 +223,26 @@ def _build_fastpath_fallback_task(subtype: str, message_text: str) -> PlannedTas
     return None
 
 
+def _infer_account_fallback_action(message_text: str) -> str:
+    normalized = " ".join(message_text.strip().lower().split())
+    if not normalized:
+        return "list_accounts"
+
+    if any(re.search(pattern, normalized) for pattern in ACCOUNT_SET_DEFAULT_PATTERNS):
+        return "set_default"
+    if any(re.search(pattern, normalized) for pattern in ACCOUNT_UNLINK_PATTERNS):
+        return "unlink"
+    if any(re.search(pattern, normalized) for pattern in ACCOUNT_LINK_PATTERNS):
+        return "link"
+    return "list_accounts"
+
+
+def _should_bypass_account_read_fastpath(subtype: str, message_text: str) -> bool:
+    if subtype not in CONTEXT_FASTPATH_ACCOUNT_SUBTYPES:
+        return False
+    return _infer_account_fallback_action(message_text) != "list_accounts"
+
+
 __all__ = [
     "NO_ACTIVE_FLOW_FASTPATH_MESSAGE",
     "TRANSACTION_EXECUTORS",
@@ -212,4 +253,5 @@ __all__ = [
     "_has_context_for_fastpath_subtype",
     "_infer_recent_domain_focus",
     "_planner_fastpath_subtype",
+    "_should_bypass_account_read_fastpath",
 ]

@@ -273,6 +273,44 @@ async def test_fastpath_v2_account_linked_bank_existence_check_falls_back_when_a
 
 
 @pytest.mark.asyncio
+async def test_fastpath_v2_link_account_request_bypasses_account_summary_read_path() -> None:
+    planner_output = PlannerOutput(
+        primary_intent="conversational",
+        response="Here are your linked accounts.",
+        response_key=None,
+        confidence=0.9,
+        is_complex=False,
+        is_cancellation=False,
+        is_confirmation=False,
+        detected_language="English",
+        context_fastpath_subtype="linked_accounts_summary",
+        normalized_instruction="link account",
+        tasks=[],
+    )
+    state = OrchestratorState(
+        user_id="u_v2_2b",
+        phone_number="2348555555556",
+        channel="whatsapp",
+        last_message_text="Link account",
+        loaded_context={
+            "accounts": [
+                {"bank_name": "Zenith", "account_number": "9384"},
+            ]
+        },
+    )
+    config: RunnableConfig = {
+        "configurable": {"task_planner": _MockPlanner(planner_output), "services": {}, "redis_client": None},
+        "recursion_limit": 50,
+    }
+
+    updates = await plan_tasks(state, config)
+    task = updates["tasks"]["t1"]
+    assert task.type == "account"
+    assert task.payload.get("action") == "link"
+    assert "final_response" not in updates
+
+
+@pytest.mark.asyncio
 async def test_fastpath_v2_beneficiary_name_match_preview_uses_direct_response() -> None:
     planner_output = PlannerOutput(
         primary_intent="conversational",

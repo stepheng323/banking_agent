@@ -13,6 +13,7 @@ from apps.core.src.agent.orchestrator.nodes.planner_fastpath import (
     _context_fastpath_total_items,
     _has_context_for_fastpath_subtype,
     _planner_fastpath_subtype,
+    _should_bypass_account_read_fastpath,
 )
 from apps.core.src.agent.orchestrator.nodes.planner_guardrails import (
     _deescalate_mandate_acknowledgement,
@@ -67,6 +68,9 @@ async def _execute_planner_with_context(
         has_no_tasks = not planner_output.tasks
         is_conversational_no_task = planner_output.primary_intent == "conversational" and has_no_tasks
         is_flow_fastpath = fastpath_subtype in CONTEXT_FASTPATH_FLOW_SUBTYPES
+        bypass_read_fastpath = _should_bypass_account_read_fastpath(fastpath_subtype, text)
+        if bypass_read_fastpath:
+            has_context_for_fastpath = False
 
         if is_conversational_no_task and has_context_for_fastpath:
             logger.info("context_fastpath_hit", subtype=fastpath_subtype)
@@ -80,7 +84,9 @@ async def _execute_planner_with_context(
                     total=total_items,
                 )
         else:
-            if not has_context_for_fastpath:
+            if bypass_read_fastpath:
+                fallback_reason = "account_mutation_request"
+            elif not has_context_for_fastpath:
                 fallback_reason = "insufficient_context"
             elif has_no_tasks:
                 fallback_reason = "invalid_no_task_shape"
