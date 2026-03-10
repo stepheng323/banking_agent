@@ -3,7 +3,6 @@
 from dataclasses import dataclass
 from typing import Any
 
-from apps.core.src.agent.graphs.account.parser import AccountParser
 from apps.core.src.agent.orchestrator.models.state import OrchestratorState
 from apps.core.src.agent.orchestrator.nodes.planner_fastpath import (
     CONTEXT_FASTPATH_ACCOUNT_SUBTYPES,
@@ -26,6 +25,7 @@ from shared.services.task_planner_prompt_models import PlannerPromptSignals
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
+_ACCOUNT_FASTPATH_NON_OVERRIDE_ACTIONS = {"none", "unknown", "list", "list_accounts", "count"}
 
 
 @dataclass(slots=True)
@@ -33,23 +33,6 @@ class PlannerExecutionResult:
     planner_output: Any
     current_locale: str
     fastpath_context_updates: dict[str, Any]
-
-
-async def _infer_account_fastpath_action(task_planner: Any, text: str) -> str | None:
-    planner_llm = getattr(task_planner, "planner_llm", None)
-    if planner_llm is None or not callable(getattr(planner_llm, "with_structured_output", None)):
-        return None
-
-    try:
-        parser = AccountParser(planner_llm)
-        parsed = await parser.parse(text)
-    except Exception as exc:
-        logger.warning("account_fastpath_action_inference_failed", error=str(exc))
-        return None
-
-    action = getattr(parsed, "action", None)
-    return str(action) if action else None
-
 
 async def _execute_planner_with_context(
     *,
@@ -93,11 +76,11 @@ async def _execute_planner_with_context(
         is_flow_fastpath = fastpath_subtype in CONTEXT_FASTPATH_FLOW_SUBTYPES
         account_fallback_action: str | None = None
 
-        if fastpath_subtype in CONTEXT_FASTPATH_ACCOUNT_SUBTYPES and has_no_tasks:
-            inferred_action = await _infer_account_fastpath_action(task_planner, text)
-            if inferred_action and inferred_action not in {"list", "count", "unknown"}:
+        if has_no_tasks and fastpath_subtype in CONTEXT_FASTPATH_ACCOUNT_SUBTYPES:
+            account_action_hint = str(getattr(planner_output, "account_action_hint", "none") or "none").strip().lower()
+            if account_action_hint not in _ACCOUNT_FASTPATH_NON_OVERRIDE_ACTIONS:
                 has_context_for_fastpath = False
-                account_fallback_action = inferred_action
+                account_fallback_action = account_action_hint
 
         if is_conversational_no_task and has_context_for_fastpath:
             logger.info("context_fastpath_hit", subtype=fastpath_subtype)

@@ -1,27 +1,12 @@
 """Planner guardrail helper functions."""
 
-from typing import Any, Literal
-
-from pydantic import BaseModel, Field
+from typing import Any
 
 from apps.core.src.agent.orchestrator.nodes.planner_fastpath import TRANSACTION_EXECUTORS
 from shared.services.onboarding.mandate_messages import build_pending_mandate_message
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
-
-
-class BeneficiaryRouteDecision(BaseModel):
-    """LLM disambiguation between beneficiary management and recipient analytics."""
-
-    route: Literal["beneficiary_list", "recipient_ranking", "other"] = Field(
-        default="other",
-        description=(
-            "Route beneficiary-like request either to beneficiary list management, "
-            "recipient ranking analytics, or other."
-        ),
-    )
-    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
 
 
 def _filter_spurious_affirmation_tasks(
@@ -128,12 +113,9 @@ async def _repair_beneficiary_summary_misroute(
     user_text: str,
     task_planner: Any,
 ) -> Any:
-    """Rewrite mistaken query beneficiary-summary tasks using LLM-directed disambiguation."""
+    """Rewrite mistaken query beneficiary-summary tasks using planner-provided route hint."""
+    del user_text, task_planner
     if not planner_output or not getattr(planner_output, "tasks", None):
-        return planner_output
-
-    text = (user_text or "").strip()
-    if not text:
         return planner_output
 
     summary_tasks = [
@@ -144,32 +126,8 @@ async def _repair_beneficiary_summary_misroute(
     if not summary_tasks:
         return planner_output
 
-    planner_llm = getattr(task_planner, "planner_llm", None)
-    if planner_llm is None or not callable(getattr(planner_llm, "with_structured_output", None)):
-        return planner_output
-
-    try:
-        structured = planner_llm.with_structured_output(BeneficiaryRouteDecision)
-        decision = await structured.ainvoke(
-            [
-                {
-                    "role": "system",
-                    "content": (
-                        "Classify the user's intent for routing. "
-                        "Use 'beneficiary_list' when they ask to view/manage saved beneficiaries. "
-                        "Use 'recipient_ranking' when they ask who they send money to most/top recipients. "
-                        "Use 'other' otherwise."
-                    ),
-                },
-                {"role": "user", "content": text},
-            ]
-        )
-        parsed = decision if isinstance(decision, BeneficiaryRouteDecision) else BeneficiaryRouteDecision(**decision)
-    except Exception as exc:
-        logger.warning("beneficiary_route_disambiguation_failed", error=str(exc))
-        return planner_output
-
-    if parsed.route != "beneficiary_list":
+    route_hint = str(getattr(planner_output, "beneficiary_route", "none") or "none").strip().lower()
+    if route_hint != "beneficiary_list":
         return planner_output
 
     for task in summary_tasks:
@@ -186,7 +144,7 @@ async def _repair_beneficiary_summary_misroute(
     logger.info(
         "beneficiary_summary_misroute_repaired",
         rewired_tasks=len(summary_tasks),
-        confidence=parsed.confidence,
+        route_hint=route_hint,
     )
     return planner_output
 

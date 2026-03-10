@@ -81,6 +81,21 @@ PlannerResponseKey: TypeAlias = Literal[
 ]
 
 TransactionExecutor: TypeAlias = Literal["transfer", "airtime", "data"]
+BeneficiaryRouteHint: TypeAlias = Literal["beneficiary_list", "recipient_ranking", "none"]
+AccountActionHint: TypeAlias = Literal[
+    "list",
+    "list_accounts",
+    "count",
+    "check_balance",
+    "balance",
+    "show_balance",
+    "overall_balance",
+    "link",
+    "unlink",
+    "set_default",
+    "unknown",
+    "none",
+]
 
 TurnRoutingDecision: TypeAlias = Literal["go_planner", "respond_directly", "query_continuation"]
 
@@ -186,6 +201,21 @@ class PlannerOutput(BaseModel):
         description=(
             "Set only for context-backed read-only account/beneficiary asks that are eligible for fastpath; "
             "otherwise null"
+        ),
+    )
+    beneficiary_route: BeneficiaryRouteHint = Field(
+        default="none",
+        description=(
+            "Beneficiary routing hint from planner: "
+            "beneficiary_list when asking to view/manage saved beneficiaries, "
+            "recipient_ranking when asking who user sends to most, otherwise none"
+        ),
+    )
+    account_action_hint: AccountActionHint = Field(
+        default="none",
+        description=(
+            "Account action hint for context-fastpath disambiguation: "
+            "list/list_accounts/count/check_balance/link/unlink/set_default, else none"
         ),
     )
 

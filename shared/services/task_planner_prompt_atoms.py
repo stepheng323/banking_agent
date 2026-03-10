@@ -8,8 +8,15 @@ PLANNER_RUNTIME_SCHEMA_PROMPT = """## OUTPUT JSON
 - context_fastpath_subtype only for context-read fastpath.
 - action must be concrete and executor-matched; never use family names.
 - transfer: send_money|schedule_transfer|recurring_transfer|list_scheduled_transfers|cancel_scheduled_transfer.
+- beneficiary: list_beneficiaries|add_beneficiary|delete_beneficiary|update_beneficiary|save_beneficiary.
 - query: transaction_list|transaction_search|analytics_summary|time_comparison|beneficiary_summary|affordability.
-- For executor=query, action must be one query action above (never "query")."""
+- For executor=query, action must be one query action above (never "query").
+- beneficiary_route must be beneficiary_list|recipient_ranking|none.
+- Ask to view/manage saved beneficiaries -> beneficiary.list_beneficiaries + beneficiary_route=beneficiary_list.
+- Ask top/most frequent recipients -> query.beneficiary_summary + beneficiary_route=recipient_ranking.
+- account_action_hint must be one of:
+  list|list_accounts|count|check_balance|balance|show_balance|overall_balance|link|unlink|set_default|unknown|none.
+- For account asks, set account_action_hint even when using context fastpath with tasks=[]."""
 
 PLANNER_TRANSFER_PRECISION_PROMPT = """## MONEY_MOVE PRECISION
 - Keep recipient exactly as typed; no context expansion.
@@ -51,6 +58,8 @@ PLANNER_RULE_ATOMS: dict[str, str] = {
     ),
     "R22_MIXED_MONEY_MOVE": "explicit transfer+airtime+data mix->emit all tasks in order",
     "R23_MULTILINGUAL_SAFETY": "rules_apply_semantically_across_supported_languages",
+    "R24_BENEFICIARY_ROUTE": "saved_beneficiaries->beneficiary_list; top_recipients->recipient_ranking",
+    "R25_ACCOUNT_ACTION_HINT": "account_asks->account_action_hint even_when tasks=[]",
 }
 
 PLANNER_RULE_ATOM_ORDER = [
@@ -77,6 +86,8 @@ PLANNER_RULE_ATOM_ORDER = [
     "R21_TRANSFER_SCHEDULING",
     "R22_MIXED_MONEY_MOVE",
     "R23_MULTILINGUAL_SAFETY",
+    "R24_BENEFICIARY_ROUTE",
+    "R25_ACCOUNT_ACTION_HINT",
 ]
 
 # Critical rules whose semantics must be explicit in the compiled prompt to prevent drift.
@@ -84,6 +95,8 @@ PLANNER_RULE_SEMANTIC_GUARD_IDS = {
     "R05_CANCEL_CONFIRM",
     "R14_REFERENCE_BINDING",
     "R17_FASTPATH_FALLBACK",
+    "R24_BENEFICIARY_ROUTE",
+    "R25_ACCOUNT_ACTION_HINT",
 }
 
 PLANNER_BASE_RULE_ATOMS = {
@@ -101,6 +114,8 @@ PLANNER_BASE_RULE_ATOMS = {
     "R17_FASTPATH_FALLBACK",
     "R18_FASTPATH_SUBTYPE",
     "R23_MULTILINGUAL_SAFETY",
+    "R24_BENEFICIARY_ROUTE",
+    "R25_ACCOUNT_ACTION_HINT",
 }
 
 PLANNER_MONEY_MOVE_RULE_ATOMS = {
@@ -122,7 +137,10 @@ PLANNER_CONTEXT_RULE_ATOMS = {
 PLANNER_RUNTIME_COMMON_EXAMPLES = """## TARGETED EXAMPLES (COMMON)
 - How far -> conversational.checkin.
 - Send 8k -> send_money amount=8000 (recipient omitted).
-- Buy 1k airtime -> buy_airtime amount=1000."""
+- Buy 1k airtime -> buy_airtime amount=1000.
+- "Show my beneficiaries" -> beneficiary.list_beneficiaries + beneficiary_route=beneficiary_list.
+- "Who do I send to most?" -> query.beneficiary_summary + beneficiary_route=recipient_ranking.
+- "Link account" + account fastpath context -> tasks=[] allowed, account_action_hint=link."""
 
 PLANNER_RUNTIME_MONEY_MOVE_EXAMPLES = """## TARGETED EXAMPLES (MONEY_MOVE)
 - Send 10k to Mum and buy 5k airtime -> send_money + buy_airtime.

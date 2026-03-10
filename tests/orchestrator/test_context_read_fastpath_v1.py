@@ -1,7 +1,5 @@
 """Tests for context-read fastpath planner behavior."""
 
-from typing import Any
-
 import pytest
 from langchain_core.runnables import RunnableConfig
 
@@ -13,11 +11,8 @@ from shared.types.planner import PlannerOutput
 
 
 class _MockPlanner:
-    planner_llm: Any | None
-
     def __init__(self, output: PlannerOutput) -> None:
         self._output = output
-        self.planner_llm = object()
 
     async def plan_tasks(self, phone_number: str, text: str, *, context: str = "None", prompt_signals: object | None = None) -> PlannerOutput:
         del phone_number, text, context
@@ -33,30 +28,6 @@ class _CapturingPlanner(_MockPlanner):
         del phone_number, text
         self.last_context = context
         return self._output
-
-
-class _AccountParserStructured:
-    def __init__(self, action: str) -> None:
-        self._action = action
-
-    async def ainvoke(self, prompt: object) -> dict[str, Any]:
-        del prompt
-        return {"action": self._action, "identifier": None, "language": "english"}
-
-
-class _AccountParserLLM:
-    def __init__(self, action: str) -> None:
-        self._action = action
-
-    def with_structured_output(self, schema: object) -> _AccountParserStructured:
-        del schema
-        return _AccountParserStructured(self._action)
-
-
-class _AccountIntentPlanner(_MockPlanner):
-    def __init__(self, output: PlannerOutput, inferred_action: str) -> None:
-        super().__init__(output)
-        self.planner_llm = _AccountParserLLM(inferred_action)
 
 
 @pytest.mark.asyncio
@@ -308,6 +279,7 @@ async def test_fastpath_v2_link_account_request_bypasses_account_summary_read_pa
         is_confirmation=False,
         detected_language="English",
         context_fastpath_subtype="linked_accounts_summary",
+        account_action_hint="link",
         normalized_instruction="link account",
         tasks=[],
     )
@@ -324,7 +296,7 @@ async def test_fastpath_v2_link_account_request_bypasses_account_summary_read_pa
     )
     config: RunnableConfig = {
         "configurable": {
-            "task_planner": _AccountIntentPlanner(planner_output, inferred_action="link"),
+            "task_planner": _MockPlanner(planner_output),
             "services": {},
             "redis_client": None,
         },
