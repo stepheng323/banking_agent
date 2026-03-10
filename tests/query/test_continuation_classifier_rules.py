@@ -2,7 +2,7 @@ from datetime import date
 
 import pytest
 
-from apps.core.src.agent.graphs.query.models import ResultSurface, SurfaceType
+from apps.core.src.agent.graphs.query.models import QueryResultItem, ResultSurface, SurfaceType
 from apps.core.src.agent.graphs.query.services.continuity import ContinuationClassification, ContinuationClassifier
 
 
@@ -198,3 +198,42 @@ async def test_balance_phrase_uses_llm_path_when_session_is_active() -> None:
 
     assert continuation_type == "new_query"
     assert data["reason"] == "llm_balance_new_query"
+
+
+@pytest.mark.asyncio
+async def test_beneficiary_summary_name_reply_maps_to_deterministic_recipient_drilldown() -> None:
+    classifier = ContinuationClassifier(_FailingLLM())
+    surface = ResultSurface(type=SurfaceType.SUMMARY, items=[], context={"view": "beneficiary_summary"})
+    items = [QueryResultItem(description="Gaines", amount=25000, date=date(2026, 3, 10))]
+
+    continuation_type, data = await classifier.classify(
+        message="Gaines.",
+        has_active_session=True,
+        today="2026-03-10",
+        items=items,
+        surface=surface,
+    )
+
+    assert continuation_type == "recipient_drill_down"
+    assert data["reason"] == "deterministic_recipient_drill_down"
+    assert data["recipient_name"] == "Gaines"
+
+
+@pytest.mark.asyncio
+async def test_llm_recipient_drilldown_preserves_recipient_name_in_payload() -> None:
+    llm_result = ContinuationClassification(
+        continuation_type="recipient_drill_down",
+        confidence=0.92,
+        reason="llm_recipient_reply",
+        recipient_name="Mum",
+    )
+    classifier = ContinuationClassifier(_DummyLLM(llm_result))
+
+    continuation_type, data = await classifier.classify(
+        message="Mum",
+        has_active_session=True,
+        today="2026-03-10",
+    )
+
+    assert continuation_type == "recipient_drill_down"
+    assert data["recipient_name"] == "Mum"

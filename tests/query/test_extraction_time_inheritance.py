@@ -268,3 +268,49 @@ async def test_time_delta_follow_up_preserves_time_comparison_intent() -> None:
     assert updates["flow_state"] == "executing"
     assert updates["query_contract"].intent == QueryIntent.TIME_COMPARISON
     assert updates["query_contract"].normalized_query.intent == QueryIntent.TIME_COMPARISON
+
+
+@pytest.mark.asyncio
+async def test_recipient_drilldown_follow_up_applies_merchant_filter() -> None:
+    step = ExtractionStep(_DummyLLM())
+    today = date(2026, 3, 10)
+    session_query = NormalizedQuery(
+        intent=QueryIntent.BENEFICIARY_SUMMARY,
+        time_range=TimeRange(start=date(2026, 3, 1), end=today),
+    )
+    session_contract = QueryExecutionContract.from_normalized_query(session_query)
+
+    async def _fake_classify(
+        message: str,
+        has_active_session: bool,
+        today: str,
+        items: list | None = None,
+        surface: object | None = None,
+        language: str = "en",
+    ) -> tuple[str, dict]:
+        del message, has_active_session, today, items, surface, language
+        return (
+            "recipient_drill_down",
+            {
+                "recipient_name": "Gaines",
+                "delta_type": "filter",
+                "confidence": 0.99,
+                "reason": "deterministic_recipient_drill_down",
+            },
+        )
+
+    step.classifier.classify = _fake_classify  # type: ignore[method-assign]
+
+    updates = await step._handle_continuation(
+        {"message": "Gaines", "today": today, "language": "en"},
+        {
+            "session_active": True,
+            "query_contract": session_contract.model_dump(),
+            "query_result": {"items": []},
+        },
+    )
+
+    assert updates["flow_state"] == "executing"
+    assert updates["continuation_type"] == "recipient_drill_down"
+    assert updates["query_contract"].normalized_query.filters is not None
+    assert updates["query_contract"].normalized_query.filters.merchant == ["Gaines"]

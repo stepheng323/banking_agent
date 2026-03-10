@@ -138,25 +138,15 @@ def resolve(extraction: QueryExtractionResult, *, language: str = "en") -> Resol
 
     # Check capabilities
     missing = check_capabilities(extraction.requested_capabilities)
+    pre_clamped_days: int | None = None
+
+    # TIME_ALL is auto-negotiated to bounded relative window; proceed without blocked messaging.
+    if QueryCapability.TIME_ALL in missing:
+        extraction, pre_clamped_days = clamp_time_range(extraction)
+        missing = [cap for cap in missing if cap != QueryCapability.TIME_ALL]
 
     if missing:
         cap = missing[0]
-
-        # Can we auto-negotiate?
-        if cap == QueryCapability.TIME_ALL:
-            # Auto-clamp to max and negotiate
-            extraction, clamped_days = clamp_time_range(extraction)
-            return ResolverDecision(
-                decision=Decision.NEGOTIATE,
-                extraction=extraction,
-                negotiation=Negotiation(
-                    original_capability=RequestedCapability.TIME_ALL,
-                    alternative=QueryCapability.TIME_RELATIVE,
-                    message=generate_limitation_message([cap], locale=language),
-                    auto_apply=False,  # Ask user first
-                ),
-                clamped=ClampedValues(days_back=clamped_days),
-            )
 
         if cap == QueryCapability.SEARCH_NARRATION_FUZZY:
             return ResolverDecision(
@@ -168,6 +158,7 @@ def resolve(extraction: QueryExtractionResult, *, language: str = "en") -> Resol
                     message=generate_limitation_message([cap], locale=language),
                     auto_apply=False,
                 ),
+                clamped=ClampedValues(days_back=pre_clamped_days) if pre_clamped_days else ClampedValues(),
             )
 
         # No alternative available
@@ -185,13 +176,15 @@ def resolve(extraction: QueryExtractionResult, *, language: str = "en") -> Resol
                     message=generate_limitation_message([cap], locale=language),
                     auto_apply=False,
                 ),
+                clamped=ClampedValues(days_back=pre_clamped_days) if pre_clamped_days else ClampedValues(),
             )
 
     # Clamp time if needed (even for supported queries)
     extraction, clamped_days = clamp_time_range(extraction)
+    final_clamped_days = clamped_days or pre_clamped_days
 
     return ResolverDecision(
         decision=Decision.PROCEED,
         extraction=extraction,
-        clamped=ClampedValues(days_back=clamped_days) if clamped_days else ClampedValues(),
+        clamped=ClampedValues(days_back=final_clamped_days) if final_clamped_days else ClampedValues(),
     )

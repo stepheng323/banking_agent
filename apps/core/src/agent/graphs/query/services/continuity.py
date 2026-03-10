@@ -173,6 +173,40 @@ class ContinuationClassifier:
     def _strip_trailing_punctuation(text: str) -> str:
         return re.sub(r"[?.!,]+$", "", text).strip()
 
+    @staticmethod
+    def _normalize_recipient_name(value: str) -> str:
+        cleaned = " ".join(value.strip().split()).rstrip(".,;:!?").strip()
+        return cleaned.casefold()
+
+    def _resolve_beneficiary_summary_recipient_reply(
+        self,
+        message: str,
+        *,
+        items: list[QueryResultItem] | None,
+        surface: ResultSurface | None,
+    ) -> str | None:
+        if not surface or surface.type != SurfaceType.SUMMARY:
+            return None
+        if not isinstance(surface.context, dict) or surface.context.get("view") != "beneficiary_summary":
+            return None
+
+        candidate = self._strip_trailing_punctuation(" ".join(message.strip().split()))
+        if not candidate:
+            return None
+
+        normalized_candidate = self._normalize_recipient_name(candidate)
+        if not normalized_candidate:
+            return None
+
+        for item in items or []:
+            item_name = str(item.description or "").strip()
+            if not item_name:
+                continue
+            if self._normalize_recipient_name(item_name) == normalized_candidate:
+                return item_name
+
+        return None
+
     def _resolve_time_delta_range(self, message: str, *, today: date) -> TimeRange | None:
         normalized = self._strip_trailing_punctuation(self._normalize_message(message))
         candidate = normalized
@@ -256,6 +290,7 @@ class ContinuationClassifier:
         *,
         message: str,
         today: str,
+        items: list[QueryResultItem] | None,
         surface: ResultSurface | None,
         language: str,
     ) -> tuple[str, dict[str, Any]] | None:
@@ -290,6 +325,15 @@ class ContinuationClassifier:
                 "confidence": 1.0,
                 "reason": "deterministic_end_session",
                 "end_session_response": render_message("query.session.you_are_welcome", language),
+            }
+
+        recipient_name = self._resolve_beneficiary_summary_recipient_reply(message, items=items, surface=surface)
+        if recipient_name:
+            return ContinuationType.RECIPIENT_DRILL_DOWN, {
+                "confidence": 0.99,
+                "reason": "deterministic_recipient_drill_down",
+                "delta_type": "filter",
+                "recipient_name": recipient_name,
             }
 
         if self._is_recipient_ranking_request(message):
@@ -349,7 +393,13 @@ class ContinuationClassifier:
         if not has_active_session:
             return ContinuationType.NEW_QUERY, {}
 
-        guarded = self._guardrail_classify(message=message, today=today, surface=surface, language=language)
+        guarded = self._guardrail_classify(
+            message=message,
+            today=today,
+            items=items,
+            surface=surface,
+            language=language,
+        )
         if guarded is not None:
             continuation_type, guarded_data = guarded
             logger.info("continuation_guardrail_hit", type=continuation_type, reason=guarded_data.get("reason"))
@@ -425,6 +475,10 @@ class ContinuationClassifier:
                 drill_idx = result.drill_down_index if result.drill_down_index is not None else 0
                 data["drill_down_index"] = drill_idx
                 data["drill_down_action"] = result.drill_down_action or "view_details"
+
+            elif result.continuation_type == "recipient_drill_down":
+                if result.recipient_name:
+                    data["recipient_name"] = result.recipient_name
 
             elif result.continuation_type == "end_session":
                 data["end_session_response"] = result.end_session_response or render_message(
