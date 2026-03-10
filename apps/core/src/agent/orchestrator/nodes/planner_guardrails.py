@@ -1,12 +1,15 @@
 """Planner guardrail helper functions."""
 
+import re
 from typing import Any
 
+from apps.core.src.agent.graphs.query.services.parser import QueryParser
 from apps.core.src.agent.orchestrator.nodes.planner_fastpath import TRANSACTION_EXECUTORS
 from shared.services.onboarding.mandate_messages import build_pending_mandate_message
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
+_BENEFICIARY_TERM_RE = re.compile(r"\bbeneficiar(?:y|ies)\b", re.IGNORECASE)
 
 
 def _filter_spurious_affirmation_tasks(
@@ -107,7 +110,46 @@ def _deescalate_mandate_acknowledgement(
     return planner_output
 
 
+def _repair_beneficiary_summary_misroute(
+    planner_output: Any,
+    *,
+    user_text: str,
+) -> Any:
+    """Rewrite mistaken query beneficiary-summary tasks to beneficiary list-management tasks."""
+    if not planner_output or not getattr(planner_output, "tasks", None):
+        return planner_output
+
+    normalized_text = (user_text or "").strip()
+    if not normalized_text:
+        return planner_output
+    if not _BENEFICIARY_TERM_RE.search(normalized_text):
+        return planner_output
+    if QueryParser._has_targeted_beneficiary_summary_cue(normalized_text):
+        return planner_output
+
+    rewired = 0
+    for task in planner_output.tasks:
+        if getattr(task, "executor", None) == "query" and getattr(task, "action", None) == "beneficiary_summary":
+            task.executor = "beneficiary"
+            task.action = "list_beneficiaries"
+            task.risk = "READ_ONLY"
+            rewired += 1
+
+    if rewired == 0:
+        return planner_output
+
+    if len(planner_output.tasks) == 1:
+        planner_output.primary_intent = "beneficiary"
+        planner_output.is_complex = False
+
+    planner_output.response = ""
+    planner_output.response_key = None
+    logger.info("beneficiary_summary_misroute_repaired", rewired_tasks=rewired)
+    return planner_output
+
+
 __all__ = [
     "_deescalate_mandate_acknowledgement",
     "_filter_spurious_affirmation_tasks",
+    "_repair_beneficiary_summary_misroute",
 ]

@@ -90,7 +90,7 @@ async def handle_beneficiary_summary(
     items = []
 
     for i, (name, data) in enumerate(sorted_cp[:limit]):
-        total = abs(data["total"]) / 100
+        total = abs(data["total"])
         count = data["count"]
         lines.append(
             render_message(
