@@ -5,7 +5,7 @@ from langchain_core.runnables import RunnableConfig
 from apps.core.src.agent.orchestrator.models.domain import ActiveSession, PendingInterrupt, TaskSpec, TaskStage
 from apps.core.src.agent.orchestrator.models.state import OrchestratorState
 from apps.core.src.agent.orchestrator.nodes.gate import session_gate_fastpath
-from shared.i18n import render_message
+from shared.i18n import render_cancelled_prompt, render_message
 from shared.types.planner import TurnRouteDecision
 
 
@@ -22,7 +22,7 @@ async def test_gate_defers_greeting_meta_to_planner() -> None:
     assert updates == {}
 
 
-async def test_gate_pending_interrupt_always_defers_to_interrupt_node() -> None:
+async def test_gate_explicit_cancel_during_pending_interrupt_resets_immediately() -> None:
     state = OrchestratorState(
         user_id="u_gate_2",
         phone_number="2348888888888",
@@ -40,7 +40,12 @@ async def test_gate_pending_interrupt_always_defers_to_interrupt_node() -> None:
     config: RunnableConfig = {"configurable": {}, "recursion_limit": 50}
 
     updates = await session_gate_fastpath(state, config)
-    assert updates == {}
+    assert updates["fast_path_triggered"] is True
+    assert updates["final_response"] == render_cancelled_prompt("en")
+    assert updates["pending_interrupt"] is None
+    assert updates["tasks"] == {}
+    assert updates["waves"] == []
+    assert updates["current_wave_index"] == 0
 
 
 async def test_gate_query_fast_path_still_applies_without_pending_interrupt() -> None:
@@ -263,7 +268,7 @@ async def test_gate_turn_router_cancel_response_clears_query_state() -> None:
         user_id="u_gate_8",
         phone_number="2348000000008",
         channel="whatsapp",
-        last_message_text="abort",
+        last_message_text="please cancel",
         loaded_context={"language": "en"},
         session_stack=[ActiveSession(domain="query", state="RUNNING", interrupt_policy="ALLOW")],
         active_domain="query",
@@ -281,7 +286,7 @@ async def test_gate_turn_router_cancel_response_clears_query_state() -> None:
 
     assert planner.route_calls == 1
     assert updates["fast_path_triggered"] is True
-    assert updates["final_response"] == "Cancelled."
+    assert updates["final_response"] == render_cancelled_prompt("en")
     assert updates["tasks"] == {}
     assert updates["waves"] == []
     assert updates["current_wave_index"] == 0
@@ -289,6 +294,22 @@ async def test_gate_turn_router_cancel_response_clears_query_state() -> None:
     assert updates["active_domain"] is None
     assert updates["stashed_query_session"] is None
     assert redis_client.deleted_keys == ["query:session:2348000000008"]
+
+
+async def test_gate_explicit_cancel_without_active_state_returns_clarify() -> None:
+    state = OrchestratorState(
+        user_id="u_gate_8b",
+        phone_number="2348000000018",
+        channel="whatsapp",
+        last_message_text="abort",
+        loaded_context={"language": "en"},
+    )
+    config: RunnableConfig = {"configurable": {"redis_client": None}, "recursion_limit": 50}
+
+    updates = await session_gate_fastpath(state, config)
+
+    assert updates["fast_path_triggered"] is True
+    assert updates["final_response"] == render_message("conversational.clarify", "en")
 
 
 async def test_gate_fast_path_cancel_and_balance_cleans_query_and_runs_balance() -> None:

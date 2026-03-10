@@ -17,6 +17,7 @@ from apps.core.src.agent.orchestrator.nodes.ingest import ingest_message
 from apps.core.src.agent.orchestrator.nodes.interrupt import handle_pending_interrupt
 from apps.core.src.agent.orchestrator.nodes.planner import plan_tasks
 from shared.formatters.accounts import format_source_account_info_from_account_number
+from shared.i18n import render_cancelled_prompt
 from shared.types.planner import InterruptRouteDecision, PlannedTask, PlannerOutput, TaskParameters
 
 SHARED_SOURCE_LINE = format_source_account_info_from_account_number(
@@ -57,7 +58,14 @@ class _SequentialPlanner:
         text: str,
         context: str = "None",
     ) -> InterruptRouteDecision:
-        del phone_number, text, context
+        del phone_number, context
+        if text.strip().lower() == "cancel":
+            return InterruptRouteDecision(
+                decision="cancel",
+                confidence=0.99,
+                detected_language="English",
+                reason="explicit cancellation",
+            )
         return InterruptRouteDecision(
             decision="continue_flow",
             confidence=0.9,
@@ -493,8 +501,10 @@ async def test_cancelled_mixed_flow_then_fresh_self_airtime_reuses_context_phone
 
     state = state.model_copy(update={"last_message_text": "Cancel"})
     state = _apply(state, await handle_pending_interrupt(state, plan_config))
-    assert state.tasks["t_transfer"].stage == TaskStage.CANCELLED
-    assert state.tasks["t_airtime"].stage == TaskStage.CANCELLED
+    assert state.tasks == {}
+    assert state.waves == []
+    assert state.pending_interrupt is None
+    assert state.final_response == render_cancelled_prompt("en")
 
     state = _apply(state, await finalize(state, plan_config))
     assert state.tasks == {}

@@ -14,6 +14,7 @@ from apps.core.src.agent.orchestrator.models.domain import (
 from apps.core.src.agent.orchestrator.models.state import OrchestratorState
 from apps.core.src.agent.orchestrator.nodes.execution import advance_wave
 from apps.core.src.agent.orchestrator.nodes.interrupt import handle_pending_interrupt
+from shared.i18n import render_cancelled_prompt
 from shared.types.planner import InterruptRouteDecision, PlannedTask, PlannerOutput, TaskParameters
 
 
@@ -795,12 +796,14 @@ async def test_confirmation_reject_flow_cancels_task() -> None:
             reason="explicit rejection",
         )
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {"configurable": {"task_planner": planner, "redis_client": None}, "recursion_limit": 50}
 
     updates = await handle_pending_interrupt(state, config)
 
     assert updates["pending_interrupt"] is None
-    assert updates["tasks"]["t1"].stage == TaskStage.CANCELLED
+    assert updates["tasks"] == {}
+    assert updates["waves"] == []
+    assert updates["final_response"] == render_cancelled_prompt("en")
 
 
 @pytest.mark.asyncio
@@ -927,7 +930,7 @@ async def test_callback_flow_type_mismatch_reprompts_confirmation_without_advanc
 
 
 @pytest.mark.asyncio
-async def test_input_cancel_shortcut_cancels_all_active_transaction_tasks() -> None:
+async def test_input_cancel_router_decision_resets_for_fresh_start() -> None:
     state = OrchestratorState(
         user_id="u_interrupt_cancel_all",
         phone_number="2348010101099",
@@ -958,14 +961,29 @@ async def test_input_cancel_shortcut_cancels_all_active_transaction_tasks() -> N
         waves=[["t_transfer", "t_airtime", "t_account"]],
         current_wave_index=0,
     )
-    config: RunnableConfig = {"configurable": {"task_planner": _FailIfRouterCalledPlanner()}, "recursion_limit": 50}
+    planner = _RouteOnlyPlanner(
+        InterruptRouteDecision(
+            decision="cancel",
+            confidence=0.99,
+            detected_language="English",
+            target_intent=None,
+            target_mode=None,
+            reason="explicit cancellation",
+        )
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner, "redis_client": None}, "recursion_limit": 50}
 
     updates = await handle_pending_interrupt(state, config)
 
     assert updates["pending_interrupt"] is None
-    assert updates["tasks"]["t_transfer"].stage == TaskStage.CANCELLED
-    assert updates["tasks"]["t_airtime"].stage == TaskStage.CANCELLED
-    assert updates["tasks"]["t_account"].stage == TaskStage.EXTRACTED
+    assert updates["tasks"] == {}
+    assert updates["waves"] == []
+    assert updates["current_wave_index"] == 0
+    assert updates["session_stack"] == []
+    assert updates["active_domain"] is None
+    assert updates["stashed_query_session"] is None
+    assert updates["stashed_sessions"] == []
+    assert updates["final_response"] == render_cancelled_prompt("en")
 
 
 @pytest.mark.asyncio
@@ -997,12 +1015,14 @@ async def test_text_abort_does_not_autoapprove_when_no_callback_payload() -> Non
             reason="explicit cancellation",
         )
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {"configurable": {"task_planner": planner, "redis_client": None}, "recursion_limit": 50}
 
     updates = await handle_pending_interrupt(state, config)
 
     assert updates["pending_interrupt"] is None
-    assert updates["tasks"]["t1"].stage == TaskStage.CANCELLED
+    assert updates["tasks"] == {}
+    assert updates["waves"] == []
+    assert updates["final_response"] == render_cancelled_prompt("en")
 
 
 @pytest.mark.asyncio

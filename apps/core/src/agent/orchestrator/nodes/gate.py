@@ -12,6 +12,13 @@ from langchain_core.runnables import RunnableConfig
 from apps.core.src.agent.orchestrator.conversational_style import format_out_of_scope_reply
 from apps.core.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
 from apps.core.src.agent.orchestrator.models.state import OrchestratorState
+from apps.core.src.agent.orchestrator.nodes.cancellation import (
+    build_cancellation_reset_updates,
+    cancelled_message,
+    clarify_message,
+    has_cancelable_state,
+    is_explicit_cancel_message,
+)
 from shared.i18n import LocaleManager, render_locale_switched, render_message
 from shared.utils.logging import get_logger
 
@@ -99,29 +106,6 @@ def _has_explicit_cancel(message_text: str) -> bool:
     return any(re.search(pattern, normalized) for pattern in EXPLICIT_CANCEL_PATTERNS)
 
 
-async def _clear_query_session(redis_client: Any | None, phone_number: str) -> None:
-    if not redis_client:
-        return
-    try:
-        await redis_client.delete(f"query:session:{phone_number}")
-    except Exception as exc:
-        logger.warning("gate_cancel_query_session_clear_failed", error=str(exc))
-
-
-async def _build_cancel_cleanup_updates(state: OrchestratorState, redis_client: Any | None) -> dict[str, Any]:
-    await _clear_query_session(redis_client, state.phone_number)
-    cleaned_stack = [session for session in state.session_stack if session.domain != "query"]
-    return {
-        "tasks": {},
-        "waves": [],
-        "current_wave_index": 0,
-        "pending_interrupt": None,
-        "session_stack": cleaned_stack,
-        "active_domain": cleaned_stack[-1].domain if cleaned_stack else None,
-        "stashed_query_session": None,
-    }
-
-
 async def session_gate_fastpath(state: OrchestratorState, config: RunnableConfig) -> dict[str, Any]:
     """
     Fast Path Gate.
@@ -141,6 +125,19 @@ async def session_gate_fastpath(state: OrchestratorState, config: RunnableConfig
 
     message_text = (state.last_message_text or "").strip()
 
+    if is_explicit_cancel_message(message_text):
+        if has_cancelable_state(state):
+            cleanup_updates = await build_cancellation_reset_updates(state, redis_client)
+            return {
+                **cleanup_updates,
+                "fast_path_triggered": True,
+                "final_response": cancelled_message(state),
+            }
+        return {
+            "fast_path_triggered": True,
+            "final_response": clarify_message(state),
+        }
+
     if not state.pending_interrupt:
         explicit_locale = LocaleManager.parse_explicit_switch_command(message_text)
         if explicit_locale:
@@ -159,7 +156,7 @@ async def session_gate_fastpath(state: OrchestratorState, config: RunnableConfig
     if not state.pending_interrupt and _is_account_balance_request(message_text):
         cleanup_updates: dict[str, Any] = {}
         if _has_explicit_cancel(message_text):
-            cleanup_updates = await _build_cancel_cleanup_updates(state, redis_client)
+            cleanup_updates = await build_cancellation_reset_updates(state, redis_client)
 
         task_id = _next_fast_account_task_id(state.tasks)
         spec = TaskSpec(
@@ -279,13 +276,17 @@ async def session_gate_fastpath(state: OrchestratorState, config: RunnableConfig
                 if route.response_key:
                     if route.response_key == "conversational.out_of_scope":
                         text = format_out_of_scope_reply(locale, route.response)
+                    elif route.response_key == "planner.cancelled":
+                        if has_cancelable_state(state):
+                            text = cancelled_message(state, locale)
+                            updates.update(await build_cancellation_reset_updates(state, redis_client))
+                        else:
+                            text = clarify_message(state, locale)
                     else:
                         text = render_message(route.response_key, locale)
                 else:
                     text = route.response or render_message("conversational.clarify", locale)
                 logger.info("gate_turn_router_direct_response", response_key=route.response_key, locale=locale)
-                if route.response_key == "planner.cancelled":
-                    updates.update(await _build_cancel_cleanup_updates(state, redis_client))
                 return {
                     "fast_path_triggered": True,
                     "final_response": text,

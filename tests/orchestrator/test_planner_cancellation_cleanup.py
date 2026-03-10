@@ -6,6 +6,7 @@ from langchain_core.runnables import RunnableConfig
 from apps.core.src.agent.orchestrator.models.domain import ActiveSession, TaskSpec, TaskStage
 from apps.core.src.agent.orchestrator.models.state import OrchestratorState
 from apps.core.src.agent.orchestrator.nodes.planner import plan_tasks
+from shared.i18n import render_cancelled_prompt, render_message
 from shared.types.planner import PlannerOutput
 
 
@@ -78,13 +79,50 @@ async def test_planner_cancel_clears_query_and_task_state() -> None:
 
     updates = await plan_tasks(state, config)
 
-    assert updates["final_response"] == "Cancelled."
+    assert updates["final_response"] == render_cancelled_prompt("en")
     assert updates["tasks"] == {}
     assert updates["waves"] == []
     assert updates["current_wave_index"] == 0
     assert updates["pending_interrupt"] is None
-    assert len(updates["session_stack"]) == 1
-    assert updates["session_stack"][0].domain == "account"
-    assert updates["active_domain"] == "account"
+    assert updates["session_stack"] == []
+    assert updates["active_domain"] is None
     assert updates["stashed_query_session"] is None
+    assert updates["stashed_sessions"] == []
+    assert updates["planner_output"] is None
+    assert updates["normalized_instruction"] is None
+    assert updates["task_results"] == {}
+    assert updates["pin_verified"] is False
+    assert updates["preplanner_expected_transaction_executors"] == []
     assert redis_client.deleted_keys == ["query:session:2348000000301"]
+
+
+@pytest.mark.asyncio
+async def test_planner_cancel_without_active_flow_returns_clarify() -> None:
+    redis_client = _TrackingRedis()
+    state = OrchestratorState(
+        user_id="u_cancel_cleanup_2",
+        phone_number="2348000000302",
+        channel="whatsapp",
+        last_message_text="abort",
+        loaded_context={"language": "en"},
+        tasks={},
+        waves=[],
+        current_wave_index=0,
+        pending_interrupt=None,
+        session_stack=[],
+        active_domain=None,
+        stashed_query_session=None,
+    )
+    config: RunnableConfig = {
+        "configurable": {
+            "task_planner": _CancelPlanner(),
+            "redis_client": redis_client,
+            "services": {},
+        },
+        "recursion_limit": 50,
+    }
+
+    updates = await plan_tasks(state, config)
+
+    assert updates["final_response"] == render_message("conversational.clarify", "en")
+    assert redis_client.deleted_keys == []

@@ -6,6 +6,7 @@ from langchain_core.runnables import RunnableConfig
 from apps.core.src.agent.orchestrator.models.domain import PendingInterrupt, TaskSpec, TaskStage
 from apps.core.src.agent.orchestrator.models.state import OrchestratorState
 from apps.core.src.agent.orchestrator.nodes.interrupt import handle_pending_interrupt
+from shared.i18n import render_cancelled_prompt
 from shared.types.planner import InterruptRouteDecision, PlannedTask, PlannerOutput, TaskParameters
 
 
@@ -440,7 +441,7 @@ async def test_auth_reprompt_for_mixed_task_types_uses_default_header() -> None:
 
 
 @pytest.mark.asyncio
-async def test_auth_cancel_shortcut_skips_router_and_cancels_flow() -> None:
+async def test_auth_cancel_uses_router_and_resets_flow() -> None:
     state = OrchestratorState(
         user_id="u_budget_7",
         phone_number="2348100000007",
@@ -459,23 +460,25 @@ async def test_auth_cancel_shortcut_skips_router_and_cancels_flow() -> None:
     )
     planner = _CountingPlanner(
         route=InterruptRouteDecision(
-            decision="switch_intent",
-            confidence=0.2,
+            decision="cancel",
+            confidence=0.99,
             detected_language="English",
-            target_intent="account",
-            target_mode="new",
-            reason="should_not_run",
+            target_intent=None,
+            target_mode=None,
+            reason="explicit cancellation",
         ),
-        output=PlannerOutput(primary_intent="account"),
+        output=PlannerOutput(primary_intent="cancel"),
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+    config: RunnableConfig = {"configurable": {"task_planner": planner, "redis_client": None}, "recursion_limit": 50}
 
     updates = await handle_pending_interrupt(state, config)
 
-    assert planner.route_calls == 0
+    assert planner.route_calls == 1
     assert planner.plan_calls == 0
     assert updates["pending_interrupt"] is None
-    assert updates["tasks"]["t1"].stage == TaskStage.CANCELLED
+    assert updates["tasks"] == {}
+    assert updates["waves"] == []
+    assert updates["final_response"] == render_cancelled_prompt("en")
 
 
 @pytest.mark.asyncio

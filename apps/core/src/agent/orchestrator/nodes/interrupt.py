@@ -7,6 +7,10 @@ from langchain_core.runnables import RunnableConfig
 
 from apps.core.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
 from apps.core.src.agent.orchestrator.models.state import OrchestratorState
+from apps.core.src.agent.orchestrator.nodes.cancellation import (
+    build_cancellation_reset_updates,
+    cancelled_message,
+)
 from apps.core.src.agent.orchestrator.nodes.planner import _build_user_state_summary
 from apps.core.src.agent.orchestrator.services.interrupt_shortcuts import (
     is_explicit_confirmation_approval,
@@ -15,7 +19,7 @@ from apps.core.src.agent.orchestrator.services.interrupt_shortcuts import (
 )
 from apps.core.src.agent.orchestrator.utils.actionable_payload import build_actionable_payload
 from apps.core.src.agent.orchestrator.utils.task_payload import build_task_spec_from_plan_item
-from apps.core.src.agent.orchestrator.utils.task_state import reset_tasks_to_extracted, set_tasks_cancelled
+from apps.core.src.agent.orchestrator.utils.task_state import reset_tasks_to_extracted
 from apps.core.src.agent.orchestrator.utils.waves import build_dependency_waves
 from shared.formatters.confirmation import build_confirmation_summary
 from shared.formatters.prompts import format_auth_reason, sanitize_recipient_display_name
@@ -877,35 +881,18 @@ def _status_query_updates(
     }
 
 
-def _cancel_updates(state: OrchestratorState, interrupt: Any, current_task_types: set[str]) -> dict[str, Any]:
-    terminal_stages = {TaskStage.COMPLETED, TaskStage.FAILED, TaskStage.CANCELLED}
-
-    if current_task_types and current_task_types.issubset(TRANSACTION_INTENTS):
-        task_ids_to_cancel = [
-            task_id
-            for task_id, task in state.tasks.items()
-            if task.type in TRANSACTION_INTENTS and task.stage not in terminal_stages
-        ]
-    else:
-        task_ids_to_cancel = [
-            task_id
-            for task_id in interrupt.task_ids
-            if task_id in state.tasks and state.tasks[task_id].stage not in terminal_stages
-        ]
-
-    set_tasks_cancelled(state.tasks, task_ids_to_cancel, copy_task=True)
-    updates: dict[str, Any] = {
-        "pending_interrupt": None,
-        "last_interrupt": interrupt,
-        "tasks": state.tasks,
-    }
-    if "query" in current_task_types:
-        cleaned_stack = [session for session in state.session_stack if session.domain != "query"]
-        updates["session_stack"] = cleaned_stack
-        updates["active_domain"] = cleaned_stack[-1].domain if cleaned_stack else None
-        updates["stashed_query_session"] = None
+async def _cancel_updates(
+    state: OrchestratorState,
+    interrupt: Any,
+    current_task_types: set[str],
+    redis_client: Any | None,
+) -> dict[str, Any]:
+    del current_task_types
+    reset_updates = await build_cancellation_reset_updates(state, redis_client)
     return {
-        **updates,
+        **reset_updates,
+        "last_interrupt": interrupt,
+        "final_response": cancelled_message(state),
     }
 
 
@@ -1064,6 +1051,7 @@ async def _switch_via_planner(
     text: str,
     active_type: str,
     current_task_types: set[str],
+    redis_client: Any | None,
 ) -> dict[str, Any]:
     context_summary = _build_interrupt_context(
         state=state,
@@ -1102,7 +1090,7 @@ async def _switch_via_planner(
         return _reprompt_updates(state, interrupt)
 
     if getattr(planner_output, "is_cancellation", False):
-        return _cancel_updates(state, interrupt, current_task_types)
+        return await _cancel_updates(state, interrupt, current_task_types, redis_client)
 
     if not planner_output.tasks:
         locale = _state_locale(state)
@@ -1143,6 +1131,7 @@ async def _handle_switch_intent_route(
     text: str,
     active_type: str,
     current_task_types: set[str],
+    redis_client: Any | None,
 ) -> dict[str, Any]:
     if _is_beneficiary_clarification_interrupt(interrupt):
         logger.info(
@@ -1182,6 +1171,7 @@ async def _handle_switch_intent_route(
             text=text,
             active_type=active_type,
             current_task_types=current_task_types,
+            redis_client=redis_client,
         )
 
     # Unknown targets are planner-mediated for safety.
@@ -1192,6 +1182,7 @@ async def _handle_switch_intent_route(
         text=text,
         active_type=active_type,
         current_task_types=current_task_types,
+        redis_client=redis_client,
     )
 
 
@@ -1207,6 +1198,7 @@ async def handle_pending_interrupt(state: OrchestratorState, config: RunnableCon
     current_task_types = _current_task_types(state, interrupt.task_ids)
     active_type = _active_intent(current_task_types)
     task_planner = config["configurable"].get("task_planner")
+    redis_client = config["configurable"].get("redis_client")
 
     if _is_verified_pin_callback(state) and interrupt.kind in {"confirmation", "auth"}:
         flow_matches, callback_flow_type = _callback_flow_matches_interrupt(state, current_task_types)
@@ -1233,13 +1225,11 @@ async def handle_pending_interrupt(state: OrchestratorState, config: RunnableCon
 
         if shortcut_route is not None and shortcut_route.decision == "cancel":
             logger.info(
-                "interrupt_shortcut_hit",
+                "interrupt_cancel_shortcut_disabled",
                 kind=interrupt.kind,
-                decision=shortcut_route.decision,
-                status_query_type=shortcut_route.status_query_type,
                 locale=shortcut_locale.value if shortcut_locale else None,
             )
-            return _cancel_updates(state, interrupt, current_task_types)
+            shortcut_route = None
 
         if shortcut_route is not None:
             logger.info(
@@ -1267,7 +1257,7 @@ async def handle_pending_interrupt(state: OrchestratorState, config: RunnableCon
         )
 
         if route.decision in {"cancel", "reject_flow"}:
-            return _cancel_updates(state, interrupt, current_task_types)
+            return await _cancel_updates(state, interrupt, current_task_types, redis_client)
 
         if route.decision == "switch_intent":
             return await _handle_switch_intent_route(
@@ -1278,6 +1268,7 @@ async def handle_pending_interrupt(state: OrchestratorState, config: RunnableCon
                 text=text,
                 active_type=active_type,
                 current_task_types=current_task_types,
+                redis_client=redis_client,
             )
 
         # Auth approval is callback-only for PIN. Non-PIN auth (e.g., OTP) can
@@ -1295,6 +1286,14 @@ async def handle_pending_interrupt(state: OrchestratorState, config: RunnableCon
         locale=shortcut_locale,
     )
 
+    if shortcut_route is not None:
+        if shortcut_route.decision == "cancel":
+            logger.info(
+                "interrupt_cancel_shortcut_disabled",
+                kind=interrupt.kind,
+                locale=shortcut_locale.value if shortcut_locale else None,
+            )
+            shortcut_route = None
     if shortcut_route is not None:
         route = shortcut_route
         logger.info(
@@ -1331,10 +1330,10 @@ async def handle_pending_interrupt(state: OrchestratorState, config: RunnableCon
         )
 
     if route.decision == "cancel":
-        return _cancel_updates(state, interrupt, current_task_types)
+        return await _cancel_updates(state, interrupt, current_task_types, redis_client)
 
     if route.decision == "reject_flow":
-        return _cancel_updates(state, interrupt, current_task_types)
+        return await _cancel_updates(state, interrupt, current_task_types, redis_client)
 
     if route.decision == "approve_flow":
         if interrupt.kind == "confirmation":
@@ -1362,6 +1361,7 @@ async def handle_pending_interrupt(state: OrchestratorState, config: RunnableCon
             text=text,
             active_type=active_type,
             current_task_types=current_task_types,
+            redis_client=redis_client,
         )
 
     # "unclear" or any unrecognized decision stays non-destructive.
