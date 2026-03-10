@@ -8,510 +8,250 @@
     />
     <title>Account Setup</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script src="/static/telegram/miniapp_theme.js?v=3"></script>
+    <link rel="stylesheet" href="/static/telegram/miniapp_shared.css?v=3" />
     <style>
-      * {
-        margin: 0;
-        padding: 0;
-        box-sizing: border-box;
-        font-family:
-          -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica,
-          Arial, sans-serif;
+      .onboarding-sheet {
+        min-height: 100%;
       }
 
-      body {
-        background-color: var(--tg-theme-bg-color, #ffffff);
-        color: var(--tg-theme-text-color, #111111);
-        min-height: 100vh;
+      .onboarding-title {
+        font-size: 44px;
+      }
+
+      .onboarding-content {
         display: flex;
         flex-direction: column;
-        padding-bottom: 80px;
+        flex: 1;
+        min-height: 0;
       }
 
-      .top-nav {
-        background: var(--tg-theme-bg-color, #ffffff);
-        position: sticky;
-        top: 0;
-        z-index: 100;
+      .onboarding-form {
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
       }
 
-      .top-nav-title {
+      .onboarding-success-title {
+        margin-bottom: 10px;
+      }
+
+      .onboarding-success-subtitle {
         text-align: center;
-        font-size: 16px;
-        font-weight: 600;
-        color: var(--tg-theme-text-color, #111111);
-        padding: 16px 20px;
       }
 
-      .progress-bar {
-        height: 4px;
-        background: var(--tg-theme-secondary-bg-color, #f0f0f0);
-        width: 100%;
+      .onboarding-footer {
+        margin-top: auto;
       }
 
-      .progress-fill {
-        height: 100%;
-        background: var(--tg-theme-button-color, #2481cc);
-        width: 20%;
-        transition: width 0.3s ease;
+      .otp-input,
+      .bvn-input {
+        letter-spacing: 1px;
       }
 
-      .step {
-        display: none;
-        flex-direction: column;
-        padding: 24px 20px;
-        animation: fadeIn 0.3s ease-in-out;
-        flex: 1;
+      .setup-pin {
+        letter-spacing: 8px;
+        -webkit-text-security: disc;
       }
 
-      .step.active {
-        display: flex;
-      }
-
-      @keyframes fadeIn {
-        from {
-          opacity: 0;
-          transform: translateY(8px);
-        }
-        to {
-          opacity: 1;
-          transform: translateY(0);
-        }
-      }
-
-      h1 {
-        font-size: 24px;
-        font-weight: 700;
-        margin-bottom: 12px;
-        color: var(--tg-theme-text-color, #000000);
-      }
-
-      .subtitle {
-        font-size: 15px;
-        color: var(--tg-theme-hint-color, #4a4a4a);
-        margin-bottom: 32px;
-        line-height: 1.5;
-      }
-
-      .input-group {
-        width: 100%;
-        margin-bottom: 24px;
-      }
-
-      .input-label {
-        display: block;
-        font-size: 15px;
-        font-weight: 600;
-        margin-bottom: 16px;
-        color: var(--tg-theme-text-color, #111111);
-      }
-
-      input[type="text"],
-      input[type="tel"],
-      input[type="email"],
-      input[type="password"] {
-        width: 100%;
-        height: 52px;
-        padding: 0 16px;
-        border-radius: 8px;
-        border: 1px solid var(--tg-theme-hint-color, #cccccc);
-        background: transparent;
-        color: var(--tg-theme-text-color, #111111);
-        font-size: 16px;
-        transition:
-          border-color 0.2s,
-          box-shadow 0.2s;
-      }
-
-      input:focus {
-        outline: none;
-        border-color: var(--tg-theme-button-color, #2481cc);
-        box-shadow: 0 0 0 1px var(--tg-theme-button-color, #2481cc);
-      }
-
-      input::placeholder {
-        color: var(--tg-theme-hint-color, #888888);
-      }
-
-      .radio-option {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        padding: 16px 0;
-        cursor: pointer;
-      }
-
-      .radio-text-container {
-        display: flex;
-        flex-direction: column;
-        flex: 1;
-        padding-right: 16px;
-      }
-
-      .radio-text {
-        font-size: 16px;
-        color: var(--tg-theme-text-color, #333333);
-      }
-
-      .radio-subtext {
-        font-size: 14px;
-        color: var(--tg-theme-hint-color, #666666);
-        margin-top: 4px;
-      }
-
-      .radio-custom {
-        width: 24px;
-        height: 24px;
-        border-radius: 50%;
-        border: 2px solid var(--tg-theme-hint-color, #777777);
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        flex-shrink: 0;
-        transition: border-color 0.2s;
-      }
-
-      .radio-custom::after {
-        content: "";
-        width: 12px;
-        height: 12px;
-        border-radius: 50%;
-        background: transparent;
-        transition: background 0.2s;
-      }
-
-      .radio-input {
-        display: none;
-      }
-
-      .radio-input:checked + .radio-custom {
-        border-color: var(--tg-theme-button-color, #2481cc);
-      }
-
-      .radio-input:checked + .radio-custom::after {
-        background: var(--tg-theme-button-color, #2481cc);
-      }
-
-      .error-msg {
-        color: #e53935;
-        font-size: 14px;
-        margin-top: -16px;
-        margin-bottom: 16px;
-        min-height: 20px;
-      }
-
-      .bottom-bar {
-        position: fixed;
-        bottom: 0;
-        left: 0;
-        right: 0;
-        background: var(--tg-theme-bg-color, #ffffff);
-        padding: 16px 20px;
-        box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.05);
-        display: none;
-        z-index: 1000;
-      }
-
-      .bottom-bar.active {
-        display: block;
-      }
-
-      button.btn-primary {
-        width: 100%;
-        height: 48px;
-        border-radius: 24px;
-        background: var(--tg-theme-button-color, #2481cc);
-        color: var(--tg-theme-button-text-color, #ffffff);
-        border: none;
-        font-size: 16px;
-        font-weight: 600;
-        cursor: pointer;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        transition: opacity 0.2s;
-      }
-
-      button.btn-primary:active {
-        opacity: 0.8;
-      }
-
-      button.btn-primary:disabled {
-        background: var(--tg-theme-hint-color, #cccccc);
-        color: var(--tg-theme-bg-color, #ffffff);
-        cursor: not-allowed;
-        opacity: 1;
-      }
-
-      .loader {
-        display: none;
-        width: 20px;
-        height: 20px;
-        border: 3px solid rgba(255, 255, 255, 0.3);
-        border-radius: 50%;
-        border-top-color: transparent;
-        animation: spin 1s ease-in-out infinite;
-      }
-
-      @keyframes spin {
-        to {
-          transform: rotate(360deg);
+      @media (max-width: 420px) {
+        .onboarding-title {
+          font-size: 38px;
         }
       }
     </style>
   </head>
 
   <body>
-    <!-- Top Nav with Progress Bar -->
-    <div class="top-nav">
-      <div class="top-nav-title">Link Your Account</div>
-      <div class="progress-bar">
-        <div class="progress-fill" id="progressFill"></div>
-      </div>
-    </div>
+    <div class="mini-page">
+      <div class="mini-sheet">
+        <div class="mini-sheet-content onboarding-sheet">
+          <div class="mini-handle"></div>
+          <div class="mini-topbar">
+            <span class="mini-topbar-icon">←</span>
+            <span class="mini-topbar-title" id="topbarTitle">Link Your Account</span>
+            <span class="mini-topbar-icon">⋮</span>
+          </div>
 
-    <!-- STEP 1: BVN -->
-    <div id="step-bvn" class="step active">
-      <h1>Welcome to Fusepay</h1>
-      <p class="subtitle">
-        Enter your BVN to verify your identity and fetch your linked bank
-        accounts.
-      </p>
+          <div class="mini-progress">
+            <div class="mini-progress-fill" id="progressFill"></div>
+          </div>
 
-      <div class="input-group">
-        <input
-          type="tel"
-          id="bvnInput"
-          placeholder="BVN (11 digits)"
-          maxlength="11"
-        />
-      </div>
+          <div class="onboarding-content">
+            <div id="step-bvn" class="mini-step active">
+              <h1 class="mini-title onboarding-title">Welcome to Fusepay</h1>
+              <p class="mini-subtitle">
+                Enter your BVN to verify your identity and fetch your linked bank accounts.
+              </p>
 
-      <div class="error-msg" id="bvnError"></div>
-    </div>
+              <div class="onboarding-form">
+                <input
+                  type="tel"
+                  id="bvnInput"
+                  class="mini-input bvn-input"
+                  placeholder="BVN (11 digits)"
+                  maxlength="11"
+                />
+              </div>
 
-    <!-- STEP 2: OTP METHOD -->
-    <div id="step-otp-method" class="step">
-      <h1>How would you like to receive your verification code?</h1>
-      <p class="subtitle" style="display: none"></p>
-      <!-- Hidden but kept for spacing/structure -->
+              <div class="mini-error" id="bvnError"></div>
+            </div>
 
-      <div class="input-label">Verification Method</div>
-      <div id="methodsList">
-        <!-- Rendered dynamically e.g.
-            <label class="radio-option">
-                <div class="radio-text-container">
-                    <span class="radio-text">SMS to 0818***6496</span>
+            <div id="step-otp-method" class="mini-step">
+              <h1 class="mini-title onboarding-title">Choose verification method</h1>
+              <p class="mini-subtitle">How would you like to receive your verification code?</p>
+
+              <label class="mini-section-label">Verification Method</label>
+              <div class="mini-list" id="methodsList"></div>
+              <div class="mini-error" id="methodError"></div>
+            </div>
+
+            <div id="step-otp-verify" class="mini-step">
+              <h1 class="mini-title onboarding-title">Enter verification code</h1>
+              <p class="mini-subtitle">We sent a 6-digit code to your selected method.</p>
+
+              <div class="onboarding-form">
+                <input
+                  type="tel"
+                  id="otpInput"
+                  class="mini-input otp-input"
+                  placeholder="Verification Code"
+                  maxlength="6"
+                />
+              </div>
+
+              <div class="mini-error" id="otpError"></div>
+            </div>
+
+            <div id="step-account" class="mini-step">
+              <h1 class="mini-title onboarding-title">Select your account</h1>
+              <p class="mini-subtitle">Choose the bank account you'd like to use with Fusepay.</p>
+
+              <label class="mini-section-label">Bank Account</label>
+              <div class="mini-list" id="accountsList"></div>
+              <div class="mini-error" id="accountError"></div>
+            </div>
+
+            <div id="step-complete" class="mini-step">
+              <h1 class="mini-title onboarding-title">Complete your profile</h1>
+              <p class="mini-subtitle">Add your details to finish setup securely.</p>
+
+              <div class="onboarding-form">
+                <input type="email" id="emailInput" class="mini-input" placeholder="Email Address" />
+                <input type="text" id="addressInput" class="mini-input" placeholder="Address" />
+                <input
+                  type="password"
+                  id="pinInput"
+                  class="mini-input setup-pin"
+                  placeholder="Transaction PIN (4 digits)"
+                  maxlength="4"
+                  pattern="[0-9]*"
+                  inputmode="numeric"
+                />
+              </div>
+
+              <div class="mini-error" id="completeError"></div>
+            </div>
+
+            <div id="step-success" class="mini-step">
+              <div class="mini-success-wrap">
+                <div class="mini-success-badge">
+                  <svg
+                    width="40"
+                    height="40"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="white"
+                    stroke-width="3"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  >
+                    <polyline points="20 6 9 17 4 12"></polyline>
+                  </svg>
                 </div>
-                <input type="radio" name="otp_method" class="radio-input" value="sms">
-                <div class="radio-custom"></div>
-            </label>
-            -->
-      </div>
-      <div class="error-msg" id="methodError" style="margin-top: 16px"></div>
-    </div>
+                <h1 class="mini-title onboarding-success-title" id="successTitle">Setup Complete!</h1>
+                <p class="mini-subtitle onboarding-success-subtitle" id="successSubtitle">
+                  Your profile is securely set up and ready to use.
+                </p>
+              </div>
+            </div>
+          </div>
 
-    <!-- STEP 3: OTP VERIFY -->
-    <div id="step-otp-verify" class="step">
-      <h1>Enter the 6-digit code</h1>
-      <p class="subtitle">
-        We sent a verification code to your selected method.
-      </p>
-
-      <div class="input-group">
-        <input
-          type="tel"
-          id="otpInput"
-          placeholder="Verification Code"
-          maxlength="6"
-        />
-      </div>
-      <div class="error-msg" id="otpError"></div>
-    </div>
-
-    <!-- STEP 4: ACCOUNT SELECTION -->
-    <div id="step-account" class="step">
-      <h1>Select your account</h1>
-      <p class="subtitle">
-        Choose the bank account you'd like to use with Fusepay.
-      </p>
-
-      <div class="input-label">Bank Account</div>
-      <div id="accountsList">
-        <!-- Rendered dynamically -->
-      </div>
-
-      <div class="error-msg" id="accountError" style="margin-top: 16px"></div>
-    </div>
-
-    <!-- STEP 5: COMPLETE SETUP -->
-    <div id="step-complete" class="step">
-      <h1>Complete your profile</h1>
-      <p class="subtitle" style="display: none"></p>
-
-      <div class="input-group">
-        <input type="email" id="emailInput" placeholder="Email Address" />
-      </div>
-
-      <div class="input-group">
-        <input type="text" id="addressInput" placeholder="Address" />
-      </div>
-
-      <div class="input-group">
-        <input
-          type="password"
-          id="pinInput"
-          placeholder="Transaction PIN (4 digits)"
-          maxlength="4"
-          pattern="[0-9]*"
-          inputmode="numeric"
-        />
-      </div>
-
-      <div class="error-msg" id="completeError"></div>
-    </div>
-
-    <!-- STEP 6: SUCCESS -->
-    <div id="step-success" class="step">
-      <div style="text-align: center; margin-top: 40px">
-        <div
-          style="
-            width: 80px;
-            height: 80px;
-            border-radius: 50%;
-            background: #00a884;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            margin-bottom: 24px;
-          "
-        >
-          <svg
-            width="40"
-            height="40"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="white"
-            stroke-width="3"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-          >
-            <polyline points="20 6 9 17 4 12"></polyline>
-          </svg>
+          <div class="onboarding-footer mini-footer" id="htmlBottomBar">
+            <button class="mini-btn" id="btnMainAction" disabled>
+              <span id="btnMainText">Continue</span>
+              <span class="mini-loader" id="btnMainLoader"></span>
+            </button>
+          </div>
         </div>
-        <h1>Setup Complete!</h1>
-        <p class="subtitle" style="text-align: center">
-          Your profile is securely set up and ready to use.
-        </p>
       </div>
-    </div>
-
-    <!-- Fixed Bottom Bar for HTML fallback -->
-    <div class="bottom-bar" id="htmlBottomBar">
-      <button class="btn-primary" id="btnMainAction">
-        <span class="btn-text" id="btnMainText">Continue</span>
-        <div class="loader" id="btnMainLoader"></div>
-      </button>
     </div>
 
     <script>
       const tg = window.Telegram.WebApp;
       tg.ready();
       tg.expand();
+      window.TelegramMiniAppTheme?.applyTheme({ accentFallback: "#21d07a" });
 
-      // Set theme colors early
       try {
-        tg.setBackgroundColor(tg.themeParams.bg_color || "#ffffff");
-        tg.setHeaderColor(tg.themeParams.bg_color || "#ffffff");
-        if (tg.themeParams.text_color) {
-          document.body.style.setProperty(
-            "--tg-theme-text-color",
-            tg.themeParams.text_color,
-          );
+        if (tg.MainButton) {
+          tg.MainButton.hide();
         }
       } catch (e) {}
 
       const params = new URLSearchParams(window.location.search);
       const flowToken = params.get("flow_token") || "";
+      const isLinkingFlow = flowToken.startsWith("link-");
 
-      let currentStep = "bvn"; // bvn, otp_method, otp_verify, account, complete, success
+      let currentStep = "bvn";
       let historyStack = [];
-
-      tg.BackButton.onClick(() => {
-        if (historyStack.length > 0) {
-          tg.HapticFeedback.impactOccurred("light");
-          let prevStep = historyStack.pop();
-          showStep(`step-${prevStep}`, false);
-        }
-      });
-
-      // State variables
       let pendingBvn = "";
       let pendingMethod = "";
       let selectedAccountId = "";
 
-      // UI references
-      const htmlBottomBar = document.getElementById("htmlBottomBar");
       const btnMainAction = document.getElementById("btnMainAction");
       const btnMainText = document.getElementById("btnMainText");
       const btnMainLoader = document.getElementById("btnMainLoader");
+      const progressFill = document.getElementById("progressFill");
 
-      // Toggle Telegram MainButton vs HTML fallback Button
-      // Telegram MainButton provides the best native experience,
-      // but if not available we use the internal HTML bottom bar.
-      function setupMainButton() {
-        if (tg.MainButton) {
-          tg.MainButton.color = "#00A884";
-          tg.MainButton.textColor = "#ffffff";
-          tg.MainButton.onClick(() => handleMainAction());
-        } else {
-          htmlBottomBar.classList.add("active");
-          btnMainAction.addEventListener("click", () => handleMainAction());
+      tg.BackButton.onClick(() => {
+        if (historyStack.length > 0) {
+          tg.HapticFeedback.impactOccurred("light");
+          const prevStep = historyStack.pop();
+          showStep(`step-${prevStep}`, false);
         }
-        updateMainButton("Continue", false, true);
-      }
+      });
+
+      btnMainAction.addEventListener("click", () => {
+        if (!btnMainAction.disabled) {
+          handleMainAction();
+        }
+      });
 
       function updateMainButton(text, isLoading, isVisible, isActive = true) {
-        if (tg.MainButton) {
-          if (isVisible && currentStep !== "success") {
-            tg.MainButton.setText(text);
-            if (isLoading) {
-              tg.MainButton.showProgress();
-            } else {
-              tg.MainButton.hideProgress();
-            }
-            if (isActive) {
-              tg.MainButton.enable();
-              tg.MainButton.color = "#00A884";
-            } else {
-              tg.MainButton.disable();
-              tg.MainButton.color = "#cccccc";
-            }
-            tg.MainButton.show();
-          } else {
-            tg.MainButton.hide();
-          }
+        const footer = document.getElementById("htmlBottomBar");
+        if (!isVisible || currentStep === "success") {
+          footer.style.display = "none";
+          return;
         }
 
-        // Also update HTML fallback if Telegram WebApp is not fully supporting MainButton
-        if (!tg.MainButton || !tg.MainButton.isVisible) {
-          if (isVisible && currentStep !== "success") {
-            htmlBottomBar.classList.add("active");
-            btnMainText.textContent = text;
-            btnMainAction.disabled = !isActive || isLoading;
-            if (isLoading) {
-              btnMainText.style.display = "none";
-              btnMainLoader.style.display = "block";
-            } else {
-              btnMainText.style.display = "inline-block";
-              btnMainLoader.style.display = "none";
-            }
-          } else {
-            htmlBottomBar.classList.remove("active");
-          }
-        }
+        footer.style.display = "block";
+        btnMainText.textContent = text;
+        btnMainAction.disabled = isLoading || !isActive;
+        btnMainLoader.style.display = isLoading ? "inline-flex" : "none";
+        btnMainText.style.display = isLoading ? "none" : "inline";
       }
 
       function getProgressWidth(step) {
+        if (isLinkingFlow) {
+          const linkingMap = {
+            "otp-method": "35%",
+            "otp-verify": "67%",
+            account: "100%",
+            success: "100%",
+          };
+          return linkingMap[step] || "10%";
+        }
         const map = {
           bvn: "20%",
           "otp-method": "40%",
@@ -529,14 +269,12 @@
         }
 
         currentStep = stepId.replace("step-", "");
-        document
-          .querySelectorAll(".step")
-          .forEach((el) => el.classList.remove("active"));
+        document.querySelectorAll(".mini-step").forEach((el) => el.classList.remove("active"));
         document.getElementById(stepId).classList.add("active");
 
-        const progressFill = document.getElementById("progressFill");
-        if (progressFill)
+        if (progressFill) {
           progressFill.style.width = getProgressWidth(currentStep);
+        }
 
         if (currentStep === "success" || historyStack.length === 0) {
           tg.BackButton.hide();
@@ -544,13 +282,15 @@
           tg.BackButton.show();
         }
 
-        // Adjust button configuration based on step
         if (currentStep === "success") {
           tg.HapticFeedback.notificationOccurred("success");
           updateMainButton("", false, false);
           setTimeout(() => tg.close(), 2500);
-        } else if (currentStep === "otp-method") {
-          updateMainButton("Send Code", false, true, false); // Disabled until selection
+          return;
+        }
+
+        if (currentStep === "otp-method") {
+          updateMainButton("Send Code", false, true, false);
         } else if (currentStep === "otp-verify") {
           updateMainButton("Verify Code", false, true, false);
         } else if (currentStep === "account") {
@@ -563,10 +303,7 @@
       }
 
       async function makeApiCall(endpoint, data) {
-        const proto = window.location.protocol;
-        const host = window.location.host;
-        const url = `${proto}//${host}/webhook/telegram/onboarding/${endpoint}`;
-
+        const url = `${window.location.protocol}//${window.location.host}/webhook/telegram/onboarding/${endpoint}`;
         try {
           const response = await fetch(url, {
             method: "POST",
@@ -580,6 +317,48 @@
         } catch (err) {
           return { success: false, error: "Network error. Please try again." };
         }
+      }
+
+      async function bootstrapLinkingSession() {
+        const completeStep = document.getElementById("step-complete");
+        if (completeStep) completeStep.style.display = "none";
+
+        const successTitle = document.getElementById("successTitle");
+        const successSubtitle = document.getElementById("successSubtitle");
+        if (successTitle) successTitle.textContent = "Account Linked!";
+        if (successSubtitle) {
+          successSubtitle.textContent = "Your new bank account is now linked and ready to use.";
+        }
+
+        updateMainButton("Loading...", true, true, false);
+        const res = await makeApiCall("linking_session", {
+          flow_token: flowToken,
+        });
+
+        if (!res.success) {
+          updateMainButton("Continue", false, false, false);
+          const errorEl = document.getElementById("bvnError");
+          if (errorEl) {
+            errorEl.textContent =
+              res.error || "Linking session expired. Please restart from chat.";
+          }
+          return;
+        }
+
+        pendingBvn = res.data?.bvn || "";
+        const methods = res.data?.methods || [];
+        if (!methods.length) {
+          updateMainButton("Continue", false, false, false);
+          const errorEl = document.getElementById("bvnError");
+          if (errorEl) {
+            errorEl.textContent =
+              "No verification method found. Please restart account linking from chat.";
+          }
+          return;
+        }
+
+        renderMethods(methods);
+        showStep("step-otp-method", false);
       }
 
       async function handleMainAction() {
@@ -597,18 +376,11 @@
         }
       }
 
-      // --- Step 1: BVN ---
       const bvnInput = document.getElementById("bvnInput");
 
       function checkBvnForm() {
         bvnInput.value = bvnInput.value.replace(/\D/g, "");
-        const bvn = bvnInput.value;
-
-        if (bvn.length === 11) {
-          updateMainButton("Continue", false, true, true);
-        } else {
-          updateMainButton("Continue", false, true, false);
-        }
+        updateMainButton("Continue", false, true, bvnInput.value.length === 11);
       }
 
       bvnInput.addEventListener("input", checkBvnForm);
@@ -644,13 +416,13 @@
         }
       }
 
-      // --- Step 2: OTP Method ---
       function renderMethods(methods) {
         const list = document.getElementById("methodsList");
         list.innerHTML = "";
-        methods.forEach((m, index) => {
+
+        methods.forEach((m) => {
           const label = document.createElement("label");
-          label.className = "radio-option";
+          label.className = "mini-choice";
 
           let displayTitle = "";
           if (m.id === "sms") {
@@ -662,14 +434,15 @@
           }
 
           label.innerHTML = `
-                    <div class="radio-text-container">
-                        <span class="radio-text">${displayTitle}</span>
-                    </div>
-                    <input type="radio" name="otp_method" class="radio-input" value="${m.id}">
-                    <div class="radio-custom"></div>
-                `;
+            <div class="mini-choice-text">
+              <span class="mini-choice-title">${displayTitle}</span>
+            </div>
+            <input type="radio" name="otp_method" class="mini-radio-input" value="${m.id}" />
+            <span class="mini-radio"></span>
+          `;
 
           label.querySelector("input").addEventListener("change", () => {
+            pendingMethod = m.id;
             updateMainButton("Send Code", false, true, true);
           });
           list.appendChild(label);
@@ -677,9 +450,7 @@
       }
 
       async function requestOtp() {
-        const selectedMethod = document.querySelector(
-          'input[name="otp_method"]:checked',
-        );
+        const selectedMethod = document.querySelector('input[name="otp_method"]:checked');
         const errorEl = document.getElementById("methodError");
         errorEl.textContent = "";
 
@@ -688,13 +459,12 @@
           return;
         }
 
-        const method = selectedMethod.value;
-        pendingMethod = method;
+        pendingMethod = selectedMethod.value;
 
         updateMainButton("Sending Code...", true, true);
         const res = await makeApiCall("send_otp", {
           flow_token: flowToken,
-          method,
+          method: pendingMethod,
         });
         updateMainButton("Send Code", false, true, true);
 
@@ -703,18 +473,14 @@
           errorEl.textContent = res.error || "Failed to send OTP";
           return;
         }
+
         showStep("step-otp-verify");
       }
 
-      // --- Step 3: OTP Verify ---
       const otpInput = document.getElementById("otpInput");
-      otpInput.addEventListener("input", (e) => {
+      otpInput.addEventListener("input", () => {
         otpInput.value = otpInput.value.replace(/\D/g, "");
-        if (otpInput.value.length === 6) {
-          updateMainButton("Verify Code", false, true, true);
-        } else {
-          updateMainButton("Verify Code", false, true, false);
-        }
+        updateMainButton("Verify Code", false, true, otpInput.value.length === 6);
       });
 
       async function submitOtp() {
@@ -725,7 +491,7 @@
         if (otp.length !== 6) return;
 
         updateMainButton("Verifying Code...", true, true);
-        let res = await makeApiCall("otp", { flow_token: flowToken, otp });
+        const res = await makeApiCall("otp", { flow_token: flowToken, otp });
         updateMainButton("Verify Code", false, true, true);
 
         if (!res.success) {
@@ -744,7 +510,6 @@
         }
       }
 
-      // --- Step 4: Account Selection ---
       function renderAccounts(accounts) {
         const container = document.getElementById("accountsList");
         container.innerHTML = "";
@@ -753,20 +518,21 @@
           const title = acc.title || acc.id || "Unknown Account";
 
           const label = document.createElement("label");
-          label.className = "radio-option";
-
+          label.className = "mini-choice";
           label.innerHTML = `
-                    <div class="radio-text-container">
-                        <span class="radio-text">${title}</span>
-                    </div>
-                    <input type="radio" name="account_selection" class="radio-input" value="${acc.id}">
-                    <div class="radio-custom"></div>
-                `;
+            <div class="mini-choice-text">
+              <span class="mini-choice-title">${title}</span>
+              ${acc.subtitle ? `<span class="mini-choice-subtitle">${acc.subtitle}</span>` : ""}
+            </div>
+            <input type="radio" name="account_selection" class="mini-radio-input" value="${acc.id}" />
+            <span class="mini-radio"></span>
+          `;
 
           label.querySelector("input").addEventListener("change", (e) => {
             selectedAccountId = e.target.value;
             updateMainButton("Link Account", false, true, true);
           });
+
           container.appendChild(label);
         });
       }
@@ -774,6 +540,7 @@
       async function submitAccount() {
         const errorEl = document.getElementById("accountError");
         errorEl.textContent = "";
+
         if (!selectedAccountId) return;
 
         updateMainButton("Linking...", true, true);
@@ -788,10 +555,24 @@
           errorEl.textContent = res.error || "Selection failed";
           return;
         }
+
+        if (isLinkingFlow) {
+          try {
+            tg.sendData(
+              JSON.stringify({
+                action: "onboarding_success",
+                flow_token: flowToken,
+                mode: "relink",
+              }),
+            );
+          } catch (e) {}
+          showStep("step-success");
+          return;
+        }
+
         showStep("step-complete");
       }
 
-      // --- Step 5: Complete Setup ---
       const emailInput = document.getElementById("emailInput");
       const addressInput = document.getElementById("addressInput");
       const pinInput = document.getElementById("pinInput");
@@ -800,13 +581,9 @@
         const email = emailInput.value.trim();
         const address = addressInput.value.trim();
         const pin = pinInput.value.replace(/\D/g, "");
-        pinInput.value = pin; // Enforce numeric only
+        pinInput.value = pin;
 
-        if (email && address && pin.length === 4) {
-          updateMainButton("Finish Setup", false, true, true);
-        } else {
-          updateMainButton("Finish Setup", false, true, false);
-        }
+        updateMainButton("Finish Setup", false, true, !!email && !!address && pin.length === 4);
       }
 
       emailInput.addEventListener("input", checkCompleteForm);
@@ -830,6 +607,7 @@
         updateMainButton("Finish Setup", false, true, true);
 
         if (!res.success) {
+          tg.HapticFeedback.notificationOccurred("error");
           errorEl.textContent = res.error || "Setup failed";
           return;
         }
@@ -846,8 +624,14 @@
         showStep("step-success");
       }
 
-      // Initialize setup
-      setupMainButton();
+      async function initializeFlow() {
+        updateMainButton("Continue", false, true, false);
+        if (isLinkingFlow) {
+          await bootstrapLinkingSession();
+        }
+      }
+
+      initializeFlow();
     </script>
   </body>
 </html>

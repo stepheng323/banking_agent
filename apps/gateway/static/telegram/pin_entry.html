@@ -8,168 +8,110 @@
     />
     <title>Enter Transaction PIN</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script src="/static/telegram/miniapp_theme.js?v=3"></script>
+    <link rel="stylesheet" href="/static/telegram/miniapp_shared.css?v=3" />
     <style>
-      * {
-        margin: 0;
-        padding: 0;
-        box-sizing: border-box;
-        font-family:
-          -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica,
-          Arial, sans-serif;
+      .pin-shell {
+        min-height: 100%;
       }
 
-      body {
-        background-color: var(--tg-theme-bg-color, #ffffff);
-        color: var(--tg-theme-text-color, #111111);
-        min-height: 100vh;
-        display: flex;
-        flex-direction: column;
-        padding: 24px 20px;
+      .pin-title {
+        font-size: 52px;
       }
 
-      h1 {
-        font-size: 24px;
-        font-weight: 700;
-        margin-bottom: 12px;
-        color: var(--tg-theme-text-color, #000000);
-      }
-
-      .subtitle {
-        font-size: 15px;
-        color: var(--tg-theme-hint-color, #4a4a4a);
-        margin-bottom: 32px;
-        line-height: 1.5;
-      }
-
-      .pin-input-container {
-        position: relative;
-        margin-bottom: 8px;
+      .pin-subtitle {
+        margin-bottom: 22px;
       }
 
       .pin-input {
-        width: 100%;
-        height: 52px;
-        padding: 0 16px;
-        font-size: 24px;
-        letter-spacing: 16px;
-        font-weight: 600;
-        border: 1px solid var(--tg-theme-hint-color, #cccccc);
-        border-radius: 8px;
-        background: transparent;
-        color: var(--tg-theme-text-color, #111111);
-        outline: none;
+        font-size: 38px;
+        letter-spacing: 12px;
+        font-weight: 650;
+        caret-color: var(--mini-accent);
         -webkit-text-security: disc;
-        text-align: center;
-        caret-color: var(--tg-theme-button-color, #2481cc);
-        transition:
-          border-color 0.2s,
-          box-shadow 0.2s;
       }
 
-      .pin-input::placeholder {
-        letter-spacing: normal;
-        font-size: 16px;
-        font-weight: 400;
-        color: var(--tg-theme-hint-color, #999999);
+      .pin-submit {
+        font-size: 36px;
       }
 
-      .pin-input:focus {
-        border-color: var(--tg-theme-button-color, #2481cc);
-        box-shadow: 0 0 0 1px var(--tg-theme-button-color, #2481cc);
+      body.locked-state .pin-input {
+        border-color: var(--mini-danger);
       }
 
-      .error-msg {
-        color: #e53935;
-        font-size: 14px;
-        margin-top: 8px;
-        min-height: 20px;
-        text-align: center;
+      body.success-state .pin-input {
+        border-color: var(--mini-accent);
       }
 
-      .spacer {
-        flex: 1;
-        min-height: 32px;
+      body.success-state .pin-submit {
+        background: var(--mini-success);
+        color: #eef6ef;
       }
 
-      button.btn-submit {
-        width: 100%;
-        height: 48px;
-        border-radius: 24px;
-        background: var(--tg-theme-button-color, #2481cc);
-        color: var(--tg-theme-button-text-color, #ffffff);
-        border: none;
-        font-size: 16px;
-        font-weight: 600;
-        cursor: pointer;
-        transition:
-          opacity 0.15s,
-          background 0.15s;
-        margin-top: auto;
-      }
+      @media (max-width: 420px) {
+        .pin-title {
+          font-size: 46px;
+        }
 
-      button.btn-submit:disabled {
-        background: var(--tg-theme-hint-color, #cccccc);
-        cursor: not-allowed;
-        color: var(--tg-theme-bg-color, #ffffff);
-      }
-
-      button.btn-submit:active:not(:disabled) {
-        opacity: 0.85;
-      }
-
-      .success-state .pin-input {
-        border-color: var(--tg-theme-button-color, #2481cc);
-      }
-
-      .success-state button.btn-submit {
-        background: #2e7d32;
-      }
-
-      .locked-state .pin-input {
-        border-color: #e53935;
+        .pin-submit {
+          font-size: 31px;
+        }
       }
     </style>
   </head>
 
   <body>
-    <h1 id="headerText">Transaction PIN</h1>
-    <p class="subtitle" id="bodyText">
-      Please enter your 4-digit transaction PIN to authorize this request.
-    </p>
+    <div class="mini-page">
+      <div class="mini-sheet">
+        <div class="mini-sheet-content pin-shell">
+          <div class="mini-handle"></div>
+          <div class="mini-topbar">
+            <span class="mini-topbar-icon">×</span>
+            <span class="mini-topbar-title" id="headerText">Enter Transaction Pin</span>
+            <span class="mini-topbar-icon">⋮</span>
+          </div>
 
-    <div class="pin-input-container">
-      <input
-        type="password"
-        id="pinInput"
-        class="pin-input"
-        inputmode="numeric"
-        pattern="[0-9]*"
-        maxlength="4"
-        placeholder="••••"
-        autocomplete="off"
-      />
+          <h2 class="mini-title pin-title">Transaction Pin Required</h2>
+          <p class="mini-subtitle pin-subtitle" id="bodyText">
+            Please enter your 4-digit transaction pin to authorize your transaction
+          </p>
+
+          <div>
+            <label class="mini-section-label" for="pinInput">Enter Pin</label>
+            <input
+              type="password"
+              id="pinInput"
+              class="mini-input pin-input"
+              inputmode="numeric"
+              pattern="[0-9]*"
+              maxlength="4"
+              placeholder="••••"
+              autocomplete="off"
+            />
+            <p class="mini-hint">Enter your transaction pin</p>
+          </div>
+
+          <div class="mini-error" id="errorMsg"></div>
+          <div class="mini-spacer"></div>
+
+          <div class="mini-footer">
+            <button class="mini-btn pin-submit" id="btnSubmit" onclick="submitPin()" disabled>
+              <span id="btnSubmitText">Submit</span>
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
-    <div class="error-msg" id="errorMsg"></div>
-
-    <div class="spacer"></div>
-
-    <button class="btn-submit" id="btnSubmit" onclick="submitPin()">
-      Submit
-    </button>
 
     <script>
       const tg = window.Telegram.WebApp;
       tg.ready();
       tg.expand();
+      window.TelegramMiniAppTheme?.applyTheme({ accentFallback: "#21d07a" });
 
       try {
-        tg.setBackgroundColor(tg.themeParams.bg_color || "#ffffff");
-        tg.setHeaderColor(tg.themeParams.bg_color || "#ffffff");
-        if (tg.themeParams.text_color) {
-          document.body.style.setProperty(
-            "--tg-theme-text-color",
-            tg.themeParams.text_color,
-          );
+        if (tg.MainButton) {
+          tg.MainButton.hide();
         }
       } catch (e) {}
 
@@ -177,17 +119,11 @@
       const flowToken = params.get("flow_token") || "";
       const chatId = params.get("chat_id") || "";
 
-      // Safely extract the header and body text if passed in the URL (optional)
-      // This is usually handled via server-side templating but we can do it via JS for simplicity
       const paramHeader = params.get("header");
       const paramBodyText = params.get("body_text");
 
-      if (paramHeader)
-        document.getElementById("headerText").textContent =
-          decodeURIComponent(paramHeader);
-      if (paramBodyText)
-        document.getElementById("bodyText").textContent =
-          decodeURIComponent(paramBodyText);
+      if (paramHeader) document.getElementById("headerText").textContent = paramHeader;
+      if (paramBodyText) document.getElementById("bodyText").textContent = paramBodyText;
 
       const PIN_LENGTH = 4;
       const MAX_ATTEMPTS = 3;
@@ -197,25 +133,15 @@
 
       const pinInput = document.getElementById("pinInput");
       const btnSubmit = document.getElementById("btnSubmit");
+      const btnSubmitText = document.getElementById("btnSubmitText");
       const errorMsg = document.getElementById("errorMsg");
 
-      // Focus the input immediately
-      setTimeout(() => pinInput.focus(), 300);
+      setTimeout(() => pinInput.focus(), 320);
 
       function checkInput() {
         if (locked || verified) return;
         pinInput.value = pinInput.value.replace(/\D/g, "").slice(0, PIN_LENGTH);
         btnSubmit.disabled = pinInput.value.length !== PIN_LENGTH;
-
-        if (tg.MainButton && tg.MainButton.isVisible) {
-          if (pinInput.value.length === PIN_LENGTH) {
-            tg.MainButton.enable();
-            tg.MainButton.color = "#00A884";
-          } else {
-            tg.MainButton.disable();
-            tg.MainButton.color = "#cccccc";
-          }
-        }
       }
 
       pinInput.addEventListener("input", checkInput);
@@ -231,36 +157,13 @@
         }
       });
 
-      // Setup MainButton if available
-      if (tg.MainButton) {
-        btnSubmit.style.display = "none"; // Hide HTML fallback
-        tg.MainButton.setText("Submit");
-        tg.MainButton.color = "#cccccc";
-        tg.MainButton.textColor = "#ffffff";
-        tg.MainButton.show();
-        tg.MainButton.disable();
-        tg.MainButton.onClick(() => submitPin());
-      } else {
-        btnSubmit.disabled = true;
-      }
-
       function showError(msg) {
         errorMsg.textContent = msg;
       }
 
       function updateSubmitButton(text, isLoading) {
-        if (tg.MainButton) {
-          tg.MainButton.setText(text);
-          if (isLoading) {
-            tg.MainButton.showProgress();
-            tg.MainButton.disable();
-          } else {
-            tg.MainButton.hideProgress();
-          }
-        } else {
-          btnSubmit.textContent = text;
-          btnSubmit.disabled = isLoading;
-        }
+        btnSubmitText.textContent = text;
+        btnSubmit.disabled = isLoading;
       }
 
       function lockUI(msg) {
@@ -268,18 +171,11 @@
         showError(msg);
         pinInput.disabled = true;
         document.body.classList.add("locked-state");
-
-        if (tg.MainButton) {
-          tg.MainButton.setText("Close");
-          tg.MainButton.color = "#e53935";
-          tg.MainButton.enable();
-          tg.MainButton.onClick(() => tg.close());
-        } else {
-          btnSubmit.textContent = "Close";
-          btnSubmit.disabled = false;
-          btnSubmit.style.background = "#e53935";
-          btnSubmit.onclick = () => tg.close();
-        }
+        btnSubmitText.textContent = "Close";
+        btnSubmit.disabled = false;
+        btnSubmit.style.background = "var(--mini-danger)";
+        btnSubmit.style.color = "#ffffff";
+        btnSubmit.onclick = () => tg.close();
       }
 
       async function submitPin() {
@@ -295,24 +191,19 @@
         pinInput.disabled = true;
         showError("");
 
-        const data = {
-          pin: pin,
-          flow_token: flowToken,
-          chat_id: chatId,
-        };
-
         try {
-          const proto = window.location.protocol;
-          const host = window.location.host;
-          const url = `${proto}//${host}/webhook/telegram/pin_submit`;
-
+          const url = `${window.location.protocol}//${window.location.host}/webhook/telegram/pin_submit`;
           const response = await fetch(url, {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
               "Telegram-Init-Data": tg.initData || "",
             },
-            body: JSON.stringify(data),
+            body: JSON.stringify({
+              pin,
+              flow_token: flowToken,
+              chat_id: chatId,
+            }),
           });
           const res = await response.json();
 
@@ -320,27 +211,17 @@
             verified = true;
             document.body.classList.add("success-state");
             tg.HapticFeedback.notificationOccurred("success");
-
-            if (tg.MainButton) {
-              tg.MainButton.setText("✓ Authorized");
-              tg.MainButton.color = "#2e7d32"; // Darker green
-              tg.MainButton.hideProgress();
-            } else {
-              btnSubmit.textContent = "✓ Authorized";
-              btnSubmit.style.background = "#2e7d32";
-              btnSubmit.disabled = false;
-            }
-
+            btnSubmitText.textContent = "✓ Authorized";
+            btnSubmit.disabled = false;
             showError("");
             setTimeout(() => tg.close(), 1500);
             return;
           }
 
-          // PIN failed — unlock for retry
           tg.HapticFeedback.notificationOccurred("error");
           locked = false;
           pinInput.disabled = false;
-          attempts++;
+          attempts += 1;
           const serverMsg = res.error || "PIN verification failed";
 
           if (res.locked || attempts >= MAX_ATTEMPTS) {
@@ -352,10 +233,7 @@
           pinInput.focus();
           showError(serverMsg);
           updateSubmitButton("Submit", false);
-
-          // Disable button again since input is empty
-          if (tg.MainButton) tg.MainButton.disable();
-          else btnSubmit.disabled = true;
+          btnSubmit.disabled = true;
         } catch (e) {
           tg.HapticFeedback.notificationOccurred("error");
           locked = false;
@@ -364,9 +242,7 @@
           pinInput.focus();
           showError(e.message || "Network error. Please try again.");
           updateSubmitButton("Submit", false);
-
-          if (tg.MainButton) tg.MainButton.disable();
-          else btnSubmit.disabled = true;
+          btnSubmit.disabled = true;
         }
       }
     </script>
