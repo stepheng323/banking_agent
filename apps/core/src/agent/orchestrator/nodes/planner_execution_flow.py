@@ -3,8 +3,10 @@
 from dataclasses import dataclass
 from typing import Any
 
+from apps.core.src.agent.graphs.account.parser import AccountParser
 from apps.core.src.agent.orchestrator.models.state import OrchestratorState
 from apps.core.src.agent.orchestrator.nodes.planner_fastpath import (
+    CONTEXT_FASTPATH_ACCOUNT_SUBTYPES,
     CONTEXT_FASTPATH_FLOW_SUBTYPES,
     NO_ACTIVE_FLOW_FASTPATH_MESSAGE,
     _build_beneficiary_fastpath_context_updates,
@@ -13,7 +15,6 @@ from apps.core.src.agent.orchestrator.nodes.planner_fastpath import (
     _context_fastpath_total_items,
     _has_context_for_fastpath_subtype,
     _planner_fastpath_subtype,
-    _should_bypass_account_read_fastpath,
 )
 from apps.core.src.agent.orchestrator.nodes.planner_guardrails import (
     _deescalate_mandate_acknowledgement,
@@ -31,6 +32,22 @@ class PlannerExecutionResult:
     planner_output: Any
     current_locale: str
     fastpath_context_updates: dict[str, Any]
+
+
+async def _infer_account_fastpath_action(task_planner: Any, text: str) -> str | None:
+    planner_llm = getattr(task_planner, "planner_llm", None)
+    if planner_llm is None or not callable(getattr(planner_llm, "with_structured_output", None)):
+        return None
+
+    try:
+        parser = AccountParser(planner_llm)
+        parsed = await parser.parse(text)
+    except Exception as exc:
+        logger.warning("account_fastpath_action_inference_failed", error=str(exc))
+        return None
+
+    action = getattr(parsed, "action", None)
+    return str(action) if action else None
 
 
 async def _execute_planner_with_context(
@@ -68,9 +85,13 @@ async def _execute_planner_with_context(
         has_no_tasks = not planner_output.tasks
         is_conversational_no_task = planner_output.primary_intent == "conversational" and has_no_tasks
         is_flow_fastpath = fastpath_subtype in CONTEXT_FASTPATH_FLOW_SUBTYPES
-        bypass_read_fastpath = _should_bypass_account_read_fastpath(fastpath_subtype, text)
-        if bypass_read_fastpath:
-            has_context_for_fastpath = False
+        account_fallback_action: str | None = None
+
+        if fastpath_subtype in CONTEXT_FASTPATH_ACCOUNT_SUBTYPES and has_no_tasks:
+            inferred_action = await _infer_account_fastpath_action(task_planner, text)
+            if inferred_action and inferred_action not in {"list", "count", "unknown"}:
+                has_context_for_fastpath = False
+                account_fallback_action = inferred_action
 
         if is_conversational_no_task and has_context_for_fastpath:
             logger.info("context_fastpath_hit", subtype=fastpath_subtype)
@@ -84,8 +105,8 @@ async def _execute_planner_with_context(
                     total=total_items,
                 )
         else:
-            if bypass_read_fastpath:
-                fallback_reason = "account_mutation_request"
+            if account_fallback_action:
+                fallback_reason = "account_action_override"
             elif not has_context_for_fastpath:
                 fallback_reason = "insufficient_context"
             elif has_no_tasks:
@@ -94,7 +115,11 @@ async def _execute_planner_with_context(
                 fallback_reason = "planner_emitted_task"
 
             if has_no_tasks:
-                fallback_task = _build_fastpath_fallback_task(fastpath_subtype, text)
+                fallback_task = _build_fastpath_fallback_task(
+                    fastpath_subtype,
+                    text,
+                    account_action_override=account_fallback_action,
+                )
                 if fallback_task:
                     planner_output.tasks = [fallback_task]
                     planner_output.primary_intent = fallback_task.executor

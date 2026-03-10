@@ -35,6 +35,30 @@ class _CapturingPlanner(_MockPlanner):
         return self._output
 
 
+class _AccountParserStructured:
+    def __init__(self, action: str) -> None:
+        self._action = action
+
+    async def ainvoke(self, prompt: object) -> dict[str, Any]:
+        del prompt
+        return {"action": self._action, "identifier": None, "language": "english"}
+
+
+class _AccountParserLLM:
+    def __init__(self, action: str) -> None:
+        self._action = action
+
+    def with_structured_output(self, schema: object) -> _AccountParserStructured:
+        del schema
+        return _AccountParserStructured(self._action)
+
+
+class _AccountIntentPlanner(_MockPlanner):
+    def __init__(self, output: PlannerOutput, inferred_action: str) -> None:
+        super().__init__(output)
+        self.planner_llm = _AccountParserLLM(inferred_action)
+
+
 @pytest.mark.asyncio
 async def test_fastpath_uses_direct_response_when_context_is_sufficient() -> None:
     planner_output = PlannerOutput(
@@ -299,7 +323,11 @@ async def test_fastpath_v2_link_account_request_bypasses_account_summary_read_pa
         },
     )
     config: RunnableConfig = {
-        "configurable": {"task_planner": _MockPlanner(planner_output), "services": {}, "redis_client": None},
+        "configurable": {
+            "task_planner": _AccountIntentPlanner(planner_output, inferred_action="link"),
+            "services": {},
+            "redis_client": None,
+        },
         "recursion_limit": 50,
     }
 
