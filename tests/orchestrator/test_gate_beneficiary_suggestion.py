@@ -1,0 +1,183 @@
+import json
+from typing import Any
+
+from langchain_core.runnables import RunnableConfig
+
+from apps.core.src.agent.orchestrator.models.state import OrchestratorState
+from apps.core.src.agent.orchestrator.nodes.gate import (
+    _resolve_beneficiary_suggestion_reply,
+    session_gate_fastpath,
+)
+from shared.types.planner import TurnRouteDecision
+
+
+class _SuggestionRedis:
+    def __init__(self, suggestion_payload: dict[str, Any]) -> None:
+        self._payload = suggestion_payload
+        self.deleted_keys: list[str] = []
+
+    async def get(self, key: str) -> str | None:
+        if ":beneficiary_suggestion" in key:
+            return json.dumps(self._payload)
+        return None
+
+    async def delete(self, key: str) -> int:
+        self.deleted_keys.append(key)
+        return 1
+
+
+class _RouteTurnPlanner:
+    def __init__(self, decision: TurnRouteDecision) -> None:
+        self._decision = decision
+        self.route_calls = 0
+
+    async def route_turn(self, phone_number: str, text: str, context: str = "None") -> TurnRouteDecision:
+        del phone_number, text, context
+        self.route_calls += 1
+        return self._decision
+
+
+def test_beneficiary_suggestion_resolver_extracts_noisy_alias() -> None:
+    decision = _resolve_beneficiary_suggestion_reply(
+        "abeg yes save am as Mum please",
+        locale="pcm",
+        suggestion_payload={"recipient_name": "Tolu"},
+    )
+    assert decision.action == "save_alias"
+    assert decision.alias == "Mum"
+
+
+def test_beneficiary_suggestion_resolver_dismisses_transaction_message() -> None:
+    decision = _resolve_beneficiary_suggestion_reply(
+        "Send 10k to mum",
+        locale="en",
+        suggestion_payload={"recipient_name": "Tolu"},
+    )
+    assert decision.action == "dismiss"
+    assert decision.reason == "transaction_guard"
+
+
+async def test_gate_suggestion_save_alias_creates_beneficiary_task_without_planner() -> None:
+    planner = _RouteTurnPlanner(
+        TurnRouteDecision(
+            decision="respond_directly",
+            confidence=0.95,
+            detected_language="English",
+            response_key="conversational.checkin",
+            response=None,
+            expected_transaction_executors=[],
+            reason="not-used",
+        )
+    )
+    redis_client = _SuggestionRedis(
+        {
+            "recipient_name": "Tolu Adedayo",
+            "recipient_account": "0760505261",
+            "bank_name": "First Bank",
+        }
+    )
+    state = OrchestratorState(
+        user_id="u_gate_benef_1",
+        phone_number="2348011112201",
+        channel="whatsapp",
+        last_message_text="save as Mum",
+        loaded_context={"language": "en"},
+    )
+    config: RunnableConfig = {
+        "configurable": {"redis_client": redis_client, "task_planner": planner},
+        "recursion_limit": 50,
+    }
+
+    updates = await session_gate_fastpath(state, config)
+
+    assert planner.route_calls == 0
+    assert updates["fast_path_triggered"] is True
+    assert updates["waves"] == [["fast_beneficiary_save"]]
+    task = updates["tasks"]["fast_beneficiary_save"]
+    assert task.type == "beneficiary"
+    assert task.payload["action"] == "save_beneficiary"
+    assert task.payload["alias"] == "Mum"
+    assert redis_client.deleted_keys == []
+
+
+async def test_gate_suggestion_affirmation_creates_default_save_task() -> None:
+    redis_client = _SuggestionRedis(
+        {
+            "recipient_name": "Tolu Adedayo",
+            "recipient_account": "0760505261",
+            "bank_name": "First Bank",
+        }
+    )
+    state = OrchestratorState(
+        user_id="u_gate_benef_2",
+        phone_number="2348011112202",
+        channel="whatsapp",
+        last_message_text="yes",
+        loaded_context={"language": "en"},
+    )
+    config: RunnableConfig = {
+        "configurable": {"redis_client": redis_client},
+        "recursion_limit": 50,
+    }
+
+    updates = await session_gate_fastpath(state, config)
+
+    assert updates["fast_path_triggered"] is True
+    assert updates["waves"] == [["fast_beneficiary_save"]]
+    task = updates["tasks"]["fast_beneficiary_save"]
+    assert task.type == "beneficiary"
+    assert task.payload["action"] == "save_beneficiary"
+    assert "alias" not in task.payload
+    assert redis_client.deleted_keys == []
+
+
+async def test_gate_suggestion_transaction_turn_dismisses_and_falls_through() -> None:
+    redis_client = _SuggestionRedis(
+        {
+            "recipient_name": "Tolu Adedayo",
+            "recipient_account": "0760505261",
+            "bank_name": "First Bank",
+        }
+    )
+    state = OrchestratorState(
+        user_id="u_gate_benef_3",
+        phone_number="2348011112203",
+        channel="whatsapp",
+        last_message_text="Send 10k to mum",
+        loaded_context={"language": "en"},
+    )
+    config: RunnableConfig = {
+        "configurable": {"redis_client": redis_client},
+        "recursion_limit": 50,
+    }
+
+    updates = await session_gate_fastpath(state, config)
+
+    assert updates == {}
+    assert redis_client.deleted_keys == ["user:2348011112203:beneficiary_suggestion"]
+
+
+async def test_gate_suggestion_non_save_reply_dismisses_and_falls_through() -> None:
+    redis_client = _SuggestionRedis(
+        {
+            "recipient_name": "Tolu Adedayo",
+            "recipient_account": "0760505261",
+            "bank_name": "First Bank",
+        }
+    )
+    state = OrchestratorState(
+        user_id="u_gate_benef_4",
+        phone_number="2348011112204",
+        channel="whatsapp",
+        last_message_text="no thanks",
+        loaded_context={"language": "en"},
+    )
+    config: RunnableConfig = {
+        "configurable": {"redis_client": redis_client},
+        "recursion_limit": 50,
+    }
+
+    updates = await session_gate_fastpath(state, config)
+
+    assert updates == {}
+    assert redis_client.deleted_keys == ["user:2348011112204:beneficiary_suggestion"]

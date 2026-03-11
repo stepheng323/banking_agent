@@ -5,7 +5,8 @@ Implements deterministic routing for active sessions and query continuation.
 """
 
 import re
-from typing import Any
+from dataclasses import dataclass
+from typing import Any, Literal
 
 from langchain_core.runnables import RunnableConfig
 
@@ -54,6 +55,117 @@ EXPLICIT_CANCEL_PATTERNS = (
     r"\bnevermind\b",
     r"\bnever\s+mind\b",
 )
+_BENEFICIARY_SUGGESTION_ALIAS_MAX_CHARS = 64
+_BENEFICIARY_ALIAS_MARKERS = (" as ", " alias ", " name ", " called ", " oruko ", " suna ", " aha ", " nom ")
+_BENEFICIARY_SAVE_AFFIRMATIONS = {
+    "yes",
+    "yes please",
+    "ok",
+    "okay",
+    "sure",
+    "proceed",
+    "go ahead",
+    "confirm",
+    "save",
+    "save it",
+    "save am",
+    "save this",
+    "save beneficiary",
+    "yes na",
+    "ok na",
+    "biko",
+    "na'am",
+    "naam",
+    "ee",
+    "beeni",
+    "oui",
+    "d'accord",
+    "daccord",
+}
+_BENEFICIARY_DISMISS_PHRASES = {
+    "no",
+    "no thanks",
+    "not now",
+    "later",
+    "skip",
+    "dont save",
+    "don't save",
+    "leave it",
+    "ignore",
+    "cancel",
+}
+_BENEFICIARY_SAVE_INTENT_RE = re.compile(
+    r"\b("
+    r"save|store|keep|remember|add|register|record|bookmark|"
+    r"sauve|sauver|enregistre|enregistrer|garde|garder|"
+    r"ajiye|adana|fipamo|pamo|toju|chekwa|debe"
+    r")\b",
+    re.IGNORECASE,
+)
+_BENEFICIARY_ALIAS_CAPTURE_PATTERNS = (
+    re.compile(
+        r"\b(?:save|store|keep|remember|add|register|record|bookmark|"
+        r"sauve|sauver|enregistre|enregistrer|garde|garder|"
+        r"ajiye|adana|fipamo|pamo|toju|chekwa|debe)\b"
+        r"(?:[\w\s]{0,32})?"
+        r"\b(?:as|alias|name|called|oruko|suna|aha|nom)\b[:\s\"'`-]*(?P<alias>.+)$",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\b(?:save|store|keep|remember|add|register|record|bookmark|"
+        r"sauve|sauver|enregistre|enregistrer|garde|garder|"
+        r"ajiye|adana|fipamo|pamo|toju|chekwa|debe)\b[:\s\"'`-]+(?P<alias>.+)$",
+        re.IGNORECASE,
+    ),
+)
+_BENEFICIARY_QUOTED_ALIAS_RE = re.compile(r"[\"'](?P<alias>[^\"']{1,64})[\"']")
+_BENEFICIARY_ALIAS_TRAILING_NOISE_RE = re.compile(
+    r"\b("
+    r"please|pls|abeg|thanks|thank you|thankyou|na|jare|biko|"
+    r"don allah|jowo|s'il vous plait|sil vous plait|svp|stp"
+    r")\b$",
+    re.IGNORECASE,
+)
+_BENEFICIARY_ALIAS_ONLY_BLOCKLIST = {
+    "it",
+    "this",
+    "that",
+    "beneficiary",
+    "recipient",
+    "save",
+    "yes",
+    "okay",
+    "ok",
+    "sure",
+}
+_SUGGESTION_TX_HINT_KEYWORDS = (
+    "send",
+    "transfer",
+    "pay",
+    "buy",
+    "airtime",
+    "data",
+    "bundle",
+    "fund",
+    "withdraw",
+    "balance",
+    "statement",
+    "transaction",
+)
+_SUGGESTION_TX_AMOUNT_PATTERN = re.compile(r"(?:₦|ngn)?\s*\d[\d,]*(?:\.\d+)?\s*[kKmMhH]?\b")
+_SUGGESTION_TX_ACCOUNT_PATTERN = re.compile(r"(?:\+?234|0)?(?:[\s().-]*\d){10,13}")
+_SUGGESTION_TX_BANK_NETWORK_PATTERN = re.compile(
+    r"\b(bank|first bank|opay|palmpay|kuda|zenith|gtb|gtbank|uba|fidelity|access|"
+    r"mtn|glo|airtel|9mobile)\b",
+    re.IGNORECASE,
+)
+
+
+@dataclass(frozen=True, slots=True)
+class BeneficiarySuggestionDecision:
+    action: Literal["save_default", "save_alias", "dismiss"]
+    alias: str | None = None
+    reason: str = "unknown"
 
 
 def _next_fast_query_task_id(existing_tasks: dict[str, TaskSpec]) -> str:
@@ -129,6 +241,117 @@ def _has_explicit_cancel(message_text: str) -> bool:
     return any(re.search(pattern, normalized) for pattern in EXPLICIT_CANCEL_PATTERNS)
 
 
+def _normalize_suggestion_text(value: str) -> str:
+    return re.sub(r"\s+", " ", value.strip().lower())
+
+
+def _is_transaction_like_message(normalized_text: str) -> bool:
+    if not normalized_text:
+        return False
+    if any(keyword in normalized_text for keyword in _SUGGESTION_TX_HINT_KEYWORDS):
+        return True
+    if _SUGGESTION_TX_AMOUNT_PATTERN.search(normalized_text):
+        return True
+    if _SUGGESTION_TX_ACCOUNT_PATTERN.search(normalized_text):
+        return True
+    return bool(_SUGGESTION_TX_BANK_NETWORK_PATTERN.search(normalized_text))
+
+
+def _cleanup_alias(value: str) -> str | None:
+    alias = value.strip().strip(".,;:!?- ")
+    if not alias:
+        return None
+
+    alias = re.sub(r"^(?:is|na|be|named|called)\s+", "", alias, flags=re.IGNORECASE).strip()
+    while True:
+        cleaned = _BENEFICIARY_ALIAS_TRAILING_NOISE_RE.sub("", alias).strip(" .,;:!?-")
+        if cleaned == alias:
+            break
+        alias = cleaned
+    if not alias:
+        return None
+    if len(alias) > _BENEFICIARY_SUGGESTION_ALIAS_MAX_CHARS:
+        alias = alias[:_BENEFICIARY_SUGGESTION_ALIAS_MAX_CHARS].rstrip()
+    alias_token = alias.lower()
+    if alias_token in _BENEFICIARY_ALIAS_ONLY_BLOCKLIST:
+        return None
+    return alias
+
+
+def _extract_alias_from_text(message_text: str) -> str | None:
+    quoted_match = _BENEFICIARY_QUOTED_ALIAS_RE.search(message_text)
+    if quoted_match:
+        alias = _cleanup_alias(quoted_match.group("alias"))
+        if alias:
+            return alias
+
+    for pattern in _BENEFICIARY_ALIAS_CAPTURE_PATTERNS:
+        match = pattern.search(message_text)
+        if not match:
+            continue
+        alias = _cleanup_alias(match.group("alias"))
+        if alias:
+            return alias
+
+    normalized = _normalize_suggestion_text(message_text)
+    for marker in _BENEFICIARY_ALIAS_MARKERS:
+        if marker not in normalized:
+            continue
+        prefix, suffix = normalized.rsplit(marker, 1)
+        if not suffix or not prefix:
+            continue
+        if not _BENEFICIARY_SAVE_INTENT_RE.search(prefix):
+            continue
+        marker_idx = prefix.rfind(marker.strip())
+        if marker_idx == -1:
+            continue
+        candidate = message_text[-len(suffix) :]
+        alias = _cleanup_alias(candidate)
+        if alias:
+            return alias
+
+    return None
+
+
+def _resolve_beneficiary_suggestion_reply(
+    message_text: str,
+    *,
+    locale: str,
+    suggestion_payload: dict[str, Any] | None,
+) -> BeneficiarySuggestionDecision:
+    del locale, suggestion_payload
+    normalized = _normalize_suggestion_text(message_text)
+    if not normalized:
+        return BeneficiarySuggestionDecision(action="dismiss", reason="empty_message")
+
+    if _is_transaction_like_message(normalized):
+        return BeneficiarySuggestionDecision(action="dismiss", reason="transaction_guard")
+
+    if normalized in _BENEFICIARY_DISMISS_PHRASES:
+        return BeneficiarySuggestionDecision(action="dismiss", reason="explicit_dismiss")
+
+    has_save_intent = bool(_BENEFICIARY_SAVE_INTENT_RE.search(normalized))
+    extracted_alias = _extract_alias_from_text(message_text)
+    if has_save_intent and extracted_alias:
+        return BeneficiarySuggestionDecision(action="save_alias", alias=extracted_alias, reason="explicit_save_alias")
+    if has_save_intent:
+        return BeneficiarySuggestionDecision(action="save_default", reason="explicit_save")
+
+    if normalized in _BENEFICIARY_SAVE_AFFIRMATIONS:
+        return BeneficiarySuggestionDecision(action="save_default", reason="pure_affirmation")
+
+    return BeneficiarySuggestionDecision(action="dismiss", reason="ambiguous_dismiss")
+
+
+def _next_fast_beneficiary_task_id(existing_tasks: dict[str, TaskSpec]) -> str:
+    idx = 1
+    task_id = "fast_beneficiary_save"
+    while task_id in existing_tasks:
+        idx += 1
+        task_id = f"fast_beneficiary_save_{idx}"
+    return task_id
+
+
 async def session_gate_fastpath(state: OrchestratorState, config: RunnableConfig) -> dict[str, Any]:
     """
     Fast Path Gate.
@@ -175,6 +398,68 @@ async def session_gate_fastpath(state: OrchestratorState, config: RunnableConfig
                 "final_response": render_locale_switched(next_locale),
                 **_locale_update(state, next_locale),
             }
+
+    if not state.pending_interrupt and redis_client:
+        import json
+
+        suggestion_key = f"user:{state.phone_number}:beneficiary_suggestion"
+        try:
+            suggestion_data = await redis_client.get(suggestion_key)
+        except Exception as exc:
+            logger.warning("beneficiary_suggestion_lookup_failed", error=str(exc))
+            suggestion_data = None
+
+        if suggestion_data:
+            suggestion_payload: dict[str, Any] | None
+            try:
+                parsed_payload = json.loads(suggestion_data)
+                suggestion_payload = parsed_payload if isinstance(parsed_payload, dict) else None
+            except Exception:
+                suggestion_payload = None
+
+            locale = LocaleManager.normalize((state.loaded_context or {}).get("language")).value
+            decision = _resolve_beneficiary_suggestion_reply(
+                message_text,
+                locale=locale,
+                suggestion_payload=suggestion_payload,
+            )
+            logger.info(
+                "beneficiary_suggestion_gate_decision",
+                decision=decision.action,
+                reason=decision.reason,
+                locale=locale,
+                alias_present=bool(decision.alias),
+            )
+            if decision.action in {"save_default", "save_alias"}:
+                task_id = _next_fast_beneficiary_task_id(state.tasks)
+                task_payload: dict[str, Any] = {
+                    "action": "save_beneficiary",
+                    "instruction": state.last_message_text,
+                    "message": state.last_message_text,
+                }
+                if decision.alias:
+                    task_payload["alias"] = decision.alias
+                spec = TaskSpec(
+                    id=task_id,
+                    type="beneficiary",
+                    stage=TaskStage.DRAFT,
+                    payload=task_payload,
+                )
+                return {
+                    "tasks": {task_id: spec},
+                    "waves": [[task_id]],
+                    "current_wave_index": 0,
+                    "planner_output": None,
+                    "pending_interrupt": None,
+                    "fast_path_triggered": True,
+                }
+
+            try:
+                await redis_client.delete(suggestion_key)
+            except Exception as exc:
+                logger.warning("beneficiary_suggestion_dismiss_delete_failed", error=str(exc))
+            else:
+                logger.info("beneficiary_suggestion_dismissed", reason=decision.reason)
 
     if not state.pending_interrupt and _is_account_balance_request(message_text):
         cleanup_updates: dict[str, Any] = {}

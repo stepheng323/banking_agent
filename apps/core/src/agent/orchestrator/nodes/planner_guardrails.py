@@ -168,12 +168,12 @@ def _beneficiary_contract_violations(planner_output: Any, *, has_beneficiary_sug
     if route_hint == "none" and (ranking_tasks or management_tasks):
         violations.append("beneficiary_route_contract_violation")
 
-    # Save-beneficiary flow is separate from listing/ranking and requires active suggestion context.
+    # Save-beneficiary flow is gate-owned; planner cannot emit save tasks.
     if save_tasks and route_hint != "none":
         violations.append("beneficiary_route_contract_violation")
 
-    if save_tasks and not has_beneficiary_suggestion:
-        violations.append("save_without_suggestion_context")
+    if save_tasks:
+        violations.append("save_beneficiary_gate_only")
 
     return violations
 

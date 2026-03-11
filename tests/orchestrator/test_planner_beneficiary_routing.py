@@ -22,6 +22,21 @@ class _MockPlanner:
         return self._output
 
 
+class _RedisWithSuggestionOnly:
+    async def get(self, key: str) -> str | None:
+        if ":beneficiary_suggestion" in key:
+            return (
+                '{"recipient_name":"Tolu Adedayo","recipient_account":"0760505261","bank_name":"First Bank"}'
+            )
+        if "query:session:" in key:
+            return None
+        return None
+
+    async def delete(self, key: str) -> int:
+        del key
+        return 1
+
+
 @pytest.mark.asyncio
 async def test_show_saved_beneficiaries_routes_to_list_beneficiaries_on_first_pass() -> None:
     planner_output = PlannerOutput(
@@ -202,6 +217,53 @@ async def test_save_beneficiary_without_suggestion_context_returns_clarify() -> 
             "task_planner": _MockPlanner(planner_output),
             "services": {},
             "redis_client": None,
+        },
+        "recursion_limit": 50,
+    }
+
+    updates = await plan_tasks(state, config)
+
+    assert "tasks" not in updates
+    assert updates.get("final_response")
+
+
+@pytest.mark.asyncio
+async def test_planner_originated_save_beneficiary_is_rejected_even_with_pending_suggestion() -> None:
+    planner_output = PlannerOutput(
+        primary_intent="beneficiary",
+        response="",
+        response_key=None,
+        confidence=0.9,
+        is_complex=False,
+        is_cancellation=False,
+        is_confirmation=False,
+        detected_language="English",
+        context_fastpath_subtype=None,
+        beneficiary_route="none",
+        normalized_instruction="save as mum",
+        tasks=[
+            PlannedTask(
+                task_id="t1",
+                action="save_beneficiary",
+                executor="beneficiary",
+                instruction="save as mum",
+                parameters=TaskParameters(alias="mum"),
+                risk="READ_ONLY",
+            )
+        ],
+    )
+    state = OrchestratorState(
+        user_id="u_benef_route_5",
+        phone_number="2348111222777",
+        channel="whatsapp",
+        last_message_text="save as mum",
+        loaded_context={"language": "en"},
+    )
+    config: RunnableConfig = {
+        "configurable": {
+            "task_planner": _MockPlanner(planner_output),
+            "services": {},
+            "redis_client": _RedisWithSuggestionOnly(),
         },
         "recursion_limit": 50,
     }

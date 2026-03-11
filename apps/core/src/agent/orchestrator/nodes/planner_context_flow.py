@@ -31,7 +31,6 @@ from shared.utils.network_utils import normalize_network_name, normalize_nigeria
 
 logger = get_logger(__name__)
 
-PLANNER_CONTEXT_BENEFICIARY_SUGGESTION_MAX_CHARS = 420
 PLANNER_CONTEXT_QUERY_SESSION_MAX_CHARS = 640
 PLANNER_CONTEXT_ACTIVE_FLOW_MAX_CHARS = 700
 PLANNER_CONTEXT_SHORT_TERM_MAX_CHARS = 700
@@ -101,7 +100,6 @@ async def _build_planner_context(
     query_session_snapshot: dict[str, Any] | None = None
     query_session_source: str | None = None
     query_session_active = False
-    has_beneficiary_suggestion = False
     has_short_term_memory = False
     has_user_state_summary = False
     recent_domain_focus: str | None = None
@@ -116,36 +114,10 @@ async def _build_planner_context(
 
     if redis_client:
         try:
-            import asyncio
             import json
 
-            suggestion_key = f"user:{state.phone_number}:beneficiary_suggestion"
             query_session_key = f"query:session:{state.phone_number}"
-            suggestion_data, query_session_data = await asyncio.gather(
-                redis_client.get(suggestion_key),
-                redis_client.get(query_session_key),
-            )
-
-            if suggestion_data:
-                data = json.loads(suggestion_data)
-                name = data.get("recipient_name") or data.get("alias_suggested") or "Unknown"
-                has_beneficiary_suggestion = True
-                planner_context_sections.append(
-                    (
-                        "beneficiary_suggestion",
-                        _clip_text(
-                            (
-                                f"Active Context: User was asked to save beneficiary '{name}'.\n"
-                                f"- Reply 'yes'/'save' -> Save with name '{name}'.\n"
-                                "- Reply with explicit alias intent (e.g., 'save as Mum')"
-                                " -> Save with that alias.\n"
-                                "- Greetings/check-ins/thanks are NOT save intent."
-                            ),
-                            PLANNER_CONTEXT_BENEFICIARY_SUGGESTION_MAX_CHARS,
-                        ),
-                    )
-                )
-                logger.info("planner_context_injected", context="beneficiary_suggestion")
+            query_session_data = await redis_client.get(query_session_key)
 
             if query_session_data:
                 session = json.loads(query_session_data)
@@ -327,7 +299,7 @@ async def _build_planner_context(
         query_session_active=query_session_active,
         query_session_source=query_session_source,
         recent_domain_focus=recent_domain_focus,
-        has_beneficiary_suggestion=has_beneficiary_suggestion,
+        has_beneficiary_suggestion=False,
         has_user_state_summary=has_user_state_summary,
         has_short_term_memory=has_short_term_memory,
         has_quote=state.has_quote and bool(state.quoted_message_id),
