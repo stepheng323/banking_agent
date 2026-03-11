@@ -265,6 +265,37 @@ async def test_name_only_single_beneficiary_match_autofills_recipient_details() 
     assert result.patch["recipient_resolved_name"] == "Mama Nkechi"
 
 
+async def test_name_variant_only_single_beneficiary_match_autofills_recipient_details() -> None:
+    payload = TransferPayload(
+        amount=6000,
+        recipient_name="mom",
+    )
+    ctx = TransferContext(
+        phone_number="2348000000000",
+        language="en",
+        beneficiaries=[
+            {
+                "id": "bene-2",
+                "alias": "Mum",
+                "account_name": "Mama Nkechi",
+                "account_number": "2010000002",
+                "bank_name": "GTBank",
+                "bank_code": "058",
+            }
+        ],
+        accounts=[],
+    )
+
+    result = await resolve_beneficiary(payload, ctx, resolver_provider=None, bank_cache=None)
+
+    assert result.outcome.value == "ok"
+    assert result.patch["resolved_from_saved_beneficiary"] is True
+    assert result.patch["recipient_account"] == "2010000002"
+    assert result.patch["recipient_bank_name"] == "GTBank"
+    assert result.patch["recipient_name"] == "mom"
+    assert result.patch["recipient_resolved_name"] == "Mama Nkechi"
+
+
 async def test_selected_beneficiary_prefers_alias_when_payload_name_missing() -> None:
     payload = TransferPayload(
         amount=6000,

@@ -89,3 +89,61 @@ def test_beneficiary_matcher_short_exact_alias_still_clarifies_when_multiple_rel
     assert status == "clarify"
     assert single is None
     assert len(candidates) >= 2
+
+
+def test_beneficiary_matcher_family_variant_mom_matches_saved_mum_alias() -> None:
+    matcher = BeneficiaryMatcher()
+    beneficiary = Beneficiary(
+        account_name="Mercy Johnson",
+        alias="Mum",
+        account_number="0123456789",
+        bank_code="044",
+        bank_name="Access Bank",
+    )
+
+    status, single, candidates = matcher.match("mom", [beneficiary])
+
+    assert status == "single"
+    assert single == beneficiary
+    assert candidates == []
+
+
+def test_beneficiary_matcher_family_variant_dad_matches_saved_daddy_alias() -> None:
+    matcher = BeneficiaryMatcher()
+    beneficiary = Beneficiary(
+        account_name="Kunle Johnson",
+        alias="Daddy",
+        account_number="0123456789",
+        bank_code="044",
+        bank_name="Access Bank",
+    )
+
+    status, single, candidates = matcher.match("dad", [beneficiary])
+
+    assert status == "single"
+    assert single == beneficiary
+    assert candidates == []
+
+
+def test_beneficiary_matcher_family_variant_ambiguity_still_clarifies() -> None:
+    matcher = BeneficiaryMatcher()
+    first = Beneficiary(
+        account_name="Mercy Johnson",
+        alias="Mum",
+        account_number="0123456789",
+        bank_code="044",
+        bank_name="Access Bank",
+    )
+    second = Beneficiary(
+        account_name="Amaka Johnson",
+        alias="Mummy",
+        account_number="1234509876",
+        bank_code="058",
+        bank_name="GTBank",
+    )
+
+    status, single, candidates = matcher.match("mom", [first, second])
+
+    assert status == "clarify"
+    assert single is None
+    assert len(candidates) == 2

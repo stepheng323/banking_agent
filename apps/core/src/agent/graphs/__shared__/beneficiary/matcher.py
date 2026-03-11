@@ -6,6 +6,19 @@ import unicodedata
 
 from shared.database.models import Beneficiary
 
+_TOKEN_CANONICAL_ALIASES: dict[str, str] = {
+    "mom": "mum",
+    "mum": "mum",
+    "mummy": "mum",
+    "daddy": "dad",
+    "dad": "dad",
+    "father": "dad",
+    "mother": "mum",
+    "bro": "brother",
+    "bros": "brother",
+    "sis": "sister",
+}
+
 
 def _normalize_text(value: str | None) -> str:
     """Normalize names for robust matching across casing/punctuation/diacritics."""
@@ -13,7 +26,11 @@ def _normalize_text(value: str | None) -> str:
         return ""
     decomposed = unicodedata.normalize("NFKD", value)
     without_marks = "".join(ch for ch in decomposed if not unicodedata.combining(ch))
-    return re.sub(r"[^a-z0-9]+", " ", without_marks.lower()).strip()
+    collapsed = re.sub(r"[^a-z0-9]+", " ", without_marks.lower()).strip()
+    if not collapsed:
+        return ""
+    tokens = [_TOKEN_CANONICAL_ALIASES.get(token, token) for token in collapsed.split()]
+    return " ".join(tokens)
 
 
 class BeneficiaryMatcher:
@@ -29,6 +46,23 @@ class BeneficiaryMatcher:
         self.max_candidates = max_candidates
         self.threshold_single = threshold_single
         self.threshold_min = threshold_min
+
+    @staticmethod
+    def _beneficiary_best_ratio(query: str, beneficiary: Beneficiary) -> float:
+        alias = _normalize_text(str(beneficiary.alias or ""))
+        account_name = _normalize_text(str(beneficiary.account_name or ""))
+        candidate_names = [value for value in (alias, account_name) if value]
+        if not candidate_names:
+            return 0.0
+
+        best_score = 0.0
+        for candidate in candidate_names:
+            base_ratio = difflib.SequenceMatcher(a=query, b=candidate).ratio()
+            sorted_query = " ".join(sorted(query.split()))
+            sorted_candidate = " ".join(sorted(candidate.split()))
+            token_ratio = difflib.SequenceMatcher(a=sorted_query, b=sorted_candidate).ratio()
+            best_score = max(best_score, base_ratio, token_ratio)
+        return best_score
 
     def match(self, name: str, beneficiaries: list[Beneficiary]) -> tuple[str, Beneficiary | None, list[Beneficiary]]:
         """Match a beneficiary name to a list of beneficiaries."""
@@ -96,8 +130,7 @@ class BeneficiaryMatcher:
             return "clarify", None, contains_matches[: self.max_candidates]
 
         # If no exact match, fall back to fuzzy matching
-        names = [_normalize_text(str(b.account_name or b.alias or "")) for b in beneficiaries]
-        ratios = [(i, difflib.SequenceMatcher(a=normalized_query, b=n).ratio()) for i, n in enumerate(names)]
+        ratios = [(i, self._beneficiary_best_ratio(normalized_query, beneficiary)) for i, beneficiary in enumerate(beneficiaries)]
         ratios.sort(key=lambda x: x[1], reverse=True)
 
         top = [(beneficiaries[i], score) for i, score in ratios[: self.max_candidates] if score >= self.threshold_min]
