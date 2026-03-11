@@ -12,7 +12,6 @@ from playwright.async_api import Browser, Playwright, async_playwright
 
 from shared.utils.logging import get_logger
 
-
 logger = get_logger(__name__)
 
 TEMPLATE_DIR = Path(__file__).parent / "templates"
