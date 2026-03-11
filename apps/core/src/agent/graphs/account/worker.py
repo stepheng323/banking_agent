@@ -432,6 +432,7 @@ class AccountWorker:
 
         phone_number = context.get("phone_number", "")
         profile = context.get("profile") or {}
+        canonical_phone_number = str(profile.get("phone_number") or phone_number or "").strip()
         bvn = (profile.get("extra_data") or {}).get("bvn")
 
         if not bvn:
@@ -442,19 +443,33 @@ class AccountWorker:
             return {"error": result.error_message or render_message("account.linking.start_failed", locale)}
 
         methods = [{"id": m["method"], "title": m["hint"]} for m in result.verification_methods]
-        flow_token = f"link-{phone_number}-{int(time.time())}"
+        flow_token_phone = canonical_phone_number or str(phone_number or "").strip()
+        flow_token = f"link-{flow_token_phone}-{int(time.time())}"
+        session_payload = {
+            "phone_number": canonical_phone_number,
+            "bvn": bvn,
+            "session_id": result.session_id,
+            "methods": methods,
+            "step": OnboardingStep.METHOD_SELECTION.value,
+            "is_account_linking": True,
+        }
+        if not self.session_manager:
+            logger.error("account_linking_session_manager_missing", flow_token=flow_token)
+            return {"error": render_message("account.linking.start_failed", locale)}
 
-        await self.session_manager.update_session(
+        stored = await self.session_manager.update_session_strict(
             flow_token,
-            {
-                "phone_number": phone_number,
-                "bvn": bvn,
-                "session_id": result.session_id,
-                "methods": methods,
-                "step": OnboardingStep.METHOD_SELECTION.value,
-                "is_account_linking": True,
-            },
+            session_payload,
+            verify=True,
         )
+        if not stored:
+            logger.error(
+                "account_linking_session_create_failed",
+                flow_token=flow_token,
+                phone=canonical_phone_number,
+                channel=context.get("channel", "unknown"),
+            )
+            return {"error": render_message("account.linking.start_failed", locale)}
 
         return {
             "flow_id": flow_id,

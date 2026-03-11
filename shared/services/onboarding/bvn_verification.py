@@ -19,6 +19,10 @@ class BvnVerificationService:
         """Get session data for a flow token."""
         return await self.session.get_session(flow_token)
 
+    async def get_session_status(self, flow_token: str):
+        """Get detailed session read status for strict relink/session checks."""
+        return await self.session.read_session(flow_token)
+
     async def initiate_account_linking(self, flow_token: str, phone_number: str) -> dict:
         """
         Initiate account linking using stored BVN.

@@ -120,15 +120,36 @@ def _no_linking_methods_error() -> dict:
 async def _get_valid_linking_session(flow_token: str) -> tuple[dict | None, dict | None]:
     token = (flow_token or "").strip()
     if not token or not token.startswith("link-"):
+        logger.warning("telegram_linking_session_invalid_token", flow_token=flow_token)
         return None, _invalid_linking_session_error()
 
-    session = await bvn_service.get_session_data(token)
-    if not session:
+    session_result = await bvn_service.get_session_status(token)
+    if session_result.backend_error:
+        logger.error(
+            "telegram_linking_session_backend_error",
+            flow_token=token,
+            error=session_result.error,
+        )
+        return None, _expired_linking_session_error()
+
+    session = session_result.data
+    if not session_result.found or not session:
+        logger.warning("telegram_linking_session_miss", flow_token=token)
         return None, _expired_linking_session_error()
 
     if not bool(session.get("is_account_linking")):
+        logger.warning(
+            "telegram_linking_session_invalid_state",
+            flow_token=token,
+            step=session.get("step"),
+        )
         return None, _invalid_linking_session_error()
 
+    logger.info(
+        "telegram_linking_session_validated",
+        flow_token=token,
+        step=session.get("step"),
+    )
     return session, None
 
 

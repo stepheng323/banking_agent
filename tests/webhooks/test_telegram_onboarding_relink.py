@@ -1,7 +1,11 @@
 """Telegram onboarding/relink router tests."""
 
+from types import SimpleNamespace
+from typing import Any
+
 import pytest
 
+from apps.core.src.agent.graphs.account.worker import AccountWorker
 from apps.gateway.api.webhooks.telegram.router import (
     AccountInput,
     LinkingAccountInput,
@@ -12,6 +16,8 @@ from apps.gateway.api.webhooks.telegram.router import (
     telegram_linking_otp,
     telegram_onboarding_account,
 )
+from shared.cache.flow_session_manager import FlowSessionManager, SessionReadResult
+from shared.services.onboarding.bvn_verification import BvnVerificationService
 
 
 class _BvnServiceStub:
@@ -36,6 +42,12 @@ class _BvnServiceStub:
     async def get_session_data(self, flow_token: str) -> dict | None:
         del flow_token
         return self._session
+
+    async def get_session_status(self, flow_token: str) -> SessionReadResult:
+        del flow_token
+        if self._session is None:
+            return SessionReadResult(status="missing")
+        return SessionReadResult(status="found", data=self._session)
 
     async def send_otp(self, flow_token: str, method: str) -> dict:
         self.send_otp_calls.append((flow_token, method))
@@ -62,6 +74,42 @@ class _AccountServiceStub:
     async def select_account(self, flow_token: str, account_id: str) -> dict:
         self.calls.append((flow_token, account_id))
         return {"success": True, "data": {"mode": "onboarding"}}
+
+
+class _RedisStub:
+    def __init__(self) -> None:
+        self.store: dict[str, str] = {}
+
+    async def get(self, key: str) -> str | None:
+        return self.store.get(key)
+
+    async def set(self, key: str, value: str, ex: int | None = None) -> bool:
+        del ex
+        self.store[key] = value
+        return True
+
+    async def delete(self, key: str) -> int:
+        return 1 if self.store.pop(key, None) is not None else 0
+
+
+class _DummyRepo:
+    async def get_by_user(self, _user_id: str) -> list[Any]:
+        return []
+
+
+class _DummyLLM:
+    def with_structured_output(self, _schema: Any) -> Any:
+        raise NotImplementedError
+
+
+class _BankingProviderStub:
+    async def initiate_bvn_lookup(self, _bvn: str) -> Any:
+        return SimpleNamespace(
+            success=True,
+            verification_methods=[{"method": "sms", "hint": "0818***6496"}],
+            session_id="mono-session-123",
+            bvn="12345678901",
+        )
 
 
 @pytest.mark.asyncio
@@ -184,3 +232,43 @@ async def test_onboarding_account_route_still_uses_onboarding_select(monkeypatch
     assert result["success"] is True
     assert account_stub.calls == [("onboarding-12345", "acc_2")]
     assert add_stub.calls == []
+
+
+@pytest.mark.asyncio
+async def test_account_worker_link_token_bootstraps_telegram_relink_session(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    redis = _RedisStub()
+    session_manager = FlowSessionManager(redis=redis, key_prefix="onboarding")
+    worker = AccountWorker(
+        account_repo=_DummyRepo(),
+        user_repo=_DummyRepo(),
+        llm=_DummyLLM(),
+        banking_provider=_BankingProviderStub(),
+        session_manager=session_manager,
+        direct_debit_provider=None,
+    )
+
+    monkeypatch.setattr("apps.core.src.agent.graphs.account.worker.time.time", lambda: 1700000000)
+    monkeypatch.setattr(
+        "apps.gateway.api.webhooks.telegram.router.bvn_service",
+        BvnVerificationService(session_manager),
+    )
+
+    flow = await worker._build_link_account_flow(
+        {
+            "phone_number": "telegram-chat-id",
+            "profile": {"phone_number": "2348000000000", "extra_data": {"bvn": "12345678901"}},
+            "language": "en",
+            "channel": "telegram",
+        }
+    )
+
+    result = await telegram_linking_method(
+        LinkingMethodInput(flow_token=flow["flow_config"]["flow_token"], method=None),
+        user_data={},
+    )
+
+    assert result["success"] is True
+    assert result["data"]["bvn"] == "12345678901"
+    assert result["data"]["methods"] == [{"id": "sms", "title": "0818***6496"}]
