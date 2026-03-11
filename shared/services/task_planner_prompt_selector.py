@@ -21,6 +21,8 @@ def _has_transactional_active_flow(signals: PlannerPromptSignals) -> bool:
 def _include_money_move_bundle(signals: PlannerPromptSignals) -> bool:
     if signals.expected_transaction_executors:
         return True
+    if signals.has_transaction_intent_hint:
+        return True
     if _has_transactional_active_flow(signals):
         return True
     if signals.pending_interrupt_kind in {"confirmation", "auth"}:

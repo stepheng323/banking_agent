@@ -20,6 +20,7 @@ class PlannerPromptSignals:
     has_user_state_summary: bool = False
     has_short_term_memory: bool = False
     has_quote: bool = False
+    has_transaction_intent_hint: bool = False
     expected_transaction_executors: tuple[TransactionExecutor, ...] = field(default_factory=tuple)
 
 

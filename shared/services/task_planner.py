@@ -12,6 +12,7 @@ from shared.services.task_planner_prompts import (
     build_planner_system_prompt,
     refresh_planner_system_prompt,
 )
+from shared.services.task_planner_normalizer import normalize_planner_transaction_output
 from shared.services.task_planner_router_prompts import (
     INTERRUPT_ROUTER_SYSTEM_PROMPT,
     INTERRUPT_ROUTER_USER_PROMPT_TEMPLATE,
@@ -44,11 +45,24 @@ class TaskPlanner:
     ) -> None:
         self.planner_llm = planner_llm
         self.interrupt_llm = interrupt_llm or planner_llm
+        self.uses_dedicated_interrupt_model = interrupt_llm is not None
         self.structured_planner = planner_llm.with_structured_output(PlannerOutput)
         self.structured_turn_router = self.interrupt_llm.with_structured_output(TurnRouteDecision)
         self.structured_interrupt_router = self.interrupt_llm.with_structured_output(InterruptRouteDecision)
         self.structured_quoted_replay = planner_llm.with_structured_output(QuotedReplayInterpretation)
         self.task_queue_service = task_queue_service
+        if not self.uses_dedicated_interrupt_model:
+            logger.warning("interrupt_router_model_not_dedicated", mode="planner_fallback")
+
+    @staticmethod
+    def _log_latency_span(*, span: str, duration_ms: float, path_label: str) -> None:
+        logger.info(
+            "perf_timer_latency",
+            gate=span,
+            span=span,
+            duration_ms=round(duration_ms, 2),
+            path_label=path_label,
+        )
 
     async def plan_tasks(
         self,
@@ -57,6 +71,7 @@ class TaskPlanner:
         *,
         context: str = "None",
         prompt_signals: PlannerPromptSignals,
+        path_label: str = "planner_path",
     ) -> PlannerOutput:
         """
         Use planner to break down request into tasks.
@@ -92,12 +107,21 @@ class TaskPlanner:
             baseline_runtime_system_chars=PLANNER_PROMPT_BASELINE_RESULT.char_count,
             baseline_runtime_profile=PLANNER_PROMPT_BASELINE_RESULT.profile,
         )
+        self._log_latency_span(span="planner_llm", duration_ms=duration_ms, path_label=path_label)
 
         if isinstance(result, PlannerOutput):
-            return result
-        return cast(PlannerOutput, PlannerOutput.model_validate(result))
+            return normalize_planner_transaction_output(result, text)
+        parsed = cast(PlannerOutput, PlannerOutput.model_validate(result))
+        return normalize_planner_transaction_output(parsed, text)
 
-    async def route_turn(self, phone_number: str, text: str, context: str = "None") -> TurnRouteDecision:
+    async def route_turn(
+        self,
+        phone_number: str,
+        text: str,
+        context: str = "None",
+        *,
+        path_label: str = "fast_path",
+    ) -> TurnRouteDecision:
         """Lightweight pre-planner routing for ambiguous/meta turns."""
         user_prompt = TURN_ROUTER_USER_PROMPT_TEMPLATE.format(
             phone_number=phone_number,
@@ -119,11 +143,19 @@ class TaskPlanner:
             system_chars=len(system_prompt),
             user_chars=len(user_prompt),
         )
+        self._log_latency_span(span="turn_router_llm", duration_ms=duration_ms, path_label=path_label)
         if isinstance(result, TurnRouteDecision):
             return result
         return cast(TurnRouteDecision, TurnRouteDecision.model_validate(result))
 
-    async def route_pending_input(self, phone_number: str, text: str, context: str = "None") -> InterruptRouteDecision:
+    async def route_pending_input(
+        self,
+        phone_number: str,
+        text: str,
+        context: str = "None",
+        *,
+        path_label: str = "interrupt_path",
+    ) -> InterruptRouteDecision:
         """Classify whether pending-input turn should continue current flow or switch intent."""
         user_prompt = INTERRUPT_ROUTER_USER_PROMPT_TEMPLATE.format(
             phone_number=phone_number,
@@ -145,6 +177,7 @@ class TaskPlanner:
             system_chars=len(system_prompt),
             user_chars=len(user_prompt),
         )
+        self._log_latency_span(span="interrupt_router_llm", duration_ms=duration_ms, path_label=path_label)
         if isinstance(result, InterruptRouteDecision):
             return result
         return cast(InterruptRouteDecision, InterruptRouteDecision.model_validate(result))

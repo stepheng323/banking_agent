@@ -101,6 +101,54 @@ def test_airtime_maps_phone_to_recipient_phone_when_only_phone_is_present() -> N
     assert spec.payload.get("phone") == "08130000000"
 
 
+def test_data_maps_phone_and_plan_into_runtime_fields() -> None:
+    plan_item = PlannedTask(
+        task_id="d1",
+        action="buy_data",
+        executor="data",
+        instruction="Buy 1gb for 08130000000 mtn",
+        parameters=TaskParameters(phone="08130000000", plan="1GB", network="MTN"),
+        risk="MONEY_MOVE",
+    )
+
+    spec = build_task_spec_from_plan_item(
+        plan_item,
+        "buy 1gb for 08130000000 mtn",
+        preserve_existing_action_instruction=True,
+        include_skip_extraction=True,
+        strip_transfer_recipient_suffix=True,
+        format_narration_requires_recipient_field=False,
+    )
+
+    assert spec.type == "data"
+    assert spec.payload.get("target_phone") == "08130000000"
+    assert spec.payload.get("plan_name") == "1GB"
+    assert spec.payload.get("network") == "MTN"
+
+
+def test_data_maps_budget_to_amount_when_amount_missing() -> None:
+    plan_item = PlannedTask(
+        task_id="d1",
+        action="buy_data",
+        executor="data",
+        instruction="Buy data 2k for my line",
+        parameters=TaskParameters(budget="2k"),
+        risk="MONEY_MOVE",
+    )
+
+    spec = build_task_spec_from_plan_item(
+        plan_item,
+        "buy data 2k for my line",
+        preserve_existing_action_instruction=True,
+        include_skip_extraction=True,
+        strip_transfer_recipient_suffix=True,
+        format_narration_requires_recipient_field=False,
+    )
+
+    assert spec.type == "data"
+    assert spec.payload.get("amount") == 2000
+
+
 def test_transfer_maps_planner_bank_name_and_normalizes_recipient_account() -> None:
     plan_item = PlannedTask(
         task_id="t1",

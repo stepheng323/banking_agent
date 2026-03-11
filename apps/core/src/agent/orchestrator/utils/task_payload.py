@@ -9,6 +9,7 @@ from shared.services.scheduling.recurrence import (
     normalize_time_local,
 )
 from shared.utils.bank_aliases import get_bank_search_terms
+from shared.utils.network_utils import normalize_nigerian_phone
 from shared.utils.sanitize import normalize_bank_account_number
 
 _TRANSFER_VERB_TOKENS = {"send", "transfer", "pay", "remit"}
@@ -23,6 +24,7 @@ _WEEKDAY_NAME_TO_INDEX = {
     "saturday": 5,
     "sunday": 6,
 }
+_AMOUNT_VALUE_PATTERN = re.compile(r"^\s*(?:₦|ngn)?\s*(\d[\d,]*(?:\.\d+)?)\s*([kKmMhH]?)\s*$")
 
 
 def apply_source_account_fields(payload: dict[str, Any], plan_item: Any) -> None:
@@ -267,6 +269,63 @@ def _apply_airtime_payload_fields(payload: dict[str, Any], plan_item: Any) -> No
         payload["recipient_phone"] = phone
 
 
+def _parse_amount_value(value: Any) -> float | None:
+    if value is None:
+        return None
+    if isinstance(value, float):
+        return value
+    if isinstance(value, int):
+        return float(value)
+
+    text = str(value).strip()
+    if not text:
+        return None
+    match = _AMOUNT_VALUE_PATTERN.match(text)
+    if not match:
+        return None
+
+    try:
+        numeric = float(match.group(1).replace(",", ""))
+    except ValueError:
+        return None
+    suffix = (match.group(2) or "").lower()
+    multiplier = 1.0
+    if suffix == "k":
+        multiplier = 1000.0
+    elif suffix == "h":
+        multiplier = 100.0
+    elif suffix == "m":
+        multiplier = 1_000_000.0
+    amount = numeric * multiplier
+    if amount <= 0:
+        return None
+    return amount
+
+
+def _apply_data_payload_fields(payload: dict[str, Any], plan_item: Any) -> None:
+    if plan_item.executor != "data":
+        return
+
+    target_phone = payload.get("target_phone")
+    recipient_phone = payload.get("recipient_phone")
+    phone = payload.get("phone")
+
+    if not target_phone and isinstance(recipient_phone, str) and recipient_phone.strip():
+        normalized = normalize_nigerian_phone(recipient_phone) or recipient_phone.strip()
+        payload["target_phone"] = normalized
+    elif not target_phone and isinstance(phone, str) and phone.strip():
+        normalized = normalize_nigerian_phone(phone) or phone.strip()
+        payload["target_phone"] = normalized
+
+    if "plan" in payload and isinstance(payload.get("plan"), str) and payload.get("plan") and not payload.get("plan_name"):
+        payload["plan_name"] = payload.get("plan")
+
+    if payload.get("amount") is None and payload.get("budget") is not None:
+        parsed_budget = _parse_amount_value(payload.get("budget"))
+        if parsed_budget is not None:
+            payload["amount"] = parsed_budget
+
+
 def _infer_schedule_action_from_text(user_text: str) -> str | None:
     normalized = user_text.lower()
     if re.search(r"\b(?:every|daily|weekly|monthly)\b", normalized):
@@ -417,6 +476,7 @@ def build_task_spec_from_plan_item(
         format_narration_requires_recipient_field=format_narration_requires_recipient_field,
     )
     _apply_airtime_payload_fields(payload, plan_item)
+    _apply_data_payload_fields(payload, plan_item)
     apply_source_account_fields(payload, plan_item)
 
     return TaskSpec(

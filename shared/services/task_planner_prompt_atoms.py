@@ -15,7 +15,9 @@ PLANNER_RUNTIME_SCHEMA_PROMPT = """## OUTPUT JSON
 PLANNER_TRANSFER_PRECISION_PROMPT = """## MONEY_MOVE PRECISION
 - Keep recipient exactly as typed; no context expansion.
 - recipient_name must be plain text only.
-- Selector refs: {"selector":"previous"} or {"selector":"index","index":N}."""
+- Selector refs: {"selector":"previous"} or {"selector":"index","index":N}.
+- One-shot completeness: extract explicit amount/account/bank/phone/network/plan in same turn.
+- Precision-first: never guess ambiguous fields."""
 
 PLANNER_EXECUTOR_COVERAGE_GUARD_PROMPT = (
     "## EXECUTOR COVERAGE GUARD\n"
@@ -52,6 +54,7 @@ PLANNER_RULE_ATOMS: dict[str, str] = {
     "R23_MULTILINGUAL_SAFETY": "rules_apply_semantically_across_supported_languages",
     "R24_BENEFICIARY_ROUTE": "saved_beneficiaries->beneficiary_list; top_recipients->recipient_ranking",
     "R25_ACCOUNT_ACTION_HINT": "account_asks->account_action_hint even_when tasks=[]",
+    "R26_ONE_SHOT_COMPLETENESS": "one_shot_tx->extract all explicit fields without correction dependence",
 }
 
 PLANNER_RULE_ATOM_ORDER = [
@@ -80,6 +83,7 @@ PLANNER_RULE_ATOM_ORDER = [
     "R23_MULTILINGUAL_SAFETY",
     "R24_BENEFICIARY_ROUTE",
     "R25_ACCOUNT_ACTION_HINT",
+    "R26_ONE_SHOT_COMPLETENESS",
 ]
 
 # Critical rules whose semantics must be explicit in the compiled prompt to prevent drift.
@@ -115,6 +119,7 @@ PLANNER_MONEY_MOVE_RULE_ATOMS = {
     "R20_TRANSFER_ACCOUNT_BANK",
     "R21_TRANSFER_SCHEDULING",
     "R22_MIXED_MONEY_MOVE",
+    "R26_ONE_SHOT_COMPLETENESS",
 }
 PLANNER_QUERY_RULE_ATOMS = {"R13_QUERY_CONTINUATION", "R14_REFERENCE_BINDING"}
 PLANNER_CONTEXT_RULE_ATOMS = {
@@ -129,7 +134,13 @@ PLANNER_RUNTIME_COMMON_EXAMPLES = """## TARGETED EXAMPLES (COMMON)
 
 PLANNER_RUNTIME_MONEY_MOVE_EXAMPLES = """## TARGETED EXAMPLES (MONEY_MOVE)
 - Send 10k to Mum and buy 5k airtime -> send_money + buy_airtime.
-- Buy 5k airtime then send 10k to Mum -> use depends_on."""
+- Buy 5k airtime then send 10k to Mum -> use depends_on.
+- Send 20k to 0760505261 First Bank -> send_money amount=20000, recipient_account=0760505261, bank_name=First Bank.
+- Abeg buy 2k airtime for 08031234567 mtn -> buy_airtime amount=2000, recipient_phone=08031234567, network=MTN.
+- Jowo ra data 1gb fun 08031234567 mtn -> buy_data plan=1GB, recipient_phone=08031234567, network=MTN.
+- Don Allah tura 5k zuwa 0760505261 First Bank -> send_money amount=5000, recipient_account=0760505261, bank_name=First Bank.
+- Biko buy 3k airtime for my line mtn -> buy_airtime amount=3000, is_self=true, network=MTN.
+- Envoie 5k a 0760505261 First Bank -> send_money amount=5000, recipient_account=0760505261, bank_name=First Bank."""
 
 PLANNER_RUNTIME_QUERY_EXAMPLES = """## TARGETED EXAMPLES (QUERY)
 - Active Query Session + "any credits?" -> transaction_search.

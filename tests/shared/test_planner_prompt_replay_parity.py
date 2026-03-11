@@ -45,6 +45,7 @@ def _build_signals(payload: dict[str, Any]) -> PlannerPromptSignals:
         has_user_state_summary=bool(payload.get("has_user_state_summary", False)),
         has_short_term_memory=bool(payload.get("has_short_term_memory", False)),
         has_quote=bool(payload.get("has_quote", False)),
+        has_transaction_intent_hint=bool(payload.get("has_transaction_intent_hint", False)),
         expected_transaction_executors=tuple(payload.get("expected_transaction_executors", [])),
     )
 
@@ -69,6 +70,9 @@ def _critical_signature(output: PlannerOutput) -> dict[str, Any]:
             "amount": task.parameters.amount,
             "recipient": normalized_recipient,
             "recipient_name": normalized_recipient_name,
+            "recipient_phone": task.parameters.recipient_phone,
+            "phone": task.parameters.phone,
+            "network": task.parameters.network,
             "bank_name": _normalize_text(task.parameters.bank_name),
             "recipient_account": task.parameters.recipient_account,
             "plan": task.parameters.plan,
@@ -162,6 +166,36 @@ def _assert_case_signature(case_id: str, signature: dict[str, Any]) -> None:
         assert amount == 8000, case_id
         return
 
+    if case_id.startswith("oneshot_transfer_"):
+        assert signature["primary_intent"] in {"transfer", "mixed"}, case_id
+        assert signature["task_count"] >= 1, case_id
+        assert first_task is not None and first_task["executor"] == "transfer", case_id
+        assert first_task["action"] == "send_money", case_id
+        assert _as_number(first_task["amount"]) is not None, case_id
+        assert first_task["recipient_account"], case_id
+        assert first_task["bank_name"], case_id
+        return
+
+    if case_id.startswith("oneshot_airtime_"):
+        assert signature["primary_intent"] in {"airtime", "mixed"}, case_id
+        assert signature["task_count"] >= 1, case_id
+        assert first_task is not None and first_task["executor"] == "airtime", case_id
+        assert first_task["action"] == "buy_airtime", case_id
+        assert _as_number(first_task["amount"]) is not None, case_id
+        assert first_task["recipient_phone"] or first_task["phone"], case_id
+        assert first_task["network"], case_id
+        return
+
+    if case_id.startswith("oneshot_data_"):
+        assert signature["primary_intent"] in {"data", "mixed"}, case_id
+        assert signature["task_count"] >= 1, case_id
+        assert first_task is not None and first_task["executor"] == "data", case_id
+        assert first_task["action"] == "buy_data", case_id
+        assert first_task["recipient_phone"] or first_task["phone"], case_id
+        assert first_task["network"], case_id
+        assert first_task["plan"] or _as_number(first_task["amount"]) is not None, case_id
+        return
+
     if case_id == "mixed_transfer_airtime":
         assert signature["primary_intent"] == "mixed", case_id
         assert signature["task_count"] >= 2, case_id
@@ -220,6 +254,9 @@ def test_replay_case_set_covers_core_planner_shapes() -> None:
     assert "beneficiary_list_saved" in case_ids
     assert "beneficiary_top_recipients" in case_ids
     assert "beneficiary_save_after_suggestion" in case_ids
+    for prefix in ("oneshot_transfer_", "oneshot_airtime_", "oneshot_data_"):
+        for locale in ("en", "pidgin", "yoruba", "hausa", "igbo", "french"):
+            assert f"{prefix}{locale}" in case_ids
 
 
 def test_compact_prompt_remains_bundle_driven() -> None:

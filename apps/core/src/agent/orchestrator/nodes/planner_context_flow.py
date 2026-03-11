@@ -1,6 +1,7 @@
 """Planner context assembly flow helpers."""
 
 from dataclasses import dataclass
+import re
 from typing import Any, cast
 
 from apps.core.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
@@ -26,6 +27,7 @@ from apps.core.src.agent.orchestrator.services.context_manager import Orchestrat
 from shared.services.task_planner_prompt_models import PlannerPromptSignals
 from shared.types.planner import TransactionExecutor
 from shared.utils.logging import get_logger
+from shared.utils.network_utils import normalize_network_name, normalize_nigerian_phone
 
 logger = get_logger(__name__)
 
@@ -35,6 +37,24 @@ PLANNER_CONTEXT_ACTIVE_FLOW_MAX_CHARS = 700
 PLANNER_CONTEXT_SHORT_TERM_MAX_CHARS = 700
 PLANNER_CONTEXT_RECENT_DOMAIN_MAX_CHARS = 220
 PLANNER_CONTEXT_USER_STATE_MAX_CHARS = 900
+_TX_HINT_KEYWORDS = (
+    "send",
+    "transfer",
+    "pay",
+    "buy",
+    "airtime",
+    "data",
+    "bundle",
+    "firanse",
+    "ra",
+    "saya",
+    "tura",
+    "ziga",
+    "envoye",
+    "envoyer",
+)
+_PHONE_HINT_PATTERN = re.compile(r"(?:\+?234|0)?(?:[\s().-]*\d){10,13}")
+_AMOUNT_HINT_PATTERN = re.compile(r"(?:₦|ngn)?\s*\d[\d,]*(?:\.\d+)?\s*[kKmMhH]?\b")
 
 
 @dataclass(slots=True)
@@ -45,6 +65,29 @@ class PlannerContextBuildResult:
     query_session_source: str | None
     prompt_signals: PlannerPromptSignals
     shortcut_updates: dict[str, Any] | None = None
+
+
+def _has_transaction_intent_hint(text: str) -> bool:
+    normalized = re.sub(r"\s+", " ", text.strip().lower())
+    if not normalized:
+        return False
+
+    if any(keyword in normalized for keyword in _TX_HINT_KEYWORDS):
+        return True
+
+    if _AMOUNT_HINT_PATTERN.search(normalized):
+        return True
+
+    for candidate in _PHONE_HINT_PATTERN.findall(normalized):
+        if normalize_nigerian_phone(candidate):
+            return True
+
+    # Network mentions are strong transaction hints.
+    for token in re.findall(r"[A-Za-z0-9]+", normalized):
+        if normalize_network_name(token) or token in {"mtn", "glo", "airtel", "9mobile"}:
+            return True
+
+    return False
 
 
 async def _build_planner_context(
@@ -288,6 +331,7 @@ async def _build_planner_context(
         has_user_state_summary=has_user_state_summary,
         has_short_term_memory=has_short_term_memory,
         has_quote=state.has_quote and bool(state.quoted_message_id),
+        has_transaction_intent_hint=_has_transaction_intent_hint(text),
         expected_transaction_executors=expected_executors,
     )
 

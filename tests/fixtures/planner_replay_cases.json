@@ -112,5 +112,149 @@
     "signals": {
       "has_beneficiary_suggestion": true
     }
+  },
+  {
+    "id": "oneshot_transfer_en",
+    "text": "Send 5k to 0760505261 First Bank",
+    "context": "None",
+    "signals": {
+      "has_transaction_intent_hint": true
+    }
+  },
+  {
+    "id": "oneshot_transfer_pidgin",
+    "text": "Abeg send 5k to 0760505261 First Bank",
+    "context": "None",
+    "signals": {
+      "has_transaction_intent_hint": true
+    }
+  },
+  {
+    "id": "oneshot_transfer_yoruba",
+    "text": "Jowo fi 5k ranse si 0760505261 First Bank",
+    "context": "None",
+    "signals": {
+      "has_transaction_intent_hint": true
+    }
+  },
+  {
+    "id": "oneshot_transfer_hausa",
+    "text": "Don Allah tura 5k zuwa 0760505261 First Bank",
+    "context": "None",
+    "signals": {
+      "has_transaction_intent_hint": true
+    }
+  },
+  {
+    "id": "oneshot_transfer_igbo",
+    "text": "Biko ziga 5k na 0760505261 First Bank",
+    "context": "None",
+    "signals": {
+      "has_transaction_intent_hint": true
+    }
+  },
+  {
+    "id": "oneshot_transfer_french",
+    "text": "Envoie 5k a 0760505261 First Bank",
+    "context": "None",
+    "signals": {
+      "has_transaction_intent_hint": true
+    }
+  },
+  {
+    "id": "oneshot_airtime_en",
+    "text": "Buy 2k airtime for 08031234567 mtn",
+    "context": "None",
+    "signals": {
+      "has_transaction_intent_hint": true
+    }
+  },
+  {
+    "id": "oneshot_airtime_pidgin",
+    "text": "Abeg buy 2k airtime for 08031234567 mtn",
+    "context": "None",
+    "signals": {
+      "has_transaction_intent_hint": true
+    }
+  },
+  {
+    "id": "oneshot_airtime_yoruba",
+    "text": "Jowo ra 2k airtime fun 08031234567 mtn",
+    "context": "None",
+    "signals": {
+      "has_transaction_intent_hint": true
+    }
+  },
+  {
+    "id": "oneshot_airtime_hausa",
+    "text": "Don Allah saya 2k airtime don 08031234567 mtn",
+    "context": "None",
+    "signals": {
+      "has_transaction_intent_hint": true
+    }
+  },
+  {
+    "id": "oneshot_airtime_igbo",
+    "text": "Biko buy 2k airtime for 08031234567 mtn",
+    "context": "None",
+    "signals": {
+      "has_transaction_intent_hint": true
+    }
+  },
+  {
+    "id": "oneshot_airtime_french",
+    "text": "Acheter 2k airtime pour 08031234567 mtn",
+    "context": "None",
+    "signals": {
+      "has_transaction_intent_hint": true
+    }
+  },
+  {
+    "id": "oneshot_data_en",
+    "text": "Buy 1gb data for 08031234567 mtn",
+    "context": "None",
+    "signals": {
+      "has_transaction_intent_hint": true
+    }
+  },
+  {
+    "id": "oneshot_data_pidgin",
+    "text": "Abeg buy 1gb data for 08031234567 mtn",
+    "context": "None",
+    "signals": {
+      "has_transaction_intent_hint": true
+    }
+  },
+  {
+    "id": "oneshot_data_yoruba",
+    "text": "Jowo ra data 1gb fun 08031234567 mtn",
+    "context": "None",
+    "signals": {
+      "has_transaction_intent_hint": true
+    }
+  },
+  {
+    "id": "oneshot_data_hausa",
+    "text": "Don Allah saya data 1gb don 08031234567 mtn",
+    "context": "None",
+    "signals": {
+      "has_transaction_intent_hint": true
+    }
+  },
+  {
+    "id": "oneshot_data_igbo",
+    "text": "Biko buy data 1gb for 08031234567 mtn",
+    "context": "None",
+    "signals": {
+      "has_transaction_intent_hint": true
+    }
+  },
+  {
+    "id": "oneshot_data_french",
+    "text": "Acheter data 1gb pour 08031234567 mtn",
+    "context": "None",
+    "signals": {
+      "has_transaction_intent_hint": true
+    }
   }
 ]

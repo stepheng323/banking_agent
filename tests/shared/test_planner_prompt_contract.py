@@ -125,6 +125,23 @@ def test_transfer_scheduling_rules_present() -> None:
     assert "cancel_scheduled_transfer" in runtime_prompt
 
 
+def test_money_move_one_shot_multilingual_examples_present() -> None:
+    """Prompt should include compact one-shot extraction examples across supported languages."""
+    runtime_prompt, _, bundles = _build_prompt(
+        "Send 20k to 0760505261 First Bank",
+        "None",
+        PlannerPromptSignals(has_transaction_intent_hint=True),
+    )
+    assert "money_move" in bundles
+    assert "R26_ONE_SHOT_COMPLETENESS" in runtime_prompt
+    assert "Send 20k to 0760505261 First Bank" in runtime_prompt
+    assert "Abeg buy 2k airtime for 08031234567 mtn" in runtime_prompt
+    assert "Jowo ra data 1gb fun 08031234567 mtn" in runtime_prompt
+    assert "Don Allah tura 5k zuwa 0760505261 First Bank" in runtime_prompt
+    assert "Biko buy 3k airtime for my line mtn" in runtime_prompt
+    assert "Envoie 5k a 0760505261 First Bank" in runtime_prompt
+
+
 def test_mixed_money_move_coverage_rules_present() -> None:
     """Prompt should force full task coverage for explicit mixed money-move requests."""
     runtime_prompt, _, bundles = _build_prompt(
@@ -191,10 +208,10 @@ def test_runtime_planner_prompt_size_budget_targets() -> None:
         ),
     )
     assert len(generic_prompt) <= 1600
-    assert len(expanded_prompt) <= 2890
+    assert len(expanded_prompt) <= 3600
     encoding = tiktoken.get_encoding("o200k_base")
     assert len(encoding.encode(generic_prompt)) <= 370
-    assert len(encoding.encode(expanded_prompt)) <= 700
+    assert len(encoding.encode(expanded_prompt)) <= 930
 
 
 def test_runtime_planner_prompt_adds_money_move_examples_when_relevant() -> None:

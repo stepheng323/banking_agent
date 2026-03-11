@@ -21,6 +21,7 @@ class TaskParameters(BaseModel):
     recipient_name: str | None = None
     narration: str | None = None
     recipient_phone: str | None = None
+    network: str | None = None
     recipient_account: str | None = None
     bank_name: str | None = None
     phone: str | None = None
