@@ -9,6 +9,36 @@ from apps.core.src.agent.orchestrator.utils.task_payload import _derive_recipien
 from shared.types.planner import PlannedTask
 
 
+def _planned_recipient_allocations(source_task: PlannedTask) -> list[tuple[str, float]] | None:
+    allocations = source_task.parameters.recipient_allocations
+    if not allocations or len(allocations) < 2:
+        return None
+
+    normalized: list[tuple[str, float]] = []
+    for allocation in allocations:
+        recipient_name = str(allocation.recipient_name or "").strip()
+        if not recipient_name:
+            return None
+        normalized.append((recipient_name, float(allocation.amount)))
+    return normalized if len(normalized) >= 2 else None
+
+
+def _apply_transfer_fanout_target(
+    task: PlannedTask,
+    *,
+    recipient_name: str,
+    amount: float | None,
+    clear_source_recipient_allocations: bool,
+) -> None:
+    task.parameters.recipient = recipient_name
+    task.parameters.recipient_name = recipient_name
+    task.parameters.recipient_allocations = None
+    if amount is not None:
+        task.parameters.amount = amount
+    if clear_source_recipient_allocations:
+        task.parameters.explicit_split = None
+
+
 def _next_transfer_fanout_task_id(base_task_id: str, index: int, existing_ids: set[str]) -> str:
     candidate = f"{base_task_id}_r{index}"
     while candidate in existing_ids:
@@ -27,10 +57,6 @@ def _expand_underproduced_transfer_tasks(
     if len(transfer_indices) != 1:
         return planned_tasks, None
 
-    recipients = _derive_recipients_from_user_text(user_text)
-    if len(recipients) < 2:
-        return planned_tasks, None
-
     source_index = transfer_indices[0]
     source_task = planned_tasks[source_index]
     source_parameters = source_task.parameters
@@ -41,20 +67,47 @@ def _expand_underproduced_transfer_tasks(
     if source_parameters.reference and not (source_parameters.recipient or source_parameters.recipient_name):
         return planned_tasks, None
 
+    recipient_allocations = _planned_recipient_allocations(source_task)
+    recipients = _derive_recipients_from_user_text(user_text)
+    if recipient_allocations is None and len(recipients) < 2:
+        return planned_tasks, None
+
     existing_ids = {task.task_id for task in planned_tasks}
     expanded_task_ids: list[str] = [source_task.task_id]
     expanded_source_tasks: list[PlannedTask] = []
 
     first_task = source_task.model_copy(deep=True)
-    first_task.parameters.recipient = recipients[0]
-    first_task.parameters.recipient_name = recipients[0]
+    if recipient_allocations:
+        _apply_transfer_fanout_target(
+            first_task,
+            recipient_name=recipient_allocations[0][0],
+            amount=recipient_allocations[0][1],
+            clear_source_recipient_allocations=True,
+        )
+    else:
+        _apply_transfer_fanout_target(
+            first_task,
+            recipient_name=recipients[0],
+            amount=None,
+            clear_source_recipient_allocations=False,
+        )
     expanded_source_tasks.append(first_task)
 
-    for idx, recipient in enumerate(recipients[1:], start=2):
+    extra_recipients = (
+        recipient_allocations[1:]
+        if recipient_allocations
+        else [(recipient, None) for recipient in recipients[1:]]
+    )
+    for idx, recipient_info in enumerate(extra_recipients, start=2):
+        recipient, allocated_amount = recipient_info
         clone = source_task.model_copy(deep=True)
         clone.task_id = _next_transfer_fanout_task_id(source_task.task_id, idx, existing_ids)
-        clone.parameters.recipient = recipient
-        clone.parameters.recipient_name = recipient
+        _apply_transfer_fanout_target(
+            clone,
+            recipient_name=recipient,
+            amount=allocated_amount,
+            clear_source_recipient_allocations=allocated_amount is not None,
+        )
         expanded_source_tasks.append(clone)
         expanded_task_ids.append(clone.task_id)
 
@@ -80,7 +133,8 @@ def _expand_underproduced_transfer_tasks(
         {
             "source_task_id": source_task.task_id,
             "recipient_count": len(expanded_task_ids),
-            "recipient_names": recipients,
+            "recipient_names": [item[0] for item in recipient_allocations] if recipient_allocations else recipients,
+            "fanout_mode": "recipient_split" if recipient_allocations else "multi_recipient",
         },
     )
 

@@ -19,14 +19,13 @@ from apps.core.src.agent.orchestrator.services.interrupt_shortcuts import (
     resolve_shortcut_locale,
 )
 from apps.core.src.agent.orchestrator.utils.actionable_payload import build_actionable_payload
-from apps.core.src.agent.orchestrator.utils.task_payload import build_task_spec_from_plan_item
+from apps.core.src.agent.orchestrator.utils.task_payload import build_task_specs_and_waves_from_plan_items
 from apps.core.src.agent.orchestrator.utils.task_state import reset_tasks_to_extracted
-from apps.core.src.agent.orchestrator.utils.waves import build_dependency_waves
 from shared.formatters.confirmation import build_confirmation_summary
 from shared.formatters.prompts import format_auth_reason, sanitize_recipient_display_name
 from shared.formatters.recipient_display import format_recipient_display_label
 from shared.i18n import LocaleManager, render_message
-from shared.types.planner import InterruptRouteDecision, PlannedTask, PlannerOutput, TaskParameters
+from shared.types.planner import InterruptRouteDecision, PlannedTask, PlannerOutput, RecipientAllocation, TaskParameters
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -71,7 +70,6 @@ _TRANSFER_SCHEDULE_RE = re.compile(
     r"\b(schedule|scheduled|tomorrow|today|later|next\s+\w+|on\s+\d{4}-\d{2}-\d{2})\b",
     re.IGNORECASE,
 )
-
 
 def _clip_text(value: str, max_chars: int) -> str:
     if len(value) <= max_chars:
@@ -331,12 +329,6 @@ def _clear_current_domain_sessions(state: OrchestratorState, domains: set[str]) 
     return stack, (stack[-1].domain if stack else None)
 
 
-def _build_waves_from_tasks(tasks: dict[str, TaskSpec]) -> list[list[str]]:
-    task_ids = list(tasks.keys())
-    depends_on_by_task = {task_id: list(tasks[task_id].depends_on) for task_id in task_ids}
-    return cast(list[list[str]], build_dependency_waves(task_ids, depends_on_by_task))
-
-
 def _next_interrupt_task_id(
     *,
     state: OrchestratorState,
@@ -428,6 +420,41 @@ def _infer_transfer_switch_action(text: str, feature_tokens: set[str]) -> str:
     return "send_money"
 
 
+async def _extract_interrupt_switch_entities(
+    *,
+    state: OrchestratorState,
+    interrupt: Any,
+    text: str,
+    services: dict[str, Any],
+    target_intent: str,
+) -> tuple[dict[str, Any], set[str], str | None]:
+    worker = services.get(target_intent)
+    extractor = getattr(worker, "extractor", None) if worker else None
+    if extractor is None or not hasattr(extractor, "extract"):
+        return {}, set(), None
+
+    context = _build_transaction_extractor_context(
+        state=state,
+        interrupt=interrupt,
+        target_intent=target_intent,
+    )
+    try:
+        extraction = await extractor.extract(text, smart_context=context)
+    except Exception as exc:
+        logger.warning(f"interrupt_switch_{target_intent}_extract_failed", error=str(exc))
+        return {}, set(), None
+
+    entities = extraction.entities.model_dump(exclude_none=True) if getattr(extraction, "entities", None) else {}
+    correction = getattr(extraction, "correction", None)
+    if correction and getattr(correction, "field", None) and getattr(correction, "new_value", None) is not None:
+        field = correction.field.value if hasattr(correction.field, "value") else str(correction.field)
+        entities[field] = correction.new_value
+
+    features = _feature_tokens(getattr(extraction, "requested_features", None))
+    acknowledgment = str(getattr(extraction, "acknowledgment", "") or "").strip() or None
+    return entities, features, acknowledgment
+
+
 async def _seed_transfer_switch_payload(
     *,
     state: OrchestratorState,
@@ -438,33 +465,13 @@ async def _seed_transfer_switch_payload(
     parameters = TaskParameters()
     payload_seed: dict[str, Any] = {}
     action = _infer_transfer_switch_action(text, set())
-
-    worker = services.get("transfer")
-    extractor = getattr(worker, "extractor", None) if worker else None
-    if extractor is None or not hasattr(extractor, "extract"):
-        return parameters, payload_seed, action, False
-
-    context = _build_transaction_extractor_context(
+    entities, features, acknowledgment = await _extract_interrupt_switch_entities(
         state=state,
         interrupt=interrupt,
+        text=text,
+        services=services,
         target_intent="transfer",
     )
-    try:
-        extraction = await extractor.extract(text, smart_context=context)
-    except Exception as exc:
-        logger.warning("interrupt_switch_transfer_extract_failed", error=str(exc))
-        return parameters, payload_seed, action, False
-
-    entities = extraction.entities.model_dump(exclude_none=True) if getattr(extraction, "entities", None) else {}
-    correction = getattr(extraction, "correction", None)
-    if correction and getattr(correction, "field", None) and getattr(correction, "new_value", None) is not None:
-        field = correction.field.value if hasattr(correction.field, "value") else str(correction.field)
-        if field == "bank_name":
-            entities["bank_name"] = correction.new_value
-        else:
-            entities[field] = correction.new_value
-
-    features = _feature_tokens(getattr(extraction, "requested_features", None))
     action = _infer_transfer_switch_action(text, features)
 
     recipient_name = str(entities.get("recipient_name") or "").strip()
@@ -521,6 +528,20 @@ async def _seed_transfer_switch_payload(
         if normalized_split:
             parameters.explicit_split = normalized_split
 
+    recipient_allocations = entities.get("recipient_allocations")
+    if isinstance(recipient_allocations, list):
+        normalized_allocations: list[RecipientAllocation] = []
+        for item in recipient_allocations:
+            if not isinstance(item, dict):
+                continue
+            recipient_name = str(item.get("recipient_name") or "").strip()
+            amount_value = _coerce_float(item.get("amount"))
+            if not recipient_name or amount_value is None:
+                continue
+            normalized_allocations.append(RecipientAllocation(recipient_name=recipient_name, amount=amount_value))
+        if normalized_allocations:
+            parameters.recipient_allocations = normalized_allocations
+
     recipient_bank_code = str(entities.get("bank_code") or "").strip()
     if recipient_bank_code:
         payload_seed["recipient_bank_code"] = recipient_bank_code
@@ -529,7 +550,6 @@ async def _seed_transfer_switch_payload(
     if source_account_id:
         payload_seed["source_account_id"] = source_account_id
 
-    acknowledgment = str(getattr(extraction, "acknowledgment", "") or "").strip()
     if acknowledgment:
         payload_seed["transition_acknowledgment"] = acknowledgment
 
@@ -546,28 +566,13 @@ async def _seed_airtime_switch_payload(
 ) -> tuple[TaskParameters, dict[str, Any], bool]:
     parameters = TaskParameters()
     payload_seed: dict[str, Any] = {}
-
-    worker = services.get("airtime")
-    extractor = getattr(worker, "extractor", None) if worker else None
-    if extractor is None or not hasattr(extractor, "extract"):
-        return parameters, payload_seed, False
-
-    context = _build_transaction_extractor_context(
+    entities, _features, _acknowledgment = await _extract_interrupt_switch_entities(
         state=state,
         interrupt=interrupt,
+        text=text,
+        services=services,
         target_intent="airtime",
     )
-    try:
-        extraction = await extractor.extract(text, smart_context=context)
-    except Exception as exc:
-        logger.warning("interrupt_switch_airtime_extract_failed", error=str(exc))
-        return parameters, payload_seed, False
-
-    entities = extraction.entities.model_dump(exclude_none=True) if getattr(extraction, "entities", None) else {}
-    correction = getattr(extraction, "correction", None)
-    if correction and getattr(correction, "field", None) and getattr(correction, "new_value", None) is not None:
-        field = correction.field.value if hasattr(correction.field, "value") else str(correction.field)
-        entities[field] = correction.new_value
 
     amount = _coerce_float(entities.get("amount"))
     if amount is not None:
@@ -614,28 +619,13 @@ async def _seed_data_switch_payload(
 ) -> tuple[TaskParameters, dict[str, Any], bool]:
     parameters = TaskParameters()
     payload_seed: dict[str, Any] = {}
-
-    worker = services.get("data")
-    extractor = getattr(worker, "extractor", None) if worker else None
-    if extractor is None or not hasattr(extractor, "extract"):
-        return parameters, payload_seed, False
-
-    context = _build_transaction_extractor_context(
+    entities, _features, _acknowledgment = await _extract_interrupt_switch_entities(
         state=state,
         interrupt=interrupt,
+        text=text,
+        services=services,
         target_intent="data",
     )
-    try:
-        extraction = await extractor.extract(text, smart_context=context)
-    except Exception as exc:
-        logger.warning("interrupt_switch_data_extract_failed", error=str(exc))
-        return parameters, payload_seed, False
-
-    entities = extraction.entities.model_dump(exclude_none=True) if getattr(extraction, "entities", None) else {}
-    correction = getattr(extraction, "correction", None)
-    if correction and getattr(correction, "field", None) and getattr(correction, "new_value", None) is not None:
-        field = correction.field.value if hasattr(correction.field, "value") else str(correction.field)
-        entities[field] = correction.new_value
 
     budget = _coerce_float(entities.get("budget"))
     if budget is not None:
@@ -713,21 +703,20 @@ async def _build_enriched_transaction_switch_tasks(
     if target_intent == "transfer" and action == "send_money":
         planned_tasks, _ = _expand_underproduced_transfer_tasks(planned_tasks, text)
 
-    new_tasks: dict[str, TaskSpec] = {}
-    for plan_item in planned_tasks:
-        spec = build_task_spec_from_plan_item(
-            plan_item,
-            text,
-            preserve_existing_action_instruction=True,
-            include_skip_extraction=preseeded,
-            strip_transfer_recipient_suffix=True,
-            format_narration_requires_recipient_field=False,
-        )
-        if len(planned_tasks) == 1 and payload_seed:
-            spec.payload.update(payload_seed)
-        new_tasks[spec.id] = spec
-
-    waves = _build_waves_from_tasks(new_tasks)
+    payload_overrides_by_task_id = (
+        {planned_tasks[0].task_id: payload_seed}
+        if len(planned_tasks) == 1 and payload_seed
+        else None
+    )
+    new_tasks, waves = build_task_specs_and_waves_from_plan_items(
+        planned_tasks,
+        text,
+        preserve_existing_action_instruction=True,
+        include_skip_extraction=preseeded,
+        strip_transfer_recipient_suffix=True,
+        format_narration_requires_recipient_field=False,
+        payload_overrides_by_task_id=payload_overrides_by_task_id,
+    )
     return new_tasks, waves, {target_intent}
 
 

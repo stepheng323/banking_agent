@@ -10,13 +10,17 @@ PLANNER_RUNTIME_SCHEMA_PROMPT = """## OUTPUT JSON
 - beneficiary_route:
   beneficiary_list=list/manage, recipient_ranking=query.beneficiary_summary, none=save/other.
 - save_beneficiary only with beneficiary suggestion context.
-- account_action_hint: account asks incl. fastpath tasks=[]; else none."""
+- recipient split -> recipient_allocations[].
+- funding split -> explicit_split.
+- account_action_hint: account asks incl. fastpath; else none."""
 
 PLANNER_TRANSFER_PRECISION_PROMPT = """## MONEY_MOVE PRECISION
 - Keep recipient exactly as typed; no context expansion.
 - recipient_name must be plain text only.
 - Selector refs: {"selector":"previous"} or {"selector":"index","index":N}.
 - One-shot completeness: extract explicit amount/account/bank/phone/network/plan in same turn.
+- Split across people/beneficiaries -> recipient_allocations, not explicit_split.
+- Split across my funding accounts/banks -> explicit_split or source_accounts.
 - Precision-first: never guess ambiguous fields."""
 
 PLANNER_EXECUTOR_COVERAGE_GUARD_PROMPT = (
@@ -55,6 +59,7 @@ PLANNER_RULE_ATOMS: dict[str, str] = {
     "R24_BENEFICIARY_ROUTE": "saved_beneficiaries->beneficiary_list; top_recipients->recipient_ranking",
     "R25_ACCOUNT_ACTION_HINT": "account_asks->account_action_hint even_when tasks=[]",
     "R26_ONE_SHOT_COMPLETENESS": "one_shot_tx->extract all explicit fields without correction dependence",
+    "R27_RECIPIENT_SPLIT": "split_people->recipient_allocations; split_my_accounts->explicit_split",
 }
 
 PLANNER_RULE_ATOM_ORDER = [
@@ -84,6 +89,7 @@ PLANNER_RULE_ATOM_ORDER = [
     "R24_BENEFICIARY_ROUTE",
     "R25_ACCOUNT_ACTION_HINT",
     "R26_ONE_SHOT_COMPLETENESS",
+    "R27_RECIPIENT_SPLIT",
 ]
 
 # Critical rules whose semantics must be explicit in the compiled prompt to prevent drift.
@@ -120,6 +126,7 @@ PLANNER_MONEY_MOVE_RULE_ATOMS = {
     "R21_TRANSFER_SCHEDULING",
     "R22_MIXED_MONEY_MOVE",
     "R26_ONE_SHOT_COMPLETENESS",
+    "R27_RECIPIENT_SPLIT",
 }
 PLANNER_QUERY_RULE_ATOMS = {"R13_QUERY_CONTINUATION", "R14_REFERENCE_BINDING"}
 PLANNER_CONTEXT_RULE_ATOMS = {
@@ -136,6 +143,13 @@ PLANNER_RUNTIME_MONEY_MOVE_EXAMPLES = """## TARGETED EXAMPLES (MONEY_MOVE)
 - Send 10k to Mum and buy 5k airtime -> send_money + buy_airtime.
 - Buy 5k airtime then send 10k to Mum -> use depends_on.
 - Send 20k to 0760505261 First Bank -> send_money amount=20000, recipient_account=0760505261, bank_name=First Bank.
+- Split 20k between Mum and Gaines ->
+  send_money amount=20000,
+  recipient_allocations=[{recipient_name:Mum,amount:10000},{recipient_name:Gaines,amount:10000}].
+- Send 20k 70/30 btw Mum and Gaines ->
+  send_money amount=20000,
+  recipient_allocations=[{recipient_name:Mum,amount:14000},{recipient_name:Gaines,amount:6000}].
+- Split 20k from Access and GTB -> send_money amount=20000, explicit_split={Access:10000,GTB:10000}.
 - Abeg buy 2k airtime for 08031234567 mtn -> buy_airtime amount=2000, recipient_phone=08031234567, network=MTN.
 - Jowo ra data 1gb fun 08031234567 mtn -> buy_data plan=1GB, recipient_phone=08031234567, network=MTN.
 - Don Allah tura 5k zuwa 0760505261 First Bank ->

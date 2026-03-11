@@ -18,3 +18,10 @@ def test_numeric_reply_not_mapped_to_recipient_name() -> None:
     """Prompt should prevent numeric-looking replies from being treated as recipient names."""
     assert "If reply is numeric-looking, do NOT put it in `recipient_name`." in TRANSFER_EXTRACTION_PROMPT
 
+
+def test_recipient_split_rules_are_separate_from_funding_split() -> None:
+    """Prompt should separate recipient-side allocation from source-account split semantics."""
+    assert "recipient_allocations" in TRANSFER_EXTRACTION_PROMPT
+    assert "split 20k between mum and gaines" in TRANSFER_EXTRACTION_PROMPT.lower()
+    assert "send 20k 70/30 btw mum and gaines" in TRANSFER_EXTRACTION_PROMPT.lower()
+    assert "Do NOT use `explicit_split` for recipient names" in TRANSFER_EXTRACTION_PROMPT

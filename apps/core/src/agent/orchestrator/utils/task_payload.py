@@ -3,6 +3,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from apps.core.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
+from apps.core.src.agent.orchestrator.utils.waves import build_dependency_waves
 from shared.services.scheduling.recurrence import (
     DEFAULT_SCHEDULE_TIME_TEXT,
     SCHEDULE_TIMEZONE,
@@ -115,6 +116,8 @@ def _derive_recipients_from_user_text(user_text: str) -> list[str]:
 
     match = re.search(r"\b(?:to|for|si|ga|zuwa)\b\s+(.+)", norm_text)
     if not match:
+        match = re.search(r"\b(?:between|btw)\b\s+(.+)", norm_text)
+    if not match:
         return []
 
     segment = match.group(1).strip()
@@ -179,6 +182,7 @@ def _apply_transfer_payload_fields(
     bank_name = payload.pop("bank_name", None)
     if bank_name and not payload.get("recipient_bank_name"):
         payload["recipient_bank_name"] = bank_name
+    payload.pop("recipient_allocations", None)
 
     if "recipient_account" in payload:
         normalized_account = normalize_bank_account_number(payload.get("recipient_account"))
@@ -491,3 +495,55 @@ def build_task_spec_from_plan_item(
         stage=TaskStage.DRAFT,
         payload=payload,
     )
+
+
+def build_task_specs_from_plan_items(
+    plan_items: list[Any],
+    fallback_message: str,
+    *,
+    preserve_existing_action_instruction: bool,
+    include_skip_extraction: bool,
+    strip_transfer_recipient_suffix: bool,
+    format_narration_requires_recipient_field: bool,
+    payload_overrides_by_task_id: dict[str, dict[str, Any]] | None = None,
+) -> dict[str, TaskSpec]:
+    task_specs: dict[str, TaskSpec] = {}
+    for plan_item in plan_items:
+        spec = build_task_spec_from_plan_item(
+            plan_item,
+            fallback_message,
+            preserve_existing_action_instruction=preserve_existing_action_instruction,
+            include_skip_extraction=include_skip_extraction,
+            strip_transfer_recipient_suffix=strip_transfer_recipient_suffix,
+            format_narration_requires_recipient_field=format_narration_requires_recipient_field,
+        )
+        payload_override = (payload_overrides_by_task_id or {}).get(spec.id)
+        if payload_override:
+            spec.payload.update(payload_override)
+        task_specs[spec.id] = spec
+    return task_specs
+
+
+def build_task_specs_and_waves_from_plan_items(
+    plan_items: list[Any],
+    fallback_message: str,
+    *,
+    preserve_existing_action_instruction: bool,
+    include_skip_extraction: bool,
+    strip_transfer_recipient_suffix: bool,
+    format_narration_requires_recipient_field: bool,
+    payload_overrides_by_task_id: dict[str, dict[str, Any]] | None = None,
+) -> tuple[dict[str, TaskSpec], list[list[str]]]:
+    task_specs = build_task_specs_from_plan_items(
+        plan_items,
+        fallback_message,
+        preserve_existing_action_instruction=preserve_existing_action_instruction,
+        include_skip_extraction=include_skip_extraction,
+        strip_transfer_recipient_suffix=strip_transfer_recipient_suffix,
+        format_narration_requires_recipient_field=format_narration_requires_recipient_field,
+        payload_overrides_by_task_id=payload_overrides_by_task_id,
+    )
+    task_ids = list(task_specs.keys())
+    depends_on_by_task = {task_id: list(spec.depends_on) for task_id, spec in task_specs.items()}
+    waves = build_dependency_waves(task_ids, depends_on_by_task)
+    return task_specs, waves

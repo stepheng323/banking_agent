@@ -63,6 +63,7 @@ def test_interrupt_status_query_contract_present() -> None:
     assert "status_query_type: recap | requirements | null" in INTERRUPT_ROUTER_SYSTEM_PROMPT
     assert "decision=status_query" in INTERRUPT_ROUTER_SYSTEM_PROMPT
     assert '"make it 20k"' in INTERRUPT_ROUTER_SYSTEM_PROMPT
+    assert '"split 20k 70/30 btw mum and gaines"' in INTERRUPT_ROUTER_SYSTEM_PROMPT
     assert "target_intent=null" in INTERRUPT_ROUTER_SYSTEM_PROMPT
 
 
@@ -134,7 +135,11 @@ def test_money_move_one_shot_multilingual_examples_present() -> None:
     )
     assert "money_move" in bundles
     assert "R26_ONE_SHOT_COMPLETENESS" in runtime_prompt
+    assert "R27_RECIPIENT_SPLIT" in runtime_prompt
     assert "Send 20k to 0760505261 First Bank" in runtime_prompt
+    assert "Split 20k between Mum and Gaines" in runtime_prompt
+    assert "Send 20k 70/30 btw Mum and Gaines" in runtime_prompt
+    assert "explicit_split={Access:10000,GTB:10000}" in runtime_prompt
     assert "Abeg buy 2k airtime for 08031234567 mtn" in runtime_prompt
     assert "Jowo ra data 1gb fun 08031234567 mtn" in runtime_prompt
     assert "Don Allah tura 5k zuwa 0760505261 First Bank" in runtime_prompt
@@ -208,10 +213,10 @@ def test_runtime_planner_prompt_size_budget_targets() -> None:
         ),
     )
     assert len(generic_prompt) <= 1600
-    assert len(expanded_prompt) <= 3600
+    assert len(expanded_prompt) <= 4300
     encoding = tiktoken.get_encoding("o200k_base")
-    assert len(encoding.encode(generic_prompt)) <= 370
-    assert len(encoding.encode(expanded_prompt)) <= 930
+    assert len(encoding.encode(generic_prompt)) <= 390
+    assert len(encoding.encode(expanded_prompt)) <= 1120
 
 
 def test_runtime_planner_prompt_adds_money_move_examples_when_relevant() -> None:

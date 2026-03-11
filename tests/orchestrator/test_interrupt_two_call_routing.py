@@ -9,7 +9,7 @@ from apps.core.src.agent.orchestrator.models.domain import PendingInterrupt, Tas
 from apps.core.src.agent.orchestrator.models.state import OrchestratorState
 from apps.core.src.agent.orchestrator.nodes.interrupt import handle_pending_interrupt
 from shared.i18n import render_cancelled_prompt
-from shared.types.planner import InterruptRouteDecision, PlannedTask, PlannerOutput, TaskParameters
+from shared.types.planner import InterruptRouteDecision, PlannedTask, PlannerOutput, RecipientAllocation, TaskParameters
 
 
 class _CountingPlanner:
@@ -189,6 +189,73 @@ async def test_transaction_switch_transfer_multi_recipient_fanout_preserved_with
     assert len(updates["tasks"]) == 2
     assert len(updates["waves"][0]) == 2
     assert all(task.type == "transfer" for task in updates["tasks"].values())
+
+
+@pytest.mark.asyncio
+async def test_transaction_switch_split_retry_uses_recipient_allocations_without_planner() -> None:
+    state = OrchestratorState(
+        user_id="u_budget_2_split_retry",
+        phone_number="2348100000014",
+        channel="whatsapp",
+        last_message_text="split 20k 70/30 btw mum and gaines",
+        pending_interrupt=PendingInterrupt(kind="input", task_ids=["t1"], fields_by_task={"t1": ["recipient_account"]}),
+        tasks={
+            "t1": TaskSpec(
+                id="t1",
+                type="transfer",
+                stage=TaskStage.EXTRACTED,
+                payload={"recipient_name": "Gaines", "amount": 6000},
+            )
+        },
+        waves=[["t1"]],
+        current_wave_index=0,
+    )
+    extractor = _TransferExtractorStub(
+        TransferExtractionResult(
+            entities=TransferEntities(
+                amount=20000,
+                recipient_allocations=[
+                    RecipientAllocation(recipient_name="Mum", amount=14000.0),
+                    RecipientAllocation(recipient_name="Gaines", amount=6000.0),
+                ],
+            ),
+        )
+    )
+    planner = _CountingPlanner(
+        route=InterruptRouteDecision(
+            decision="switch_intent",
+            confidence=0.94,
+            detected_language="English",
+            target_intent="transfer",
+            target_mode="new",
+            reason="fresh transfer split retry",
+        ),
+        output=PlannerOutput(primary_intent="transfer"),
+    )
+    config: RunnableConfig = {
+        "configurable": {
+            "task_planner": planner,
+            "services": {"transfer": _TransferWorkerStub(extractor)},
+        },
+        "recursion_limit": 50,
+    }
+
+    updates = await handle_pending_interrupt(state, config)
+
+    assert planner.route_calls == 1
+    assert planner.plan_calls == 0
+    assert extractor.calls == 1
+    assert "final_response" not in updates
+    assert updates["pending_interrupt"] is None
+    assert set(updates["tasks"].keys()) == {"interrupt_transfer_1", "interrupt_transfer_1_r2"}
+    assert updates["tasks"]["interrupt_transfer_1"].payload.get("recipient_name") == "Mum"
+    assert updates["tasks"]["interrupt_transfer_1"].payload.get("amount") == 14000.0
+    assert updates["tasks"]["interrupt_transfer_1"].payload.get("recipient_allocations") is None
+    assert updates["tasks"]["interrupt_transfer_1"].payload.get("explicit_split") is None
+    assert updates["tasks"]["interrupt_transfer_1_r2"].payload.get("recipient_name") == "Gaines"
+    assert updates["tasks"]["interrupt_transfer_1_r2"].payload.get("amount") == 6000.0
+    assert updates["tasks"]["interrupt_transfer_1_r2"].payload.get("recipient_allocations") is None
+    assert updates["tasks"]["interrupt_transfer_1_r2"].payload.get("explicit_split") is None
 
 
 @pytest.mark.asyncio

@@ -8,8 +8,7 @@ from apps.core.src.agent.orchestrator.nodes.planner_postprocess import (
     _expand_underproduced_transfer_tasks,
     _strip_transactional_depends_on_edges,
 )
-from apps.core.src.agent.orchestrator.utils.task_payload import build_task_spec_from_plan_item
-from apps.core.src.agent.orchestrator.utils.waves import build_dependency_waves
+from apps.core.src.agent.orchestrator.utils.task_payload import build_task_specs_and_waves_from_plan_items
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -76,23 +75,14 @@ async def _build_planner_task_updates(
             keys=list(stashed_query_session_update.keys()),
         )
 
-    new_tasks = {}
-    task_ids: list[str] = []
-    depends_on_by_task: dict[str, list[str]] = {}
-    for plan_item in planner_output.tasks:
-        spec = build_task_spec_from_plan_item(
-            plan_item,
-            text,
-            preserve_existing_action_instruction=True,
-            include_skip_extraction=True,
-            strip_transfer_recipient_suffix=True,
-            format_narration_requires_recipient_field=False,
-        )
-        new_tasks[spec.id] = spec
-        task_ids.append(spec.id)
-        depends_on_by_task[spec.id] = list(spec.depends_on)
-
-    waves = build_dependency_waves(task_ids, depends_on_by_task)
+    new_tasks, waves = build_task_specs_and_waves_from_plan_items(
+        planner_output.tasks,
+        text,
+        preserve_existing_action_instruction=True,
+        include_skip_extraction=True,
+        strip_transfer_recipient_suffix=True,
+        format_narration_requires_recipient_field=False,
+    )
     return {
         "planner_output": planner_output,
         "new_tasks": new_tasks,

@@ -4,6 +4,8 @@ from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
 
+from shared.types.planner import RecipientAllocation
+
 
 class TransferEntities(BaseModel):
     """Entities for transfer flow with optional dual-account pooling."""
@@ -53,6 +55,13 @@ class TransferEntities(BaseModel):
     explicit_split: dict[str, float] | None = Field(
         default=None,
         description="User-specified split amounts (e.g., {'Access Bank': 60000, 'GTBank': 40000})",
+    )
+    recipient_allocations: list[RecipientAllocation] | None = Field(
+        default=None,
+        description=(
+            "Recipient-side allocations when user splits one transfer across people "
+            "(e.g., [{'recipient_name':'Mum','amount':14000},{'recipient_name':'Gaines','amount':6000}])"
+        ),
     )
     source_account_index: int | None = Field(
         default=None,

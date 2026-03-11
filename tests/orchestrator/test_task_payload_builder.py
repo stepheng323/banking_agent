@@ -367,6 +367,11 @@ def test_transfer_recipient_list_derivation_supports_and_separator() -> None:
     assert recipients == ["mum", "tolu"]
 
 
+def test_transfer_recipient_list_derivation_supports_between_separator() -> None:
+    recipients = _derive_recipients_from_user_text("split 20k 70/30 btw mum and gaines")
+    assert recipients == ["mum", "gaines"]
+
+
 def test_transfer_single_recipient_derivation_uses_first_candidate_from_list() -> None:
     recipient = _derive_recipient_from_user_text("Mum and Tolu", "send 10k to mum and tolu")
     assert recipient == "mum"

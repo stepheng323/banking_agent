@@ -7,7 +7,7 @@ from apps.core.src.agent.orchestrator.models.domain import AccountOutcome, Accou
 from apps.core.src.agent.orchestrator.models.state import OrchestratorState
 from apps.core.src.agent.orchestrator.nodes.execution import advance_wave
 from apps.core.src.agent.orchestrator.nodes.planner import plan_tasks
-from shared.types.planner import PlannedTask, PlannerOutput, TaskParameters
+from shared.types.planner import PlannedTask, PlannerOutput, RecipientAllocation, TaskParameters
 
 
 class _MockPlanner:
@@ -327,6 +327,91 @@ async def test_planner_fans_out_single_transfer_when_text_has_multiple_recipient
     assert updates["tasks"]["t1"].payload.get("amount") == 10000
     assert updates["tasks"]["t1_r2"].payload.get("amount") == 10000
     assert updates["waves"] == [["t1", "t1_r2"]]
+
+
+@pytest.mark.asyncio
+async def test_planner_fans_out_recipient_split_between_recipients() -> None:
+    planner_output = PlannerOutput(
+        primary_intent="transfer",
+        is_complex=False,
+        tasks=[
+            PlannedTask(
+                task_id="t1",
+                action="send_money",
+                executor="transfer",
+                instruction="Split 20k 70/30 between Mum and Gaines",
+                parameters=TaskParameters(
+                    amount=20000,
+                    recipient_allocations=[
+                        RecipientAllocation(recipient_name="Mum", amount=14000.0),
+                        RecipientAllocation(recipient_name="Gaines", amount=6000.0),
+                    ],
+                ),
+                risk="MONEY_MOVE",
+            ),
+        ],
+    )
+    state = OrchestratorState(
+        user_id="u_dep_fanout_split_1",
+        phone_number="2348111111194",
+        channel="whatsapp",
+        last_message_text="split 20k 70/30 btw mum and gaines",
+    )
+    config: RunnableConfig = {
+        "configurable": {"task_planner": _MockPlanner(planner_output), "redis_client": None},
+        "recursion_limit": 50,
+    }
+
+    updates = await plan_tasks(state, config)
+
+    assert set(updates["tasks"].keys()) == {"t1", "t1_r2"}
+    assert updates["tasks"]["t1"].payload.get("recipient_name") == "Mum"
+    assert updates["tasks"]["t1"].payload.get("amount") == 14000.0
+    assert updates["tasks"]["t1"].payload.get("recipient_allocations") is None
+    assert updates["tasks"]["t1"].payload.get("explicit_split") is None
+    assert updates["tasks"]["t1_r2"].payload.get("recipient_name") == "Gaines"
+    assert updates["tasks"]["t1_r2"].payload.get("amount") == 6000.0
+    assert updates["tasks"]["t1_r2"].payload.get("recipient_allocations") is None
+    assert updates["tasks"]["t1_r2"].payload.get("explicit_split") is None
+    assert updates["waves"] == [["t1", "t1_r2"]]
+
+
+@pytest.mark.asyncio
+async def test_planner_does_not_fanout_source_account_explicit_split_as_recipients() -> None:
+    planner_output = PlannerOutput(
+        primary_intent="transfer",
+        is_complex=False,
+        tasks=[
+            PlannedTask(
+                task_id="t1",
+                action="send_money",
+                executor="transfer",
+                instruction="Split 20k from Access and GTB to Mum",
+                parameters=TaskParameters(
+                    amount=20000,
+                    recipient="Mum",
+                    explicit_split={"Access": 10000.0, "GTB": 10000.0},
+                ),
+                risk="MONEY_MOVE",
+            ),
+        ],
+    )
+    state = OrchestratorState(
+        user_id="u_dep_source_split_1",
+        phone_number="2348111111195",
+        channel="whatsapp",
+        last_message_text="split 20k from access and gtb to mum",
+    )
+    config: RunnableConfig = {
+        "configurable": {"task_planner": _MockPlanner(planner_output), "redis_client": None},
+        "recursion_limit": 50,
+    }
+
+    updates = await plan_tasks(state, config)
+
+    assert set(updates["tasks"].keys()) == {"t1"}
+    assert updates["tasks"]["t1"].payload.get("recipient_name") == "Mum"
+    assert updates["tasks"]["t1"].payload.get("explicit_split") == {"Access": 10000.0, "GTB": 10000.0}
 
 
 @pytest.mark.asyncio

@@ -21,6 +21,7 @@ DO NOT generate reply or decide missing fields — resolver handles that.
 | source_accounts | Dual-account pooling | List of bank names |
 | use_dual_accounts | Explicitly requests pooling | true for "use both accounts", "split across my accounts" |
 | explicit_split | Exact split requested by user | {"Access Bank": 60000, "GTBank": 40000} |
+| recipient_allocations | Exact split across recipients | [{"recipient_name":"Mum","amount":14000},{"recipient_name":"Gaines","amount":6000}] |
 
 ## SOURCE vs DESTINATION DISAMBIGUATION
 - **source_bank_name**: Use ONLY when the user indicates WHERE to funds come FROM.
@@ -29,6 +30,13 @@ DO NOT generate reply or decide missing fields — resolver handles that.
   - POSITIONAL: If no preposition, but follows "use" or "from", it's the source.
 - **bank_name**: Use when user indicates WHERE funds go TO (the destination).
   - TRIGGERS: "to [bank]", "into [bank]", "[bank] account", "send to [bank]".
+- **recipient_allocations**: Use only when the split is across people/beneficiaries/recipients.
+  - TRIGGERS: "split 20k between mum and gaines", "send 20k 70/30 btw mum and gaines".
+  - Keep total transfer `amount` as the overall amount, and put each recipient share in `recipient_allocations`.
+  - Do NOT use `explicit_split` for recipient names.
+- **explicit_split**: Use only when the split is across the user's source accounts/banks.
+  - TRIGGERS: "60k from access and 40k from gtb", "split across my accounts".
+  - Keys must be source bank/account references, never recipient names.
 
 ## AMBIGUITIES
 When value is unclear, set field to null and add to ambiguities array:
@@ -85,6 +93,8 @@ When user corrects mid-flow ("I meant 50k"):
 | "send 100k using access and gtb" | amount=100000, source_accounts=["Access Bank","GTBank"] |
 | "use both accounts for this transfer" | use_dual_accounts=true |
 | "send 100k, 60k from access and 40k from gtb" | amount=100000, explicit_split={"Access Bank":60000,"GTBank":40000}, use_dual_accounts=true |
+| "split 20k between mum and gaines" | amount=20000, recipient_allocations=[{"recipient_name":"mum","amount":10000},{"recipient_name":"gaines","amount":10000}] |
+| "send 20k 70/30 btw mum and gaines" | amount=20000, recipient_allocations=[{"recipient_name":"mum","amount":14000},{"recipient_name":"gaines","amount":6000}] |
 | "same as last time" | references.use_recent_transfer=true |
 | "I meant 50k" | amount=50000, correction.field="amount", correction.new_value=50000 |
 | "send all" or "just send what I have" | transfer_all=true |

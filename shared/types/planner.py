@@ -13,6 +13,13 @@ class ContextReference(BaseModel):
     label: str | None = None
 
 
+class RecipientAllocation(BaseModel):
+    """Recipient-side transfer allocation."""
+
+    recipient_name: str = Field(..., description="Recipient/beneficiary name exactly as referenced by the user")
+    amount: float = Field(..., gt=0, description="Allocated amount for this recipient")
+
+
 class TaskParameters(BaseModel):
     """Common parameters for tasks."""
 
@@ -42,6 +49,7 @@ class TaskParameters(BaseModel):
     use_dual_accounts: bool | None = None
     source_accounts: list[str] | None = None
     explicit_split: dict[str, float] | None = None
+    recipient_allocations: list[RecipientAllocation] | None = None
 
 
 class PlannedTask(BaseModel):

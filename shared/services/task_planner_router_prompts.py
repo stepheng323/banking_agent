@@ -45,6 +45,9 @@ Rules:
 14) In confirmation/auth transaction flows, treat concise correction replies as continue_flow
     (target_intent=null), not switch_intent. Examples: "make it 20k", "change amount to 13k",
     "use opay instead", "it's for feeding".
+15) Fresh replacement transfer batches should still be switch_intent, not cancel.
+    Examples: active transfer waiting for input, user says "split 20k 70/30 btw mum and gaines"
+    or "send 20k between mum and gaines".
 """
 
 INTERRUPT_ROUTER_USER_PROMPT_TEMPLATE = """User phone: {phone_number}
