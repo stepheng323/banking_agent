@@ -4,7 +4,9 @@ Integrates the Top-Level LangGraph into the Message Processing Pipeline.
 """
 
 import asyncio
+import random
 import time
+from collections import deque
 from typing import Any, Literal
 
 import redis.asyncio as redis
@@ -26,6 +28,8 @@ from shared.repositories.beneficiary_repository import BeneficiaryRepository
 from shared.repositories.user_repository import UserRepository
 from shared.services.context_manager import ContextManager
 from shared.services.task_planner import OrchestratorTaskPlanner
+from shared.config.settings import settings
+from shared.utils.async_helpers import create_background_task
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -83,6 +87,10 @@ class OrchestratorGraphHandler:
         self.checkpointer = AsyncRedisSaver(redis_client=redis_client)
         self._checkpointer_setup = False
         self._invoke_lock = asyncio.Lock()
+        self._housekeeping_semaphore = asyncio.Semaphore(max(1, settings.async_housekeeping_max_concurrency))
+        self._ttl_maintenance_lock = asyncio.Lock()
+        self._next_ttl_maintenance_at = 0.0
+        self._error_window: deque[int] = deque(maxlen=200)
 
         self.graph: CompiledStateGraph = build_orchestrator_graph(checkpointer=self.checkpointer)
 
@@ -112,6 +120,62 @@ class OrchestratorGraphHandler:
             "recursion_limit": 50,
         }
 
+    @staticmethod
+    def _resolve_path_label(context: MessageContext, final_state: dict[str, Any]) -> str:
+        if getattr(context, "is_media_input", False) or bool(context.image_data):
+            return "media_path"
+        if final_state.get("fast_path_triggered"):
+            return "fast_path"
+        if final_state.get("last_interrupt") or final_state.get("pending_interrupt"):
+            return "interrupt_path"
+        return "planner_path"
+
+    def _log_latency_span(
+        self,
+        *,
+        span: str,
+        duration_ms: float,
+        phone_number: str,
+        path_label: str,
+    ) -> None:
+        logger.info(
+            "perf_timer_latency",
+            gate=span,
+            span=span,
+            path_label=path_label,
+            duration_ms=round(duration_ms, 2),
+            phone_number=phone_number,
+        )
+
+    def _record_guardrail_signal(self, *, path_label: str, duration_ms: float, errored: bool) -> None:
+        self._error_window.append(1 if errored else 0)
+        window_count = len(self._error_window)
+        error_rate = (sum(self._error_window) / window_count) if window_count else 0.0
+        breach_level = None
+        if duration_ms > settings.latency_slo_p99_ms:
+            breach_level = "p99"
+        elif duration_ms > settings.latency_slo_p95_ms:
+            breach_level = "p95"
+        elif duration_ms > settings.latency_slo_p50_ms:
+            breach_level = "p50"
+
+        if breach_level:
+            logger.warning(
+                "latency_slo_breach",
+                path_label=path_label,
+                duration_ms=round(duration_ms, 2),
+                threshold_ms=getattr(settings, f"latency_slo_{breach_level}_ms"),
+                breach_level=breach_level,
+            )
+        if error_rate > settings.latency_slo_error_rate_threshold and window_count >= 20:
+            logger.warning(
+                "latency_rollback_signal",
+                path_label=path_label,
+                error_rate=round(error_rate, 4),
+                threshold=settings.latency_slo_error_rate_threshold,
+                recommendation="roll_back_recent_latency_changes",
+            )
+
     async def invoke(self, context: MessageContext) -> dict[str, Any]:
         """
         Run the graph.
@@ -122,79 +186,190 @@ class OrchestratorGraphHandler:
         """
         async with self._invoke_lock:
             await self._ensure_checkpointer()
+            turn_start = time.perf_counter()
 
             phone_number = context.phone_number
+            path_label = "media_path" if (getattr(context, "is_media_input", False) or bool(context.image_data)) else "planner_path"
 
-            inputs = {
-                "user_id": phone_number,
-                "phone_number": phone_number,
-                "last_message_text": context.text,
-                "last_message_id": context.message_id,
-                "last_callback": None,
-                "has_quote": bool(context.quoted_message_id),
-                "quoted_message_id": context.quoted_message_id,
-                "channel": context.channel,
-                "channel_identity": context.channel_identity,
-            }
+            try:
+                inputs = {
+                    "user_id": phone_number,
+                    "phone_number": phone_number,
+                    "last_message_text": context.text,
+                    "last_message_id": context.message_id,
+                    "last_callback": None,
+                    "has_quote": bool(context.quoted_message_id),
+                    "quoted_message_id": context.quoted_message_id,
+                    "channel": context.channel,
+                    "channel_identity": context.channel_identity,
+                }
 
-            # Hydrate via ContextManager (Parallel Fetch)
-            h_start = time.perf_counter()
-            user_ctx, _, _, _ = await self.context_manager.load_context_parallel(phone_number)
-            h_duration = (time.perf_counter() - h_start) * 1000
-            logger.info(
-                "perf_timer_latency",
-                gate="orchestrator_context_hydration",
-                duration_ms=round(h_duration, 2),
+                # Hydrate via ContextManager (Parallel Fetch)
+                h_start = time.perf_counter()
+                user_ctx, _, _, _ = await self.context_manager.load_context_parallel(phone_number)
+                h_duration = (time.perf_counter() - h_start) * 1000
+
+                loaded_context: dict[str, Any] = {
+                    "profile": user_ctx.get("profile"),
+                    "accounts": user_ctx.get("accounts"),
+                    "beneficiaries": user_ctx.get("beneficiaries"),
+                    "history": user_ctx.get("history", []),
+                    "language": LocaleManager.normalize(user_ctx.get("language")).value,
+                    "detected_language": LocaleManager.normalize(user_ctx.get("language")).value,
+                    "user_id": user_ctx.get("profile", {}).get("id") if user_ctx.get("profile") else None,
+                }
+
+                inputs["loaded_context"] = loaded_context
+
+                config = self._get_config(phone_number, channel=context.channel)
+
+                logger.info("orchestrator_graph_invoke", user=phone_number)
+
+                g_start = time.perf_counter()
+                final_state = await self.graph.ainvoke(inputs, config=config)
+                g_duration = (time.perf_counter() - g_start) * 1000
+                path_label = self._resolve_path_label(context, final_state)
+                self._log_latency_span(
+                    span="context_hydration",
+                    duration_ms=h_duration,
+                    phone_number=phone_number,
+                    path_label=path_label,
+                )
+                self._log_latency_span(
+                    span="graph_execution",
+                    duration_ms=g_duration,
+                    phone_number=phone_number,
+                    path_label=path_label,
+                )
+                outbox = final_state.get("outbox", [])
+                response_text = final_state.get("final_response")
+                resolved_locale = LocaleManager.normalize(
+                    (final_state.get("loaded_context") or {}).get("language") or loaded_context.get("language")
+                ).value
+
+                intents = map_outbox_to_intents(outbox, response_text)
+
+                # Apply cleanup policy
+                thread_id = config["configurable"]["thread_id"]
+                await self._run_housekeeping(
+                    thread_id=thread_id,
+                    state=final_state,
+                    phone_number=phone_number,
+                    path_label=path_label,
+                )
+
+                result = {
+                    "text": response_text,
+                    "intents": intents,
+                    "outbox": outbox,  # Keep raw outbox for logging/debug if needed
+                    "locale": resolved_locale,
+                }
+                total_duration = (time.perf_counter() - turn_start) * 1000
+                self._log_latency_span(
+                    span="orchestrator_turn_total",
+                    duration_ms=total_duration,
+                    phone_number=phone_number,
+                    path_label=path_label,
+                )
+                logger.info("orchestrator_path_label", path_label=path_label, phone_number=phone_number)
+                self._record_guardrail_signal(path_label=path_label, duration_ms=total_duration, errored=False)
+                return result
+            except Exception:
+                total_duration = (time.perf_counter() - turn_start) * 1000
+                self._log_latency_span(
+                    span="orchestrator_turn_total",
+                    duration_ms=total_duration,
+                    phone_number=phone_number,
+                    path_label=path_label,
+                )
+                self._record_guardrail_signal(path_label=path_label, duration_ms=total_duration, errored=True)
+                raise
+
+    async def _run_housekeeping(
+        self,
+        *,
+        thread_id: str,
+        state: dict[str, Any],
+        phone_number: str,
+        path_label: str,
+    ) -> None:
+        create_background_task(
+            self._run_housekeeping_with_retries(
+                thread_id=thread_id,
+                state=state,
                 phone_number=phone_number,
-            )
+                path_label=path_label,
+            ),
+            task_name="orchestrator_housekeeping",
+        )
 
-            loaded_context: dict[str, Any] = {
-                "profile": user_ctx.get("profile"),
-                "accounts": user_ctx.get("accounts"),
-                "beneficiaries": user_ctx.get("beneficiaries"),
-                "history": user_ctx.get("history", []),
-                "language": LocaleManager.normalize(user_ctx.get("language")).value,
-                "detected_language": LocaleManager.normalize(user_ctx.get("language")).value,
-                "user_id": user_ctx.get("profile", {}).get("id") if user_ctx.get("profile") else None,
-            }
+    async def _run_housekeeping_with_retries(
+        self,
+        *,
+        thread_id: str,
+        state: dict[str, Any],
+        phone_number: str,
+        path_label: str,
+    ) -> None:
+        max_attempts = max(1, settings.async_housekeeping_max_retries + 1)
+        for attempt in range(1, max_attempts + 1):
+            async with self._housekeeping_semaphore:
+                cleanup_start = time.perf_counter()
+                cleanup_ok = await self._cleanup_if_idle(thread_id, state)
+                cleanup_duration = (time.perf_counter() - cleanup_start) * 1000
+                self._log_latency_span(
+                    span="cleanup",
+                    duration_ms=cleanup_duration,
+                    phone_number=phone_number,
+                    path_label=path_label,
+                )
 
-            inputs["loaded_context"] = loaded_context
+                ttl_start = time.perf_counter()
+                ttl_ok = await self._maybe_apply_session_ttl(thread_id)
+                ttl_duration = (time.perf_counter() - ttl_start) * 1000
+                self._log_latency_span(
+                    span="ttl_apply",
+                    duration_ms=ttl_duration,
+                    phone_number=phone_number,
+                    path_label=path_label,
+                )
 
-            config = self._get_config(phone_number, channel=context.channel)
+            if cleanup_ok and ttl_ok:
+                return
+            if attempt >= max_attempts:
+                logger.warning(
+                    "housekeeping_retry_exhausted",
+                    thread_id=thread_id,
+                    attempts=attempt,
+                    cleanup_ok=cleanup_ok,
+                    ttl_ok=ttl_ok,
+                )
+                return
+            backoff = (settings.async_housekeeping_retry_base_ms * attempt) / 1000.0
+            await asyncio.sleep(backoff + random.uniform(0.01, 0.09))
 
-            logger.info("orchestrator_graph_invoke", user=phone_number)
+    async def _maybe_apply_session_ttl(self, thread_id: str) -> bool:
+        chat_ok = await self._apply_chat_history_ttl(thread_id)
+        interval = max(0, settings.checkpoint_ttl_maintenance_interval_seconds)
+        if interval <= 0:
+            checkpoint_ok = await self._apply_session_ttl(thread_id)
+            return chat_ok and checkpoint_ok
 
-            g_start = time.perf_counter()
-            final_state = await self.graph.ainvoke(inputs, config=config)
-            g_duration = (time.perf_counter() - g_start) * 1000
-            logger.info(
-                "perf_timer_latency",
-                gate="orchestrator_graph_execution",
-                duration_ms=round(g_duration, 2),
-                phone_number=phone_number,
-            )
-            outbox = final_state.get("outbox", [])
-            response_text = final_state.get("final_response")
-            resolved_locale = LocaleManager.normalize(
-                (final_state.get("loaded_context") or {}).get("language") or loaded_context.get("language")
-            ).value
+        now = time.monotonic()
+        if now < self._next_ttl_maintenance_at:
+            return chat_ok
 
-            intents = map_outbox_to_intents(outbox, response_text)
+        async with self._ttl_maintenance_lock:
+            now = time.monotonic()
+            if now < self._next_ttl_maintenance_at:
+                return chat_ok
+            ok = await self._apply_session_ttl(thread_id)
+            if ok:
+                self._next_ttl_maintenance_at = now + interval
+            return chat_ok and ok
 
-            # Apply cleanup policy
-            thread_id = config["configurable"]["thread_id"]
-            await self._cleanup_if_idle(thread_id, final_state)
-            await self._apply_session_ttl(thread_id)
-
-            return {
-                "text": response_text,
-                "intents": intents,
-                "outbox": outbox,  # Keep raw outbox for logging/debug if needed
-                "locale": resolved_locale,
-            }
-
-    async def _apply_session_ttl(self, thread_id: str, ttl: int = 86400) -> None:
-        """Apply TTL to all Redis keys associated with a thread to prevent bloat."""
+    async def _apply_session_ttl(self, thread_id: str, ttl: int = 86400) -> bool:
+        """Apply TTL to LangGraph checkpoint keys associated with a thread."""
         try:
             # Patterns for LangGraph Redis Saver keys
             patterns = [
@@ -208,12 +383,20 @@ class OrchestratorGraphHandler:
                 async for key in self.redis_client.scan_iter(match=pattern):
                     await self.redis_client.expire(key, ttl)
 
-            # Also expire the chat history key overseen by ContextManager
-            await self.redis_client.expire(f"user:{thread_id.split(':')[-1]}:chat_history", ttl)
+            return True
         except Exception as e:
             logger.warning("apply_session_ttl_error", thread_id=thread_id, error=str(e))
+            return False
 
-    async def _cleanup_if_idle(self, thread_id: str, state: dict[str, Any]) -> None:
+    async def _apply_chat_history_ttl(self, thread_id: str, ttl: int = 86400) -> bool:
+        try:
+            await self.redis_client.expire(f"user:{thread_id.split(':')[-1]}:chat_history", ttl)
+            return True
+        except Exception as e:
+            logger.warning("apply_chat_history_ttl_error", thread_id=thread_id, error=str(e))
+            return False
+
+    async def _cleanup_if_idle(self, thread_id: str, state: dict[str, Any]) -> bool:
         """Explicitly delete thread if no active tasks, waves, or interruptions remain."""
         # Check if the state is truly "idle" (nothing pending)
         tasks = state.get("tasks", {})
@@ -237,8 +420,11 @@ class OrchestratorGraphHandler:
                 # adelete_thread is the proper way to wipe a thread in LangGraph
                 await self.checkpointer.adelete_thread(thread_id)
                 logger.info("orchestrator_thread_cleaned", thread_id=thread_id)
+                return True
             except Exception as e:
                 logger.warning("cleanup_thread_error", thread_id=thread_id, error=str(e))
+                return False
+        return True
 
     async def resume_flow(self, phone_number: str, payload: dict[str, Any], channel: str) -> dict[str, Any]:
         """Resume flow externally (e.g. from auth callback)."""
@@ -264,8 +450,12 @@ class OrchestratorGraphHandler:
                 ).value
 
                 thread_id = config["configurable"]["thread_id"]
-                await self._cleanup_if_idle(thread_id, final_state)
-                await self._apply_session_ttl(thread_id)
+                await self._run_housekeeping(
+                    thread_id=thread_id,
+                    state=final_state,
+                    phone_number=phone_number,
+                    path_label="interrupt_path",
+                )
 
                 return {
                     "text": final_state.get("final_response"),

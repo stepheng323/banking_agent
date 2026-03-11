@@ -177,9 +177,11 @@ def setup_core_consumers() -> tuple[MessageConsumer, RedisStreamConsumer]:
     messaging_clients = build_messaging_clients()
     shared_redis = RedisClient.get_client()
     llm = ChatOpenAI(model=settings.planner_model, temperature=0)
-    interrupt_llm: ChatOpenAI | None = None
-    if settings.interrupt_router_model and settings.interrupt_router_model != settings.planner_model:
-        interrupt_llm = ChatOpenAI(model=settings.interrupt_router_model, temperature=0)
+    if not settings.interrupt_router_model:
+        raise RuntimeError("INTERRUPT_ROUTER_MODEL must be set for dedicated interrupt routing model.")
+    if settings.interrupt_router_model == settings.planner_model:
+        raise RuntimeError("INTERRUPT_ROUTER_MODEL must differ from PLANNER_MODEL.")
+    interrupt_llm = ChatOpenAI(model=settings.interrupt_router_model, temperature=0)
 
     _, message_user_repo, onboarding_executor, message_orchestrator = _build_orchestrator_runtime_bundle(
         queue_publisher=queue_publisher,

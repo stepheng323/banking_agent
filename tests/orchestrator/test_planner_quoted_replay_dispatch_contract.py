@@ -4,12 +4,14 @@ import pytest
 
 from apps.core.src.agent.orchestrator.models.state import OrchestratorState
 from apps.core.src.agent.orchestrator.nodes.planner import plan_tasks
+from shared.types.planner import PlannerOutput
 from shared.types.quoted_replay import QuotedReplayInterpretation
 
 
 class _PlannerStub:
     def __init__(self, interpretation: QuotedReplayInterpretation) -> None:
         self.interpretation = interpretation
+        self.plan_called = False
 
     async def interpret_quoted_replay(self, phone_number: str, text: str, context: str = "None") -> Any:
         del phone_number, text, context
@@ -17,7 +19,12 @@ class _PlannerStub:
 
     async def plan_tasks(self, phone_number: str, text: str, *, context: str = "None", prompt_signals: object | None = None) -> Any:
         del phone_number, text, context
-        raise AssertionError("main planner should not be called for execute replay hit")
+        self.plan_called = True
+        return PlannerOutput(
+            primary_intent="conversational",
+            response="fallback planner",
+            tasks=[],
+        )
 
 
 class _ActionableRepoStub:
@@ -85,6 +92,7 @@ async def test_dispatch_enforces_skip_extraction_and_fresh_execution_fields() ->
     assert task.payload["confirmation"]["confirmed"] is False
     assert task.payload["idempotency_key"] is None
     assert task.payload["transaction_id"] is None
+    assert planner.plan_called is False
 
 
 @pytest.mark.asyncio
@@ -120,6 +128,7 @@ async def test_dispatch_clarifies_when_replay_payload_is_insufficient() -> None:
 
     assert "tasks" not in updates
     assert updates["final_response"] == "Please tell me who to send to."
+    assert planner.plan_called is False
 
 
 @pytest.mark.asyncio
@@ -153,8 +162,8 @@ async def test_dispatch_clarifies_when_actionable_seed_missing() -> None:
         },
     )
 
-    assert "tasks" not in updates
-    assert "final_response" in updates
+    assert planner.plan_called is True
+    assert updates["final_response"] == "fallback planner"
 
 
 @pytest.mark.asyncio
@@ -192,3 +201,4 @@ async def test_dispatch_accepts_transfer_payload_seeded_by_beneficiary_id() -> N
     assert task.type == "transfer"
     assert task.payload["beneficiary_id"] == "bene-1"
     assert task.payload["skip_extraction"] is True
+    assert planner.plan_called is False

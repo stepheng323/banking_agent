@@ -1,5 +1,6 @@
 """Context and state management service."""
 
+import asyncio
 import json
 from typing import Any, cast
 
@@ -30,7 +31,13 @@ class ContextManager:
         self.account_repo = account_repo
         self.data_cache = UserDataCache()
 
-    async def load_user_context(self, phone_number: str, user: Any | None = None) -> dict[str, Any]:
+    async def load_user_context(
+        self,
+        phone_number: str,
+        user: Any | None = None,
+        *,
+        cached_data: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         """
         Load user context from cache or database.
 
@@ -40,41 +47,71 @@ class ContextManager:
             phone_number: User's phone number
             user: Optional pre-fetched user object to avoid duplicate database queries
         """
-        cached_data = await self.data_cache.get_all_user_data(phone_number)
+        cached_data = cached_data or await self.data_cache.get_all_user_data(phone_number)
+        cache_profile = cached_data.get("profile")
+        cache_accounts = cached_data.get("accounts")
+        cache_beneficiaries = cached_data.get("beneficiaries")
 
-        if (
-            cached_data["profile"] is not None
-            and cached_data["accounts"] is not None
-            and cached_data["beneficiaries"] is not None
-        ):
+        cache_status = "miss"
+        cache_hits = sum(v is not None for v in (cache_profile, cache_accounts, cache_beneficiaries))
+        if cache_hits == 3:
+            cache_status = "hit"
+        elif cache_hits > 0:
+            cache_status = "partial_hit"
+        logger.info("context_user_data_cache", phone=phone_number, status=cache_status)
+
+        if cache_hits == 3:
             return {
-                "profile": cached_data["profile"],
-                "accounts": cached_data["accounts"],
-                "beneficiaries": cached_data["beneficiaries"],
+                "profile": cache_profile,
+                "accounts": cache_accounts,
+                "beneficiaries": cache_beneficiaries,
             }
 
-        current_profile = user
-        if current_profile is None and self.user_repo:
-            current_profile = await self.user_repo.get_by_phone(phone_number)
+        profile_obj = user if user is not None else cache_profile
+        if profile_obj is None and self.user_repo:
+            profile_obj = await self.user_repo.get_by_phone(phone_number)
 
-        current_accounts = []
-        if current_profile:
-            if self.account_repo:
-                user_id = str(current_profile.id)
-                current_accounts = await self.account_repo.get_by_user(user_id)
+        user_id: str | None = None
+        if isinstance(profile_obj, dict):
+            raw_user_id = profile_obj.get("id")
+            user_id = str(raw_user_id) if raw_user_id else None
+            safe_profile = dict(profile_obj)
+        elif profile_obj is not None:
+            user_id = str(profile_obj.id)
+            safe_profile = sqlalchemy_to_dict(profile_obj)
+        else:
+            safe_profile = None
 
-        current_beneficiaries = []
-        if current_profile and self.beneficiary_repo:
-            user_id = str(current_profile.id)
-            current_beneficiaries = await self.beneficiary_repo.get_by_user(user_id)
+        accounts: list[Any] = list(cache_accounts) if cache_accounts is not None else []
+        beneficiaries: list[Any] = list(cache_beneficiaries) if cache_beneficiaries is not None else []
 
-        profile, accounts, beneficiaries = current_profile, current_accounts, current_beneficiaries
+        fetch_ops: list[tuple[str, Any]] = []
+        if user_id and cache_accounts is None and self.account_repo:
+            fetch_ops.append(("accounts", self.account_repo.get_by_user(user_id)))
+        if user_id and cache_beneficiaries is None and self.beneficiary_repo:
+            fetch_ops.append(("beneficiaries", self.beneficiary_repo.get_by_user(user_id)))
 
-        safe_profile: dict[str, Any] | None = sqlalchemy_to_dict(profile) if profile is not None else None
+        if fetch_ops:
+            labels = [label for label, _ in fetch_ops]
+            results = await asyncio.gather(*[op for _, op in fetch_ops], return_exceptions=True)
+            for label, result in zip(labels, results, strict=False):
+                if isinstance(result, Exception):
+                    logger.warning("context_user_data_fetch_error", phone=phone_number, field=label, error=str(result))
+                    continue
+                if label == "accounts":
+                    accounts = list(result)
+                else:
+                    beneficiaries = list(result)
 
-        safe_accounts = [sqlalchemy_to_dict(acc) for acc in accounts]
+        safe_accounts = [
+            dict(acc) if isinstance(acc, dict) else sqlalchemy_to_dict(acc)
+            for acc in accounts
+        ]
 
-        safe_beneficiaries = [sqlalchemy_to_dict(ben) for ben in beneficiaries]
+        safe_beneficiaries = [
+            dict(ben) if isinstance(ben, dict) else sqlalchemy_to_dict(ben)
+            for ben in beneficiaries
+        ]
 
         context = {
             "profile": safe_profile,
@@ -302,6 +339,9 @@ class ContextManager:
                 f"user:{phone_number}:beneficiary_suggestion",
                 f"user:{phone_number}:language",
                 f"user:{phone_number}:chat_history",
+                f"cache:user:profile:{phone_number}",
+                f"cache:user:accounts:{phone_number}",
+                f"cache:user:beneficiaries:{phone_number}",
             ]
 
             pipe = redis_client.pipeline()
@@ -309,10 +349,17 @@ class ContextManager:
                 pipe.get(key)
 
             pipe.lrange(keys[4], -10, -1)
+            for key in keys[5:8]:
+                pipe.get(key)
 
             results = await pipe.execute()
 
-            user_ctx = await self.load_user_context(phone_number)
+            cached_user_data: dict[str, Any] = {
+                "profile": json.loads(results[5]) if results[5] else None,
+                "accounts": json.loads(results[6]) if results[6] else None,
+                "beneficiaries": json.loads(results[7]) if results[7] else None,
+            }
+            user_ctx = await self.load_user_context(phone_number, cached_data=cached_user_data)
 
             conversation_state = None
             if results[0]:

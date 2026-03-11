@@ -84,6 +84,7 @@ async def _build_non_task_response(
                     user_language_hint=conversational_locale,
                     meta_intent=meta_intent,
                     redis_client=redis_client,
+                    path_label="planner_path",
                 )
                 if handoff == "meta" and meta_message:
                     logger.info(
@@ -132,6 +133,7 @@ async def _build_non_task_response(
                     user_language_hint=conversational_locale,
                     meta_intent=meta_intent,
                     redis_client=redis_client,
+                    path_label="planner_path",
                 )
                 if handoff == "meta" and meta_message:
                     logger.info(

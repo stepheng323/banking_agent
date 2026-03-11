@@ -71,6 +71,16 @@ class Settings:
         self.schedule_dispatcher_batch_size: int = int(os.getenv("SCHEDULE_DISPATCHER_BATCH_SIZE", "25"))
         self.schedule_max_due_per_tick: int = int(os.getenv("SCHEDULE_MAX_DUE_PER_TICK", "25"))
         self.schedule_retry_delay_minutes: int = int(os.getenv("SCHEDULE_RETRY_DELAY_MINUTES", "1"))
+        self.async_housekeeping_max_concurrency: int = int(os.getenv("ASYNC_HOUSEKEEPING_MAX_CONCURRENCY", "4"))
+        self.async_housekeeping_max_retries: int = int(os.getenv("ASYNC_HOUSEKEEPING_MAX_RETRIES", "0"))
+        self.async_housekeeping_retry_base_ms: int = int(os.getenv("ASYNC_HOUSEKEEPING_RETRY_BASE_MS", "120"))
+        self.checkpoint_ttl_maintenance_interval_seconds: int = int(
+            os.getenv("CHECKPOINT_TTL_MAINTENANCE_INTERVAL_SECONDS", "300")
+        )
+        self.latency_slo_p50_ms: int = int(os.getenv("LATENCY_SLO_P50_MS", "900"))
+        self.latency_slo_p95_ms: int = int(os.getenv("LATENCY_SLO_P95_MS", "2500"))
+        self.latency_slo_p99_ms: int = int(os.getenv("LATENCY_SLO_P99_MS", "4500"))
+        self.latency_slo_error_rate_threshold: float = float(os.getenv("LATENCY_SLO_ERROR_RATE_THRESHOLD", "0.05"))
 
         self._validate_critical_runtime_config()
         self._validate_whatsapp_config()

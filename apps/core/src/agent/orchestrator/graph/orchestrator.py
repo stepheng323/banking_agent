@@ -81,6 +81,7 @@ class OrchestratorAgent:
             text=text,
             message_id=message_id,
             image_data=image_data,
+            is_media_input=message_type in {"audio", "image"},
             quoted_message_id=quoted_message_id,
             channel=channel,
             channel_identity=channel_identity,

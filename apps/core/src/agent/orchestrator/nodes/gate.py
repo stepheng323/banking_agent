@@ -28,6 +28,17 @@ TRANSACTION_EXECUTORS = {"transfer", "airtime", "data"}
 TURN_ROUTER_MAX_WORDS = 6
 TURN_ROUTER_MAX_CHARS = 64
 TURN_ROUTER_MULTI_CLAUSE_MARKERS = (" and ", " & ", " then ", ",")
+TURN_ROUTER_META_PATTERNS = (
+    r"\b(hi|hello|hey|how far|good (morning|afternoon|evening))\b",
+    r"\b(who are you|what can you do|help me|can you help)\b",
+    r"\b(loan|borrow|hungry|starving|food|book (a|my)|flight|hotel)\b",
+    r"\b(thank you|thanks|sorry|get out|leave me)\b",
+    r"\b(cancel|abort|stop|nevermind|never mind)\b",
+)
+TURN_ROUTER_TRANSACTION_HINT_PATTERNS = (
+    r"\b(send|transfer|buy|airtime|data|bundle|pay|fund|withdraw)\b",
+    r"\b(account|bank|acct|beneficiary|statement|transaction)\b",
+)
 ACCOUNT_BALANCE_REQUEST_PATTERNS = (
     r"\bbalance\b",
     r"\baccount\s+balance\b",
@@ -74,11 +85,23 @@ def _should_invoke_turn_router(message_text: str) -> bool:
     normalized = re.sub(r"\s+", " ", message_text.strip().lower())
     if not normalized:
         return False
-    if any(marker in normalized for marker in TURN_ROUTER_MULTI_CLAUSE_MARKERS):
+    if _is_account_balance_request(normalized):
+        return False
+    has_multi_clause = any(marker in normalized for marker in TURN_ROUTER_MULTI_CLAUSE_MARKERS)
+    has_money_move = bool(re.search(r"\b(send|transfer|pay|fund)\b", normalized))
+    has_airtime_or_data = bool(re.search(r"\b(buy|airtime|data|bundle)\b", normalized))
+    looks_mixed_transaction = has_multi_clause and has_money_move and has_airtime_or_data
+    if looks_mixed_transaction:
         return True
     if any(char.isdigit() for char in normalized):
         return False
-    return len(normalized) <= TURN_ROUTER_MAX_CHARS and len(normalized.split()) <= TURN_ROUTER_MAX_WORDS
+    if any(marker in normalized for marker in TURN_ROUTER_MULTI_CLAUSE_MARKERS):
+        return False
+    if len(normalized) > TURN_ROUTER_MAX_CHARS or len(normalized.split()) > TURN_ROUTER_MAX_WORDS:
+        return False
+    if any(re.search(pattern, normalized) for pattern in TURN_ROUTER_TRANSACTION_HINT_PATTERNS):
+        return False
+    return any(re.search(pattern, normalized) for pattern in TURN_ROUTER_META_PATTERNS)
 
 
 def _build_turn_router_context(state: OrchestratorState, session_domain: str | None) -> str:
@@ -249,11 +272,20 @@ async def session_gate_fastpath(state: OrchestratorState, config: RunnableConfig
         and _should_invoke_turn_router(message_text)
     ):
         try:
-            route = await task_planner.route_turn(
-                state.phone_number,
-                message_text,
-                context=_build_turn_router_context(state, session.domain if session else None),
-            )
+            route_context = _build_turn_router_context(state, session.domain if session else None)
+            try:
+                route = await task_planner.route_turn(
+                    state.phone_number,
+                    message_text,
+                    context=route_context,
+                    path_label="fast_path",
+                )
+            except TypeError:
+                route = await task_planner.route_turn(
+                    state.phone_number,
+                    message_text,
+                    context=route_context,
+                )
         except Exception as exc:
             logger.warning("gate_turn_router_failed", error=str(exc))
             route = None

@@ -1,4 +1,4 @@
-"""Tests for meta reply language mismatch retry behavior."""
+"""Tests for meta reply language mismatch fallback behavior."""
 
 from typing import Any
 
@@ -27,7 +27,7 @@ class _FakeMetaLLM:
 
 
 @pytest.mark.asyncio
-async def test_meta_reply_retries_on_language_mismatch() -> None:
+async def test_meta_reply_bypasses_retry_on_language_mismatch() -> None:
     llm = _FakeMetaLLM(
         [
             {"handoff": "meta", "language": "en", "message": "Hello"},
@@ -42,11 +42,12 @@ async def test_meta_reply_retries_on_language_mismatch() -> None:
     )
 
     assert handoff == "meta"
-    assert message == "How far"
+    assert message.startswith("I be ")
+    assert llm._idx == 1
 
 
 @pytest.mark.asyncio
-async def test_meta_reply_falls_back_when_retry_still_wrong_language() -> None:
+async def test_meta_reply_falls_back_when_language_mismatch() -> None:
     llm = _FakeMetaLLM(
         [
             {"handoff": "meta", "language": "en", "message": "Hello"},
@@ -62,6 +63,7 @@ async def test_meta_reply_falls_back_when_retry_still_wrong_language() -> None:
 
     assert handoff == "meta"
     assert message.startswith("I be ")
+    assert llm._idx == 1
 
 
 @pytest.mark.asyncio

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import time
 from dataclasses import asdict
 from typing import Any, Literal, cast
 
@@ -37,8 +38,6 @@ META_SYSTEM_PROMPT = (
     "- Keep the reply under 5 lines.\n\n"
     'Return ONLY JSON: {"message":"...", "language":"en|yo|pcm|ha|ig"}'
 )
-
-META_STRICT_LANGUAGE_PROMPT = "CRITICAL: Return language exactly '{language}'. If you cannot, return handoff='domain'."
 STRICT_BRAND_TERMS = ("lotr", "lord of the rings", "tolkien", "ring of power", "ring of fire")
 
 
@@ -170,6 +169,7 @@ async def generate_meta_reply(
     redis_client: Any | None = None,
     profile: SystemProfile = SYSTEM_PROFILE,
     active_session: dict[str, Any] | None = None,
+    path_label: str = "planner_path",
 ) -> tuple[str, Literal["meta", "domain"]]:
     """Generate a meta response grounded in the SystemProfile with Caching."""
     policy = get_cached_policy()
@@ -205,16 +205,21 @@ async def generate_meta_reply(
         # Use low temperature for deterministic generation
         meta_llm = llm.with_structured_output(MetaReply).with_config({"configurable": {"temperature": 0.1}})
 
-        async def _invoke_meta(strict_language: bool = False) -> MetaReply:
-            system_prompt = META_SYSTEM_PROMPT
-            if strict_language:
-                system_prompt = f"{META_SYSTEM_PROMPT}\n{META_STRICT_LANGUAGE_PROMPT.format(language=language)}"
-
+        async def _invoke_meta() -> MetaReply:
+            start = time.perf_counter()
             result = await meta_llm.ainvoke(
                 [
-                    {"role": "system", "content": system_prompt},
+                    {"role": "system", "content": META_SYSTEM_PROMPT},
                     {"role": "user", "content": json.dumps(payload, ensure_ascii=True)},
                 ]
+            )
+            duration_ms = (time.perf_counter() - start) * 1000
+            logger.info(
+                "perf_timer_latency",
+                gate="meta_reply_llm",
+                span="meta_reply_llm",
+                duration_ms=round(duration_ms, 2),
+                path_label=path_label,
             )
             return result if isinstance(result, MetaReply) else MetaReply.model_validate(result)
 
@@ -222,19 +227,11 @@ async def generate_meta_reply(
         resolved_reply_language = normalize_language_hint(meta_reply.language)
         if resolved_reply_language != language:
             logger.info(
-                "meta_reply_language_mismatch_retry",
+                "meta_reply_language_mismatch_fallback",
                 expected=language,
                 got=resolved_reply_language,
             )
-            meta_reply = await _invoke_meta(strict_language=True)
-            resolved_reply_language = normalize_language_hint(meta_reply.language)
-            if resolved_reply_language != language:
-                logger.info(
-                    "meta_reply_language_retry_failed",
-                    expected=language,
-                    got=resolved_reply_language,
-                )
-                return _grounded_meta_fallback(profile, locale=language, meta_intent=meta_intent), "meta"
+            return _grounded_meta_fallback(profile, locale=language, meta_intent=meta_intent), "meta"
 
         if meta_reply.handoff != "meta":
             return "", meta_reply.handoff

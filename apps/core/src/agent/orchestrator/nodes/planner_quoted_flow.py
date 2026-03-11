@@ -1,5 +1,6 @@
 """Planner quoted replay shortcut flow helpers."""
 
+import re
 from typing import Any, cast
 
 from langchain_core.runnables import RunnableConfig
@@ -17,6 +18,22 @@ from shared.types.quoted_replay import QuotedReplayInterpretation
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
+QUOTED_REPLAY_ACTION_PATTERNS = (
+    r"\b(again|retry|resend|repeat|same)\b",
+    r"\b(send|buy|do|run|process)\b",
+)
+
+
+def _should_attempt_quoted_replay(text: str, quoted_payload: dict[str, Any] | None) -> bool:
+    if not quoted_payload:
+        return False
+    normalized = re.sub(r"\s+", " ", text.strip().lower())
+    if not normalized:
+        return False
+    # Short quote replies are usually actionable ("again", "send now", "do same").
+    if len(normalized) <= 24:
+        return True
+    return any(re.search(pattern, normalized) for pattern in QUOTED_REPLAY_ACTION_PATTERNS)
 
 
 async def _handle_quoted_replay_shortcut(
@@ -33,6 +50,10 @@ async def _handle_quoted_replay_shortcut(
         return None
 
     quoted_payload = await _load_quoted_actionable_payload(state, config)
+    if not _should_attempt_quoted_replay(text, quoted_payload):
+        logger.info("quoted_replay_preconditions_not_met", has_payload=bool(quoted_payload))
+        return None
+
     quoted_context = (
         _build_quoted_replay_context_with_payload(state, quoted_payload)
         if quoted_payload is not None

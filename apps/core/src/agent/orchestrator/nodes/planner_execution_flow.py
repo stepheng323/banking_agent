@@ -45,12 +45,21 @@ async def _execute_planner_with_context(
     current_locale: str,
     redis_client: Any | None,
 ) -> PlannerExecutionResult:
-    planner_output = await task_planner.plan_tasks(
-        state.phone_number,
-        text,
-        context=planner_context,
-        prompt_signals=prompt_signals,
-    )
+    try:
+        planner_output = await task_planner.plan_tasks(
+            state.phone_number,
+            text,
+            context=planner_context,
+            prompt_signals=prompt_signals,
+            path_label="planner_path",
+        )
+    except TypeError:
+        planner_output = await task_planner.plan_tasks(
+            state.phone_number,
+            text,
+            context=planner_context,
+            prompt_signals=prompt_signals,
+        )
     planner_output = _filter_spurious_affirmation_tasks(
         planner_output,
         active_intent=active_intent,

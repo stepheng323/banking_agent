@@ -19,6 +19,7 @@ class MessageContext:
     text: str
     message_id: str
     image_data: str | None = None
+    is_media_input: bool = False
     quoted_message_id: str | None = None
     quoted_message_data: dict[str, Any] | None = None
     channel: str = "whatsapp"
