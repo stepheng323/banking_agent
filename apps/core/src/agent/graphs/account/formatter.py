@@ -63,7 +63,8 @@ class AccountFormatter:
             symbol = "₦" if currency == "NGN" else currency
             account_number = bal.get("account_number") or ""
             last4 = account_number[-4:] if account_number else "????"
-            masked = f"****{last4}"
+            # Use a markdown-safe mask so the account line does not turn into bold text.
+            masked = f"···{last4}"
 
             lines.append(f"{index}. {bal['bank_name']} ({masked}): **{symbol}{amount:,.2f}**")
 

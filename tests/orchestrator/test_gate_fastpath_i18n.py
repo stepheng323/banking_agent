@@ -251,6 +251,21 @@ async def test_gate_fast_path_routes_balance_request_without_turn_router() -> No
     assert task.payload["action"] == "check_balance"
 
 
+async def test_gate_balance_fastpath_does_not_swallow_mixed_transaction_and_balance_request() -> None:
+    state = OrchestratorState(
+        user_id="u_gate_7b",
+        phone_number="23480000000071",
+        channel="whatsapp",
+        last_message_text="Send 10k to gaines, buy 1k airtime to my line, and show my balance",
+        loaded_context={"language": "en"},
+    )
+    config: RunnableConfig = {"configurable": {}, "recursion_limit": 50}
+
+    updates = await session_gate_fastpath(state, config)
+
+    assert updates == {}
+
+
 async def test_gate_turn_router_cancel_response_clears_query_state() -> None:
     planner = _RouteTurnPlanner(
         TurnRouteDecision(

@@ -782,6 +782,82 @@ async def test_confirmation_switch_to_account_uses_user_message_for_balance_exec
 
 
 @pytest.mark.asyncio
+async def test_confirmation_update_targets_only_airtime_task_in_mixed_batch() -> None:
+    state = OrchestratorState(
+        user_id="u_interrupt_7c",
+        phone_number="2348077777779",
+        channel="whatsapp",
+        last_message_text="Make the airtime 2k instead",
+        pending_interrupt=PendingInterrupt(kind="confirmation", task_ids=["t_transfer", "t_airtime"]),
+        loaded_context={"language": "en"},
+        tasks={
+            "t_transfer": TaskSpec(
+                id="t_transfer",
+                type="transfer",
+                stage=TaskStage.AWAITING_CONFIRMATION,
+                payload={
+                    "recipient_name": "Gaines",
+                    "recipient_resolved_name": "Yusuf Ibrahim",
+                    "recipient_account": "0760505262",
+                    "confirmation": {
+                        "summary": "Confirm transfer",
+                        "snapshot": {
+                            "amount": 10000,
+                            "recipient_name": "Gaines",
+                            "recipient_account": "0760505262",
+                            "recipient_bank_name": "Access Bank",
+                        },
+                    },
+                    "idempotency_key": "idem-transfer",
+                },
+            ),
+            "t_airtime": TaskSpec(
+                id="t_airtime",
+                type="airtime",
+                stage=TaskStage.AWAITING_CONFIRMATION,
+                payload={
+                    "amount": 1000,
+                    "recipient_phone": "08162511023",
+                    "network": "MTN",
+                    "confirmation": {
+                        "summary": "Confirm airtime",
+                        "snapshot": {
+                            "amount": 1000,
+                            "recipient_phone": "08162511023",
+                            "network": "MTN",
+                        },
+                    },
+                    "idempotency_key": "idem-airtime",
+                },
+            ),
+        },
+        waves=[["t_transfer", "t_airtime"]],
+        current_wave_index=0,
+    )
+    planner = _RouteOnlyPlanner(
+        InterruptRouteDecision(
+            decision="continue_flow",
+            confidence=0.96,
+            detected_language="English",
+            target_intent=None,
+            target_mode=None,
+            reason="confirmation correction",
+        )
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await handle_pending_interrupt(state, config)
+
+    assert updates["pending_interrupt"] is None
+    assert updates["tasks"]["t_transfer"].stage == TaskStage.AWAITING_CONFIRMATION
+    assert updates["tasks"]["t_transfer"].payload["idempotency_key"] == "idem-transfer"
+    assert updates["tasks"]["t_airtime"].stage == TaskStage.EXTRACTED
+    assert updates["tasks"]["t_airtime"].payload["confirmation"] == {}
+    assert "idempotency_key" not in updates["tasks"]["t_airtime"].payload
+    assert updates["last_interrupt"].task_ids == ["t_airtime"]
+
+
+@pytest.mark.asyncio
 async def test_confirmation_reject_flow_cancels_task() -> None:
     state = OrchestratorState(
         user_id="u_interrupt_8",

@@ -48,6 +48,13 @@ ACCOUNT_BALANCE_REQUEST_PATTERNS = (
     r"\bhow\s+much\s+do\s+i\s+have\b",
     r"\bhow\s+much\s+is\s+in\s+my\s+account\b",
 )
+BALANCE_FASTPATH_TRANSACTION_HINT_PATTERNS = (
+    r"\b(send|transfer|pay|buy|airtime|data|bundle|fund|withdraw)\b",
+)
+BALANCE_FASTPATH_CANCEL_PREFIX_RE = re.compile(
+    r"^(?:cancel|abort|stop|nevermind|never\s+mind)(?:\s+(?:and|then))?\s+",
+    re.IGNORECASE,
+)
 EXPLICIT_CANCEL_PATTERNS = (
     r"\bcancel\b",
     r"\babort\b",
@@ -57,6 +64,7 @@ EXPLICIT_CANCEL_PATTERNS = (
 )
 _BENEFICIARY_SUGGESTION_ALIAS_MAX_CHARS = 64
 _BENEFICIARY_ALIAS_MARKERS = (" as ", " alias ", " name ", " called ", " oruko ", " suna ", " aha ", " nom ")
+_BENEFICIARY_BARE_ALIAS_MAX_WORDS = 3
 _BENEFICIARY_SAVE_AFFIRMATIONS = {
     "yes",
     "yes please",
@@ -138,6 +146,24 @@ _BENEFICIARY_ALIAS_ONLY_BLOCKLIST = {
     "ok",
     "sure",
 }
+_BENEFICIARY_BARE_ALIAS_BLOCKLIST = {
+    "i",
+    "im",
+    "i'm",
+    "me",
+    "you",
+    "your",
+    "he",
+    "she",
+    "we",
+    "they",
+    "save",
+    "call",
+    "use",
+    "name",
+    "alias",
+}
+_BENEFICIARY_ALIAS_TOKEN_RE = re.compile(r"[A-Za-zÀ-ÖØ-öø-ÿ0-9][A-Za-zÀ-ÖØ-öø-ÿ0-9'.-]*")
 _SUGGESTION_TX_HINT_KEYWORDS = (
     "send",
     "transfer",
@@ -231,7 +257,10 @@ def _is_account_balance_request(message_text: str) -> bool:
     normalized = re.sub(r"\s+", " ", message_text.strip().lower())
     if not normalized:
         return False
-    return any(re.search(pattern, normalized) for pattern in ACCOUNT_BALANCE_REQUEST_PATTERNS)
+    candidate = BALANCE_FASTPATH_CANCEL_PREFIX_RE.sub("", normalized)
+    if any(re.search(pattern, candidate) for pattern in BALANCE_FASTPATH_TRANSACTION_HINT_PATTERNS):
+        return False
+    return any(re.search(pattern, candidate) for pattern in ACCOUNT_BALANCE_REQUEST_PATTERNS)
 
 
 def _has_explicit_cancel(message_text: str) -> bool:
@@ -313,6 +342,21 @@ def _extract_alias_from_text(message_text: str) -> str | None:
     return None
 
 
+def _is_bare_alias_candidate(message_text: str, alias: str) -> bool:
+    normalized = _normalize_suggestion_text(message_text)
+    if not normalized:
+        return False
+    if any(marker in normalized for marker in TURN_ROUTER_MULTI_CLAUSE_MARKERS):
+        return False
+    words = alias.split()
+    if not words or len(words) > _BENEFICIARY_BARE_ALIAS_MAX_WORDS:
+        return False
+    lowered_words = {word.lower() for word in words}
+    if lowered_words & _BENEFICIARY_BARE_ALIAS_BLOCKLIST:
+        return False
+    return all(_BENEFICIARY_ALIAS_TOKEN_RE.fullmatch(word) for word in words)
+
+
 def _resolve_beneficiary_suggestion_reply(
     message_text: str,
     *,
@@ -339,6 +383,10 @@ def _resolve_beneficiary_suggestion_reply(
 
     if normalized in _BENEFICIARY_SAVE_AFFIRMATIONS:
         return BeneficiarySuggestionDecision(action="save_default", reason="pure_affirmation")
+
+    bare_alias = _cleanup_alias(message_text)
+    if bare_alias and _is_bare_alias_candidate(message_text, bare_alias):
+        return BeneficiarySuggestionDecision(action="save_alias", alias=bare_alias, reason="bare_alias_reply")
 
     return BeneficiarySuggestionDecision(action="dismiss", reason="ambiguous_dismiss")
 

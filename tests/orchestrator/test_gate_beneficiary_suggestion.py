@@ -57,6 +57,37 @@ def test_beneficiary_suggestion_resolver_dismisses_transaction_message() -> None
     assert decision.reason == "transaction_guard"
 
 
+def test_beneficiary_suggestion_resolver_treats_bare_alias_as_save_alias() -> None:
+    decision = _resolve_beneficiary_suggestion_reply(
+        "Tols",
+        locale="en",
+        suggestion_payload={"recipient_name": "Mercy Johnson"},
+    )
+    assert decision.action == "save_alias"
+    assert decision.alias == "Tols"
+    assert decision.reason == "bare_alias_reply"
+
+
+def test_beneficiary_suggestion_resolver_cleans_bare_alias_trailing_noise() -> None:
+    decision = _resolve_beneficiary_suggestion_reply(
+        "Tols please",
+        locale="en",
+        suggestion_payload={"recipient_name": "Mercy Johnson"},
+    )
+    assert decision.action == "save_alias"
+    assert decision.alias == "Tols"
+
+
+def test_beneficiary_suggestion_resolver_allows_two_word_bare_alias() -> None:
+    decision = _resolve_beneficiary_suggestion_reply(
+        "Big Tols",
+        locale="en",
+        suggestion_payload={"recipient_name": "Mercy Johnson"},
+    )
+    assert decision.action == "save_alias"
+    assert decision.alias == "Big Tols"
+
+
 async def test_gate_suggestion_save_alias_creates_beneficiary_task_without_planner() -> None:
     planner = _RouteTurnPlanner(
         TurnRouteDecision(
@@ -181,3 +212,46 @@ async def test_gate_suggestion_non_save_reply_dismisses_and_falls_through() -> N
 
     assert updates == {}
     assert redis_client.deleted_keys == ["user:2348011112204:beneficiary_suggestion"]
+
+
+async def test_gate_suggestion_bare_alias_creates_beneficiary_task_without_planner() -> None:
+    planner = _RouteTurnPlanner(
+        TurnRouteDecision(
+            decision="respond_directly",
+            confidence=0.95,
+            detected_language="English",
+            response_key="conversational.checkin",
+            response=None,
+            expected_transaction_executors=[],
+            reason="not-used",
+        )
+    )
+    redis_client = _SuggestionRedis(
+        {
+            "recipient_name": "Mercy Johnson",
+            "recipient_account": "0334555167",
+            "bank_name": "GTBank",
+        }
+    )
+    state = OrchestratorState(
+        user_id="u_gate_benef_5",
+        phone_number="2348011112205",
+        channel="whatsapp",
+        last_message_text="Tols",
+        loaded_context={"language": "en"},
+    )
+    config: RunnableConfig = {
+        "configurable": {"redis_client": redis_client, "task_planner": planner},
+        "recursion_limit": 50,
+    }
+
+    updates = await session_gate_fastpath(state, config)
+
+    assert planner.route_calls == 0
+    assert updates["fast_path_triggered"] is True
+    assert updates["waves"] == [["fast_beneficiary_save"]]
+    task = updates["tasks"]["fast_beneficiary_save"]
+    assert task.type == "beneficiary"
+    assert task.payload["action"] == "save_beneficiary"
+    assert task.payload["alias"] == "Tols"
+    assert redis_client.deleted_keys == []

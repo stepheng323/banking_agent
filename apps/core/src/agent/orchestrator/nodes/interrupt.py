@@ -1321,6 +1321,66 @@ def _message_targets_transfer_task(message_text: str, task: TaskSpec) -> bool:
     return False
 
 
+def _message_targets_airtime_task(message_text: str, task: TaskSpec) -> bool:
+    payload = task.payload if isinstance(task.payload, dict) else {}
+    normalized_message = _normalize_recipient_match_text(message_text)
+    if not normalized_message:
+        return False
+
+    if re.search(r"\b(airtime|recharge|top up|topup)\b", normalized_message):
+        return True
+
+    message_digits = _digits_only(message_text)
+    recipient_phone = _digits_only(str(payload.get("recipient_phone") or ""))
+    if len(recipient_phone) >= 10 and recipient_phone in message_digits:
+        return True
+
+    network = _normalize_recipient_match_text(str(payload.get("network") or ""))
+    if network and re.search(rf"\b{re.escape(network)}\b", normalized_message):
+        return True
+
+    recipient_name = _normalize_recipient_match_text(str(payload.get("recipient_name") or ""))
+    if recipient_name and re.search(rf"\b{re.escape(recipient_name)}\b", normalized_message):
+        return True
+
+    return False
+
+
+def _message_targets_data_task(message_text: str, task: TaskSpec) -> bool:
+    payload = task.payload if isinstance(task.payload, dict) else {}
+    normalized_message = _normalize_recipient_match_text(message_text)
+    if not normalized_message:
+        return False
+
+    if re.search(r"\b(data|bundle|plan|mb|gb)\b", normalized_message):
+        return True
+
+    message_digits = _digits_only(message_text)
+    target_phone = _digits_only(str(payload.get("target_phone") or ""))
+    if len(target_phone) >= 10 and target_phone in message_digits:
+        return True
+
+    network = _normalize_recipient_match_text(str(payload.get("network") or ""))
+    if network and re.search(rf"\b{re.escape(network)}\b", normalized_message):
+        return True
+
+    plan_name = _normalize_recipient_match_text(str(payload.get("plan_name") or ""))
+    if plan_name and re.search(rf"\b{re.escape(plan_name)}\b", normalized_message):
+        return True
+
+    return False
+
+
+def _message_targets_confirmation_task(message_text: str, task: TaskSpec) -> bool:
+    if task.type == "transfer":
+        return _message_targets_transfer_task(message_text, task)
+    if task.type == "airtime":
+        return _message_targets_airtime_task(message_text, task)
+    if task.type == "data":
+        return _message_targets_data_task(message_text, task)
+    return False
+
+
 def _select_confirmation_continue_flow_task_ids(
     state: OrchestratorState,
     interrupt: Any,
@@ -1328,9 +1388,6 @@ def _select_confirmation_continue_flow_task_ids(
     task_ids = [str(task_id) for task_id in getattr(interrupt, "task_ids", []) if str(task_id) in state.tasks]
     if len(task_ids) < 2:
         return task_ids, "single_or_empty_batch", []
-
-    if any(state.tasks[task_id].type != "transfer" for task_id in task_ids):
-        return task_ids, "non_transfer_batch", []
 
     message_text = (state.last_message_text or "").strip()
     if not message_text:
@@ -1342,7 +1399,7 @@ def _select_confirmation_continue_flow_task_ids(
     matched_task_ids = [
         task_id
         for task_id in task_ids
-        if _message_targets_transfer_task(message_text, state.tasks[task_id])
+        if _message_targets_confirmation_task(message_text, state.tasks[task_id])
     ]
     if 0 < len(matched_task_ids) < len(task_ids):
         return matched_task_ids, "matched_subset", matched_task_ids

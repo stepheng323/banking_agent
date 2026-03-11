@@ -16,6 +16,7 @@ from shared.formatters.recipient_display import format_recipient_display_label
 from shared.formatters.transfer import format_funding_plan_summary, format_transfer_summary
 from shared.i18n import render_message
 from shared.policy.loader import get_cached_policy
+from shared.utils.bank_aliases import normalize_bank_name
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -34,6 +35,14 @@ _VAGUE_ACKNOWLEDGMENTS = {
     "ok.",
     "done",
     "done.",
+}
+_RECIPIENT_DISPLAY_INNER_RE = re.compile(r"^(?P<outer>[^()]+?)\s*\((?P<inner>[^()]+)\)$")
+_ACK_FIELD_MARKERS: dict[str, tuple[str, ...]] = {
+    "amount": ("amount", "ngn", "naira", "₦"),
+    "recipient_name": ("recipient", "beneficiary"),
+    "recipient_bank": ("bank",),
+    "recipient_account": ("account", "acct"),
+    "narration": ("narration", "memo", "note", "description"),
 }
 
 
@@ -164,11 +173,55 @@ def _field_value_changed(field: str, previous: Any, current: Any) -> bool:
     return _normalize_text(previous) != _normalize_text(current)
 
 
+def _extract_recipient_display_inner(value: Any) -> str:
+    normalized = _normalize_text(value)
+    if not normalized:
+        return ""
+    match = _RECIPIENT_DISPLAY_INNER_RE.match(normalized)
+    if not match:
+        return normalized
+    inner = _normalize_text(match.group("inner"))
+    return inner or normalized
+
+
+def _same_recipient_identity(previous_snapshot: dict[str, Any], current_snapshot: dict[str, Any]) -> bool:
+    previous_account = re.sub(r"\D", "", str(previous_snapshot.get("recipient_account") or ""))
+    current_account = re.sub(r"\D", "", str(current_snapshot.get("recipient_account") or ""))
+    return bool(previous_account and current_account and previous_account == current_account)
+
+
+def _same_recipient_display(previous: Any, current: Any) -> bool:
+    previous_normalized = _normalize_text(previous)
+    current_normalized = _normalize_text(current)
+    if previous_normalized == current_normalized:
+        return True
+    previous_inner = _extract_recipient_display_inner(previous)
+    current_inner = _extract_recipient_display_inner(current)
+    return bool(previous_inner and current_inner and previous_inner == current_inner)
+
+
+def _same_bank_identity(previous: Any, current: Any) -> bool:
+    previous_normalized = _normalize_text(previous)
+    current_normalized = _normalize_text(current)
+    if not previous_normalized or not current_normalized:
+        return False
+    return normalize_bank_name(previous_normalized) == normalize_bank_name(current_normalized)
+
+
 def _changed_transition_fields(previous_snapshot: dict[str, Any], current_snapshot: dict[str, Any]) -> list[str]:
     changed: list[str] = []
     for field in _TRANSITION_FIELDS:
         if _field_value_changed(field, previous_snapshot.get(field), current_snapshot.get(field)):
             changed.append(field)
+    if _same_recipient_identity(previous_snapshot, current_snapshot):
+        if "recipient_name" in changed and _same_recipient_display(
+            previous_snapshot.get("recipient_name"), current_snapshot.get("recipient_name")
+        ):
+            changed.remove("recipient_name")
+        if "recipient_bank" in changed and _same_bank_identity(
+            previous_snapshot.get("recipient_bank"), current_snapshot.get("recipient_bank")
+        ):
+            changed.remove("recipient_bank")
     return changed
 
 
@@ -221,6 +274,8 @@ def _has_specific_value_reference(
     normalized_ack = _normalize_text(acknowledgment)
     if not normalized_ack or normalized_ack in _VAGUE_ACKNOWLEDGMENTS:
         return False
+    if _acknowledgment_mentions_unexpected_fields(normalized_ack, changed_fields=changed_fields):
+        return False
 
     ack_digits = re.sub(r"\D", "", acknowledgment)
 
@@ -256,6 +311,20 @@ def _has_specific_value_reference(
             return True
         tokens = [token for token in normalized_value.split() if len(token) >= 3]
         if any(token in normalized_ack for token in tokens):
+            return True
+    return False
+
+
+def _acknowledgment_mentions_unexpected_fields(
+    normalized_ack: str,
+    *,
+    changed_fields: list[str],
+) -> bool:
+    changed = set(changed_fields)
+    for field, markers in _ACK_FIELD_MARKERS.items():
+        if field in changed:
+            continue
+        if any(marker in normalized_ack for marker in markers):
             return True
     return False
 

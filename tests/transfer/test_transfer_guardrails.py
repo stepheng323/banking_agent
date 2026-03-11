@@ -168,6 +168,33 @@ async def test_confirmation_update_message_not_emitted_when_snapshot_unchanged()
     assert result.update_message is None
 
 
+async def test_confirmation_update_message_ignores_cosmetic_recipient_and_bank_normalization() -> None:
+    payload = TransferPayload(
+        amount=8000,
+        recipient_name="Mercy Johnson",
+        recipient_account="0334555167",
+        recipient_bank_name="GTBank",
+        narration="Money for car repairs",
+        previous_confirmation_snapshot={
+            "amount": 8000,
+            "recipient_name": "Gtb (Mercy Johnson)",
+            "recipient_bank": "Gtb",
+            "recipient_account": "0334555167",
+            "narration": None,
+        },
+        transition_acknowledgment="Alright, changing recipient to Mercy Johnson, bank to GTBank, and narration to money for car repairs.",
+    )
+    ctx = TransferContext(phone_number="2348000000000", language="en", beneficiaries=[], accounts=[])
+
+    result = build_confirmation(payload, ctx)
+
+    assert result.update_message is not None
+    normalized = result.update_message.lower()
+    assert "narration" in normalized or "note" in normalized
+    assert "recipient" not in normalized
+    assert "bank" not in normalized
+
+
 async def test_saved_beneficiary_shortcut_is_used_when_recipient_not_changed() -> None:
     payload = TransferPayload(
         amount=6000,
