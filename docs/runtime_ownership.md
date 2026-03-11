@@ -3,22 +3,27 @@
 ## Production/Staging Runtime Split
 
 1. `gateway-lambda` (API Gateway ingress)
+
 - Owns webhook ingress endpoints.
 - Publishes inbound events to SNS/SQS via queue publisher.
 
 2. `core-chat-worker` (ECS service)
+
 - Owns chat-critical queue consumption:
   - `message.received`
   - `flow_event.process`
 
 3. `transaction-worker` (Lambda)
+
 - Owns async financial queues:
   - `transaction.execute`
   - `funding.process`
   - `payout.process`
   - `refund.process`
+  - ``
 
 4. `receipt-worker` (Lambda)
+
 - Owns async messaging queues:
   - `notification.send`
   - `actionable_message.send`
