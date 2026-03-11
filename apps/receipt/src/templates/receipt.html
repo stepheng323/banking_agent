@@ -185,7 +185,7 @@
       margin: 0 auto;
       padding: 24px;
       border-radius: 12px;
-      border: 1px solid #e2e8f0;
+      border: 1px solid #f1f5f9;
       background-color: #f8fafc;
     }
 
@@ -235,19 +235,6 @@
       color: #475569;
     }
 
-    .reference-box {
-      display: block;
-      width: 100%;
-      padding: 8px 10px;
-      border-radius: 6px;
-      background-color: #e2e8f0;
-      word-break: break-all;
-      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-      font-size: 15px;
-      font-weight: 600;
-      color: #0f172a;
-    }
-
     .narration {
       font-size: 16px;
       font-weight: 400;
@@ -256,98 +243,8 @@
       color: #1e293b;
     }
 
-    .verification {
-      margin-top: 20px;
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-      border: 1px solid #dbeafe;
-      border-radius: 12px;
-      background-color: #f8fbff;
-      padding: 14px;
-    }
 
-    .verification-body {
-      display: flex;
-      align-items: flex-start;
-      gap: 12px;
-    }
 
-    .verification-qr {
-      width: 74px;
-      height: 74px;
-      border-radius: 8px;
-      border: 1px solid #cbd5e1;
-      background-color: #ffffff;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      overflow: hidden;
-      flex-shrink: 0;
-    }
-
-    .verification-qr img {
-      width: 64px;
-      height: 64px;
-    }
-
-    .verification-qr-fallback {
-      font-size: 10px;
-      font-weight: 600;
-      color: #64748b;
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-    }
-
-    .verification-copy {
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
-      min-width: 0;
-    }
-
-    .verification-title {
-      font-size: 12px;
-      font-weight: 600;
-      color: #1e3a8a;
-      text-transform: uppercase;
-      letter-spacing: 0.06em;
-    }
-
-    .verification-link {
-      font-size: 11px;
-      color: #334155;
-      word-break: break-all;
-    }
-
-    .verification-meta {
-      font-size: 11px;
-      color: #475569;
-    }
-
-    .action-chips {
-      margin-top: 20px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 8px;
-      flex-wrap: wrap;
-    }
-
-    .action-chip {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      padding: 6px 10px;
-      border-radius: 9999px;
-      border: 1px solid #dbeafe;
-      background-color: #eff6ff;
-      color: #1e40af;
-      font-size: 11px;
-      font-weight: 600;
-      letter-spacing: 0.03em;
-      text-transform: uppercase;
-    }
 
     .footer {
       margin-top: 28px;
@@ -447,23 +344,11 @@
             </div>
           </div>
 
-          <div class="row grid">
-            <div class="row">
-              <label class="label">Channel</label>
-              <p class="value">{{ channel }}</p>
-            </div>
-            <div class="row">
-              <label class="label">Processor / Session ID</label>
-              <p class="sub-value">{{ processor_name }}</p>
-              <p class="sub-value" style="font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;">
-                {{ session_id }}
-              </p>
-            </div>
-          </div>
-
           <div class="row">
-            <label class="label">Transaction Reference</label>
-            <p class="reference-box">#{{ transaction_reference }}</p>
+            <label class="label">Session ID</label>
+            <p class="sub-value" style="font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;">
+              {{ session_id }}
+            </p>
           </div>
 
           {% if narration %}
@@ -472,34 +357,6 @@
             <p class="narration">"{{ narration }}"</p>
           </div>
           {% endif %}
-        </div>
-
-        <div class="verification">
-          <div class="verification-body">
-            <div class="verification-qr">
-              {% if verification_qr_data_uri %}
-              <img src="{{ verification_qr_data_uri }}" alt="Verification QR code" />
-              {% else %}
-              <span class="verification-qr-fallback">Verify</span>
-              {% endif %}
-            </div>
-
-            <div class="verification-copy">
-              <p class="verification-title">Verify Receipt</p>
-              {% if verification_url %}
-              <p class="verification-link">{{ verification_url }}</p>
-              {% else %}
-              <p class="verification-link">Verification URL unavailable</p>
-              {% endif %}
-              <p class="verification-meta">Processed by {{ processor_name }}</p>
-            </div>
-          </div>
-        </div>
-
-        <div class="action-chips">
-          <span class="action-chip">Share</span>
-          <span class="action-chip">Download PDF</span>
-          <span class="action-chip">Report Issue</span>
         </div>
       </div>
 

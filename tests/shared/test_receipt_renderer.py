@@ -63,15 +63,6 @@ async def test_render_receipt_uses_fast_wait_and_local_font_html(monkeypatch: py
         return browser
 
     monkeypatch.setattr(renderer, "_get_browser", _get_browser)
-    monkeypatch.setattr(
-        "apps.receipt.src.renderer.settings.receipt_verification_base_url",
-        "https://verify.fusepay.example/receipt",
-    )
-    monkeypatch.setattr(
-        renderer,
-        "_build_verification_qr_data_uri",
-        lambda *_: "data:image/svg+xml;base64,abc",
-    )
 
     screenshot = await renderer.render_receipt(
         transfer_data={
@@ -100,10 +91,7 @@ async def test_render_receipt_uses_fast_wait_and_local_font_html(monkeypatch: py
     assert "Transfer Successful" in html_content
     assert "Funds delivered to beneficiary bank" in html_content
     assert "WAT" in html_content
-    assert "Download PDF" in html_content
-    assert "Report Issue" in html_content
-    assert "https://verify.fusepay.example/receipt/TRX-FAST-1?session_id=SESSION-FAST-1" in html_content
-    assert "data:image/svg+xml;base64,abc" in html_content
+    assert "SESSION-FAST-1" in html_content
     assert "bottom-bar" not in html_content
     assert page.set_content.await_args.kwargs["wait_until"] == "domcontentloaded"
     page.wait_for_selector.assert_awaited_once_with("#receipt-container", state="visible", timeout=3000)
@@ -133,8 +121,6 @@ async def test_render_receipt_renders_safe_fallbacks_when_optional_fields_missin
         return browser
 
     monkeypatch.setattr(renderer, "_get_browser", _get_browser)
-    monkeypatch.setattr("apps.receipt.src.renderer.settings.receipt_verification_base_url", "")
-    monkeypatch.setattr(renderer, "_build_verification_qr_data_uri", lambda *_: "")
 
     await renderer.render_receipt(
         transfer_data={"amount": 1000, "recipient": {}, "source": {}},
@@ -144,7 +130,6 @@ async def test_render_receipt_renders_safe_fallbacks_when_optional_fields_missin
 
     assert page.set_content.await_args is not None
     html_content = page.set_content.await_args.args[0]
-    assert "Verification URL unavailable" in html_content
     assert ">N/A<" in html_content
 
 
