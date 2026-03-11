@@ -209,6 +209,8 @@ async def _handle_completed_tasks(
             has_receipt="receipt" in t.payload,
             payload_keys=list(t.payload.keys()),
         )
+    transaction_visible_tasks = [task for task in visible_tasks if task.type in TRANSACTION_TASK_TYPES]
+
     is_single_transfer = (
         len(visible_tasks) == 1
         and visible_tasks[0].type == "transfer"
@@ -282,7 +284,10 @@ async def _handle_completed_tasks(
     elif all_read_only:
         pass
     else:
-        summary_text = format_multi_action_summary(visible_tasks, locale=locale)
+        # For mixed read-only + transaction completions, keep explicit read-only outputs
+        # already emitted by workers and summarize only transaction outcomes.
+        summary_source = transaction_visible_tasks or visible_tasks
+        summary_text = format_multi_action_summary(summary_source, locale=locale)
         outbox.append({"type": "say", "text": summary_text})
 
 

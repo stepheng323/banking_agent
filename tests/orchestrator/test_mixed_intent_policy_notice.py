@@ -800,3 +800,7 @@ async def test_mixed_request_runs_in_order_without_resume_prompt() -> None:
     final_updates = await finalize(state, config)
     outbox = final_updates["outbox"]
     assert all("resume your transfer" not in item.get("text", "").lower() for item in outbox)
+    texts = [item.get("text", "") for item in outbox if isinstance(item, dict)]
+    assert any("balance is available." in text.lower() for text in texts)
+    assert any("transaction summary" in text.lower() for text in texts)
+    assert all("account: completed" not in text.lower() for text in texts)

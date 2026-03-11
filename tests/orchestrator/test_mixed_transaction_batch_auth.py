@@ -5,6 +5,7 @@ from langchain_core.runnables import RunnableConfig
 
 from apps.core.src.agent.graphs.airtime.worker import AirtimeWorker
 from apps.core.src.agent.orchestrator.models.domain import (
+    PendingInterrupt,
     TaskSpec,
     TaskStage,
     TransactionOutcome,
@@ -146,6 +147,32 @@ class _AirtimeNeedsConfirmationWorker:
             confirmation_snapshot={
                 "amount": payload.get("amount", 0),
                 "recipient_phone": payload.get("recipient_phone"),
+                "sourceBank": "Zenith Bank",
+                "sourceAccount": "0000009384",
+            },
+        )
+
+
+class _AirtimeCorrectionNeedsConfirmationWorker:
+    async def run(
+        self,
+        payload: dict,
+        context: dict,
+        user_message: str | None = None,
+        pin_verified: bool = False,
+    ) -> TransactionResult:
+        del context, pin_verified
+        amount = payload.get("amount", 0)
+        if user_message and "2k" in user_message.lower():
+            amount = 2000
+        return TransactionResult(
+            outcome=TransactionOutcome.NEEDS_CONFIRMATION,
+            patch={"amount": amount},
+            confirmation_summary="Confirm airtime task",
+            confirmation_snapshot={
+                "amount": amount,
+                "recipient_phone": payload.get("recipient_phone"),
+                "network": payload.get("network"),
                 "sourceBank": "Zenith Bank",
                 "sourceAccount": "0000009384",
             },
@@ -603,6 +630,81 @@ async def test_mixed_authorized_wave_continues_when_first_task_fails() -> None:
     assert updates["tasks"]["t_transfer"].stage == TaskStage.FAILED
     assert updates["tasks"]["t_airtime"].stage == TaskStage.COMPLETED
     assert updates["current_wave_index"] == 1
+
+
+@pytest.mark.asyncio
+async def test_confirmation_correction_turn_reconfirms_without_completion_summary() -> None:
+    state = OrchestratorState(
+        user_id="u_mixed_confirm_reconfirm",
+        phone_number="2348000000919",
+        channel="whatsapp",
+        last_message_text="Make the airtime 2k",
+        waves=[["t_transfer", "t_airtime"]],
+        current_wave_index=0,
+        pending_interrupt=PendingInterrupt(kind="confirmation", task_ids=["t_transfer", "t_airtime"]),
+        loaded_context={
+            "language": "en",
+            "accounts": [
+                {
+                    "id": "acct-1",
+                    "bank_name": "Zenith Bank",
+                    "account_number": "0000009384",
+                    "mandate_status": "ready",
+                    "mandate_id": "m1",
+                }
+            ],
+        },
+        tasks={
+            "t_transfer": TaskSpec(
+                id="t_transfer",
+                type="transfer",
+                stage=TaskStage.AWAITING_CONFIRMATION,
+                payload={
+                    "amount": 10000,
+                    "recipient_name": "Gaines",
+                    "recipient_resolved_name": "Yusuf Ibrahim",
+                    "recipient_account": "0760505262",
+                    "recipient_bank_name": "Access Bank",
+                    "source_account_id": "acct-1",
+                    "confirmation": {"summary": "Confirm transfer task", "snapshot": {"amount": 10000}},
+                },
+            ),
+            "t_airtime": TaskSpec(
+                id="t_airtime",
+                type="airtime",
+                stage=TaskStage.AWAITING_CONFIRMATION,
+                payload={
+                    "amount": 1000,
+                    "recipient_phone": "08162511023",
+                    "network": "mtn",
+                    "source_account_id": "acct-1",
+                    "confirmation": {"summary": "Confirm airtime task", "snapshot": {"amount": 1000}},
+                },
+            ),
+        },
+    )
+    config: RunnableConfig = {
+        "configurable": {
+            "task_planner": _SequentialPlanner([]),
+            "services": {
+                "transfer": _TransferNeedsConfirmationWorker(),
+                "airtime": _AirtimeCorrectionNeedsConfirmationWorker(),
+            },
+        },
+        "recursion_limit": 50,
+    }
+
+    interrupt_updates = await handle_pending_interrupt(state, config)
+    state = _apply(state, interrupt_updates)
+    wave_updates = await advance_wave(state, config)
+
+    assert wave_updates["pending_interrupt"].kind == "confirmation"
+    assert set(wave_updates["pending_interrupt"].task_ids) == {"t_transfer", "t_airtime"}
+    outbox = wave_updates["outbox"]
+    assert len(outbox) == 1
+    assert outbox[0]["type"] == "request_confirmation"
+    assert "transaction summary" not in outbox[0]["summary"].lower()
+    assert "all transactions completed successfully" not in outbox[0]["summary"].lower()
 
 
 @pytest.mark.asyncio
