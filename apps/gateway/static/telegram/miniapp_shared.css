@@ -27,6 +27,12 @@
   font-family: "IBM Plex Sans", "Segoe UI", Helvetica, Arial, sans-serif;
 }
 
+html,
+body {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
 body {
   min-height: 100vh;
   background:
@@ -39,7 +45,7 @@ body {
   display: flex;
   align-items: stretch;
   min-height: 100vh;
-  padding: 12px 10px;
+  padding: 8px;
 }
 
 .mini-sheet {
@@ -58,14 +64,14 @@ body {
   display: flex;
   flex-direction: column;
   flex: 1;
-  padding: 10px 16px 16px;
+  padding: 8px 14px 14px;
 }
 
 .mini-handle {
-  width: 76px;
-  height: 6px;
+  width: 68px;
+  height: 5px;
   border-radius: 999px;
-  margin: 4px auto 14px;
+  margin: 2px auto 12px;
   background: var(--mini-handle);
 }
 
@@ -73,21 +79,21 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 22px;
+  margin-bottom: 16px;
   color: var(--mini-text-muted);
 }
 
 .mini-topbar-icon {
-  width: 28px;
+  width: 24px;
   text-align: center;
-  font-size: 24px;
+  font-size: 20px;
   line-height: 1;
 }
 
 .mini-topbar-title {
   flex: 1;
   text-align: center;
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 650;
   letter-spacing: 0.02em;
 }
@@ -115,38 +121,38 @@ body {
 }
 
 .mini-title {
-  font-size: 42px;
-  line-height: 1.05;
+  font-size: 34px;
+  line-height: 1.1;
   font-weight: 700;
   letter-spacing: 0.01em;
-  margin: 0 0 14px;
+  margin: 0 0 10px;
   color: var(--mini-text);
 }
 
 .mini-subtitle {
-  font-size: 18px;
-  line-height: 1.5;
+  font-size: 16px;
+  line-height: 1.42;
   color: var(--mini-text-muted);
-  margin-bottom: 24px;
+  margin-bottom: 18px;
 }
 
 .mini-section-label {
   display: inline-block;
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 600;
-  margin: 0 0 10px 6px;
+  margin: 0 0 8px 4px;
   color: var(--mini-accent);
 }
 
 .mini-input {
   width: 100%;
-  height: 64px;
-  border-radius: 14px;
+  height: 56px;
+  border-radius: 12px;
   border: 2px solid var(--mini-input-border);
   background: var(--mini-input-bg);
   color: var(--mini-text);
-  font-size: 20px;
-  padding: 0 16px;
+  font-size: 17px;
+  padding: 0 14px;
   outline: none;
   transition: box-shadow 0.18s ease, border-color 0.18s ease;
 }
@@ -161,8 +167,8 @@ body {
 }
 
 .mini-input.pin {
-  font-size: 34px;
-  letter-spacing: 12px;
+  font-size: 28px;
+  letter-spacing: 10px;
   font-weight: 600;
   -webkit-text-security: disc;
   caret-color: var(--mini-accent);
@@ -179,8 +185,8 @@ body {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 14px 12px;
-  border-radius: 14px;
+  padding: 12px 11px;
+  border-radius: 12px;
   border: 1px solid var(--mini-border);
   background: var(--mini-choice-bg);
   cursor: pointer;
@@ -194,12 +200,12 @@ body {
 }
 
 .mini-choice-title {
-  font-size: 16px;
+  font-size: 15px;
   color: var(--mini-text);
 }
 
 .mini-choice-subtitle {
-  font-size: 13px;
+  font-size: 12px;
   color: var(--mini-text-muted);
 }
 
@@ -208,8 +214,8 @@ body {
 }
 
 .mini-radio {
-  width: 24px;
-  height: 24px;
+  width: 22px;
+  height: 22px;
   border-radius: 50%;
   border: 2px solid var(--mini-radio-border);
   display: inline-flex;
@@ -221,8 +227,8 @@ body {
 
 .mini-radio::after {
   content: "";
-  width: 12px;
-  height: 12px;
+  width: 10px;
+  height: 10px;
   border-radius: 50%;
   background: transparent;
   transition: background 0.15s ease;
@@ -237,15 +243,15 @@ body {
 }
 
 .mini-error {
-  min-height: 20px;
-  margin-top: 10px;
-  font-size: 14px;
+  min-height: 18px;
+  margin-top: 8px;
+  font-size: 13px;
   color: var(--mini-danger);
 }
 
 .mini-hint {
-  margin: 10px 4px 0;
-  font-size: 15px;
+  margin: 8px 4px 0;
+  font-size: 13px;
   color: var(--mini-text-muted);
 }
 
@@ -255,7 +261,7 @@ body {
   border-radius: 999px;
   background: var(--mini-progress-track);
   overflow: hidden;
-  margin-bottom: 22px;
+  margin-bottom: 16px;
 }
 
 .mini-progress-fill {
@@ -268,21 +274,21 @@ body {
 
 .mini-spacer {
   flex: 1;
-  min-height: 20px;
+  min-height: 14px;
 }
 
 .mini-footer {
-  margin-top: 12px;
-  padding-top: 14px;
+  margin-top: 8px;
+  padding-top: 10px;
   border-top: 1px solid var(--mini-border);
 }
 
 .mini-btn {
   width: 100%;
-  height: 56px;
+  height: 50px;
   border: none;
   border-radius: 999px;
-  font-size: 21px;
+  font-size: 18px;
   font-weight: 650;
   line-height: 1;
   background: var(--mini-accent);
@@ -304,8 +310,8 @@ body {
 }
 
 .mini-loader {
-  width: 18px;
-  height: 18px;
+  width: 16px;
+  height: 16px;
   border: 2px solid rgba(255, 255, 255, 0.35);
   border-top-color: transparent;
   border-radius: 50%;
@@ -320,8 +326,8 @@ body {
 }
 
 .mini-success-badge {
-  width: 82px;
-  height: 82px;
+  width: 70px;
+  height: 70px;
   border-radius: 50%;
   display: inline-flex;
   align-items: center;
@@ -332,24 +338,24 @@ body {
 
 .mini-success-wrap {
   text-align: center;
-  margin-top: 24px;
+  margin-top: 18px;
 }
 
 @media (max-width: 420px) {
   .mini-title {
-    font-size: 36px;
+    font-size: 30px;
   }
 
   .mini-input {
-    height: 60px;
-    font-size: 18px;
+    height: 54px;
+    font-size: 16px;
   }
 
   .mini-input.pin {
-    font-size: 32px;
+    font-size: 26px;
   }
 
   .mini-btn {
-    font-size: 19px;
+    font-size: 17px;
   }
 }

@@ -4,19 +4,19 @@
     <meta charset="UTF-8" />
     <meta
       name="viewport"
-      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover"
     />
     <title>Enter Transaction PIN</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <script src="/static/telegram/miniapp_theme.js?v=3"></script>
-    <link rel="stylesheet" href="/static/telegram/miniapp_shared.css?v=3" />
+    <link rel="stylesheet" href="/static/telegram/miniapp_shared.css?v=4" />
     <style>
       .pin-shell {
         min-height: 100%;
       }
 
       .pin-title {
-        font-size: 52px;
+        font-size: 36px;
       }
 
       .pin-subtitle {
@@ -24,15 +24,15 @@
       }
 
       .pin-input {
-        font-size: 38px;
-        letter-spacing: 12px;
+        font-size: 28px;
+        letter-spacing: 9px;
         font-weight: 650;
         caret-color: var(--mini-accent);
         -webkit-text-security: disc;
       }
 
       .pin-submit {
-        font-size: 36px;
+        font-size: 18px;
       }
 
       body.locked-state .pin-input {
@@ -50,11 +50,11 @@
 
       @media (max-width: 420px) {
         .pin-title {
-          font-size: 46px;
+          font-size: 31px;
         }
 
         .pin-submit {
-          font-size: 31px;
+          font-size: 17px;
         }
       }
     </style>
