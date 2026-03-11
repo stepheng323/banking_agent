@@ -1,7 +1,7 @@
 """Planner context assembly flow helpers."""
 
-from dataclasses import dataclass
 import re
+from dataclasses import dataclass
 from typing import Any, cast
 
 from apps.core.src.agent.orchestrator.models.domain import TaskSpec, TaskStage

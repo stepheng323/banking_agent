@@ -19,6 +19,7 @@ from apps.core.src.agent.orchestrator.graph import build_orchestrator_graph
 from apps.core.src.agent.orchestrator.models.message_context import MessageContext
 from apps.core.src.agent.orchestrator.presentation.intents import map_outbox_to_intents
 from shared.clients.abstractions.banking import BankDataProvider
+from shared.config.settings import settings
 from shared.i18n import LocaleManager
 from shared.protocols.worker import WorkerProtocol
 from shared.queue.adapter import QueuePublisher
@@ -28,7 +29,6 @@ from shared.repositories.beneficiary_repository import BeneficiaryRepository
 from shared.repositories.user_repository import UserRepository
 from shared.services.context_manager import ContextManager
 from shared.services.task_planner import OrchestratorTaskPlanner
-from shared.config.settings import settings
 from shared.utils.async_helpers import create_background_task
 from shared.utils.logging import get_logger
 
@@ -189,7 +189,11 @@ class OrchestratorGraphHandler:
             turn_start = time.perf_counter()
 
             phone_number = context.phone_number
-            path_label = "media_path" if (getattr(context, "is_media_input", False) or bool(context.image_data)) else "planner_path"
+            path_label = (
+                "media_path"
+                if (getattr(context, "is_media_input", False) or bool(context.image_data))
+                else "planner_path"
+            )
 
             try:
                 inputs = {

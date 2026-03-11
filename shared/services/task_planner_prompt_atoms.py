@@ -138,7 +138,8 @@ PLANNER_RUNTIME_MONEY_MOVE_EXAMPLES = """## TARGETED EXAMPLES (MONEY_MOVE)
 - Send 20k to 0760505261 First Bank -> send_money amount=20000, recipient_account=0760505261, bank_name=First Bank.
 - Abeg buy 2k airtime for 08031234567 mtn -> buy_airtime amount=2000, recipient_phone=08031234567, network=MTN.
 - Jowo ra data 1gb fun 08031234567 mtn -> buy_data plan=1GB, recipient_phone=08031234567, network=MTN.
-- Don Allah tura 5k zuwa 0760505261 First Bank -> send_money amount=5000, recipient_account=0760505261, bank_name=First Bank.
+- Don Allah tura 5k zuwa 0760505261 First Bank ->
+  send_money amount=5000, recipient_account=0760505261, bank_name=First Bank.
 - Biko buy 3k airtime for my line mtn -> buy_airtime amount=3000, is_self=true, network=MTN.
 - Envoie 5k a 0760505261 First Bank -> send_money amount=5000, recipient_account=0760505261, bank_name=First Bank."""
 

@@ -317,7 +317,12 @@ def _apply_data_payload_fields(payload: dict[str, Any], plan_item: Any) -> None:
         normalized = normalize_nigerian_phone(phone) or phone.strip()
         payload["target_phone"] = normalized
 
-    if "plan" in payload and isinstance(payload.get("plan"), str) and payload.get("plan") and not payload.get("plan_name"):
+    if (
+        "plan" in payload
+        and isinstance(payload.get("plan"), str)
+        and payload.get("plan")
+        and not payload.get("plan_name")
+    ):
         payload["plan_name"] = payload.get("plan")
 
     if payload.get("amount") is None and payload.get("budget") is not None:

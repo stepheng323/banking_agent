@@ -4,6 +4,7 @@ from typing import cast
 
 from langchain_openai import ChatOpenAI
 
+from shared.services.task_planner_normalizer import normalize_planner_transaction_output
 from shared.services.task_planner_prompts import (
     PLANNER_PROMPT_BASELINE_RESULT,
     PLANNER_RULE_ATOMS,
@@ -12,7 +13,6 @@ from shared.services.task_planner_prompts import (
     build_planner_system_prompt,
     refresh_planner_system_prompt,
 )
-from shared.services.task_planner_normalizer import normalize_planner_transaction_output
 from shared.services.task_planner_router_prompts import (
     INTERRUPT_ROUTER_SYSTEM_PROMPT,
     INTERRUPT_ROUTER_USER_PROMPT_TEMPLATE,
