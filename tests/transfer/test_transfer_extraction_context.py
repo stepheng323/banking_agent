@@ -462,7 +462,7 @@ async def test_narration_correction_updates_narration_and_user_note() -> None:
     assert result.outcome == TransactionOutcome.OK
     assert result.patch["narration"] == "groceries"
     assert result.patch["user_note"] == "groceries"
-    assert result.patch["_extraction_ack"] == "Updated narration."
+    assert result.patch["transition_acknowledgment"] == "Updated narration."
 
 
 async def test_amount_update_does_not_clear_recipient_binding_when_name_matches_resolved_identity() -> None:

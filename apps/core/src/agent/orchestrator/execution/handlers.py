@@ -169,6 +169,10 @@ def _set_confirmation(task: Any, result: Any, *, gate_on: str) -> None:
     update_message = getattr(result, "update_message", None)
     if update_message:
         confirmation["update_message"] = update_message
+    else:
+        confirmation.pop("update_message", None)
+    task.payload.pop("transition_acknowledgment", None)
+    task.payload.pop("previous_confirmation_snapshot", None)
 
 
 def _handle_transaction_outcome(

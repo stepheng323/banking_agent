@@ -328,6 +328,30 @@ def _build_confirmation_gate_summary(
     return "\n\n".join(non_empty)
 
 
+def _compact_confirmation_update_message(update_messages: list[str], locale: str) -> str | None:
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for message in update_messages:
+        compact = message.strip()
+        if not compact:
+            continue
+        key = re.sub(r"\s+", " ", compact).strip().lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        normalized.append(compact)
+
+    if not normalized:
+        return None
+    if len(normalized) == 1:
+        return normalized[0]
+    return render_message(
+        "response.templates.acknowledge_change",
+        locale,
+        {"changes_text": "your transfer details"},
+    )
+
+
 def _auth_header_for_tasks(state: OrchestratorState, task_ids: list[str], *, locale: str) -> str:
     task_types = {state.tasks[task_id].type for task_id in task_ids if task_id in state.tasks}
     if len(task_types) == 1:
@@ -1025,7 +1049,13 @@ async def advance_wave(state: OrchestratorState, config: RunnableConfig) -> dict
 
         first_task_payload = state.tasks[confirm_task_ids[0]].payload.get("confirmation", {})
         snap = first_task_payload.get("snapshot", {})
-        update_msg = first_task_payload.get("update_message")
+        update_messages: list[str] = []
+        for task_id in confirm_task_ids:
+            confirmation_payload = state.tasks[task_id].payload.get("confirmation", {})
+            candidate = confirmation_payload.get("update_message")
+            if isinstance(candidate, str) and candidate.strip():
+                update_messages.append(candidate)
+        update_msg = _compact_confirmation_update_message(update_messages, locale)
         snapshots_by_task = {
             tid: state.tasks[tid].payload.get("confirmation", {}).get("snapshot", {}) for tid in confirm_task_ids
         }

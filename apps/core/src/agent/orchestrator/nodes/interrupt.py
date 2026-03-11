@@ -12,6 +12,7 @@ from apps.core.src.agent.orchestrator.nodes.cancellation import (
     cancelled_message,
 )
 from apps.core.src.agent.orchestrator.nodes.planner import _build_user_state_summary
+from apps.core.src.agent.orchestrator.nodes.planner_postprocess import _expand_underproduced_transfer_tasks
 from apps.core.src.agent.orchestrator.services.interrupt_shortcuts import (
     is_explicit_confirmation_approval,
     resolve_interrupt_shortcut_with_reason,
@@ -25,23 +26,14 @@ from shared.formatters.confirmation import build_confirmation_summary
 from shared.formatters.prompts import format_auth_reason, sanitize_recipient_display_name
 from shared.formatters.recipient_display import format_recipient_display_label
 from shared.i18n import LocaleManager, render_message
-from shared.services.task_planner_prompt_models import PlannerPromptSignals
-from shared.types.planner import InterruptRouteDecision, PlannerOutput, TransactionExecutor
+from shared.types.planner import InterruptRouteDecision, PlannedTask, PlannerOutput, TaskParameters
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
 
 TRANSACTION_INTENTS = {"transfer", "airtime", "data"}
-DIRECT_SWITCH_INTENTS = {"query", "account", "faq", "support"}
-PLANNER_SWITCH_INTENTS = {
-    "transfer",
-    "airtime",
-    "data",
-    "beneficiary",
-    "mixed",
-    "conversational",
-    "cancel",
-}
+NON_TRANSACTION_SWITCH_INTENTS = {"query", "account", "faq", "support", "beneficiary"}
+KNOWN_SWITCH_INTENTS = TRANSACTION_INTENTS | NON_TRANSACTION_SWITCH_INTENTS
 INTERRUPT_CONTEXT_MAX_CHARS = 1800
 INTERRUPT_REQUIRED_FIELDS_MAX_CHARS = 700
 INTERRUPT_PROMPT_MAX_CHARS = 300
@@ -68,6 +60,15 @@ _NON_TRANSFER_INTENT_HINT_RE = re.compile(
 )
 _CONFIRMATION_COLLECTIVE_SCOPE_RE = re.compile(
     r"\b(both|all|everyone|everybody|all of them|for both)\b",
+    re.IGNORECASE,
+)
+_TRANSFER_CANCEL_SCHEDULE_RE = re.compile(
+    r"\b(cancel|stop|delete|remove)\b[\w\s]{0,40}\b(schedule|scheduled|recurring|auto)\b",
+    re.IGNORECASE,
+)
+_TRANSFER_RECURRING_RE = re.compile(r"\b(every|daily|weekly|monthly|recurring)\b", re.IGNORECASE)
+_TRANSFER_SCHEDULE_RE = re.compile(
+    r"\b(schedule|scheduled|tomorrow|today|later|next\s+\w+|on\s+\d{4}-\d{2}-\d{2})\b",
     re.IGNORECASE,
 )
 
@@ -291,7 +292,19 @@ async def _route_interrupt(
             fields_by_task=fields_by_task,
             prompt=prompt,
         )
-        route = await task_planner.route_pending_input(state.phone_number, text, context=route_context)
+        try:
+            route = await task_planner.route_pending_input(
+                state.phone_number,
+                text,
+                context=route_context,
+                path_label="interrupt_path",
+            )
+        except TypeError:
+            route = await task_planner.route_pending_input(
+                state.phone_number,
+                text,
+                context=route_context,
+            )
         route = cast(InterruptRouteDecision, route)
         logger.info(
             "interrupt_router_decision",
@@ -324,40 +337,408 @@ def _build_waves_from_tasks(tasks: dict[str, TaskSpec]) -> list[list[str]]:
     return cast(list[list[str]], build_dependency_waves(task_ids, depends_on_by_task))
 
 
-def _build_replanned_tasks(
-    planner_output: PlannerOutput,
+def _next_interrupt_task_id(
+    *,
+    state: OrchestratorState,
+    target_intent: str,
+    start_index: int = 1,
+) -> str:
+    index = max(start_index, 1)
+    while True:
+        candidate = f"interrupt_{target_intent}_{index}"
+        if candidate not in state.tasks:
+            return candidate
+        index += 1
+
+
+def _feature_tokens(requested_features: list[Any] | None) -> set[str]:
+    tokens: set[str] = set()
+    for feature in requested_features or []:
+        if hasattr(feature, "value"):
+            tokens.add(str(feature.value).strip().upper())
+        else:
+            tokens.add(str(feature).strip().upper())
+    return {token for token in tokens if token}
+
+
+def _coerce_float(value: Any) -> float | None:
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _interrupt_required_fields(interrupt: Any) -> list[str]:
+    fields_by_task = getattr(interrupt, "fields_by_task", {}) or {}
+    if not isinstance(fields_by_task, dict):
+        return []
+    ordered: list[str] = []
+    seen: set[str] = set()
+    for raw_fields in fields_by_task.values():
+        if not isinstance(raw_fields, list):
+            continue
+        for field in raw_fields:
+            if not isinstance(field, str) or field in seen:
+                continue
+            ordered.append(field)
+            seen.add(field)
+    return ordered
+
+
+def _build_transaction_extractor_context(
+    *,
+    state: OrchestratorState,
+    interrupt: Any,
+    target_intent: str,
+) -> dict[str, Any]:
+    context: dict[str, Any] = {
+        "phone_number": state.phone_number,
+        "language": _state_locale(state),
+        "accounts": (state.loaded_context or {}).get("accounts", []),
+        "beneficiaries": (state.loaded_context or {}).get("beneficiaries", []),
+        "required_fields": _interrupt_required_fields(interrupt),
+        "previousResponse": getattr(interrupt, "prompt", None),
+        "previous_response": getattr(interrupt, "prompt", None),
+    }
+
+    if target_intent != "transfer":
+        return context
+
+    first_task_id = next(iter(getattr(interrupt, "task_ids", []) or []), None)
+    task = state.tasks.get(str(first_task_id)) if first_task_id else None
+    payload = task.payload if task and isinstance(task.payload, dict) else {}
+    context["known_recipient"] = {
+        "recipient_name": payload.get("recipient_name"),
+        "recipient_resolved_name": payload.get("recipient_resolved_name"),
+        "recipient_account": payload.get("recipient_account"),
+        "recipient_bank_name": payload.get("recipient_bank_name"),
+    }
+    return context
+
+
+def _infer_transfer_switch_action(text: str, feature_tokens: set[str]) -> str:
+    if _TRANSFER_CANCEL_SCHEDULE_RE.search(text):
+        return "cancel_scheduled_transfer"
+    if "RECURRING" in feature_tokens or _TRANSFER_RECURRING_RE.search(text):
+        return "recurring_transfer"
+    if "SCHEDULED" in feature_tokens or _TRANSFER_SCHEDULE_RE.search(text):
+        return "schedule_transfer"
+    return "send_money"
+
+
+async def _seed_transfer_switch_payload(
+    *,
+    state: OrchestratorState,
+    interrupt: Any,
     text: str,
+    services: dict[str, Any],
+) -> tuple[TaskParameters, dict[str, Any], str, bool]:
+    parameters = TaskParameters()
+    payload_seed: dict[str, Any] = {}
+    action = _infer_transfer_switch_action(text, set())
+
+    worker = services.get("transfer")
+    extractor = getattr(worker, "extractor", None) if worker else None
+    if extractor is None or not hasattr(extractor, "extract"):
+        return parameters, payload_seed, action, False
+
+    context = _build_transaction_extractor_context(
+        state=state,
+        interrupt=interrupt,
+        target_intent="transfer",
+    )
+    try:
+        extraction = await extractor.extract(text, smart_context=context)
+    except Exception as exc:
+        logger.warning("interrupt_switch_transfer_extract_failed", error=str(exc))
+        return parameters, payload_seed, action, False
+
+    entities = extraction.entities.model_dump(exclude_none=True) if getattr(extraction, "entities", None) else {}
+    correction = getattr(extraction, "correction", None)
+    if correction and getattr(correction, "field", None) and getattr(correction, "new_value", None) is not None:
+        field = correction.field.value if hasattr(correction.field, "value") else str(correction.field)
+        if field == "bank_name":
+            entities["bank_name"] = correction.new_value
+        else:
+            entities[field] = correction.new_value
+
+    features = _feature_tokens(getattr(extraction, "requested_features", None))
+    action = _infer_transfer_switch_action(text, features)
+
+    recipient_name = str(entities.get("recipient_name") or "").strip()
+    if recipient_name:
+        parameters.recipient = recipient_name
+        parameters.recipient_name = recipient_name
+
+    recipient_account = str(entities.get("recipient_account") or "").strip()
+    if recipient_account:
+        parameters.recipient_account = recipient_account
+        payload_seed["recipient_account"] = recipient_account
+
+    bank_name = str(entities.get("bank_name") or "").strip()
+    if bank_name:
+        parameters.bank_name = bank_name
+        payload_seed["recipient_bank_name"] = bank_name
+
+    amount = _coerce_float(entities.get("amount"))
+    if amount is not None:
+        parameters.amount = amount
+
+    narration = str(entities.get("narration") or "").strip()
+    if narration:
+        parameters.narration = narration
+
+    source_bank_name = str(entities.get("source_bank_name") or "").strip()
+    if source_bank_name:
+        parameters.source_bank_name = source_bank_name
+
+    source_account_index = entities.get("source_account_index")
+    if isinstance(source_account_index, int):
+        parameters.source_account_index = source_account_index
+
+    source_accounts = entities.get("source_accounts")
+    if isinstance(source_accounts, list):
+        normalized_accounts = [str(item).strip() for item in source_accounts if str(item).strip()]
+        if normalized_accounts:
+            parameters.source_accounts = normalized_accounts
+
+    if entities.get("use_dual_accounts") is not None:
+        parameters.use_dual_accounts = bool(entities.get("use_dual_accounts"))
+
+    explicit_split = entities.get("explicit_split")
+    if isinstance(explicit_split, dict):
+        normalized_split: dict[str, float] = {}
+        for key, value in explicit_split.items():
+            amount_value = _coerce_float(value)
+            if amount_value is None:
+                continue
+            normalized_key = str(key).strip()
+            if not normalized_key:
+                continue
+            normalized_split[normalized_key] = amount_value
+        if normalized_split:
+            parameters.explicit_split = normalized_split
+
+    recipient_bank_code = str(entities.get("bank_code") or "").strip()
+    if recipient_bank_code:
+        payload_seed["recipient_bank_code"] = recipient_bank_code
+
+    source_account_id = str(entities.get("source_account_id") or "").strip()
+    if source_account_id:
+        payload_seed["source_account_id"] = source_account_id
+
+    acknowledgment = str(getattr(extraction, "acknowledgment", "") or "").strip()
+    if acknowledgment:
+        payload_seed["transition_acknowledgment"] = acknowledgment
+
+    preseeded = bool(features or entities or payload_seed)
+    return parameters, payload_seed, action, preseeded
+
+
+async def _seed_airtime_switch_payload(
+    *,
+    state: OrchestratorState,
+    interrupt: Any,
+    text: str,
+    services: dict[str, Any],
+) -> tuple[TaskParameters, dict[str, Any], bool]:
+    parameters = TaskParameters()
+    payload_seed: dict[str, Any] = {}
+
+    worker = services.get("airtime")
+    extractor = getattr(worker, "extractor", None) if worker else None
+    if extractor is None or not hasattr(extractor, "extract"):
+        return parameters, payload_seed, False
+
+    context = _build_transaction_extractor_context(
+        state=state,
+        interrupt=interrupt,
+        target_intent="airtime",
+    )
+    try:
+        extraction = await extractor.extract(text, smart_context=context)
+    except Exception as exc:
+        logger.warning("interrupt_switch_airtime_extract_failed", error=str(exc))
+        return parameters, payload_seed, False
+
+    entities = extraction.entities.model_dump(exclude_none=True) if getattr(extraction, "entities", None) else {}
+    correction = getattr(extraction, "correction", None)
+    if correction and getattr(correction, "field", None) and getattr(correction, "new_value", None) is not None:
+        field = correction.field.value if hasattr(correction.field, "value") else str(correction.field)
+        entities[field] = correction.new_value
+
+    amount = _coerce_float(entities.get("amount"))
+    if amount is not None:
+        parameters.amount = amount
+
+    recipient_phone = str(entities.get("recipient_phone") or "").strip()
+    if recipient_phone:
+        parameters.recipient_phone = recipient_phone
+        parameters.phone = recipient_phone
+
+    recipient_name = str(entities.get("recipient_name") or "").strip()
+    if recipient_name:
+        parameters.recipient_name = recipient_name
+
+    if entities.get("is_self") is not None:
+        parameters.is_self = bool(entities.get("is_self"))
+
+    source_bank_name = str(entities.get("source_bank_name") or "").strip()
+    if source_bank_name:
+        parameters.source_bank_name = source_bank_name
+
+    source_account_index = entities.get("source_account_index")
+    if isinstance(source_account_index, int):
+        parameters.source_account_index = source_account_index
+
+    narration = str(entities.get("narration") or "").strip()
+    if narration:
+        parameters.narration = narration
+
+    network = str(entities.get("network") or "").strip()
+    if network:
+        payload_seed["network"] = network
+
+    preseeded = bool(entities or payload_seed)
+    return parameters, payload_seed, preseeded
+
+
+async def _seed_data_switch_payload(
+    *,
+    state: OrchestratorState,
+    interrupt: Any,
+    text: str,
+    services: dict[str, Any],
+) -> tuple[TaskParameters, dict[str, Any], bool]:
+    parameters = TaskParameters()
+    payload_seed: dict[str, Any] = {}
+
+    worker = services.get("data")
+    extractor = getattr(worker, "extractor", None) if worker else None
+    if extractor is None or not hasattr(extractor, "extract"):
+        return parameters, payload_seed, False
+
+    context = _build_transaction_extractor_context(
+        state=state,
+        interrupt=interrupt,
+        target_intent="data",
+    )
+    try:
+        extraction = await extractor.extract(text, smart_context=context)
+    except Exception as exc:
+        logger.warning("interrupt_switch_data_extract_failed", error=str(exc))
+        return parameters, payload_seed, False
+
+    entities = extraction.entities.model_dump(exclude_none=True) if getattr(extraction, "entities", None) else {}
+    correction = getattr(extraction, "correction", None)
+    if correction and getattr(correction, "field", None) and getattr(correction, "new_value", None) is not None:
+        field = correction.field.value if hasattr(correction.field, "value") else str(correction.field)
+        entities[field] = correction.new_value
+
+    budget = _coerce_float(entities.get("budget"))
+    if budget is not None:
+        parameters.amount = budget
+
+    recipient_phone = str(entities.get("recipient_phone") or "").strip()
+    if recipient_phone:
+        parameters.recipient_phone = recipient_phone
+        payload_seed["target_phone"] = recipient_phone
+
+    network = str(entities.get("network") or "").strip()
+    if network:
+        payload_seed["network"] = network
+
+    plan_name = str(entities.get("size_preference") or "").strip()
+    if plan_name:
+        parameters.plan = plan_name
+        payload_seed["plan_name"] = plan_name
+
+    if entities.get("is_self") is not None:
+        parameters.is_self = bool(entities.get("is_self"))
+
+    recipient_name = str(entities.get("recipient_name") or "").strip()
+    if recipient_name:
+        parameters.recipient_name = recipient_name
+
+    preseeded = bool(entities or payload_seed)
+    return parameters, payload_seed, preseeded
+
+
+async def _build_enriched_transaction_switch_tasks(
+    *,
+    state: OrchestratorState,
+    text: str,
+    target_intent: str,
+    interrupt: Any,
+    services: dict[str, Any],
 ) -> tuple[dict[str, TaskSpec], list[list[str]], set[str]]:
+    if target_intent == "transfer":
+        parameters, payload_seed, action, preseeded = await _seed_transfer_switch_payload(
+            state=state,
+            interrupt=interrupt,
+            text=text,
+            services=services,
+        )
+    elif target_intent == "airtime":
+        parameters, payload_seed, preseeded = await _seed_airtime_switch_payload(
+            state=state,
+            interrupt=interrupt,
+            text=text,
+            services=services,
+        )
+        action = "buy_airtime"
+    else:
+        parameters, payload_seed, preseeded = await _seed_data_switch_payload(
+            state=state,
+            interrupt=interrupt,
+            text=text,
+            services=services,
+        )
+        action = "buy_data"
+
+    base_task_id = _next_interrupt_task_id(state=state, target_intent=target_intent)
+    planned_tasks = [
+        PlannedTask(
+            task_id=base_task_id,
+            action=action,
+            executor=cast(Any, target_intent),
+            instruction=text,
+            parameters=parameters,
+            risk="MONEY_MOVE",
+        )
+    ]
+
+    if target_intent == "transfer" and action == "send_money":
+        planned_tasks, _ = _expand_underproduced_transfer_tasks(planned_tasks, text)
+
     new_tasks: dict[str, TaskSpec] = {}
-    for plan_item in planner_output.tasks:
+    for plan_item in planned_tasks:
         spec = build_task_spec_from_plan_item(
             plan_item,
             text,
             preserve_existing_action_instruction=True,
-            include_skip_extraction=True,
+            include_skip_extraction=preseeded,
             strip_transfer_recipient_suffix=True,
             format_narration_requires_recipient_field=False,
         )
+        if len(planned_tasks) == 1 and payload_seed:
+            spec.payload.update(payload_seed)
         new_tasks[spec.id] = spec
 
     waves = _build_waves_from_tasks(new_tasks)
-    new_task_types = {str(task.type) for task in new_tasks.values()}
-    return new_tasks, waves, new_task_types
+    return new_tasks, waves, {target_intent}
 
 
-def _build_direct_switch_tasks(
+def _build_direct_non_transaction_switch_tasks(
     *,
     state: OrchestratorState,
     text: str,
     target_intent: str,
     route: InterruptRouteDecision,
 ) -> tuple[dict[str, TaskSpec], list[list[str]], set[str]]:
-    base_id = f"interrupt_{target_intent}_1"
-    task_id = base_id
-    index = 1
-    while task_id in state.tasks:
-        index += 1
-        task_id = f"interrupt_{target_intent}_{index}"
+    task_id = _next_interrupt_task_id(state=state, target_intent=target_intent)
 
     payload: dict[str, Any] = {
         "instruction": text,
@@ -970,6 +1351,19 @@ def _select_confirmation_continue_flow_task_ids(
     return task_ids, "matched_all", matched_task_ids
 
 
+def _stash_previous_confirmation_snapshots(state: OrchestratorState, task_ids: list[str]) -> None:
+    for task_id in task_ids:
+        task = state.tasks.get(task_id)
+        if task is None:
+            continue
+        confirmation = task.payload.get("confirmation")
+        snapshot = confirmation.get("snapshot") if isinstance(confirmation, dict) else None
+        if isinstance(snapshot, dict) and snapshot:
+            task.payload["previous_confirmation_snapshot"] = dict(snapshot)
+        else:
+            task.payload.pop("previous_confirmation_snapshot", None)
+
+
 def _continue_flow_updates(state: OrchestratorState, interrupt: Any) -> dict[str, Any]:
     if interrupt.kind in {"input", "confirmation"}:
         task_ids_to_reset = [str(task_id) for task_id in interrupt.task_ids]
@@ -987,6 +1381,8 @@ def _continue_flow_updates(state: OrchestratorState, interrupt: Any) -> dict[str
             selection_reason=selection_reason,
             matched_task_ids=matched_task_ids,
         )
+        if interrupt.kind == "confirmation":
+            _stash_previous_confirmation_snapshots(state, task_ids_to_reset)
         reset_tasks_to_extracted(
             state.tasks,
             task_ids_to_reset,
@@ -1043,95 +1439,15 @@ def _approve_auth_updates(state: OrchestratorState, interrupt: Any) -> dict[str,
     }
 
 
-async def _switch_via_planner(
-    *,
-    state: OrchestratorState,
-    interrupt: Any,
-    task_planner: Any,
-    text: str,
-    active_type: str,
-    current_task_types: set[str],
-    redis_client: Any | None,
-) -> dict[str, Any]:
-    context_summary = _build_interrupt_context(
-        state=state,
-        kind=interrupt.kind,
-        task_ids=interrupt.task_ids,
-        current_task_types=current_task_types,
-        fields_by_task=interrupt.fields_by_task,
-        prompt=interrupt.prompt,
-    )
-    expected_executors = tuple(
-        cast(TransactionExecutor, item)
-        for item in state.preplanner_expected_transaction_executors
-        if item in TRANSACTION_INTENTS
-    )
-    prompt_signals = PlannerPromptSignals(
-        active_flow_type=active_type,
-        pending_interrupt_kind=interrupt.kind,
-        query_session_active=False,
-        query_session_source=None,
-        recent_domain_focus=state.active_domain,
-        has_beneficiary_suggestion=False,
-        has_user_state_summary=bool(_build_user_state_summary(state)),
-        has_short_term_memory=False,
-        has_quote=state.has_quote and bool(state.quoted_message_id),
-        expected_transaction_executors=expected_executors,
-    )
-    try:
-        planner_output = await task_planner.plan_tasks(
-            state.phone_number,
-            text,
-            context=context_summary,
-            prompt_signals=prompt_signals,
-        )
-    except Exception as exc:
-        logger.warning("interrupt_switch_planner_failed", kind=interrupt.kind, error=str(exc))
-        return _reprompt_updates(state, interrupt)
-
-    if getattr(planner_output, "is_cancellation", False):
-        return await _cancel_updates(state, interrupt, current_task_types, redis_client)
-
-    if not planner_output.tasks:
-        locale = _state_locale(state)
-        response_key = getattr(planner_output, "response_key", None)
-        if response_key:
-            final_response = render_message(response_key, locale)
-        else:
-            final_response = planner_output.response or render_message("conversational.clarify", locale)
-        return {
-            "pending_interrupt": None,
-            "last_interrupt": interrupt,
-            "waves": [],
-            "final_response": final_response,
-            "planner_output": planner_output,
-        }
-
-    new_tasks, waves, new_task_types = _build_replanned_tasks(planner_output, text)
-    return _switch_updates(
-        state=state,
-        interrupt=interrupt,
-        active_type=active_type,
-        current_task_types=current_task_types,
-        new_tasks=new_tasks,
-        waves=waves,
-        new_task_types=new_task_types,
-        text=text,
-        planner_output=planner_output,
-        primary_intent=planner_output.primary_intent,
-    )
-
-
 async def _handle_switch_intent_route(
     *,
     state: OrchestratorState,
     interrupt: Any,
     route: InterruptRouteDecision,
-    task_planner: Any,
     text: str,
     active_type: str,
     current_task_types: set[str],
-    redis_client: Any | None,
+    services: dict[str, Any],
 ) -> dict[str, Any]:
     if _is_beneficiary_clarification_interrupt(interrupt):
         logger.info(
@@ -1143,46 +1459,41 @@ async def _handle_switch_intent_route(
         return _reprompt_updates(state, interrupt)
 
     target_intent = (route.target_intent or "").strip().lower()
-    if target_intent in DIRECT_SWITCH_INTENTS:
-        new_tasks, waves, new_task_types = _build_direct_switch_tasks(
+    if not target_intent or target_intent not in KNOWN_SWITCH_INTENTS:
+        logger.info(
+            "interrupt_switch_target_unknown",
+            target_intent=target_intent or None,
+            reason="missing_or_unsupported_target",
+        )
+        return _reprompt_updates(state, interrupt)
+
+    if target_intent in NON_TRANSACTION_SWITCH_INTENTS:
+        new_tasks, waves, new_task_types = _build_direct_non_transaction_switch_tasks(
             state=state,
             text=text,
             target_intent=target_intent,
             route=route,
         )
-        return _switch_updates(
+    else:
+        new_tasks, waves, new_task_types = await _build_enriched_transaction_switch_tasks(
             state=state,
-            interrupt=interrupt,
-            active_type=active_type,
-            current_task_types=current_task_types,
-            new_tasks=new_tasks,
-            waves=waves,
-            new_task_types=new_task_types,
             text=text,
-            planner_output=None,
-            primary_intent=target_intent,
+            target_intent=target_intent,
+            interrupt=interrupt,
+            services=services,
         )
 
-    if target_intent in PLANNER_SWITCH_INTENTS or not target_intent:
-        return await _switch_via_planner(
-            state=state,
-            interrupt=interrupt,
-            task_planner=task_planner,
-            text=text,
-            active_type=active_type,
-            current_task_types=current_task_types,
-            redis_client=redis_client,
-        )
-
-    # Unknown targets are planner-mediated for safety.
-    return await _switch_via_planner(
+    return _switch_updates(
         state=state,
         interrupt=interrupt,
-        task_planner=task_planner,
-        text=text,
         active_type=active_type,
         current_task_types=current_task_types,
-        redis_client=redis_client,
+        new_tasks=new_tasks,
+        waves=waves,
+        new_task_types=new_task_types,
+        text=text,
+        planner_output=None,
+        primary_intent=target_intent,
     )
 
 
@@ -1199,6 +1510,7 @@ async def handle_pending_interrupt(state: OrchestratorState, config: RunnableCon
     active_type = _active_intent(current_task_types)
     task_planner = config["configurable"].get("task_planner")
     redis_client = config["configurable"].get("redis_client")
+    services = config["configurable"].get("services") or {}
 
     if _is_verified_pin_callback(state) and interrupt.kind in {"confirmation", "auth"}:
         flow_matches, callback_flow_type = _callback_flow_matches_interrupt(state, current_task_types)
@@ -1264,11 +1576,10 @@ async def handle_pending_interrupt(state: OrchestratorState, config: RunnableCon
                 state=state,
                 interrupt=interrupt,
                 route=route,
-                task_planner=task_planner,
                 text=text,
                 active_type=active_type,
                 current_task_types=current_task_types,
-                redis_client=redis_client,
+                services=services,
             )
 
         # Auth approval is callback-only for PIN. Non-PIN auth (e.g., OTP) can
@@ -1357,11 +1668,10 @@ async def handle_pending_interrupt(state: OrchestratorState, config: RunnableCon
             state=state,
             interrupt=interrupt,
             route=route,
-            task_planner=task_planner,
             text=text,
             active_type=active_type,
             current_task_types=current_task_types,
-            redis_client=redis_client,
+            services=services,
         )
 
     # "unclear" or any unrecognized decision stays non-destructive.

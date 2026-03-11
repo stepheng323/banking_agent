@@ -481,7 +481,7 @@ async def _extract_transfer_update(
             extracted_data["recipient_bank_code"] = extracted_data.pop("bank_code")
 
         if extraction.acknowledgment:
-            extracted_data["_extraction_ack"] = extraction.acknowledgment
+            extracted_data["transition_acknowledgment"] = extraction.acknowledgment
 
         if "recipient_bank_name" in extracted_data:
             extracted_data["recipient_bank_code"] = None

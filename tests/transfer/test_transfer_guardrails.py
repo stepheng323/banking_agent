@@ -80,6 +80,94 @@ async def test_confirmation_summary_includes_name_mismatch_warning() -> None:
     assert "Mercy Johnson" in result.confirmation_summary
 
 
+async def test_confirmation_update_message_uses_specific_dynamic_ack() -> None:
+    payload = TransferPayload(
+        amount=20000,
+        recipient_name="Mum",
+        recipient_account="1234567890",
+        recipient_bank_name="Access Bank",
+        previous_confirmation_snapshot={
+            "amount": 10000,
+            "recipient_name": "Mum",
+            "recipient_bank": "Access Bank",
+            "recipient_account": "1234567890",
+        },
+        transition_acknowledgment="Changing amount to 20k.",
+    )
+    ctx = TransferContext(phone_number="2348000000000", language="en", beneficiaries=[], accounts=[])
+
+    result = build_confirmation(payload, ctx)
+
+    assert result.update_message == "Changing amount to 20k."
+
+
+async def test_confirmation_update_message_falls_back_to_amount_template_when_ack_is_vague() -> None:
+    payload = TransferPayload(
+        amount=20000,
+        recipient_name="Mum",
+        recipient_account="1234567890",
+        recipient_bank_name="Access Bank",
+        previous_confirmation_snapshot={
+            "amount": 10000,
+            "recipient_name": "Mum",
+            "recipient_bank": "Access Bank",
+            "recipient_account": "1234567890",
+        },
+        transition_acknowledgment="Updated.",
+    )
+    ctx = TransferContext(phone_number="2348000000000", language="en", beneficiaries=[], accounts=[])
+
+    result = build_confirmation(payload, ctx)
+
+    assert result.update_message is not None
+    assert "amount" in result.update_message.lower()
+    assert "₦20,000" in result.update_message
+
+
+async def test_confirmation_update_message_falls_back_to_recipient_template() -> None:
+    payload = TransferPayload(
+        amount=20000,
+        recipient_name="Gaines",
+        recipient_account="1234567890",
+        recipient_bank_name="Access Bank",
+        previous_confirmation_snapshot={
+            "amount": 20000,
+            "recipient_name": "Mum",
+            "recipient_bank": "Access Bank",
+            "recipient_account": "1234567890",
+        },
+        transition_acknowledgment="Got it.",
+    )
+    ctx = TransferContext(phone_number="2348000000000", language="en", beneficiaries=[], accounts=[])
+
+    result = build_confirmation(payload, ctx)
+
+    assert result.update_message is not None
+    assert "recipient" in result.update_message.lower()
+    assert "Gaines" in result.update_message
+
+
+async def test_confirmation_update_message_not_emitted_when_snapshot_unchanged() -> None:
+    payload = TransferPayload(
+        amount=20000,
+        recipient_name="Mum",
+        recipient_account="1234567890",
+        recipient_bank_name="Access Bank",
+        previous_confirmation_snapshot={
+            "amount": 20000,
+            "recipient_name": "Mum",
+            "recipient_bank": "Access Bank",
+            "recipient_account": "1234567890",
+        },
+        transition_acknowledgment="Changing amount to 20k.",
+    )
+    ctx = TransferContext(phone_number="2348000000000", language="en", beneficiaries=[], accounts=[])
+
+    result = build_confirmation(payload, ctx)
+
+    assert result.update_message is None
+
+
 async def test_saved_beneficiary_shortcut_is_used_when_recipient_not_changed() -> None:
     payload = TransferPayload(
         amount=6000,

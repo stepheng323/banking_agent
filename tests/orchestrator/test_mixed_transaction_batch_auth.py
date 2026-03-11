@@ -109,6 +109,28 @@ class _TransferNeedsConfirmationWorker:
         )
 
 
+class _TransferNeedsConfirmationWorkerWithUpdate:
+    async def run(
+        self,
+        payload: dict,
+        context: dict,
+        user_message: str | None = None,
+        pin_verified: bool = False,
+    ) -> TransactionResult:
+        del context, user_message, pin_verified
+        return TransactionResult(
+            outcome=TransactionOutcome.NEEDS_CONFIRMATION,
+            confirmation_summary="Confirm transfer task",
+            confirmation_snapshot={
+                "amount": payload.get("amount", 0),
+                "recipient_name": payload.get("recipient_name"),
+                "sourceBank": "Zenith Bank",
+                "sourceAccount": "0000009384",
+            },
+            update_message=payload.get("update_message_override"),
+        )
+
+
 class _AirtimeNeedsConfirmationWorker:
     async def run(
         self,
@@ -307,6 +329,157 @@ async def test_mixed_transfer_airtime_uses_single_confirmation_and_single_auth_g
     assert "Confirm transfer task" in auth_entry["summary"]
     assert "Confirm airtime task" in auth_entry["summary"]
     assert auth_entry["summary"].count(SHARED_SOURCE_LINE) == 1
+
+
+@pytest.mark.asyncio
+async def test_single_transfer_update_message_precedes_confirmation_prompt() -> None:
+    state = OrchestratorState(
+        user_id="u_transfer_update_msg",
+        phone_number="2348000000900",
+        channel="whatsapp",
+        waves=[["t_transfer"]],
+        current_wave_index=0,
+        loaded_context={
+            "language": "en",
+            "accounts": [
+                {
+                    "id": "acct-1",
+                    "bank_name": "Zenith Bank",
+                    "account_number": "0000009384",
+                    "mandate_status": "ready",
+                    "mandate_id": "m1",
+                }
+            ],
+        },
+        tasks={
+            "t_transfer": TaskSpec(
+                id="t_transfer",
+                type="transfer",
+                stage=TaskStage.EXTRACTED,
+                payload={
+                    "amount": 20000,
+                    "recipient_name": "Mum",
+                    "source_account_id": "acct-1",
+                    "update_message_override": "Changing amount to ₦20,000.",
+                },
+            )
+        },
+    )
+    config: RunnableConfig = {
+        "configurable": {"services": {"transfer": _TransferNeedsConfirmationWorkerWithUpdate()}},
+        "recursion_limit": 50,
+    }
+
+    updates = await advance_wave(state, config)
+
+    assert updates["outbox"][0] == {"type": "say", "text": "Changing amount to ₦20,000."}
+    assert updates["outbox"][1]["type"] == "request_confirmation"
+
+
+@pytest.mark.asyncio
+async def test_transfer_confirmation_clears_transient_transition_metadata() -> None:
+    state = OrchestratorState(
+        user_id="u_transfer_update_cleanup",
+        phone_number="2348000000900",
+        channel="whatsapp",
+        waves=[["t_transfer"]],
+        current_wave_index=0,
+        loaded_context={
+            "language": "en",
+            "accounts": [
+                {
+                    "id": "acct-1",
+                    "bank_name": "Zenith Bank",
+                    "account_number": "0000009384",
+                    "mandate_status": "ready",
+                    "mandate_id": "m1",
+                }
+            ],
+        },
+        tasks={
+            "t_transfer": TaskSpec(
+                id="t_transfer",
+                type="transfer",
+                stage=TaskStage.EXTRACTED,
+                payload={
+                    "amount": 20000,
+                    "recipient_name": "Mum",
+                    "source_account_id": "acct-1",
+                    "transition_acknowledgment": "Changing amount to ₦20,000.",
+                    "previous_confirmation_snapshot": {"amount": 10000, "recipient_name": "Mum"},
+                    "update_message_override": "Changing amount to ₦20,000.",
+                },
+            )
+        },
+    )
+    config: RunnableConfig = {
+        "configurable": {"services": {"transfer": _TransferNeedsConfirmationWorkerWithUpdate()}},
+        "recursion_limit": 50,
+    }
+
+    updates = await advance_wave(state, config)
+
+    transfer_payload = updates["tasks"]["t_transfer"].payload
+    assert "transition_acknowledgment" not in transfer_payload
+    assert "previous_confirmation_snapshot" not in transfer_payload
+
+
+@pytest.mark.asyncio
+async def test_multi_transfer_update_messages_compact_to_single_heads_up() -> None:
+    state = OrchestratorState(
+        user_id="u_transfer_update_batch",
+        phone_number="2348000000900",
+        channel="whatsapp",
+        waves=[["t1", "t2"]],
+        current_wave_index=0,
+        loaded_context={
+            "language": "en",
+            "accounts": [
+                {
+                    "id": "acct-1",
+                    "bank_name": "Zenith Bank",
+                    "account_number": "0000009384",
+                    "mandate_status": "ready",
+                    "mandate_id": "m1",
+                }
+            ],
+        },
+        tasks={
+            "t1": TaskSpec(
+                id="t1",
+                type="transfer",
+                stage=TaskStage.EXTRACTED,
+                payload={
+                    "amount": 20000,
+                    "recipient_name": "Mum",
+                    "source_account_id": "acct-1",
+                    "update_message_override": "Changing amount to ₦20,000.",
+                },
+            ),
+            "t2": TaskSpec(
+                id="t2",
+                type="transfer",
+                stage=TaskStage.EXTRACTED,
+                payload={
+                    "amount": 10000,
+                    "recipient_name": "Gaines",
+                    "source_account_id": "acct-1",
+                    "update_message_override": "Updating recipient to Gaines.",
+                },
+            ),
+        },
+    )
+    config: RunnableConfig = {
+        "configurable": {"services": {"transfer": _TransferNeedsConfirmationWorkerWithUpdate()}},
+        "recursion_limit": 50,
+    }
+
+    updates = await advance_wave(state, config)
+
+    say_entries = [entry for entry in updates["outbox"] if entry.get("type") == "say"]
+    assert len(say_entries) == 1
+    assert "changing your transfer details" in say_entries[0]["text"].lower()
+    assert any(entry.get("type") == "request_confirmation" for entry in updates["outbox"])
 
 
 @pytest.mark.asyncio

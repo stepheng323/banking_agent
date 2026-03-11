@@ -3,6 +3,8 @@
 import pytest
 from langchain_core.runnables import RunnableConfig
 
+from apps.core.src.agent.graphs.transfer.models.entities import TransferEntities
+from apps.core.src.agent.graphs.transfer.models.extraction import TransferExtractionResult
 from apps.core.src.agent.orchestrator.models.domain import PendingInterrupt, TaskSpec, TaskStage
 from apps.core.src.agent.orchestrator.models.state import OrchestratorState
 from apps.core.src.agent.orchestrator.nodes.interrupt import handle_pending_interrupt
@@ -31,6 +33,22 @@ class _CountingPlanner:
         del phone_number, text, context
         self.plan_calls += 1
         return self._output
+
+
+class _TransferExtractorStub:
+    def __init__(self, result: TransferExtractionResult) -> None:
+        self._result = result
+        self.calls = 0
+
+    async def extract(self, text: str, smart_context: dict | None = None) -> TransferExtractionResult:
+        del text, smart_context
+        self.calls += 1
+        return self._result
+
+
+class _TransferWorkerStub:
+    def __init__(self, extractor: _TransferExtractorStub) -> None:
+        self.extractor = extractor
 
 
 @pytest.mark.asyncio
@@ -80,7 +98,7 @@ async def test_direct_switch_target_skips_planner_call() -> None:
 
 
 @pytest.mark.asyncio
-async def test_transaction_switch_target_invokes_planner_call() -> None:
+async def test_transaction_switch_target_skips_planner_call() -> None:
     state = OrchestratorState(
         user_id="u_budget_2",
         phone_number="2348100000002",
@@ -126,13 +144,137 @@ async def test_transaction_switch_target_invokes_planner_call() -> None:
     updates = await handle_pending_interrupt(state, config)
 
     assert planner.route_calls == 1
-    assert planner.plan_calls == 1
-    assert list(updates["tasks"].keys()) == ["t2"]
-    assert updates["tasks"]["t2"].type == "transfer"
+    assert planner.plan_calls == 0
+    task_ids = list(updates["tasks"].keys())
+    assert len(task_ids) == 1
+    assert updates["tasks"][task_ids[0]].type == "transfer"
 
 
 @pytest.mark.asyncio
-async def test_transaction_switch_drops_ungrounded_destination_fields_from_new_transfer_task() -> None:
+async def test_transaction_switch_transfer_multi_recipient_fanout_preserved_without_planner() -> None:
+    state = OrchestratorState(
+        user_id="u_budget_2_multi",
+        phone_number="2348100000012",
+        channel="whatsapp",
+        last_message_text="send 5k to mum and gains",
+        pending_interrupt=PendingInterrupt(kind="input", task_ids=["t1"], fields_by_task={"t1": ["amount"]}),
+        tasks={
+            "t1": TaskSpec(
+                id="t1",
+                type="transfer",
+                stage=TaskStage.EXTRACTED,
+                payload={"recipient_name": "Mercy", "amount": 5000},
+            )
+        },
+        waves=[["t1"]],
+        current_wave_index=0,
+    )
+    planner = _CountingPlanner(
+        route=InterruptRouteDecision(
+            decision="switch_intent",
+            confidence=0.95,
+            detected_language="English",
+            target_intent="transfer",
+            target_mode="new",
+            reason="fresh transfer batch request",
+        ),
+        output=PlannerOutput(primary_intent="transfer"),
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await handle_pending_interrupt(state, config)
+
+    assert planner.route_calls == 1
+    assert planner.plan_calls == 0
+    assert len(updates["tasks"]) == 2
+    assert len(updates["waves"][0]) == 2
+    assert all(task.type == "transfer" for task in updates["tasks"].values())
+
+
+@pytest.mark.asyncio
+async def test_transaction_switch_transfer_schedule_action_preserved_without_planner() -> None:
+    state = OrchestratorState(
+        user_id="u_budget_2_sched",
+        phone_number="2348100000013",
+        channel="whatsapp",
+        last_message_text="send 5k to mum tomorrow",
+        pending_interrupt=PendingInterrupt(kind="input", task_ids=["t1"], fields_by_task={"t1": ["amount"]}),
+        tasks={
+            "t1": TaskSpec(
+                id="t1",
+                type="transfer",
+                stage=TaskStage.EXTRACTED,
+                payload={"recipient_name": "Mercy", "amount": 5000},
+            )
+        },
+        waves=[["t1"]],
+        current_wave_index=0,
+    )
+    planner = _CountingPlanner(
+        route=InterruptRouteDecision(
+            decision="switch_intent",
+            confidence=0.95,
+            detected_language="English",
+            target_intent="transfer",
+            target_mode="new",
+            reason="scheduled transfer request",
+        ),
+        output=PlannerOutput(primary_intent="transfer"),
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await handle_pending_interrupt(state, config)
+
+    assert planner.route_calls == 1
+    assert planner.plan_calls == 0
+    task_id = list(updates["tasks"].keys())[0]
+    assert updates["tasks"][task_id].type == "transfer"
+    assert updates["tasks"][task_id].payload.get("action") == "schedule_transfer"
+
+
+@pytest.mark.asyncio
+async def test_transaction_switch_transfer_cancel_schedule_action_preserved_without_planner() -> None:
+    state = OrchestratorState(
+        user_id="u_budget_2_cancel_sched",
+        phone_number="2348100000014",
+        channel="whatsapp",
+        last_message_text="cancel my scheduled transfer 2",
+        pending_interrupt=PendingInterrupt(kind="input", task_ids=["t1"], fields_by_task={"t1": ["amount"]}),
+        tasks={
+            "t1": TaskSpec(
+                id="t1",
+                type="transfer",
+                stage=TaskStage.EXTRACTED,
+                payload={"recipient_name": "Mercy", "amount": 5000},
+            )
+        },
+        waves=[["t1"]],
+        current_wave_index=0,
+    )
+    planner = _CountingPlanner(
+        route=InterruptRouteDecision(
+            decision="switch_intent",
+            confidence=0.95,
+            detected_language="English",
+            target_intent="transfer",
+            target_mode="new",
+            reason="cancel schedule request",
+        ),
+        output=PlannerOutput(primary_intent="transfer"),
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await handle_pending_interrupt(state, config)
+
+    assert planner.route_calls == 1
+    assert planner.plan_calls == 0
+    task_id = list(updates["tasks"].keys())[0]
+    assert updates["tasks"][task_id].payload.get("action") == "cancel_scheduled_transfer"
+    assert updates["tasks"][task_id].payload.get("schedule_selector") == "2"
+
+
+@pytest.mark.asyncio
+async def test_transaction_switch_uses_interrupt_extractor_seed() -> None:
     state = OrchestratorState(
         user_id="u_budget_2b",
         phone_number="2348100000020",
@@ -184,17 +326,30 @@ async def test_transaction_switch_drops_ungrounded_destination_fields_from_new_t
             ],
         ),
     )
-    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+    extractor = _TransferExtractorStub(
+        TransferExtractionResult(
+            entities=TransferEntities(recipient_name="Mum", recipient_account="8162511023", bank_name="Zenith Bank"),
+        )
+    )
+    config: RunnableConfig = {
+        "configurable": {
+            "task_planner": planner,
+            "services": {"transfer": _TransferWorkerStub(extractor)},
+        },
+        "recursion_limit": 50,
+    }
 
     updates = await handle_pending_interrupt(state, config)
 
     assert planner.route_calls == 1
-    assert planner.plan_calls == 1
-    assert list(updates["tasks"].keys()) == ["t2"]
-    payload = updates["tasks"]["t2"].payload
+    assert planner.plan_calls == 0
+    assert extractor.calls == 1
+    task_id = list(updates["tasks"].keys())[0]
+    payload = updates["tasks"][task_id].payload
     assert payload.get("recipient_name") == "Mum"
-    assert "recipient_account" not in payload
-    assert "recipient_bank_name" not in payload
+    assert payload.get("recipient_account") == "8162511023"
+    assert payload.get("recipient_bank_name") == "Zenith Bank"
+    assert payload.get("skip_extraction") is True
 
 
 @pytest.mark.asyncio

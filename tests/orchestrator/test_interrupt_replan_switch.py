@@ -159,8 +159,10 @@ async def test_interrupt_input_stashes_transfer_and_switches_to_beneficiary() ->
     assert updates["pending_interrupt"] is None
     assert len(updates["stashed_sessions"]) == 1
     assert updates["stashed_sessions"][0]["intent"] == "transfer"
-    assert updates["waves"] == [["t1"]]
-    assert updates["tasks"]["t1"].type == "beneficiary"
+    switched_task_ids = list(updates["tasks"].keys())
+    assert len(switched_task_ids) == 1
+    assert updates["waves"] == [switched_task_ids]
+    assert updates["tasks"][switched_task_ids[0]].type == "beneficiary"
 
 
 @pytest.mark.asyncio
@@ -334,9 +336,10 @@ async def test_interrupt_input_replaces_transfer_with_new_transfer_without_stash
 
     assert updates["pending_interrupt"] is None
     assert "stashed_sessions" not in updates
-    assert updates["waves"] == [["t_new"]]
-    assert list(updates["tasks"].keys()) == ["t_new"]
-    assert updates["tasks"]["t_new"].type == "transfer"
+    switched_task_ids = list(updates["tasks"].keys())
+    assert len(switched_task_ids) == 1
+    assert updates["waves"] == [switched_task_ids]
+    assert updates["tasks"][switched_task_ids[0]].type == "transfer"
     assert len(updates["session_stack"]) == 1
     assert updates["session_stack"][0].domain == "query"
     assert updates["active_domain"] == "query"
@@ -401,8 +404,10 @@ async def test_interrupt_confirmation_replaces_transfer_with_airtime_without_sta
 
     assert updates["pending_interrupt"] is None
     assert "stashed_sessions" not in updates
-    assert updates["waves"] == [["t_airtime"]]
-    assert updates["tasks"]["t_airtime"].type == "airtime"
+    switched_task_ids = list(updates["tasks"].keys())
+    assert len(switched_task_ids) == 1
+    assert updates["waves"] == [switched_task_ids]
+    assert updates["tasks"][switched_task_ids[0]].type == "airtime"
     assert [s.domain for s in updates["session_stack"]] == ["support"]
     assert updates["active_domain"] == "support"
 
@@ -463,8 +468,10 @@ async def test_interrupt_auth_replaces_transfer_with_data_without_stash() -> Non
 
     assert updates["pending_interrupt"] is None
     assert "stashed_sessions" not in updates
-    assert updates["tasks"]["t_data"].type == "data"
-    assert updates["waves"] == [["t_data"]]
+    switched_task_ids = list(updates["tasks"].keys())
+    assert len(switched_task_ids) == 1
+    assert updates["tasks"][switched_task_ids[0]].type == "data"
+    assert updates["waves"] == [switched_task_ids]
     assert updates["session_stack"] == []
     assert updates["active_domain"] is None
 
@@ -529,6 +536,11 @@ async def test_confirmation_continue_flow_resets_task_to_extracted() -> None:
     assert updates["pending_interrupt"] is None
     assert updates["tasks"]["t1"].stage == TaskStage.EXTRACTED
     assert updates["tasks"]["t1"].payload["confirmation"] == {}
+    assert updates["tasks"]["t1"].payload["previous_confirmation_snapshot"] == {
+        "amount": 5000,
+        "sourceBank": "First Bank",
+        "sourceAccount": "1234567890",
+    }
     assert "idempotency_key" not in updates["tasks"]["t1"].payload
 
 

@@ -1,6 +1,7 @@
 """Confirmation logic."""
 
 import math
+import re
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -18,6 +19,22 @@ from shared.policy.loader import get_cached_policy
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
+
+_TRANSITION_FIELDS = ("amount", "recipient_name", "recipient_bank", "recipient_account", "narration")
+_VAGUE_ACKNOWLEDGMENTS = {
+    "updated",
+    "updated.",
+    "got it",
+    "got it.",
+    "alright",
+    "alright.",
+    "okay",
+    "okay.",
+    "ok",
+    "ok.",
+    "done",
+    "done.",
+}
 
 
 class ConfirmationStep(TransferStep):
@@ -124,6 +141,183 @@ async def _build_dynamic_risk_patch(
     }
 
 
+def _format_naira(amount: Any) -> str | None:
+    try:
+        return f"₦{float(amount):,.0f}"
+    except (TypeError, ValueError):
+        return None
+
+
+def _normalize_text(value: Any) -> str:
+    if value is None:
+        return ""
+    normalized = re.sub(r"\s+", " ", str(value)).strip().lower()
+    return normalized
+
+
+def _field_value_changed(field: str, previous: Any, current: Any) -> bool:
+    if field == "amount":
+        try:
+            return round(float(previous or 0), 2) != round(float(current or 0), 2)
+        except (TypeError, ValueError):
+            return _normalize_text(previous) != _normalize_text(current)
+    return _normalize_text(previous) != _normalize_text(current)
+
+
+def _changed_transition_fields(previous_snapshot: dict[str, Any], current_snapshot: dict[str, Any]) -> list[str]:
+    changed: list[str] = []
+    for field in _TRANSITION_FIELDS:
+        if _field_value_changed(field, previous_snapshot.get(field), current_snapshot.get(field)):
+            changed.append(field)
+    return changed
+
+
+def _join_parts(parts: list[str]) -> str:
+    if not parts:
+        return ""
+    if len(parts) == 1:
+        return parts[0]
+    if len(parts) == 2:
+        return f"{parts[0]} and {parts[1]}"
+    return ", ".join(parts[:-1]) + f", and {parts[-1]}"
+
+
+def _build_change_text(changed_fields: list[str], current_snapshot: dict[str, Any], locale: str) -> str:
+    parts: list[str] = []
+    if "amount" in changed_fields:
+        formatted_amount = _format_naira(current_snapshot.get("amount"))
+        if formatted_amount:
+            parts.append(f"amount to {formatted_amount}")
+    if "recipient_name" in changed_fields:
+        recipient_name = str(
+            current_snapshot.get("recipient_name")
+            or render_message("response.common.recipient_fallback", locale)
+        ).strip()
+        if recipient_name:
+            parts.append(f"recipient to {recipient_name}")
+    if "recipient_bank" in changed_fields:
+        recipient_bank = str(current_snapshot.get("recipient_bank") or "").strip()
+        if recipient_bank:
+            parts.append(f"bank to {recipient_bank}")
+    if "recipient_account" in changed_fields:
+        recipient_account = str(current_snapshot.get("recipient_account") or "").strip()
+        if recipient_account:
+            parts.append(f"account to {recipient_account}")
+    if "narration" in changed_fields:
+        narration = str(current_snapshot.get("narration") or "").strip()
+        if narration:
+            parts.append(f"narration to {narration}")
+    if not parts:
+        parts.append("your transfer details")
+    return _join_parts(parts)
+
+
+def _has_specific_value_reference(
+    acknowledgment: str,
+    *,
+    changed_fields: list[str],
+    current_snapshot: dict[str, Any],
+) -> bool:
+    normalized_ack = _normalize_text(acknowledgment)
+    if not normalized_ack or normalized_ack in _VAGUE_ACKNOWLEDGMENTS:
+        return False
+
+    ack_digits = re.sub(r"\D", "", acknowledgment)
+
+    for field in changed_fields:
+        value = current_snapshot.get(field)
+        if field == "amount":
+            try:
+                amount_val = float(value)
+            except (TypeError, ValueError):
+                continue
+            formatted_amount = f"₦{amount_val:,.0f}".lower()
+            compact_amount = str(int(round(amount_val)))
+            if formatted_amount in normalized_ack:
+                return True
+            if compact_amount and compact_amount in ack_digits:
+                return True
+            if amount_val >= 1000 and amount_val % 1000 == 0:
+                short_amount = f"{int(amount_val / 1000)}k"
+                if short_amount in normalized_ack:
+                    return True
+            continue
+
+        if field == "recipient_account":
+            digits = re.sub(r"\D", "", str(value or ""))
+            if digits and (digits in ack_digits or (len(digits) >= 4 and digits[-4:] in ack_digits)):
+                return True
+            continue
+
+        normalized_value = _normalize_text(value)
+        if not normalized_value:
+            continue
+        if normalized_value in normalized_ack:
+            return True
+        tokens = [token for token in normalized_value.split() if len(token) >= 3]
+        if any(token in normalized_ack for token in tokens):
+            return True
+    return False
+
+
+def _deterministic_transition_message(
+    *,
+    changed_fields: list[str],
+    current_snapshot: dict[str, Any],
+    locale: str,
+) -> str:
+    if changed_fields == ["amount"]:
+        return render_message(
+            "response.templates.amount_changed",
+            locale,
+            {"formatted_amount": _format_naira(current_snapshot.get("amount")) or ""},
+        )
+    if changed_fields == ["recipient_name"]:
+        recipient_name = str(
+            current_snapshot.get("recipient_name")
+            or render_message("response.common.recipient_fallback", locale)
+        ).strip()
+        return render_message(
+            "response.templates.recipient_changed",
+            locale,
+            {"recipient_name": recipient_name},
+        )
+    return render_message(
+        "response.templates.acknowledge_change",
+        locale,
+        {"changes_text": _build_change_text(changed_fields, current_snapshot, locale)},
+    )
+
+
+def _resolve_transition_update_message(
+    *,
+    payload: TransferPayload,
+    current_snapshot: dict[str, Any],
+    locale: str,
+) -> str | None:
+    previous_snapshot = payload.previous_confirmation_snapshot
+    if not isinstance(previous_snapshot, dict) or not previous_snapshot:
+        return None
+
+    changed_fields = _changed_transition_fields(previous_snapshot, current_snapshot)
+    if not changed_fields:
+        return None
+
+    acknowledgment = (payload.transition_acknowledgment or "").strip()
+    if acknowledgment and _has_specific_value_reference(
+        acknowledgment,
+        changed_fields=changed_fields,
+        current_snapshot=current_snapshot,
+    ):
+        return acknowledgment
+
+    return _deterministic_transition_message(
+        changed_fields=changed_fields,
+        current_snapshot=current_snapshot,
+        locale=locale,
+    )
+
+
 def build_confirmation(
     payload: TransferPayload,
     ctx: TransferContext,
@@ -145,6 +339,11 @@ def build_confirmation(
         "description": payload.description,
         "user_note": payload.user_note,
     }
+    update_message = _resolve_transition_update_message(
+        payload=payload,
+        current_snapshot=snap,
+        locale=ctx.language,
+    )
     base_summary = format_transfer_summary(
         {
             "amount": payload.amount,
@@ -196,4 +395,5 @@ def build_confirmation(
         outcome=TransactionOutcome.NEEDS_CONFIRMATION,
         confirmation_snapshot=snap,
         confirmation_summary=summary,
+        update_message=update_message,
     )
