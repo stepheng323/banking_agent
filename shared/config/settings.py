@@ -40,7 +40,7 @@ class Settings:
 
         self.openai_api_key: str = os.getenv("OPENAI_API_KEY", "")
         self.planner_model: str = os.getenv("PLANNER_MODEL", "gpt-4o-mini")
-        self.interrupt_router_model: str = os.getenv("INTERRUPT_ROUTER_MODEL", "").strip()
+        self.interrupt_router_model: str = os.getenv("INTERRUPT_ROUTER_MODEL", self.planner_model).strip()
 
         self.flutterwave_secret_key: str = os.getenv("FLUTTERWAVE_SECRET_KEY", "")
         self.flutterwave_use_sandbox: bool = os.getenv("FLUTTERWAVE_USE_SANDBOX", "false").lower() == "true"

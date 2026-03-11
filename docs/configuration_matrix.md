@@ -24,6 +24,8 @@ All runtimes receive these baseline keys:
 Required keys:
 
 - `OPENAI_API_KEY`
+- `PLANNER_MODEL`
+- `INTERRUPT_ROUTER_MODEL`
 - `MONO_API_KEY`
 - `FLUTTERWAVE_SECRET_KEY`
 - `FLUTTERWAVE_USE_SANDBOX`
@@ -44,6 +46,11 @@ Required keys:
 - `TTL_SECONDS`
 - `FLOW_SESSION_TIMEOUT`
 - `PENDING_TRANSACTION_TTL`
+
+Notes:
+
+- `INTERRUPT_ROUTER_MODEL` is optional; when missing, runtime defaults to `PLANNER_MODEL`.
+- Setting a dedicated `INTERRUPT_ROUTER_MODEL` is still recommended for latency and routing isolation.
 
 Delivery model:
 

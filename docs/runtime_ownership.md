@@ -42,3 +42,5 @@
 - ECS `core-chat-worker` reads secrets via task definition `secrets` (SSM ARN references).
 - Lambda workers (`transaction-worker`, `receipt-worker`, `gateway-lambda`) receive env values from SSM at deploy time.
 - SSM and KMS IAM permissions are scoped to Terraform-managed parameter ARNs.
+- `core-chat-worker` may omit `INTERRUPT_ROUTER_MODEL`; runtime defaults it to `PLANNER_MODEL`.
+- Supplying a dedicated `INTERRUPT_ROUTER_MODEL` is recommended for latency and routing isolation.
