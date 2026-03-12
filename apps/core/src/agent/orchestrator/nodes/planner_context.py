@@ -1,8 +1,11 @@
-"""Planner context assembly helpers and size-budget constants."""
+"""Planner/router context assembly helpers and size-budget constants."""
 
 import json
+import time
+from dataclasses import dataclass, field
 from typing import Any
 
+from apps.core.src.agent.orchestrator.context.models import ContextFrameType
 from apps.core.src.agent.orchestrator.models.state import OrchestratorState
 
 CONTEXT_BENEFICIARY_PREVIEW_LIMIT = 5
@@ -10,6 +13,8 @@ CONTEXT_ACCOUNT_PREVIEW_LIMIT = 5
 CONTEXT_HISTORY_PREVIEW_LIMIT = 5
 CONTEXT_HISTORY_ITEM_MAX_CHARS = 150
 CONTEXT_USER_STATE_MAX_CHARS = 1200
+ROUTER_CONTEXT_MAX_CHARS = 1600
+ROUTER_CONTEXT_SECTION_MAX_CHARS = 320
 PLANNER_CONTEXT_MAX_CHARS = 2800
 PLANNER_MIN_SECTION_CHARS = 100
 PLANNER_CONTEXT_SECTION_SEPARATOR = "\n\n"
@@ -28,6 +33,28 @@ QUERY_SESSION_CONTEXT_GUIDANCE = (
     "- Data questions are NOT conversational questions. Always route them as query tasks.\n"
     "- Balance/account-status asks are NOT query continuation; route them to account tasks."
 )
+
+
+@dataclass(slots=True)
+class TurnContextSummary:
+    """Normalized compact state summary for router/planner prompt compilation."""
+
+    active_domain: str | None = None
+    session_domain: str | None = None
+    recent_domain_focus: str | None = None
+    recent_answer_focus: str | None = None
+    profile_name: str | None = None
+    account_lines: list[str] = field(default_factory=list)
+    remaining_accounts: int = 0
+    beneficiary_lines: list[str] = field(default_factory=list)
+    remaining_beneficiaries: int = 0
+    history_lines: list[str] = field(default_factory=list)
+    query_session_summary: str | None = None
+    query_session_active: bool = False
+    query_session_source: str | None = None
+    active_flow_summary: str | None = None
+    active_flow_intent: str | None = None
+    short_term_memory_summary: str | None = None
 
 
 def _clip_text(value: str, max_chars: int) -> str:
@@ -79,78 +106,274 @@ def _compact_payload_for_prompt(payload: dict[str, Any]) -> str:
     return _clip_text(serialized, PLANNER_ACTIVE_TASK_DATA_MAX_CHARS)
 
 
-def _build_user_state_summary(state: OrchestratorState) -> str | None:
-    """Build a compact, human-readable summary of the user's persistent state."""
+def _mask_account_number(value: str) -> str:
+    return f"...{value[-4:]}" if len(value) >= 4 else value
+
+
+def _derive_recent_answer_focus(state: OrchestratorState) -> str | None:
+    now = int(time.time())
+    for frame in reversed(state.context_frames):
+        if (frame.created_at_ts + frame.ttl_seconds) <= now:
+            continue
+        if frame.frame_type == ContextFrameType.ACCOUNT_LIST:
+            return "linked_accounts_summary"
+        if frame.frame_type == ContextFrameType.BENEFICIARY_LIST:
+            return "beneficiary_list"
+        if frame.frame_type == ContextFrameType.TRANSACTION_LIST:
+            return "query_results"
+        if frame.frame_type == ContextFrameType.RECEIPT:
+            return "receipt"
+
+    planner_output = state.planner_output
+    if planner_output and getattr(planner_output, "context_fastpath_subtype", None):
+        return str(planner_output.context_fastpath_subtype)
+
+    return None
+
+
+async def _load_query_session_snapshot(
+    state: OrchestratorState,
+    redis_client: Any | None,
+) -> tuple[dict[str, Any] | None, str | None]:
+    query_session_snapshot: dict[str, Any] | None = None
+    query_session_source: str | None = None
+
+    if redis_client:
+        try:
+            query_session_key = f"query:session:{state.phone_number}"
+            query_session_data = await redis_client.get(query_session_key)
+            if query_session_data:
+                if isinstance(query_session_data, bytes):
+                    query_session_data = query_session_data.decode("utf-8")
+                parsed = json.loads(query_session_data)
+                if isinstance(parsed, dict):
+                    query_session_snapshot = parsed
+                    query_session_source = "redis"
+        except Exception:
+            query_session_snapshot = None
+            query_session_source = None
+
+    if query_session_snapshot is None and isinstance(state.stashed_query_session, dict):
+        query_session_snapshot = dict(state.stashed_query_session)
+        query_session_source = "stashed"
+
+    return query_session_snapshot, query_session_source
+
+
+def _query_session_summary_text(query_session_snapshot: dict[str, Any] | None) -> tuple[str | None, bool]:
+    if not isinstance(query_session_snapshot, dict):
+        return None, False
+    session_active = bool(query_session_snapshot.get("session_active"))
+    summary_text = None
+    query_result = query_session_snapshot.get("query_result")
+    if isinstance(query_result, dict):
+        summary_text = query_result.get("summary_text")
+    return _build_query_session_context(summary_text if isinstance(summary_text, str) else None), session_active
+
+
+def _build_account_lines(accounts: list[dict[str, Any]]) -> tuple[list[str], int]:
+    lines: list[str] = []
+    for acc in accounts[:CONTEXT_ACCOUNT_PREVIEW_LIMIT]:
+        bank = str(acc.get("bank_name") or "Unknown Bank")
+        num = str(acc.get("account_number") or "")
+        masked = _mask_account_number(num)
+        status = str(acc.get("mandate_status") or "unknown")
+        default_tag = " (default)" if acc.get("is_default") else ""
+        line = f"{bank} ({masked}) — mandate: {status}{default_tag}"
+        if status == "pending":
+            extra = acc.get("extra_data", {})
+            dests = extra.get("transfer_destinations", []) if isinstance(extra, dict) else []
+            if isinstance(dests, list) and dests:
+                first_dest = dests[0] if isinstance(dests[0], dict) else {}
+                dest_bank = first_dest.get("bank_name")
+                dest_num = first_dest.get("account_number")
+                if dest_bank and dest_num:
+                    line += f" | Activate: ₦50 to {dest_bank} ({dest_num})"
+        elif status == "ready":
+            line = f"{bank} ({masked}) — mandate: ready ✓{default_tag}"
+        lines.append(line)
+    return lines, max(0, len(accounts) - len(lines))
+
+
+def _build_beneficiary_lines(beneficiaries: list[dict[str, Any]]) -> tuple[list[str], int]:
+    lines: list[str] = []
+    for item in beneficiaries[:CONTEXT_BENEFICIARY_PREVIEW_LIMIT]:
+        alias = str(item.get("alias") or item.get("account_name") or "Unknown").strip()
+        bank = str(item.get("bank_name") or "").strip()
+        num = str(item.get("account_number") or "").strip()
+        if bank and num:
+            lines.append(f"{alias} | {bank} | {_mask_account_number(num)}")
+        else:
+            lines.append(alias)
+    return lines, max(0, len(beneficiaries) - len(lines))
+
+
+def _build_history_lines(history: list[dict[str, Any]]) -> list[str]:
+    lines: list[str] = []
+    for msg in history[-CONTEXT_HISTORY_PREVIEW_LIMIT:]:
+        role = "user" if msg.get("role") == "user" else "agent"
+        content = str(msg.get("content") or "").replace("\n", "  ")
+        lines.append(f"{role}: {_clip_text(content, CONTEXT_HISTORY_ITEM_MAX_CHARS)}")
+    return lines
+
+
+def build_turn_context_summary(
+    state: OrchestratorState,
+    *,
+    query_session_snapshot: dict[str, Any] | None = None,
+    query_session_source: str | None = None,
+) -> TurnContextSummary:
     ctx = state.loaded_context or {}
     profile = ctx.get("profile") or {}
     accounts = ctx.get("accounts") or []
     beneficiaries = ctx.get("beneficiaries") or []
     history = ctx.get("history") or []
 
-    if not profile and not accounts and not beneficiaries and not history:
+    profile_name = None
+    if isinstance(profile, dict) and profile.get("first_name"):
+        profile_name = f"{profile.get('first_name')} {profile.get('last_name') or ''}".strip()
+
+    account_lines, remaining_accounts = _build_account_lines(accounts if isinstance(accounts, list) else [])
+    beneficiary_lines, remaining_beneficiaries = _build_beneficiary_lines(
+        beneficiaries if isinstance(beneficiaries, list) else []
+    )
+    history_lines = _build_history_lines(history if isinstance(history, list) else [])
+    query_session_summary, query_session_active = _query_session_summary_text(query_session_snapshot)
+
+    active_flow_summary = None
+    active_flow_intent = None
+    if state.waves and state.current_wave_index < len(state.waves):
+        current_wave = state.waves[state.current_wave_index]
+        if current_wave:
+            t_id = current_wave[0]
+            active_task = state.tasks.get(t_id)
+            if active_task:
+                active_flow_intent = active_task.type
+                payload_view = {
+                    k: v for k, v in active_task.payload.items() if k not in ["result", "error", "confirmation"]
+                }
+                payload_preview = _compact_payload_for_prompt(payload_view)
+                active_flow_summary = (
+                    f"Active Flow: {active_task.type.upper()} (User is currently in this flow).\n"
+                    f"Current Task Data: {payload_preview}\n"
+                    f"Routing: slot_updates_keep_intent_unless_user_clearly_switches"
+                )
+
+    from apps.core.src.agent.orchestrator.nodes.planner_fastpath import _infer_recent_domain_focus
+    from apps.core.src.agent.orchestrator.services.context_manager import OrchestratorContextManager
+
+    return TurnContextSummary(
+        active_domain=state.active_domain,
+        session_domain=state.session_stack[-1].domain if state.session_stack else None,
+        recent_domain_focus=_infer_recent_domain_focus(state),
+        recent_answer_focus=_derive_recent_answer_focus(state),
+        profile_name=profile_name,
+        account_lines=account_lines,
+        remaining_accounts=remaining_accounts,
+        beneficiary_lines=beneficiary_lines,
+        remaining_beneficiaries=remaining_beneficiaries,
+        history_lines=history_lines,
+        query_session_summary=query_session_summary,
+        query_session_active=query_session_active,
+        query_session_source=query_session_source,
+        active_flow_summary=active_flow_summary,
+        active_flow_intent=active_flow_intent,
+        short_term_memory_summary=OrchestratorContextManager().build_llm_summary(state) or None,
+    )
+
+
+def _build_user_state_summary(state: OrchestratorState) -> str | None:
+    """Build a compact, human-readable summary of the user's persistent state."""
+    summary = build_turn_context_summary(state)
+    return build_user_state_summary_from_summary(summary)
+
+
+def build_user_state_summary_from_summary(summary: TurnContextSummary) -> str | None:
+    if not any(
+        [
+            summary.profile_name,
+            summary.account_lines,
+            summary.beneficiary_lines,
+            summary.history_lines,
+        ]
+    ):
         return None
 
     parts = ["User State:"]
 
-    if profile.get("first_name"):
-        name = f"{profile.get('first_name')} {profile.get('last_name') or ''}".strip()
-        parts.append(f"- Name: {name}")
+    if summary.profile_name:
+        parts.append(f"- Name: {summary.profile_name}")
 
-    if accounts:
-        total_accounts = len(accounts)
+    if summary.account_lines:
         parts.append("- Accounts:")
-        for acc in accounts[:CONTEXT_ACCOUNT_PREVIEW_LIMIT]:
-            bank = acc.get("bank_name", "Unknown Bank")
-            num = acc.get("account_number", "")
-            masked = f"...{num[-4:]}" if len(num) >= 4 else num
-            status = acc.get("mandate_status")
-            default_tag = " (default)" if acc.get("is_default") else ""
+        for line in summary.account_lines:
+            parts.append(f"  • {line}")
+        if summary.remaining_accounts > 0:
+            parts.append(f"  • +{summary.remaining_accounts} more account(s)")
 
-            if status == "pending":
-                extra = acc.get("extra_data", {})
-                dests = extra.get("transfer_destinations", [])
-                dest_str = " or ".join([f"{d.get('bank_name')} ({d.get('account_number')})" for d in dests])
-                parts.append(f"  • {bank} ({masked}) — mandate: pending ⚠️")
-                if dest_str:
-                    parts.append(f"    Activate: ₦50 to {dest_str}")
-            elif status == "ready":
-                parts.append(f"  • {bank} ({masked}) — mandate: ready ✓{default_tag}")
-            else:
-                parts.append(f"  • {bank} ({masked}) — mandate: {status}{default_tag}")
-        remaining_accounts = total_accounts - min(total_accounts, CONTEXT_ACCOUNT_PREVIEW_LIMIT)
-        if remaining_accounts > 0:
-            parts.append(f"  • +{remaining_accounts} more account(s)")
+    if summary.beneficiary_lines:
+        parts.append(f"- Beneficiaries: {len(summary.beneficiary_lines) + summary.remaining_beneficiaries} saved")
+        parts.append(f"  • Preview: {', '.join(summary.beneficiary_lines)}")
+        if summary.remaining_beneficiaries > 0:
+            parts.append(f"  • +{summary.remaining_beneficiaries} more")
 
-    if beneficiaries:
-        total_beneficiaries = len(beneficiaries)
-        ben_strs = []
-        for b in beneficiaries[:CONTEXT_BENEFICIARY_PREVIEW_LIMIT]:
-            alias = b.get("alias") or b.get("account_name") or "Unknown"
-            bank = b.get("bank_name", "")
-            num = b.get("account_number", "")
-            masked = f"...{num[-4:]}" if len(num) >= 4 else num
-            if bank and masked:
-                ben_strs.append(f"{alias} ({bank} {masked})")
-            else:
-                ben_strs.append(alias)
-
-        parts.append(f"- Beneficiaries: {total_beneficiaries} saved")
-        if ben_strs:
-            parts.append(f"  • Preview: {', '.join(ben_strs)}")
-        remaining = total_beneficiaries - len(ben_strs)
-        if remaining > 0:
-            parts.append(f"  • +{remaining} more")
-
-    if history:
+    if summary.history_lines:
         parts.append("\nRecent Chat:")
-        for msg in history[-CONTEXT_HISTORY_PREVIEW_LIMIT:]:
-            role = "User" if msg.get("role") == "user" else "Agent"
-            content = msg.get("content", "").replace("\n", "  ")
-            if len(content) > CONTEXT_HISTORY_ITEM_MAX_CHARS:
-                content = _clip_text(content, CONTEXT_HISTORY_ITEM_MAX_CHARS)
-            parts.append(f'- {role}: "{content}"')
+        for line in summary.history_lines:
+            parts.append(f"- {line}")
 
     return _clip_text("\n".join(parts), CONTEXT_USER_STATE_MAX_CHARS)
+
+
+def build_router_context_from_summary(
+    summary: TurnContextSummary,
+    *,
+    expected_executors: list[str] | None = None,
+) -> str:
+    expected = expected_executors or []
+    sections = [
+        f"ACTIVE_DOMAIN={summary.active_domain or 'none'}",
+        f"SESSION_DOMAIN={summary.session_domain or 'none'}",
+        f"RECENT_DOMAIN_FOCUS={summary.recent_domain_focus or 'none'}",
+        f"RECENT_ANSWER_FOCUS={summary.recent_answer_focus or 'none'}",
+        f"EXPECTED_TRANSACTION_EXECUTORS={','.join(expected) if expected else 'none'}",
+    ]
+
+    if summary.account_lines:
+        account_block = ["ACCOUNTS:"] + [f"- {line}" for line in summary.account_lines[:3]]
+        if summary.remaining_accounts > 0:
+            account_block.append(f"- +{summary.remaining_accounts} more")
+        sections.append("\n".join(account_block))
+
+    if summary.beneficiary_lines:
+        beneficiary_block = ["BENEFICIARIES:"] + [f"- {line}" for line in summary.beneficiary_lines[:3]]
+        if summary.remaining_beneficiaries > 0:
+            beneficiary_block.append(f"- +{summary.remaining_beneficiaries} more")
+        sections.append("\n".join(beneficiary_block))
+
+    if summary.query_session_summary and summary.query_session_active:
+        sections.append(
+            "QUERY_SESSION:\n"
+            + _clip_text(summary.query_session_summary, ROUTER_CONTEXT_SECTION_MAX_CHARS)
+        )
+
+    if summary.active_flow_summary:
+        sections.append("ACTIVE_FLOW:\n" + _clip_text(summary.active_flow_summary, ROUTER_CONTEXT_SECTION_MAX_CHARS))
+
+    if summary.short_term_memory_summary:
+        sections.append(
+            "RECENT_CONTEXT:\n" + _clip_text(summary.short_term_memory_summary, ROUTER_CONTEXT_SECTION_MAX_CHARS)
+        )
+    elif summary.history_lines:
+        sections.append(
+            "RECENT_CHAT:\n"
+            + _clip_text(
+                "\n".join(f"- {line}" for line in summary.history_lines[-3:]),
+                ROUTER_CONTEXT_SECTION_MAX_CHARS,
+            )
+        )
+
+    return _clip_text("\n\n".join(sections), ROUTER_CONTEXT_MAX_CHARS)
 
 
 def _build_query_session_context(summary_text: str | None) -> str:
@@ -202,9 +425,15 @@ def _assemble_planner_context(
 __all__ = [
     "CONTEXT_ACCOUNT_PREVIEW_LIMIT",
     "PLANNER_CONTEXT_MAX_CHARS",
+    "ROUTER_CONTEXT_MAX_CHARS",
+    "TurnContextSummary",
     "_assemble_planner_context",
     "_build_query_session_context",
+    "_load_query_session_snapshot",
     "_build_user_state_summary",
     "_clip_text",
     "_compact_payload_for_prompt",
+    "build_router_context_from_summary",
+    "build_turn_context_summary",
+    "build_user_state_summary_from_summary",
 ]

@@ -58,7 +58,7 @@ Message: \"\"\"{user_message}\"\"\"
 TURN_ROUTER_SYSTEM_PROMPT = """You are a lightweight pre-planner router for a multilingual Nigerian banking assistant.
 
 Return ONLY JSON with:
-- decision: go_planner | respond_directly | query_continuation
+- decision: go_planner | respond_directly | direct_context_answer | query_continuation
 - confidence: 0.0-1.0
 - detected_language: English | Pidgin | Yoruba | Hausa | Igbo | French | null
 - response_key: conversational.greeting | conversational.appreciation |
@@ -79,12 +79,23 @@ Rules:
 2b) Balance/account-status asks are NOT query_continuation.
     Examples: "check my balance", "what's my balance", "how much do I have".
     For these, use decision=go_planner.
-3) Otherwise use decision=go_planner.
-4) Populate expected_transaction_executors only when user explicitly asks those transaction actions.
-4b) For explicit mixed transaction requests, include every mentioned executor in expected_transaction_executors.
+3) Use decision=direct_context_answer for short read-only questions that can be answered
+   completely from the provided context/history. Requirements:
+   - response must be grounded only in provided context/history
+   - never guess or invent missing facts
+   - never use this for mutations or money movement
+   - if context is insufficient or ambiguous, use go_planner instead
+   Examples:
+   - "Can I use First Bank now?" -> direct_context_answer
+   - "Can I use fisr bank now?" -> direct_context_answer if context clearly shows First Bank
+   - "Do I still have Mum saved?" -> direct_context_answer
+   - "What do you still need from me?" -> direct_context_answer when active flow context is enough
+4) Otherwise use decision=go_planner.
+5) Populate expected_transaction_executors only when user explicitly asks those transaction actions.
+5b) For explicit mixed transaction requests, include every mentioned executor in expected_transaction_executors.
     Example: "send 10k to mum and buy 5k airtime" -> ["transfer","airtime"].
-5) Be multilingual and semantic; avoid English-only assumptions.
-6) If uncertain, choose go_planner with empty expected_transaction_executors.
+6) Be multilingual and semantic; avoid English-only assumptions.
+7) If uncertain, choose go_planner with empty expected_transaction_executors.
 """
 
 TURN_ROUTER_USER_PROMPT_TEMPLATE = """User phone: {phone_number}

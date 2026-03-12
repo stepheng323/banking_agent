@@ -9,21 +9,19 @@ from apps.core.src.agent.orchestrator.models.state import OrchestratorState
 from apps.core.src.agent.orchestrator.nodes.planner_context import (
     PLANNER_CONTEXT_MAX_CHARS,
     _assemble_planner_context,
-    _build_query_session_context,
-    _build_user_state_summary,
     _clip_text,
-    _compact_payload_for_prompt,
+    _load_query_session_snapshot,
+    build_turn_context_summary,
+    build_user_state_summary_from_summary,
 )
 from apps.core.src.agent.orchestrator.nodes.planner_fastpath import (
     TRANSACTION_EXECUTORS,
-    _infer_recent_domain_focus,
 )
 from apps.core.src.agent.orchestrator.nodes.planner_query_shortcuts import (
     _is_query_continuation_blocked,
     _looks_like_explicit_query_continuation,
     _next_query_continuation_task_id,
 )
-from apps.core.src.agent.orchestrator.services.context_manager import OrchestratorContextManager
 from shared.services.task_planner_prompt_models import PlannerPromptSignals
 from shared.types.planner import TransactionExecutor
 from shared.utils.logging import get_logger
@@ -112,101 +110,44 @@ async def _build_planner_context(
                 current_flow_type = wave_task.type
     is_transactional_flow = current_flow_type in TRANSACTION_EXECUTORS
 
-    if redis_client:
-        try:
-            import json
-
-            query_session_key = f"query:session:{state.phone_number}"
-            query_session_data = await redis_client.get(query_session_key)
-
-            if query_session_data:
-                session = json.loads(query_session_data)
-                if isinstance(session, dict):
-                    query_session_snapshot = session
-                    query_session_source = "redis"
-
-            if query_session_snapshot and not is_transactional_flow:
-                session = query_session_snapshot
-                session_active = bool(session.get("session_active"))
-                query_session_active = session_active
-                if (
-                    session_active
-                    and state.pending_interrupt is None
-                    and _looks_like_explicit_query_continuation(text)
-                    and not _is_query_continuation_blocked(text)
-                ):
-                    shortcut_task_id = _next_query_continuation_task_id(state.tasks)
-                    shortcut_task = TaskSpec(
-                        id=shortcut_task_id,
-                        type="query",
-                        stage=TaskStage.DRAFT,
-                        payload={
-                            "action": "transaction_list",
-                            "instruction": text,
-                            "message": text,
-                        },
-                    )
-                    logger.info("planner_query_continuation_shortcut_hit", message=text)
-                    return PlannerContextBuildResult(
-                        planner_context="None",
-                        active_intent=None,
-                        query_session_snapshot=query_session_snapshot,
-                        query_session_source=query_session_source,
-                        prompt_signals=PlannerPromptSignals(),
-                        shortcut_updates={
-                            "tasks": {shortcut_task_id: shortcut_task},
-                            "waves": [[shortcut_task_id]],
-                            "current_wave_index": 0,
-                            "normalized_instruction": text,
-                            **locale_updates,
-                        },
-                    )
-
-                summary_text = None
-                query_result = session.get("query_result")
-                if isinstance(query_result, dict):
-                    summary_text = query_result.get("summary_text")
-                planner_context_sections.append(
-                    (
-                        "query_session",
-                        _clip_text(
-                            _build_query_session_context(
-                                cast(str | None, summary_text) if isinstance(summary_text, str) else None
-                            ),
-                            PLANNER_CONTEXT_QUERY_SESSION_MAX_CHARS,
-                        ),
-                    )
-                )
-                logger.info("planner_context_injected", context="query_session")
-            elif query_session_snapshot and is_transactional_flow:
-                logger.info("planner_query_context_skipped", reason="active_transaction_flow")
-        except Exception as e:
-            logger.warning("planner_context_check_failed", error=str(e))
-
-    if query_session_snapshot is None and isinstance(state.stashed_query_session, dict):
-        query_session_snapshot = dict(state.stashed_query_session)
-        query_session_source = "stashed"
-
-    if query_session_snapshot and query_session_source == "stashed" and not is_transactional_flow:
-        query_session_active = bool(query_session_snapshot.get("session_active"))
-        summary_text = None
-        query_result = query_session_snapshot.get("query_result")
-        if isinstance(query_result, dict):
-            summary_text = query_result.get("summary_text")
-        planner_context_sections.append(
-            (
-                "query_session_stashed",
-                _clip_text(
-                    _build_query_session_context(
-                        cast(str | None, summary_text) if isinstance(summary_text, str) else None
-                    ),
-                    PLANNER_CONTEXT_QUERY_SESSION_MAX_CHARS,
-                ),
+    query_session_snapshot, query_session_source = await _load_query_session_snapshot(state, redis_client)
+    if query_session_snapshot and not is_transactional_flow:
+        session_active = bool(query_session_snapshot.get("session_active"))
+        query_session_active = session_active
+        if (
+            session_active
+            and state.pending_interrupt is None
+            and _looks_like_explicit_query_continuation(text)
+            and not _is_query_continuation_blocked(text)
+        ):
+            shortcut_task_id = _next_query_continuation_task_id(state.tasks)
+            shortcut_task = TaskSpec(
+                id=shortcut_task_id,
+                type="query",
+                stage=TaskStage.DRAFT,
+                payload={
+                    "action": "transaction_list",
+                    "instruction": text,
+                    "message": text,
+                },
             )
-        )
-        logger.info("planner_context_injected", context="query_session_stashed")
-    elif query_session_snapshot and query_session_source == "stashed" and is_transactional_flow:
-        logger.info("planner_query_context_skipped", reason="active_transaction_flow_stashed")
+            logger.info("planner_query_continuation_shortcut_hit", message=text)
+            return PlannerContextBuildResult(
+                planner_context="None",
+                active_intent=None,
+                query_session_snapshot=query_session_snapshot,
+                query_session_source=query_session_source,
+                prompt_signals=PlannerPromptSignals(),
+                shortcut_updates={
+                    "tasks": {shortcut_task_id: shortcut_task},
+                    "waves": [[shortcut_task_id]],
+                    "current_wave_index": 0,
+                    "normalized_instruction": text,
+                    **locale_updates,
+                },
+            )
+    elif query_session_snapshot and is_transactional_flow:
+        logger.info("planner_query_context_skipped", reason="active_transaction_flow")
 
     active_intent = None
     if state.waves:
@@ -217,41 +158,44 @@ async def _build_planner_context(
                 if t_id in state.tasks:
                     active_task = state.tasks[t_id]
                     active_intent = active_task.type
-
-                    payload_view = {
-                        k: v for k, v in active_task.payload.items() if k not in ["result", "error", "confirmation"]
-                    }
-                    payload_preview = _compact_payload_for_prompt(payload_view)
-
-                    planner_context_sections.append(
-                        (
-                            "active_flow",
-                            _clip_text(
-                                (
-                                    f"Active Flow: {active_intent.upper()} (User is currently in this flow).\n"
-                                    f"Current Task Data: {payload_preview}\n"
-                                    "Review Rule 9 (CONTEXT OVERRIDE):"
-                                    f"- Slot-filling/updates keep intent='{active_intent}'.\n"
-                                    "- Clearly unrelated asks switch intent."
-                                ),
-                                PLANNER_CONTEXT_ACTIVE_FLOW_MAX_CHARS,
-                            ),
-                        )
-                    )
-                    logger.info("planner_context_active_flow_injected", intent=active_intent)
         except Exception as e:
             logger.warning("active_flow_context_failed", error=str(e))
 
-    ctx_manager = OrchestratorContextManager()
-    short_term_context = ctx_manager.build_llm_summary(state)
-    if short_term_context:
+    turn_summary = build_turn_context_summary(
+        state,
+        query_session_snapshot=query_session_snapshot,
+        query_session_source=query_session_source,
+    )
+    if turn_summary.query_session_summary and not is_transactional_flow:
+        section_name = "query_session" if query_session_source == "redis" else "query_session_stashed"
+        planner_context_sections.append(
+            (
+                section_name,
+                _clip_text(turn_summary.query_session_summary, PLANNER_CONTEXT_QUERY_SESSION_MAX_CHARS),
+            )
+        )
+        logger.info("planner_context_injected", context=section_name)
+
+    if turn_summary.active_flow_summary and active_intent:
+        planner_context_sections.append(
+            (
+                "active_flow",
+                _clip_text(turn_summary.active_flow_summary, PLANNER_CONTEXT_ACTIVE_FLOW_MAX_CHARS),
+            )
+        )
+        logger.info("planner_context_active_flow_injected", intent=active_intent)
+
+    if turn_summary.short_term_memory_summary:
         has_short_term_memory = True
         planner_context_sections.append(
-            ("short_term_memory", _clip_text(short_term_context, PLANNER_CONTEXT_SHORT_TERM_MAX_CHARS))
+            (
+                "short_term_memory",
+                _clip_text(turn_summary.short_term_memory_summary, PLANNER_CONTEXT_SHORT_TERM_MAX_CHARS),
+            )
         )
         logger.info("planner_context_injected", context="short_term_memory")
 
-    recent_domain_focus = _infer_recent_domain_focus(state)
+    recent_domain_focus = turn_summary.recent_domain_focus
     if recent_domain_focus:
         planner_context_sections.append(
             (
@@ -268,7 +212,22 @@ async def _build_planner_context(
         )
         logger.info("planner_context_injected", context="recent_domain_focus", domain=recent_domain_focus)
 
-    user_state_summary = _build_user_state_summary(state)
+    if turn_summary.recent_answer_focus:
+        planner_context_sections.append(
+            (
+                "recent_answer_focus",
+                _clip_text(
+                    (
+                        f"Recent Answer Focus: {turn_summary.recent_answer_focus}\n"
+                        "- Prefer grounding short referential follow-ups against this recent surface first."
+                    ),
+                    PLANNER_CONTEXT_RECENT_DOMAIN_MAX_CHARS,
+                ),
+            )
+        )
+        logger.info("planner_context_injected", context="recent_answer_focus", focus=turn_summary.recent_answer_focus)
+
+    user_state_summary = build_user_state_summary_from_summary(turn_summary)
     if user_state_summary:
         has_user_state_summary = True
         planner_context_sections.append(

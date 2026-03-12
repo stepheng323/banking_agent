@@ -106,7 +106,12 @@ AccountActionHint: TypeAlias = Literal[
     "none",
 ]
 
-TurnRoutingDecision: TypeAlias = Literal["go_planner", "respond_directly", "query_continuation"]
+TurnRoutingDecision: TypeAlias = Literal[
+    "go_planner",
+    "respond_directly",
+    "direct_context_answer",
+    "query_continuation",
+]
 
 ContextFastpathSubtype: TypeAlias = Literal[
     "account_count",
@@ -171,7 +176,10 @@ class TurnRouteDecision(BaseModel):
         default=None,
         description="Deterministic keyed response when decision=respond_directly",
     )
-    response: str | None = Field(default=None, description="Direct response text when keyed response is unavailable")
+    response: str | None = Field(
+        default=None,
+        description="Direct response text when decision=respond_directly or direct_context_answer",
+    )
     expected_transaction_executors: list[TransactionExecutor] = Field(
         default_factory=list,
         description="Explicit transaction executors expected from planner, when known",

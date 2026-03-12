@@ -20,6 +20,12 @@ from apps.core.src.agent.orchestrator.nodes.cancellation import (
     has_cancelable_state,
     is_explicit_cancel_message,
 )
+from apps.core.src.agent.orchestrator.nodes.planner_context import (
+    TurnContextSummary,
+    _load_query_session_snapshot,
+    build_router_context_from_summary,
+    build_turn_context_summary,
+)
 from shared.i18n import LocaleManager, render_locale_switched, render_message
 from shared.utils.logging import get_logger
 
@@ -38,7 +44,38 @@ TURN_ROUTER_META_PATTERNS = (
 )
 TURN_ROUTER_TRANSACTION_HINT_PATTERNS = (
     r"\b(send|transfer|buy|airtime|data|bundle|pay|fund|withdraw)\b",
-    r"\b(account|bank|acct|beneficiary|statement|transaction)\b",
+)
+TURN_ROUTER_QUESTION_STARTERS = {
+    "can",
+    "do",
+    "does",
+    "did",
+    "is",
+    "are",
+    "was",
+    "were",
+    "what",
+    "which",
+    "who",
+    "how",
+    "where",
+    "when",
+    "why",
+    "any",
+    "more",
+    "still",
+}
+TURN_ROUTER_IMPERATIVE_ACTION_PREFIXES = (
+    "show ",
+    "list ",
+    "set ",
+    "unlink ",
+    "link ",
+    "delete ",
+    "remove ",
+)
+TURN_ROUTER_CONTEXT_HINT_PATTERNS = (
+    r"\b(bank|account|acct|beneficiary|saved|debit|credit|transactions?|default|mandate|ready)\b",
 )
 ACCOUNT_BALANCE_REQUEST_PATTERNS = (
     r"\bbalance\b",
@@ -239,17 +276,22 @@ def _should_invoke_turn_router(message_text: str) -> bool:
         return False
     if any(re.search(pattern, normalized) for pattern in TURN_ROUTER_TRANSACTION_HINT_PATTERNS):
         return False
+    if normalized.startswith(TURN_ROUTER_IMPERATIVE_ACTION_PREFIXES):
+        return False
+    if normalized.endswith("?"):
+        return True
+    first_word = normalized.split()[0] if normalized else ""
+    if first_word in TURN_ROUTER_QUESTION_STARTERS:
+        return True
+    if any(re.search(pattern, normalized) for pattern in TURN_ROUTER_CONTEXT_HINT_PATTERNS):
+        return True
     return any(re.search(pattern, normalized) for pattern in TURN_ROUTER_META_PATTERNS)
 
 
-def _build_turn_router_context(state: OrchestratorState, session_domain: str | None) -> str:
-    active_domain = state.active_domain or "none"
-    session_part = session_domain or "none"
-    expected = state.preplanner_expected_transaction_executors or []
-    return (
-        f"active_domain={active_domain}; "
-        f"session_domain={session_part}; "
-        f"expected_transaction_executors={','.join(expected) if expected else 'none'}"
+def _build_turn_router_context(summary: TurnContextSummary, expected_executors: list[str]) -> str:
+    return build_router_context_from_summary(
+        summary,
+        expected_executors=expected_executors,
     )
 
 
@@ -605,7 +647,13 @@ async def session_gate_fastpath(state: OrchestratorState, config: RunnableConfig
         and _should_invoke_turn_router(message_text)
     ):
         try:
-            route_context = _build_turn_router_context(state, session.domain if session else None)
+            query_session_snapshot, query_session_source = await _load_query_session_snapshot(state, redis_client)
+            router_summary = build_turn_context_summary(
+                state,
+                query_session_snapshot=query_session_snapshot,
+                query_session_source=query_session_source,
+            )
+            route_context = _build_turn_router_context(router_summary, state.preplanner_expected_transaction_executors)
             try:
                 route = await task_planner.route_turn(
                     state.phone_number,
@@ -633,7 +681,7 @@ async def session_gate_fastpath(state: OrchestratorState, config: RunnableConfig
             if expected_executors:
                 updates["preplanner_expected_transaction_executors"] = expected_executors
 
-            if route.decision == "respond_directly":
+            if route.decision in {"respond_directly", "direct_context_answer"}:
                 locale = LocaleManager.normalize((state.loaded_context or {}).get("language")).value
                 if route.detected_language:
                     locale = LocaleManager.from_detection(route.detected_language).value
@@ -651,7 +699,12 @@ async def session_gate_fastpath(state: OrchestratorState, config: RunnableConfig
                         text = render_message(route.response_key, locale)
                 else:
                     text = route.response or render_message("conversational.clarify", locale)
-                logger.info("gate_turn_router_direct_response", response_key=route.response_key, locale=locale)
+                logger.info(
+                    "gate_turn_router_direct_response",
+                    decision=route.decision,
+                    response_key=route.response_key,
+                    locale=locale,
+                )
                 return {
                     "fast_path_triggered": True,
                     "final_response": text,

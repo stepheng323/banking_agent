@@ -91,10 +91,12 @@ class _RouteTurnPlanner:
     def __init__(self, decision: TurnRouteDecision) -> None:
         self._decision = decision
         self.route_calls = 0
+        self.last_context: str | None = None
 
     async def route_turn(self, phone_number: str, text: str, context: str = "None") -> TurnRouteDecision:
-        del phone_number, text, context
+        del phone_number, text
         self.route_calls += 1
+        self.last_context = context
         return self._decision
 
 
@@ -134,6 +136,75 @@ async def test_gate_turn_router_can_bypass_planner_with_direct_response() -> Non
     assert updates["fast_path_triggered"] is True
     assert isinstance(updates.get("final_response"), str)
     assert updates["loaded_context"]["language"] == "pcm"
+
+
+async def test_gate_turn_router_can_answer_grounded_account_follow_up_without_planner() -> None:
+    planner = _RouteTurnPlanner(
+        TurnRouteDecision(
+            decision="direct_context_answer",
+            confidence=0.96,
+            detected_language="English",
+            response_key=None,
+            response="Your First Bank account is linked, but it is not ready for payments yet.",
+            expected_transaction_executors=[],
+            reason="grounded account readiness answer",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_gate_ctx_1",
+        phone_number="2348000000201",
+        channel="telegram",
+        last_message_text="Can I use first bank now",
+        loaded_context={
+            "language": "en",
+            "accounts": [
+                {"bank_name": "Zenith Bank", "account_number": "00009384", "mandate_status": "ready"},
+                {"bank_name": "First Bank", "account_number": "0334557890", "mandate_status": "pending"},
+            ],
+        },
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await session_gate_fastpath(state, config)
+
+    assert planner.route_calls == 1
+    assert "ACCOUNTS:" in (planner.last_context or "")
+    assert "First Bank" in (planner.last_context or "")
+    assert updates["fast_path_triggered"] is True
+    assert updates["final_response"] == "Your First Bank account is linked, but it is not ready for payments yet."
+
+
+async def test_gate_turn_router_can_answer_grounded_account_follow_up_with_typo() -> None:
+    planner = _RouteTurnPlanner(
+        TurnRouteDecision(
+            decision="direct_context_answer",
+            confidence=0.94,
+            detected_language="English",
+            response_key=None,
+            response="Your First Bank account is linked, but it is not ready for payments yet.",
+            expected_transaction_executors=[],
+            reason="grounded account readiness answer with typo tolerance",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_gate_ctx_2",
+        phone_number="2348000000202",
+        channel="telegram",
+        last_message_text="Can I use fisr bank now",
+        loaded_context={
+            "language": "en",
+            "accounts": [
+                {"bank_name": "First Bank", "account_number": "0334557890", "mandate_status": "pending"},
+            ],
+        },
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await session_gate_fastpath(state, config)
+
+    assert planner.route_calls == 1
+    assert updates["fast_path_triggered"] is True
+    assert updates["final_response"] == "Your First Bank account is linked, but it is not ready for payments yet."
 
 
 async def test_gate_turn_router_out_of_scope_includes_empathy_and_redirect() -> None:

@@ -166,10 +166,13 @@ def test_mixed_money_move_coverage_rules_present() -> None:
 
 def test_turn_router_expected_executor_coverage_rules_present() -> None:
     """Turn-router prompt should require all explicit mixed transaction executors."""
+    assert "direct_context_answer" in TURN_ROUTER_SYSTEM_PROMPT
     assert "expected_transaction_executors" in TURN_ROUTER_SYSTEM_PROMPT
     assert "explicit mixed transaction requests" in TURN_ROUTER_SYSTEM_PROMPT
     assert "include every mentioned executor" in TURN_ROUTER_SYSTEM_PROMPT
     assert '["transfer","airtime"]' in TURN_ROUTER_SYSTEM_PROMPT
+    assert '"Can I use First Bank now?" -> direct_context_answer' in TURN_ROUTER_SYSTEM_PROMPT
+    assert '"Can I use fisr bank now?" -> direct_context_answer' in TURN_ROUTER_SYSTEM_PROMPT
 
 
 def test_runtime_planner_prompt_is_compact_for_generic_turns() -> None:
