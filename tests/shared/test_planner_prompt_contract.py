@@ -97,8 +97,8 @@ def test_follow_up_referent_binding_rules_present() -> None:
     assert "R14_REFERENCE_BINDING" in runtime_prompt
     assert "R14:pronoun|index->selector_ref" in runtime_prompt
     assert 'Recent Chat account_count + "List them"' in runtime_prompt
-    assert 'Recent Chat linked_accounts_summary + "What about First Bank?" -> account_linked_bank_existence_check.' in runtime_prompt
     assert 'Recent Chat beneficiary_count + "List them"' in runtime_prompt
+    assert 'Active transfer flow + "Where did we stop?" -> context_fastpath_subtype=flow_recap.' in runtime_prompt
 
 
 def test_transfer_pronoun_reference_continuity_rules_present() -> None:
@@ -173,6 +173,9 @@ def test_turn_router_expected_executor_coverage_rules_present() -> None:
     assert '["transfer","airtime"]' in TURN_ROUTER_SYSTEM_PROMPT
     assert '"Can I use First Bank now?" -> direct_context_answer' in TURN_ROUTER_SYSTEM_PROMPT
     assert '"Can I use fisr bank now?" -> direct_context_answer' in TURN_ROUTER_SYSTEM_PROMPT
+    assert '"Do I still have Mum saved?" -> direct_context_answer' in TURN_ROUTER_SYSTEM_PROMPT
+    assert '"Any more debits after that?" -> direct_context_answer' in TURN_ROUTER_SYSTEM_PROMPT
+    assert '"Where did we stop?" -> direct_context_answer' in TURN_ROUTER_SYSTEM_PROMPT
 
 
 def test_runtime_planner_prompt_is_compact_for_generic_turns() -> None:

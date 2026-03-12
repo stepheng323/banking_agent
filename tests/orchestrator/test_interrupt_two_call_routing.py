@@ -18,6 +18,7 @@ class _CountingPlanner:
         self._output = output
         self.route_calls = 0
         self.plan_calls = 0
+        self.last_context: str | None = None
 
     async def route_pending_input(
         self,
@@ -25,8 +26,9 @@ class _CountingPlanner:
         text: str,
         context: str = "None",
     ) -> InterruptRouteDecision:
-        del phone_number, text, context
+        del phone_number, text
         self.route_calls += 1
+        self.last_context = context
         return self._route
 
     async def plan_tasks(self, phone_number: str, text: str, *, context: str = "None", prompt_signals: object | None = None) -> PlannerOutput:
@@ -256,6 +258,58 @@ async def test_transaction_switch_split_retry_uses_recipient_allocations_without
     assert updates["tasks"]["interrupt_transfer_1_r2"].payload.get("amount") == 6000.0
     assert updates["tasks"]["interrupt_transfer_1_r2"].payload.get("recipient_allocations") is None
     assert updates["tasks"]["interrupt_transfer_1_r2"].payload.get("explicit_split") is None
+
+
+@pytest.mark.asyncio
+async def test_status_query_requirements_skips_planner_and_uses_interrupt_router_only() -> None:
+    state = OrchestratorState(
+        user_id="u_budget_status_1",
+        phone_number="2348100000091",
+        channel="whatsapp",
+        last_message_text="what do you need from me",
+        pending_interrupt=PendingInterrupt(
+            kind="input",
+            task_ids=["t1"],
+            fields_by_task={"t1": ["beneficiary_id"]},
+        ),
+        loaded_context={
+            "accounts": [{"bank_name": "Zenith Bank", "account_number": "00009384", "mandate_status": "ready"}],
+            "beneficiaries": [{"alias": "Mum", "bank_name": "Opay", "account_number": "8162511023"}],
+        },
+        tasks={
+            "t1": TaskSpec(
+                id="t1",
+                type="transfer",
+                stage=TaskStage.EXTRACTED,
+                payload={"recipient_name": "Tolu", "amount": 5000},
+            )
+        },
+        waves=[["t1"]],
+        current_wave_index=0,
+    )
+    planner = _CountingPlanner(
+        route=InterruptRouteDecision(
+            decision="status_query",
+            confidence=0.95,
+            detected_language="English",
+            target_intent=None,
+            target_mode=None,
+            status_query_type="requirements",
+            reason="requirements status query",
+        ),
+        output=PlannerOutput(primary_intent="transfer"),
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await handle_pending_interrupt(state, config)
+
+    assert planner.route_calls == 1
+    assert planner.plan_calls == 0
+    assert "Recent Domain Focus:" in (planner.last_context or "")
+    assert "Beneficiaries:" in (planner.last_context or "")
+    assert updates["pending_interrupt"] is not None
+    assert updates["outbox"][0]["type"] == "say"
+    assert "I still need: beneficiary selection." in updates["outbox"][0]["text"]
 
 
 @pytest.mark.asyncio

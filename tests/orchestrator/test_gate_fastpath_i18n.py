@@ -91,6 +91,7 @@ class _RouteTurnPlanner:
     def __init__(self, decision: TurnRouteDecision) -> None:
         self._decision = decision
         self.route_calls = 0
+        self.plan_calls = 0
         self.last_context: str | None = None
 
     async def route_turn(self, phone_number: str, text: str, context: str = "None") -> TurnRouteDecision:
@@ -98,6 +99,11 @@ class _RouteTurnPlanner:
         self.route_calls += 1
         self.last_context = context
         return self._decision
+
+    async def plan_tasks(self, *args: object, **kwargs: object) -> None:
+        del args, kwargs
+        self.plan_calls += 1
+        raise AssertionError("planner should not run when gate returns a direct router answer")
 
 
 class _TrackingRedis:
@@ -168,6 +174,7 @@ async def test_gate_turn_router_can_answer_grounded_account_follow_up_without_pl
     updates = await session_gate_fastpath(state, config)
 
     assert planner.route_calls == 1
+    assert planner.plan_calls == 0
     assert "ACCOUNTS:" in (planner.last_context or "")
     assert "First Bank" in (planner.last_context or "")
     assert updates["fast_path_triggered"] is True
@@ -203,8 +210,137 @@ async def test_gate_turn_router_can_answer_grounded_account_follow_up_with_typo(
     updates = await session_gate_fastpath(state, config)
 
     assert planner.route_calls == 1
+    assert planner.plan_calls == 0
     assert updates["fast_path_triggered"] is True
     assert updates["final_response"] == "Your First Bank account is linked, but it is not ready for payments yet."
+
+
+async def test_gate_turn_router_can_answer_grounded_beneficiary_follow_up_without_planner() -> None:
+    planner = _RouteTurnPlanner(
+        TurnRouteDecision(
+            decision="direct_context_answer",
+            confidence=0.95,
+            detected_language="English",
+            response_key=None,
+            response="Yes, you still have Mum saved on Opay ending in 1023.",
+            expected_transaction_executors=[],
+            reason="grounded beneficiary existence answer",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_gate_ctx_3",
+        phone_number="2348000000203",
+        channel="whatsapp",
+        last_message_text="Do I still have mum saved",
+        loaded_context={
+            "language": "en",
+            "beneficiaries": [
+                {
+                    "alias": "Mum",
+                    "account_name": "Mercy Johnson",
+                    "bank_name": "Opay",
+                    "account_number": "8162511023",
+                }
+            ],
+        },
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await session_gate_fastpath(state, config)
+
+    assert planner.route_calls == 1
+    assert planner.plan_calls == 0
+    assert "BENEFICIARIES:" in (planner.last_context or "")
+    assert "Mum" in (planner.last_context or "")
+    assert updates["fast_path_triggered"] is True
+    assert updates["final_response"] == "Yes, you still have Mum saved on Opay ending in 1023."
+
+
+async def test_gate_turn_router_can_answer_grounded_query_follow_up_without_planner() -> None:
+    planner = _RouteTurnPlanner(
+        TurnRouteDecision(
+            decision="direct_context_answer",
+            confidence=0.94,
+            detected_language="English",
+            response_key=None,
+            response="Yes. The transactions shown after that include more debits.",
+            expected_transaction_executors=[],
+            reason="grounded query recap answer",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_gate_ctx_4",
+        phone_number="2348000000204",
+        channel="whatsapp",
+        last_message_text="Any more debits after that",
+        loaded_context={"language": "en"},
+    )
+
+    class _RedisWithQuerySession:
+        async def get(self, key: str) -> str | None:
+            if "query:session:" in key:
+                return (
+                    '{"session_active": true, "query_result": {"summary_text": "Recent results include 3 debits and 1 credit."}}'
+                )
+            return None
+
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "redis_client": _RedisWithQuerySession()},
+        "recursion_limit": 50,
+    }
+
+    updates = await session_gate_fastpath(state, config)
+
+    assert planner.route_calls == 1
+    assert planner.plan_calls == 0
+    assert "QUERY_SESSION:" in (planner.last_context or "")
+    assert "3 debits" in (planner.last_context or "")
+    assert updates["fast_path_triggered"] is True
+    assert updates["final_response"] == "Yes. The transactions shown after that include more debits."
+
+
+async def test_gate_turn_router_can_answer_grounded_flow_recap_without_planner() -> None:
+    planner = _RouteTurnPlanner(
+        TurnRouteDecision(
+            decision="direct_context_answer",
+            confidence=0.96,
+            detected_language="English",
+            response_key=None,
+            response="We are on your transfer. I still have your amount and recipient, and the flow is waiting to continue from there.",
+            expected_transaction_executors=[],
+            reason="grounded active-flow recap answer",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_gate_ctx_5",
+        phone_number="2348000000205",
+        channel="whatsapp",
+        last_message_text="Where did we stop",
+        loaded_context={"language": "en"},
+        tasks={
+            "t1": TaskSpec(
+                id="t1",
+                type="transfer",
+                stage=TaskStage.EXTRACTED,
+                payload={"amount": 5000, "recipient_name": "Tolu"},
+            )
+        },
+        waves=[["t1"]],
+        current_wave_index=0,
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await session_gate_fastpath(state, config)
+
+    assert planner.route_calls == 1
+    assert planner.plan_calls == 0
+    assert "ACTIVE_FLOW:" in (planner.last_context or "")
+    assert "Current Task Data:" in (planner.last_context or "")
+    assert updates["fast_path_triggered"] is True
+    assert (
+        updates["final_response"]
+        == "We are on your transfer. I still have your amount and recipient, and the flow is waiting to continue from there."
+    )
 
 
 async def test_gate_turn_router_out_of_scope_includes_empathy_and_redirect() -> None:

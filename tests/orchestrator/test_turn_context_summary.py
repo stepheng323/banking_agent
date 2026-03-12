@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from apps.core.src.agent.orchestrator.context.models import ContextEntity, ContextFrame, ContextFrameType, EntityType
-from apps.core.src.agent.orchestrator.models.domain import ActiveSession, TaskSpec, TaskStage
+from apps.core.src.agent.orchestrator.models.domain import ActiveSession, PendingInterrupt, TaskSpec, TaskStage
 from apps.core.src.agent.orchestrator.models.state import OrchestratorState
 from apps.core.src.agent.orchestrator.nodes.planner_context import (
     _load_query_session_snapshot,
@@ -68,6 +68,7 @@ def test_turn_context_summary_builds_compact_shared_view() -> None:
             )
         ],
         session_stack=[ActiveSession(domain="account", state="RUNNING", interrupt_policy="ALLOW")],
+        pending_interrupt=PendingInterrupt(kind="input", task_ids=["t1"], fields_by_task={"t1": ["beneficiary_id"]}),
         tasks={
             "t1": TaskSpec(
                 id="t1",
@@ -95,6 +96,8 @@ def test_turn_context_summary_builds_compact_shared_view() -> None:
     assert summary.query_session_summary is not None
     assert "You spent ₦5,000 today." in summary.query_session_summary
     assert summary.active_flow_intent == "transfer"
+    assert summary.active_flow_interrupt_kind == "input"
+    assert summary.active_flow_missing_fields == ["beneficiary_id"]
     assert summary.active_flow_summary is not None
     assert "Current Task Data:" in summary.active_flow_summary
     assert any("Zenith Bank" in line and "ready" in line for line in summary.account_lines)
@@ -124,6 +127,7 @@ def test_router_and_user_state_render_from_shared_summary() -> None:
     assert "ACCOUNTS:" in router_context
     assert "BENEFICIARIES:" in router_context
     assert "RECENT_CHAT:" in router_context or "RECENT_CONTEXT:" in router_context
+    assert "EXPECTED_TRANSACTION_EXECUTORS=transfer" in router_context
     assert user_state_summary is not None
     assert "User State:" in user_state_summary
     assert "mandate:" in user_state_summary

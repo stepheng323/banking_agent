@@ -32,7 +32,7 @@ from shared.utils.logging import get_logger
 logger = get_logger(__name__)
 
 TRANSACTION_EXECUTORS = {"transfer", "airtime", "data"}
-TURN_ROUTER_MAX_WORDS = 6
+TURN_ROUTER_MAX_WORDS = 8
 TURN_ROUTER_MAX_CHARS = 64
 TURN_ROUTER_MULTI_CLAUSE_MARKERS = (" and ", " & ", " then ", ",")
 TURN_ROUTER_META_PATTERNS = (

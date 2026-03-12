@@ -54,6 +54,8 @@ class TurnContextSummary:
     query_session_source: str | None = None
     active_flow_summary: str | None = None
     active_flow_intent: str | None = None
+    active_flow_missing_fields: list[str] = field(default_factory=list)
+    active_flow_interrupt_kind: str | None = None
     short_term_memory_summary: str | None = None
 
 
@@ -242,6 +244,8 @@ def build_turn_context_summary(
 
     active_flow_summary = None
     active_flow_intent = None
+    active_flow_missing_fields: list[str] = []
+    active_flow_interrupt_kind = state.pending_interrupt.kind if state.pending_interrupt else None
     if state.waves and state.current_wave_index < len(state.waves):
         current_wave = state.waves[state.current_wave_index]
         if current_wave:
@@ -258,6 +262,10 @@ def build_turn_context_summary(
                     f"Current Task Data: {payload_preview}\n"
                     f"Routing: slot_updates_keep_intent_unless_user_clearly_switches"
                 )
+                if state.pending_interrupt and active_task.id in state.pending_interrupt.task_ids:
+                    active_flow_missing_fields = list(
+                        state.pending_interrupt.fields_by_task.get(active_task.id, []) or []
+                    )
 
     from apps.core.src.agent.orchestrator.nodes.planner_fastpath import _infer_recent_domain_focus
     from apps.core.src.agent.orchestrator.services.context_manager import OrchestratorContextManager
@@ -278,6 +286,8 @@ def build_turn_context_summary(
         query_session_source=query_session_source,
         active_flow_summary=active_flow_summary,
         active_flow_intent=active_flow_intent,
+        active_flow_missing_fields=active_flow_missing_fields,
+        active_flow_interrupt_kind=active_flow_interrupt_kind,
         short_term_memory_summary=OrchestratorContextManager().build_llm_summary(state) or None,
     )
 
@@ -358,7 +368,15 @@ def build_router_context_from_summary(
         )
 
     if summary.active_flow_summary:
-        sections.append("ACTIVE_FLOW:\n" + _clip_text(summary.active_flow_summary, ROUTER_CONTEXT_SECTION_MAX_CHARS))
+        active_flow_lines = [summary.active_flow_summary]
+        if summary.active_flow_interrupt_kind:
+            active_flow_lines.append(f"Interrupt Kind: {summary.active_flow_interrupt_kind}")
+        if summary.active_flow_missing_fields:
+            active_flow_lines.append(f"Missing Fields: {', '.join(summary.active_flow_missing_fields)}")
+        sections.append(
+            "ACTIVE_FLOW:\n"
+            + _clip_text("\n".join(active_flow_lines), ROUTER_CONTEXT_SECTION_MAX_CHARS)
+        )
 
     if summary.short_term_memory_summary:
         sections.append(
