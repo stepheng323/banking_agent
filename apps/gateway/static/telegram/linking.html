@@ -219,6 +219,9 @@
       async function makeApiCall(endpoint, data) {
         const url = `${window.location.protocol}//${window.location.host}/webhook/telegram/linking/${endpoint}`;
         try {
+          if (!tg.initData) {
+            return { success: false, error: "Telegram authentication missing. Reopen this page from Telegram." };
+          }
           const response = await fetch(url, {
             method: "POST",
             headers: {
@@ -227,7 +230,18 @@
             },
             body: JSON.stringify(data),
           });
-          return await response.json();
+          const payload = await response.json().catch(() => ({}));
+          if (!response.ok) {
+            return {
+              success: false,
+              error:
+                payload.error ||
+                payload.detail ||
+                payload.message ||
+                `Request failed (${response.status}). Please try again.`,
+            };
+          }
+          return payload;
         } catch (err) {
           return { success: false, error: "Network error. Please try again." };
         }

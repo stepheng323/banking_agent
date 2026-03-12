@@ -192,6 +192,9 @@
         showError("");
 
         try {
+          if (!tg.initData) {
+            throw new Error("Telegram authentication missing. Reopen this page from Telegram.");
+          }
           const url = `${window.location.protocol}//${window.location.host}/webhook/telegram/pin_submit`;
           const response = await fetch(url, {
             method: "POST",
@@ -205,9 +208,9 @@
               chat_id: chatId,
             }),
           });
-          const res = await response.json();
+          const res = await response.json().catch(() => ({}));
 
-          if (res.success) {
+          if (response.ok && res.success) {
             verified = true;
             document.body.classList.add("success-state");
             tg.HapticFeedback.notificationOccurred("success");
@@ -222,7 +225,7 @@
           locked = false;
           pinInput.disabled = false;
           attempts += 1;
-          const serverMsg = res.error || "PIN verification failed";
+          const serverMsg = res.error || res.detail || res.message || "PIN verification failed";
 
           if (res.locked || attempts >= MAX_ATTEMPTS) {
             lockUI(serverMsg);
