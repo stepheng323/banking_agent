@@ -1,12 +1,16 @@
 """Context read fastpath planner helpers."""
 
+import re
 import time
 from typing import Any, cast
 
 from apps.core.src.agent.orchestrator.context.models import ContextEntity, ContextFrame, ContextFrameType, EntityType
 from apps.core.src.agent.orchestrator.models.state import OrchestratorState
 from apps.core.src.agent.orchestrator.services.context_manager import OrchestratorContextManager
+from shared.i18n import render_message
+from shared.services.onboarding.mandate_messages import build_pending_mandate_message
 from shared.types.planner import PlannedTask, TaskParameters
+from shared.utils.bank_aliases import BANK_ALIASES, get_bank_search_terms, normalize_bank_name
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -37,6 +41,7 @@ TRANSACTION_EXECUTORS = {"transfer", "airtime", "data"}
 BENEFICIARY_MATCH_PREVIEW_LIMIT = 3
 BENEFICIARY_FASTPATH_PERSIST_SUBTYPES = {"beneficiary_list", "beneficiary_name_match_preview"}
 NO_ACTIVE_FLOW_FASTPATH_MESSAGE = "There is no active transfer flow right now. Start a transfer and I will guide you."
+_NON_ALNUM_RE = re.compile(r"[^a-z0-9]+")
 
 
 def _infer_recent_domain_focus(state: OrchestratorState) -> str | None:
@@ -72,6 +77,61 @@ def _planner_fastpath_subtype(planner_output: Any) -> str | None:
     if isinstance(subtype, str) and subtype in CONTEXT_FASTPATH_SUBTYPES:
         return subtype
     return None
+
+
+def _compact_token(value: str) -> str:
+    return _NON_ALNUM_RE.sub("", value.lower())
+
+
+def _find_account_for_bank_followup(text: str, accounts: list[dict[str, Any]]) -> dict[str, Any] | None:
+    compact_text = _compact_token(text)
+    if not compact_text:
+        return None
+
+    for account in accounts:
+        bank_name = str(account.get("bank_name") or "").strip()
+        if not bank_name:
+            continue
+        search_terms = {normalize_bank_name(bank_name), *get_bank_search_terms(bank_name)}
+        if any(term and _compact_token(term) in compact_text for term in search_terms):
+            return account
+    return None
+
+
+def _extract_requested_bank_label(text: str) -> str | None:
+    lowered = text.lower()
+    for alias in sorted(BANK_ALIASES.keys(), key=len, reverse=True):
+        if alias in lowered:
+            return alias.title()
+    return None
+
+
+def synthesize_account_fastpath_response(
+    state: OrchestratorState,
+    subtype: str,
+    text: str,
+    locale: str,
+) -> str | None:
+    """Build deterministic account fastpath responses from loaded context when beneficial."""
+    accounts_raw = (state.loaded_context or {}).get("accounts")
+    accounts = accounts_raw if isinstance(accounts_raw, list) else []
+    if subtype != "account_linked_bank_existence_check" or not accounts:
+        return None
+
+    match = _find_account_for_bank_followup(text, [a for a in accounts if isinstance(a, dict)])
+    if match is None:
+        bank_label = _extract_requested_bank_label(text)
+        if bank_label:
+            return f"No, you do not have {bank_label} linked."
+        return None
+
+    bank_name = str(match.get("bank_name") or render_message("mandate.bank_fallback", locale))
+    status = str(match.get("mandate_status") or "").strip().lower()
+    if status == "ready":
+        return f"Yes, you have {bank_name} linked and ready."
+
+    pending_message = build_pending_mandate_message([match], locale)
+    return f"Yes, you have {bank_name} linked, but it is not ready for payments yet.\n\n{pending_message}"
 
 
 def _has_context_for_fastpath_subtype(state: OrchestratorState, subtype: str) -> bool:
@@ -223,4 +283,5 @@ __all__ = [
     "_has_context_for_fastpath_subtype",
     "_infer_recent_domain_focus",
     "_planner_fastpath_subtype",
+    "synthesize_account_fastpath_response",
 ]

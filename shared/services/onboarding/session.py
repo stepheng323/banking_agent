@@ -36,3 +36,4 @@ class OnboardingSession:
     address: str | None = None
     step: OnboardingStep = OnboardingStep.BVN_ENTRY
     is_account_linking: bool = False
+    channel: str | None = None

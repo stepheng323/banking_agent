@@ -86,6 +86,7 @@ async def test_build_link_account_flow_uses_canonical_phone_and_persists_session
     assert stored["session_id"] == "mono-session-123"
     assert stored["step"] == "method_selection"
     assert stored["is_account_linking"] is True
+    assert stored["channel"] == "telegram"
 
 
 @pytest.mark.asyncio

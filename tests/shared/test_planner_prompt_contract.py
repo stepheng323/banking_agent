@@ -97,6 +97,7 @@ def test_follow_up_referent_binding_rules_present() -> None:
     assert "R14_REFERENCE_BINDING" in runtime_prompt
     assert "R14:pronoun|index->selector_ref" in runtime_prompt
     assert 'Recent Chat account_count + "List them"' in runtime_prompt
+    assert 'Recent Chat linked_accounts_summary + "What about First Bank?" -> account_linked_bank_existence_check.' in runtime_prompt
     assert 'Recent Chat beneficiary_count + "List them"' in runtime_prompt
 
 
@@ -213,10 +214,10 @@ def test_runtime_planner_prompt_size_budget_targets() -> None:
         ),
     )
     assert len(generic_prompt) <= 1600
-    assert len(expanded_prompt) <= 4300
+    assert len(expanded_prompt) <= 4350
     encoding = tiktoken.get_encoding("o200k_base")
     assert len(encoding.encode(generic_prompt)) <= 390
-    assert len(encoding.encode(expanded_prompt)) <= 1120
+    assert len(encoding.encode(expanded_prompt)) <= 1130
 
 
 def test_runtime_planner_prompt_adds_money_move_examples_when_relevant() -> None:

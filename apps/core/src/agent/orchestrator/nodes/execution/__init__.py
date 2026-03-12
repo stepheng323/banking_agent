@@ -510,7 +510,8 @@ async def _maybe_coordinate_batch_funding(
         return None
 
     accounts_raw = (state.loaded_context or {}).get("accounts") or []
-    accounts = [account for account in accounts_raw if isinstance(account, dict)]
+    transaction_accounts_raw = (state.loaded_context or {}).get("transaction_accounts") or accounts_raw
+    accounts = [account for account in transaction_accounts_raw if isinstance(account, dict)]
     demands = [
         _build_transfer_demand(task_id, cast(dict[str, Any], state.tasks[task_id].payload))
         for task_id in transfer_task_ids
@@ -591,9 +592,7 @@ async def advance_wave(state: OrchestratorState, config: RunnableConfig) -> dict
     locale = (state.loaded_context or {}).get("language", "en")
     mandate_gate_accounts: list[dict[str, Any]] = []
 
-    # ── Filter accounts to mandate-ready only ────────────────────────
-    # Workers should only see accounts eligible for transactions.
-    # Pending/expired accounts are hidden from source selection, balance, etc.
+    # ── Build transaction-only account view without hiding pending accounts globally ──
     if state.loaded_context and "accounts" in state.loaded_context:
         raw_accounts = state.loaded_context["accounts"]
         mandate_gate_accounts = [a for a in raw_accounts if isinstance(a, dict)]
@@ -605,12 +604,14 @@ async def advance_wave(state: OrchestratorState, config: RunnableConfig) -> dict
                 if isinstance(a, dict)
             ],
         )
-        state.loaded_context["accounts"] = [a for a in mandate_gate_accounts if a.get("mandate_status") == "ready"]
+        state.loaded_context["transaction_accounts"] = [
+            a for a in mandate_gate_accounts if a.get("mandate_status") == "ready"
+        ]
         logger.info(
             "mandate_gate_post_filter",
-            ready_count=len(state.loaded_context["accounts"]),
+            ready_count=len(state.loaded_context["transaction_accounts"]),
         )
-    # ─────────────────────────────────────────────────────────────────
+    # ────────────────────────────────────────────────────────────────
 
     batch_block = await _maybe_coordinate_batch_funding(
         state=state,
@@ -684,9 +685,8 @@ async def advance_wave(state: OrchestratorState, config: RunnableConfig) -> dict
         if not handler:
             continue
 
-        account_dependent_tasks = {"transfer", "airtime", "data", "account", "query"}
-        if task.type in account_dependent_tasks:
-            accounts = (state.loaded_context or {}).get("accounts") or []
+        if task.type in TRANSACTION_TASK_TYPES:
+            accounts = (state.loaded_context or {}).get("transaction_accounts") or []
             has_ready = any(isinstance(a, dict) and a.get("mandate_status") == "ready" for a in accounts)
             if not has_ready:
                 mandate_error = _build_mandate_gate_error(mandate_gate_accounts or accounts, locale)
@@ -770,7 +770,7 @@ async def advance_wave(state: OrchestratorState, config: RunnableConfig) -> dict
 
         if all_batch_source:
             # [Option C] Batch funding: only newly resolved in prompt, then amount + account list.
-            accounts = state.loaded_context.get("accounts") or []
+            accounts = state.loaded_context.get("transaction_accounts") or []
             lines = []
             total_amount = 0.0
             amounts = []
@@ -969,7 +969,7 @@ async def advance_wave(state: OrchestratorState, config: RunnableConfig) -> dict
                         continue
                     intents.append(format_intent_line(task.type, task.payload, locale=locale))
 
-                accounts = state.loaded_context.get("accounts", [])
+                accounts = state.loaded_context.get("transaction_accounts", [])
                 prompt_text = format_source_repair_prompt(
                     intents=intents,
                     failed_hint=repair_hint,

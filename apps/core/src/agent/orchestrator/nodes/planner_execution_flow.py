@@ -14,6 +14,7 @@ from apps.core.src.agent.orchestrator.nodes.planner_fastpath import (
     _context_fastpath_total_items,
     _has_context_for_fastpath_subtype,
     _planner_fastpath_subtype,
+    synthesize_account_fastpath_response,
 )
 from apps.core.src.agent.orchestrator.nodes.planner_guardrails import (
     _deescalate_mandate_acknowledgement,
@@ -94,6 +95,9 @@ async def _execute_planner_with_context(
 
         if is_conversational_no_task and has_context_for_fastpath:
             logger.info("context_fastpath_hit", subtype=fastpath_subtype)
+            synthesized_response = synthesize_account_fastpath_response(state, fastpath_subtype, text, current_locale)
+            if synthesized_response:
+                planner_output.response = synthesized_response
             total_items = _context_fastpath_total_items(state, fastpath_subtype)
             shown_limit = _context_fastpath_shown_limit(fastpath_subtype)
             if total_items is not None and total_items > shown_limit:

@@ -268,6 +268,88 @@ async def test_fastpath_v2_account_linked_bank_existence_check_falls_back_when_a
 
 
 @pytest.mark.asyncio
+async def test_fastpath_v2_account_linked_bank_existence_check_synthesizes_pending_response() -> None:
+    planner_output = PlannerOutput(
+        primary_intent="conversational",
+        response="*Your Bank Accounts*\n\n1. Zenith Bank (****9384) [✓]",
+        response_key=None,
+        confidence=0.92,
+        is_complex=False,
+        is_cancellation=False,
+        is_confirmation=False,
+        detected_language="English",
+        context_fastpath_subtype="account_linked_bank_existence_check",
+        normalized_instruction="what about first bank",
+        tasks=[],
+    )
+    state = OrchestratorState(
+        user_id="u_v2_2c",
+        phone_number="2348555555557",
+        channel="telegram",
+        last_message_text="What about First Bank?",
+        loaded_context={
+            "accounts": [
+                {"bank_name": "Zenith Bank", "account_number": "00009384", "mandate_status": "ready"},
+                {
+                    "bank_name": "First Bank",
+                    "account_number": "0334555167",
+                    "mandate_status": "pending",
+                    "extra_data": {
+                        "transfer_destinations": [{"bank_name": "NIBSS Bank", "account_number": "0001112223"}]
+                    },
+                },
+            ]
+        },
+    )
+    config: RunnableConfig = {
+        "configurable": {"task_planner": _MockPlanner(planner_output), "services": {}, "redis_client": None},
+        "recursion_limit": 50,
+    }
+
+    updates = await plan_tasks(state, config)
+    assert "First Bank linked" in updates.get("final_response", "")
+    assert "not ready for payments yet" in updates.get("final_response", "")
+    assert "transfer ₦50" in updates.get("final_response", "").lower()
+    assert "tasks" not in updates
+
+
+@pytest.mark.asyncio
+async def test_fastpath_v2_account_linked_bank_existence_check_synthesizes_absent_response() -> None:
+    planner_output = PlannerOutput(
+        primary_intent="conversational",
+        response="*Your Bank Accounts*\n\n1. Zenith Bank (****9384) [✓]",
+        response_key=None,
+        confidence=0.92,
+        is_complex=False,
+        is_cancellation=False,
+        is_confirmation=False,
+        detected_language="English",
+        context_fastpath_subtype="account_linked_bank_existence_check",
+        normalized_instruction="what about first bank",
+        tasks=[],
+    )
+    state = OrchestratorState(
+        user_id="u_v2_2d",
+        phone_number="2348555555558",
+        channel="telegram",
+        last_message_text="What about First Bank?",
+        loaded_context={
+            "accounts": [
+                {"bank_name": "Zenith Bank", "account_number": "00009384", "mandate_status": "ready"},
+            ]
+        },
+    )
+    config: RunnableConfig = {
+        "configurable": {"task_planner": _MockPlanner(planner_output), "services": {}, "redis_client": None},
+        "recursion_limit": 50,
+    }
+
+    updates = await plan_tasks(state, config)
+    assert updates.get("final_response") == "No, you do not have First Bank linked."
+    assert "tasks" not in updates
+
+
+@pytest.mark.asyncio
 async def test_fastpath_v2_link_account_request_bypasses_account_summary_read_path() -> None:
     planner_output = PlannerOutput(
         primary_intent="conversational",

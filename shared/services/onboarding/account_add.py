@@ -3,6 +3,7 @@
 import asyncio
 
 from shared.cache.flow_session_manager import FlowSessionManager
+from shared.cache.user_data import UserDataCache
 from shared.models.account import CreateAccount
 from shared.repositories.unit_of_work import UnitOfWork
 from shared.services.onboarding.mandate import MandateService
@@ -33,6 +34,7 @@ class AccountAddService:
         phone_number = session.get("phone_number")
         if not phone_number:
             return {"success": False, "error": "Phone number missing."}
+        channel = str(session.get("channel") or "whatsapp")
 
         accounts = session.get("accounts", [])
         selected_account_id = account_id or session.get("selected_account")
@@ -84,6 +86,11 @@ class AccountAddService:
 
                 mono_customer_id = user.mono_customer_id
 
+            try:
+                await UserDataCache().invalidate_accounts(phone_number)
+            except Exception as cache_error:
+                logger.warning("account_add_cache_invalidate_failed", phone=phone_number, error=str(cache_error))
+
             await self.session.update_session(flow_token, {"step": OnboardingStep.COMPLETE.value})
 
             if mono_customer_id:
@@ -95,6 +102,7 @@ class AccountAddService:
                         account_number=selected_account.get("account_number", ""),
                         bank_code=bank_code,
                         bank_name=selected_account.get("bank_name", ""),
+                        channel=channel,
                     )
                 )
 
@@ -118,6 +126,7 @@ class AccountAddService:
         account_number: str,
         bank_code: str,
         bank_name: str,
+        channel: str = "whatsapp",
     ) -> None:
         """Background task: Create mandate and send auth instructions."""
         try:
@@ -138,15 +147,16 @@ class AccountAddService:
                     account_number=account_number,
                     bank_name=bank_name,
                     transfer_destinations=transfer_destinations,
+                    channel=channel,
                 )
-
-                # Notify user of success
-                msg = (
-                    f"✓ Your {bank_name} account has been added! Complete the ₦50 verification transfer to activate it."
-                )
-                await self.mandate.enqueue_outbox_say(phone_number, msg)
+                logger.info("account_add_mandate_instruction_sent", phone=phone_number, channel=channel)
             else:
-                logger.error("mandate_creation_failed_for_add", error=result.get("error"), phone=phone_number)
+                logger.error(
+                    "mandate_creation_failed_for_add",
+                    error=result.get("error"),
+                    phone=phone_number,
+                    channel=channel,
+                )
 
         except Exception as e:
             import traceback

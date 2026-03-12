@@ -452,6 +452,7 @@ class AccountWorker:
             "methods": methods,
             "step": OnboardingStep.METHOD_SELECTION.value,
             "is_account_linking": True,
+            "channel": context.get("channel", "whatsapp"),
         }
         if not self.session_manager:
             logger.error("account_linking_session_manager_missing", flow_token=flow_token)

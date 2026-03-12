@@ -24,13 +24,15 @@ class _SessionStub:
 
 
 class _MandateStub:
+    def __init__(self) -> None:
+        self.sent_auth_calls: list[dict[str, Any]] = []
+
     async def create_mandate(self, **kwargs: Any) -> dict[str, Any]:
         del kwargs
         raise AssertionError("create_mandate should not run in this test")
 
     async def send_auth_instructions(self, **kwargs: Any) -> None:
-        del kwargs
-        raise AssertionError("send_auth_instructions should not run in this test")
+        self.sent_auth_calls.append(kwargs)
 
     async def enqueue_outbox_say(self, phone_number: str, msg: str) -> None:
         del phone_number, msg
@@ -83,6 +85,7 @@ async def test_account_add_service_uses_async_uow_and_creates_account(monkeypatc
     session = _SessionStub(
         {
             "phone_number": "2348162511023",
+            "channel": "telegram",
             "accounts": [
                 {
                     "id": "058_8162511022",
@@ -96,8 +99,16 @@ async def test_account_add_service_uses_async_uow_and_creates_account(monkeypatc
     )
     user = SimpleNamespace(id=uuid4(), mono_customer_id=None)
     uow = _UnitOfWorkStub(user=user)
+    invalidated: list[str] = []
+
+    async def _invalidate_accounts(_self: Any, phone_number: str) -> None:
+        invalidated.append(phone_number)
 
     monkeypatch.setattr("shared.services.onboarding.account_add.UnitOfWork", lambda: uow)
+    monkeypatch.setattr(
+        "shared.services.onboarding.account_add.UserDataCache.invalidate_accounts",
+        _invalidate_accounts,
+    )
 
     service = AccountAddService(session, _MandateStub())
     result = await service.add_account("link-token", "058_8162511022")
@@ -109,6 +120,44 @@ async def test_account_add_service_uses_async_uow_and_creates_account(monkeypatc
     assert created.account_id == "058_8162511022"
     assert created.account_number == "8162511022"
     assert created.bank_name == "Access Bank"
+    assert invalidated == ["2348162511023"]
+
+
+@pytest.mark.asyncio
+async def test_account_add_service_setup_mandate_uses_originating_channel() -> None:
+    mandate = _MandateStub()
+    service = AccountAddService(_SessionStub(), mandate)
+
+    async def _create_mandate(**kwargs: Any) -> dict[str, Any]:
+        del kwargs
+        return {
+            "success": True,
+            "mandate": SimpleNamespace(
+                transfer_destinations=[SimpleNamespace(bank_name="NIBSS Bank", account_number="0001112223")]
+            ),
+        }
+
+    mandate.create_mandate = _create_mandate
+
+    await service._setup_mandate_for_account(
+        phone_number="2348162511023",
+        mono_customer_id="mono-customer-1",
+        account_id="058_8162511022",
+        account_number="8162511022",
+        bank_code="058",
+        bank_name="Access Bank",
+        channel="telegram",
+    )
+
+    assert mandate.sent_auth_calls == [
+        {
+            "phone_number": "2348162511023",
+            "account_number": "8162511022",
+            "bank_name": "Access Bank",
+            "transfer_destinations": [SimpleNamespace(bank_name="NIBSS Bank", account_number="0001112223")],
+            "channel": "telegram",
+        }
+    ]
 
 
 @pytest.mark.asyncio
