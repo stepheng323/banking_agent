@@ -17,6 +17,7 @@ from apps.gateway.api.webhooks.telegram.router import (
     telegram_onboarding_account,
 )
 from shared.cache.flow_session_manager import FlowSessionManager, SessionReadResult
+from shared.config.settings import settings
 from shared.services.onboarding.bvn_verification import BvnVerificationService
 
 
@@ -238,6 +239,7 @@ async def test_onboarding_account_route_still_uses_onboarding_select(monkeypatch
 async def test_account_worker_link_token_bootstraps_telegram_relink_session(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    monkeypatch.setattr(settings, "account_linking_flow_id", "flow-link-123")
     redis = _RedisStub()
     session_manager = FlowSessionManager(redis=redis, key_prefix="onboarding")
     worker = AccountWorker(

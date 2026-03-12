@@ -5,6 +5,7 @@ import pytest
 
 from apps.core.src.agent.graphs.account.worker import AccountWorker
 from shared.cache.flow_session_manager import FlowSessionManager
+from shared.config.settings import settings
 from shared.services.onboarding.bvn_verification import BvnVerificationService
 
 
@@ -54,6 +55,7 @@ class _FailingSessionManager:
 async def test_build_link_account_flow_uses_canonical_phone_and_persists_session(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    monkeypatch.setattr(settings, "account_linking_flow_id", "flow-link-123")
     redis = _RedisStub()
     session_manager = FlowSessionManager(redis=redis, key_prefix="onboarding")
     worker = AccountWorker(
@@ -90,6 +92,7 @@ async def test_build_link_account_flow_uses_canonical_phone_and_persists_session
 async def test_build_link_account_flow_returns_retryable_error_when_session_store_fails(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    monkeypatch.setattr(settings, "account_linking_flow_id", "flow-link-123")
     worker = AccountWorker(
         account_repo=_DummyRepo(),
         user_repo=_DummyRepo(),
