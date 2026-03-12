@@ -1,0 +1,186 @@
+from types import SimpleNamespace
+from typing import Any
+from uuid import uuid4
+
+import pytest
+
+from shared.clients.providers.mono.models import BankAccount, Institution
+from shared.services.onboarding.account_add import AccountAddService
+from shared.services.onboarding.bvn_verification import BvnVerificationService
+
+
+class _SessionStub:
+    def __init__(self, data: dict[str, Any] | None = None) -> None:
+        self.data = data or {}
+
+    async def get_session(self, flow_token: str) -> dict[str, Any]:
+        del flow_token
+        return self.data
+
+    async def update_session(self, flow_token: str, updates: dict[str, Any]) -> bool:
+        del flow_token
+        self.data.update(updates)
+        return True
+
+
+class _MandateStub:
+    async def create_mandate(self, **kwargs: Any) -> dict[str, Any]:
+        del kwargs
+        raise AssertionError("create_mandate should not run in this test")
+
+    async def send_auth_instructions(self, **kwargs: Any) -> None:
+        del kwargs
+        raise AssertionError("send_auth_instructions should not run in this test")
+
+    async def enqueue_outbox_say(self, phone_number: str, msg: str) -> None:
+        del phone_number, msg
+        raise AssertionError("enqueue_outbox_say should not run in this test")
+
+
+class _UserRepoStub:
+    def __init__(self, user: Any) -> None:
+        self.user = user
+
+    async def get_by_phone(self, phone_number: str) -> Any:
+        del phone_number
+        return self.user
+
+
+class _AccountRepoStub:
+    def __init__(self, *, existing_by_id: Any = None, existing_for_user: list[Any] | None = None) -> None:
+        self.existing_by_id = existing_by_id
+        self.existing_for_user = existing_for_user or []
+        self.created: list[Any] = []
+
+    async def get_by_account_id(self, account_id: str) -> Any:
+        del account_id
+        return self.existing_by_id
+
+    async def create_account(self, create_account: Any) -> Any:
+        self.created.append(create_account)
+        return create_account
+
+    async def get_by_user(self, user_id: str) -> list[Any]:
+        del user_id
+        return self.existing_for_user
+
+
+class _UnitOfWorkStub:
+    def __init__(self, *, user: Any = None, existing_by_id: Any = None, existing_for_user: list[Any] | None = None) -> None:
+        self.users = _UserRepoStub(user)
+        self.accounts = _AccountRepoStub(existing_by_id=existing_by_id, existing_for_user=existing_for_user)
+
+    async def __aenter__(self) -> "_UnitOfWorkStub":
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb) -> bool:
+        del exc_type, exc, tb
+        return False
+
+
+@pytest.mark.asyncio
+async def test_account_add_service_uses_async_uow_and_creates_account(monkeypatch: pytest.MonkeyPatch) -> None:
+    session = _SessionStub(
+        {
+            "phone_number": "2348162511023",
+            "accounts": [
+                {
+                    "id": "058_8162511022",
+                    "account_number": "8162511022",
+                    "bank_name": "Access Bank",
+                    "bank_code": "058",
+                    "account_name": "Gaines Test",
+                }
+            ],
+        }
+    )
+    user = SimpleNamespace(id=uuid4(), mono_customer_id=None)
+    uow = _UnitOfWorkStub(user=user)
+
+    monkeypatch.setattr("shared.services.onboarding.account_add.UnitOfWork", lambda: uow)
+
+    service = AccountAddService(session, _MandateStub())
+    result = await service.add_account("link-token", "058_8162511022")
+
+    assert result["success"] is True
+    assert session.data["step"] == "complete"
+    assert len(uow.accounts.created) == 1
+    created = uow.accounts.created[0]
+    assert created.account_id == "058_8162511022"
+    assert created.account_number == "8162511022"
+    assert created.bank_name == "Access Bank"
+
+
+@pytest.mark.asyncio
+async def test_verify_otp_filters_out_existing_linked_accounts(monkeypatch: pytest.MonkeyPatch) -> None:
+    session = _SessionStub({"session_id": "mono-session", "phone_number": "2348162511023", "bvn": "12345678901"})
+    service = BvnVerificationService(session)
+    user = SimpleNamespace(id=uuid4())
+    existing_account = SimpleNamespace(account_id="058_8162511022")
+    uow = _UnitOfWorkStub(user=user, existing_for_user=[existing_account])
+
+    async def _verify_otp(session_id: str, otp: str) -> list[BankAccount]:
+        del session_id, otp
+        return [
+            BankAccount(
+                account_name="Existing Account",
+                account_number="8162511022",
+                account_type="savings",
+                institution=Institution(name="Access Bank", bank_code="058"),
+            ),
+            BankAccount(
+                account_name="New Account",
+                account_number="0334555167",
+                account_type="savings",
+                institution=Institution(name="GTBank", bank_code="058"),
+            ),
+        ]
+
+    monkeypatch.setattr("shared.services.onboarding.bvn_verification.UnitOfWork", lambda: uow)
+    monkeypatch.setattr("shared.services.onboarding.bvn_verification.mono_client.verify_otp", _verify_otp)
+
+    result = await service.verify_otp("link-token", "123456")
+
+    assert result["success"] is True
+    assert result["data"]["accounts"] == [{"id": "058_0334555167", "title": "GTBank - 0334555167"}]
+    assert session.data["accounts"] == [
+        {
+            "id": "058_0334555167",
+            "account_number": "0334555167",
+            "bank_name": "GTBank",
+            "bank_code": "058",
+            "account_name": "New Account",
+            "account_type": "savings",
+        }
+    ]
+
+
+@pytest.mark.asyncio
+async def test_verify_otp_returns_error_when_all_accounts_are_already_linked(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = _SessionStub({"session_id": "mono-session", "phone_number": "2348162511023", "bvn": "12345678901"})
+    service = BvnVerificationService(session)
+    user = SimpleNamespace(id=uuid4())
+    existing_account = SimpleNamespace(account_id="058_8162511022")
+    uow = _UnitOfWorkStub(user=user, existing_for_user=[existing_account])
+
+    async def _verify_otp(session_id: str, otp: str) -> list[BankAccount]:
+        del session_id, otp
+        return [
+            BankAccount(
+                account_name="Existing Account",
+                account_number="8162511022",
+                account_type="savings",
+                institution=Institution(name="Access Bank", bank_code="058"),
+            )
+        ]
+
+    monkeypatch.setattr("shared.services.onboarding.bvn_verification.UnitOfWork", lambda: uow)
+    monkeypatch.setattr("shared.services.onboarding.bvn_verification.mono_client.verify_otp", _verify_otp)
+
+    result = await service.verify_otp("link-token", "123456")
+
+    assert result == {"success": False, "error": "No new accounts available to link."}
+    assert session.data.get("accounts") is None
+    assert session.data.get("step") is None

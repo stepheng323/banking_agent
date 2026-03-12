@@ -54,22 +54,22 @@ class AccountAddService:
             bank_code = institution.get("bank_code", "")
 
         try:
-            with UnitOfWork() as uow:
+            async with UnitOfWork() as uow:
                 if not uow.users or not uow.accounts:
                     return {"success": False, "error": "Database error."}
 
-                user = uow.users.get_by_phone(phone_number)
+                user = await uow.users.get_by_phone(phone_number)
                 if not user:
                     return {
                         "success": False,
                         "error": "User not found. Please complete onboarding first.",
                     }
 
-                existing_account = uow.accounts.get_by_account_id(selected_account_id)
+                existing_account = await uow.accounts.get_by_account_id(selected_account_id)
                 if existing_account and str(existing_account.user_id) == str(user.id):
                     return {"success": False, "error": "This account is already linked."}
 
-                uow.accounts.create_account(
+                await uow.accounts.create_account(
                     CreateAccount(
                         user_id=str(user.id),
                         account_id=selected_account_id,

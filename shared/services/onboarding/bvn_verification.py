@@ -15,6 +15,26 @@ class BvnVerificationService:
     def __init__(self, session_manager: SessionManager):
         self.session = session_manager
 
+    async def _get_existing_linked_account_ids(self, phone_number: str) -> set[str]:
+        """Return linked account IDs for a user so relinking can exclude duplicates."""
+        if not phone_number:
+            return set()
+
+        try:
+            async with UnitOfWork() as uow:
+                if not uow.users or not uow.accounts:
+                    return set()
+
+                user = await uow.users.get_by_phone(phone_number)
+                if not user:
+                    return set()
+
+                accounts = await uow.accounts.get_by_user(str(user.id))
+                return {account.account_id for account in accounts if account.account_id}
+        except Exception as e:
+            logger.error("linked_account_lookup_failed", error=str(e), phone=phone_number)
+            return set()
+
     async def get_session_data(self, flow_token: str) -> dict:
         """Get session data for a flow token."""
         return await self.session.get_session(flow_token)
@@ -167,6 +187,7 @@ class BvnVerificationService:
 
         try:
             accounts: list[BankAccount] = await mono_client.verify_otp(session_id, otp)
+            existing_account_ids = await self._get_existing_linked_account_ids(session.get("phone_number", ""))
 
             accounts_data = [
                 {
@@ -178,11 +199,24 @@ class BvnVerificationService:
                     "account_type": acc.account_type,
                 }
                 for acc in accounts
+                if f"{acc.institution.bank_code}_{acc.account_number}" not in existing_account_ids
             ]
 
             accounts_for_flow = [
                 {"id": acc["id"], "title": f"{acc['bank_name']} - {acc['account_number']}"} for acc in accounts_data
             ]
+
+            if not accounts_data:
+                logger.info(
+                    "otp_verified_no_new_accounts",
+                    phone=session.get("phone_number"),
+                    total_accounts=len(accounts),
+                    filtered_accounts=len(existing_account_ids),
+                )
+                return {
+                    "success": False,
+                    "error": "No new accounts available to link.",
+                }
 
             await self.session.update_session(
                 flow_token,
