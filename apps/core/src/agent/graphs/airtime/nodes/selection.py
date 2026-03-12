@@ -2,6 +2,13 @@
 
 from typing import Any
 
+from apps.core.src.agent.graphs.__shared__.source_account_guard import (
+    build_nonready_source_account_message,
+    find_account_by_bank_name,
+    find_account_by_id,
+    find_account_by_index,
+    is_account_ready,
+)
 from apps.core.src.agent.graphs.airtime.models.types import (
     AirtimeContext,
     AirtimeGates,
@@ -38,7 +45,18 @@ class SourceSelectionStep(AirtimeStep):
         worker_context: Any,
     ) -> TransactionResult:
         locale = context.language
+        linked_accounts = context.all_accounts or context.accounts
         if data.source_account_id:
+            linked_account = find_account_by_id(linked_accounts, data.source_account_id)
+            if linked_account and not is_account_ready(linked_account):
+                accounts_list = format_accounts_list(context.accounts, locale=locale)
+                return TransactionResult(
+                    outcome=TransactionOutcome.NEEDS_INPUT,
+                    required_fields=["source_account_id"],
+                    prompt=render_message("source_account.choose_prompt", locale, {"accounts_list": accounts_list}),
+                    update_message=build_nonready_source_account_message(linked_account, locale),
+                    details={"options": _build_account_options(context.accounts)},
+                )
             logger.info("airtime_selection_preselected", source_account_id=data.source_account_id)
             return TransactionResult(outcome=TransactionOutcome.OK)
 
@@ -51,6 +69,63 @@ class SourceSelectionStep(AirtimeStep):
                 outcome=TransactionOutcome.FAILED,
                 error=render_message("source_account.no_accounts", locale),
             )
+
+        if data.source_bank_name and not data.source_account_id:
+            acc = find_account_by_bank_name(accounts, data.source_bank_name)
+            if acc:
+                return TransactionResult(
+                    outcome=TransactionOutcome.OK,
+                    patch={
+                        "source_account_id": str(acc.get("id")),
+                        "source_bank_name": acc.get("bank_name"),
+                        "source_account_name": acc.get("account_name"),
+                        "source_account_number": acc.get("account_number"),
+                    },
+                )
+            linked_account = find_account_by_bank_name(linked_accounts, data.source_bank_name)
+            update_msg = (
+                build_nonready_source_account_message(linked_account, locale)
+                if linked_account and not is_account_ready(linked_account)
+                else render_message(
+                    "source_account.bank_not_found",
+                    locale,
+                    {"bank_name": data.source_bank_name or ""},
+                )
+            )
+            accounts_list = format_accounts_list(accounts, locale=locale)
+            return TransactionResult(
+                outcome=TransactionOutcome.NEEDS_INPUT,
+                required_fields=["source_account_id"],
+                prompt=render_message("source_account.choose_prompt", locale, {"accounts_list": accounts_list}),
+                update_message=update_msg,
+                patch={"source_bank_name": data.source_bank_name},
+                details={"options": _build_account_options(accounts)},
+            )
+
+        if data.source_account_index is not None:
+            acc = find_account_by_index(accounts, data.source_account_index)
+            if acc:
+                return TransactionResult(
+                    outcome=TransactionOutcome.OK,
+                    patch={
+                        "source_account_id": str(acc.get("id")),
+                        "source_bank_name": acc.get("bank_name"),
+                        "source_account_name": acc.get("account_name"),
+                        "source_account_number": acc.get("account_number"),
+                        "source_account_index": None,  # clear index
+                    },
+                )
+            linked_account = find_account_by_index(linked_accounts, data.source_account_index)
+            if linked_account and not is_account_ready(linked_account):
+                accounts_list = format_accounts_list(accounts, locale=locale)
+                return TransactionResult(
+                    outcome=TransactionOutcome.NEEDS_INPUT,
+                    required_fields=["source_account_id"],
+                    prompt=render_message("source_account.choose_prompt", locale, {"accounts_list": accounts_list}),
+                    update_message=build_nonready_source_account_message(linked_account, locale),
+                    patch={"source_account_index": data.source_account_index},
+                    details={"options": _build_account_options(accounts)},
+                )
 
         if len(accounts) == 1:
             acc = accounts[0]
@@ -77,58 +152,6 @@ class SourceSelectionStep(AirtimeStep):
                     "source_account_number": default.get("account_number"),
                 },
             )
-
-        if data.source_bank_name and not data.source_account_id:
-            # Bank name matching
-            target_bank = data.source_bank_name.lower()
-            candidates = [
-                a
-                for a in accounts
-                if target_bank in (a.get("bank_name") or "").lower()
-                or (a.get("alias") and target_bank in a.get("alias").lower())
-            ]
-            if candidates:
-                acc = candidates[0]
-                return TransactionResult(
-                    outcome=TransactionOutcome.OK,
-                    patch={
-                        "source_account_id": str(acc.get("id")),
-                        "source_bank_name": acc.get("bank_name"),
-                        "source_account_name": acc.get("account_name"),
-                        "source_account_number": acc.get("account_number"),
-                    },
-                )
-            else:
-                # Feedback: requested bank not found
-                update_msg = render_message(
-                    "source_account.bank_not_found",
-                    locale,
-                    {"bank_name": data.source_bank_name or ""},
-                )
-                accounts_list = format_accounts_list(accounts, locale=locale)
-                return TransactionResult(
-                    outcome=TransactionOutcome.NEEDS_INPUT,
-                    required_fields=["source_account_id"],
-                    prompt=render_message("source_account.choose_prompt", locale, {"accounts_list": accounts_list}),
-                    update_message=update_msg,
-                    patch={"source_bank_name": data.source_bank_name},
-                    details={"options": _build_account_options(accounts)},
-                )
-
-        if data.source_account_index is not None:
-            index = data.source_account_index - 1
-            if 0 <= index < len(accounts):
-                acc = accounts[index]
-                return TransactionResult(
-                    outcome=TransactionOutcome.OK,
-                    patch={
-                        "source_account_id": str(acc.get("id")),
-                        "source_bank_name": acc.get("bank_name"),
-                        "source_account_name": acc.get("account_name"),
-                        "source_account_number": acc.get("account_number"),
-                        "source_account_index": None,  # clear index
-                    },
-                )
 
         accounts_list = format_accounts_list(accounts, locale=locale)
         return TransactionResult(

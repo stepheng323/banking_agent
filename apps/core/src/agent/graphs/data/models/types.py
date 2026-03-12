@@ -37,6 +37,7 @@ class DataContext(BaseModel):
     language: str = "en"
     beneficiaries: list[dict[str, Any]] = Field(default_factory=list)
     accounts: list[dict[str, Any]] = Field(default_factory=list)
+    all_accounts: list[dict[str, Any]] = Field(default_factory=list)
     user_id: str | None = None
 
 

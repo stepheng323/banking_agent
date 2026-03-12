@@ -2,6 +2,13 @@
 
 from typing import Any
 
+from apps.core.src.agent.graphs.__shared__.source_account_guard import (
+    build_nonready_source_account_message,
+    find_account_by_bank_name,
+    find_account_by_id,
+    find_account_by_index,
+    is_account_ready,
+)
 from apps.core.src.agent.graphs.transfer.models.types import (
     TransferContext,
     TransferGates,
@@ -53,6 +60,7 @@ async def select_source_account(
 ) -> TransactionResult:
     """Select source account if not provided."""
     locale = ctx.language
+    linked_accounts = ctx.all_accounts or ctx.accounts
     if payload.source_account_id:
         if not payload.source_account_name:
             acc = next((a for a in ctx.accounts if str(a.get("id")) == payload.source_account_id), None)
@@ -65,6 +73,19 @@ async def select_source_account(
                         "funding_plan": None,
                     },
                 )
+            linked_account = find_account_by_id(linked_accounts, payload.source_account_id)
+            if linked_account and not is_account_ready(linked_account):
+                return TransactionResult(
+                    outcome=TransactionOutcome.NEEDS_INPUT,
+                    required_fields=["source_account_id"],
+                    prompt=render_message(
+                        "source_account.choose_prompt",
+                        locale,
+                        {"accounts_list": format_accounts_list(ctx.accounts, locale=locale)},
+                    ),
+                    update_message=build_nonready_source_account_message(linked_account, locale),
+                    details={"options": _build_account_options(ctx.accounts)},
+                )
         return TransactionResult(outcome=TransactionOutcome.OK)
 
     accounts = ctx.accounts
@@ -72,6 +93,68 @@ async def select_source_account(
         return TransactionResult(
             outcome=TransactionOutcome.FAILED,
             error=render_message("source_account.no_accounts", locale),
+        )
+
+    if payload.source_account_index is not None and not payload.source_account_id:
+        acc = find_account_by_index(accounts, payload.source_account_index)
+        if acc:
+            return TransactionResult(
+                outcome=TransactionOutcome.OK,
+                patch={
+                    "source_account_id": str(acc.get("id")),
+                    "source_bank_name": acc.get("bank_name"),
+                    "source_account_name": acc.get("account_name"),
+                    "source_account_number": acc.get("account_number"),
+                    "source_affinity_mode": _resolve_affinity_mode(payload, explicit_resolution=True),
+                    "source_account_index": None,
+                    "funding_plan": None,
+                },
+            )
+        linked_account = find_account_by_index(linked_accounts, payload.source_account_index)
+        if linked_account and not is_account_ready(linked_account):
+            update_msg = build_nonready_source_account_message(linked_account, locale)
+            accounts_list = format_accounts_list(accounts, locale=locale)
+            return TransactionResult(
+                outcome=TransactionOutcome.NEEDS_INPUT,
+                required_fields=["source_account_id"],
+                prompt=render_message("source_account.choose_prompt", locale, {"accounts_list": accounts_list}),
+                update_message=update_msg,
+                patch={"source_account_index": payload.source_account_index},
+                details={"options": _build_account_options(accounts)},
+            )
+
+    if payload.source_bank_name and not payload.source_account_id:
+        acc = find_account_by_bank_name(accounts, payload.source_bank_name)
+        if acc:
+            return TransactionResult(
+                outcome=TransactionOutcome.OK,
+                patch={
+                    "source_account_id": str(acc.get("id")),
+                    "source_bank_name": acc.get("bank_name"),
+                    "source_account_name": acc.get("account_name"),
+                    "source_account_number": acc.get("account_number"),
+                    "source_affinity_mode": _resolve_affinity_mode(payload, explicit_resolution=True),
+                    "funding_plan": None,
+                },
+            )
+        linked_account = find_account_by_bank_name(linked_accounts, payload.source_bank_name)
+        update_msg = (
+            build_nonready_source_account_message(linked_account, locale)
+            if linked_account and not is_account_ready(linked_account)
+            else render_message(
+                "source_account.bank_not_found",
+                locale,
+                {"bank_name": payload.source_bank_name or ""},
+            )
+        )
+        accounts_list = format_accounts_list(accounts, locale=locale)
+        return TransactionResult(
+            outcome=TransactionOutcome.NEEDS_INPUT,
+            required_fields=["source_account_id"],
+            prompt=render_message("source_account.choose_prompt", locale, {"accounts_list": accounts_list}),
+            update_message=update_msg,
+            patch={"source_bank_name": payload.source_bank_name},
+            details={"options": _build_account_options(accounts)},
         )
 
     if len(accounts) == 1:
@@ -101,61 +184,6 @@ async def select_source_account(
                 "funding_plan": None,
             },
         )
-
-    if payload.source_account_index is not None and not payload.source_account_id:
-        index = payload.source_account_index - 1
-        if 0 <= index < len(accounts):
-            acc = accounts[index]
-            return TransactionResult(
-                outcome=TransactionOutcome.OK,
-                patch={
-                    "source_account_id": str(acc.get("id")),
-                    "source_bank_name": acc.get("bank_name"),
-                    "source_account_name": acc.get("account_name"),
-                    "source_account_number": acc.get("account_number"),
-                    "source_affinity_mode": _resolve_affinity_mode(payload, explicit_resolution=True),
-                    "source_account_index": None,
-                    "funding_plan": None,
-                },
-            )
-
-    if payload.source_bank_name and not payload.source_account_id:
-        # Bank name matching
-        target_bank = payload.source_bank_name.lower()
-        candidates = [
-            a
-            for a in accounts
-            if target_bank in (a.get("bank_name") or "").lower()
-            or (a.get("alias") and target_bank in a.get("alias").lower())
-        ]
-        if candidates:
-            acc = candidates[0]
-            return TransactionResult(
-                outcome=TransactionOutcome.OK,
-                patch={
-                    "source_account_id": str(acc.get("id")),
-                    "source_bank_name": acc.get("bank_name"),
-                    "source_account_name": acc.get("account_name"),
-                    "source_account_number": acc.get("account_number"),
-                    "source_affinity_mode": _resolve_affinity_mode(payload, explicit_resolution=True),
-                    "funding_plan": None,
-                },
-            )
-        else:
-            update_msg = render_message(
-                "source_account.bank_not_found",
-                locale,
-                {"bank_name": payload.source_bank_name or ""},
-            )
-            accounts_list = format_accounts_list(accounts, locale=locale)
-            return TransactionResult(
-                outcome=TransactionOutcome.NEEDS_INPUT,
-                required_fields=["source_account_id"],
-                prompt=render_message("source_account.choose_prompt", locale, {"accounts_list": accounts_list}),
-                update_message=update_msg,
-                patch={"source_bank_name": payload.source_bank_name},
-                details={"options": _build_account_options(accounts)},
-            )
 
     if len(accounts) == 2 and payload.recipient_account:
         recipient_acc_num = payload.recipient_account

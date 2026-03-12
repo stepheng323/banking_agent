@@ -17,6 +17,8 @@ from shared.formatters.funding import (
     format_insufficient_funds,
 )
 from shared.i18n import render_message
+from shared.services.onboarding.mandate_messages import build_pending_mandate_message
+from shared.utils.bank_aliases import normalize_bank_name
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -145,6 +147,7 @@ class FundingPlanner:
             if cleaned_explicit_split or use_dual_accounts or normalized_requested_sources:
                 return await self._plan_explicit_pooling(
                     eligible=eligible,
+                    all_accounts=accounts,
                     transfer_amount=transfer_amount,
                     requested_source_banks=normalized_requested_sources,
                     explicit_split=cleaned_explicit_split,
@@ -154,7 +157,13 @@ class FundingPlanner:
 
             # Case 2: User specified a source account
             if preferred_account_id:
-                return await self._plan_with_preferred_account(eligible, transfer_amount, preferred_account_id, locale)
+                return await self._plan_with_preferred_account(
+                    eligible,
+                    accounts,
+                    transfer_amount,
+                    preferred_account_id,
+                    locale,
+                )
 
             # Case 3: Normal flow - try default first, then add if needed
             return await self._plan_with_lazy_fetching(eligible, transfer_amount, locale)
@@ -165,6 +174,7 @@ class FundingPlanner:
         self,
         *,
         eligible: list[Any],
+        all_accounts: list[Any],
         transfer_amount: float,
         requested_source_banks: list[str],
         explicit_split: dict[str, float],
@@ -177,6 +187,18 @@ class FundingPlanner:
                 account = self._match_account_by_bank_name(eligible, bank_name)
                 if account and all(str(existing.id) != str(account.id) for existing in requested_accounts):
                     requested_accounts.append(account)
+                    continue
+
+                ineligible = self._match_ineligible_requested_account(all_accounts, eligible, bank_name)
+                if ineligible is not None:
+                    return FundingPlan(
+                        transfer_amount=transfer_amount,
+                        total_funded=0,
+                        is_sufficient=False,
+                        trigger_mode="explicit",
+                        requested_sources=requested_source_banks,
+                        error=self._build_explicit_nonready_account_message(ineligible, locale),
+                    )
 
             if not requested_accounts:
                 return FundingPlan(
@@ -196,6 +218,7 @@ class FundingPlanner:
         if explicit_split:
             return await self._plan_with_explicit_split(
                 candidates=candidates,
+                all_accounts=all_accounts,
                 transfer_amount=transfer_amount,
                 explicit_split=explicit_split,
                 locale=locale,
@@ -275,6 +298,7 @@ class FundingPlanner:
         self,
         *,
         candidates: list[Any],
+        all_accounts: list[Any],
         transfer_amount: float,
         explicit_split: dict[str, float],
         locale: str,
@@ -316,6 +340,17 @@ class FundingPlanner:
         for requested_bank, requested_amount in explicit_split.items():
             account = self._match_account_by_bank_name(candidates, requested_bank)
             if account is None:
+                ineligible = self._match_ineligible_requested_account(all_accounts, candidates, requested_bank)
+                if ineligible is not None:
+                    return FundingPlan(
+                        transfer_amount=transfer_amount,
+                        total_funded=total_funded,
+                        is_sufficient=False,
+                        trigger_mode="explicit",
+                        requested_sources=requested_source_banks,
+                        explicit_split_applied=True,
+                        error=self._build_explicit_nonready_account_message(ineligible, locale),
+                    )
                 return FundingPlan(
                     transfer_amount=transfer_amount,
                     total_funded=total_funded,
@@ -382,6 +417,7 @@ class FundingPlanner:
     async def _plan_with_preferred_account(
         self,
         eligible: list[Any],
+        all_accounts: list[Any],
         transfer_amount: float,
         preferred_account_id: UUID,
         locale: str,
@@ -390,6 +426,15 @@ class FundingPlanner:
         account = next((a for a in eligible if a.id == preferred_account_id), None)
 
         if not account:
+            pending_match = next((a for a in all_accounts if getattr(a, "id", None) == preferred_account_id), None)
+            if pending_match is not None and not self._is_eligible(pending_match):
+                return FundingPlan(
+                    transfer_amount=transfer_amount,
+                    total_funded=0,
+                    is_sufficient=False,
+                    trigger_mode="explicit",
+                    error=self._build_explicit_nonready_account_message(pending_match, locale),
+                )
             return FundingPlan(
                 transfer_amount=transfer_amount,
                 total_funded=0,
@@ -575,6 +620,36 @@ class FundingPlanner:
     def _is_eligible(self, account: Any) -> bool:
         """Check if account is eligible for debiting."""
         return account.mandate_status == "ready" and account.mandate_id is not None
+
+    def _match_ineligible_requested_account(self, all_accounts: list[Any], eligible: list[Any], bank_name: str) -> Any | None:
+        eligible_ids = {str(getattr(account, "id", "")) for account in eligible}
+        normalized_request = normalize_bank_name(bank_name)
+        for account in all_accounts:
+            if str(getattr(account, "id", "")) in eligible_ids:
+                continue
+            account_bank = str(getattr(account, "bank_name", "") or "")
+            normalized_bank = normalize_bank_name(account_bank)
+            if (
+                normalized_request
+                and (
+                    normalized_request in normalized_bank
+                    or normalized_bank in normalized_request
+                    or normalized_request.replace(" ", "") in normalized_bank.replace(" ", "")
+                )
+            ):
+                return account
+        return None
+
+    def _build_explicit_nonready_account_message(self, account: Any, locale: str) -> str:
+        account_dict = {
+            "bank_name": getattr(account, "bank_name", ""),
+            "account_number": getattr(account, "account_number", ""),
+            "mandate_status": getattr(account, "mandate_status", ""),
+            "extra_data": getattr(account, "extra_data", {}) or {},
+        }
+        bank_name = str(account_dict.get("bank_name") or render_message("mandate.bank_fallback", locale))
+        pending_message = build_pending_mandate_message([account_dict], locale)
+        return f"Your {bank_name} account is linked, but it is not ready for payments yet.\n\n{pending_message}"
 
     def _build_pending_mandate_message(self, account: Any, locale: str) -> str:
         """Build contextual message for accounts with pending mandates.

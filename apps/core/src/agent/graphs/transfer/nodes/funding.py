@@ -71,7 +71,8 @@ async def plan_transaction_funding(
 
     planner = FundingPlanner(direct_debit_provider=dd_provider)
 
-    adapted_accounts = [AccountAdapter(a) for a in ctx.accounts]
+    funding_accounts = ctx.all_accounts or ctx.accounts
+    adapted_accounts = [AccountAdapter(a) for a in funding_accounts]
 
     amount = payload.amount or 0.0
     preferred_id = None

@@ -67,6 +67,7 @@ class AirtimeWorker:
             channel=context.get("channel", "whatsapp"),
             beneficiaries=context.get("beneficiaries", []),
             accounts=context.get("accounts", []),
+            all_accounts=context.get("all_accounts", []),
         )
 
     @staticmethod

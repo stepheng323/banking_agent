@@ -93,6 +93,7 @@ class TransferContext(BaseModel):
     language: str = "en"
     beneficiaries: list[dict[str, Any]] = Field(default_factory=list)
     accounts: list[dict[str, Any]] = Field(default_factory=list)
+    all_accounts: list[dict[str, Any]] = Field(default_factory=list)
     recent_beneficiary_context: bool = False
     channel: str = "whatsapp"
     channel_identity: str | None = None

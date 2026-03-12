@@ -212,6 +212,30 @@ class TestFundingPlannerEdgeCases:
 class TestFundingPlannerExplicitPooling:
     """Tests for explicit pooling and split behavior."""
 
+
+    @pytest.mark.asyncio
+    async def test_requested_pending_source_account_returns_pending_message(self, sample_accounts):
+        provider = MockDirectDebitProvider({"acc1": 50000.0, "acc2": 30000.0, "acc3": 20000.0})
+        planner = FundingPlanner(provider)
+
+        pending_first = MockAccount("acc4", "1111222233", "First Bank", mandate_id=None, mandate_status="pending")
+        pending_first.extra_data = {
+            "transfer_destinations": [{"bank_name": "NIBSS Bank", "account_number": "0001112223"}]
+        }
+
+        plan = await planner.plan_funding(
+            accounts=[pending_first, *sample_accounts],
+            transfer_amount=10000.0,
+            requested_source_banks=["First Bank"],
+            locale="en",
+        )
+
+        assert not plan.is_sufficient
+        assert plan.trigger_mode == "explicit"
+        assert plan.error is not None
+        assert "First Bank account is linked" in plan.error
+        assert "not ready for payments yet" in plan.error
+
     @pytest.mark.asyncio
     async def test_use_dual_accounts_respected_even_if_primary_can_cover(self, sample_accounts):
         provider = MockDirectDebitProvider({"acc1": 200000.0, "acc2": 10000.0, "acc3": 1000.0})

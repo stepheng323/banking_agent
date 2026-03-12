@@ -1,5 +1,12 @@
 from typing import Any
 
+from apps.core.src.agent.graphs.__shared__.source_account_guard import (
+    build_nonready_source_account_message,
+    find_account_by_bank_name,
+    find_account_by_id,
+    find_account_by_index,
+    is_account_ready,
+)
 from apps.core.src.agent.graphs.data.models.types import DataContext, DataGates, DataPayload
 from apps.core.src.agent.graphs.data.pipeline.base import PipelineStep
 from apps.core.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
@@ -28,6 +35,7 @@ class SourceSelectionStep(PipelineStep):
         self, payload: DataPayload, context: DataContext, gates: DataGates, worker_context: Any
     ) -> TransactionResult | None:
         locale = context.language
+        linked_accounts = context.all_accounts or context.accounts
         if payload.source_account_id:
             if not payload.source_account_name:
                 acc = next((a for a in context.accounts if str(a.get("id")) == payload.source_account_id), None)
@@ -35,6 +43,17 @@ class SourceSelectionStep(PipelineStep):
                     payload.source_account_name = acc.get("account_name")
                     payload.source_bank_name = acc.get("bank_name")
                     payload.source_account_number = acc.get("account_number")
+                else:
+                    linked_account = find_account_by_id(linked_accounts, payload.source_account_id)
+                    if linked_account and not is_account_ready(linked_account):
+                        accounts_list = format_accounts_list(context.accounts, locale=locale)
+                        return TransactionResult(
+                            outcome=TransactionOutcome.NEEDS_INPUT,
+                            required_fields=["source_account_id"],
+                            prompt=render_message("source_account.choose_prompt", locale, {"accounts_list": accounts_list}),
+                            update_message=build_nonready_source_account_message(linked_account, locale),
+                            details={"options": _build_account_options(context.accounts)},
+                        )
             return None
 
         accounts = context.accounts
@@ -43,6 +62,56 @@ class SourceSelectionStep(PipelineStep):
                 outcome=TransactionOutcome.FAILED,
                 error=render_message("source_account.no_accounts", locale),
             )
+
+        if payload.source_account_index is not None:
+            acc = find_account_by_index(accounts, payload.source_account_index)
+            if acc:
+                payload.source_account_id = str(acc.get("id"))
+                payload.source_bank_name = acc.get("bank_name")
+                payload.source_account_name = acc.get("account_name")
+                payload.source_account_number = acc.get("account_number")
+                payload.source_account_index = None
+                return None
+            linked_account = find_account_by_index(linked_accounts, payload.source_account_index)
+            if linked_account and not is_account_ready(linked_account):
+                accounts_list = format_accounts_list(accounts, locale=locale)
+                return TransactionResult(
+                    outcome=TransactionOutcome.NEEDS_INPUT,
+                    required_fields=["source_account_id"],
+                    prompt=render_message("source_account.choose_prompt", locale, {"accounts_list": accounts_list}),
+                    update_message=build_nonready_source_account_message(linked_account, locale),
+                    patch={"source_account_index": payload.source_account_index},
+                    details={"options": _build_account_options(accounts)},
+                )
+
+        if payload.source_bank_name:
+            acc = find_account_by_bank_name(accounts, payload.source_bank_name)
+            if acc:
+                payload.source_account_id = str(acc.get("id"))
+                payload.source_bank_name = acc.get("bank_name")
+                payload.source_account_name = acc.get("account_name")
+                payload.source_account_number = acc.get("account_number")
+                return None
+            else:
+                linked_account = find_account_by_bank_name(linked_accounts, payload.source_bank_name)
+                update_msg = (
+                    build_nonready_source_account_message(linked_account, locale)
+                    if linked_account and not is_account_ready(linked_account)
+                    else render_message(
+                        "source_account.bank_not_found",
+                        locale,
+                        {"bank_name": payload.source_bank_name or ""},
+                    )
+                )
+                accounts_list = format_accounts_list(accounts, locale=locale)
+                return TransactionResult(
+                    outcome=TransactionOutcome.NEEDS_INPUT,
+                    required_fields=["source_account_id"],
+                    prompt=render_message("source_account.choose_prompt", locale, {"accounts_list": accounts_list}),
+                    update_message=update_msg,
+                    patch={"source_bank_name": payload.source_bank_name},
+                    details={"options": _build_account_options(accounts)},
+                )
 
         if len(accounts) == 1:
             acc = accounts[0]
@@ -59,49 +128,6 @@ class SourceSelectionStep(PipelineStep):
             payload.source_account_name = default.get("account_name")
             payload.source_account_number = default.get("account_number")
             return None
-
-        if payload.source_account_index is not None:
-            index = payload.source_account_index - 1
-            if 0 <= index < len(accounts):
-                acc = accounts[index]
-                payload.source_account_id = str(acc.get("id"))
-                payload.source_bank_name = acc.get("bank_name")
-                payload.source_account_name = acc.get("account_name")
-                payload.source_account_number = acc.get("account_number")
-                payload.source_account_index = None
-                return None
-
-        if payload.source_bank_name:
-            target_bank = payload.source_bank_name.lower()
-            candidates = [
-                a
-                for a in accounts
-                if target_bank in (a.get("bank_name") or "").lower()
-                or (a.get("alias") and target_bank in a.get("alias").lower())
-            ]
-            if candidates:
-                acc = candidates[0]
-                payload.source_account_id = str(acc.get("id"))
-                payload.source_bank_name = acc.get("bank_name")
-                payload.source_account_name = acc.get("account_name")
-                payload.source_account_number = acc.get("account_number")
-                return None
-            else:
-                # Feedback: requested bank not found
-                update_msg = render_message(
-                    "source_account.bank_not_found",
-                    locale,
-                    {"bank_name": payload.source_bank_name or ""},
-                )
-                accounts_list = format_accounts_list(accounts, locale=locale)
-                return TransactionResult(
-                    outcome=TransactionOutcome.NEEDS_INPUT,
-                    required_fields=["source_account_id"],
-                    prompt=render_message("source_account.choose_prompt", locale, {"accounts_list": accounts_list}),
-                    update_message=update_msg,
-                    patch={"source_bank_name": payload.source_bank_name},
-                    details={"options": _build_account_options(accounts)},
-                )
 
         accounts_list = format_accounts_list(accounts, locale=locale)
         return TransactionResult(

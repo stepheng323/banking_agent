@@ -66,6 +66,7 @@ class AirtimeContext(BaseModel):
     channel: str = "whatsapp"
     beneficiaries: list[dict[str, Any]] = Field(default_factory=list)
     accounts: list[dict[str, Any]] = Field(default_factory=list)
+    all_accounts: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class AirtimeRecipient(TypedDict):

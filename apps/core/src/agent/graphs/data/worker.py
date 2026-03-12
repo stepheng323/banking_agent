@@ -70,6 +70,7 @@ class DataWorker:
             language=LocaleManager.normalize(context.get("language")).value,
             beneficiaries=context.get("beneficiaries", []),
             accounts=context.get("accounts", []),
+            all_accounts=context.get("all_accounts", []),
             user_id=context.get("user_id"),
         )
 
