@@ -162,10 +162,10 @@ PLANNER_RUNTIME_QUERY_EXAMPLES = """## TARGETED EXAMPLES (QUERY)
 - Active Query Session + "send again"/"resend" -> send_money."""
 
 PLANNER_RUNTIME_CONTEXT_EXAMPLES = """## TARGETED EXAMPLES (CONTEXT)
-- Asked to save beneficiary + "Hi" -> conversational.
-- Recent Chat account_count + "List them" -> context_fastpath_subtype=linked_accounts_summary.
-- Recent Chat beneficiary_count + "List them" -> context_fastpath_subtype=beneficiary_list.
-- Active transfer flow + "Where did we stop?" -> context_fastpath_subtype=flow_recap."""
+- Fallback only: router handles short grounded read-only follow-ups first.
+- Save-beneficiary prompt + "Hi" -> conversational.
+- Recent Chat account_count + "List them" -> linked_accounts_summary.
+- Recent Chat beneficiary_count + "List them" -> beneficiary_list."""
 
 PLANNER_RUNTIME_PROMPT_SUFFIX = "Return schema JSON"
 

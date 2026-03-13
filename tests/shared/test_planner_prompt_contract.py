@@ -35,7 +35,7 @@ def test_beneficiary_reactive_save_requires_explicit_intent() -> None:
     )
     assert "context" in bundles
     assert "R12_BENEFICIARY_HANDLING" in runtime_prompt
-    assert 'Asked to save beneficiary + "Hi" -> conversational' in runtime_prompt
+    assert 'Save-beneficiary prompt + "Hi" -> conversational' in runtime_prompt
 
 
 def test_context_read_fastpath_rules_present() -> None:
@@ -96,9 +96,10 @@ def test_follow_up_referent_binding_rules_present() -> None:
     assert "query" in bundles
     assert "R14_REFERENCE_BINDING" in runtime_prompt
     assert "R14:pronoun|index->selector_ref" in runtime_prompt
-    assert 'Recent Chat account_count + "List them"' in runtime_prompt
-    assert 'Recent Chat beneficiary_count + "List them"' in runtime_prompt
-    assert 'Active transfer flow + "Where did we stop?" -> context_fastpath_subtype=flow_recap.' in runtime_prompt
+    assert "Fallback only: router handles short grounded read-only follow-ups first." in runtime_prompt
+    assert 'Recent Chat account_count + "List them" -> linked_accounts_summary.' in runtime_prompt
+    assert 'Recent Chat beneficiary_count + "List them" -> beneficiary_list.' in runtime_prompt
+    assert 'Active transfer flow + "Where did we stop?" -> flow_recap.' not in runtime_prompt
 
 
 def test_transfer_pronoun_reference_continuity_rules_present() -> None:
@@ -172,10 +173,13 @@ def test_turn_router_expected_executor_coverage_rules_present() -> None:
     assert "include every mentioned executor" in TURN_ROUTER_SYSTEM_PROMPT
     assert '["transfer","airtime"]' in TURN_ROUTER_SYSTEM_PROMPT
     assert '"Can I use First Bank now?" -> direct_context_answer' in TURN_ROUTER_SYSTEM_PROMPT
+    assert '"Is First Bank ready?" -> direct_context_answer' in TURN_ROUTER_SYSTEM_PROMPT
+    assert '"Which account is default now?" -> direct_context_answer' in TURN_ROUTER_SYSTEM_PROMPT
     assert '"Can I use fisr bank now?" -> direct_context_answer' in TURN_ROUTER_SYSTEM_PROMPT
     assert '"Do I still have Mum saved?" -> direct_context_answer' in TURN_ROUTER_SYSTEM_PROMPT
     assert '"Any more debits after that?" -> direct_context_answer' in TURN_ROUTER_SYSTEM_PROMPT
     assert '"Where did we stop?" -> direct_context_answer' in TURN_ROUTER_SYSTEM_PROMPT
+    assert '"What are we doing again?" -> direct_context_answer' in TURN_ROUTER_SYSTEM_PROMPT
 
 
 def test_runtime_planner_prompt_is_compact_for_generic_turns() -> None:
