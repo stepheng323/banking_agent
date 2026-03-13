@@ -7,6 +7,7 @@ from langchain_core.runnables import RunnableConfig
 
 from apps.core.src.agent.orchestrator.models.state import OrchestratorState
 from apps.core.src.agent.orchestrator.nodes.planner_quoted_replay import (
+    _build_deterministic_quoted_replay_updates,
     _build_quoted_replay_context,
     _build_quoted_replay_context_with_payload,
     _build_quoted_replay_execution_updates,
@@ -46,10 +47,22 @@ async def _handle_quoted_replay_shortcut(
     locale_updates: dict[str, Any],
     quoted_replay_min_confidence: float,
 ) -> dict[str, Any] | None:
-    if not (state.has_quote and state.quoted_message_id and hasattr(task_planner, "interpret_quoted_replay")):
+    if not (state.has_quote and state.quoted_message_id):
         return None
 
     quoted_payload = await _load_quoted_actionable_payload(state, config)
+    deterministic_updates = _build_deterministic_quoted_replay_updates(
+        state=state,
+        text=text,
+        quoted_payload=quoted_payload,
+        locale_updates=locale_updates,
+    )
+    if deterministic_updates is not None:
+        return deterministic_updates
+
+    if not hasattr(task_planner, "interpret_quoted_replay"):
+        return None
+
     if not _should_attempt_quoted_replay(text, quoted_payload):
         logger.info("quoted_replay_preconditions_not_met", has_payload=bool(quoted_payload))
         return None
@@ -69,6 +82,7 @@ async def _handle_quoted_replay_shortcut(
             return {
                 "final_response": _quoted_replay_clarify_response(interpretation, current_locale),
                 "normalized_instruction": text,
+                "semantic_path_shape": "quoted_router",
                 **locale_updates,
             }
         if interpretation.decision == "execute":
@@ -82,6 +96,7 @@ async def _handle_quoted_replay_shortcut(
                 return {
                     "final_response": _quoted_replay_clarify_response(interpretation, current_locale),
                     "normalized_instruction": text,
+                    "semantic_path_shape": "quoted_router",
                     **locale_updates,
                 }
             if quoted_payload is None:
@@ -89,6 +104,7 @@ async def _handle_quoted_replay_shortcut(
                 return {
                     "final_response": render_message("conversational.clarify", current_locale),
                     "normalized_instruction": text,
+                    "semantic_path_shape": "quoted_router",
                     **locale_updates,
                 }
             replay_updates = _build_quoted_replay_execution_updates(
@@ -107,6 +123,7 @@ async def _handle_quoted_replay_shortcut(
             return {
                 "final_response": _quoted_replay_clarify_response(interpretation, current_locale),
                 "normalized_instruction": text,
+                "semantic_path_shape": "quoted_router",
                 **locale_updates,
             }
         logger.info("quoted_replay_shortcut_miss", decision=interpretation.decision, reason=interpretation.reason)

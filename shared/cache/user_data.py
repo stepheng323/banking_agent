@@ -26,6 +26,18 @@ class UserDataCache:
     def __init__(self, redis_client: Redis | None = None):
         self.redis = redis_client or RedisClient.get_client()
 
+    @staticmethod
+    def _build_beneficiary_alias_map(beneficiaries: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+        alias_map: dict[str, dict[str, Any]] = {}
+        for beneficiary in beneficiaries:
+            name = (beneficiary.get("name") or "").lower().strip()
+            alias = (beneficiary.get("alias") or "").lower().strip()
+            if name:
+                alias_map[name] = beneficiary
+            if alias:
+                alias_map[alias] = beneficiary
+        return alias_map
+
     async def get_user_profile(self, phone_number: str) -> dict[str, Any] | None:
         """Get cached user profile."""
         key = f"cache:user:profile:{phone_number}"
@@ -78,17 +90,54 @@ class UserDataCache:
         key = f"cache:user:beneficiaries:{phone_number}"
         await self.redis.set(key, json.dumps(beneficiaries), ex=self.BENEFICIARIES_TTL)
 
-        alias_map: dict[str, dict[str, Any]] = {}
-        for b in beneficiaries:
-            name = (b.get("name") or "").lower().strip()
-            alias = (b.get("alias") or "").lower().strip()
-            if name:
-                alias_map[name] = b
-            if alias:
-                alias_map[alias] = b
+        alias_map = self._build_beneficiary_alias_map(beneficiaries)
         if alias_map:
             alias_key = f"cache:user:beneficiary_aliases:{phone_number}"
             await self.redis.set(alias_key, json.dumps(alias_map), ex=self.BENEFICIARIES_TTL)
+
+    async def set_user_data_snapshot(
+        self,
+        phone_number: str,
+        *,
+        profile: dict[str, Any] | None = None,
+        cache_profile: bool = False,
+        accounts: list[dict[str, Any]] | None = None,
+        cache_accounts: bool = False,
+        beneficiaries: list[dict[str, Any]] | None = None,
+        cache_beneficiaries: bool = False,
+    ) -> None:
+        """Write multiple user-data cache keys in one Redis pipeline."""
+        pipe = self.redis.pipeline()
+
+        if cache_profile:
+            pipe.set(
+                f"cache:user:profile:{phone_number}",
+                json.dumps(profile),
+                ex=self.PROFILE_TTL,
+            )
+
+        if cache_accounts:
+            pipe.set(
+                f"cache:user:accounts:{phone_number}",
+                json.dumps(accounts),
+                ex=self.ACCOUNTS_TTL,
+            )
+
+        if cache_beneficiaries:
+            beneficiaries_value = beneficiaries or []
+            pipe.set(
+                f"cache:user:beneficiaries:{phone_number}",
+                json.dumps(beneficiaries_value),
+                ex=self.BENEFICIARIES_TTL,
+            )
+            alias_key = f"cache:user:beneficiary_aliases:{phone_number}"
+            alias_map = self._build_beneficiary_alias_map(beneficiaries_value)
+            if alias_map:
+                pipe.set(alias_key, json.dumps(alias_map), ex=self.BENEFICIARIES_TTL)
+            else:
+                pipe.delete(alias_key)
+
+        await pipe.execute()
 
     async def get_beneficiary_by_alias(self, phone_number: str, alias: str) -> dict[str, Any] | None:
         """

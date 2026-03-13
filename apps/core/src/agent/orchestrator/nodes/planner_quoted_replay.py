@@ -1,5 +1,6 @@
 """Quoted replay planner helper functions."""
 
+import re
 from typing import Any, cast
 
 from langchain_core.runnables import RunnableConfig
@@ -7,9 +8,9 @@ from langchain_core.runnables import RunnableConfig
 from apps.core.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
 from apps.core.src.agent.orchestrator.models.state import OrchestratorState
 from apps.core.src.agent.orchestrator.nodes.planner_context import (
-    _build_user_state_summary,
-    _clip_text,
     _compact_payload_for_prompt,
+    build_quoted_replay_context_from_summary,
+    get_or_build_turn_context_summary,
 )
 from shared.i18n import render_message
 from shared.types.quoted_replay import QuotedReplayInterpretation
@@ -18,31 +19,147 @@ from shared.utils.logging import get_logger
 logger = get_logger(__name__)
 
 QUOTED_REPLAY_MIN_CONFIDENCE = 0.75
+_QUOTED_REPLAY_DIRECT_PHRASES = {
+    "again",
+    "send again",
+    "repeat",
+    "retry",
+    "same",
+    "do same",
+    "run again",
+}
+_QUOTED_REPLAY_AMOUNT_CAPTURE_PATTERNS = (
+    re.compile(r"^(?:again|same|repeat|retry)(?:\s+but)?\s+(?P<amount>.+)$", re.IGNORECASE),
+    re.compile(r"^change\s+amount\s+to\s+(?P<amount>.+)$", re.IGNORECASE),
+    re.compile(r"^same\s+but\s+(?P<amount>.+)$", re.IGNORECASE),
+    re.compile(r"^again\s+but\s+(?P<amount>.+)$", re.IGNORECASE),
+)
+_QUOTED_REPLAY_AMOUNT_RE = re.compile(
+    r"^(?:₦|ngn)?\s*(?P<number>\d[\d,]*(?:\.\d+)?)\s*(?P<suffix>[kKmM])?$",
+    re.IGNORECASE,
+)
 
 
 def _build_quoted_replay_context(state: OrchestratorState) -> str:
-    return _clip_text(
-        (
-            f"Quoted message id: {state.quoted_message_id or 'unknown'}\n"
-            f"Has quote: {state.has_quote}\n"
-            "Quoted actionable payload: unavailable"
-        ),
-        1800,
+    summary, _ = get_or_build_turn_context_summary(state, path_label="planner_path")
+    return build_quoted_replay_context_from_summary(
+        summary,
+        quoted_message_id=state.quoted_message_id,
+        has_quote=state.has_quote,
     )
 
 
 def _build_quoted_replay_context_with_payload(state: OrchestratorState, quoted_payload: dict[str, Any]) -> str:
-    user_state = _build_user_state_summary(state) or "User State: unavailable"
     payload_preview = _compact_payload_for_prompt(quoted_payload)
-    return _clip_text(
-        (
-            f"Quoted message id: {state.quoted_message_id or 'unknown'}\n"
-            f"Has quote: {state.has_quote}\n"
-            f"Quoted actionable payload: {payload_preview}\n"
-            f"{user_state}"
-        ),
-        1800,
+    summary, _ = get_or_build_turn_context_summary(state, path_label="planner_path")
+    return build_quoted_replay_context_from_summary(
+        summary,
+        quoted_message_id=state.quoted_message_id,
+        has_quote=state.has_quote,
+        quoted_payload_preview=payload_preview,
     )
+
+
+def _normalize_replay_text(text: str) -> str:
+    return re.sub(r"\s+", " ", text.strip().lower()).strip('.,!?;:"`~()[]{}')
+
+
+def _infer_quoted_replay_task_type(quoted_payload: dict[str, Any]) -> str | None:
+    task_type = str(quoted_payload.get("task_type") or "").strip().lower()
+    if task_type in {"transfer", "airtime", "data"}:
+        return task_type
+    action = str(quoted_payload.get("action") or "").strip().lower()
+    action_map = {
+        "send_money": "transfer",
+        "buy_airtime": "airtime",
+        "buy_data": "data",
+    }
+    return action_map.get(action)
+
+
+def _parse_quoted_replay_amount(value: str) -> float | int | None:
+    match = _QUOTED_REPLAY_AMOUNT_RE.match(value.strip())
+    if not match:
+        return None
+    try:
+        amount = float(match.group("number").replace(",", ""))
+    except ValueError:
+        return None
+    suffix = (match.group("suffix") or "").lower()
+    if suffix == "k":
+        amount *= 1000
+    elif suffix == "m":
+        amount *= 1_000_000
+    return int(amount) if amount.is_integer() else amount
+
+
+def _extract_quoted_replay_amount_delta(normalized_text: str) -> float | int | None:
+    for pattern in _QUOTED_REPLAY_AMOUNT_CAPTURE_PATTERNS:
+        match = pattern.match(normalized_text)
+        if not match:
+            continue
+        amount = _parse_quoted_replay_amount(match.group("amount"))
+        if amount is not None:
+            return amount
+    return None
+
+
+def _build_deterministic_quoted_replay_updates(
+    *,
+    state: OrchestratorState,
+    text: str,
+    quoted_payload: dict[str, Any] | None,
+    locale_updates: dict[str, Any],
+) -> dict[str, Any] | None:
+    if not isinstance(quoted_payload, dict) or not quoted_payload:
+        return None
+
+    normalized_text = _normalize_replay_text(text)
+    if not normalized_text:
+        return None
+
+    task_type = _infer_quoted_replay_task_type(quoted_payload)
+    if task_type is None:
+        return None
+
+    next_payload = dict(quoted_payload)
+    next_payload.pop("task_type", None)
+
+    if normalized_text in _QUOTED_REPLAY_DIRECT_PHRASES:
+        pass
+    else:
+        amount_delta = _extract_quoted_replay_amount_delta(normalized_text)
+        if amount_delta is None:
+            return None
+        # Keep amount-only patching narrow. Data plans with explicit plan codes/names
+        # remain on the quoted-replay LLM path.
+        if task_type == "data" and (next_payload.get("plan_code") or next_payload.get("plan_name")):
+            return None
+        if next_payload.get("amount") is None:
+            return None
+        next_payload["amount"] = amount_delta
+
+    sanitized_payload = _sanitize_replay_task_payload(task_type=task_type, payload=next_payload, text=text)
+    if sanitized_payload is None:
+        return None
+
+    task_id = _next_quoted_replay_task_id(state, task_type)
+    logger.info("quoted_replay_shortcut_hit", decision="deterministic_execute", task_count=1)
+    return {
+        "tasks": {
+            task_id: TaskSpec(
+                id=task_id,
+                type=cast(Any, task_type),
+                stage=TaskStage.DRAFT,
+                payload=sanitized_payload,
+            )
+        },
+        "waves": [[task_id]],
+        "current_wave_index": 0,
+        "normalized_instruction": text,
+        "semantic_path_shape": "quoted_deterministic",
+        **locale_updates,
+    }
 
 
 def _next_quoted_replay_task_id(state: OrchestratorState, task_type: str, existing_ids: set[str] | None = None) -> str:
@@ -161,6 +278,7 @@ def _build_quoted_replay_execution_updates(
         "waves": [wave_ids],
         "current_wave_index": 0,
         "normalized_instruction": text,
+        "semantic_path_shape": "quoted_router",
         **locale_updates,
     }
 
@@ -173,6 +291,7 @@ __all__ = [
     "QUOTED_REPLAY_MIN_CONFIDENCE",
     "_build_quoted_replay_context",
     "_build_quoted_replay_context_with_payload",
+    "_build_deterministic_quoted_replay_updates",
     "_build_quoted_replay_execution_updates",
     "_load_quoted_actionable_payload",
     "_quoted_replay_clarify_response",

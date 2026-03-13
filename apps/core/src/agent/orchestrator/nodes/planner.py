@@ -77,7 +77,10 @@ async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[s
         locale_updates=locale_updates,
     )
     if context_result.shortcut_updates is not None:
-        return context_result.shortcut_updates
+        return {
+            **context_result.shortcut_updates,
+            "semantic_path_shape": context_result.shortcut_updates.get("semantic_path_shape") or "planner",
+        }
 
     planner_context = context_result.planner_context
     active_intent = context_result.active_intent
@@ -116,7 +119,10 @@ async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[s
         fastpath_context_updates=fastpath_context_updates,
     )
     if handled_response is not None:
-        return handled_response
+        return {
+            **handled_response,
+            "semantic_path_shape": handled_response.get("semantic_path_shape") or "planner",
+        }
 
     if state.waves and active_intent:
         logger.info("planner_intent_switch_or_update", old=active_intent, new=planner_output.primary_intent)
@@ -144,6 +150,7 @@ async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[s
         "normalized_instruction": text,
         "planner_output": planner_output,
         "policy_notice": policy_notice,
+        "semantic_path_shape": "planner",
         "stashed_query_session": (
             stashed_query_session_update if stashed_query_session_update else state.stashed_query_session
         ),

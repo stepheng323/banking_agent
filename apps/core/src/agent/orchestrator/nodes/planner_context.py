@@ -2,7 +2,7 @@
 
 import json
 import time
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from typing import Any
 
 from apps.core.src.agent.orchestrator.context.models import ContextFrameType
@@ -15,6 +15,10 @@ CONTEXT_HISTORY_ITEM_MAX_CHARS = 150
 CONTEXT_USER_STATE_MAX_CHARS = 1200
 ROUTER_CONTEXT_MAX_CHARS = 1600
 ROUTER_CONTEXT_SECTION_MAX_CHARS = 320
+INTERRUPT_CONTEXT_MAX_CHARS = 1800
+INTERRUPT_CONTEXT_SECTION_MAX_CHARS = 500
+QUOTED_REPLAY_CONTEXT_MAX_CHARS = 1800
+QUOTED_REPLAY_CONTEXT_SECTION_MAX_CHARS = 500
 PLANNER_CONTEXT_MAX_CHARS = 2800
 PLANNER_MIN_SECTION_CHARS = 100
 PLANNER_CONTEXT_SECTION_SEPARATOR = "\n\n"
@@ -219,6 +223,18 @@ def _build_history_lines(history: list[dict[str, Any]]) -> list[str]:
     return lines
 
 
+def summary_to_state_payload(summary: TurnContextSummary) -> dict[str, Any]:
+    return asdict(summary)
+
+
+def summary_from_state_payload(payload: Any) -> TurnContextSummary | None:
+    if isinstance(payload, TurnContextSummary):
+        return payload
+    if isinstance(payload, dict):
+        return TurnContextSummary(**payload)
+    return None
+
+
 def build_turn_context_summary(
     state: OrchestratorState,
     *,
@@ -292,9 +308,40 @@ def build_turn_context_summary(
     )
 
 
+def get_or_build_turn_context_summary(
+    state: OrchestratorState,
+    *,
+    query_session_snapshot: dict[str, Any] | None = None,
+    query_session_source: str | None = None,
+    path_label: str | None = None,
+) -> tuple[TurnContextSummary, dict[str, Any] | None]:
+    cached = summary_from_state_payload(state.turn_context_summary)
+    if cached is not None:
+        return cached, None
+
+    build_start = time.perf_counter()
+    summary = build_turn_context_summary(
+        state,
+        query_session_snapshot=query_session_snapshot,
+        query_session_source=query_session_source,
+    )
+    if path_label:
+        from shared.utils.logging import get_logger
+
+        get_logger(__name__).info(
+            "perf_timer_latency",
+            gate="turn_context_summary_build",
+            span="turn_context_summary_build",
+            duration_ms=round((time.perf_counter() - build_start) * 1000, 2),
+            path_label=path_label,
+            phone_number=state.phone_number,
+        )
+    return summary, {"turn_context_summary": summary_to_state_payload(summary)}
+
+
 def _build_user_state_summary(state: OrchestratorState) -> str | None:
     """Build a compact, human-readable summary of the user's persistent state."""
-    summary = build_turn_context_summary(state)
+    summary, _ = get_or_build_turn_context_summary(state)
     return build_user_state_summary_from_summary(summary)
 
 
@@ -394,6 +441,112 @@ def build_router_context_from_summary(
     return _clip_text("\n\n".join(sections), ROUTER_CONTEXT_MAX_CHARS)
 
 
+def build_interrupt_context_from_summary(
+    summary: TurnContextSummary,
+    *,
+    kind: str,
+    task_ids: list[str],
+    current_task_types: set[str],
+    active_task_state_json: str,
+    required_fields_json: str,
+    prompt_text: str,
+) -> str:
+    sections = [
+        (
+            "active_flow",
+            (
+                f"Active Flow: {kind} required for tasks {task_ids} "
+                f"(types: {', '.join(sorted(current_task_types)) or 'unknown'}).\n"
+                f"active_task_state={active_task_state_json}\n"
+                f"required_fields={required_fields_json}\n"
+                f"prompt={prompt_text}"
+            ),
+        )
+    ]
+
+    shared_lines = [
+        f"RECENT_DOMAIN_FOCUS={summary.recent_domain_focus or 'none'}",
+        f"RECENT_ANSWER_FOCUS={summary.recent_answer_focus or 'none'}",
+    ]
+    if summary.account_lines:
+        shared_lines.append("ACCOUNTS:")
+        shared_lines.extend(f"- {line}" for line in summary.account_lines[:2])
+    if summary.beneficiary_lines:
+        shared_lines.append("BENEFICIARIES:")
+        shared_lines.extend(f"- {line}" for line in summary.beneficiary_lines[:2])
+    if summary.query_session_summary and summary.query_session_active:
+        shared_lines.append("QUERY_SESSION:")
+        shared_lines.append(_clip_text(summary.query_session_summary, INTERRUPT_CONTEXT_SECTION_MAX_CHARS))
+    if summary.history_lines:
+        shared_lines.append("RECENT_CHAT:")
+        shared_lines.extend(f"- {line}" for line in summary.history_lines[-2:])
+    if summary.active_flow_summary:
+        active_lines = [summary.active_flow_summary]
+        if summary.active_flow_interrupt_kind:
+            active_lines.append(f"Interrupt Kind: {summary.active_flow_interrupt_kind}")
+        if summary.active_flow_missing_fields:
+            active_lines.append(f"Missing Fields: {', '.join(summary.active_flow_missing_fields)}")
+        shared_lines.append("TURN_CONTEXT_ACTIVE_FLOW:")
+        shared_lines.append(
+            _clip_text(
+                "\n".join(active_lines),
+                INTERRUPT_CONTEXT_SECTION_MAX_CHARS,
+            )
+        )
+    sections.append(
+        (
+            "shared_context",
+            _clip_text("\n".join(shared_lines), INTERRUPT_CONTEXT_SECTION_MAX_CHARS),
+        )
+    )
+    context, _, _, _ = _assemble_planner_context(sections, max_chars=INTERRUPT_CONTEXT_MAX_CHARS)
+    return context
+
+
+def build_quoted_replay_context_from_summary(
+    summary: TurnContextSummary,
+    *,
+    quoted_message_id: str | None,
+    has_quote: bool,
+    quoted_payload_preview: str | None = None,
+) -> str:
+    header_lines = [
+        f"QUOTED_MESSAGE_ID={quoted_message_id or 'unknown'}",
+        f"HAS_QUOTE={'true' if has_quote else 'false'}",
+        (
+            f"QUOTED_ACTIONABLE_PAYLOAD={quoted_payload_preview}"
+            if quoted_payload_preview
+            else "QUOTED_ACTIONABLE_PAYLOAD=unavailable"
+        ),
+    ]
+    sections = [("quoted_header", "\n".join(header_lines))]
+
+    shared_lines = [
+        f"RECENT_DOMAIN_FOCUS={summary.recent_domain_focus or 'none'}",
+        f"RECENT_ANSWER_FOCUS={summary.recent_answer_focus or 'none'}",
+    ]
+    if summary.account_lines:
+        shared_lines.append("ACCOUNTS:")
+        shared_lines.extend(f"- {line}" for line in summary.account_lines[:2])
+    if summary.beneficiary_lines:
+        shared_lines.append("BENEFICIARIES:")
+        shared_lines.extend(f"- {line}" for line in summary.beneficiary_lines[:2])
+    if summary.short_term_memory_summary:
+        shared_lines.append("RECENT_CONTEXT:")
+        shared_lines.append(_clip_text(summary.short_term_memory_summary, QUOTED_REPLAY_CONTEXT_SECTION_MAX_CHARS))
+    elif summary.history_lines:
+        shared_lines.append("RECENT_CHAT:")
+        shared_lines.extend(f"- {line}" for line in summary.history_lines[-2:])
+    sections.append(
+        (
+            "shared_context",
+            _clip_text("\n".join(shared_lines), QUOTED_REPLAY_CONTEXT_SECTION_MAX_CHARS),
+        )
+    )
+    context, _, _, _ = _assemble_planner_context(sections, max_chars=QUOTED_REPLAY_CONTEXT_MAX_CHARS)
+    return context
+
+
 def _build_query_session_context(summary_text: str | None) -> str:
     summary_snippet = ""
     if summary_text:
@@ -442,7 +595,9 @@ def _assemble_planner_context(
 
 __all__ = [
     "CONTEXT_ACCOUNT_PREVIEW_LIMIT",
+    "INTERRUPT_CONTEXT_MAX_CHARS",
     "PLANNER_CONTEXT_MAX_CHARS",
+    "QUOTED_REPLAY_CONTEXT_MAX_CHARS",
     "ROUTER_CONTEXT_MAX_CHARS",
     "TurnContextSummary",
     "_assemble_planner_context",
@@ -451,7 +606,12 @@ __all__ = [
     "_build_user_state_summary",
     "_clip_text",
     "_compact_payload_for_prompt",
+    "build_interrupt_context_from_summary",
+    "build_quoted_replay_context_from_summary",
     "build_router_context_from_summary",
     "build_turn_context_summary",
     "build_user_state_summary_from_summary",
+    "get_or_build_turn_context_summary",
+    "summary_from_state_payload",
+    "summary_to_state_payload",
 ]

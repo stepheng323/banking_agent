@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import time
 from typing import Any, cast
 
 from shared.cache.redis_client import RedisClient
@@ -31,23 +32,39 @@ class ContextManager:
         self.account_repo = account_repo
         self.data_cache = UserDataCache()
 
-    async def load_user_context(
+    @staticmethod
+    def _log_latency_span(*, span: str, duration_ms: float, phone_number: str, path_label: str) -> None:
+        logger.info(
+            "perf_timer_latency",
+            gate=span,
+            span=span,
+            duration_ms=round(duration_ms, 2),
+            path_label=path_label,
+            phone_number=phone_number,
+        )
+
+    @staticmethod
+    def _serialize_profile(profile_obj: Any) -> tuple[dict[str, Any] | None, str | None]:
+        if isinstance(profile_obj, dict):
+            raw_user_id = profile_obj.get("id")
+            user_id = str(raw_user_id) if raw_user_id else None
+            return dict(profile_obj), user_id
+        if profile_obj is not None:
+            return sqlalchemy_to_dict(profile_obj), str(profile_obj.id)
+        return None, None
+
+    @staticmethod
+    def _serialize_rows(rows: list[Any]) -> list[dict[str, Any]]:
+        return [dict(row) if isinstance(row, dict) else sqlalchemy_to_dict(row) for row in rows]
+
+    async def _hydrate_user_context_from_cache_snapshot(
         self,
         phone_number: str,
-        user: Any | None = None,
         *,
-        cached_data: dict[str, Any] | None = None,
+        user: Any | None = None,
+        cached_data: dict[str, Any],
+        path_label: str,
     ) -> dict[str, Any]:
-        """
-        Load user context from cache or database.
-
-        Uses UserDataCache (Redis) for structured data with TTL.
-
-        Args:
-            phone_number: User's phone number
-            user: Optional pre-fetched user object to avoid duplicate database queries
-        """
-        cached_data = cached_data or await self.data_cache.get_all_user_data(phone_number)
         cache_profile = cached_data.get("profile")
         cache_accounts = cached_data.get("accounts")
         cache_beneficiaries = cached_data.get("beneficiaries")
@@ -69,65 +86,111 @@ class ContextManager:
 
         profile_obj = user if user is not None else cache_profile
         if profile_obj is None and self.user_repo:
+            profile_start = time.perf_counter()
             profile_obj = await self.user_repo.get_by_phone(phone_number)
+            self._log_latency_span(
+                span="context_profile_fetch",
+                duration_ms=(time.perf_counter() - profile_start) * 1000,
+                phone_number=phone_number,
+                path_label=path_label,
+            )
 
-        user_id: str | None = None
-        if isinstance(profile_obj, dict):
-            raw_user_id = profile_obj.get("id")
-            user_id = str(raw_user_id) if raw_user_id else None
-            safe_profile = dict(profile_obj)
-        elif profile_obj is not None:
-            user_id = str(profile_obj.id)
-            safe_profile = sqlalchemy_to_dict(profile_obj)
-        else:
-            safe_profile = None
+        safe_profile, user_id = self._serialize_profile(profile_obj)
+
+        async def _timed_fetch(label: str, op: Any) -> tuple[str, Any]:
+            fetch_start = time.perf_counter()
+            result = await op
+            self._log_latency_span(
+                span=f"context_{label}_fetch",
+                duration_ms=(time.perf_counter() - fetch_start) * 1000,
+                phone_number=phone_number,
+                path_label=path_label,
+            )
+            return label, result
 
         accounts: list[Any] = list(cache_accounts) if cache_accounts is not None else []
         beneficiaries: list[Any] = list(cache_beneficiaries) if cache_beneficiaries is not None else []
 
         fetch_ops: list[tuple[str, Any]] = []
         if user_id and cache_accounts is None and self.account_repo:
-            fetch_ops.append(("accounts", self.account_repo.get_by_user(user_id)))
+            fetch_ops.append(("accounts", _timed_fetch("accounts", self.account_repo.get_by_user(user_id))))
         if user_id and cache_beneficiaries is None and self.beneficiary_repo:
-            fetch_ops.append(("beneficiaries", self.beneficiary_repo.get_by_user(user_id)))
+            fetch_ops.append(
+                ("beneficiaries", _timed_fetch("beneficiaries", self.beneficiary_repo.get_by_user(user_id)))
+            )
 
         if fetch_ops:
             labels = [label for label, _ in fetch_ops]
             results = await asyncio.gather(*[op for _, op in fetch_ops], return_exceptions=True)
             for label, result in zip(labels, results, strict=False):
                 if isinstance(result, Exception):
-                    logger.warning("context_user_data_fetch_error", phone=phone_number, field=label, error=str(result))
+                    logger.warning(
+                        "context_user_data_fetch_error",
+                        phone=phone_number,
+                        field=label,
+                        error=str(result),
+                    )
                     continue
+                _, value = result
                 if label == "accounts":
-                    accounts = list(result)
+                    accounts = list(value)
                 else:
-                    beneficiaries = list(result)
+                    beneficiaries = list(value)
 
-        safe_accounts = [
-            dict(acc) if isinstance(acc, dict) else sqlalchemy_to_dict(acc)
-            for acc in accounts
-        ]
+        safe_accounts = self._serialize_rows(accounts)
+        safe_beneficiaries = self._serialize_rows(beneficiaries)
 
-        safe_beneficiaries = [
-            dict(ben) if isinstance(ben, dict) else sqlalchemy_to_dict(ben)
-            for ben in beneficiaries
-        ]
+        cache_profile_write = safe_profile is not None and cache_profile is None
+        cache_accounts_write = bool(safe_accounts) and cache_accounts is None
+        cache_beneficiaries_write = cache_beneficiaries is None
+        if cache_profile_write or cache_accounts_write or cache_beneficiaries_write:
+            write_start = time.perf_counter()
+            await self.data_cache.set_user_data_snapshot(
+                phone_number,
+                profile=safe_profile,
+                cache_profile=cache_profile_write,
+                accounts=safe_accounts,
+                cache_accounts=cache_accounts_write,
+                beneficiaries=safe_beneficiaries,
+                cache_beneficiaries=cache_beneficiaries_write,
+            )
+            self._log_latency_span(
+                span="context_cache_write",
+                duration_ms=(time.perf_counter() - write_start) * 1000,
+                phone_number=phone_number,
+                path_label=path_label,
+            )
 
-        context = {
+        return {
             "profile": safe_profile,
             "accounts": safe_accounts,
             "beneficiaries": safe_beneficiaries,
         }
 
-        if safe_profile:
-            await self.data_cache.set_user_profile(phone_number, safe_profile)
-        if safe_accounts:
-            await self.data_cache.set_accounts(phone_number, safe_accounts)
-        # Cache beneficiaries even when empty to avoid repeated DB fetches
-        # on partial cache misses.
-        await self.data_cache.set_beneficiaries(phone_number, safe_beneficiaries)
+    async def load_user_context(
+        self,
+        phone_number: str,
+        user: Any | None = None,
+        *,
+        cached_data: dict[str, Any] | None = None,
+        path_label: str = "planner_path",
+    ) -> dict[str, Any]:
+        """
+        Load user context from cache or database.
 
-        return context
+        Uses UserDataCache (Redis) for structured data with TTL.
+
+        Args:
+            phone_number: User's phone number
+            user: Optional pre-fetched user object to avoid duplicate database queries
+        """
+        cached_data = cached_data or await self.data_cache.get_all_user_data(phone_number)
+        return await self._hydrate_user_context_from_cache_snapshot(
+            phone_number,
+            user=user,
+            cached_data=cached_data,
+            path_label=path_label,
+        )
 
     async def get_user_accounts(self, phone_number: str) -> list[dict[str, Any]]:
         """Get user's linked accounts.
@@ -312,7 +375,10 @@ class ContextManager:
         return cast(str, locale.value)
 
     async def load_context_parallel(
-        self, phone_number: str
+        self,
+        phone_number: str,
+        *,
+        path_label: str = "planner_path",
     ) -> tuple[dict[str, Any], dict[str, Any] | None, str | None, str | None]:
         """
         Load all context data in parallel using Redis pipeline for optimal performance.
@@ -344,6 +410,7 @@ class ContextManager:
                 f"cache:user:beneficiaries:{phone_number}",
             ]
 
+            cache_fetch_start = time.perf_counter()
             pipe = redis_client.pipeline()
             for key in keys[0:4]:  # Get values for first 4 keys
                 pipe.get(key)
@@ -353,13 +420,23 @@ class ContextManager:
                 pipe.get(key)
 
             results = await pipe.execute()
+            self._log_latency_span(
+                span="context_cache_fetch",
+                duration_ms=(time.perf_counter() - cache_fetch_start) * 1000,
+                phone_number=phone_number,
+                path_label=path_label,
+            )
 
             cached_user_data: dict[str, Any] = {
                 "profile": json.loads(results[5]) if results[5] else None,
                 "accounts": json.loads(results[6]) if results[6] else None,
                 "beneficiaries": json.loads(results[7]) if results[7] else None,
             }
-            user_ctx = await self.load_user_context(phone_number, cached_data=cached_user_data)
+            user_ctx = await self._hydrate_user_context_from_cache_snapshot(
+                phone_number,
+                cached_data=cached_user_data,
+                path_label=path_label,
+            )
 
             conversation_state = None
             if results[0]:
@@ -387,7 +464,7 @@ class ContextManager:
 
         except Exception as e:
             logger.error("error_in_parallel_context", phone=phone_number, error=str(e))
-            user_ctx = await self.load_user_context(phone_number)
+            user_ctx = await self.load_user_context(phone_number, path_label=path_label)
             conversation_state = await self.get_conversation_state(phone_number)
             last_response = await self.get_last_response(phone_number)
             language = await self.get_user_language(phone_number)

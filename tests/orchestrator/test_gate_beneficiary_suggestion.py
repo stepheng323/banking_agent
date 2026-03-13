@@ -184,7 +184,8 @@ async def test_gate_suggestion_transaction_turn_dismisses_and_falls_through() ->
 
     updates = await session_gate_fastpath(state, config)
 
-    assert updates == {}
+    assert "turn_context_summary" in updates
+    assert updates.get("semantic_path_shape") is None
     assert redis_client.deleted_keys == ["user:2348011112203:beneficiary_suggestion"]
 
 
@@ -210,7 +211,8 @@ async def test_gate_suggestion_non_save_reply_dismisses_and_falls_through() -> N
 
     updates = await session_gate_fastpath(state, config)
 
-    assert updates == {}
+    assert "turn_context_summary" in updates
+    assert updates.get("semantic_path_shape") is None
     assert redis_client.deleted_keys == ["user:2348011112204:beneficiary_suggestion"]
 
 

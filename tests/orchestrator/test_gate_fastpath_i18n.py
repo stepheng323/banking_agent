@@ -19,7 +19,8 @@ async def test_gate_defers_greeting_meta_to_planner() -> None:
     config: RunnableConfig = {"configurable": {}, "recursion_limit": 50}
 
     updates = await session_gate_fastpath(state, config)
-    assert updates == {}
+    assert "turn_context_summary" in updates
+    assert updates.get("semantic_path_shape") is None
 
 
 async def test_gate_explicit_cancel_during_pending_interrupt_resets_immediately() -> None:
@@ -256,6 +257,89 @@ async def test_gate_turn_router_can_answer_grounded_beneficiary_follow_up_withou
     assert updates["final_response"] == "Yes, you still have Mum saved on Opay ending in 1023."
 
 
+async def test_gate_turn_router_can_answer_grounded_beneficiary_preview_without_planner() -> None:
+    planner = _RouteTurnPlanner(
+        TurnRouteDecision(
+            decision="direct_context_answer",
+            confidence=0.95,
+            detected_language="English",
+            response_key=None,
+            response="You have Tolu Adedayo on First Bank ending in 5261.",
+            expected_transaction_executors=[],
+            reason="grounded beneficiary preview answer",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_gate_ctx_3b",
+        phone_number="2348000000208",
+        channel="whatsapp",
+        last_message_text="Which Tolu do I have saved",
+        loaded_context={
+            "language": "en",
+            "beneficiaries": [
+                {
+                    "alias": "Tolu",
+                    "account_name": "Tolu Adedayo",
+                    "bank_name": "First Bank",
+                    "account_number": "0760505261",
+                }
+            ],
+        },
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await session_gate_fastpath(state, config)
+
+    assert planner.route_calls == 1
+    assert planner.plan_calls == 0
+    assert "BENEFICIARIES:" in (planner.last_context or "")
+    assert "Tolu" in (planner.last_context or "")
+    assert updates["fast_path_triggered"] is True
+    assert updates["final_response"] == "You have Tolu Adedayo on First Bank ending in 5261."
+
+
+async def test_gate_turn_router_can_answer_grounded_default_account_follow_up_without_planner() -> None:
+    planner = _RouteTurnPlanner(
+        TurnRouteDecision(
+            decision="direct_context_answer",
+            confidence=0.95,
+            detected_language="English",
+            response_key=None,
+            response="Your default account is Zenith Bank ending in 9384.",
+            expected_transaction_executors=[],
+            reason="grounded default-account answer",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_gate_ctx_3c",
+        phone_number="2348000000209",
+        channel="telegram",
+        last_message_text="Which account is default now",
+        loaded_context={
+            "language": "en",
+            "accounts": [
+                {
+                    "bank_name": "Zenith Bank",
+                    "account_number": "00009384",
+                    "mandate_status": "ready",
+                    "is_default": True,
+                },
+                {"bank_name": "First Bank", "account_number": "0334557890", "mandate_status": "pending"},
+            ],
+        },
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await session_gate_fastpath(state, config)
+
+    assert planner.route_calls == 1
+    assert planner.plan_calls == 0
+    assert "ACCOUNTS:" in (planner.last_context or "")
+    assert "default" in (planner.last_context or "").lower()
+    assert updates["fast_path_triggered"] is True
+    assert updates["final_response"] == "Your default account is Zenith Bank ending in 9384."
+
+
 async def test_gate_turn_router_can_answer_grounded_query_follow_up_without_planner() -> None:
     planner = _RouteTurnPlanner(
         TurnRouteDecision(
@@ -470,7 +554,8 @@ async def test_gate_balance_fastpath_does_not_swallow_mixed_transaction_and_bala
 
     updates = await session_gate_fastpath(state, config)
 
-    assert updates == {}
+    assert "turn_context_summary" in updates
+    assert updates.get("semantic_path_shape") is None
 
 
 async def test_gate_turn_router_cancel_response_clears_query_state() -> None:

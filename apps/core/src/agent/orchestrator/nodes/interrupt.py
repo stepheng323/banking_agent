@@ -11,7 +11,11 @@ from apps.core.src.agent.orchestrator.nodes.cancellation import (
     build_cancellation_reset_updates,
     cancelled_message,
 )
-from apps.core.src.agent.orchestrator.nodes.planner_context import build_turn_context_summary
+from apps.core.src.agent.orchestrator.nodes.planner_context import (
+    INTERRUPT_CONTEXT_MAX_CHARS,
+    build_interrupt_context_from_summary,
+    get_or_build_turn_context_summary,
+)
 from apps.core.src.agent.orchestrator.nodes.planner_postprocess import _expand_underproduced_transfer_tasks
 from apps.core.src.agent.orchestrator.services.interrupt_shortcuts import (
     is_explicit_confirmation_approval,
@@ -33,11 +37,9 @@ logger = get_logger(__name__)
 TRANSACTION_INTENTS = {"transfer", "airtime", "data"}
 NON_TRANSACTION_SWITCH_INTENTS = {"query", "account", "faq", "support", "beneficiary"}
 KNOWN_SWITCH_INTENTS = TRANSACTION_INTENTS | NON_TRANSACTION_SWITCH_INTENTS
-INTERRUPT_CONTEXT_MAX_CHARS = 1800
 INTERRUPT_REQUIRED_FIELDS_MAX_CHARS = 700
 INTERRUPT_PROMPT_MAX_CHARS = 300
 INTERRUPT_ACTIVE_TASK_STATE_MAX_CHARS = 700
-INTERRUPT_SHARED_CONTEXT_MAX_CHARS = 500
 
 _CONFIRMATION_UPDATE_VERB_RE = re.compile(
     r"\b(change|update|edit|instead|set|make(?:\s+it)?|replace|correct|meant|add|use)\b",
@@ -154,10 +156,11 @@ def _build_interrupt_context(
     fields_by_task: dict[str, list[str]],
     prompt: str | None,
 ) -> str:
-    summary = build_turn_context_summary(
+    summary, _ = get_or_build_turn_context_summary(
         state,
         query_session_snapshot=state.stashed_query_session if isinstance(state.stashed_query_session, dict) else None,
         query_session_source="stashed" if isinstance(state.stashed_query_session, dict) else None,
+        path_label="interrupt_path",
     )
     active_task_state = _build_active_task_router_state(state=state, task_ids=task_ids)
     active_task_state_text = _clip_text(
@@ -169,35 +172,16 @@ def _build_interrupt_context(
         INTERRUPT_REQUIRED_FIELDS_MAX_CHARS,
     )
     prompt_text = _clip_text(prompt or "", INTERRUPT_PROMPT_MAX_CHARS)
-    parts = [
-        f"Active Flow: {kind} required for tasks {task_ids} "
-        f"(types: {', '.join(sorted(current_task_types))}).\n"
-        f"active_task_state={active_task_state_text}\n"
-        f"required_fields={required_fields_text}\n"
-        f"prompt={prompt_text}"
-    ]
-    shared_context_lines = [
-        f"Recent Domain Focus: {summary.recent_domain_focus or 'none'}",
-        f"Recent Answer Focus: {summary.recent_answer_focus or 'none'}",
-    ]
-    if summary.account_lines:
-        shared_context_lines.append("Accounts:")
-        shared_context_lines.extend(f"- {line}" for line in summary.account_lines[:2])
-    if summary.beneficiary_lines:
-        shared_context_lines.append("Beneficiaries:")
-        shared_context_lines.extend(f"- {line}" for line in summary.beneficiary_lines[:2])
-    if summary.query_session_summary and summary.query_session_active:
-        shared_context_lines.append(f"Query Session: {summary.query_session_summary}")
-    if summary.history_lines:
-        shared_context_lines.append("Recent Chat:")
-        shared_context_lines.extend(f"- {line}" for line in summary.history_lines[-2:])
-
-    shared_context = _clip_text("\n".join(shared_context_lines), INTERRUPT_SHARED_CONTEXT_MAX_CHARS)
-    if shared_context:
-        parts.append(shared_context)
-    context_raw = "\n\n".join(parts)
-    context = _clip_text(context_raw, INTERRUPT_CONTEXT_MAX_CHARS)
-    logger.info("interrupt_context_size", chars=len(context), truncated=context != context_raw)
+    context = build_interrupt_context_from_summary(
+        summary,
+        kind=kind,
+        task_ids=task_ids,
+        current_task_types=current_task_types,
+        active_task_state_json=active_task_state_text,
+        required_fields_json=required_fields_text,
+        prompt_text=prompt_text,
+    )
+    logger.info("interrupt_context_size", chars=len(context), truncated=len(context) >= INTERRUPT_CONTEXT_MAX_CHARS)
     return context
 
 
@@ -211,6 +195,31 @@ def _route_fallback(reason: str) -> InterruptRouteDecision:
         status_query_type=None,
         reason=reason,
     )
+
+
+def _resolve_deterministic_status_query_route(
+    *,
+    state: OrchestratorState,
+    interrupt: Any,
+    text: str,
+) -> InterruptRouteDecision | None:
+    shortcut_locale = resolve_shortcut_locale((state.loaded_context or {}).get("language")) or resolve_shortcut_locale(
+        _state_locale(state)
+    )
+    shortcut_route, _miss_reason = resolve_interrupt_shortcut_with_reason(
+        text=text,
+        interrupt_kind=interrupt.kind,
+        locale=shortcut_locale,
+    )
+    if shortcut_route is None or shortcut_route.decision != "status_query":
+        return None
+    logger.info(
+        "interrupt_status_query_shortcut_hit",
+        kind=interrupt.kind,
+        status_query_type=shortcut_route.status_query_type,
+        locale=shortcut_locale.value if shortcut_locale else None,
+    )
+    return shortcut_route
 
 
 def _compact_task_payload_for_interrupt_router(payload: dict[str, Any]) -> dict[str, Any]:
@@ -1243,6 +1252,7 @@ def _status_query_updates(
     interrupt: Any,
     route: InterruptRouteDecision,
     current_task_types: set[str],
+    semantic_path_shape: str,
 ) -> dict[str, Any]:
     if not current_task_types or not current_task_types.issubset(TRANSACTION_INTENTS):
         logger.info(
@@ -1270,6 +1280,7 @@ def _status_query_updates(
         "last_interrupt": interrupt,
         "tasks": state.tasks,
         "outbox": [{"type": "say", "text": response}],
+        "semantic_path_shape": semantic_path_shape,
     }
 
 
@@ -1595,6 +1606,20 @@ async def handle_pending_interrupt(state: OrchestratorState, config: RunnableCon
             return _approve_confirmation_updates(state, interrupt)
         return _approve_auth_updates(state, interrupt)
 
+    status_shortcut_route = _resolve_deterministic_status_query_route(
+        state=state,
+        interrupt=interrupt,
+        text=text,
+    )
+    if status_shortcut_route is not None:
+        return _status_query_updates(
+            state=state,
+            interrupt=interrupt,
+            route=status_shortcut_route,
+            current_task_types=current_task_types,
+            semantic_path_shape="interrupt_deterministic",
+        )
+
     if interrupt.kind == "auth":
         shortcut_locale = resolve_shortcut_locale((state.loaded_context or {}).get("language"))
         shortcut_route, miss_reason = resolve_interrupt_shortcut_with_reason(
@@ -1706,6 +1731,7 @@ async def handle_pending_interrupt(state: OrchestratorState, config: RunnableCon
             interrupt=interrupt,
             route=route,
             current_task_types=current_task_types,
+            semantic_path_shape="interrupt_router_only",
         )
 
     if route.decision == "cancel":

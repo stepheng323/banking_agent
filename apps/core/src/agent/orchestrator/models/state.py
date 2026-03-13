@@ -64,6 +64,8 @@ class OrchestratorState(BaseModel):
     active_domain: str | None = None
 
     loaded_context: dict[str, Any] = Field(default_factory=dict)
+    turn_context_summary: dict[str, Any] | None = None
+    semantic_path_shape: str | None = None
 
     # Stashed Sessions (Upstream)
     stashed_sessions: list[dict[str, Any]] = Field(default_factory=list)

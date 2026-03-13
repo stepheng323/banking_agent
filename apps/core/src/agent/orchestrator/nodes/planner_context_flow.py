@@ -11,8 +11,8 @@ from apps.core.src.agent.orchestrator.nodes.planner_context import (
     _assemble_planner_context,
     _clip_text,
     _load_query_session_snapshot,
-    build_turn_context_summary,
     build_user_state_summary_from_summary,
+    get_or_build_turn_context_summary,
 )
 from apps.core.src.agent.orchestrator.nodes.planner_fastpath import (
     TRANSACTION_EXECUTORS,
@@ -161,10 +161,11 @@ async def _build_planner_context(
         except Exception as e:
             logger.warning("active_flow_context_failed", error=str(e))
 
-    turn_summary = build_turn_context_summary(
+    turn_summary, _ = get_or_build_turn_context_summary(
         state,
         query_session_snapshot=query_session_snapshot,
         query_session_source=query_session_source,
+        path_label="planner_path",
     )
     if turn_summary.query_session_summary and not is_transactional_flow:
         section_name = "query_session" if query_session_source == "redis" else "query_session_stashed"

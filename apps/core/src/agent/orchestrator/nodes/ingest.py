@@ -26,6 +26,8 @@ async def ingest_message(state: OrchestratorState) -> dict[str, Any]:
         "preplanner_expected_transaction_executors": [],
         "last_interrupt": None,
         "last_activity_date": today,
+        "turn_context_summary": None,
+        "semantic_path_shape": None,
     }
 
     if state.last_activity_date and state.last_activity_date != today:

@@ -303,13 +303,114 @@ async def test_status_query_requirements_skips_planner_and_uses_interrupt_router
 
     updates = await handle_pending_interrupt(state, config)
 
-    assert planner.route_calls == 1
+    assert planner.route_calls == 0
     assert planner.plan_calls == 0
-    assert "Recent Domain Focus:" in (planner.last_context or "")
-    assert "Beneficiaries:" in (planner.last_context or "")
+    assert planner.last_context is None
     assert updates["pending_interrupt"] is not None
     assert updates["outbox"][0]["type"] == "say"
     assert "I still need: beneficiary selection." in updates["outbox"][0]["text"]
+
+
+@pytest.mark.asyncio
+async def test_status_query_recap_skips_planner_and_uses_interrupt_router_only() -> None:
+    state = OrchestratorState(
+        user_id="u_budget_status_2",
+        phone_number="2348100000092",
+        channel="whatsapp",
+        last_message_text="where did we stop",
+        pending_interrupt=PendingInterrupt(
+            kind="input",
+            task_ids=["t1"],
+            fields_by_task={"t1": ["beneficiary_id"]},
+        ),
+        loaded_context={
+            "accounts": [{"bank_name": "Zenith Bank", "account_number": "00009384", "mandate_status": "ready"}],
+            "history": [{"role": "assistant", "content": "We are preparing your transfer."}],
+        },
+        tasks={
+            "t1": TaskSpec(
+                id="t1",
+                type="transfer",
+                stage=TaskStage.RESOLVED,
+                payload={"recipient_name": "Tolu", "amount": 5000},
+            )
+        },
+        waves=[["t1"]],
+        current_wave_index=0,
+    )
+    planner = _CountingPlanner(
+        route=InterruptRouteDecision(
+            decision="status_query",
+            confidence=0.95,
+            detected_language="English",
+            target_intent=None,
+            target_mode=None,
+            status_query_type="recap",
+            reason="recap status query",
+        ),
+        output=PlannerOutput(primary_intent="transfer"),
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await handle_pending_interrupt(state, config)
+
+    assert planner.route_calls == 0
+    assert planner.plan_calls == 0
+    assert planner.last_context is None
+    assert updates["pending_interrupt"] is not None
+    assert updates["outbox"][0]["type"] == "say"
+    assert "transfer flow" in updates["outbox"][0]["text"]
+
+
+@pytest.mark.asyncio
+async def test_ambiguous_status_wording_still_uses_interrupt_router() -> None:
+    state = OrchestratorState(
+        user_id="u_budget_status_3",
+        phone_number="2348100000093",
+        channel="whatsapp",
+        last_message_text="can you remind me again please",
+        pending_interrupt=PendingInterrupt(
+            kind="input",
+            task_ids=["t1"],
+            fields_by_task={"t1": ["beneficiary_id"]},
+        ),
+        loaded_context={
+            "accounts": [{"bank_name": "Zenith Bank", "account_number": "00009384", "mandate_status": "ready"}],
+        },
+        tasks={
+            "t1": TaskSpec(
+                id="t1",
+                type="transfer",
+                stage=TaskStage.EXTRACTED,
+                payload={"recipient_name": "Tolu", "amount": 5000},
+            )
+        },
+        waves=[["t1"]],
+        current_wave_index=0,
+    )
+    planner = _CountingPlanner(
+        route=InterruptRouteDecision(
+            decision="status_query",
+            confidence=0.84,
+            detected_language="English",
+            target_intent=None,
+            target_mode=None,
+            status_query_type="recap",
+            reason="ambiguous recap via router",
+        ),
+        output=PlannerOutput(primary_intent="transfer"),
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await handle_pending_interrupt(state, config)
+
+    assert planner.route_calls == 1
+    assert planner.plan_calls == 0
+    assert planner.last_context is not None
+    assert "ACCOUNTS:" in planner.last_context
+    assert updates["pending_interrupt"] is not None
+    assert updates["outbox"][0]["type"] == "say"
+    assert "transfer flow" in updates["outbox"][0]["text"]
 
 
 @pytest.mark.asyncio

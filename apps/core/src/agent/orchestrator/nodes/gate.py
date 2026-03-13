@@ -24,7 +24,7 @@ from apps.core.src.agent.orchestrator.nodes.planner_context import (
     TurnContextSummary,
     _load_query_session_snapshot,
     build_router_context_from_summary,
-    build_turn_context_summary,
+    get_or_build_turn_context_summary,
 )
 from shared.i18n import LocaleManager, render_locale_switched, render_message
 from shared.utils.logging import get_logger
@@ -640,6 +640,28 @@ async def session_gate_fastpath(state: OrchestratorState, config: RunnableConfig
             ),
         }
 
+    summary_path_label = (
+        "interrupt_path"
+        if state.pending_interrupt
+        else (
+            "fast_path"
+            if (
+                not state.has_quote
+                and callable(getattr(task_planner, "route_turn", None))
+                and _should_invoke_turn_router(message_text)
+            )
+            else "planner_path"
+        )
+    )
+    query_session_snapshot, query_session_source = await _load_query_session_snapshot(state, redis_client)
+    turn_summary, summary_updates = get_or_build_turn_context_summary(
+        state,
+        query_session_snapshot=query_session_snapshot,
+        query_session_source=query_session_source,
+        path_label=summary_path_label,
+    )
+    summary_updates = summary_updates or {}
+
     if (
         not state.pending_interrupt
         and not state.has_quote
@@ -647,13 +669,7 @@ async def session_gate_fastpath(state: OrchestratorState, config: RunnableConfig
         and _should_invoke_turn_router(message_text)
     ):
         try:
-            query_session_snapshot, query_session_source = await _load_query_session_snapshot(state, redis_client)
-            router_summary = build_turn_context_summary(
-                state,
-                query_session_snapshot=query_session_snapshot,
-                query_session_source=query_session_source,
-            )
-            route_context = _build_turn_router_context(router_summary, state.preplanner_expected_transaction_executors)
+            route_context = _build_turn_router_context(turn_summary, state.preplanner_expected_transaction_executors)
             try:
                 route = await task_planner.route_turn(
                     state.phone_number,
@@ -706,8 +722,10 @@ async def session_gate_fastpath(state: OrchestratorState, config: RunnableConfig
                     locale=locale,
                 )
                 return {
+                    **summary_updates,
                     "fast_path_triggered": True,
                     "final_response": text,
+                    "semantic_path_shape": "turn_router_only",
                     **updates,
                 }
 
@@ -731,17 +749,22 @@ async def session_gate_fastpath(state: OrchestratorState, config: RunnableConfig
                 )
                 logger.info("gate_turn_router_query_continuation", task_id=task_id)
                 return {
+                    **summary_updates,
                     "tasks": {task_id: spec},
                     "waves": [[task_id]],
                     "current_wave_index": 0,
                     "planner_output": None,
                     "fast_path_triggered": True,
+                    "semantic_path_shape": "turn_router_only",
                     **updates,
                 }
 
             if updates:
                 logger.info("gate_turn_router_expected_executors", executors=expected_executors)
-                return updates
+                return {
+                    **summary_updates,
+                    **updates,
+                }
 
     logger.info("gate_fallback_to_planner", reason="no_fast_path_match")
-    return {}  # Fallback to planner logic
+    return summary_updates  # Fallback to planner logic

@@ -130,6 +130,21 @@ class OrchestratorGraphHandler:
             return "interrupt_path"
         return "planner_path"
 
+    @staticmethod
+    def _resolve_semantic_path_shape(
+        context: MessageContext,
+        final_state: dict[str, Any],
+        path_label: str,
+    ) -> str:
+        explicit = final_state.get("semantic_path_shape")
+        if isinstance(explicit, str) and explicit:
+            return explicit
+        if getattr(context, "is_media_input", False) or bool(context.image_data):
+            return "media"
+        if path_label == "planner_path":
+            return "planner"
+        return path_label
+
     def _log_latency_span(
         self,
         *,
@@ -144,6 +159,14 @@ class OrchestratorGraphHandler:
             span=span,
             path_label=path_label,
             duration_ms=round(duration_ms, 2),
+            phone_number=phone_number,
+        )
+
+    def _log_semantic_path_shape(self, *, semantic_path_shape: str, path_label: str, phone_number: str) -> None:
+        logger.info(
+            "orchestrator_semantic_path",
+            semantic_path_shape=semantic_path_shape,
+            path_label=path_label,
             phone_number=phone_number,
         )
 
@@ -210,7 +233,13 @@ class OrchestratorGraphHandler:
 
                 # Hydrate via ContextManager (Parallel Fetch)
                 h_start = time.perf_counter()
-                user_ctx, _, _, _ = await self.context_manager.load_context_parallel(phone_number)
+                try:
+                    user_ctx, _, _, _ = await self.context_manager.load_context_parallel(
+                        phone_number,
+                        path_label=path_label,
+                    )
+                except TypeError:
+                    user_ctx, _, _, _ = await self.context_manager.load_context_parallel(phone_number)
                 h_duration = (time.perf_counter() - h_start) * 1000
 
                 loaded_context: dict[str, Any] = {
@@ -233,6 +262,7 @@ class OrchestratorGraphHandler:
                 final_state = await self.graph.ainvoke(inputs, config=config)
                 g_duration = (time.perf_counter() - g_start) * 1000
                 path_label = self._resolve_path_label(context, final_state)
+                semantic_path_shape = self._resolve_semantic_path_shape(context, final_state, path_label)
                 self._log_latency_span(
                     span="context_hydration",
                     duration_ms=h_duration,
@@ -276,6 +306,11 @@ class OrchestratorGraphHandler:
                     path_label=path_label,
                 )
                 logger.info("orchestrator_path_label", path_label=path_label, phone_number=phone_number)
+                self._log_semantic_path_shape(
+                    semantic_path_shape=semantic_path_shape,
+                    path_label=path_label,
+                    phone_number=phone_number,
+                )
                 self._record_guardrail_signal(path_label=path_label, duration_ms=total_duration, errored=False)
                 return result
             except Exception:

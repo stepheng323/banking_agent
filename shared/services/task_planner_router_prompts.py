@@ -87,11 +87,14 @@ Rules:
    - if context is insufficient or ambiguous, use go_planner instead
    Examples:
    - "Can I use First Bank now?" -> direct_context_answer
+   - "Is First Bank ready?" -> direct_context_answer
+   - "Which account is default now?" -> direct_context_answer when account context is enough
    - "Can I use fisr bank now?" -> direct_context_answer if context clearly shows First Bank
    - "Do I still have Mum saved?" -> direct_context_answer
    - "Which Tolu do I have saved?" -> direct_context_answer when beneficiary preview is enough
    - "Any more debits after that?" -> direct_context_answer when active query/session context already answers it
    - "Where did we stop?" -> direct_context_answer when active flow context is enough
+   - "What are we doing again?" -> direct_context_answer when active flow context is enough
 4) Otherwise use decision=go_planner.
 5) Populate expected_transaction_executors only when user explicitly asks those transaction actions.
 5b) For explicit mixed transaction requests, include every mentioned executor in expected_transaction_executors.

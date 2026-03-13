@@ -4,10 +4,16 @@ from apps.core.src.agent.orchestrator.context.models import ContextEntity, Conte
 from apps.core.src.agent.orchestrator.models.domain import ActiveSession, PendingInterrupt, TaskSpec, TaskStage
 from apps.core.src.agent.orchestrator.models.state import OrchestratorState
 from apps.core.src.agent.orchestrator.nodes.planner_context import (
+    INTERRUPT_CONTEXT_MAX_CHARS,
+    QUOTED_REPLAY_CONTEXT_MAX_CHARS,
     _load_query_session_snapshot,
+    build_interrupt_context_from_summary,
+    build_quoted_replay_context_from_summary,
     build_router_context_from_summary,
     build_turn_context_summary,
     build_user_state_summary_from_summary,
+    get_or_build_turn_context_summary,
+    summary_to_state_payload,
 )
 
 
@@ -132,3 +138,80 @@ def test_router_and_user_state_render_from_shared_summary() -> None:
     assert "User State:" in user_state_summary
     assert "mandate:" in user_state_summary
     assert "Beneficiaries:" in user_state_summary
+
+
+def test_interrupt_and_quoted_context_render_from_shared_summary() -> None:
+    state = OrchestratorState(
+        user_id="u_ctx_3",
+        phone_number="2348000000304",
+        channel="whatsapp",
+        loaded_context={
+            "accounts": [{"bank_name": "First Bank", "account_number": "0334557890", "mandate_status": "pending"}],
+            "beneficiaries": [{"alias": "Mum", "bank_name": "Opay", "account_number": "8162511023"}],
+            "history": [
+                {"role": "user", "content": "Show my linked accounts"},
+                {"role": "assistant", "content": "First Bank is linked but pending."},
+            ],
+        },
+    )
+    summary = build_turn_context_summary(state)
+
+    interrupt_context = build_interrupt_context_from_summary(
+        summary,
+        kind="input",
+        task_ids=["t1"],
+        current_task_types={"transfer"},
+        active_task_state_json='{"t1":{"recipient_name":"Tolu"}}',
+        required_fields_json='{"t1":["beneficiary_id"]}',
+        prompt_text="Who do you want to send to?",
+    )
+    quoted_context = build_quoted_replay_context_from_summary(
+        summary,
+        quoted_message_id="wamid.quoted.1",
+        has_quote=True,
+        quoted_payload_preview='{"task_type":"transfer","amount":5000}',
+    )
+
+    assert len(interrupt_context) <= INTERRUPT_CONTEXT_MAX_CHARS
+    assert "Active Flow: input required for tasks ['t1']" in interrupt_context
+    assert "RECENT_ANSWER_FOCUS=" in interrupt_context
+    assert "ACCOUNTS:" in interrupt_context
+    assert "BENEFICIARIES:" in interrupt_context
+
+    assert len(quoted_context) <= QUOTED_REPLAY_CONTEXT_MAX_CHARS
+    assert "QUOTED_MESSAGE_ID=wamid.quoted.1" in quoted_context
+    assert "QUOTED_ACTIONABLE_PAYLOAD=" in quoted_context
+    assert "ACCOUNTS:" in quoted_context
+    assert "BENEFICIARIES:" in quoted_context
+
+
+def test_get_or_build_turn_context_summary_reuses_cached_state_payload(monkeypatch) -> None:
+    state = OrchestratorState(
+        user_id="u_ctx_4",
+        phone_number="2348000000305",
+        channel="whatsapp",
+        turn_context_summary=summary_to_state_payload(
+            build_turn_context_summary(
+                OrchestratorState(
+                    user_id="u_ctx_seed",
+                    phone_number="2348000000305",
+                    channel="whatsapp",
+                    loaded_context={"history": [{"role": "assistant", "content": "cached"}]},
+                )
+            )
+        ),
+        loaded_context={"history": [{"role": "assistant", "content": "fresh"}]},
+    )
+
+    def _should_not_build(*args, **kwargs):
+        raise AssertionError("summary should be reused from state")
+
+    monkeypatch.setattr(
+        "apps.core.src.agent.orchestrator.nodes.planner_context.build_turn_context_summary",
+        _should_not_build,
+    )
+
+    summary, updates = get_or_build_turn_context_summary(state, path_label="planner_path")
+
+    assert updates is None
+    assert summary.history_lines == ["agent: cached"]

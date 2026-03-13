@@ -143,3 +143,68 @@ async def test_graph_handler_resume_flow_clears_quoted_message_fields(monkeypatc
     assert graph.last_inputs is not None
     assert graph.last_inputs["quoted_message_id"] is None
     assert graph.last_inputs["has_quote"] is False
+
+
+@pytest.mark.asyncio
+async def test_graph_handler_logs_semantic_path_shape(monkeypatch: pytest.MonkeyPatch) -> None:
+    class _SemanticGraphStub(_GraphStub):
+        async def ainvoke(self, inputs: dict, config: dict) -> dict:
+            del inputs, config
+            return {
+                "outbox": [{"type": "say", "text": "linked and pending"}],
+                "final_response": "linked and pending",
+                "loaded_context": {"language": "en"},
+                "semantic_path_shape": "turn_router_only",
+                "fast_path_triggered": True,
+            }
+
+    graph = _SemanticGraphStub()
+    monkeypatch.setattr(
+        "apps.core.src.agent.orchestrator.graph.handler.AsyncRedisSaver",
+        lambda redis_client: _CheckpointerStub(),
+    )
+    monkeypatch.setattr(
+        "apps.core.src.agent.orchestrator.graph.handler.build_orchestrator_graph",
+        lambda checkpointer: graph,
+    )
+
+    events: list[tuple[str, dict]] = []
+
+    def _capture(event: str, **kwargs) -> None:
+        events.append((event, kwargs))
+
+    monkeypatch.setattr("apps.core.src.agent.orchestrator.graph.handler.logger.info", _capture)
+
+    handler = OrchestratorGraphHandler(
+        task_planner=SimpleNamespace(),
+        transfer_service=SimpleNamespace(),
+        airtime_service=SimpleNamespace(),
+        query_service=SimpleNamespace(),
+        data_service=SimpleNamespace(),
+        account_service=SimpleNamespace(),
+        support_service=SimpleNamespace(),
+        faq_service=SimpleNamespace(),
+        user_repo=SimpleNamespace(),
+        beneficiary_repo=SimpleNamespace(),
+        account_repo=SimpleNamespace(),
+        actionable_message_repo=SimpleNamespace(),
+        banking_provider=SimpleNamespace(),
+        context_manager=_ContextManagerStub(),
+        redis_client=SimpleNamespace(),
+        publisher=SimpleNamespace(),
+        beneficiary_suggestion_service=SimpleNamespace(),
+    )
+    handler._cleanup_if_idle = AsyncMock()
+    handler._apply_session_ttl = AsyncMock()
+
+    await handler.invoke(
+        MessageContext(
+            phone_number="2348000000001",
+            text="Can I use First Bank now?",
+            message_id="wamid.12",
+            channel="whatsapp",
+            channel_identity="2348000000001",
+        )
+    )
+
+    assert ("orchestrator_semantic_path", {"semantic_path_shape": "turn_router_only", "path_label": "fast_path", "phone_number": "2348000000001"}) in events
