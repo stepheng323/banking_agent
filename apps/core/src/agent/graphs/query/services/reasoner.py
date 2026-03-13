@@ -61,8 +61,6 @@ _ISSUE_EXACT = {
     "problem",
     "report a problem",
 }
-
-
 class QuerySemanticDecision(BaseModel):
     """Unified semantic reasoner output for query turns."""
 
@@ -98,11 +96,12 @@ class QuerySemanticDecision(BaseModel):
     result_limit: int | None = Field(default=None)
     result_reference: Literal["latest", "oldest"] | None = Field(default=None)
     drill_down_index: int | None = Field(default=None)
-    drill_down_action: Literal["view_details", "get_receipt", "report_issue", "re_transfer"] | None = Field(
+    drill_down_action: Literal["view_details", "get_receipt", "report_issue", "re_transfer", "answer_fact"] | None = Field(
         default=None
     )
     recipient_name: str | None = Field(default=None)
     end_session_response: str | None = Field(default=None)
+    fact_field: Literal["status", "amount", "recipient", "bank", "date"] | None = Field(default=None)
     semantic_context_mode: Literal["none", "pending_clarification", "active_result"] | None = Field(default=None)
     semantic_llm_used: bool | None = Field(default=None)
     deterministic_surface_action: str | None = Field(default=None)

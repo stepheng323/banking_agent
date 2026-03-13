@@ -55,6 +55,7 @@ async def handle_drill_down(state: dict[str, Any]) -> TransactionResult:
 
     drill_down_index = state.get("selected_item_index", 0)
     drill_down_action = state.get("drill_down_action", "view_details")
+    fact_field = state.get("fact_field")
 
     if not query_result or not query_result.items:
         return TransactionResult(
@@ -64,6 +65,51 @@ async def handle_drill_down(state: dict[str, Any]) -> TransactionResult:
 
     index = max(0, min(drill_down_index, len(query_result.items) - 1))
     item = query_result.items[index]
+
+    if drill_down_action == "answer_fact":
+        metadata = item.metadata if isinstance(getattr(item, "metadata", None), dict) else {}
+        response = None
+
+        if fact_field == "amount":
+            response = render_message("query.format.field_amount", locale, {"amount": f"₦{item.amount:,.2f}"})
+        elif fact_field == "status":
+            status = str(metadata.get("status") or "")
+            if status:
+                status_display = (
+                    render_message("query.format.status_success", locale)
+                    if status.lower() in ("success", "completed", "successful")
+                    else render_message("query.format.status_pending_generic", locale, {"status": status.title()})
+                )
+                response = render_message("query.format.field_status", locale, {"status": status_display})
+        elif fact_field == "bank":
+            bank_name = str(metadata.get("bank_name") or "")
+            if bank_name:
+                response = render_message("query.format.field_bank", locale, {"bank_name": bank_name})
+        elif fact_field == "date":
+            response = render_message(
+                "query.format.field_date",
+                locale,
+                {
+                    "date": item.date.strftime("%B %d, %Y")
+                    if item.date
+                    else render_message("query.format.unknown", locale),
+                },
+            )
+        elif fact_field == "recipient":
+            recipient = str(metadata.get("recipient_name") or item.description or "").strip()
+            if recipient:
+                response = render_message(
+                    "transfer.format.multi_source_summary.field_to",
+                    locale,
+                    {"recipient_name": recipient},
+                )
+
+        if response:
+            return TransactionResult(
+                outcome=TransactionOutcome.OK,
+                response=response,
+                patch={"session_active": True},
+            )
 
     if drill_down_action == "get_receipt":
         transaction_type, transaction_type_display = _resolve_transaction_type(item, locale)

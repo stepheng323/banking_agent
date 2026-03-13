@@ -377,6 +377,8 @@ class ExtractionStep(QueryStep):
             elif items and 0 <= drill_idx < len(items):
                 updates["selected_item_index"] = drill_idx
                 updates["drill_down_action"] = decision.drill_down_action
+                if decision.fact_field:
+                    updates["fact_field"] = decision.fact_field
 
         elif cont_type == "recipient_drill_down":
             # Recipient drill down (filter by this recipient)

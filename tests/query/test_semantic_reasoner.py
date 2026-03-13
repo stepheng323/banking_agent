@@ -86,6 +86,55 @@ async def test_reasoner_uses_deterministic_receipt_action_without_llm() -> None:
 
 
 @pytest.mark.asyncio
+async def test_reasoner_uses_llm_for_active_result_fact_answer() -> None:
+    llm = _TrackingLLM(
+        QuerySemanticDecision(
+            decision="continuation",
+            confidence=0.94,
+            reason="llm_fact_status",
+            continuation_type="drill_down",
+            drill_down_index=0,
+            drill_down_action="answer_fact",
+            fact_field="status",
+        )
+    )
+    reasoner = QuerySemanticReasoner(llm)
+    surface = ResultSurface(type=SurfaceType.SINGLE_ITEM, items=[], context={"type": "single_transaction"})
+    item = QueryResultItem(
+        id="txn-1",
+        description="Payment to Mum",
+        amount=10000.0,
+        date=date(2026, 3, 13),
+        metadata={"status": "processing", "bank_name": "Zenith Bank", "recipient_name": "Mum"},
+    )
+
+    decision = await reasoner.reason(
+        SemanticReasonerContext(
+            message="was it successful?",
+            today=date(2026, 3, 13),
+            language="en",
+            query_contract=QueryExecutionContract(
+                intent=QueryIntent.TRANSACTION_SEARCH,
+                time_start=date(2026, 3, 13),
+                time_end=date(2026, 3, 13),
+                normalized_query=NormalizedQuery(
+                    intent=QueryIntent.TRANSACTION_SEARCH,
+                    time_range=TimeRange(start=date(2026, 3, 13), end=date(2026, 3, 13)),
+                ),
+            ),
+            surface=surface,
+            items=[item],
+        )
+    )
+
+    assert decision.decision == "continuation"
+    assert decision.continuation_type == "drill_down"
+    assert decision.drill_down_action == "answer_fact"
+    assert decision.fact_field == "status"
+    assert llm.structured.calls == 1
+
+
+@pytest.mark.asyncio
 async def test_reasoner_logs_deterministic_surface_action_without_llm(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -131,6 +180,72 @@ async def test_reasoner_logs_deterministic_surface_action_without_llm(
             "continuation_type": "drill_down",
             "confidence": 1.0,
             "reason": "deterministic_receipt",
+        },
+    ) in events
+
+
+@pytest.mark.asyncio
+async def test_reasoner_logs_llm_fact_answer_decision(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    events: list[tuple[str, dict]] = []
+
+    def _capture(event: str, **kwargs: object) -> None:
+        events.append((event, dict(kwargs)))
+
+    monkeypatch.setattr("apps.core.src.agent.graphs.query.services.reasoner.logger.info", _capture)
+
+    llm = _TrackingLLM(
+        QuerySemanticDecision(
+            decision="continuation",
+            confidence=0.91,
+            reason="llm_fact_recipient",
+            continuation_type="drill_down",
+            drill_down_index=0,
+            drill_down_action="answer_fact",
+            fact_field="recipient",
+        )
+    )
+    reasoner = QuerySemanticReasoner(llm)
+    surface = ResultSurface(type=SurfaceType.SINGLE_ITEM, items=[], context={"type": "single_transaction"})
+    item = QueryResultItem(
+        id="txn-1",
+        description="Payment to Mum",
+        amount=10000.0,
+        date=date(2026, 3, 13),
+        metadata={"status": "processing", "bank_name": "Zenith Bank", "recipient_name": "Mum"},
+    )
+
+    decision = await reasoner.reason(
+        SemanticReasonerContext(
+            message="who was it to?",
+            today=date(2026, 3, 13),
+            language="en",
+            query_contract=QueryExecutionContract(
+                intent=QueryIntent.TRANSACTION_SEARCH,
+                time_start=date(2026, 3, 13),
+                time_end=date(2026, 3, 13),
+                normalized_query=NormalizedQuery(
+                    intent=QueryIntent.TRANSACTION_SEARCH,
+                    time_range=TimeRange(start=date(2026, 3, 13), end=date(2026, 3, 13)),
+                ),
+            ),
+            surface=surface,
+            items=[item],
+        )
+    )
+
+    assert decision.fact_field == "recipient"
+    assert llm.structured.calls == 1
+    assert (
+        "query_reasoner_decision",
+        {
+            "reasoner_decision": "continuation",
+            "reasoner_context_mode": "active_result",
+            "reasoner_llm_used": True,
+            "continuation_type": "drill_down",
+            "confidence": 0.91,
+            "reason": "llm_fact_recipient",
         },
     ) in events
 

@@ -74,6 +74,13 @@ CONTINUATION RULES
   - filter-only change -> continuation_type="filter_delta"
   - expand summary -> continuation_type="expand"
   - item action/detail/receipt/issue -> continuation_type="drill_down"
+  - factual questions about the currently displayed single item should also use continuation_type="drill_down"
+    with drill_down_action="answer_fact" and fact_field set to one of:
+    - status
+    - amount
+    - recipient
+    - bank
+    - date
   - recipient reply on beneficiary summary -> continuation_type="recipient_drill_down"
   - analytics over current result set -> continuation_type="aggregate"
   - unrelated full query -> decision="new_query"

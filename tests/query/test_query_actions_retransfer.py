@@ -71,3 +71,54 @@ async def test_retransfer_rejects_non_transfer_item() -> None:
     assert "query_transfer_handoff" not in result.patch
     assert "only resend transfer" in (result.response or "").lower()
 
+
+@pytest.mark.asyncio
+async def test_answer_fact_returns_status_from_selected_item() -> None:
+    item = QueryResultItem(
+        id="txn-3",
+        description="Payment to Mum",
+        amount=10000.0,
+        date=date(2026, 3, 13),
+        metadata={"status": "processing", "bank_name": "Zenith Bank", "recipient_name": "Mum"},
+    )
+    query_result = QueryResult(summary_text="single", items=[item], context_key="ctx-3")
+
+    result = await handle_drill_down(
+        {
+            "language": "en",
+            "query_result": query_result,
+            "drill_down_action": "answer_fact",
+            "fact_field": "status",
+            "selected_item_index": 0,
+        }
+    )
+
+    assert result.outcome == TransactionOutcome.OK
+    assert result.patch["session_active"] is True
+    assert "Status:" in (result.response or "")
+
+
+@pytest.mark.asyncio
+async def test_answer_fact_returns_recipient_from_selected_item() -> None:
+    item = QueryResultItem(
+        id="txn-4",
+        description="Payment to Mum",
+        amount=10000.0,
+        date=date(2026, 3, 13),
+        metadata={"recipient_name": "Mum", "bank_name": "Zenith Bank"},
+    )
+    query_result = QueryResult(summary_text="single", items=[item], context_key="ctx-4")
+
+    result = await handle_drill_down(
+        {
+            "language": "en",
+            "query_result": query_result,
+            "drill_down_action": "answer_fact",
+            "fact_field": "recipient",
+            "selected_item_index": 0,
+        }
+    )
+
+    assert result.outcome == TransactionOutcome.OK
+    assert result.patch["session_active"] is True
+    assert "Mum" in (result.response or "")
