@@ -3,8 +3,10 @@ from datetime import date
 import pytest
 
 from apps.core.src.agent.graphs.query.models import (
+    ExtractionIntent,
     Filters,
     NormalizedQuery,
+    PendingClarificationState,
     QueryExecutionContract,
     QueryExtractionResult,
     QueryFilters,
@@ -35,6 +37,26 @@ class _FailingLLM:
         return _FailingStructured()
 
 
+class _TrackingStructured:
+    def __init__(self, decision: QuerySemanticDecision) -> None:
+        self.decision = decision
+        self.calls = 0
+
+    async def ainvoke(self, prompt: str) -> QuerySemanticDecision:
+        del prompt
+        self.calls += 1
+        return self.decision
+
+
+class _TrackingLLM:
+    def __init__(self, decision: QuerySemanticDecision) -> None:
+        self.structured = _TrackingStructured(decision)
+
+    def with_structured_output(self, schema: object) -> _TrackingStructured:
+        del schema
+        return self.structured
+
+
 @pytest.mark.asyncio
 async def test_reasoner_uses_deterministic_receipt_action_without_llm() -> None:
     reasoner = QuerySemanticReasoner(_FailingLLM())
@@ -61,6 +83,139 @@ async def test_reasoner_uses_deterministic_receipt_action_without_llm() -> None:
     assert decision.decision == "continuation"
     assert decision.continuation_type == "drill_down"
     assert decision.drill_down_action == "get_receipt"
+
+
+@pytest.mark.asyncio
+async def test_reasoner_logs_deterministic_surface_action_without_llm(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    events: list[tuple[str, dict]] = []
+
+    def _capture(event: str, **kwargs: object) -> None:
+        events.append((event, dict(kwargs)))
+
+    monkeypatch.setattr("apps.core.src.agent.graphs.query.services.reasoner.logger.info", _capture)
+
+    reasoner = QuerySemanticReasoner(_FailingLLM())
+    surface = ResultSurface(type=SurfaceType.SINGLE_ITEM, items=[], context={"type": "single_transaction"})
+
+    decision = await reasoner.reason(
+        SemanticReasonerContext(
+            message="receipt",
+            today=date(2026, 3, 13),
+            language="en",
+            query_contract=QueryExecutionContract(
+                intent=QueryIntent.TRANSACTION_SEARCH,
+                time_start=date(2026, 3, 13),
+                time_end=date(2026, 3, 13),
+                normalized_query=NormalizedQuery(
+                    intent=QueryIntent.TRANSACTION_SEARCH,
+                    time_range=TimeRange(start=date(2026, 3, 13), end=date(2026, 3, 13)),
+                ),
+            ),
+            surface=surface,
+        )
+    )
+
+    assert decision.drill_down_action == "get_receipt"
+    assert (
+        "query_surface_action_deterministic",
+        {"reasoner_context_mode": "active_result", "action": "get_receipt", "reason": "deterministic_receipt"},
+    ) in events
+    assert (
+        "query_reasoner_decision",
+        {
+            "reasoner_decision": "continuation",
+            "reasoner_context_mode": "active_result",
+            "reasoner_llm_used": False,
+            "continuation_type": "drill_down",
+            "confidence": 1.0,
+            "reason": "deterministic_receipt",
+        },
+    ) in events
+
+
+@pytest.mark.asyncio
+async def test_reasoner_logs_llm_backed_fresh_query_decision(monkeypatch: pytest.MonkeyPatch) -> None:
+    events: list[tuple[str, dict]] = []
+
+    def _capture(event: str, **kwargs: object) -> None:
+        events.append((event, dict(kwargs)))
+
+    monkeypatch.setattr("apps.core.src.agent.graphs.query.services.reasoner.logger.info", _capture)
+
+    llm = _TrackingLLM(
+        QuerySemanticDecision(
+            decision="fresh_query",
+            confidence=0.93,
+            reason="llm_fresh_query",
+            extraction=QueryExtractionResult(raw_query="show my last transaction", result_limit=1),
+        )
+    )
+    reasoner = QuerySemanticReasoner(llm)
+
+    decision = await reasoner.reason(
+        SemanticReasonerContext(
+            message="show my last transaction",
+            today=date(2026, 3, 13),
+            language="en",
+        )
+    )
+
+    assert llm.structured.calls == 1
+    assert decision.decision == "fresh_query"
+    assert (
+        "query_reasoner_decision",
+        {
+            "reasoner_decision": "fresh_query",
+            "reasoner_context_mode": "none",
+            "reasoner_llm_used": True,
+            "continuation_type": None,
+            "confidence": 0.93,
+            "reason": "llm_fresh_query",
+        },
+    ) in events
+
+
+@pytest.mark.asyncio
+async def test_reasoner_logs_deterministic_pending_clarification_answer_without_llm(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    events: list[tuple[str, dict]] = []
+
+    def _capture(event: str, **kwargs: object) -> None:
+        events.append((event, dict(kwargs)))
+
+    monkeypatch.setattr("apps.core.src.agent.graphs.query.services.reasoner.logger.info", _capture)
+
+    reasoner = QuerySemanticReasoner(_FailingLLM())
+    decision = await reasoner.reason(
+        SemanticReasonerContext(
+            message="last 3 days",
+            today=date(2026, 3, 13),
+            language="en",
+            pending_clarification=PendingClarificationState(
+                original_query="How much did I spend last",
+                current_intent=ExtractionIntent.SPENDING_TOTAL,
+                original_extraction=QueryExtractionResult(raw_query="How much did I spend last"),
+                resolver_message="What time period did you mean by 'last'?",
+                language="en",
+            ),
+        )
+    )
+
+    assert decision.decision == "clarification_answer"
+    assert (
+        "query_reasoner_decision",
+        {
+            "reasoner_decision": "clarification_answer",
+            "reasoner_context_mode": "pending_clarification",
+            "reasoner_llm_used": False,
+            "continuation_type": None,
+            "confidence": 0.99,
+            "reason": "deterministic_time_reply",
+        },
+    ) in events
 
 
 @pytest.mark.asyncio
