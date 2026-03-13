@@ -226,3 +226,87 @@ async def test_worker_logs_query_turn_summary(monkeypatch: pytest.MonkeyPatch) -
             "has_pending_clarification": False,
         },
     ) in events
+
+
+@pytest.mark.asyncio
+async def test_worker_logs_query_turn_summary_for_active_result_fact_followup(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session_manager = _SessionManager()
+    worker = QueryWorker(_DummyLLM(), _DummyProvider(), session_manager)  # type: ignore[arg-type]
+    events: list[tuple[str, dict[str, Any]]] = []
+
+    def _capture(event: str, **kwargs: Any) -> None:
+        events.append((event, kwargs))
+
+    monkeypatch.setattr("apps.core.src.agent.graphs.query.worker.logger.info", _capture)
+
+    async def _fake_pipeline_run(state: dict[str, Any], worker_context: Any) -> TransactionResult:
+        del worker_context
+        assert state["query_session"]["session_active"] is True
+        return TransactionResult(
+            outcome=TransactionOutcome.OK,
+            patch={
+                "session_active": True,
+                "flow_state": "executing",
+                "surface": {"type": "single_item", "items": [], "context": {"type": "single_transaction"}},
+                "_query_semantic_decision": "continuation",
+                "_query_semantic_context_mode": "active_result",
+                "_query_semantic_llm_used": True,
+                "_query_deterministic_surface_action": None,
+            },
+        )
+
+    worker.pipeline.run = _fake_pipeline_run  # type: ignore[method-assign]
+
+    result = await worker.run(
+        payload={"message": "was it successful?"},
+        context={
+            "phone_number": "2348000000303",
+            "user_id": "u4",
+            "accounts": [],
+            "language": "en",
+            "today": date(2026, 3, 13),
+            "stashed_query_session": {
+                "session_active": True,
+                "query_contract": QueryExecutionContract(
+                    intent=QueryIntent.TRANSACTION_SEARCH,
+                    time_start=date(2026, 3, 13),
+                    time_end=date(2026, 3, 13),
+                    normalized_query=NormalizedQuery(
+                        intent=QueryIntent.TRANSACTION_SEARCH,
+                        time_range=TimeRange(start=date(2026, 3, 13), end=date(2026, 3, 13)),
+                    ),
+                ).model_dump(),
+                "query_result": {
+                    "items": [
+                        {
+                            "id": "txn-1",
+                            "description": "Payment to Mum",
+                            "amount": 10000.0,
+                            "date": "2026-03-13",
+                            "metadata": {"status": "processing"},
+                        }
+                    ]
+                },
+                "surface": {"type": "single_item", "items": [], "context": {"type": "single_transaction"}},
+            },
+        },
+    )
+
+    assert result.outcome == TransactionOutcome.OK
+    assert (
+        "query_turn_summary",
+        {
+            "context_mode": "active_result",
+            "semantic_decision": "continuation",
+            "semantic_context_mode": "active_result",
+            "semantic_llm_used": True,
+            "deterministic_surface_action": None,
+            "outcome": "ok",
+            "flow_state": "executing",
+            "surface_type": "single_item",
+            "session_active": True,
+            "has_pending_clarification": False,
+        },
+    ) in events
