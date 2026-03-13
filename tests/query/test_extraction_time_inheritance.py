@@ -15,6 +15,7 @@ from apps.core.src.agent.graphs.query.models import (
     TimeReference,
 )
 from apps.core.src.agent.graphs.query.nodes.extraction import ExtractionStep
+from apps.core.src.agent.graphs.query.services.reasoner import QuerySemanticDecision
 
 
 class _DummyStructured:
@@ -197,13 +198,26 @@ async def test_recipient_ranking_followup_reparses_as_new_beneficiary_summary_qu
         time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="this_week", days_back=5),
         raw_query="who did I send money to the most this week",
     )
-    parse_result = QueryParseResult(outcome=ResolverOutcome.OK, extraction=extraction)
+    def _fake_resolve_existing(
+        parsed_extraction: QueryExtractionResult,
+        *,
+        today: date,
+        language: str,
+    ) -> QueryParseResult:
+        del today, language
+        return QueryParseResult(outcome=ResolverOutcome.OK, extraction=parsed_extraction)
 
-    async def _fake_parse(message: str, today: date, language: str = "en") -> QueryParseResult:
-        del message, today, language
-        return parse_result
+    async def _fake_reason(context: object) -> QuerySemanticDecision:
+        del context
+        return QuerySemanticDecision(
+            decision="new_query",
+            confidence=0.99,
+            reason="recipient_ranking_followup",
+            extraction=extraction,
+        )
 
-    step.parser.parse = _fake_parse  # type: ignore[method-assign]
+    step.reasoner.reason = _fake_reason  # type: ignore[method-assign]
+    step.parser.resolve_existing_extraction = _fake_resolve_existing  # type: ignore[method-assign]
 
     updates = await step._handle_continuation(
         {
@@ -235,26 +249,18 @@ async def test_time_delta_follow_up_preserves_time_comparison_intent() -> None:
     )
     session_contract = QueryExecutionContract.from_normalized_query(session_query)
 
-    async def _fake_classify(
-        message: str,
-        has_active_session: bool,
-        today: str,
-        items: list | None = None,
-        surface: object | None = None,
-        language: str = "en",
-    ) -> tuple[str, dict]:
-        del message, has_active_session, today, items, surface, language
-        return (
-            "time_delta",
-            {
-                "time_range": TimeRange(start=date(2026, 3, 5), end=date(2026, 3, 5)),
-                "delta_type": "time",
-                "confidence": 0.9,
-                "reason": "User asked for yesterday",
-            },
+    async def _fake_reason(context: object) -> QuerySemanticDecision:
+        del context
+        return QuerySemanticDecision(
+            decision="continuation",
+            continuation_type="time_delta",
+            time_range=TimeRange(start=date(2026, 3, 5), end=date(2026, 3, 5)),
+            delta_type="time",
+            confidence=0.9,
+            reason="User asked for yesterday",
         )
 
-    step.classifier.classify = _fake_classify  # type: ignore[method-assign]
+    step.reasoner.reason = _fake_reason  # type: ignore[method-assign]
 
     updates = await step._handle_continuation(
         {"message": "what about yesterday", "today": today, "language": "en"},
@@ -280,26 +286,18 @@ async def test_recipient_drilldown_follow_up_applies_merchant_filter() -> None:
     )
     session_contract = QueryExecutionContract.from_normalized_query(session_query)
 
-    async def _fake_classify(
-        message: str,
-        has_active_session: bool,
-        today: str,
-        items: list | None = None,
-        surface: object | None = None,
-        language: str = "en",
-    ) -> tuple[str, dict]:
-        del message, has_active_session, today, items, surface, language
-        return (
-            "recipient_drill_down",
-            {
-                "recipient_name": "Gaines",
-                "delta_type": "filter",
-                "confidence": 0.99,
-                "reason": "deterministic_recipient_drill_down",
-            },
+    async def _fake_reason(context: object) -> QuerySemanticDecision:
+        del context
+        return QuerySemanticDecision(
+            decision="continuation",
+            continuation_type="recipient_drill_down",
+            recipient_name="Gaines",
+            delta_type="filter",
+            confidence=0.99,
+            reason="deterministic_recipient_drill_down",
         )
 
-    step.classifier.classify = _fake_classify  # type: ignore[method-assign]
+    step.reasoner.reason = _fake_reason  # type: ignore[method-assign]
 
     updates = await step._handle_continuation(
         {"message": "Gaines", "today": today, "language": "en"},

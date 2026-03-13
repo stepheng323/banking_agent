@@ -6,7 +6,9 @@ from typing import Any
 from langchain_core.runnables import Runnable
 
 from apps.core.src.agent.graphs.query.models import (
+    AmbiguityCode,
     NormalizedQuery,
+    PendingClarificationState,
     QueryExecutionContract,
     QueryResultItem,
     ResolverOutcome,
@@ -16,11 +18,11 @@ from apps.core.src.agent.graphs.query.models import (
 )
 from apps.core.src.agent.graphs.query.pipeline import QueryStep
 from apps.core.src.agent.graphs.query.services.continuity import (
-    ContinuationClassifier,
     apply_filter_delta,
     apply_time_delta,
 )
 from apps.core.src.agent.graphs.query.services.parser import QueryParser
+from apps.core.src.agent.graphs.query.services.reasoner import QuerySemanticReasoner, SemanticReasonerContext
 from apps.core.src.agent.graphs.query.utils.timezone import lagos_today
 from apps.core.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
 from shared.i18n import LocaleManager, render_message
@@ -36,7 +38,7 @@ class ExtractionStep(QueryStep):
 
     def __init__(self, llm: Runnable):
         self.parser = QueryParser(llm)
-        self.classifier = ContinuationClassifier(llm)
+        self.reasoner = QuerySemanticReasoner(llm)
 
     def _load_session_query_contract(self, session: dict[str, Any]) -> QueryExecutionContract | None:
         raw_contract = session.get("query_contract")
@@ -45,6 +47,17 @@ class ExtractionStep(QueryStep):
         if isinstance(raw_contract, dict):
             try:
                 return QueryExecutionContract.model_validate(raw_contract)
+            except Exception:
+                return None
+        return None
+
+    def _load_pending_clarification(self, session: dict[str, Any]) -> PendingClarificationState | None:
+        raw_pending = session.get("pending_clarification")
+        if isinstance(raw_pending, PendingClarificationState):
+            return raw_pending
+        if isinstance(raw_pending, dict):
+            try:
+                return PendingClarificationState.model_validate(raw_pending)
             except Exception:
                 return None
         return None
@@ -60,6 +73,8 @@ class ExtractionStep(QueryStep):
         # If we have an active session, check for continuity
         if force_new_query:
             updates = await self._parse_new_query(state)
+        elif query_session and query_session.get("session_active") and self._load_pending_clarification(query_session):
+            updates = await self._handle_pending_clarification(state, query_session)
         elif query_session and query_session.get("session_active"):
             updates = await self._handle_continuation(state, query_session)
         else:
@@ -86,6 +101,74 @@ class ExtractionStep(QueryStep):
             patch=updates,
         )
 
+    async def _handle_pending_clarification(self, state: dict[str, Any], session: dict[str, Any]) -> dict[str, Any]:
+        """Resolve a follow-up against an unresolved semantic query state."""
+        pending = self._load_pending_clarification(session)
+        if pending is None:
+            return await self._parse_new_query(state)
+
+        message = state.get("message", "")
+        today_state = state.get("today")
+        today = today_state if isinstance(today_state, date) else lagos_today()
+        locale = LocaleManager.normalize(state.get("language")).value
+
+        decision = await self.reasoner.reason(
+            SemanticReasonerContext(
+                message=message,
+                today=today,
+                language=locale,
+                pending_clarification=pending,
+            )
+        )
+        logger.info(
+            "query_pending_clarification_resolved",
+            decision=decision.decision,
+            reason=decision.reason,
+            confidence=decision.confidence,
+        )
+
+        if decision.decision == "end_session":
+            return {
+                "transaction_outcome": TransactionOutcome.OK,
+                "response": render_message("query.session.goodbye", locale),
+                "session_active": False,
+                "pending_clarification": None,
+                "flow_state": "complete",
+            }
+
+        if decision.decision == "new_query":
+            return self._parse_reasoner_extraction_to_updates(
+                decision,
+                state=state,
+                today=today,
+                language=locale,
+            )
+
+        if decision.decision == "clarification_answer":
+            patched_extraction = pending.original_extraction.model_copy(deep=True)
+            if decision.time_period:
+                parsed_time_range = self.parser.parse_clarification_time_range(decision.time_period, today=today)
+                if parsed_time_range is not None:
+                    patched_extraction.time_range = parsed_time_range
+                    patched_extraction.ambiguities = [
+                        ambiguity
+                        for ambiguity in patched_extraction.ambiguities
+                        if ambiguity.code != AmbiguityCode.TIME_VAGUE
+                    ]
+            result = self.parser.resolve_existing_extraction(
+                patched_extraction,
+                today=today,
+                language=locale,
+            )
+            return self._parse_result_to_updates(result, state=state, today=today, language=locale)
+
+        return self._parse_reasoner_extraction_to_updates(
+            decision,
+            state=state,
+            today=today,
+            language=locale,
+        )
+
     async def _handle_continuation(self, state: dict[str, Any], session: dict[str, Any]) -> dict[str, Any]:
         """Handle possible continuation of previous query."""
         message = state.get("message", "")
@@ -110,29 +193,66 @@ class ExtractionStep(QueryStep):
         raw_surface = session.get("surface")
         surface = ResultSurface.model_validate(raw_surface) if isinstance(raw_surface, dict) else raw_surface
 
-        cont_type, data = await self.classifier.classify(
-            message,
-            has_active_session=True,
-            today=today.isoformat(),
-            items=items,
-            surface=surface,
-            language=LocaleManager.normalize(state.get("language")).value,
+        decision = await self.reasoner.reason(
+            SemanticReasonerContext(
+                message=message,
+                today=today,
+                language=LocaleManager.normalize(state.get("language")).value,
+                query_contract=session_query_contract,
+                items=items,
+                surface=surface,
+            )
         )
+        cont_type = decision.continuation_type or "new_query"
+        data = {
+            "confidence": decision.confidence,
+            "reason": decision.reason,
+            "delta_type": decision.delta_type,
+            "time_range": decision.time_range,
+            "filters": decision.filters,
+            "result_limit": decision.result_limit,
+            "result_reference": decision.result_reference,
+            "drill_down_index": decision.drill_down_index,
+            "drill_down_action": decision.drill_down_action,
+            "recipient_name": decision.recipient_name,
+            "end_session_response": decision.end_session_response,
+        }
 
         logger.info(
             "query_continuation_type",
             type=cont_type,
-            confidence=data.get("confidence"),
-            reason=data.get("reason"),
-            override=data.get("is_new_query_override"),
+            confidence=decision.confidence,
+            reason=decision.reason,
+            semantic_decision=decision.decision,
         )
 
-        # LLM override for new query or low-confidence classifications.
-        if data.get("is_new_query_override") or data.get("restates_query"):
+        if decision.decision == "end_session":
+            locale = LocaleManager.normalize(state.get("language")).value
+            return {
+                "transaction_outcome": TransactionOutcome.OK,
+                "response": decision.end_session_response or render_message("query.session.goodbye", locale),
+                "session_active": False,
+                "flow_state": "complete",
+            }
+
+        if decision.decision in {"fresh_query", "new_query", "reinterpret_query"}:
+            return self._parse_reasoner_extraction_to_updates(
+                decision,
+                state=state,
+                today=today,
+                language=LocaleManager.normalize(state.get("language")).value,
+            )
+
+        if decision.decision != "continuation":
             return await self._parse_new_query(state)
 
         if self._should_force_new_query(message, cont_type, data):
-            return await self._parse_new_query(state)
+            return self._parse_reasoner_extraction_to_updates(
+                decision,
+                state=state,
+                today=today,
+                language=LocaleManager.normalize(state.get("language")).value,
+            ) if decision.extraction is not None else await self._parse_new_query(state)
 
         # Trust the LLM classification unless it explicitly signals a new-query override.
 
@@ -140,7 +260,7 @@ class ExtractionStep(QueryStep):
         updates: dict[str, Any] = {
             "flow_state": "executing",
             "continuation_type": cont_type,
-            "continuation_delta_type": data.get("delta_type"),
+            "continuation_delta_type": decision.delta_type,
             # Merging session data is handled by the worker initiating the state,
             # but we ensure critical keys are present or updated.
             # Ideally the 'state' passed in already has session data merged.
@@ -152,16 +272,16 @@ class ExtractionStep(QueryStep):
 
         elif cont_type == "time_delta":
             original_query = session_query_contract.normalized_query if session_query_contract else None
-            if original_query:
-                new_query = apply_time_delta(original_query, data["time_range"])
-                if "result_limit" in data:
-                    new_query.result_limit = data["result_limit"]
-                if "result_reference" in data:
-                    new_query.result_reference = data["result_reference"]
+            if original_query and decision.time_range is not None:
+                new_query = apply_time_delta(original_query, decision.time_range)
+                if decision.result_limit is not None:
+                    new_query.result_limit = decision.result_limit
+                if decision.result_reference is not None:
+                    new_query.result_reference = decision.result_reference
                 updates["query_contract"] = QueryExecutionContract.from_normalized_query(
                     new_query,
                     continuation_type=cont_type,
-                    continuation_delta_type=data.get("delta_type"),
+                    continuation_delta_type=decision.delta_type,
                 )
                 updates["current_page"] = 0
                 updates["show_expanded"] = False
@@ -169,20 +289,20 @@ class ExtractionStep(QueryStep):
         elif cont_type == "filter_delta":
             original_query = session_query_contract.normalized_query if session_query_contract else None
             if original_query:
-                delta_type = data.get("delta_type")
+                delta_type = decision.delta_type
                 allow_limit = delta_type in (None, "limit", "reference")
                 allow_reference = delta_type in (None, "reference", "limit")
 
-                new_query = apply_filter_delta(original_query, data["filters"]) if "filters" in data else original_query
+                new_query = apply_filter_delta(original_query, decision.filters) if decision.filters else original_query
 
-                if "result_limit" in data and allow_limit:
-                    new_query.result_limit = data["result_limit"]
-                if "result_reference" in data and allow_reference:
-                    new_query.result_reference = data["result_reference"]
+                if decision.result_limit is not None and allow_limit:
+                    new_query.result_limit = decision.result_limit
+                if decision.result_reference is not None and allow_reference:
+                    new_query.result_reference = decision.result_reference
                 updates["query_contract"] = QueryExecutionContract.from_normalized_query(
                     new_query,
                     continuation_type=cont_type,
-                    continuation_delta_type=data.get("delta_type"),
+                    continuation_delta_type=decision.delta_type,
                 )
                 updates["current_page"] = 0
                 updates["show_expanded"] = False
@@ -191,7 +311,7 @@ class ExtractionStep(QueryStep):
             updates["show_expanded"] = True
 
         elif cont_type == "drill_down":
-            drill_idx = data.get("drill_down_index", 0)
+            drill_idx = decision.drill_down_index if decision.drill_down_index is not None else 0
 
             # Special handling for BREAKDOWN surface: Drill down means filter by category
             surface = session.get("surface")
@@ -227,7 +347,7 @@ class ExtractionStep(QueryStep):
                         updates["query_contract"] = QueryExecutionContract.from_normalized_query(
                             new_query,
                             continuation_type=cont_type,
-                            continuation_delta_type=data.get("delta_type"),
+                            continuation_delta_type=decision.delta_type,
                         )
                         updates["current_page"] = 0
                         updates["show_expanded"] = False
@@ -235,11 +355,11 @@ class ExtractionStep(QueryStep):
             # Default behavior for LIST surface (Item Detail)
             elif items and 0 <= drill_idx < len(items):
                 updates["selected_item_index"] = drill_idx
-                updates["drill_down_action"] = data.get("drill_down_action")
+                updates["drill_down_action"] = decision.drill_down_action
 
         elif cont_type == "recipient_drill_down":
             # Recipient drill down (filter by this recipient)
-            recipient_name = data.get("recipient_name")
+            recipient_name = decision.recipient_name
             if recipient_name:
                 from apps.core.src.agent.graphs.query.models import Filters
 
@@ -250,7 +370,7 @@ class ExtractionStep(QueryStep):
                     updates["query_contract"] = QueryExecutionContract.from_normalized_query(
                         new_query,
                         continuation_type=cont_type,
-                        continuation_delta_type=data.get("delta_type"),
+                        continuation_delta_type=decision.delta_type,
                     )
                     updates["current_page"] = 0
                     updates["show_expanded"] = False
@@ -260,14 +380,24 @@ class ExtractionStep(QueryStep):
             # Usually fallback to new query check is safer.
             return await self._parse_new_query(state)
 
-        elif cont_type == "new_query" or cont_type == "aggregate":
+        elif cont_type == "new_query":
+            return await self._parse_new_query(state)
+
+        elif cont_type == "aggregate":
+            if decision.extraction is not None:
+                return self._parse_reasoner_extraction_to_updates(
+                    decision,
+                    state=state,
+                    today=today,
+                    language=LocaleManager.normalize(state.get("language")).value,
+                )
             return await self._parse_new_query(state)
 
         elif cont_type == "end_session":
             locale = LocaleManager.normalize(state.get("language")).value
             return {
                 "transaction_outcome": TransactionOutcome.OK,  # Or OK?
-                "response": data.get("end_session_response", render_message("query.session.goodbye", locale)),
+                "response": decision.end_session_response or render_message("query.session.goodbye", locale),
                 "session_active": False,
                 "flow_state": "complete",
             }
@@ -281,18 +411,62 @@ class ExtractionStep(QueryStep):
         today = today_state if isinstance(today_state, date) else lagos_today()
         language = LocaleManager.normalize(state.get("language")).value
 
-        result = await self.parser.parse(message, today=today, language=language)
+        decision = await self.reasoner.reason(
+            SemanticReasonerContext(
+                message=message,
+                today=today,
+                language=language,
+            )
+        )
+        return self._parse_reasoner_extraction_to_updates(decision, state=state, today=today, language=language)
 
-        # Check for resolver outcomes
-        if result.outcome == ResolverOutcome.NEEDS_INPUT:
-            clarify_fallback = render_message("query.clarify.default", language)
+    def _parse_reasoner_extraction_to_updates(
+        self,
+        decision: Any,
+        *,
+        state: dict[str, Any],
+        today: date,
+        language: str,
+    ) -> dict[str, Any]:
+        """Translate semantic reasoner extraction output into parser/compiler updates."""
+        extraction = getattr(decision, "extraction", None)
+        if extraction is None:
             return {
-                "transaction_outcome": TransactionOutcome.NEEDS_INPUT,
-                "response": result.resolver_message or clarify_fallback,
+                "transaction_outcome": TransactionOutcome.FAILED,
+                "response": render_message("query.error.general", language),
                 "flow_state": "parsing",
             }
+        result = self.parser.resolve_existing_extraction(extraction, today=today, language=language)
+        return self._parse_result_to_updates(result, state=state, today=today, language=language)
 
-        # Combine notices with resolver message
+    def _parse_result_to_updates(
+        self,
+        result: Any,
+        *,
+        state: dict[str, Any],
+        today: date,
+        language: str,
+        message_override: str | None = None,
+    ) -> dict[str, Any]:
+        """Translate parser outcomes into extraction-step state updates."""
+
+        if result.outcome == ResolverOutcome.NEEDS_INPUT:
+            clarify_fallback = render_message("query.clarify.default", language)
+            updates = {
+                "transaction_outcome": TransactionOutcome.NEEDS_INPUT,
+                "response": result.resolver_message or clarify_fallback,
+                "session_active": True,
+                "pending_clarification": (
+                    PendingClarificationState.model_validate(result.pending_clarification)
+                    if result.pending_clarification
+                    else None
+                ),
+                "flow_state": "parsing",
+            }
+            if result.resolver_message:
+                updates["resolver_message"] = result.resolver_message
+            return updates
+
         resolver_msg_parts = []
         if result.resolver_message:
             resolver_msg_parts.append(result.resolver_message)
@@ -325,6 +499,7 @@ class ExtractionStep(QueryStep):
 
         # If this is a fresh parse with unspecified time, inherit prior active-session window.
         query_session = state.get("query_session")
+        message = message_override if message_override is not None else state.get("message", "")
         if (
             isinstance(query_session, dict)
             and query_session.get("session_active")
@@ -356,6 +531,7 @@ class ExtractionStep(QueryStep):
             "flow_state": "executing",
             "current_page": 0,
             "session_active": True,
+            "pending_clarification": None,
             "show_expanded": False,
         }
 

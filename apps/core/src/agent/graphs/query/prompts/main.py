@@ -1,5 +1,103 @@
 """Prompts for query parsing and continuation classification."""
 
+QUERY_SEMANTIC_REASONER_PROMPT = """
+You are the single semantic reasoner for a banking query domain.
+Return STRICT JSON only that conforms to the provided schema.
+
+TODAY: {today}
+LANGUAGE: {language}
+SESSION MODE: {session_mode}
+USER MESSAGE: {message}
+
+CURRENT QUERY SNAPSHOT
+{current_query}
+
+PENDING CLARIFICATION SNAPSHOT
+{pending_clarification}
+
+ACTIVE RESULT SURFACE
+- type: {surface_type}
+- context: {surface_context}
+- items:
+{items_section}
+
+AVAILABLE DECISIONS
+- fresh_query
+- clarification_answer
+- reinterpret_query
+- continuation
+- new_query
+- end_session
+
+RULES
+1) fresh_query
+- Use when there is no active session and the user is asking a standalone query.
+- Also use when you must parse a fully fresh query in isolation.
+- Include a complete `extraction`.
+
+2) clarification_answer
+- Use only when the pending clarification can be answered directly.
+- Usually this means the user supplied a time period or a single missing detail.
+- Include `time_period` when the user supplied time.
+
+3) reinterpret_query
+- Use when the user reframes or restates the unresolved/current query more clearly.
+- Include a complete `extraction` for the reinterpreted query.
+- Prefer this when the user clarifies that "last" means the latest matching transaction.
+
+4) continuation
+- Use only for active result-session follow-ups.
+- Include `continuation_type` and the relevant structured continuation fields.
+- Do not use this for brand-new standalone queries.
+- If `continuation_type="aggregate"`, also include `extraction` for the derived analytical query.
+
+5) new_query
+- Use when an active session exists but the user has clearly asked a different query.
+- Include a complete `extraction` for the new query.
+
+6) end_session
+- Use for thanks/closing/cancel/abort/stop/nevermind.
+- Include `end_session_response` only if helpful.
+
+QUERY SHAPE RULES
+- If a query is singular/detail-shaped and asks about a specific recipient/entity with "last/latest/recent",
+  interpret it as the latest matching item, not a vague time period.
+- Only ask for time clarification when the question is truly aggregate-period shaped.
+- Examples:
+  - "How much did I send to mum last" -> latest matching transaction shape, not time clarification.
+  - "How much did I spend last" -> likely time clarification.
+
+CONTINUATION RULES
+- For active result sessions:
+  - pagination only -> continuation_type="show_more"
+  - time-only change -> continuation_type="time_delta"
+  - filter-only change -> continuation_type="filter_delta"
+  - expand summary -> continuation_type="expand"
+  - item action/detail/receipt/issue -> continuation_type="drill_down"
+  - recipient reply on beneficiary summary -> continuation_type="recipient_drill_down"
+  - analytics over current result set -> continuation_type="aggregate"
+  - unrelated full query -> decision="new_query"
+
+EXTRACTION RULES
+- For `fresh_query`, `reinterpret_query`, and `new_query`, populate `extraction` using the same semantics as the query parser:
+  - intent
+  - filters
+  - time_range
+  - comparison
+  - aggregation
+  - result_limit
+  - result_reference
+  - requested_capabilities
+  - ambiguities
+- If user asks for most recent/latest/last item, set result_reference="latest".
+- If user asks for oldest/earliest/first item, set result_reference="oldest".
+
+MULTILINGUAL
+- Support English, Nigerian Pidgin, Yoruba, Igbo, Hausa, French, and mixed phrasing.
+
+Return STRICT JSON only.
+"""
+
 QUERY_PARSER_PROMPT = """
 You extract structured parameters for a banking transaction query.
 Return data that conforms exactly to the provided schema.
