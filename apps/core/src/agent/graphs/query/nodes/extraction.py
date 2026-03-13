@@ -40,6 +40,15 @@ class ExtractionStep(QueryStep):
         self.parser = QueryParser(llm)
         self.reasoner = QuerySemanticReasoner(llm)
 
+    @staticmethod
+    def _semantic_trace_updates(decision: Any) -> dict[str, Any]:
+        return {
+            "_query_semantic_decision": getattr(decision, "decision", None),
+            "_query_semantic_context_mode": getattr(decision, "semantic_context_mode", None),
+            "_query_semantic_llm_used": getattr(decision, "semantic_llm_used", None),
+            "_query_deterministic_surface_action": getattr(decision, "deterministic_surface_action", None),
+        }
+
     def _load_session_query_contract(self, session: dict[str, Any]) -> QueryExecutionContract | None:
         raw_contract = session.get("query_contract")
         if isinstance(raw_contract, QueryExecutionContract):
@@ -134,6 +143,7 @@ class ExtractionStep(QueryStep):
                 "session_active": False,
                 "pending_clarification": None,
                 "flow_state": "complete",
+                **self._semantic_trace_updates(decision),
             }
 
         if decision.decision == "new_query":
@@ -160,14 +170,18 @@ class ExtractionStep(QueryStep):
                 today=today,
                 language=locale,
             )
-            return self._parse_result_to_updates(result, state=state, today=today, language=locale)
+            updates = self._parse_result_to_updates(result, state=state, today=today, language=locale)
+            updates.update(self._semantic_trace_updates(decision))
+            return updates
 
-        return self._parse_reasoner_extraction_to_updates(
+        updates = self._parse_reasoner_extraction_to_updates(
             decision,
             state=state,
             today=today,
             language=locale,
         )
+        updates.update(self._semantic_trace_updates(decision))
+        return updates
 
     async def _handle_continuation(self, state: dict[str, Any], session: dict[str, Any]) -> dict[str, Any]:
         """Handle possible continuation of previous query."""
@@ -233,26 +247,32 @@ class ExtractionStep(QueryStep):
                 "response": decision.end_session_response or render_message("query.session.goodbye", locale),
                 "session_active": False,
                 "flow_state": "complete",
+                **self._semantic_trace_updates(decision),
             }
 
         if decision.decision in {"fresh_query", "new_query", "reinterpret_query"}:
-            return self._parse_reasoner_extraction_to_updates(
+            semantic_updates = self._parse_reasoner_extraction_to_updates(
                 decision,
                 state=state,
                 today=today,
                 language=LocaleManager.normalize(state.get("language")).value,
             )
+            semantic_updates.update(self._semantic_trace_updates(decision))
+            return semantic_updates
 
         if decision.decision != "continuation":
             return await self._parse_new_query(state)
 
         if self._should_force_new_query(message, cont_type, data):
-            return self._parse_reasoner_extraction_to_updates(
+            semantic_updates = self._parse_reasoner_extraction_to_updates(
                 decision,
                 state=state,
                 today=today,
                 language=LocaleManager.normalize(state.get("language")).value,
             ) if decision.extraction is not None else await self._parse_new_query(state)
+            if isinstance(semantic_updates, dict):
+                semantic_updates.update(self._semantic_trace_updates(decision))
+            return semantic_updates
 
         # Trust the LLM classification unless it explicitly signals a new-query override.
 
@@ -261,6 +281,7 @@ class ExtractionStep(QueryStep):
             "flow_state": "executing",
             "continuation_type": cont_type,
             "continuation_delta_type": decision.delta_type,
+            **self._semantic_trace_updates(decision),
             # Merging session data is handled by the worker initiating the state,
             # but we ensure critical keys are present or updated.
             # Ideally the 'state' passed in already has session data merged.
@@ -400,6 +421,7 @@ class ExtractionStep(QueryStep):
                 "response": decision.end_session_response or render_message("query.session.goodbye", locale),
                 "session_active": False,
                 "flow_state": "complete",
+                **self._semantic_trace_updates(decision),
             }
 
         return updates
@@ -418,7 +440,9 @@ class ExtractionStep(QueryStep):
                 language=language,
             )
         )
-        return self._parse_reasoner_extraction_to_updates(decision, state=state, today=today, language=language)
+        updates = self._parse_reasoner_extraction_to_updates(decision, state=state, today=today, language=language)
+        updates.update(self._semantic_trace_updates(decision))
+        return updates
 
     def _parse_reasoner_extraction_to_updates(
         self,

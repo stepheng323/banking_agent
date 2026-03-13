@@ -170,3 +170,59 @@ async def test_worker_persists_pending_query_clarification_session() -> None:
     assert session_manager.saved_state is not None
     assert session_manager.saved_state["session_active"] is True
     assert session_manager.saved_state["pending_clarification"] == pending
+
+
+@pytest.mark.asyncio
+async def test_worker_logs_query_turn_summary(monkeypatch: pytest.MonkeyPatch) -> None:
+    session_manager = _SessionManager()
+    worker = QueryWorker(_DummyLLM(), _DummyProvider(), session_manager)  # type: ignore[arg-type]
+    events: list[tuple[str, dict[str, Any]]] = []
+
+    def _capture(event: str, **kwargs: Any) -> None:
+        events.append((event, kwargs))
+
+    monkeypatch.setattr("apps.core.src.agent.graphs.query.worker.logger.info", _capture)
+
+    async def _fake_pipeline_run(state: dict[str, Any], worker_context: Any) -> TransactionResult:
+        del state, worker_context
+        return TransactionResult(
+            outcome=TransactionOutcome.OK,
+            patch={
+                "session_active": True,
+                "flow_state": "executing",
+                "_query_semantic_decision": "fresh_query",
+                "_query_semantic_context_mode": "none",
+                "_query_semantic_llm_used": True,
+                "_query_deterministic_surface_action": None,
+            },
+        )
+
+    worker.pipeline.run = _fake_pipeline_run  # type: ignore[method-assign]
+
+    result = await worker.run(
+        payload={"message": "show my last transaction"},
+        context={
+            "phone_number": "2348000000302",
+            "user_id": "u3",
+            "accounts": [],
+            "language": "en",
+            "today": date(2026, 3, 13),
+        },
+    )
+
+    assert result.outcome == TransactionOutcome.OK
+    assert (
+        "query_turn_summary",
+        {
+            "context_mode": "fresh",
+            "semantic_decision": "fresh_query",
+            "semantic_context_mode": "none",
+            "semantic_llm_used": True,
+            "deterministic_surface_action": None,
+            "outcome": "ok",
+            "flow_state": "executing",
+            "surface_type": None,
+            "session_active": True,
+            "has_pending_clarification": False,
+        },
+    ) in events

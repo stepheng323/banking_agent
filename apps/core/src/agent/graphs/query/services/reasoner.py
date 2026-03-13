@@ -103,6 +103,9 @@ class QuerySemanticDecision(BaseModel):
     )
     recipient_name: str | None = Field(default=None)
     end_session_response: str | None = Field(default=None)
+    semantic_context_mode: Literal["none", "pending_clarification", "active_result"] | None = Field(default=None)
+    semantic_llm_used: bool | None = Field(default=None)
+    deterministic_surface_action: str | None = Field(default=None)
 
 
 @dataclass
@@ -150,6 +153,19 @@ class QuerySemanticReasoner:
             confidence=decision.confidence,
             reason=decision.reason,
         )
+
+    @staticmethod
+    def _annotate_decision(
+        *,
+        context_mode: Literal["none", "pending_clarification", "active_result"],
+        decision: QuerySemanticDecision,
+        llm_used: bool,
+        deterministic_surface_action: str | None = None,
+    ) -> QuerySemanticDecision:
+        decision.semantic_context_mode = context_mode
+        decision.semantic_llm_used = llm_used
+        decision.deterministic_surface_action = deterministic_surface_action
+        return decision
 
     @staticmethod
     def _normalize(text: str) -> str:
@@ -276,15 +292,23 @@ class QuerySemanticReasoner:
 
         if context.session_mode == "pending_clarification":
             if self._looks_like_end_session(context.message):
-                decision = QuerySemanticDecision(decision="end_session", confidence=1.0, reason="deterministic_end")
+                decision = self._annotate_decision(
+                    context_mode=context.session_mode,
+                    decision=QuerySemanticDecision(decision="end_session", confidence=1.0, reason="deterministic_end"),
+                    llm_used=False,
+                )
                 self._log_reasoner_decision(context_mode=context.session_mode, decision=decision, llm_used=False)
                 return decision
             if self._looks_like_time_reply(context.message):
-                decision = QuerySemanticDecision(
-                    decision="clarification_answer",
-                    confidence=0.99,
-                    reason="deterministic_time_reply",
-                    time_period=normalized,
+                decision = self._annotate_decision(
+                    context_mode=context.session_mode,
+                    decision=QuerySemanticDecision(
+                        decision="clarification_answer",
+                        confidence=0.99,
+                        reason="deterministic_time_reply",
+                        time_period=normalized,
+                    ),
+                    llm_used=False,
                 )
                 self._log_reasoner_decision(context_mode=context.session_mode, decision=decision, llm_used=False)
                 return decision
@@ -295,6 +319,12 @@ class QuerySemanticReasoner:
                 language=context.language,
             )
             if deterministic_surface is not None:
+                deterministic_surface = self._annotate_decision(
+                    context_mode=context.session_mode,
+                    decision=deterministic_surface,
+                    llm_used=False,
+                    deterministic_surface_action=deterministic_surface.drill_down_action,
+                )
                 logger.info(
                     "query_surface_action_deterministic",
                     reasoner_context_mode=context.session_mode,
@@ -310,6 +340,11 @@ class QuerySemanticReasoner:
 
             guardrail_decision = self._continuation_guardrail_decision(context)
             if guardrail_decision is not None:
+                guardrail_decision = self._annotate_decision(
+                    context_mode=context.session_mode,
+                    decision=guardrail_decision,
+                    llm_used=False,
+                )
                 self._log_reasoner_decision(
                     context_mode=context.session_mode,
                     decision=guardrail_decision,
@@ -335,24 +370,37 @@ class QuerySemanticReasoner:
             decision = await self.structured_llm.ainvoke(prompt)
             if decision.extraction is not None:
                 decision.extraction.raw_query = decision.extraction.raw_query or context.message
+            decision = self._annotate_decision(
+                context_mode=context.session_mode,
+                decision=decision,
+                llm_used=True,
+            )
             self._log_reasoner_decision(context_mode=context.session_mode, decision=decision, llm_used=True)
             return decision
         except Exception as exc:
             logger.error("query_semantic_reasoner_failed", error=str(exc))
             if context.session_mode == "none":
-                decision = QuerySemanticDecision(
-                    decision="fresh_query",
-                    confidence=0.0,
-                    reason="fallback_empty_fresh_query",
-                    extraction=QueryExtractionResult(raw_query=context.message),
+                decision = self._annotate_decision(
+                    context_mode=context.session_mode,
+                    decision=QuerySemanticDecision(
+                        decision="fresh_query",
+                        confidence=0.0,
+                        reason="fallback_empty_fresh_query",
+                        extraction=QueryExtractionResult(raw_query=context.message),
+                    ),
+                    llm_used=False,
                 )
                 self._log_reasoner_decision(context_mode=context.session_mode, decision=decision, llm_used=False)
                 return decision
-            decision = QuerySemanticDecision(
-                decision="new_query",
-                confidence=0.0,
-                reason="fallback_new_query",
-                extraction=QueryExtractionResult(raw_query=context.message),
+            decision = self._annotate_decision(
+                context_mode=context.session_mode,
+                decision=QuerySemanticDecision(
+                    decision="new_query",
+                    confidence=0.0,
+                    reason="fallback_new_query",
+                    extraction=QueryExtractionResult(raw_query=context.message),
+                ),
+                llm_used=False,
             )
             self._log_reasoner_decision(context_mode=context.session_mode, decision=decision, llm_used=False)
             return decision

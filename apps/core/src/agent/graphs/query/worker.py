@@ -43,6 +43,44 @@ class QueryWorker:
         self.executor = ExecutionStep()
         self.pipeline = QueryPipeline([self.extractor, self.executor])
 
+    @staticmethod
+    def _query_context_mode(state: dict[str, Any]) -> str:
+        query_session = state.get("query_session")
+        if not isinstance(query_session, dict) or not query_session.get("session_active"):
+            return "fresh"
+        if query_session.get("pending_clarification"):
+            return "pending_clarification"
+        return "active_result"
+
+    @staticmethod
+    def _surface_type_name(value: Any) -> str | None:
+        if value is None:
+            return None
+        if isinstance(value, dict):
+            raw_type = value.get("type")
+            return str(raw_type) if raw_type is not None else None
+        raw_type = getattr(value, "type", None)
+        if raw_type is None:
+            return None
+        return getattr(raw_type, "value", str(raw_type))
+
+    def _log_turn_summary(self, *, state: dict[str, Any], result: TransactionResult) -> None:
+        patch = result.patch or {}
+        final_state = {**state, **patch}
+        logger.info(
+            "query_turn_summary",
+            context_mode=self._query_context_mode(state),
+            semantic_decision=patch.get("_query_semantic_decision"),
+            semantic_context_mode=patch.get("_query_semantic_context_mode"),
+            semantic_llm_used=patch.get("_query_semantic_llm_used"),
+            deterministic_surface_action=patch.get("_query_deterministic_surface_action"),
+            outcome=result.outcome.value if hasattr(result.outcome, "value") else str(result.outcome),
+            flow_state=final_state.get("flow_state"),
+            surface_type=self._surface_type_name(final_state.get("surface")),
+            session_active=final_state.get("session_active"),
+            has_pending_clarification=bool(final_state.get("pending_clarification")),
+        )
+
     async def run(
         self,
         payload: dict[str, Any],
@@ -129,6 +167,7 @@ class QueryWorker:
         # 4. Run Pipeline
         try:
             result = cast(TransactionResult, await self.pipeline.run(state, worker_context))
+            self._log_turn_summary(state=state, result=result)
 
             # 5. Handle Session Persistence
             if result.outcome in (TransactionOutcome.OK, TransactionOutcome.NEEDS_INPUT) and result.patch:
