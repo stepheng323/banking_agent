@@ -84,10 +84,13 @@ Rules:
    - response must be grounded only in provided context/history
    - never guess or invent missing facts
    - never use this for mutations or money movement
+   - use this only for fact-class answers (status/count/boolean/short recap)
+   - do NOT use this for structured surfaces like detail cards, lists, pagination, or actionable result screens
    - if context is insufficient or ambiguous, use go_planner instead
    Examples:
    - "Can I use First Bank now?" -> direct_context_answer
    - "Is First Bank ready?" -> direct_context_answer
+   - "Is my First Bank account ready?" -> direct_context_answer
    - "Which account is default now?" -> direct_context_answer when account context is enough
    - "Can I use fisr bank now?" -> direct_context_answer if context clearly shows First Bank
    - "Do I still have Mum saved?" -> direct_context_answer
@@ -95,6 +98,12 @@ Rules:
    - "Any more debits after that?" -> direct_context_answer when active query/session context already answers it
    - "Where did we stop?" -> direct_context_answer when active flow context is enough
    - "What are we doing again?" -> direct_context_answer when active flow context is enough
+   Counterexamples:
+   - "Show my last transaction" -> go_planner
+   - "What was my last transfer?" -> go_planner
+   - "Show my linked accounts" -> go_planner
+   - "Show my beneficiaries" -> go_planner
+   - "More" while viewing transactions -> query_continuation
 4) Otherwise use decision=go_planner.
 5) Populate expected_transaction_executors only when user explicitly asks those transaction actions.
 5b) For explicit mixed transaction requests, include every mentioned executor in expected_transaction_executors.

@@ -26,6 +26,15 @@ from apps.core.src.agent.orchestrator.nodes.planner_context import (
     build_router_context_from_summary,
     get_or_build_turn_context_summary,
 )
+from apps.core.src.agent.orchestrator.nodes.planner_fastpath import synthesize_account_fastpath_response
+from apps.core.src.agent.orchestrator.nodes.planner_query_shortcuts import (
+    _looks_like_explicit_query_continuation,
+    _normalize_shortcut_message,
+)
+from apps.core.src.agent.orchestrator.nodes.response_classes import (
+    classify_read_only_response_class,
+    is_surface_response_class,
+)
 from shared.i18n import LocaleManager, render_locale_switched, render_message
 from shared.utils.logging import get_logger
 
@@ -73,6 +82,11 @@ TURN_ROUTER_IMPERATIVE_ACTION_PREFIXES = (
     "link ",
     "delete ",
     "remove ",
+)
+TURN_ROUTER_QUERY_SESSION_META_ALLOW_PATTERNS = (
+    r"\b(hi|hello|hey|how far|good (morning|afternoon|evening))\b",
+    r"\b(who are you|what can you do|help me|can you help)\b",
+    r"\b(thank you|thanks)\b",
 )
 TURN_ROUTER_CONTEXT_HINT_PATTERNS = (
     r"\b(bank|account|acct|beneficiary|saved|debit|credit|transactions?|default|mandate|ready)\b",
@@ -310,6 +324,54 @@ def _has_explicit_cancel(message_text: str) -> bool:
     if not normalized:
         return False
     return any(re.search(pattern, normalized) for pattern in EXPLICIT_CANCEL_PATTERNS)
+
+
+def _is_explicit_meta_turn(message_text: str) -> bool:
+    normalized = re.sub(r"\s+", " ", message_text.strip().lower())
+    if not normalized:
+        return False
+    return any(re.search(pattern, normalized) for pattern in TURN_ROUTER_QUERY_SESSION_META_ALLOW_PATTERNS)
+
+
+def _should_ignore_query_session_direct_response(
+    *,
+    message_text: str,
+    route: Any,
+    query_session_snapshot: dict[str, Any] | None,
+) -> bool:
+    if not isinstance(query_session_snapshot, dict) or not query_session_snapshot.get("session_active"):
+        return False
+    if getattr(route, "decision", None) != "respond_directly":
+        return False
+
+    response_key = str(getattr(route, "response_key", "") or "")
+    if response_key == "planner.cancelled":
+        return not _has_explicit_cancel(message_text)
+    if response_key in {
+        "conversational.checkin",
+        "conversational.identity",
+        "conversational.brand_origin",
+        "conversational.capability_question",
+    }:
+        return not _is_explicit_meta_turn(message_text)
+    return False
+
+
+def _should_block_direct_router_surface_response(
+    *,
+    message_text: str,
+    route: Any,
+    loaded_context: dict[str, Any] | None,
+    query_session_snapshot: dict[str, Any] | None,
+) -> bool:
+    if getattr(route, "decision", None) not in {"respond_directly", "direct_context_answer"}:
+        return False
+    response_class = classify_read_only_response_class(
+        message_text,
+        loaded_context=loaded_context,
+        query_session_snapshot=query_session_snapshot,
+    )
+    return is_surface_response_class(response_class)
 
 
 def _normalize_suggestion_text(value: str) -> str:
@@ -584,29 +646,40 @@ async def session_gate_fastpath(state: OrchestratorState, config: RunnableConfig
 
         # --- 3. Fast Query Resume ---
         if session.domain == "query":
+            normalized_query_turn = _normalize_shortcut_message(message_text)
             fast_keywords = {
                 "more",
                 "next",
                 "back",
                 "previous",
                 "prev",
-                "show",
-                "filter",
-                "sort",
                 "details",
+                "show details",
+                "receipt",
+                "issue",
+                "report issue",
+                "show more",
+                "show them",
+                "which ones",
+                "next page",
+                "last month",
+                "this month",
+                "yesterday",
+                "today",
+                "only debits",
+                "only credits",
                 "first",
-                "last",
                 "latest",
                 "oldest",
-                "drill",
-                "expand",
             }
-
-            first_word = message_lowered.split()[0] if message_lowered else ""
-            is_fast_match = first_word in fast_keywords or "page" in message_lowered or "only" in message_lowered
+            is_fast_match = (
+                normalized_query_turn in fast_keywords
+                or _looks_like_explicit_query_continuation(message_text)
+                or re.fullmatch(r"page\s+\d+", normalized_query_turn) is not None
+            )
 
             if is_fast_match:
-                logger.info("fast_path_query_match", phrase=first_word)
+                logger.info("fast_path_query_match", phrase=normalized_query_turn)
 
                 task_id = _next_fast_query_task_id(state.tasks)
                 spec = TaskSpec(
@@ -697,13 +770,54 @@ async def session_gate_fastpath(state: OrchestratorState, config: RunnableConfig
             if expected_executors:
                 updates["preplanner_expected_transaction_executors"] = expected_executors
 
-            if route.decision in {"respond_directly", "direct_context_answer"}:
+            if _should_ignore_query_session_direct_response(
+                message_text=message_text,
+                route=route,
+                query_session_snapshot=query_session_snapshot,
+            ):
+                logger.info(
+                    "gate_turn_router_query_session_direct_response_ignored",
+                    response_key=getattr(route, "response_key", None),
+                )
+                route = None
+
+            if route is not None and _should_block_direct_router_surface_response(
+                message_text=message_text,
+                route=route,
+                loaded_context=state.loaded_context,
+                query_session_snapshot=query_session_snapshot,
+            ):
+                logger.info(
+                    "gate_turn_router_surface_response_blocked",
+                    decision=getattr(route, "decision", None),
+                    response_key=getattr(route, "response_key", None),
+                )
+                route = None
+
+            if route is not None and route.decision in {"respond_directly", "direct_context_answer"}:
                 locale = LocaleManager.normalize((state.loaded_context or {}).get("language")).value
                 if route.detected_language:
                     locale = LocaleManager.from_detection(route.detected_language).value
                     updates.update(_locale_update(state, locale))
+                account_fastpath_override = None
+                if route.decision == "respond_directly":
+                    account_fastpath_override = synthesize_account_fastpath_response(
+                        state,
+                        "account_linked_bank_existence_check",
+                        message_text,
+                        locale,
+                    )
+                if account_fastpath_override:
+                    text = account_fastpath_override
+                    logger.info(
+                        "gate_turn_router_meta_override_with_account_fastpath",
+                        response_key=route.response_key,
+                        locale=locale,
+                    )
                 if route.response_key:
-                    if route.response_key == "conversational.out_of_scope":
+                    if account_fastpath_override:
+                        pass
+                    elif route.response_key == "conversational.out_of_scope":
                         text = format_out_of_scope_reply(locale, route.response)
                     elif route.response_key == "planner.cancelled":
                         if has_cancelable_state(state):
@@ -729,7 +843,7 @@ async def session_gate_fastpath(state: OrchestratorState, config: RunnableConfig
                     **updates,
                 }
 
-            if route.decision == "query_continuation":
+            if route is not None and route.decision == "query_continuation":
                 if _is_account_balance_request(message_text):
                     logger.info("gate_turn_router_query_continuation_blocked_account_request", message=message_text)
                     if updates:

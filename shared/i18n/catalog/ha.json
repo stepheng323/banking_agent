@@ -172,6 +172,7 @@
     },
     "clarify": {
       "default": "Could you clarify?",
+      "time_vague": "What time period did you mean by '{context}'? You can say something like '{suggestion}'.",
       "unsure_rephrase": "I'm not sure what you're referring to. Could you rephrase?",
       "which_one": "I'm not sure which one you mean{context_suffix}.",
       "are_you_referring": "Are you referring to:",

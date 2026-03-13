@@ -182,6 +182,48 @@ async def test_gate_turn_router_can_answer_grounded_account_follow_up_without_pl
     assert updates["final_response"] == "Your First Bank account is linked, but it is not ready for payments yet."
 
 
+async def test_gate_overrides_meta_router_reply_with_grounded_account_fastpath() -> None:
+    planner = _RouteTurnPlanner(
+        TurnRouteDecision(
+            decision="respond_directly",
+            confidence=0.82,
+            detected_language="English",
+            response_key="conversational.identity",
+            response=None,
+            expected_transaction_executors=[],
+            reason="misclassified meta reply",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_gate_ctx_1b",
+        phone_number="2348000000210",
+        channel="telegram",
+        last_message_text="Is my first bank account ready?",
+        loaded_context={
+            "language": "en",
+            "accounts": [
+                {"bank_name": "Zenith Bank", "account_number": "00009384", "mandate_status": "ready"},
+                {
+                    "bank_name": "First Bank",
+                    "account_number": "0334557890",
+                    "mandate_status": "pending",
+                    "transfer_destinations": [{"channel": "ussd", "url": "bank://activate"}],
+                },
+            ],
+        },
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await session_gate_fastpath(state, config)
+
+    assert planner.route_calls == 1
+    assert planner.plan_calls == 0
+    assert updates["fast_path_triggered"] is True
+    assert "First Bank" in updates["final_response"]
+    assert "not ready for payments yet" in updates["final_response"]
+    assert "identity" not in updates["final_response"].lower()
+
+
 async def test_gate_turn_router_can_answer_grounded_account_follow_up_with_typo() -> None:
     planner = _RouteTurnPlanner(
         TurnRouteDecision(
@@ -542,6 +584,89 @@ async def test_gate_fast_path_routes_balance_request_without_turn_router() -> No
     assert task.payload["action"] == "check_balance"
 
 
+async def test_gate_query_session_does_not_swallow_full_query_restatement_as_fast_resume() -> None:
+    state = OrchestratorState(
+        user_id="u_gate_query_1",
+        phone_number="2348000000071",
+        channel="whatsapp",
+        last_message_text="Show my last transaction",
+        loaded_context={"language": "en"},
+        session_stack=[ActiveSession(domain="query", state="RUNNING", interrupt_policy="ALLOW")],
+        active_domain="query",
+    )
+    config: RunnableConfig = {"configurable": {}, "recursion_limit": 50}
+
+    updates = await session_gate_fastpath(state, config)
+
+    assert updates.get("fast_path_triggered") is None
+    assert "tasks" not in updates
+    assert "turn_context_summary" in updates
+
+
+async def test_gate_routes_last_transaction_surface_to_structured_path() -> None:
+    planner = _RouteTurnPlanner(
+        TurnRouteDecision(
+            decision="direct_context_answer",
+            confidence=0.79,
+            detected_language="English",
+            response_key=None,
+            response="Your last transaction was 10k to Mum.",
+            expected_transaction_executors=[],
+            reason="unused because turn should bypass router",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_gate_surface_1",
+        phone_number="2348000000301",
+        channel="whatsapp",
+        last_message_text="Show my last transaction",
+        loaded_context={"language": "en"},
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await session_gate_fastpath(state, config)
+
+    assert planner.route_calls == 0
+    assert updates.get("fast_path_triggered") is None
+    assert "final_response" not in updates
+    assert "turn_context_summary" in updates
+
+
+async def test_gate_blocks_router_direct_text_for_linked_accounts_surface() -> None:
+    planner = _RouteTurnPlanner(
+        TurnRouteDecision(
+            decision="respond_directly",
+            confidence=0.81,
+            detected_language="English",
+            response_key="conversational.checkin",
+            response="You have two linked accounts.",
+            expected_transaction_executors=[],
+            reason="misclassified list surface",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_gate_surface_2",
+        phone_number="2348000000302",
+        channel="telegram",
+        last_message_text="What linked accounts do I have?",
+        loaded_context={
+            "language": "en",
+            "accounts": [
+                {"bank_name": "Zenith Bank", "account_number": "00009384", "mandate_status": "ready"},
+                {"bank_name": "First Bank", "account_number": "0334557890", "mandate_status": "pending"},
+            ],
+        },
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await session_gate_fastpath(state, config)
+
+    assert planner.route_calls == 1
+    assert updates.get("fast_path_triggered") is None
+    assert "final_response" not in updates
+    assert "turn_context_summary" in updates
+
+
 async def test_gate_balance_fastpath_does_not_swallow_mixed_transaction_and_balance_request() -> None:
     state = OrchestratorState(
         user_id="u_gate_7b",
@@ -556,6 +681,38 @@ async def test_gate_balance_fastpath_does_not_swallow_mixed_transaction_and_bala
 
     assert "turn_context_summary" in updates
     assert updates.get("semantic_path_shape") is None
+
+
+async def test_gate_query_session_ignores_generic_checkin_direct_response_for_follow_up_question() -> None:
+    planner = _RouteTurnPlanner(
+        TurnRouteDecision(
+            decision="respond_directly",
+            confidence=0.87,
+            detected_language="English",
+            response_key="conversational.checkin",
+            response=None,
+            expected_transaction_executors=[],
+            reason="misclassified skeptical follow-up",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_gate_query_2",
+        phone_number="2348000000072",
+        channel="whatsapp",
+        last_message_text="Really?",
+        loaded_context={"language": "en"},
+        session_stack=[ActiveSession(domain="query", state="RUNNING", interrupt_policy="ALLOW")],
+        active_domain="query",
+        stashed_query_session={"session_active": True, "query_result": {"summary_text": "No spend yesterday."}},
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await session_gate_fastpath(state, config)
+
+    assert planner.route_calls == 1
+    assert updates.get("fast_path_triggered") is None
+    assert "final_response" not in updates
+    assert "turn_context_summary" in updates
 
 
 async def test_gate_turn_router_cancel_response_clears_query_state() -> None:

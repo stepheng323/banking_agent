@@ -3,6 +3,8 @@ from datetime import date
 import pytest
 
 from apps.core.src.agent.graphs.query.models import (
+    Ambiguity,
+    AmbiguityCode,
     ExtractionIntent,
     QueryExtractionResult,
     QueryTimeRange,
@@ -65,3 +67,21 @@ async def test_all_time_query_auto_clamps_without_blocking_message() -> None:
     assert result.resolver_message is None
     assert result.notices == [render_message("query.notice.clamped_days", "en", {"days_back": 180})]
     assert result.query_contract is not None
+
+
+@pytest.mark.asyncio
+async def test_time_vague_clarify_renders_full_message_not_raw_context() -> None:
+    extraction = QueryExtractionResult(
+        intent=ExtractionIntent.SPENDING_TOTAL,
+        ambiguities=[Ambiguity(code=AmbiguityCode.TIME_VAGUE, context="last")],
+    )
+    parser = QueryParser(_DummyLLM(extraction))
+
+    result = await parser.parse(
+        "How much did I send to mum last",
+        today=date(2026, 3, 13),
+        language="en",
+    )
+
+    assert result.outcome == ResolverOutcome.NEEDS_INPUT
+    assert result.resolver_message == "What time period did you mean by 'last'? You can say something like 'last 30 days'."

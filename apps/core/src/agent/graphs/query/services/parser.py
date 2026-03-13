@@ -25,7 +25,7 @@ from apps.core.src.agent.graphs.query.models import (
     TimeReference,
 )
 from apps.core.src.agent.graphs.query.prompts import QUERY_PARSER_PROMPT
-from apps.core.src.agent.graphs.query.services.resolver import Decision, resolve
+from apps.core.src.agent.graphs.query.services.resolver import Decision, Prompt, resolve
 from apps.core.src.agent.graphs.query.utils.timezone import lagos_today
 from shared.i18n import render_message
 from shared.utils.logging import get_logger
@@ -38,6 +38,25 @@ class QueryParser:
 
     def __init__(self, llm: Runnable):
         self.llm = llm
+
+    @staticmethod
+    def _render_resolver_prompt_message(prompt: Prompt, language: str) -> str:
+        if prompt.key == "query.time_vague":
+            return render_message(
+                "query.clarify.time_vague",
+                language,
+                {
+                    "context": prompt.vars.get("context") or "that time",
+                    "suggestion": prompt.vars.get("suggestion") or "last 30 days",
+                },
+                fallback_en="What time period did you mean by '{context}'? You can say something like '{suggestion}'.",
+            )
+        return render_message(
+            prompt.key,
+            language,
+            prompt.vars,
+            fallback_en=str(prompt.vars.get("context") or render_message("query.clarify.default", language)),
+        )
 
     async def parse(
         self,
@@ -79,7 +98,7 @@ class QueryParser:
             if decision.decision == Decision.ASK_CLARIFY:
                 outcome = ResolverOutcome.NEEDS_INPUT
                 message = (
-                    decision.prompts[0].vars.get("context", render_message("query.clarify.default", language))
+                    self._render_resolver_prompt_message(decision.prompts[0], language)
                     if decision.prompts
                     else render_message("query.clarify.default", language)
                 )

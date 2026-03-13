@@ -174,12 +174,16 @@ def test_turn_router_expected_executor_coverage_rules_present() -> None:
     assert '["transfer","airtime"]' in TURN_ROUTER_SYSTEM_PROMPT
     assert '"Can I use First Bank now?" -> direct_context_answer' in TURN_ROUTER_SYSTEM_PROMPT
     assert '"Is First Bank ready?" -> direct_context_answer' in TURN_ROUTER_SYSTEM_PROMPT
+    assert '"Is my First Bank account ready?" -> direct_context_answer' in TURN_ROUTER_SYSTEM_PROMPT
     assert '"Which account is default now?" -> direct_context_answer' in TURN_ROUTER_SYSTEM_PROMPT
     assert '"Can I use fisr bank now?" -> direct_context_answer' in TURN_ROUTER_SYSTEM_PROMPT
     assert '"Do I still have Mum saved?" -> direct_context_answer' in TURN_ROUTER_SYSTEM_PROMPT
     assert '"Any more debits after that?" -> direct_context_answer' in TURN_ROUTER_SYSTEM_PROMPT
     assert '"Where did we stop?" -> direct_context_answer' in TURN_ROUTER_SYSTEM_PROMPT
     assert '"What are we doing again?" -> direct_context_answer' in TURN_ROUTER_SYSTEM_PROMPT
+    assert '"Show my last transaction" -> go_planner' in TURN_ROUTER_SYSTEM_PROMPT
+    assert '"Show my linked accounts" -> go_planner' in TURN_ROUTER_SYSTEM_PROMPT
+    assert '"More" while viewing transactions -> query_continuation' in TURN_ROUTER_SYSTEM_PROMPT
 
 
 def test_runtime_planner_prompt_is_compact_for_generic_turns() -> None:
