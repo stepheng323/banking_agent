@@ -18,6 +18,7 @@ from .extraction import (
     Ambiguity,
     AmbiguityCode,
     ExtractionIntent,
+    PendingClarificationState,
     QueryAggregation,
     QueryComparison,
     QueryExtractionResult,

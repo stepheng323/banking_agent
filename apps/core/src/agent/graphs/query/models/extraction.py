@@ -147,4 +147,20 @@ class QueryParseResult(BaseModel):
     query_contract: dict[str, Any] | None = Field(default=None, description="Compiled execution contract snapshot")
     resolver_message: str | None = Field(default=None, description="Message to show user (e.g. clarification)")
     notices: list[str] = Field(default_factory=list, description="Infos like 'Clamped to 30 days'")
+    pending_clarification: dict[str, Any] | None = Field(
+        default=None,
+        description="Structured unresolved clarification state for multi-turn query follow-ups",
+    )
     patch: dict[str, Any] | None = Field(default=None, description="State updates")
+
+
+class PendingClarificationState(BaseModel):
+    """Semantic unresolved query state persisted between clarification turns."""
+
+    kind: Literal["pending_clarification"] = "pending_clarification"
+    original_query: str
+    current_intent: ExtractionIntent
+    original_extraction: QueryExtractionResult
+    ambiguities: list[Ambiguity] = Field(default_factory=list)
+    resolver_message: str | None = None
+    language: str = "en"

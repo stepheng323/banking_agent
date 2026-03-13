@@ -298,6 +298,17 @@ class _TrackingRedis:
         return 1
 
 
+class _TrackingRedisWithSession(_TrackingRedis):
+    def __init__(self, payload: str | None) -> None:
+        super().__init__()
+        self.payload = payload
+
+    async def get(self, key: str) -> str | None:
+        if "query:session:" in key:
+            return self.payload
+        return None
+
+
 async def test_gate_turn_router_can_bypass_planner_with_direct_response() -> None:
     planner = _RouteTurnPlanner(
         TurnRouteDecision(
@@ -962,6 +973,64 @@ async def test_gate_explicit_cancel_without_active_state_returns_clarify() -> No
 
     assert updates["fast_path_triggered"] is True
     assert updates["final_response"] == render_message("conversational.clarify", "en")
+
+
+async def test_gate_explicit_cancel_during_pending_query_clarification_uses_query_goodbye() -> None:
+    redis_client = _TrackingRedisWithSession(
+        '{"session_active": true, "pending_clarification": {"kind": "pending_clarification", "original_query": "How much did I spend last", "current_intent": "spending_total", "original_extraction": {"intent": "spending_total", "filters": {}, "time_range": {"reference_type": "vague", "days_back": 30}, "requested_capabilities": [], "ambiguities": [{"code": "TIME_VAGUE", "context": "last"}], "raw_query": "How much did I spend last"}, "ambiguities": [{"code": "TIME_VAGUE", "context": "last"}], "resolver_message": "What time period did you mean by last?", "language": "en"}}'
+    )
+    state = OrchestratorState(
+        user_id="u_gate_query_cancel_1",
+        phone_number="2348000000019",
+        channel="whatsapp",
+        last_message_text="abort",
+        loaded_context={"language": "en"},
+    )
+    config: RunnableConfig = {"configurable": {"redis_client": redis_client}, "recursion_limit": 50}
+
+    updates = await session_gate_fastpath(state, config)
+
+    assert updates["fast_path_triggered"] is True
+    assert updates["final_response"] == render_message("query.session.goodbye", "en")
+    assert redis_client.deleted_keys == ["query:session:2348000000019"]
+
+
+async def test_gate_pending_query_clarification_time_reply_bypasses_to_query_worker() -> None:
+    redis_client = _TrackingRedisWithSession(
+        '{"session_active": true, "pending_clarification": {"kind": "pending_clarification", "original_query": "How much did I spend last", "current_intent": "spending_total", "original_extraction": {"intent": "spending_total", "filters": {}, "time_range": {"reference_type": "vague", "days_back": 30}, "requested_capabilities": [], "ambiguities": [{"code": "TIME_VAGUE", "context": "last"}], "raw_query": "How much did I spend last"}, "ambiguities": [{"code": "TIME_VAGUE", "context": "last"}], "resolver_message": "What time period did you mean by last?", "language": "en"}}'
+    )
+    planner = _RouteTurnPlanner(
+        TurnRouteDecision(
+            decision="go_planner",
+            confidence=0.9,
+            detected_language="English",
+            response_key=None,
+            response=None,
+            expected_transaction_executors=[],
+            reason="should not be used",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_gate_query_pending_1",
+        phone_number="2348000000020",
+        channel="whatsapp",
+        last_message_text="last 3 days",
+        loaded_context={"language": "en"},
+    )
+    config: RunnableConfig = {
+        "configurable": {"redis_client": redis_client, "task_planner": planner},
+        "recursion_limit": 50,
+    }
+
+    updates = await session_gate_fastpath(state, config)
+
+    assert planner.route_calls == 0
+    assert updates["fast_path_triggered"] is True
+    assert updates["semantic_path_shape"] == "query_direct"
+    task = updates["tasks"]["direct_query"]
+    assert task.type == "query"
+    assert task.payload["message"] == "last 3 days"
+    assert "force_new_query" not in task.payload
 
 
 async def test_gate_fast_path_cancel_and_balance_cleans_query_and_runs_balance() -> None:

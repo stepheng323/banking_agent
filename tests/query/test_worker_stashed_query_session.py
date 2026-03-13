@@ -3,7 +3,17 @@ from typing import Any
 
 import pytest
 
-from apps.core.src.agent.graphs.query.models import NormalizedQuery, QueryExecutionContract, QueryIntent, TimeRange
+from apps.core.src.agent.graphs.query.models import (
+    ExtractionIntent,
+    NormalizedQuery,
+    PendingClarificationState,
+    QueryExecutionContract,
+    QueryExtractionResult,
+    QueryIntent,
+    QueryTimeRange,
+    TimeRange,
+    TimeReference,
+)
 from apps.core.src.agent.graphs.query.worker import QueryWorker
 from apps.core.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
 
@@ -117,3 +127,46 @@ async def test_worker_ignores_legacy_stashed_query_session_without_contract() ->
     )
 
     assert session_manager.saved_state is not None
+
+
+@pytest.mark.asyncio
+async def test_worker_persists_pending_query_clarification_session() -> None:
+    session_manager = _SessionManager()
+    worker = QueryWorker(_DummyLLM(), _DummyProvider(), session_manager)  # type: ignore[arg-type]
+    pending = PendingClarificationState(
+        original_query="How much did I spend last",
+        current_intent=ExtractionIntent.SPENDING_TOTAL,
+        original_extraction=QueryExtractionResult(
+            intent=ExtractionIntent.SPENDING_TOTAL,
+            time_range=QueryTimeRange(reference_type=TimeReference.VAGUE, days_back=30),
+            raw_query="How much did I spend last",
+        ),
+        resolver_message="What time period did you mean by 'last'?",
+        language="en",
+    )
+
+    async def _fake_pipeline_run(state: dict[str, Any], worker_context: Any) -> TransactionResult:
+        del state, worker_context
+        return TransactionResult(
+            outcome=TransactionOutcome.NEEDS_INPUT,
+            response="What time period did you mean by 'last'?",
+            patch={"session_active": True, "pending_clarification": pending},
+        )
+
+    worker.pipeline.run = _fake_pipeline_run  # type: ignore[method-assign]
+
+    result = await worker.run(
+        payload={"message": "How much did I spend last"},
+        context={
+            "phone_number": "2348000000301",
+            "user_id": "u2",
+            "accounts": [],
+            "language": "en",
+            "today": date(2026, 3, 13),
+        },
+    )
+
+    assert result.outcome == TransactionOutcome.NEEDS_INPUT
+    assert session_manager.saved_state is not None
+    assert session_manager.saved_state["session_active"] is True
+    assert session_manager.saved_state["pending_clarification"] == pending

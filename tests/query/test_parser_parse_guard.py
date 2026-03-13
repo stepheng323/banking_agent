@@ -7,6 +7,7 @@ from apps.core.src.agent.graphs.query.models import (
     AmbiguityCode,
     ExtractionIntent,
     QueryExtractionResult,
+    QueryFilters,
     QueryTimeRange,
     ResolverOutcome,
     TimeReference,
@@ -78,10 +79,34 @@ async def test_time_vague_clarify_renders_full_message_not_raw_context() -> None
     parser = QueryParser(_DummyLLM(extraction))
 
     result = await parser.parse(
-        "How much did I send to mum last",
+        "How much did I spend last",
         today=date(2026, 3, 13),
         language="en",
     )
 
     assert result.outcome == ResolverOutcome.NEEDS_INPUT
     assert result.resolver_message == "What time period did you mean by 'last'? You can say something like 'last 30 days'."
+
+
+@pytest.mark.asyncio
+async def test_latest_matching_transaction_shape_does_not_clarify_time() -> None:
+    extraction = QueryExtractionResult(
+        intent=ExtractionIntent.SPENDING_TOTAL,
+        filters=QueryFilters(recipient="Mum"),
+        ambiguities=[Ambiguity(code=AmbiguityCode.TIME_VAGUE, context="last")],
+        time_range=QueryTimeRange(reference_type=TimeReference.VAGUE, days_back=30),
+    )
+    parser = QueryParser(_DummyLLM(extraction))
+
+    result = await parser.parse(
+        "How much did I send to mum last",
+        today=date(2026, 3, 13),
+        language="en",
+    )
+
+    assert result.outcome == ResolverOutcome.OK
+    assert result.resolver_message is None
+    assert result.query_contract is not None
+    assert result.query_contract["intent"] == "transaction_search"
+    assert result.query_contract["result_limit"] == 1
+    assert result.query_contract["result_reference"] == "latest"

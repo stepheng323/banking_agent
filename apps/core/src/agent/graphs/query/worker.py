@@ -58,7 +58,7 @@ class QueryWorker:
         session_key = f"query:session:{phone_number}"
         query_session = await self.session_manager.load(session_key) or {}
         restored_from_stashed_query_session = False
-        if query_session and not query_session.get("query_contract"):
+        if query_session and not query_session.get("query_contract") and not query_session.get("pending_clarification"):
             logger.warning("query_session_missing_contract_cleared")
             await self.session_manager.clear(session_key)
             query_session = {}
@@ -96,6 +96,7 @@ class QueryWorker:
             "cached_transactions": query_session.get("cached_transactions"),
             "cache_fetched_at": query_session.get("cache_fetched_at"),
             "cache_fingerprint": query_session.get("cache_fingerprint"),
+            "pending_clarification": query_session.get("pending_clarification"),
         }
 
         # 2. Build Initial State
@@ -130,7 +131,7 @@ class QueryWorker:
             result = cast(TransactionResult, await self.pipeline.run(state, worker_context))
 
             # 5. Handle Session Persistence
-            if result.outcome == TransactionOutcome.OK and result.patch:
+            if result.outcome in (TransactionOutcome.OK, TransactionOutcome.NEEDS_INPUT) and result.patch:
                 # Merge patch for saving
                 final_state = {**state, **result.patch}
 

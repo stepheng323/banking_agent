@@ -1,5 +1,6 @@
 """Query parsing service - extracts QueryIR/QueryExecutionContract from natural language."""
 
+import re
 from calendar import monthrange
 from datetime import date, timedelta
 from typing import Any, Literal, cast
@@ -11,15 +12,18 @@ from apps.core.src.agent.graphs.query.capabilities import (
 )
 from apps.core.src.agent.graphs.query.models import (
     Aggregation,
+    AmbiguityCode,
     ComparisonDirective,
     ExtractionIntent,
     Filters,
     NormalizedQuery,
+    PendingClarificationState,
     QueryExecutionContract,
     QueryExtractionResult,
     QueryIntent,
     QueryIR,
     QueryParseResult,
+    QueryTimeRange,
     ResolverOutcome,
     TimeRange,
     TimeReference,
@@ -39,6 +43,201 @@ class QueryParser:
 
     def __init__(self, llm: Runnable):
         self.llm = llm
+
+    @staticmethod
+    def _normalize_query_text(value: str | None) -> str:
+        return " ".join((value or "").lower().strip().split())
+
+    def _should_treat_last_as_latest(self, extraction: "QueryExtractionResult") -> bool:
+        time_vague = any(ambiguity.code == AmbiguityCode.TIME_VAGUE for ambiguity in extraction.ambiguities)
+        if not time_vague:
+            return False
+
+        normalized = self._normalize_query_text(extraction.raw_query)
+        if not normalized:
+            return False
+
+        has_last_cue = any(cue in normalized for cue in (" last ", " latest", "most recent", " recent "))
+        if not has_last_cue:
+            prefixed = f" {normalized} "
+            has_last_cue = " last " in prefixed or " recent " in prefixed
+        if not has_last_cue:
+            return False
+
+        has_entity_filter = any(
+            (
+                extraction.filters.recipient,
+                extraction.filters.bank,
+                extraction.filters.narration_keyword,
+            )
+        )
+        if not has_entity_filter:
+            return False
+
+        singular_cues = (
+            extraction.intent == ExtractionIntent.SINGLE_TRANSACTION
+            or extraction.result_limit == 1
+            or extraction.result_reference == "latest"
+            or "transaction" in normalized
+            or "transfer" in normalized
+            or "payment" in normalized
+            or "status" in normalized
+            or "ref" in normalized
+            or "reference" in normalized
+        )
+        amount_to_entity_latest = (
+            extraction.intent == ExtractionIntent.SPENDING_TOTAL
+            and "how much" in normalized
+            and has_entity_filter
+        )
+        return singular_cues or amount_to_entity_latest
+
+    def _apply_intent_shape_disambiguation(self, extraction: "QueryExtractionResult") -> "QueryExtractionResult":
+        if not self._should_treat_last_as_latest(extraction):
+            return extraction
+
+        extraction.intent = ExtractionIntent.SINGLE_TRANSACTION
+        extraction.result_limit = 1
+        extraction.result_reference = extraction.result_reference or "latest"
+        extraction.ambiguities = [a for a in extraction.ambiguities if a.code != AmbiguityCode.TIME_VAGUE]
+        if extraction.time_range.reference_type == TimeReference.VAGUE:
+            extraction.time_range.reference_type = TimeReference.UNSPECIFIED
+            extraction.time_range.period = None
+            extraction.time_range.days_back = None
+        return extraction
+
+    def _build_pending_clarification(
+        self,
+        *,
+        extraction: QueryExtractionResult,
+        language: str,
+        message: str | None,
+        resolver_message: str | None,
+    ) -> PendingClarificationState:
+        return PendingClarificationState(
+            original_query=message or extraction.raw_query or "",
+            current_intent=self._resolve_effective_intent(extraction),
+            original_extraction=extraction.model_copy(deep=True),
+            ambiguities=list(extraction.ambiguities),
+            resolver_message=resolver_message,
+            language=language,
+        )
+
+    def _finalize_extraction(
+        self,
+        extraction: QueryExtractionResult,
+        *,
+        today: date,
+        language: str,
+    ) -> QueryParseResult:
+        extraction = extraction.model_copy(deep=True)
+        extraction = self._apply_intent_shape_disambiguation(extraction)
+
+        # Deterministic capability validation
+        self._validate_capabilities(extraction)
+
+        # Run through resolver
+        decision = resolve(extraction, language=language)
+
+        outcome = ResolverOutcome.OK
+        message = None
+        notices = []
+        pending_clarification: PendingClarificationState | None = None
+
+        if decision.decision == Decision.ASK_CLARIFY:
+            outcome = ResolverOutcome.NEEDS_INPUT
+            message = (
+                self._render_resolver_prompt_message(decision.prompts[0], language)
+                if decision.prompts
+                else render_message("query.clarify.default", language)
+            )
+            pending_clarification = self._build_pending_clarification(
+                extraction=decision.extraction,
+                language=language,
+                message=extraction.raw_query,
+                resolver_message=message,
+            )
+
+        elif decision.decision == Decision.NEGOTIATE:
+            outcome = ResolverOutcome.NEGOTIATED
+            if decision.negotiation:
+                message = decision.negotiation.message
+
+        if decision.clamped.days_back:
+            notices.append(
+                render_message(
+                    "query.notice.clamped_days",
+                    language,
+                    {"days_back": decision.clamped.days_back},
+                )
+            )
+
+        if self._requires_time_comparison_period(decision.extraction):
+            clarify_message = render_message("query.time_comparison.prompt_specify_period", language)
+            pending_clarification = self._build_pending_clarification(
+                extraction=decision.extraction,
+                language=language,
+                message=decision.extraction.raw_query,
+                resolver_message=clarify_message,
+            )
+            return QueryParseResult(
+                outcome=ResolverOutcome.NEEDS_INPUT,
+                extraction=decision.extraction,
+                resolver_message=clarify_message,
+                notices=notices,
+                pending_clarification=pending_clarification.model_dump(),
+                patch={},
+            )
+
+        query_ir = self.build_query_ir_from_extraction(
+            decision.extraction,
+            today=today,
+            language=language,
+        )
+        query_contract = self.build_execution_contract_from_ir(query_ir)
+
+        return QueryParseResult(
+            outcome=outcome,
+            extraction=decision.extraction,
+            query_ir=query_ir.model_dump(),
+            query_contract=query_contract.model_dump(),
+            resolver_message=message,
+            notices=notices,
+            pending_clarification=pending_clarification.model_dump() if pending_clarification else None,
+            patch={},
+        )
+
+    @staticmethod
+    def parse_clarification_time_range(
+        message: str,
+        *,
+        today: date,
+    ) -> QueryTimeRange | None:
+        normalized = " ".join(message.lower().strip().split()).rstrip("?.!,")
+        mapping = {
+            "today": QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="today", days_back=0),
+            "yesterday": QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="yesterday", days_back=1),
+            "this week": QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="this_week"),
+            "last week": QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="last_week"),
+            "this month": QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="this_month"),
+            "last month": QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="last_month"),
+            "this year": QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="this_year"),
+            "last year": QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="last_year"),
+        }
+        if normalized in mapping:
+            return mapping[normalized]
+
+        match = re.fullmatch(r"(last|past)\s+(\d{1,3})\s+(day|days|week|weeks|month|months)", normalized)
+        if not match:
+            return None
+
+        amount = max(1, int(match.group(2)))
+        unit = match.group(3)
+        if unit.startswith("week"):
+            amount *= 7
+        elif unit.startswith("month"):
+            amount *= 30
+        return QueryTimeRange(reference_type=TimeReference.EXPLICIT, days_back=amount)
 
     @staticmethod
     def _render_resolver_prompt_message(prompt: Prompt, language: str) -> str:
@@ -85,65 +284,7 @@ class QueryParser:
         try:
             extraction: QueryExtractionResult = await structured_llm.ainvoke(prompt)
             extraction.raw_query = question
-
-            # Deterministic capability validation
-            self._validate_capabilities(extraction)
-
-            # Run through resolver
-            decision = resolve(extraction, language=language)
-
-            outcome = ResolverOutcome.OK
-            message = None
-            notices = []
-
-            if decision.decision == Decision.ASK_CLARIFY:
-                outcome = ResolverOutcome.NEEDS_INPUT
-                message = (
-                    self._render_resolver_prompt_message(decision.prompts[0], language)
-                    if decision.prompts
-                    else render_message("query.clarify.default", language)
-                )
-
-            elif decision.decision == Decision.NEGOTIATE:
-                outcome = ResolverOutcome.NEGOTIATED
-                if decision.negotiation:
-                    message = decision.negotiation.message
-
-            # Add notices for clamping/modifications
-            if decision.clamped.days_back:
-                notices.append(
-                    render_message(
-                        "query.notice.clamped_days",
-                        language,
-                        {"days_back": decision.clamped.days_back},
-                    )
-                )
-
-            if self._requires_time_comparison_period(decision.extraction):
-                return QueryParseResult(
-                    outcome=ResolverOutcome.NEEDS_INPUT,
-                    extraction=decision.extraction,
-                    resolver_message=render_message("query.time_comparison.prompt_specify_period", language),
-                    notices=notices,
-                    patch={},
-                )
-
-            query_ir = self.build_query_ir_from_extraction(
-                decision.extraction,
-                today=today,
-                language=language,
-            )
-            query_contract = self.build_execution_contract_from_ir(query_ir)
-
-            return QueryParseResult(
-                outcome=outcome,
-                extraction=decision.extraction,
-                query_ir=query_ir.model_dump(),
-                query_contract=query_contract.model_dump(),
-                resolver_message=message,
-                notices=notices,
-                patch={},
-            )
+            return self._finalize_extraction(extraction, today=today, language=language)
 
         except Exception as e:
             logger.error("parse_error", error=str(e))
@@ -152,6 +293,16 @@ class QueryParser:
                 outcome=ResolverOutcome.OK,  # Fallback to try best effort
                 extraction=QueryExtractionResult(raw_query=question),
             )
+
+    def resolve_existing_extraction(
+        self,
+        extraction: QueryExtractionResult,
+        *,
+        today: date,
+        language: str,
+    ) -> QueryParseResult:
+        """Resolve a pre-extracted query after semantic clarification patching."""
+        return self._finalize_extraction(extraction, today=today, language=language)
 
     def _validate_capabilities(self, extraction: "QueryExtractionResult") -> None:
         """Enforce capability dependencies deterministically."""

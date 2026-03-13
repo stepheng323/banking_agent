@@ -5,7 +5,7 @@ from typing import Any
 
 import redis.asyncio as redis
 
-from apps.core.src.agent.graphs.query.models import QueryExecutionContract, QueryResult
+from apps.core.src.agent.graphs.query.models import PendingClarificationState, QueryExecutionContract, QueryResult
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -46,6 +46,15 @@ class QuerySessionManager:
                 except Exception as e:
                     logger.warning("query_result_restore_error", error=str(e))
                     session["query_result"] = None
+
+            if session.get("pending_clarification") and isinstance(session["pending_clarification"], dict):
+                try:
+                    session["pending_clarification"] = PendingClarificationState.model_validate(
+                        session["pending_clarification"]
+                    )
+                except Exception as e:
+                    logger.warning("pending_clarification_restore_error", error=str(e))
+                    session["pending_clarification"] = None
 
             if session.get("surface") and isinstance(session["surface"], dict):
                 try:
@@ -95,11 +104,14 @@ class QuerySessionManager:
                 "recipient_name",
                 "filters",
                 "surface",
+                "pending_clarification",
             )
             for k, v in state.items():
                 if k not in allowed_keys:
                     continue
-                if k in ("query_contract", "query_result", "surface") and v and hasattr(v, "model_dump"):
+                if k in ("query_contract", "query_result", "surface", "pending_clarification") and v and hasattr(
+                    v, "model_dump"
+                ):
                     save_state[k] = v.model_dump()
                 elif k == "cached_transactions" and v:
                     save_state[k] = [t.model_dump() if hasattr(t, "model_dump") else t for t in v]

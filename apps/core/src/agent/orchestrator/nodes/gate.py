@@ -17,6 +17,7 @@ from apps.core.src.agent.orchestrator.nodes.cancellation import (
     build_cancellation_reset_updates,
     cancelled_message,
     clarify_message,
+    clear_query_session,
     has_cancelable_state,
     is_explicit_cancel_message,
 )
@@ -396,6 +397,30 @@ def _looks_like_pure_query_turn(message_text: str) -> bool:
     return True
 
 
+def _looks_like_pending_query_clarification_followup(message_text: str) -> bool:
+    normalized = re.sub(r"\s+", " ", message_text.strip().lower()).rstrip("?.!,")
+    if not normalized:
+        return False
+    if _is_explicit_meta_turn(normalized):
+        return False
+    if _is_account_balance_request(normalized):
+        return False
+    if any(re.search(pattern, normalized) for pattern in TURN_ROUTER_TRANSACTION_HINT_PATTERNS):
+        return False
+    if normalized in {
+        "today",
+        "yesterday",
+        "this week",
+        "last week",
+        "this month",
+        "last month",
+        "this year",
+        "last year",
+    }:
+        return True
+    return re.fullmatch(r"(last|past)\s+\d{1,3}\s+(day|days|week|weeks|month|months)", normalized) is not None
+
+
 def _has_explicit_cancel(message_text: str) -> bool:
     normalized = re.sub(r"\s+", " ", message_text.strip().lower())
     if not normalized:
@@ -601,6 +626,19 @@ async def session_gate_fastpath(state: OrchestratorState, config: RunnableConfig
     message_text = (state.last_message_text or "").strip()
 
     if is_explicit_cancel_message(message_text):
+        query_session_snapshot, _ = await _load_query_session_snapshot(state, redis_client)
+        if (
+            isinstance(query_session_snapshot, dict)
+            and query_session_snapshot.get("session_active")
+            and query_session_snapshot.get("pending_clarification")
+            and not has_cancelable_state(state)
+        ):
+            await clear_query_session(redis_client, state.phone_number)
+            locale = LocaleManager.normalize((state.loaded_context or {}).get("language")).value
+            return {
+                "fast_path_triggered": True,
+                "final_response": render_message("query.session.goodbye", locale),
+            }
         if has_cancelable_state(state):
             cleanup_updates = await build_cancellation_reset_updates(state, redis_client)
             return {
@@ -812,6 +850,34 @@ async def session_gate_fastpath(state: OrchestratorState, config: RunnableConfig
     )
     summary_updates = summary_updates or {}
 
+    if (
+        not state.pending_interrupt
+        and not state.has_quote
+        and isinstance(query_session_snapshot, dict)
+        and query_session_snapshot.get("session_active")
+        and query_session_snapshot.get("pending_clarification")
+        and _looks_like_pending_query_clarification_followup(message_text)
+    ):
+        task_id = _next_direct_query_task_id(state.tasks)
+        spec = TaskSpec(
+            id=task_id,
+            type="query",
+            stage=TaskStage.DRAFT,
+            payload={
+                "message": state.last_message_text,
+            },
+        )
+        logger.info("gate_pending_query_clarification_followup_bypass", task_id=task_id)
+        return {
+            **summary_updates,
+            "tasks": {task_id: spec},
+            "waves": [[task_id]],
+            "current_wave_index": 0,
+            "planner_output": None,
+            "fast_path_triggered": True,
+            "semantic_path_shape": "query_direct",
+        }
+
     if not state.pending_interrupt and not state.has_quote and _looks_like_pure_query_turn(message_text):
         task_id = _next_direct_query_task_id(state.tasks)
         spec = TaskSpec(
@@ -928,6 +994,10 @@ async def session_gate_fastpath(state: OrchestratorState, config: RunnableConfig
                         text = render_message(route.response_key, locale)
                 else:
                     text = route.response or render_message("conversational.clarify", locale)
+
+                if isinstance(query_session_snapshot, dict) and query_session_snapshot.get("pending_clarification"):
+                    await clear_query_session(redis_client, state.phone_number)
+                    logger.info("gate_pending_query_clarification_dismissed_on_direct_reply")
                 logger.info(
                     "gate_turn_router_direct_response",
                     decision=route.decision,
