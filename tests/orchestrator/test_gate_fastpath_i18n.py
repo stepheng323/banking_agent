@@ -70,6 +70,188 @@ async def test_gate_query_fast_path_still_applies_without_pending_interrupt() ->
     assert updates.get("waves") == [["fast_query_resume"]]
 
 
+async def test_gate_bypasses_planner_for_pure_query_detail_turn() -> None:
+    planner = _RouteTurnPlanner(
+        TurnRouteDecision(
+            decision="go_planner",
+            confidence=0.95,
+            detected_language="English",
+            response_key=None,
+            response=None,
+            expected_transaction_executors=[],
+            reason="should not be used",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_gate_query_direct_1",
+        phone_number="2348999999901",
+        channel="whatsapp",
+        last_message_text="Show my last transaction",
+        loaded_context={"language": "en"},
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await session_gate_fastpath(state, config)
+
+    assert planner.route_calls == 0
+    assert planner.plan_calls == 0
+    assert updates["fast_path_triggered"] is True
+    assert updates["semantic_path_shape"] == "query_direct"
+    task = updates["tasks"]["direct_query"]
+    assert task.type == "query"
+    assert task.payload["message"] == "Show my last transaction"
+    assert task.payload["force_new_query"] is True
+
+
+async def test_gate_bypasses_planner_for_pure_query_analytics_turn() -> None:
+    planner = _RouteTurnPlanner(
+        TurnRouteDecision(
+            decision="go_planner",
+            confidence=0.95,
+            detected_language="English",
+            response_key=None,
+            response=None,
+            expected_transaction_executors=[],
+            reason="should not be used",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_gate_query_direct_2",
+        phone_number="2348999999902",
+        channel="whatsapp",
+        last_message_text="How much did I spend yesterday",
+        loaded_context={"language": "en"},
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await session_gate_fastpath(state, config)
+
+    assert planner.route_calls == 0
+    assert updates["fast_path_triggered"] is True
+    task = updates["tasks"]["direct_query"]
+    assert task.type == "query"
+    assert task.payload["force_new_query"] is True
+
+
+async def test_gate_bypasses_planner_for_pure_query_beneficiary_ranking_turn() -> None:
+    planner = _RouteTurnPlanner(
+        TurnRouteDecision(
+            decision="go_planner",
+            confidence=0.95,
+            detected_language="English",
+            response_key=None,
+            response=None,
+            expected_transaction_executors=[],
+            reason="should not be used",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_gate_query_direct_3",
+        phone_number="2348999999903",
+        channel="whatsapp",
+        last_message_text="Who did I send money to the most this week",
+        loaded_context={"language": "en"},
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await session_gate_fastpath(state, config)
+
+    assert planner.route_calls == 0
+    assert updates["fast_path_triggered"] is True
+    task = updates["tasks"]["direct_query"]
+    assert task.type == "query"
+    assert task.payload["force_new_query"] is True
+
+
+async def test_gate_direct_query_bypass_forces_new_query_with_active_query_session() -> None:
+    planner = _RouteTurnPlanner(
+        TurnRouteDecision(
+            decision="go_planner",
+            confidence=0.95,
+            detected_language="English",
+            response_key=None,
+            response=None,
+            expected_transaction_executors=[],
+            reason="should not be used",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_gate_query_direct_4",
+        phone_number="2348999999904",
+        channel="whatsapp",
+        last_message_text="Show my last transaction",
+        loaded_context={"language": "en"},
+        session_stack=[ActiveSession(domain="query", state="RUNNING", interrupt_policy="ALLOW")],
+        active_domain="query",
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await session_gate_fastpath(state, config)
+
+    assert planner.route_calls == 0
+    assert updates["fast_path_triggered"] is True
+    task = updates["tasks"]["direct_query"]
+    assert task.payload["force_new_query"] is True
+
+
+async def test_gate_mixed_query_and_transfer_turn_still_falls_through_to_planner() -> None:
+    planner = _RouteTurnPlanner(
+        TurnRouteDecision(
+            decision="go_planner",
+            confidence=0.96,
+            detected_language="English",
+            response_key=None,
+            response=None,
+            expected_transaction_executors=["transfer"],
+            reason="mixed turn",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_gate_query_direct_5",
+        phone_number="2348999999905",
+        channel="whatsapp",
+        last_message_text="Send 5k to Mum and show my last transaction",
+        loaded_context={"language": "en"},
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await session_gate_fastpath(state, config)
+
+    assert planner.route_calls == 0
+    assert updates.get("fast_path_triggered") is None
+    assert "tasks" not in updates
+    assert "turn_context_summary" in updates
+
+
+async def test_gate_mixed_query_and_airtime_turn_still_falls_through_to_planner() -> None:
+    planner = _RouteTurnPlanner(
+        TurnRouteDecision(
+            decision="go_planner",
+            confidence=0.96,
+            detected_language="English",
+            response_key=None,
+            response=None,
+            expected_transaction_executors=["airtime"],
+            reason="mixed turn",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_gate_query_direct_6",
+        phone_number="2348999999906",
+        channel="whatsapp",
+        last_message_text="Buy airtime and how much did I spend today",
+        loaded_context={"language": "en"},
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await session_gate_fastpath(state, config)
+
+    assert planner.route_calls == 0
+    assert updates.get("fast_path_triggered") is None
+    assert "tasks" not in updates
+    assert "turn_context_summary" in updates
+
+
 async def test_gate_handles_explicit_locale_switch_before_planner() -> None:
     state = OrchestratorState(
         user_id="u_gate_4",
@@ -598,9 +780,12 @@ async def test_gate_query_session_does_not_swallow_full_query_restatement_as_fas
 
     updates = await session_gate_fastpath(state, config)
 
-    assert updates.get("fast_path_triggered") is None
-    assert "tasks" not in updates
-    assert "turn_context_summary" in updates
+    assert updates["fast_path_triggered"] is True
+    assert updates["semantic_path_shape"] == "query_direct"
+    task = updates["tasks"]["direct_query"]
+    assert task.type == "query"
+    assert task.payload["message"] == "Show my last transaction"
+    assert task.payload["force_new_query"] is True
 
 
 async def test_gate_routes_last_transaction_surface_to_structured_path() -> None:
@@ -627,9 +812,12 @@ async def test_gate_routes_last_transaction_surface_to_structured_path() -> None
     updates = await session_gate_fastpath(state, config)
 
     assert planner.route_calls == 0
-    assert updates.get("fast_path_triggered") is None
-    assert "final_response" not in updates
-    assert "turn_context_summary" in updates
+    assert updates["fast_path_triggered"] is True
+    assert updates["semantic_path_shape"] == "query_direct"
+    task = updates["tasks"]["direct_query"]
+    assert task.type == "query"
+    assert task.payload["message"] == "Show my last transaction"
+    assert task.payload["force_new_query"] is True
 
 
 async def test_gate_blocks_router_direct_text_for_linked_accounts_surface() -> None:

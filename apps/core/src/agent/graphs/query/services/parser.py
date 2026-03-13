@@ -28,6 +28,7 @@ from apps.core.src.agent.graphs.query.prompts import QUERY_PARSER_PROMPT
 from apps.core.src.agent.graphs.query.services.resolver import Decision, Prompt, resolve
 from apps.core.src.agent.graphs.query.utils.timezone import lagos_today
 from shared.i18n import render_message
+from shared.i18n.message_keys import MessageKey
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -52,7 +53,7 @@ class QueryParser:
                 fallback_en="What time period did you mean by '{context}'? You can say something like '{suggestion}'.",
             )
         return render_message(
-            prompt.key,
+            cast(MessageKey, prompt.key),
             language,
             prompt.vars,
             fallback_en=str(prompt.vars.get("context") or render_message("query.clarify.default", language)),

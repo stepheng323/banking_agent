@@ -44,6 +44,10 @@ TRANSACTION_EXECUTORS = {"transfer", "airtime", "data"}
 TURN_ROUTER_MAX_WORDS = 8
 TURN_ROUTER_MAX_CHARS = 64
 TURN_ROUTER_MULTI_CLAUSE_MARKERS = (" and ", " & ", " then ", ",")
+PURE_QUERY_MULTI_CLAUSE_ALLOWED_PHRASES = {
+    "credits and debits",
+    "debits and credits",
+}
 TURN_ROUTER_META_PATTERNS = (
     r"\b(hi|hello|hey|how far|good (morning|afternoon|evening))\b",
     r"\b(who are you|what can you do|help me|can you help)\b",
@@ -90,6 +94,43 @@ TURN_ROUTER_QUERY_SESSION_META_ALLOW_PATTERNS = (
 )
 TURN_ROUTER_CONTEXT_HINT_PATTERNS = (
     r"\b(bank|account|acct|beneficiary|saved|debit|credit|transactions?|default|mandate|ready)\b",
+)
+PURE_QUERY_HISTORY_PATTERNS = (
+    re.compile(
+        r"\b(show|list|find|search|what(?:'s| is)|what was|give|tell)\s+(?:me\s+)?(?:my\s+)?"
+        r"(?:last|latest|most\s+recent|\d+\s+)?\s*"
+        r"(?:transaction|transactions|transfer|transfers|payment|payments|debit|debits|credit|credits|history|statement)\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\b(?:last|latest|most\s+recent)\s+"
+        r"(?:transaction|transfer|payment|debit|credit)\b",
+        re.IGNORECASE,
+    ),
+)
+PURE_QUERY_ANALYTICS_PATTERNS = (
+    re.compile(
+        r"\bhow\s+much\s+(?:did|do|have)\s+i\s+"
+        r"(?:spend|spent|pay|paid|receive|received|earn|earned)\b",
+        re.IGNORECASE,
+    ),
+    re.compile(r"\btotal\s+(?:spending|spent|received|income)\b", re.IGNORECASE),
+    re.compile(r"\bhow\s+many\s+transactions\b", re.IGNORECASE),
+)
+PURE_QUERY_BENEFICIARY_SUMMARY_PATTERNS = (
+    re.compile(r"\bwho\s+did\s+i\s+(?:send\s+money|transfer)\s+to\s+the\s+most\b", re.IGNORECASE),
+    re.compile(r"\btop\s+recipients?\b", re.IGNORECASE),
+    re.compile(r"\bmost\s+frequent\s+recipients?\b", re.IGNORECASE),
+)
+PURE_QUERY_MUTATION_HINT_PATTERNS = (
+    re.compile(r"\bsend\b", re.IGNORECASE),
+    re.compile(r"\bbuy\b", re.IGNORECASE),
+    re.compile(r"\bpay\b", re.IGNORECASE),
+    re.compile(r"\bfund\b", re.IGNORECASE),
+    re.compile(r"\bwithdraw\b", re.IGNORECASE),
+    re.compile(r"\bairtime\b", re.IGNORECASE),
+    re.compile(r"\bdata\b", re.IGNORECASE),
+    re.compile(r"\bbundle\b", re.IGNORECASE),
 )
 ACCOUNT_BALANCE_REQUEST_PATTERNS = (
     r"\bbalance\b",
@@ -263,6 +304,15 @@ def _next_fast_account_task_id(existing_tasks: dict[str, TaskSpec]) -> str:
     return task_id
 
 
+def _next_direct_query_task_id(existing_tasks: dict[str, TaskSpec]) -> str:
+    idx = 1
+    task_id = "direct_query"
+    while task_id in existing_tasks:
+        idx += 1
+        task_id = f"direct_query_{idx}"
+    return task_id
+
+
 def _locale_update(state: OrchestratorState, locale: str) -> dict[str, Any]:
     loaded_context = dict(state.loaded_context or {})
     loaded_context["language"] = locale
@@ -317,6 +367,33 @@ def _is_account_balance_request(message_text: str) -> bool:
     if any(re.search(pattern, candidate) for pattern in BALANCE_FASTPATH_TRANSACTION_HINT_PATTERNS):
         return False
     return any(re.search(pattern, candidate) for pattern in ACCOUNT_BALANCE_REQUEST_PATTERNS)
+
+
+def _looks_like_pure_query_turn(message_text: str) -> bool:
+    normalized = re.sub(r"\s+", " ", message_text.strip().lower())
+    if not normalized:
+        return False
+    if _is_account_balance_request(normalized):
+        return False
+    if any(re.search(pattern, normalized) for pattern in EXPLICIT_CANCEL_PATTERNS):
+        return False
+
+    history_like = any(pattern.search(normalized) for pattern in PURE_QUERY_HISTORY_PATTERNS)
+    analytics_like = any(pattern.search(normalized) for pattern in PURE_QUERY_ANALYTICS_PATTERNS)
+    ranking_like = any(pattern.search(normalized) for pattern in PURE_QUERY_BENEFICIARY_SUMMARY_PATTERNS)
+    query_like = history_like or analytics_like or ranking_like
+    if not query_like:
+        return False
+
+    has_multi_clause = any(marker in normalized for marker in TURN_ROUTER_MULTI_CLAUSE_MARKERS)
+    if has_multi_clause and not any(phrase in normalized for phrase in PURE_QUERY_MULTI_CLAUSE_ALLOWED_PHRASES):
+        if any(pattern.search(normalized) for pattern in PURE_QUERY_MUTATION_HINT_PATTERNS):
+            return False
+
+    if not ranking_like and any(pattern.search(normalized) for pattern in PURE_QUERY_MUTATION_HINT_PATTERNS):
+        return False
+
+    return True
 
 
 def _has_explicit_cancel(message_text: str) -> bool:
@@ -734,6 +811,28 @@ async def session_gate_fastpath(state: OrchestratorState, config: RunnableConfig
         path_label=summary_path_label,
     )
     summary_updates = summary_updates or {}
+
+    if not state.pending_interrupt and not state.has_quote and _looks_like_pure_query_turn(message_text):
+        task_id = _next_direct_query_task_id(state.tasks)
+        spec = TaskSpec(
+            id=task_id,
+            type="query",
+            stage=TaskStage.DRAFT,
+            payload={
+                "message": state.last_message_text,
+                "force_new_query": True,
+            },
+        )
+        logger.info("gate_direct_query_bypass", task_id=task_id)
+        return {
+            **summary_updates,
+            "tasks": {task_id: spec},
+            "waves": [[task_id]],
+            "current_wave_index": 0,
+            "planner_output": None,
+            "fast_path_triggered": True,
+            "semantic_path_shape": "query_direct",
+        }
 
     if (
         not state.pending_interrupt
