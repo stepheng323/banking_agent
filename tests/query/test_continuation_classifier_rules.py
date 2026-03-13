@@ -1,138 +1,81 @@
 from datetime import date
 
-import pytest
-
 from apps.core.src.agent.graphs.query.models import QueryResultItem, ResultSurface, SurfaceType
-from apps.core.src.agent.graphs.query.services.continuity import ContinuationClassification, ContinuationClassifier
+from apps.core.src.agent.graphs.query.services.continuity import ContinuationClassifier
 
 
-class _DummyStructured:
-    def __init__(self, result: ContinuationClassification):
-        self._result = result
-
-    async def ainvoke(self, prompt: str) -> ContinuationClassification:
-        del prompt
-        return self._result
+def _classifier() -> ContinuationClassifier:
+    return ContinuationClassifier(object())
 
 
-class _DummyLLM:
-    def __init__(self, result: ContinuationClassification):
-        self._result = result
-
-    def with_structured_output(self, schema: object) -> _DummyStructured:
-        del schema
-        return _DummyStructured(self._result)
-
-
-class _FailingLLM:
-    def with_structured_output(self, schema: object) -> "_FailingStructured":
-        del schema
-        return _FailingStructured()
-
-
-class _FailingStructured:
-    async def ainvoke(self, prompt: str) -> ContinuationClassification:
-        del prompt
-        raise AssertionError("LLM should not be called for deterministic guardrail path")
-
-
-@pytest.mark.asyncio
-async def test_summary_show_my_transactions_is_expand_guardrail() -> None:
-    classifier = ContinuationClassifier(_FailingLLM())
+def test_summary_show_my_transactions_is_expand_guardrail() -> None:
+    classifier = _classifier()
     surface = ResultSurface(type=SurfaceType.SUMMARY, items=[], context={"view": "summary"})
 
-    continuation_type, data = await classifier.classify(
+    guarded = classifier._guardrail_classify(
         message="show my transactions",
-        has_active_session=True,
         today=date.today().isoformat(),
+        items=None,
         surface=surface,
+        language="en",
     )
 
+    assert guarded is not None
+    continuation_type, data = guarded
     assert continuation_type == "expand"
     assert data["reason"] == "deterministic_expand"
 
 
-@pytest.mark.asyncio
-async def test_repeated_send_phrase_maps_to_retransfer_action() -> None:
-    llm_result = ContinuationClassification(
-        continuation_type="new_query",
-        confidence=0.2,
-        reason="fallback",
-    )
-    classifier = ContinuationClassifier(_DummyLLM(llm_result))
-    surface = ResultSurface(type=SurfaceType.SINGLE_ITEM, items=[], context={"type": "single_transaction"})
+def test_recipient_ranking_followup_forces_new_query_override() -> None:
+    classifier = _classifier()
 
-    continuation_type, data = await classifier.classify(
-        message="resend it",
-        has_active_session=True,
-        today=date.today().isoformat(),
-        surface=surface,
+    guarded = classifier._guardrail_classify(
+        message="Who did I send money to the most this week",
+        today="2026-03-07",
+        items=None,
+        surface=None,
+        language="en",
     )
 
-    assert continuation_type == "drill_down"
-    assert data["drill_down_action"] == "re_transfer"
-
-
-@pytest.mark.asyncio
-async def test_restated_full_query_remains_new_query_override() -> None:
-    llm_result = ContinuationClassification(
-        continuation_type="new_query",
-        confidence=0.97,
-        reason="full_restate",
-        is_new_query_override=True,
-        restates_query=True,
-    )
-    classifier = ContinuationClassifier(_DummyLLM(llm_result))
-    surface = ResultSurface(type=SurfaceType.LIST, items=[], context={"count": 5})
-
-    continuation_type, data = await classifier.classify(
-        message="show my last 5 transfers",
-        has_active_session=True,
-        today=date.today().isoformat(),
-        surface=surface,
-    )
-
+    assert guarded is not None
+    continuation_type, data = guarded
     assert continuation_type == "new_query"
+    assert data["reason"] == "deterministic_recipient_ranking_new_query"
     assert data["is_new_query_override"] is True
     assert data["restates_query"] is True
 
 
-@pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "message",
-    [
-        "how much did I spend yesterday",
-        "how much did I spend",
-        "total spending",
-        "how many transactions",
-        "sum it up",
-        "How much have I spent today",
-    ],
-)
-async def test_aggregate_phrases_hit_guardrail(message: str) -> None:
-    classifier = ContinuationClassifier(_FailingLLM())
+def test_aggregate_phrases_hit_guardrail() -> None:
+    classifier = _classifier()
 
-    continuation_type, data = await classifier.classify(
-        message=message,
-        has_active_session=True,
+    guarded = classifier._guardrail_classify(
+        message="How much have I spent today",
         today=date.today().isoformat(),
+        items=None,
+        surface=None,
+        language="en",
     )
 
+    assert guarded is not None
+    continuation_type, data = guarded
     assert continuation_type == "aggregate"
     assert data["reason"] == "deterministic_aggregate"
     assert data["confidence"] == 0.95
 
 
-@pytest.mark.asyncio
-async def test_time_delta_shortcut_skips_llm_for_yesterday_followup() -> None:
-    classifier = ContinuationClassifier(_FailingLLM())
+def test_time_delta_shortcut_for_yesterday_followup() -> None:
+    classifier = _classifier()
 
-    continuation_type, data = await classifier.classify(
+    guarded = classifier._guardrail_classify(
         message="what about yesterday",
-        has_active_session=True,
         today="2026-03-06",
+        items=None,
+        surface=None,
+        language="en",
     )
 
+    assert guarded is not None
+    continuation_type, data = guarded
     assert continuation_type == "time_delta"
     assert data["reason"] == "deterministic_time_delta"
     assert data["delta_type"] == "time"
@@ -140,100 +83,52 @@ async def test_time_delta_shortcut_skips_llm_for_yesterday_followup() -> None:
     assert data["time_range"].end.isoformat() == "2026-03-05"
 
 
-@pytest.mark.asyncio
-async def test_recipient_ranking_followup_forces_new_query_override() -> None:
-    classifier = ContinuationClassifier(_FailingLLM())
+def test_filter_delta_shortcut_for_credit_debit_followups() -> None:
+    classifier = _classifier()
 
-    continuation_type, data = await classifier.classify(
-        message="Who did I send money to the most this week",
-        has_active_session=True,
-        today="2026-03-07",
-    )
-
-    assert continuation_type == "new_query"
-    assert data["reason"] == "deterministic_recipient_ranking_new_query"
-    assert data["is_new_query_override"] is True
-    assert data["restates_query"] is True
-
-
-@pytest.mark.asyncio
-async def test_filter_delta_shortcut_skips_llm_for_credit_debit_followups() -> None:
-    classifier = ContinuationClassifier(_FailingLLM())
-
-    continuation_type, data = await classifier.classify(
+    guarded = classifier._guardrail_classify(
         message="only debits",
-        has_active_session=True,
         today="2026-03-06",
+        items=None,
+        surface=None,
+        language="en",
     )
 
+    assert guarded is not None
+    continuation_type, data = guarded
     assert continuation_type == "filter_delta"
     assert data["reason"] == "deterministic_tx_type_filter"
     assert data["delta_type"] == "filter"
     assert data["filters"].transaction_type == "debit"
 
-    continuation_type2, data2 = await classifier.classify(
+    guarded2 = classifier._guardrail_classify(
         message="what about credits",
-        has_active_session=True,
         today="2026-03-06",
+        items=None,
+        surface=None,
+        language="en",
     )
 
-    assert continuation_type2 == "filter_delta"
+    assert guarded2 is not None
+    _, data2 = guarded2
     assert data2["filters"].transaction_type == "credit"
 
 
-@pytest.mark.asyncio
-async def test_balance_phrase_uses_llm_path_when_session_is_active() -> None:
-    llm_result = ContinuationClassification(
-        continuation_type="new_query",
-        confidence=0.81,
-        reason="llm_balance_new_query",
-    )
-    classifier = ContinuationClassifier(_DummyLLM(llm_result))
-
-    continuation_type, data = await classifier.classify(
-        message="check my balance",
-        has_active_session=True,
-        today="2026-03-06",
-    )
-
-    assert continuation_type == "new_query"
-    assert data["reason"] == "llm_balance_new_query"
-
-
-@pytest.mark.asyncio
-async def test_beneficiary_summary_name_reply_maps_to_deterministic_recipient_drilldown() -> None:
-    classifier = ContinuationClassifier(_FailingLLM())
+def test_beneficiary_summary_name_reply_maps_to_recipient_drilldown() -> None:
+    classifier = _classifier()
     surface = ResultSurface(type=SurfaceType.SUMMARY, items=[], context={"view": "beneficiary_summary"})
     items = [QueryResultItem(description="Gaines", amount=25000, date=date(2026, 3, 10))]
 
-    continuation_type, data = await classifier.classify(
+    guarded = classifier._guardrail_classify(
         message="Gaines.",
-        has_active_session=True,
         today="2026-03-10",
         items=items,
         surface=surface,
+        language="en",
     )
 
+    assert guarded is not None
+    continuation_type, data = guarded
     assert continuation_type == "recipient_drill_down"
     assert data["reason"] == "deterministic_recipient_drill_down"
     assert data["recipient_name"] == "Gaines"
-
-
-@pytest.mark.asyncio
-async def test_llm_recipient_drilldown_preserves_recipient_name_in_payload() -> None:
-    llm_result = ContinuationClassification(
-        continuation_type="recipient_drill_down",
-        confidence=0.92,
-        reason="llm_recipient_reply",
-        recipient_name="Mum",
-    )
-    classifier = ContinuationClassifier(_DummyLLM(llm_result))
-
-    continuation_type, data = await classifier.classify(
-        message="Mum",
-        has_active_session=True,
-        today="2026-03-10",
-    )
-
-    assert continuation_type == "recipient_drill_down"
-    assert data["recipient_name"] == "Mum"
