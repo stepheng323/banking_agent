@@ -12,9 +12,9 @@ COPY pyproject.toml ./
 COPY apps/core/ /app/apps/core/
 COPY shared/ /app/shared/
 
-# Install base + core dependencies only
+# Install the core API runtime, including the ASGI/web stack.
 RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir ".[core]"
+    pip install --no-cache-dir ".[core,web]"
 
 ENV PYTHONPATH=/app
 EXPOSE 8001

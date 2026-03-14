@@ -13,7 +13,7 @@ COPY shared/ /app/shared/
 COPY config/ /app/config/
 
 RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir ".[receipt]" && \
+    pip install --no-cache-dir ".[receipt,web]" && \
     playwright install chromium --with-deps
 
 ENV PYTHONPATH=/app

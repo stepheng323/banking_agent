@@ -12,9 +12,9 @@ COPY pyproject.toml ./
 COPY apps/gateway/ /app/apps/gateway/
 COPY shared/ /app/shared/
 
-# Install base dependencies only (gateway has no extras)
+# Install the gateway runtime bundle, including web + gateway deps.
 RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir "."
+    pip install --no-cache-dir ".[runtime-gateway]"
 
 ENV PYTHONPATH=/app
 EXPOSE 8000

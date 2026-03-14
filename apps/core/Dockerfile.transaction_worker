@@ -14,7 +14,7 @@ COPY config/ /app/config/
 
 RUN --mount=type=cache,target=/root/.cache/pip \
     pip install --upgrade pip && \
-    pip install "."
+    pip install ".[web]"
 
 ENV PYTHONPATH=/app
 EXPOSE 8003
