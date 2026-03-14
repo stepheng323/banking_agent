@@ -21,7 +21,7 @@ from apps.core.src.agent.orchestrator.config import OrchestratorDependencies
 from apps.core.src.agent.orchestrator.graph.orchestrator import OrchestratorAgent
 from apps.core.src.agent.orchestrator.services.media_service import MediaService
 from apps.core.src.queue_consumers.message_consumer import MessageConsumer
-from apps.core.src.runtime.common import build_messaging_clients, require_aws_account_id
+from apps.core.src.runtime.common import build_messaging_clients
 from shared.cache.bank_cache import BankCacheService
 from shared.cache.redis_client import RedisClient
 from shared.cache.user_data import UserDataCache
@@ -175,7 +175,6 @@ def setup_core_consumers() -> tuple[MessageConsumer, RedisStreamConsumer]:
     validate_policy_coverage(policy)
     refresh_planner_system_prompt()
 
-    require_aws_account_id()
     queue_publisher = QueuePublisherFactory.get_async_publisher()
     messaging_clients = build_messaging_clients()
     shared_redis = RedisClient.get_client()

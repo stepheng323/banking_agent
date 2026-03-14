@@ -43,16 +43,22 @@ QUEUE_CONTRACTS: tuple[QueueContract, ...] = (
         logical_topic="transaction.execute",
         queue_name="banking:transactions",
         domain="transaction",
+        sqs_queue_name="banking-transactions",
+        redis_stream_name="async:transactions",
     ),
     QueueContract(
         logical_topic="funding.process",
         queue_name="banking:funding",
         domain="funding",
+        sqs_queue_name="banking-transactions",
+        redis_stream_name="async:funding",
     ),
     QueueContract(
         logical_topic="payout.process",
         queue_name="banking:payouts",
         domain="payout",
+        sqs_queue_name="banking-transactions",
+        redis_stream_name="async:payouts",
     ),
     QueueContract(
         logical_topic="flow_event.process",
@@ -63,11 +69,15 @@ QUEUE_CONTRACTS: tuple[QueueContract, ...] = (
         logical_topic="refund.process",
         queue_name="banking:refunds",
         domain="refund",
+        sqs_queue_name="banking-transactions",
+        redis_stream_name="async:refunds",
     ),
     QueueContract(
         logical_topic="receipt.process",
         queue_name="banking:receipt_jobs",
         domain="receipt",
+        sqs_queue_name="banking-receipts",
+        redis_stream_name="async:receipts",
     ),
 )
 

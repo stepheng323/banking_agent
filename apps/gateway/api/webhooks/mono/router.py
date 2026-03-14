@@ -3,6 +3,7 @@
 from fastapi import APIRouter, Request, Response
 
 from apps.gateway.api.webhooks.mono.service import MonoWebhookService
+from apps.gateway.api.webhooks.ownership import require_webhook_ingress_enabled
 from shared.queue.factory import QueuePublisherFactory
 from shared.utils.logging import get_logger
 
@@ -25,6 +26,7 @@ def _get_service() -> MonoWebhookService:
 async def mono_webhook(request: Request) -> Response:
     """Handle Mono webhook events for mandate and debit status updates."""
     try:
+        require_webhook_ingress_enabled("mono")
         payload = await request.json()
         event = payload.get("event", "")
         data = payload.get("data", {})

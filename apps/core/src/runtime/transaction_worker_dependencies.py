@@ -8,7 +8,6 @@ from apps.core.src.queue_consumers.funding_consumer import FundingConsumer
 from apps.core.src.queue_consumers.payout_consumer import PayoutConsumer
 from apps.core.src.queue_consumers.refund_consumer import RefundConsumer
 from apps.core.src.queue_consumers.transaction_consumer import TransactionConsumer
-from apps.core.src.runtime.common import require_aws_account_id
 from shared.clients.factories.providers import ProviderFactory
 from shared.clients.providers.mono.direct_debit import MonoDirectDebitProvider
 from shared.database.connection import get_db_session
@@ -24,7 +23,6 @@ def setup_transaction_worker_consumers() -> tuple[
     RefundConsumer,
 ]:
     """Setup async transaction-domain consumers owned by transaction Lambda worker."""
-    require_aws_account_id()
     queue_publisher = QueuePublisherFactory.get_async_publisher()
     db_session = get_db_session()
     transaction_repository = TransactionRepository(db=db_session)

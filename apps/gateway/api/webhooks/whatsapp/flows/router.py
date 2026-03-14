@@ -6,6 +6,7 @@ import traceback
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse, Response
 
+from apps.gateway.api.webhooks.ownership import require_webhook_ingress_enabled
 from apps.gateway.api.webhooks.whatsapp.flows.dependencies import (
     get_queue_publisher,
     get_whatsapp_client,
@@ -55,6 +56,7 @@ async def flow_webhook(
     Note: Agent services are called via queue events, not directly.
     """
     try:
+        require_webhook_ingress_enabled("whatsapp.flow")
         processed_request, error_response = await process_flow_request(req)
         if error_response:
             return error_response

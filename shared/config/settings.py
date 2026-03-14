@@ -52,6 +52,21 @@ class Settings:
         self.aws_account_id: str = os.getenv("AWS_ACCOUNT_ID", "000000000000")
         self.s3_region: str = self.aws_region
         self.s3_receipt_prefix: str = "receipts"
+        self.runtime_stack_role: str = os.getenv("RUNTIME_STACK_ROLE", "aws-primary").strip() or "aws-primary"
+        self.chat_transport: str = os.getenv("CHAT_TRANSPORT", "redis").strip() or "redis"
+        self.async_transport: str = os.getenv("ASYNC_TRANSPORT", "aws").strip() or "aws"
+        self.enable_webhook_ingress: bool = os.getenv("ENABLE_WEBHOOK_INGRESS", "true").lower() == "true"
+        self.enable_chat_consumers: bool = os.getenv("ENABLE_CHAT_CONSUMERS", "true").lower() == "true"
+        self.enable_transaction_worker: bool = os.getenv("ENABLE_TRANSACTION_WORKER", "false").lower() == "true"
+        self.enable_funding_worker: bool = os.getenv("ENABLE_FUNDING_WORKER", "false").lower() == "true"
+        self.enable_payout_worker: bool = os.getenv("ENABLE_PAYOUT_WORKER", "false").lower() == "true"
+        self.enable_refund_worker: bool = os.getenv("ENABLE_REFUND_WORKER", "false").lower() == "true"
+        self.enable_receipt_worker: bool = os.getenv("ENABLE_RECEIPT_WORKER", "false").lower() == "true"
+        self.enable_outbound_sender: bool = os.getenv("ENABLE_OUTBOUND_SENDER", "true").lower() == "true"
+        self.chat_message_max_age_seconds: int = int(os.getenv("CHAT_MESSAGE_MAX_AGE_SECONDS", "120"))
+        self.sqs_wait_time_seconds: int = int(os.getenv("SQS_WAIT_TIME_SECONDS", "10"))
+        self.sqs_visibility_timeout_seconds: int = int(os.getenv("SQS_VISIBILITY_TIMEOUT_SECONDS", "90"))
+        self.sqs_poll_max_messages: int = int(os.getenv("SQS_POLL_MAX_MESSAGES", "5"))
 
         self.default_channel: str = os.getenv("DEFAULT_CHANNEL", "whatsapp")
 
@@ -132,6 +147,27 @@ class Settings:
             raise RuntimeError(
                 "Missing critical runtime configuration for non-dev environment: " + ", ".join(sorted(missing))
             )
+
+    @property
+    def uses_aws_async_transport(self) -> bool:
+        """Return whether async queue publishing/consumption should use AWS SNS/SQS."""
+        return self.async_transport.lower() == "aws"
+
+    @property
+    def is_passive_runtime(self) -> bool:
+        """Return whether this runtime is configured as a passive standby."""
+        return not any(
+            (
+                self.enable_webhook_ingress,
+                self.enable_chat_consumers,
+                self.enable_transaction_worker,
+                self.enable_funding_worker,
+                self.enable_payout_worker,
+                self.enable_refund_worker,
+                self.enable_receipt_worker,
+                self.enable_outbound_sender,
+            )
+        )
 
 
 settings = Settings()

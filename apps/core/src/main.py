@@ -6,6 +6,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from apps.core.src.runtime_bootstrap import warm_runtime
+from shared.runtime_ownership import build_runtime_status
 from shared.utils.logging import configure_logger, get_logger
 
 configure_logger()
@@ -15,15 +16,12 @@ logger = get_logger(__name__)
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
     """Lifespan context manager for startup/shutdown events."""
-    logger.info("Starting Core Banking Service...")
+    logger.info("Starting Core Banking Service...", **build_runtime_status("core-api"))
     await warm_runtime()
 
     logger.info(
-        "consumer_ownership_config",
-        mode="api_only",
-        run_message_consumer=False,
-        run_stream_consumer=False,
-        started=[],
+        "runtime_ownership_config",
+        **build_runtime_status("core-api"),
     )
 
     yield
@@ -42,6 +40,16 @@ async def root() -> dict[str, str]:
 
 
 @app.get("/health")
-async def health() -> dict[str, str]:
+async def health() -> dict[str, object]:
     """Health check endpoint"""
-    return {"status": "healthy"}
+    return {"status": "healthy", "service": "core-api", "stack_role": build_runtime_status("core-api")["stack_role"]}
+
+
+@app.get("/ready")
+async def readiness() -> dict[str, object]:
+    """Readiness endpoint exposing API ownership mode."""
+    return {
+        "status": "ready",
+        "service": "core-api",
+        "ownership": build_runtime_status("core-api"),
+    }

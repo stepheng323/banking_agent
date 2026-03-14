@@ -34,6 +34,27 @@
 - Chat-critical queues are consumed only by ECS chat worker.
 - Async queues are consumed only by lambda workers.
 - Webhook ingress is owned only by gateway lambda/API Gateway.
+- During VPS migration, parallel infrastructure is allowed but active ownership must still be single-writer/single-consumer.
+- When `ASYNC_TRANSPORT=aws`, receipt jobs can move independently but transaction, funding, payout, and refund share one SQS queue and therefore cut over as one ownership unit.
+- When `ASYNC_TRANSPORT=redis`, async topics are split by Redis Stream and can be owned independently per worker domain.
+
+## Migration Flags
+
+The repo now supports explicit runtime ownership via environment flags:
+
+- `RUNTIME_STACK_ROLE`
+- `ENABLE_WEBHOOK_INGRESS`
+- `ENABLE_CHAT_CONSUMERS`
+- `ENABLE_TRANSACTION_WORKER`
+- `ENABLE_FUNDING_WORKER`
+- `ENABLE_PAYOUT_WORKER`
+- `ENABLE_REFUND_WORKER`
+- `ENABLE_RECEIPT_WORKER`
+- `ENABLE_OUTBOUND_SENDER`
+- `ASYNC_TRANSPORT`
+- `CHAT_TRANSPORT`
+
+See [vps_parallel_migration.md](/home/abiodun/dev/personal/banking_agent/docs/vps_parallel_migration.md) for cutover and rollback.
 
 ## Configuration Ownership
 

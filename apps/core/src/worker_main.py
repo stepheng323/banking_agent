@@ -2,10 +2,13 @@
 
 import asyncio
 import signal
+from datetime import UTC, datetime
 
 from apps.core.src.runtime.core_chat_dependencies import setup_core_consumers
 from apps.core.src.runtime_bootstrap import warm_runtime
+from shared.config.settings import settings
 from shared.queue.redis_stream_consumer import RedisStreamConsumer, RedisStreamRecord
+from shared.runtime_ownership import build_runtime_status
 from shared.utils.logging import configure_logger, get_logger
 
 configure_logger()
@@ -18,6 +21,9 @@ async def _process_stream_record(
     record: RedisStreamRecord,
 ) -> None:
     try:
+        if _should_drop_stale(record):
+            await stream_consumer.ack(record.stream_name, record.record_id)
+            return
         await consumer.process_record(record.topic, record.payload)
         await stream_consumer.ack(record.stream_name, record.record_id)
     except Exception as exc:
@@ -29,6 +35,36 @@ async def _process_stream_record(
             error=str(exc),
             exc_info=True,
         )
+
+
+def _should_drop_stale(record: RedisStreamRecord) -> bool:
+    if record.topic != "message.received":
+        return False
+
+    raw_timestamp = record.payload.get("timestamp")
+    if not isinstance(raw_timestamp, str) or not raw_timestamp.strip():
+        return False
+
+    try:
+        parsed = datetime.fromisoformat(raw_timestamp.replace("Z", "+00:00"))
+    except ValueError:
+        return False
+
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=UTC)
+
+    age_seconds = (datetime.now(UTC) - parsed.astimezone(UTC)).total_seconds()
+    if age_seconds <= settings.chat_message_max_age_seconds:
+        return False
+
+    logger.warning(
+        "chat_message_dropped_stale",
+        topic=record.topic,
+        record_id=record.record_id,
+        age_seconds=round(age_seconds, 2),
+        max_age_seconds=settings.chat_message_max_age_seconds,
+    )
+    return True
 
 
 async def _run_stream_loop(consumer, stream_consumer: RedisStreamConsumer) -> None:
@@ -47,14 +83,8 @@ async def _run_stream_loop(consumer, stream_consumer: RedisStreamConsumer) -> No
 
 async def run_worker(stop_event: asyncio.Event | None = None) -> None:
     """Run chat-critical consumer in a long-lived worker process."""
-    logger.info("starting_core_chat_worker")
+    logger.info("starting_core_chat_worker", **build_runtime_status("core-chat-worker"))
     await warm_runtime()
-
-    message_consumer, stream_consumer = setup_core_consumers()
-    stream_task = asyncio.create_task(
-        _run_stream_loop(message_consumer, stream_consumer),
-        name="core-chat-stream-loop",
-    )
 
     worker_stop_event = stop_event or asyncio.Event()
     if stop_event is None:
@@ -69,6 +99,18 @@ async def run_worker(stop_event: asyncio.Event | None = None) -> None:
                 loop.add_signal_handler(sig, _request_shutdown, sig)
             except NotImplementedError:
                 pass
+
+    if not settings.enable_chat_consumers:
+        logger.info("chat_consumer_passive_mode", **build_runtime_status("core-chat-worker"))
+        await worker_stop_event.wait()
+        logger.info("core_chat_worker_stopped")
+        return
+
+    message_consumer, stream_consumer = setup_core_consumers()
+    stream_task = asyncio.create_task(
+        _run_stream_loop(message_consumer, stream_consumer),
+        name="core-chat-stream-loop",
+    )
 
     try:
         await worker_stop_event.wait()

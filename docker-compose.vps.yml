@@ -1,0 +1,113 @@
+services:
+  caddy:
+    image: caddy:2-alpine
+    ports:
+      - "80:80"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+    depends_on:
+      gateway:
+        condition: service_started
+      core:
+        condition: service_started
+      receipt-worker:
+        condition: service_started
+      transaction-worker:
+        condition: service_started
+    restart: unless-stopped
+    networks:
+      - banking_network
+
+  gateway:
+    build:
+      context: .
+      dockerfile: apps/gateway/Dockerfile
+    env_file: .env
+    environment:
+      RUNTIME_STACK_ROLE: vps-primary
+      CHAT_TRANSPORT: redis
+      ASYNC_TRANSPORT: aws
+      ENABLE_WEBHOOK_INGRESS: "true"
+      ENABLE_OUTBOUND_SENDER: "true"
+      ENABLE_CHAT_CONSUMERS: "false"
+      ENABLE_TRANSACTION_WORKER: "false"
+      ENABLE_FUNDING_WORKER: "false"
+      ENABLE_PAYOUT_WORKER: "false"
+      ENABLE_REFUND_WORKER: "false"
+      ENABLE_RECEIPT_WORKER: "false"
+    restart: unless-stopped
+    networks:
+      - banking_network
+
+  core:
+    build:
+      context: .
+      dockerfile: apps/core/Dockerfile
+    env_file: .env
+    environment:
+      RUNTIME_STACK_ROLE: vps-primary
+      CHAT_TRANSPORT: redis
+      ASYNC_TRANSPORT: aws
+      ENABLE_WEBHOOK_INGRESS: "false"
+      ENABLE_OUTBOUND_SENDER: "true"
+      ENABLE_CHAT_CONSUMERS: "false"
+      ENABLE_TRANSACTION_WORKER: "false"
+      ENABLE_FUNDING_WORKER: "false"
+      ENABLE_PAYOUT_WORKER: "false"
+      ENABLE_REFUND_WORKER: "false"
+      ENABLE_RECEIPT_WORKER: "false"
+    restart: unless-stopped
+    networks:
+      - banking_network
+
+  core-chat-worker:
+    build:
+      context: .
+      dockerfile: apps/core/Dockerfile.worker
+    env_file: .env
+    environment:
+      RUNTIME_STACK_ROLE: vps-primary
+      CHAT_TRANSPORT: redis
+      ASYNC_TRANSPORT: aws
+      ENABLE_CHAT_CONSUMERS: "true"
+      ENABLE_OUTBOUND_SENDER: "true"
+    restart: unless-stopped
+    networks:
+      - banking_network
+
+  transaction-worker:
+    build:
+      context: .
+      dockerfile: apps/core/Dockerfile.transaction_worker
+    env_file: .env
+    environment:
+      RUNTIME_STACK_ROLE: vps-primary
+      CHAT_TRANSPORT: redis
+      ASYNC_TRANSPORT: aws
+      ENABLE_TRANSACTION_WORKER: "true"
+      ENABLE_FUNDING_WORKER: "true"
+      ENABLE_PAYOUT_WORKER: "true"
+      ENABLE_REFUND_WORKER: "true"
+      ENABLE_OUTBOUND_SENDER: "true"
+    restart: unless-stopped
+    networks:
+      - banking_network
+
+  receipt-worker:
+    build:
+      context: .
+      dockerfile: apps/receipt/Dockerfile.local
+    env_file: .env
+    environment:
+      RUNTIME_STACK_ROLE: vps-primary
+      CHAT_TRANSPORT: redis
+      ASYNC_TRANSPORT: aws
+      ENABLE_RECEIPT_WORKER: "true"
+      ENABLE_OUTBOUND_SENDER: "true"
+    restart: unless-stopped
+    networks:
+      - banking_network
+
+networks:
+  banking_network:
+    driver: bridge

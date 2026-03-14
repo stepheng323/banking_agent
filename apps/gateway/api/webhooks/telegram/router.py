@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from apps.gateway.api.webhooks.ownership import require_webhook_ingress_enabled
 from apps.gateway.api.webhooks.telegram.auth import verify_telegram_init_data
 from apps.gateway.api.webhooks.telegram.service import TelegramWebhookService
 from shared.clients.telegram.client import TelegramClient
@@ -30,6 +31,7 @@ async def telegram_webhook(
     x_telegram_bot_api_secret_token: str | None = Header(default=None),
 ) -> Response:
     """Handle incoming Telegram Bot webhook updates."""
+    require_webhook_ingress_enabled("telegram")
     expected_token = settings.telegram_webhook_secret_token
     if expected_token and x_telegram_bot_api_secret_token != expected_token:
         logger.warning(

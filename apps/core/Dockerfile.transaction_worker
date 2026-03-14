@@ -1,0 +1,21 @@
+FROM python:3.13-slim
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y \
+    gcc \
+    postgresql-client \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY pyproject.toml ./
+COPY apps/core/ /app/apps/core/
+COPY shared/ /app/shared/
+COPY config/ /app/config/
+
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install --upgrade pip && \
+    pip install "."
+
+ENV PYTHONPATH=/app
+EXPOSE 8003
+CMD ["uvicorn", "apps.core.src.transaction_worker_app:app", "--host", "0.0.0.0", "--port", "8003"]

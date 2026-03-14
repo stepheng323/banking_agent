@@ -3,6 +3,7 @@
 from fastapi import APIRouter, HTTPException, Request, Response, status
 
 from apps.gateway.adapters.meta_whatsapp import verify_meta_signature
+from apps.gateway.api.webhooks.ownership import require_webhook_ingress_enabled
 from apps.gateway.core.config import settings
 from shared.clients.whatsapp.client import WhatsAppClient
 from shared.queue.factory import QueuePublisherFactory
@@ -31,6 +32,7 @@ def _get_service() -> WhatsAppWebhookService:
 @router.get("/whatsapp")
 async def verify_webhook(request: Request) -> Response:
     """Handle Meta webhook verification challenge."""
+    require_webhook_ingress_enabled("whatsapp.verify")
     params = request.query_params
     mode = params.get("hub.mode")
     verify_token = params.get("hub.verify_token")
@@ -46,6 +48,7 @@ async def verify_webhook(request: Request) -> Response:
 async def whatsapp_webhook(request: Request) -> Response:
     """Handle incoming WhatsApp messages."""
     try:
+        require_webhook_ingress_enabled("whatsapp.messages")
         await verify_meta_signature(request)
         payload = await request.json()
 

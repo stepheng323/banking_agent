@@ -16,8 +16,10 @@ from apps.core.src.messaging.presenters.base import PresentationContext
 from apps.core.src.messaging.presenters.factory import PresenterFactory
 from shared.cache.redis_client import RedisClient
 from shared.clients.abstractions.messaging import MessagingClient
+from shared.clients.disabled_messaging import DisabledMessagingClient
 from shared.clients.telegram.client import TelegramClient
 from shared.clients.whatsapp.client import WhatsAppClient
+from shared.config.settings import settings
 from shared.database.enums import ActionableMessageTypeEnum
 from shared.database.models import ActionableMessage
 from shared.repositories.unit_of_work import UnitOfWork
@@ -48,10 +50,18 @@ class DeliveryService:
         self,
         messaging_clients: dict[str, MessagingClient] | None = None,
     ) -> None:
-        self.messaging_clients = messaging_clients or {
-            "whatsapp": WhatsAppClient(),
-            "telegram": TelegramClient(),
-        }
+        if messaging_clients is not None:
+            self.messaging_clients = messaging_clients
+        elif settings.enable_outbound_sender:
+            self.messaging_clients = {
+                "whatsapp": WhatsAppClient(),
+                "telegram": TelegramClient(),
+            }
+        else:
+            self.messaging_clients = {
+                "whatsapp": DisabledMessagingClient("whatsapp"),
+                "telegram": DisabledMessagingClient("telegram"),
+            }
         self.redis = RedisClient.get_client()
 
     async def deliver_text(

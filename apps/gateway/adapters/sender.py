@@ -1,12 +1,22 @@
 import httpx
 
 from apps.gateway.core.config import settings
+from shared.utils.logging import get_logger
 
 GRAPH_BASE = "https://graph.facebook.com/v21.0"
+logger = get_logger(__name__)
 
 
 async def send_text(to: str, text: str) -> None:
     """Send a text message via WhatsApp Business API."""
+    if not settings.enable_outbound_sender:
+        logger.info(
+            "gateway_sender_skipped",
+            channel="whatsapp",
+            to=to,
+            reason="outbound_sender_disabled",
+        )
+        return
     url = f"{GRAPH_BASE}/{settings.meta_phone_number_id}/messages"
     headers = {
         "Authorization": f"Bearer {settings.meta_access_token}",
