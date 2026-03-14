@@ -1,5 +1,3 @@
-import json
-
 import httpx
 import pytest
 
@@ -193,14 +191,46 @@ async def test_send_mini_app_routes_tokens_to_expected_surfaces(monkeypatch: pyt
 
     assert len(calls) == 3
 
-    first_markup = json.loads(str(calls[0]["reply_markup"]))
+    first_markup = calls[0]["reply_markup"]
     first_url = first_markup["inline_keyboard"][0][0]["web_app"]["url"]
     assert "/static/telegram/linking.html" in first_url
 
-    second_markup = json.loads(str(calls[1]["reply_markup"]))
+    second_markup = calls[1]["reply_markup"]
     second_url = second_markup["inline_keyboard"][0][0]["web_app"]["url"]
     assert "/static/telegram/onboarding.html" in second_url
 
-    third_markup = json.loads(str(calls[2]["reply_markup"]))
+    third_markup = calls[2]["reply_markup"]
     third_url = third_markup["inline_keyboard"][0][0]["web_app"]["url"]
     assert "/static/telegram/pin_entry.html" in third_url
+
+
+@pytest.mark.asyncio
+async def test_send_interactive_uses_object_reply_markup(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "telegram_bot_token", "test-token")
+    client = TelegramClient()
+
+    captured: dict[str, object] = {}
+
+    async def _fake_call(
+        method: str,
+        payload: dict[str, object] | None = None,
+        files: dict[str, object] | None = None,
+        max_retries: int = 3,
+    ) -> dict[str, object]:
+        del files, max_retries
+        assert method == "sendMessage"
+        captured.update(payload or {})
+        return {"ok": True, "result": {"message_id": 77}}
+
+    monkeypatch.setattr(client, "_call", _fake_call)
+
+    result = await client.send_interactive(
+        to="12345",
+        body_text="Choose one",
+        options=[{"id": "1", "title": "First"}],
+    )
+
+    assert result.success is True
+    assert captured["reply_markup"] == {
+        "inline_keyboard": [[{"text": "First", "callback_data": "1"}]]
+    }

@@ -2,7 +2,6 @@
 
 import asyncio
 import html
-import json
 import re
 from typing import Any
 
@@ -238,7 +237,7 @@ class TelegramClient(MessagingClient):
             "chat_id": to,
             "text": html_text,
             "parse_mode": "HTML",
-            "reply_markup": json.dumps({"inline_keyboard": keyboard_rows}),
+            "reply_markup": {"inline_keyboard": keyboard_rows},
         }
 
         try:
@@ -418,7 +417,7 @@ class TelegramClient(MessagingClient):
             "chat_id": to,
             "text": "\n\n".join(parts) or "Please tap the button below.",
             "parse_mode": "HTML",
-            "reply_markup": json.dumps(keyboard),
+            "reply_markup": keyboard,
         }
 
         try:

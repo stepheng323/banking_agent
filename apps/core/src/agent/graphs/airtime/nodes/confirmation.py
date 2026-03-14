@@ -9,6 +9,7 @@ from apps.core.src.agent.graphs.airtime.models.types import (
 )
 from apps.core.src.agent.graphs.airtime.pipeline.base import AirtimeStep
 from apps.core.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
+from shared.cache.redis_client import RedisClient
 from shared.formatters.airtime import format_airtime_summary
 from shared.utils.logging import get_logger
 
@@ -50,6 +51,9 @@ class ConfirmationStep(AirtimeStep):
         try:
             redis_client = getattr(worker_context, "redis_client", None)
             key = data.idempotency_key
+
+            if redis_client is None:
+                redis_client = RedisClient.get_client()
 
             if redis_client:
                 # Persist tokens so Webhook can look them up

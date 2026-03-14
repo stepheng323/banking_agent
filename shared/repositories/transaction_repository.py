@@ -1,6 +1,6 @@
 """Repository for Transaction model."""
 
-from datetime import datetime
+from datetime import UTC, datetime
 from uuid import UUID
 
 from sqlalchemy import select
@@ -9,6 +9,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from shared.database.enums import TransactionTypeEnum
 from shared.database.models import Transaction
 from shared.repositories.base import BaseRepository
+
+
+def normalize_db_timestamp(value: datetime) -> datetime:
+    """Normalize timestamps for naive Postgres TIMESTAMP columns."""
+    if value.tzinfo is not None:
+        return value.astimezone(UTC).replace(tzinfo=None)
+    return value
 
 
 class TransactionRepository(BaseRepository[Transaction]):
@@ -98,6 +105,8 @@ class TransactionRepository(BaseRepository[Transaction]):
             lookup_id = UUID(user_id)
         except ValueError:
             pass
+
+        since = normalize_db_timestamp(since)
 
         result = await self.db.execute(
             select(Transaction)
