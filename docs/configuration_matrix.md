@@ -18,6 +18,9 @@ All runtimes receive these baseline keys:
 - `AWS_ACCOUNT_ID`
 - `DATABASE_URL`
 - `REDIS_URL`
+- `APP_DOMAIN`
+- `ACME_EMAIL`
+- `MONO_USE_MOCK`
 - `RUNTIME_STACK_ROLE`
 - `CHAT_TRANSPORT`
 - `ASYNC_TRANSPORT`

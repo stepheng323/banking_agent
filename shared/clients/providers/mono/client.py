@@ -27,7 +27,7 @@ class MonoClient:
     BASE_URL = "https://api.withmono.com"
 
     def __init__(self):
-        self.use_mock = settings.app_env == "development"
+        self.use_mock = settings.use_mono_mock
         self.api_key = settings.mono_api_key
 
     async def lookup_account_number(self, account_number: str, bank_code: str) -> AccountLookupData | None:

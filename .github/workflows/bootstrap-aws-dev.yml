@@ -1,16 +1,6 @@
 name: Bootstrap AWS Dev Terraform
 
 on:
-  pull_request:
-    branches: [main]
-    paths:
-      - "infrastructure/aws-backend-bootstrap/**"
-      - ".github/workflows/bootstrap-aws-dev.yml"
-  push:
-    branches: [main]
-    paths:
-      - "infrastructure/aws-backend-bootstrap/**"
-      - ".github/workflows/bootstrap-aws-dev.yml"
   workflow_dispatch:
     inputs:
       action:

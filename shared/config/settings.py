@@ -46,6 +46,7 @@ class Settings:
         self.flutterwave_use_sandbox: bool = os.getenv("FLUTTERWAVE_USE_SANDBOX", "false").lower() == "true"
 
         self.mono_api_key: str = os.getenv("MONO_API_KEY", "")
+        self.mono_use_mock_override: bool | None = self._parse_optional_bool(os.getenv("MONO_USE_MOCK"))
 
         self.s3_bucket_name: str = os.getenv("S3_BUCKET_NAME", "")
         self.aws_region: str = os.getenv("AWS_REGION", "us-east-1")
@@ -100,6 +101,20 @@ class Settings:
         self._validate_critical_runtime_config()
         self._validate_whatsapp_config()
 
+    @staticmethod
+    def _parse_optional_bool(raw: str | None) -> bool | None:
+        """Parse optional boolean env vars."""
+        if raw is None:
+            return None
+        normalized = raw.strip().lower()
+        if not normalized:
+            return None
+        if normalized in {"1", "true", "yes", "on"}:
+            return True
+        if normalized in {"0", "false", "no", "off"}:
+            return False
+        raise RuntimeError(f"Invalid boolean value: {raw}")
+
     def _validate_whatsapp_config(self) -> None:
         """Validate WhatsApp configuration and warn about missing values."""
         warnings = []
@@ -147,6 +162,18 @@ class Settings:
             raise RuntimeError(
                 "Missing critical runtime configuration for non-dev environment: " + ", ".join(sorted(missing))
             )
+
+    @property
+    def use_mono_mock(self) -> bool:
+        """Return whether Mono clients should use mock responses."""
+        if self.mono_use_mock_override is not None:
+            return self.mono_use_mock_override
+        return self.app_env.lower() == "development"
+
+    @property
+    def selected_direct_debit_provider(self) -> str:
+        """Return the effective direct-debit provider selection."""
+        return "mock" if self.use_mono_mock else "mono"
 
     @property
     def uses_aws_async_transport(self) -> bool:

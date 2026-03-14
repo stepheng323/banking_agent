@@ -1,10 +1,14 @@
 services:
   caddy:
     image: caddy:2-alpine
+    env_file: .env
     ports:
       - "80:80"
+      - "443:443"
     volumes:
       - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
     depends_on:
       gateway:
         condition: service_started
@@ -111,3 +115,7 @@ services:
 networks:
   banking_network:
     driver: bridge
+
+volumes:
+  caddy_data:
+  caddy_config:

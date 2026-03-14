@@ -1,20 +1,6 @@
 name: Deploy to AWS Dev Environment
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - "apps/**"
-      - "shared/**"
-      - "infrastructure/aws/**"
-      - ".github/workflows/deploy-dev.yml"
-  pull_request:
-    branches: [main]
-    paths:
-      - "apps/**"
-      - "shared/**"
-      - "infrastructure/aws/**"
-      - ".github/workflows/deploy-dev.yml"
   workflow_dispatch:
 
 concurrency:

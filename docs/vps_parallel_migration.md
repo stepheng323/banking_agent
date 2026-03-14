@@ -12,6 +12,12 @@ Required env vars in `.env`:
 
 - `DATABASE_URL`
 - `REDIS_URL`
+- `APP_DOMAIN`
+- `ACME_EMAIL`
+
+Optional integration overrides:
+
+- `MONO_USE_MOCK=true|false`
 
 Operational requirements:
 
@@ -19,6 +25,8 @@ Operational requirements:
 - firewall/allowlist should admit only the VPS public IP where supported
 - keep the VPS, Postgres, and Redis in nearby regions to limit latency
 - enable TLS on the provider side if available
+- DNS for `APP_DOMAIN` must point to the VPS public IP
+- ports `80` and `443` must be open on the VPS firewall for ACME + HTTPS
 
 ## Recommended Runtime Mode
 
@@ -60,6 +68,7 @@ docker compose -f docker-compose.vps.yml up -d --build
 
 This compose file does not start local Postgres or Redis.
 It uses the managed `DATABASE_URL` and `REDIS_URL` from `.env`.
+It expects `APP_DOMAIN` and `ACME_EMAIL` so Caddy can provision TLS automatically.
 
 2. Confirm passive ownership:
 

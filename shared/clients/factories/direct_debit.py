@@ -36,12 +36,7 @@ class DirectDebitProviderFactory:
         if cls._instance is not None and provider_name is None:
             return cls._instance
 
-        if provider_name:
-            selected = provider_name
-        elif settings.app_env == "development":
-            selected = "mock"
-        else:
-            selected = "mono"
+        selected = provider_name or settings.selected_direct_debit_provider
 
         provider = cls._create_provider(selected)
 
