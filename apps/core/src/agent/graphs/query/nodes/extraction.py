@@ -49,6 +49,21 @@ class ExtractionStep(QueryStep):
             "_query_deterministic_surface_action": getattr(decision, "deterministic_surface_action", None),
         }
 
+    @staticmethod
+    def _append_query_session_transition(updates: dict[str, Any], transition: str) -> dict[str, Any]:
+        updates["_query_session_transition"] = transition
+        return updates
+
+    @staticmethod
+    def _compose_conversational_reply(decision: Any, *, language: str) -> str:
+        response_text = (getattr(decision, "response_text", None) or "").strip()
+        contextual_hint = (getattr(decision, "contextual_hint", None) or "").strip()
+        if not response_text:
+            response_text = render_message("conversational.checkin", language)
+        if contextual_hint:
+            return f"{response_text}\n\n{contextual_hint}"
+        return response_text
+
     def _load_session_query_contract(self, session: dict[str, Any]) -> QueryExecutionContract | None:
         raw_contract = session.get("query_contract")
         if isinstance(raw_contract, QueryExecutionContract):
@@ -137,14 +152,14 @@ class ExtractionStep(QueryStep):
         )
 
         if decision.decision == "end_session":
-            return {
+            return self._append_query_session_transition({
                 "transaction_outcome": TransactionOutcome.OK,
                 "response": render_message("query.session.goodbye", locale),
                 "session_active": False,
                 "pending_clarification": None,
                 "flow_state": "complete",
                 **self._semantic_trace_updates(decision),
-            }
+            }, "end_query_session")
 
         if decision.decision == "new_query":
             return self._parse_reasoner_extraction_to_updates(
@@ -242,13 +257,13 @@ class ExtractionStep(QueryStep):
 
         if decision.decision == "end_session":
             locale = LocaleManager.normalize(state.get("language")).value
-            return {
+            return self._append_query_session_transition({
                 "transaction_outcome": TransactionOutcome.OK,
                 "response": decision.end_session_response or render_message("query.session.goodbye", locale),
                 "session_active": False,
                 "flow_state": "complete",
                 **self._semantic_trace_updates(decision),
-            }
+            }, "end_query_session")
 
         if decision.decision in {"fresh_query", "new_query", "reinterpret_query"}:
             semantic_updates = self._parse_reasoner_extraction_to_updates(
@@ -258,6 +273,7 @@ class ExtractionStep(QueryStep):
                 language=LocaleManager.normalize(state.get("language")).value,
             )
             semantic_updates.update(self._semantic_trace_updates(decision))
+            self._append_query_session_transition(semantic_updates, "replace_session_new_query")
             return semantic_updates
 
         if decision.decision != "continuation":
@@ -331,6 +347,21 @@ class ExtractionStep(QueryStep):
         elif cont_type == "expand":
             updates["show_expanded"] = True
 
+        elif cont_type == "conversational":
+            return self._append_query_session_transition(
+                {
+                    "transaction_outcome": TransactionOutcome.OK,
+                    "response": self._compose_conversational_reply(
+                        decision,
+                        language=LocaleManager.normalize(state.get("language")).value,
+                    ),
+                    "session_active": True,
+                    "flow_state": "executing",
+                    **self._semantic_trace_updates(decision),
+                },
+                "preserve_session_conversational",
+            )
+
         elif cont_type == "drill_down":
             drill_idx = decision.drill_down_index if decision.drill_down_index is not None else 0
 
@@ -379,6 +410,8 @@ class ExtractionStep(QueryStep):
                 updates["drill_down_action"] = decision.drill_down_action
                 if decision.fact_field:
                     updates["fact_field"] = decision.fact_field
+                if decision.drill_down_action == "answer_fact":
+                    updates["_query_session_transition"] = "answer_fact_active_result"
 
         elif cont_type == "recipient_drill_down":
             # Recipient drill down (filter by this recipient)
@@ -418,13 +451,13 @@ class ExtractionStep(QueryStep):
 
         elif cont_type == "end_session":
             locale = LocaleManager.normalize(state.get("language")).value
-            return {
+            return self._append_query_session_transition({
                 "transaction_outcome": TransactionOutcome.OK,  # Or OK?
                 "response": decision.end_session_response or render_message("query.session.goodbye", locale),
                 "session_active": False,
                 "flow_state": "complete",
                 **self._semantic_trace_updates(decision),
-            }
+            }, "end_query_session")
 
         return updates
 
@@ -567,7 +600,7 @@ class ExtractionStep(QueryStep):
         if confidence is None or confidence >= self._LOW_CONFIDENCE_THRESHOLD:
             return False
 
-        if cont_type in ("show_more", "end_session"):
+        if cont_type in ("show_more", "end_session", "conversational"):
             return False
 
         word_count = len(message.split())

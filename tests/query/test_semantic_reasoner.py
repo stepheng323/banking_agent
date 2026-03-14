@@ -135,6 +135,46 @@ async def test_reasoner_uses_llm_for_active_result_fact_answer() -> None:
 
 
 @pytest.mark.asyncio
+async def test_reasoner_uses_llm_for_active_result_conversational_reaction() -> None:
+    llm = _TrackingLLM(
+        QuerySemanticDecision(
+            decision="continuation",
+            confidence=0.9,
+            reason="llm_conversational_reaction",
+            continuation_type="conversational",
+            response_text="It is on the high side.",
+            contextual_hint="You can ask what made it up.",
+        )
+    )
+    reasoner = QuerySemanticReasoner(llm)
+    surface = ResultSurface(type=SurfaceType.SUMMARY, items=[], context={"type": "spending_total"})
+
+    decision = await reasoner.reason(
+        SemanticReasonerContext(
+            message="That's a lot",
+            today=date(2026, 3, 13),
+            language="en",
+            query_contract=QueryExecutionContract(
+                intent=QueryIntent.ANALYTICS_SUMMARY,
+                time_start=date(2026, 3, 9),
+                time_end=date(2026, 3, 13),
+                normalized_query=NormalizedQuery(
+                    intent=QueryIntent.ANALYTICS_SUMMARY,
+                time_range=TimeRange(start=date(2026, 3, 9), end=date(2026, 3, 13)),
+                ),
+            ),
+            surface=surface,
+        )
+    )
+
+    assert decision.decision == "continuation"
+    assert decision.continuation_type == "conversational"
+    assert decision.response_text == "It is on the high side."
+    assert decision.contextual_hint == "You can ask what made it up."
+    assert llm.structured.calls == 1
+
+
+@pytest.mark.asyncio
 async def test_reasoner_logs_deterministic_surface_action_without_llm(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -331,6 +371,50 @@ async def test_reasoner_logs_deterministic_pending_clarification_answer_without_
             "reason": "deterministic_time_reply",
         },
     ) in events
+
+
+@pytest.mark.asyncio
+async def test_extraction_step_preserves_session_for_conversational_reaction() -> None:
+    step = ExtractionStep(_FailingLLM())
+    session_contract = QueryExecutionContract(
+        intent=QueryIntent.ANALYTICS_SUMMARY,
+        time_start=date(2026, 3, 9),
+        time_end=date(2026, 3, 14),
+        normalized_query=NormalizedQuery(
+            intent=QueryIntent.ANALYTICS_SUMMARY,
+            time_range=TimeRange(start=date(2026, 3, 9), end=date(2026, 3, 14)),
+        ),
+    )
+
+    async def _fake_reason(context: object) -> QuerySemanticDecision:
+        del context
+        return QuerySemanticDecision(
+            decision="continuation",
+            continuation_type="conversational",
+            response_text="It is on the high side.",
+            contextual_hint="You can ask what made it up.",
+        )
+
+    step.reasoner.reason = _fake_reason  # type: ignore[method-assign]
+
+    result = await step.run(
+        {
+            "message": "That's a lot",
+            "language": "en",
+            "today": date(2026, 3, 14),
+            "query_session": {
+                "session_active": True,
+                "query_contract": session_contract,
+                "query_result": {"items": []},
+                "surface": ResultSurface(type=SurfaceType.SUMMARY, items=[], context={"type": "spending_total"}),
+            },
+        }
+    )
+
+    assert result.outcome == TransactionOutcome.OK
+    assert result.patch["response"] == "It is on the high side.\n\nYou can ask what made it up."
+    assert result.patch["session_active"] is True
+    assert result.patch["_query_session_transition"] == "preserve_session_conversational"
 
 
 @pytest.mark.asyncio

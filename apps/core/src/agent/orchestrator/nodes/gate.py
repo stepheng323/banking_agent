@@ -112,7 +112,12 @@ PURE_QUERY_HISTORY_PATTERNS = (
 PURE_QUERY_ANALYTICS_PATTERNS = (
     re.compile(
         r"\bhow\s+much\s+(?:did|do|have)\s+i\s+"
-        r"(?:spend|spent|pay|paid|receive|received|earn|earned)\b",
+        r"(?:spend|spent|pay|paid|send|sent|transfer|transferred|receive|received|earn|earned)\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\b(?:have|did)\s+i\s+"
+        r"(?:send|sent|transfer|transferred|spend|spent|pay|paid|receive|received)\b",
         re.IGNORECASE,
     ),
     re.compile(r"\btotal\s+(?:spending|spent|received|income)\b", re.IGNORECASE),
@@ -385,13 +390,15 @@ def _looks_like_pure_query_turn(message_text: str) -> bool:
     query_like = history_like or analytics_like or ranking_like
     if not query_like:
         return False
+    has_mutation_hint = any(pattern.search(normalized) for pattern in PURE_QUERY_MUTATION_HINT_PATTERNS)
+    analytics_query_frame = normalized.startswith(("how much ", "have i ", "did i "))
 
     has_multi_clause = any(marker in normalized for marker in TURN_ROUTER_MULTI_CLAUSE_MARKERS)
     if has_multi_clause and not any(phrase in normalized for phrase in PURE_QUERY_MULTI_CLAUSE_ALLOWED_PHRASES):
-        if any(pattern.search(normalized) for pattern in PURE_QUERY_MUTATION_HINT_PATTERNS):
+        if has_mutation_hint and not (analytics_like and analytics_query_frame):
             return False
 
-    if not ranking_like and any(pattern.search(normalized) for pattern in PURE_QUERY_MUTATION_HINT_PATTERNS):
+    if not ranking_like and has_mutation_hint and not (analytics_like and analytics_query_frame):
         return False
 
     return True
@@ -457,6 +464,28 @@ def _should_ignore_query_session_direct_response(
     }:
         return not _is_explicit_meta_turn(message_text)
     return False
+
+
+def _should_route_query_session_conversational_response_to_query(
+    *,
+    route: Any,
+    query_session_snapshot: dict[str, Any] | None,
+) -> bool:
+    if not isinstance(query_session_snapshot, dict) or not query_session_snapshot.get("session_active"):
+        return False
+    if query_session_snapshot.get("pending_clarification"):
+        return False
+    if getattr(route, "decision", None) != "respond_directly":
+        return False
+    return str(getattr(route, "response_key", "") or "") in {
+        "conversational.greeting",
+        "conversational.checkin",
+        "conversational.appreciation",
+        "conversational.identity",
+        "conversational.brand_origin",
+        "conversational.capability_question",
+        "planner.cancelled",
+    }
 
 
 def _should_block_direct_router_surface_response(
@@ -958,6 +987,35 @@ async def session_gate_fastpath(state: OrchestratorState, config: RunnableConfig
                     response_key=getattr(route, "response_key", None),
                 )
                 route = None
+
+            if route is not None and _should_route_query_session_conversational_response_to_query(
+                route=route,
+                query_session_snapshot=query_session_snapshot,
+            ):
+                task_id = _next_direct_query_task_id(state.tasks)
+                spec = TaskSpec(
+                    id=task_id,
+                    type="query",
+                    stage=TaskStage.DRAFT,
+                    payload={
+                        "message": state.last_message_text,
+                    },
+                )
+                logger.info(
+                    "gate_query_session_conversational_response_handoff",
+                    task_id=task_id,
+                    response_key=getattr(route, "response_key", None),
+                )
+                return {
+                    **summary_updates,
+                    **updates,
+                    "tasks": {task_id: spec},
+                    "waves": [[task_id]],
+                    "current_wave_index": 0,
+                    "planner_output": None,
+                    "fast_path_triggered": True,
+                    "semantic_path_shape": "query_direct",
+                }
 
             if route is not None and route.decision in {"respond_directly", "direct_context_answer"}:
                 locale = LocaleManager.normalize((state.loaded_context or {}).get("language")).value

@@ -23,3 +23,23 @@ def test_query_reasoner_prompt_covers_active_result_fact_followups() -> None:
     assert '- recipient' in QUERY_SEMANTIC_REASONER_PROMPT
     assert '- bank' in QUERY_SEMANTIC_REASONER_PROMPT
     assert '- date' in QUERY_SEMANTIC_REASONER_PROMPT
+
+
+def test_query_reasoner_prompt_tightens_active_result_answer_fact_boundary() -> None:
+    assert 'Use drill_down_action="answer_fact" only when the user is clearly referring to the currently displayed item' in (
+        QUERY_SEMANTIC_REASONER_PROMPT
+    )
+    assert '"Have I sent money today?" -> fresh_query or new_query, not answer_fact.' in QUERY_SEMANTIC_REASONER_PROMPT
+    assert (
+        '"How much have I sent to mum this week?" -> fresh_query or new_query, not answer_fact.'
+        in QUERY_SEMANTIC_REASONER_PROMPT
+    )
+
+
+def test_query_reasoner_prompt_covers_conversational_reactions_in_active_sessions() -> None:
+    assert 'continuation_type="conversational"' in QUERY_SEMANTIC_REASONER_PROMPT
+    assert "response_text" in QUERY_SEMANTIC_REASONER_PROMPT
+    assert "contextual_hint" in QUERY_SEMANTIC_REASONER_PROMPT
+    assert "Do not trigger pagination, expand, drill-down, or any other mutation for conversational reactions." in (
+        QUERY_SEMANTIC_REASONER_PROMPT
+    )

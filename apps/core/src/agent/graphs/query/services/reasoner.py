@@ -83,6 +83,7 @@ class QuerySemanticDecision(BaseModel):
         "time_delta",
         "filter_delta",
         "expand",
+        "conversational",
         "drill_down",
         "recipient_drill_down",
         "aggregate",
@@ -102,6 +103,8 @@ class QuerySemanticDecision(BaseModel):
     recipient_name: str | None = Field(default=None)
     end_session_response: str | None = Field(default=None)
     fact_field: Literal["status", "amount", "recipient", "bank", "date"] | None = Field(default=None)
+    response_text: str | None = Field(default=None)
+    contextual_hint: str | None = Field(default=None)
     semantic_context_mode: Literal["none", "pending_clarification", "active_result"] | None = Field(default=None)
     semantic_llm_used: bool | None = Field(default=None)
     deterministic_surface_action: str | None = Field(default=None)

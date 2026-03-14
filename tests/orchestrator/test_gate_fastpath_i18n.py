@@ -133,6 +133,68 @@ async def test_gate_bypasses_planner_for_pure_query_analytics_turn() -> None:
     assert task.payload["force_new_query"] is True
 
 
+async def test_gate_bypasses_planner_for_pure_query_sent_analytics_turn() -> None:
+    planner = _RouteTurnPlanner(
+        TurnRouteDecision(
+            decision="go_planner",
+            confidence=0.95,
+            detected_language="English",
+            response_key=None,
+            response=None,
+            expected_transaction_executors=[],
+            reason="should not be used",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_gate_query_direct_2b",
+        phone_number="2348999999912",
+        channel="whatsapp",
+        last_message_text="How much have I sent to Mum this week",
+        loaded_context={"language": "en"},
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await session_gate_fastpath(state, config)
+
+    assert planner.route_calls == 0
+    assert updates["fast_path_triggered"] is True
+    assert updates["semantic_path_shape"] == "query_direct"
+    task = updates["tasks"]["direct_query"]
+    assert task.type == "query"
+    assert task.payload["force_new_query"] is True
+
+
+async def test_gate_bypasses_planner_for_pure_query_have_i_sent_turn() -> None:
+    planner = _RouteTurnPlanner(
+        TurnRouteDecision(
+            decision="go_planner",
+            confidence=0.95,
+            detected_language="English",
+            response_key=None,
+            response=None,
+            expected_transaction_executors=[],
+            reason="should not be used",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_gate_query_direct_2c",
+        phone_number="2348999999913",
+        channel="whatsapp",
+        last_message_text="Have I sent money today",
+        loaded_context={"language": "en"},
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await session_gate_fastpath(state, config)
+
+    assert planner.route_calls == 0
+    assert updates["fast_path_triggered"] is True
+    assert updates["semantic_path_shape"] == "query_direct"
+    task = updates["tasks"]["direct_query"]
+    assert task.type == "query"
+    assert task.payload["force_new_query"] is True
+
+
 async def test_gate_bypasses_planner_for_pure_query_beneficiary_ranking_turn() -> None:
     planner = _RouteTurnPlanner(
         TurnRouteDecision(
@@ -914,6 +976,46 @@ async def test_gate_query_session_ignores_generic_checkin_direct_response_for_fo
     assert "turn_context_summary" in updates
 
 
+async def test_gate_hands_active_query_session_greeting_to_query_worker() -> None:
+    planner = _RouteTurnPlanner(
+        TurnRouteDecision(
+            decision="respond_directly",
+            confidence=0.89,
+            detected_language="English",
+            response_key="conversational.greeting",
+            response=None,
+            expected_transaction_executors=[],
+            reason="greeting during active query session",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_gate_query_conv_1",
+        phone_number="2348000001072",
+        channel="whatsapp",
+        last_message_text="Hi",
+        loaded_context={"language": "en"},
+        session_stack=[ActiveSession(domain="query", state="RUNNING", interrupt_policy="ALLOW")],
+        active_domain="query",
+        stashed_query_session={
+            "session_active": True,
+            "query_contract": {"intent": "transaction_search"},
+            "query_result": {"summary_text": "Result"},
+        },
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await session_gate_fastpath(state, config)
+
+    assert planner.route_calls == 1
+    assert updates["fast_path_triggered"] is True
+    assert updates["semantic_path_shape"] == "query_direct"
+    assert "final_response" not in updates
+    task = updates["tasks"]["direct_query"]
+    assert task.type == "query"
+    assert task.payload["message"] == "Hi"
+    assert "force_new_query" not in task.payload
+
+
 async def test_gate_turn_router_cancel_response_clears_query_state() -> None:
     planner = _RouteTurnPlanner(
         TurnRouteDecision(
@@ -949,14 +1051,12 @@ async def test_gate_turn_router_cancel_response_clears_query_state() -> None:
 
     assert planner.route_calls == 1
     assert updates["fast_path_triggered"] is True
-    assert updates["final_response"] == render_cancelled_prompt("en")
-    assert updates["tasks"] == {}
-    assert updates["waves"] == []
-    assert updates["current_wave_index"] == 0
-    assert updates["session_stack"] == []
-    assert updates["active_domain"] is None
-    assert updates["stashed_query_session"] is None
-    assert redis_client.deleted_keys == ["query:session:2348000000008"]
+    assert updates["semantic_path_shape"] == "query_direct"
+    assert "final_response" not in updates
+    task = updates["tasks"]["direct_query"]
+    assert task.type == "query"
+    assert task.payload["message"] == "please cancel"
+    assert redis_client.deleted_keys == []
 
 
 async def test_gate_explicit_cancel_without_active_state_returns_clarify() -> None:

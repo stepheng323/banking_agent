@@ -337,7 +337,10 @@ class QueryParser:
         if not has_aggregate_cue:
             return False
 
-        spend_cue = any(term in query_lower for term in ("spend", "spent", "spending", "paid", "pay", "expense", "cost"))
+        spend_cue = any(
+            term in query_lower
+            for term in ("spend", "spent", "spending", "paid", "pay", "send", "sent", "transfer", "transferred", "expense", "cost")
+        )
         receive_cue = any(
             term in query_lower for term in ("receive", "received", "credited", "credit", "income", "salary", "earned")
         )
@@ -602,7 +605,7 @@ class QueryParser:
             )
 
             if not is_expense_query and raw_lower:
-                if any(k in raw_lower for k in ("spending", "expense", "spent", "cost", "paid")):
+                if any(k in raw_lower for k in ("spending", "expense", "spent", "cost", "paid", "send", "sent", "transfer", "transferred")):
                     is_expense_query = True
 
             if is_expense_query:

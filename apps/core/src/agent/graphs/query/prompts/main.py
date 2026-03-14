@@ -73,6 +73,8 @@ CONTINUATION RULES
   - time-only change -> continuation_type="time_delta"
   - filter-only change -> continuation_type="filter_delta"
   - expand summary -> continuation_type="expand"
+  - conversational reactions/check-ins about the current result session -> continuation_type="conversational"
+    with a short `response_text` and optional one-line `contextual_hint`
   - item action/detail/receipt/issue -> continuation_type="drill_down"
   - factual questions about the currently displayed single item should also use continuation_type="drill_down"
     with drill_down_action="answer_fact" and fact_field set to one of:
@@ -84,6 +86,22 @@ CONTINUATION RULES
   - recipient reply on beneficiary summary -> continuation_type="recipient_drill_down"
   - analytics over current result set -> continuation_type="aggregate"
   - unrelated full query -> decision="new_query"
+
+ACTIVE-RESULT FACT BOUNDARY
+- Use drill_down_action="answer_fact" only when the user is clearly referring to the currently displayed item,
+  for example "was it successful?", "who was it to?", "which bank was that from?", "how much was that one?".
+- If the user names a new activity, recipient, or period explicitly, treat it as fresh/new query intent instead.
+- Examples:
+  - "Have I sent money today?" -> fresh_query or new_query, not answer_fact.
+  - "How much have I sent to mum this week?" -> fresh_query or new_query, not answer_fact.
+
+CONVERSATIONAL REACTION RULES
+- During an active result session, short reactions like "that's a lot", "wow", "hi", or "how are you"
+  should stay inside the query session.
+- Reply conversationally using `response_text`.
+- Preserve the current session and surface.
+- Do not trigger pagination, expand, drill-down, or any other mutation for conversational reactions.
+- If helpful, include exactly one short `contextual_hint` grounded in the current surface.
 
 EXTRACTION RULES
 - For `fresh_query`, `reinterpret_query`, and `new_query`, populate `extraction` using the same semantics as the query parser:
@@ -126,7 +144,7 @@ Choose the best intent:
 FILTER INFERENCE
 - recipient: merchant or person name ("Uber", "Mum")
 - transaction_type:
-  - "spent", "paid", "bought", "spending", "expense", "cost" → debit
+  - "spent", "paid", "bought", "spending", "expense", "cost", "sent", "send", "transferred" → debit
   - "received", "earned", "salary", "income" → credit
 - amount thresholds:
   - "over X", "above X", "at least X" → min_amount
@@ -195,6 +213,9 @@ User: "how much have I spent today"
 User: "how much have I received today"
 → intent=spending_total, filters.transaction_type="credit",
   time_range.reference_type=explicit, time_range.period="today", time_range.days_back=0
+User: "how much have I sent to mum this week"
+→ intent=spending_total, filters.transaction_type="debit", filters.recipient="mum",
+  time_range.reference_type=explicit, time_range.period="this_week"
 User: "show my transactions"
 → intent=transaction_list, time_range.reference_type=unspecified
 User: "what was my last transaction status"

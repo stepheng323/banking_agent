@@ -194,6 +194,7 @@ async def test_worker_logs_query_turn_summary(monkeypatch: pytest.MonkeyPatch) -
                 "_query_semantic_context_mode": "none",
                 "_query_semantic_llm_used": True,
                 "_query_deterministic_surface_action": None,
+                "_query_session_transition": None,
             },
         )
 
@@ -219,6 +220,7 @@ async def test_worker_logs_query_turn_summary(monkeypatch: pytest.MonkeyPatch) -
             "semantic_context_mode": "none",
             "semantic_llm_used": True,
             "deterministic_surface_action": None,
+            "session_transition": None,
             "outcome": "ok",
             "flow_state": "executing",
             "surface_type": None,
@@ -254,6 +256,7 @@ async def test_worker_logs_query_turn_summary_for_active_result_fact_followup(
                 "_query_semantic_context_mode": "active_result",
                 "_query_semantic_llm_used": True,
                 "_query_deterministic_surface_action": None,
+                "_query_session_transition": "answer_fact_active_result",
             },
         )
 
@@ -296,6 +299,85 @@ async def test_worker_logs_query_turn_summary_for_active_result_fact_followup(
 
     assert result.outcome == TransactionOutcome.OK
     assert (
+        "query_session_transition",
+        {
+            "transition": "answer_fact_active_result",
+            "context_mode": "active_result",
+            "semantic_decision": "continuation",
+            "session_active": True,
+        },
+    ) in events
+
+
+@pytest.mark.asyncio
+async def test_worker_logs_query_turn_summary_for_conversational_active_result_reaction(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session_manager = _SessionManager()
+    worker = QueryWorker(_DummyLLM(), _DummyProvider(), session_manager)  # type: ignore[arg-type]
+    events: list[tuple[str, dict[str, Any]]] = []
+
+    def _capture(event: str, **kwargs: Any) -> None:
+        events.append((event, kwargs))
+
+    monkeypatch.setattr("apps.core.src.agent.graphs.query.worker.logger.info", _capture)
+
+    async def _fake_pipeline_run(state: dict[str, Any], worker_context: Any) -> TransactionResult:
+        del worker_context
+        assert state["query_session"]["session_active"] is True
+        return TransactionResult(
+            outcome=TransactionOutcome.OK,
+            response="It is on the high side.\n\nYou can ask what made it up.",
+            patch={
+                "session_active": True,
+                "flow_state": "executing",
+                "surface": {"type": "summary", "items": [], "context": {"type": "spending_total"}},
+                "_query_semantic_decision": "continuation",
+                "_query_semantic_context_mode": "active_result",
+                "_query_semantic_llm_used": True,
+                "_query_deterministic_surface_action": None,
+                "_query_session_transition": "preserve_session_conversational",
+            },
+        )
+
+    worker.pipeline.run = _fake_pipeline_run  # type: ignore[method-assign]
+
+    result = await worker.run(
+        payload={"message": "That's a lot"},
+        context={
+            "phone_number": "2348000000304",
+            "user_id": "u5",
+            "accounts": [],
+            "language": "en",
+            "today": date(2026, 3, 13),
+            "stashed_query_session": {
+                "session_active": True,
+                "query_contract": QueryExecutionContract(
+                    intent=QueryIntent.ANALYTICS_SUMMARY,
+                    time_start=date(2026, 3, 9),
+                    time_end=date(2026, 3, 13),
+                    normalized_query=NormalizedQuery(
+                        intent=QueryIntent.ANALYTICS_SUMMARY,
+                        time_range=TimeRange(start=date(2026, 3, 9), end=date(2026, 3, 13)),
+                    ),
+                ).model_dump(),
+                "query_result": {"summary_text": "You spent ₦10,000 yesterday."},
+                "surface": {"type": "summary", "items": [], "context": {"type": "spending_total"}},
+            },
+        },
+    )
+
+    assert result.outcome == TransactionOutcome.OK
+    assert (
+        "query_session_transition",
+        {
+            "transition": "preserve_session_conversational",
+            "context_mode": "active_result",
+            "semantic_decision": "continuation",
+            "session_active": True,
+        },
+    ) in events
+    assert (
         "query_turn_summary",
         {
             "context_mode": "active_result",
@@ -303,9 +385,10 @@ async def test_worker_logs_query_turn_summary_for_active_result_fact_followup(
             "semantic_context_mode": "active_result",
             "semantic_llm_used": True,
             "deterministic_surface_action": None,
+            "session_transition": "preserve_session_conversational",
             "outcome": "ok",
             "flow_state": "executing",
-            "surface_type": "single_item",
+            "surface_type": "summary",
             "session_active": True,
             "has_pending_clarification": False,
         },

@@ -67,6 +67,15 @@ class QueryWorker:
     def _log_turn_summary(self, *, state: dict[str, Any], result: TransactionResult) -> None:
         patch = result.patch or {}
         final_state = {**state, **patch}
+        session_transition = patch.get("_query_session_transition")
+        if session_transition:
+            logger.info(
+                "query_session_transition",
+                transition=session_transition,
+                context_mode=self._query_context_mode(state),
+                semantic_decision=patch.get("_query_semantic_decision"),
+                session_active=final_state.get("session_active"),
+            )
         logger.info(
             "query_turn_summary",
             context_mode=self._query_context_mode(state),
@@ -74,6 +83,7 @@ class QueryWorker:
             semantic_context_mode=patch.get("_query_semantic_context_mode"),
             semantic_llm_used=patch.get("_query_semantic_llm_used"),
             deterministic_surface_action=patch.get("_query_deterministic_surface_action"),
+            session_transition=session_transition,
             outcome=result.outcome.value if hasattr(result.outcome, "value") else str(result.outcome),
             flow_state=final_state.get("flow_state"),
             surface_type=self._surface_type_name(final_state.get("surface")),
