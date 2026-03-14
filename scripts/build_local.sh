@@ -18,6 +18,10 @@ Options:
   --build-only             Build Docker images only.
   --tag <value>            Override image tag suffix (default: local-<git-sha>).
   --image <name>           Build only one image (repeatable). Values:
+                           core-vps
+                           gateway-vps
+                           transaction-worker-vps
+                           receipt-worker-vps
                            chat-worker
                            transaction-worker-lambda
                            receipt-worker-lambda
@@ -78,6 +82,30 @@ run_runtime_smoke() {
   run_check "gateway-runtime" "runtime-gateway" "apps.gateway.lambda_handler" "handler"
 }
 
+run_vps_image_smoke() {
+  require_cmd docker
+  docker buildx version >/dev/null
+
+  run_check() {
+    local name="$1"
+    local dockerfile="$2"
+    local module="$3"
+    local symbol="$4"
+    local tag="banking-agent-${name}:${TAG}"
+
+    docker buildx build --load -f "$dockerfile" -t "$tag" .
+    docker run --rm "$tag" sh -lc \
+      "command -v uvicorn >/dev/null && python -c \"import importlib; m = importlib.import_module('${module}'); getattr(m, '${symbol}')\""
+    echo "✓ ${name} image smoke passed"
+  }
+
+  echo "Running VPS image runtime smoke checks..."
+  run_check "core-vps" "apps/core/Dockerfile" "apps.core.src.main" "app"
+  run_check "gateway-vps" "apps/gateway/Dockerfile" "apps.gateway.main" "app"
+  run_check "transaction-worker-vps" "apps/core/Dockerfile.transaction_worker" "apps.core.src.transaction_worker_app" "app"
+  run_check "receipt-worker-vps" "apps/receipt/Dockerfile.local" "apps.receipt.main" "app"
+}
+
 build_image() {
   local name="$1"
   local repo="$2"
@@ -113,6 +141,22 @@ run_docker_builds() {
   docker buildx version >/dev/null
 
   echo "Building local Docker images (tag suffix: ${TAG})..."
+
+  if contains_image "core-vps"; then
+    build_image "core-vps" "banking-agent-core-dev" "apps/core/Dockerfile" "false"
+  fi
+
+  if contains_image "gateway-vps"; then
+    build_image "gateway-vps" "banking-agent-gateway-dev" "apps/gateway/Dockerfile" "false"
+  fi
+
+  if contains_image "transaction-worker-vps"; then
+    build_image "transaction-worker-vps" "banking-agent-core-dev" "apps/core/Dockerfile.transaction_worker" "false"
+  fi
+
+  if contains_image "receipt-worker-vps"; then
+    build_image "receipt-worker-vps" "banking-agent-receipt-dev" "apps/receipt/Dockerfile.local" "false"
+  fi
 
   if contains_image "chat-worker"; then
     build_image "chat-worker" "banking-agent-core-dev" "apps/core/Dockerfile.worker" "false"
@@ -152,7 +196,7 @@ while [ "$#" -gt 0 ]; do
     --image)
       img="${2:-}"
       case "$img" in
-        chat-worker|transaction-worker-lambda|receipt-worker-lambda|gateway-lambda)
+        core-vps|gateway-vps|transaction-worker-vps|receipt-worker-vps|chat-worker|transaction-worker-lambda|receipt-worker-lambda|gateway-lambda)
           SELECTED_IMAGES+=("$img")
           ;;
         *)
@@ -181,6 +225,7 @@ fi
 
 if [ "$RUN_SMOKE" -eq 1 ]; then
   run_runtime_smoke
+  run_vps_image_smoke
 fi
 
 if [ "$RUN_BUILD" -eq 1 ]; then
