@@ -850,6 +850,7 @@ async def test_finalize_multi_transfer_summary_uses_alias_resolved_with_title_ca
 
     updates = await finalize(state, config)
 
-    summary = updates["outbox"][0]["text"]
+    say_entries = [entry for entry in updates["outbox"] if entry.get("type") == "say"]
+    summary = next(entry["text"] for entry in say_entries if "Transaction Summary" in entry["text"])
     assert "✓ ₦10,000 → Mum (Mercy Johnson) • Opay • 8162511023" in summary
     assert "✓ ₦10,000 → Tolu (Grace Ngozi Adebayo) • Access Bank • 0762511023" in summary
