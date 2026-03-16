@@ -20,6 +20,7 @@ PLANNER_TRANSFER_PRECISION_PROMPT = """## MONEY_MOVE PRECISION
 - Selector refs: {"selector":"previous"} or {"selector":"index","index":N}.
 - One-shot completeness: extract explicit amount/account/bank/phone/network/plan in same turn.
 - Split across people/beneficiaries -> recipient_allocations, not explicit_split.
+- "each" + multiple recipients -> recipient_allocations with per-recipient amounts.
 - Split across my funding accounts/banks -> explicit_split or source_accounts.
 - Precision-first: never guess ambiguous fields."""
 
@@ -146,6 +147,9 @@ PLANNER_RUNTIME_MONEY_MOVE_EXAMPLES = """## TARGETED EXAMPLES (MONEY_MOVE)
 - Split 20k between Mum and Gaines ->
   send_money amount=20000,
   recipient_allocations=[{recipient_name:Mum,amount:10000},{recipient_name:Gaines,amount:10000}].
+- Send 10k each to Mum and Tolu ->
+  send_money amount=20000,
+  recipient_allocations=[{recipient_name:Mum,amount:10000},{recipient_name:Tolu,amount:10000}].
 - Send 20k 70/30 btw Mum and Gaines ->
   send_money amount=20000,
   recipient_allocations=[{recipient_name:Mum,amount:14000},{recipient_name:Gaines,amount:6000}].
