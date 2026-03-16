@@ -1,0 +1,196 @@
+name: Deploy to VPS
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-vps
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  VPS_APP_DIR: ${{ vars.VPS_APP_DIR || '/srv/banking_agent' }}
+  VPS_SSH_PORT: ${{ vars.VPS_SSH_PORT || '22' }}
+
+jobs:
+  lint-and-test:
+    name: Lint / Type-check / Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Setup Python
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: uv sync --all-extras --dev
+
+      - name: Ruff (lint)
+        run: uv run ruff check .
+
+      - name: Mypy (type-check)
+        run: uv run mypy .
+
+      - name: Pytest (tests)
+        run: uv run pytest -q
+
+  vps-runtime-image-smoke:
+    name: VPS Runtime Image Smoke (${{ matrix.name }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - name: core-vps
+            dockerfile: apps/core/Dockerfile
+            module: apps.core.src.main
+            symbol: app
+          - name: gateway-vps
+            dockerfile: apps/gateway/Dockerfile
+            module: apps.gateway.main
+            symbol: app
+          - name: transaction-worker-vps
+            dockerfile: apps/core/Dockerfile.transaction_worker
+            module: apps.core.src.transaction_worker_app
+            symbol: app
+          - name: receipt-worker-vps
+            dockerfile: apps/receipt/Dockerfile.local
+            module: apps.receipt.main
+            symbol: app
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build runtime image
+        run: |
+          set -euo pipefail
+          docker buildx build --load -f "${{ matrix.dockerfile }}" -t "banking-agent-${{ matrix.name }}:ci" .
+
+      - name: Validate runtime image boot boundary
+        run: |
+          set -euo pipefail
+          docker run --rm "banking-agent-${{ matrix.name }}:ci" sh -lc \
+            "command -v uvicorn >/dev/null && python -c \"import importlib; m = importlib.import_module('${{ matrix.module }}'); getattr(m, '${{ matrix.symbol }}')\""
+          echo "✓ ${{ matrix.name }} runtime image smoke passed"
+
+  deploy-vps:
+    name: Deploy VPS Stack
+    runs-on: ubuntu-latest
+    needs: [lint-and-test, vps-runtime-image-smoke]
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Validate required VPS secrets
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_SSH_USER: ${{ secrets.VPS_SSH_USER }}
+          VPS_SSH_PRIVATE_KEY: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
+          VPS_SSH_KNOWN_HOSTS: ${{ secrets.VPS_SSH_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          test -n "$VPS_HOST"
+          test -n "$VPS_SSH_USER"
+          test -n "$VPS_SSH_PRIVATE_KEY"
+          test -n "$VPS_SSH_KNOWN_HOSTS"
+
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
+
+      - name: Configure SSH known_hosts
+        env:
+          VPS_SSH_KNOWN_HOSTS: ${{ secrets.VPS_SSH_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$VPS_SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 644 ~/.ssh/known_hosts
+
+      - name: Ensure remote app directory exists
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_SSH_USER: ${{ secrets.VPS_SSH_USER }}
+        run: |
+          set -euo pipefail
+          ssh -p "$VPS_SSH_PORT" "$VPS_SSH_USER@$VPS_HOST" "mkdir -p '$VPS_APP_DIR'"
+
+      - name: Sync repo to VPS
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_SSH_USER: ${{ secrets.VPS_SSH_USER }}
+        run: |
+          set -euo pipefail
+          rsync -az \
+            --exclude '.git/' \
+            --exclude '.venv/' \
+            --exclude '.mypy_cache/' \
+            --exclude '.pytest_cache/' \
+            --exclude '.ruff_cache/' \
+            --exclude '__pycache__/' \
+            --exclude '*.pyc' \
+            --exclude '.env' \
+            --exclude 'whatsapp_flow_private_key.pem' \
+            -e "ssh -p $VPS_SSH_PORT" \
+            ./ "$VPS_SSH_USER@$VPS_HOST:$VPS_APP_DIR/"
+
+      - name: Deploy stack on VPS
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_SSH_USER: ${{ secrets.VPS_SSH_USER }}
+          GITHUB_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+
+          ssh -p "$VPS_SSH_PORT" "$VPS_SSH_USER@$VPS_HOST" "APP_DIR='$VPS_APP_DIR' GITHUB_SHA='$GITHUB_SHA' bash -s" <<'EOF'
+          set -euo pipefail
+          cd "$APP_DIR"
+
+          echo "Deploying commit $GITHUB_SHA"
+          docker compose -f docker-compose.vps.yml config >/dev/null
+          docker compose -f docker-compose.vps.yml up -d --build
+          docker compose -f docker-compose.vps.yml ps
+
+          check_health() {
+            local name="$1"
+            local url="$2"
+            local attempt
+            for attempt in $(seq 1 20); do
+              if curl -fsS "$url" >/tmp/health.out 2>/dev/null; then
+                echo "✓ $name: $(cat /tmp/health.out)"
+                return 0
+              fi
+              sleep 5
+            done
+            echo "Health check failed for $name ($url)"
+            return 1
+          }
+
+          check_health gateway "http://localhost/health"
+          check_health core "http://localhost/core/health"
+          check_health transaction "http://localhost/transaction/health"
+          check_health receipt "http://localhost/receipt/health"
+          EOF
+
+      - name: Capture VPS logs on failure
+        if: failure()
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_SSH_USER: ${{ secrets.VPS_SSH_USER }}
+        run: |
+          set -euo pipefail
+          ssh -p "$VPS_SSH_PORT" "$VPS_SSH_USER@$VPS_HOST" "cd '$VPS_APP_DIR' && docker compose -f docker-compose.vps.yml logs --tail=120 gateway core core-chat-worker transaction-worker receipt-worker caddy"

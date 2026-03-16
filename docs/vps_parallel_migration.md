@@ -85,6 +85,34 @@ curl http://<host>/transaction/health
 - `transaction_worker_service_starting`
 - `receipt_service_starting`
 
+## GitHub Actions Deploy
+
+The repo now supports VPS deploys through [deploy-vps.yml](/home/abiodun/dev/personal/banking_agent/.github/workflows/deploy-vps.yml).
+
+Required GitHub repository secrets:
+
+- `VPS_HOST`
+- `VPS_SSH_USER`
+- `VPS_SSH_PRIVATE_KEY`
+- `VPS_SSH_KNOWN_HOSTS`
+
+Optional GitHub repository variables:
+
+- `VPS_APP_DIR` (defaults to `/srv/banking_agent`)
+- `VPS_SSH_PORT` (defaults to `22`)
+
+Workflow behavior:
+
+- runs lint, mypy, pytest
+- runs VPS runtime image smoke checks
+- syncs the checked-out repo to the VPS over SSH
+- does not overwrite the VPS `.env`
+- does not overwrite `whatsapp_flow_private_key.pem`
+- runs `docker compose -f docker-compose.vps.yml up -d --build`
+- verifies `/health`, `/core/health`, `/transaction/health`, and `/receipt/health`
+
+Because the workflow syncs the checked-out workspace directly, the VPS does not need GitHub deploy credentials or `git pull` access.
+
 ## Cutover Order
 
 ### Final VPS Mode
