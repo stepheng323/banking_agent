@@ -142,17 +142,19 @@ PLANNER_RUNTIME_COMMON_EXAMPLES = """## TARGETED EXAMPLES (COMMON)
 
 PLANNER_RUNTIME_MONEY_MOVE_EXAMPLES = """## TARGETED EXAMPLES (MONEY_MOVE)
 - Send 10k to Mum and buy 5k airtime -> send_money + buy_airtime.
-- Buy 5k airtime then send 10k to Mum -> use depends_on.
 - Send 20k to 0760505261 First Bank -> send_money amount=20000, recipient_account=0760505261, bank_name=First Bank.
-- Send 10k each to Mum and Tolu ->
+- Split 20k between Mum and Gaines ->
   send_money amount=20000,
-  recipient_allocations=[{recipient_name:Mum,amount:10000},{recipient_name:Tolu,amount:10000}].
+  recipient_allocations=[{recipient_name:Mum,amount:10000},{recipient_name:Gaines,amount:10000}].
+- Send 10k each to Mum and Tolu -> allocations.
 - Send 20k 70/30 btw Mum and Gaines ->
   send_money amount=20000,
   recipient_allocations=[{recipient_name:Mum,amount:14000},{recipient_name:Gaines,amount:6000}].
 - Split 20k from Access and GTB -> send_money amount=20000, explicit_split={Access:10000,GTB:10000}.
 - Abeg buy 2k airtime for 08031234567 mtn -> buy_airtime amount=2000, recipient_phone=08031234567, network=MTN.
 - Jowo ra data 1gb fun 08031234567 mtn -> buy_data plan=1GB, recipient_phone=08031234567, network=MTN.
+- Don Allah tura 5k zuwa 0760505261 First Bank ->
+  send_money amount=5000, recipient_account=0760505261, bank_name=First Bank.
 - Biko buy 3k airtime for my line mtn -> buy_airtime amount=3000, is_self=true, network=MTN.
 - Envoie 5k a 0760505261 First Bank -> send_money amount=5000, recipient_account=0760505261, bank_name=First Bank."""
 
