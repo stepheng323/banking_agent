@@ -214,3 +214,78 @@ async def test_finalize_does_not_repeat_resume_prompt_with_live_resume_frame() -
 
     assert updates["outbox"] == []
     assert "context_frames" not in updates
+
+
+@pytest.mark.asyncio
+async def test_finalize_mixed_transaction_batch_emits_processing_notice_before_summary() -> None:
+    state = OrchestratorState(
+        user_id="u_resume_9",
+        phone_number="2348000000019",
+        channel="telegram",
+        loaded_context={"language": "en"},
+        tasks={
+            "t_transfer": TaskSpec(
+                id="t_transfer",
+                type="transfer",
+                stage=TaskStage.COMPLETED,
+                payload={
+                    "amount": 20000,
+                    "recipient_name": "Mum",
+                    "recipient_resolved_name": "Mercy Johnson",
+                    "recipient_bank_name": "Opay",
+                    "recipient_account": "8162511023",
+                },
+            ),
+            "t_airtime": TaskSpec(
+                id="t_airtime",
+                type="airtime",
+                stage=TaskStage.COMPLETED,
+                payload={
+                    "amount": 1000,
+                    "recipient_phone": "08162511023",
+                    "network": "MTN",
+                    "receipt": {
+                        "status": "queued",
+                        "message": "Your purchase of ₦1,000.00 airtime for 08162511023 (MTN) has been queued.",
+                    },
+                },
+            ),
+        },
+    )
+
+    updates = await finalize(state, _config())
+
+    say_entries = [entry for entry in updates["outbox"] if entry.get("type") == "say"]
+    assert len(say_entries) == 2
+    assert "Transfer of ₦20,000.00 to Mercy Johnson is being processed." in say_entries[0]["text"]
+    assert "Queued" in say_entries[0]["text"]
+    assert "Transaction Summary" in say_entries[1]["text"]
+
+
+@pytest.mark.asyncio
+async def test_finalize_completed_transfer_clears_interrupt_state() -> None:
+    state = OrchestratorState(
+        user_id="u_resume_10",
+        phone_number="2348000000020",
+        channel="telegram",
+        loaded_context={"language": "en"},
+        pending_interrupt={"kind": "input", "task_ids": ["t1"], "fields_by_task": {"t1": ["amount"]}},
+        last_interrupt={"kind": "input", "task_ids": ["t1"], "fields_by_task": {"t1": ["amount"]}},
+        session_stack=[],
+        active_domain="transfer",
+        tasks={
+            "t1": TaskSpec(
+                id="t1",
+                type="transfer",
+                stage=TaskStage.COMPLETED,
+                payload={"amount": 5000, "recipient_name": "Mum"},
+            )
+        },
+    )
+
+    updates = await finalize(state, _config())
+
+    assert updates["pending_interrupt"] is None
+    assert updates["last_interrupt"] is None
+    assert updates["session_stack"] == []
+    assert updates["active_domain"] is None

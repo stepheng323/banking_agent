@@ -181,8 +181,12 @@ async def finalize(state: OrchestratorState, config: RunnableConfig) -> dict[str
         "tasks": {},  # Wipe tasks so the next turn is fresh
         "waves": [],  # Clear waves so next turn triggers Planner
         "current_wave_index": 0,
+        "pending_interrupt": None,
+        "last_interrupt": None,
         "pin_verified": False,  # Security: Reset PIN verification status
         "last_callback": None,  # Security: Clear stale callback data
+        "session_stack": [],
+        "active_domain": None,
         **context_updates,
     }
 
@@ -284,11 +288,57 @@ async def _handle_completed_tasks(
     elif all_read_only:
         pass
     else:
+        processing_notice = _build_transaction_processing_notice(transaction_visible_tasks, locale=locale)
+        if processing_notice:
+            outbox.append({"type": "say", "text": processing_notice})
+
         # For mixed read-only + transaction completions, keep explicit read-only outputs
         # already emitted by workers and summarize only transaction outcomes.
         summary_source = transaction_visible_tasks or visible_tasks
         summary_text = format_multi_action_summary(summary_source, locale=locale)
         outbox.append({"type": "say", "text": summary_text})
+
+
+def _build_transaction_processing_notice(completed_tasks: list[TaskSpec], *, locale: str) -> str | None:
+    """Build interim queued/processing text before the final multi-action summary."""
+    if len(completed_tasks) <= 1:
+        return None
+
+    lines: list[str] = []
+
+    for task in completed_tasks:
+        if task.type == "transfer":
+            display_name = (
+                task.payload.get("recipient_resolved_name")
+                or task.payload.get("recipient_name")
+                or render_message("orchestrator.finalize.recipient_fallback", locale)
+            )
+            amount = float(task.payload.get("amount", 0) or 0)
+            lines.append(
+                render_message(
+                    "orchestrator.finalize.transfer_processing",
+                    locale,
+                    {"amount": f"{amount:,.2f}", "display_name": display_name},
+                )
+            )
+            continue
+
+        if task.type in {"airtime", "data"}:
+            receipt = task.payload.get("receipt", {})
+            status = str(receipt.get("status", "")).title() or "Queued"
+            message = receipt.get("message", render_message("orchestrator.finalize.transaction_completed", locale))
+            lines.append(
+                render_message(
+                    "orchestrator.finalize.async_status_message",
+                    locale,
+                    {"status": status, "message": message},
+                )
+            )
+
+    if not lines:
+        return None
+
+    return "\n".join(lines)
 
 
 async def _queue_single_transfer_receipt(
