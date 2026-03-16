@@ -466,25 +466,18 @@ def _should_ignore_query_session_direct_response(
     return False
 
 
-def _should_route_query_session_conversational_response_to_query(
+def _build_query_session_exit_updates(
+    state: OrchestratorState,
     *,
-    route: Any,
     query_session_snapshot: dict[str, Any] | None,
-) -> bool:
+) -> dict[str, Any]:
     if not isinstance(query_session_snapshot, dict) or not query_session_snapshot.get("session_active"):
-        return False
-    if query_session_snapshot.get("pending_clarification"):
-        return False
-    if getattr(route, "decision", None) != "respond_directly":
-        return False
-    return str(getattr(route, "response_key", "") or "") in {
-        "conversational.greeting",
-        "conversational.checkin",
-        "conversational.appreciation",
-        "conversational.identity",
-        "conversational.brand_origin",
-        "conversational.capability_question",
-        "planner.cancelled",
+        return {}
+    remaining_sessions = [session for session in state.session_stack if session.domain != "query"]
+    return {
+        "stashed_query_session": None,
+        "session_stack": remaining_sessions,
+        "active_domain": None if state.active_domain == "query" else state.active_domain,
     }
 
 
@@ -988,35 +981,6 @@ async def session_gate_fastpath(state: OrchestratorState, config: RunnableConfig
                 )
                 route = None
 
-            if route is not None and _should_route_query_session_conversational_response_to_query(
-                route=route,
-                query_session_snapshot=query_session_snapshot,
-            ):
-                task_id = _next_direct_query_task_id(state.tasks)
-                spec = TaskSpec(
-                    id=task_id,
-                    type="query",
-                    stage=TaskStage.DRAFT,
-                    payload={
-                        "message": state.last_message_text,
-                    },
-                )
-                logger.info(
-                    "gate_query_session_conversational_response_handoff",
-                    task_id=task_id,
-                    response_key=getattr(route, "response_key", None),
-                )
-                return {
-                    **summary_updates,
-                    **updates,
-                    "tasks": {task_id: spec},
-                    "waves": [[task_id]],
-                    "current_wave_index": 0,
-                    "planner_output": None,
-                    "fast_path_triggered": True,
-                    "semantic_path_shape": "query_direct",
-                }
-
             if route is not None and route.decision in {"respond_directly", "direct_context_answer"}:
                 locale = LocaleManager.normalize((state.loaded_context or {}).get("language")).value
                 if route.detected_language:
@@ -1053,9 +1017,24 @@ async def session_gate_fastpath(state: OrchestratorState, config: RunnableConfig
                 else:
                     text = route.response or render_message("conversational.clarify", locale)
 
-                if isinstance(query_session_snapshot, dict) and query_session_snapshot.get("pending_clarification"):
+                had_active_query_session = bool(
+                    isinstance(query_session_snapshot, dict) and query_session_snapshot.get("session_active")
+                )
+                had_pending_query_clarification = bool(
+                    isinstance(query_session_snapshot, dict) and query_session_snapshot.get("pending_clarification")
+                )
+                if had_active_query_session:
                     await clear_query_session(redis_client, state.phone_number)
-                    logger.info("gate_pending_query_clarification_dismissed_on_direct_reply")
+                    updates.update(
+                        _build_query_session_exit_updates(
+                            state,
+                            query_session_snapshot=query_session_snapshot,
+                        )
+                    )
+                    logger.info(
+                        "gate_query_session_exited_on_direct_reply",
+                        had_pending_clarification=had_pending_query_clarification,
+                    )
                 logger.info(
                     "gate_turn_router_direct_response",
                     decision=route.decision,

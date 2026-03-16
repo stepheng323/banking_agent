@@ -287,6 +287,7 @@ class QuerySemanticReasoner:
             drill_down_index=data.get("drill_down_index"),
             drill_down_action=data.get("drill_down_action"),
             recipient_name=data.get("recipient_name"),
+            response_text=data.get("response_text"),
         )
 
     async def reason(self, context: SemanticReasonerContext) -> QuerySemanticDecision:

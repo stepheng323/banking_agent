@@ -329,14 +329,14 @@ async def test_worker_logs_query_turn_summary_for_conversational_active_result_r
             outcome=TransactionOutcome.OK,
             response="It is on the high side.\n\nYou can ask what made it up.",
             patch={
-                "session_active": True,
-                "flow_state": "executing",
+                "session_active": False,
+                "flow_state": "complete",
                 "surface": {"type": "summary", "items": [], "context": {"type": "spending_total"}},
                 "_query_semantic_decision": "continuation",
                 "_query_semantic_context_mode": "active_result",
                 "_query_semantic_llm_used": True,
                 "_query_deterministic_surface_action": None,
-                "_query_session_transition": "preserve_session_conversational",
+                "_query_session_transition": "exit_query_session_conversational",
             },
         )
 
@@ -371,10 +371,10 @@ async def test_worker_logs_query_turn_summary_for_conversational_active_result_r
     assert (
         "query_session_transition",
         {
-            "transition": "preserve_session_conversational",
+            "transition": "exit_query_session_conversational",
             "context_mode": "active_result",
             "semantic_decision": "continuation",
-            "session_active": True,
+            "session_active": False,
         },
     ) in events
     assert (
@@ -385,11 +385,11 @@ async def test_worker_logs_query_turn_summary_for_conversational_active_result_r
             "semantic_context_mode": "active_result",
             "semantic_llm_used": True,
             "deterministic_surface_action": None,
-            "session_transition": "preserve_session_conversational",
+            "session_transition": "exit_query_session_conversational",
             "outcome": "ok",
-            "flow_state": "executing",
+            "flow_state": "complete",
             "surface_type": "summary",
-            "session_active": True,
+            "session_active": False,
             "has_pending_clarification": False,
         },
     ) in events

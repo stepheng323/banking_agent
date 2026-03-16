@@ -355,11 +355,11 @@ class ExtractionStep(QueryStep):
                         decision,
                         language=LocaleManager.normalize(state.get("language")).value,
                     ),
-                    "session_active": True,
-                    "flow_state": "executing",
+                    "session_active": False,
+                    "flow_state": "complete",
                     **self._semantic_trace_updates(decision),
                 },
-                "preserve_session_conversational",
+                "exit_query_session_conversational",
             )
 
         elif cont_type == "drill_down":

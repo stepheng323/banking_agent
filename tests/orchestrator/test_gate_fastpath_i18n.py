@@ -976,7 +976,7 @@ async def test_gate_query_session_ignores_generic_checkin_direct_response_for_fo
     assert "turn_context_summary" in updates
 
 
-async def test_gate_hands_active_query_session_greeting_to_query_worker() -> None:
+async def test_gate_exits_active_query_session_on_greeting_direct_reply() -> None:
     planner = _RouteTurnPlanner(
         TurnRouteDecision(
             decision="respond_directly",
@@ -1008,12 +1008,12 @@ async def test_gate_hands_active_query_session_greeting_to_query_worker() -> Non
 
     assert planner.route_calls == 1
     assert updates["fast_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "query_direct"
-    assert "final_response" not in updates
-    task = updates["tasks"]["direct_query"]
-    assert task.type == "query"
-    assert task.payload["message"] == "Hi"
-    assert "force_new_query" not in task.payload
+    assert updates["semantic_path_shape"] == "turn_router_only"
+    assert updates["final_response"] == render_message("conversational.greeting", "en")
+    assert updates["stashed_query_session"] is None
+    assert updates["session_stack"] == []
+    assert updates["active_domain"] is None
+    assert "tasks" not in updates or "direct_query" not in updates["tasks"]
 
 
 async def test_gate_turn_router_cancel_response_clears_query_state() -> None:
@@ -1051,12 +1051,12 @@ async def test_gate_turn_router_cancel_response_clears_query_state() -> None:
 
     assert planner.route_calls == 1
     assert updates["fast_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "query_direct"
-    assert "final_response" not in updates
-    task = updates["tasks"]["direct_query"]
-    assert task.type == "query"
-    assert task.payload["message"] == "please cancel"
-    assert redis_client.deleted_keys == []
+    assert updates["semantic_path_shape"] == "turn_router_only"
+    assert updates["final_response"] == render_cancelled_prompt("en")
+    assert updates["stashed_query_session"] is None
+    assert updates["session_stack"] == []
+    assert updates["active_domain"] is None
+    assert redis_client.deleted_keys
 
 
 async def test_gate_explicit_cancel_without_active_state_returns_clarify() -> None:
