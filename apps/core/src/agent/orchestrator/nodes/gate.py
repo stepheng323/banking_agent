@@ -673,21 +673,6 @@ async def session_gate_fastpath(state: OrchestratorState, config: RunnableConfig
             "final_response": clarify_message(state),
         }
 
-    if not state.pending_interrupt:
-        explicit_locale = LocaleManager.parse_explicit_switch_command(message_text)
-        if explicit_locale:
-            if redis_client:
-                resolved = await LocaleManager.set_locale(state.phone_number, explicit_locale, source="user_command")
-                next_locale = resolved.value
-            else:
-                next_locale = explicit_locale.value
-            logger.info("gate_locale_switch_fastpath", locale=next_locale)
-            return {
-                "fast_path_triggered": True,
-                "final_response": render_locale_switched(next_locale),
-                **_locale_update(state, next_locale),
-            }
-
     if not state.pending_interrupt and redis_client:
         import json
 
@@ -923,10 +908,9 @@ async def session_gate_fastpath(state: OrchestratorState, config: RunnableConfig
         }
 
     if (
-        not state.pending_interrupt
-        and not state.has_quote
+        not state.has_quote
         and callable(getattr(task_planner, "route_turn", None))
-        and _should_invoke_turn_router(message_text)
+        and (not state.pending_interrupt and _should_invoke_turn_router(message_text) or state.pending_interrupt)
     ):
         try:
             route_context = _build_turn_router_context(turn_summary, state.preplanner_expected_transaction_executors)
@@ -948,6 +932,31 @@ async def session_gate_fastpath(state: OrchestratorState, config: RunnableConfig
             route = None
 
         if route is not None:
+            requested_locale = getattr(route, "requested_language", None)
+            if requested_locale:
+                resolved_locale = LocaleManager.parse_locale_name(requested_locale)
+                if resolved_locale is None:
+                logger.info("gate_locale_switch_fastpath_invalid", requested_locale=requested_locale)
+                else:
+                    if redis_client:
+                        resolved = await LocaleManager.set_locale(
+                            state.phone_number,
+                            resolved_locale,
+                            source="user_command",
+                        )
+                        next_locale = resolved.value
+                    else:
+                        next_locale = resolved_locale.value
+                    logger.info("gate_locale_switch_fastpath", locale=next_locale)
+                    return {
+                        "fast_path_triggered": True,
+                        "final_response": render_locale_switched(next_locale),
+                        **_locale_update(state, next_locale),
+                    }
+
+            if state.pending_interrupt:
+                route = None
+
             expected_executors = [
                 str(item)
                 for item in (getattr(route, "expected_transaction_executors", None) or [])

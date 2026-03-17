@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import re
 from typing import ClassVar
 
 from shared.cache.redis_client import RedisClient
@@ -38,47 +37,24 @@ class LocaleManager:
         "ibo": LocaleCode.IG,
     }
 
-    _EXPLICIT_PATTERNS: ClassVar[tuple[re.Pattern[str], ...]] = (
-        re.compile(r"^(?:language|lang|speak)\s+([a-z\s]+)$", re.IGNORECASE),
-        re.compile(r"^(?:switch\s+to|change\s+language\s+to)\s+([a-z\s]+)$", re.IGNORECASE),
-        re.compile(r"^([a-z\s]+)\s+(?:please)?\s*language$", re.IGNORECASE),
-    )
-
     @classmethod
     def normalize(cls, value: str | LocaleCode | None) -> LocaleCode:
+        parsed = cls.parse_locale_name(value)
+        return parsed if parsed is not None else cls.DEFAULT_LOCALE
+
+    @classmethod
+    def parse_locale_name(cls, value: str | LocaleCode | None) -> LocaleCode | None:
         if isinstance(value, LocaleCode):
             return value
         if not value:
-            return cls.DEFAULT_LOCALE
+            return None
 
         token = value.strip().lower()
-        return cls._ALIASES.get(token, cls.DEFAULT_LOCALE)
+        return cls._ALIASES.get(token)
 
     @classmethod
     def from_detection(cls, detected_language: str | None) -> LocaleCode:
         return cls.normalize(detected_language)
-
-    @classmethod
-    def parse_explicit_switch_command(cls, text: str) -> LocaleCode | None:
-        normalized = text.strip()
-        if not normalized:
-            return None
-
-        for pattern in cls._EXPLICIT_PATTERNS:
-            match = pattern.match(normalized)
-            if not match:
-                continue
-            token = match.group(1).strip().lower()
-            candidate = cls._ALIASES.get(token)
-            if candidate:
-                return candidate
-
-        # Support direct single-word language names (avoid short codes like "yo").
-        direct_token = normalized.lower()
-        if direct_token in {"english", "pidgin", "yoruba", "hausa", "igbo", "ibo", "nigerian pidgin"}:
-            direct = cls._ALIASES.get(direct_token)
-            return direct
-        return None
 
     @classmethod
     def _locale_key(cls, phone_number: str) -> str:

@@ -61,6 +61,7 @@ Return ONLY JSON with:
 - decision: go_planner | respond_directly | direct_context_answer | query_continuation
 - confidence: 0.0-1.0
 - detected_language: English | Pidgin | Yoruba | Hausa | Igbo | French | null
+- requested_language: English | Pidgin | Yoruba | Hausa | Igbo | null
 - response_key: conversational.greeting | conversational.appreciation |
   conversational.checkin | conversational.identity |
   conversational.brand_origin | conversational.capability_question |
@@ -71,6 +72,11 @@ Return ONLY JSON with:
 
 Rules:
 1) Use decision=respond_directly only for obvious conversational/meta responses.
+1a) If user asks to switch language (for example, "Can you switch to Pidgin?", "speak Yoruba now"), set:
+    - decision=respond_directly
+    - requested_language to the requested locale
+    - response optional (do not include other router intent actions)
+    - Do not apply cancellation/flow-guess logic for this request.
 1b) For out-of-scope/non-banking messages, ALWAYS set:
     - response_key=conversational.out_of_scope
     - response as one short empathy sentence (optional) or null
@@ -98,6 +104,9 @@ Rules:
    - "Any more debits after that?" -> direct_context_answer when active query/session context already answers it
    - "Where did we stop?" -> direct_context_answer when active flow context is enough
    - "What are we doing again?" -> direct_context_answer when active flow context is enough
+   - "How far" -> direct_context_answer
+   - if active flow context is absent for any flow-recap request (e.g. "How far", "Where did we stop"), answer:
+     "There is no active transfer flow right now. Start a transfer and I will guide you."
    Counterexamples:
    - "Show my last transaction" -> go_planner
    - "What was my last transfer?" -> go_planner

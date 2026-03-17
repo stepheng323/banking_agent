@@ -32,11 +32,16 @@ def test_locale_normalize_aliases():
     assert LocaleManager.normalize("igbo") == LocaleCode.IG
 
 
-def test_parse_explicit_switch_command():
-    assert LocaleManager.parse_explicit_switch_command("language yoruba") == LocaleCode.YO
-    assert LocaleManager.parse_explicit_switch_command("switch to pidgin") == LocaleCode.PCM
-    assert LocaleManager.parse_explicit_switch_command("speak hausa") == LocaleCode.HA
-    assert LocaleManager.parse_explicit_switch_command("use first bank") is None
+def test_parse_locale_name():
+    assert LocaleManager.parse_locale_name("english") == LocaleCode.EN
+    assert LocaleManager.parse_locale_name("English") == LocaleCode.EN
+    assert LocaleManager.parse_locale_name("pidgin") == LocaleCode.PCM
+    assert LocaleManager.parse_locale_name("yoruba") == LocaleCode.YO
+    assert LocaleManager.parse_locale_name("hausa") == LocaleCode.HA
+    assert LocaleManager.parse_locale_name("igbo") == LocaleCode.IG
+    assert LocaleManager.parse_locale_name("  Yoruba  ") == LocaleCode.YO
+    assert LocaleManager.parse_locale_name(None) is None
+    assert LocaleManager.parse_locale_name("french") is None
 
 
 def test_render_message_and_bridge():

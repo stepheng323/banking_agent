@@ -172,6 +172,10 @@ class TurnRouteDecision(BaseModel):
     decision: TurnRoutingDecision = Field(default="go_planner", description="Routing action before planner")
     confidence: float = Field(default=0.0, description="Confidence in routing decision (0.0-1.0)")
     detected_language: str | None = Field(default=None, description="Detected language for this turn")
+    requested_language: str | None = Field(
+        default=None,
+        description="Explicit language requested for switch when user asks to change locale.",
+    )
     response_key: PlannerResponseKey | None = Field(
         default=None,
         description="Deterministic keyed response when decision=respond_directly",

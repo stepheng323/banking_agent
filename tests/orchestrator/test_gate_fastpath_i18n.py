@@ -5,7 +5,7 @@ from langchain_core.runnables import RunnableConfig
 from apps.core.src.agent.orchestrator.models.domain import ActiveSession, PendingInterrupt, TaskSpec, TaskStage
 from apps.core.src.agent.orchestrator.models.state import OrchestratorState
 from apps.core.src.agent.orchestrator.nodes.gate import session_gate_fastpath
-from shared.i18n import render_cancelled_prompt, render_message
+from shared.i18n import render_cancelled_prompt, render_locale_switched, render_message
 from shared.types.planner import TurnRouteDecision
 
 
@@ -314,22 +314,112 @@ async def test_gate_mixed_query_and_airtime_turn_still_falls_through_to_planner(
     assert "turn_context_summary" in updates
 
 
-async def test_gate_handles_explicit_locale_switch_before_planner() -> None:
+async def test_gate_turn_router_can_switch_language_before_planner() -> None:
+    planner = _RouteTurnPlanner(
+        TurnRouteDecision(
+            decision="respond_directly",
+            confidence=0.98,
+            detected_language="English",
+            requested_language="Pidgin",
+            response_key="conversational.capability_question",
+            response=None,
+            expected_transaction_executors=[],
+            reason="language switch request",
+        )
+    )
     state = OrchestratorState(
         user_id="u_gate_4",
         phone_number="2348000000004",
         channel="whatsapp",
-        last_message_text="switch to pidgin",
+        last_message_text="Can you switch to Pidgin?",
         loaded_context={"language": "en"},
     )
-    config: RunnableConfig = {"configurable": {"redis_client": None}, "recursion_limit": 50}
+    config: RunnableConfig = {"configurable": {"task_planner": planner, "redis_client": None}, "recursion_limit": 50}
+
+    updates = await session_gate_fastpath(state, config)
+
+    assert planner.route_calls == 1
+    assert updates["fast_path_triggered"] is True
+    assert updates["loaded_context"]["language"] == "pcm"
+    assert updates["loaded_context"]["detected_language"] == "pcm"
+    assert updates["final_response"] == render_locale_switched("pcm")
+    assert planner.plan_calls == 0
+
+
+async def test_gate_turn_router_locale_switch_can_run_during_pending_interrupt_without_reset() -> None:
+    planner = _RouteTurnPlanner(
+        TurnRouteDecision(
+            decision="respond_directly",
+            confidence=0.98,
+            detected_language="English",
+            requested_language="Yoruba",
+            response_key="conversational.capability_question",
+            response=None,
+            expected_transaction_executors=[],
+            reason="language switch request",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_gate_4b",
+        phone_number="2348000000005",
+        channel="whatsapp",
+        last_message_text="speak Yoruba now",
+        loaded_context={"language": "en"},
+        pending_interrupt=PendingInterrupt(kind="input", task_ids=["t1"]),
+        session_stack=[ActiveSession(domain="transfer", state="WAITING_FOR_INPUT", interrupt_policy="BLOCK")],
+        tasks={"t1": TaskSpec(id="t1", type="transfer", stage=TaskStage.DRAFT, payload={"foo": "bar"})},
+        waves=[["t1"]],
+        current_wave_index=0,
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner, "redis_client": None}, "recursion_limit": 50}
+
+    updates = await session_gate_fastpath(state, config)
+
+    assert planner.route_calls == 1
+    assert updates["fast_path_triggered"] is True
+    assert updates["loaded_context"]["language"] == "yo"
+    assert updates["loaded_context"]["detected_language"] == "yo"
+    assert updates["final_response"] == render_locale_switched("yo")
+    assert "tasks" not in updates
+    assert "pending_interrupt" not in updates
+    assert "session_stack" not in updates
+    assert planner.plan_calls == 0
+
+
+async def test_gate_turn_router_locale_switch_persists_language_in_redis() -> None:
+    redis_client = _TrackingLocaleRedis()
+    planner = _RouteTurnPlanner(
+        TurnRouteDecision(
+            decision="respond_directly",
+            confidence=0.99,
+            detected_language="English",
+            requested_language="Hausa",
+            response_key="conversational.capability_question",
+            response=None,
+            expected_transaction_executors=[],
+            reason="language switch request",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_gate_5",
+        phone_number="2348000000006",
+        channel="whatsapp",
+        last_message_text="Can we continue in Hausa?",
+        loaded_context={"language": "en"},
+    )
+    config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "redis_client": redis_client},
+        "recursion_limit": 50,
+    }
 
     updates = await session_gate_fastpath(state, config)
 
     assert updates["fast_path_triggered"] is True
-    assert updates["loaded_context"]["language"] == "pcm"
-    assert updates["loaded_context"]["detected_language"] == "pcm"
-    assert isinstance(updates.get("final_response"), str)
+    assert updates["loaded_context"]["language"] == "ha"
+    assert updates["final_response"] == render_locale_switched("ha")
+    assert redis_client.set_calls
+    assert redis_client.set_calls[0][0] == "user:2348000000006:language"
+    assert redis_client.set_calls[0][1] == "ha"
 
 
 class _RouteTurnPlanner:
@@ -358,6 +448,17 @@ class _TrackingRedis:
     async def delete(self, key: str) -> int:
         self.deleted_keys.append(key)
         return 1
+
+
+class _TrackingLocaleRedis(_TrackingRedis):
+    def __init__(self) -> None:
+        super().__init__()
+        self.set_calls: list[tuple[str, str, int | None]] = []
+        self.store: dict[str, str] = {}
+
+    async def set(self, key: str, value: str, ex: int | None = None) -> None:
+        self.set_calls.append((key, value, ex))
+        self.store[key] = value
 
 
 class _TrackingRedisWithSession(_TrackingRedis):

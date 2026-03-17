@@ -186,6 +186,17 @@ def test_turn_router_expected_executor_coverage_rules_present() -> None:
     assert '"More" while viewing transactions -> query_continuation' in TURN_ROUTER_SYSTEM_PROMPT
 
 
+def test_turn_router_language_switch_contract_present() -> None:
+    """Turn-router contract must expose explicit language-switch request capture."""
+    assert "requested_language: English | Pidgin | Yoruba | Hausa | Igbo | null" in TURN_ROUTER_SYSTEM_PROMPT
+    assert "If user asks to switch language (for example, \"Can you switch to Pidgin?\", \"speak Yoruba now\"), set" in TURN_ROUTER_SYSTEM_PROMPT
+    assert '"Can you switch to Pidgin?"' in TURN_ROUTER_SYSTEM_PROMPT
+    assert '"speak Yoruba now"' in TURN_ROUTER_SYSTEM_PROMPT
+    assert "requested_language to the requested locale" in TURN_ROUTER_SYSTEM_PROMPT
+    assert "Do not apply cancellation/flow-guess logic for this request." in TURN_ROUTER_SYSTEM_PROMPT
+    assert "decision=respond_directly" in TURN_ROUTER_SYSTEM_PROMPT
+
+
 def test_runtime_planner_prompt_is_compact_for_generic_turns() -> None:
     """Runtime prompt should remain minimal for simple turns."""
     runtime_prompt, profile, bundles = _build_prompt("hello", "None", PlannerPromptSignals())
