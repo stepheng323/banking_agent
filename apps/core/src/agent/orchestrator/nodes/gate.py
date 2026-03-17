@@ -936,7 +936,7 @@ async def session_gate_fastpath(state: OrchestratorState, config: RunnableConfig
             if requested_locale:
                 resolved_locale = LocaleManager.parse_locale_name(requested_locale)
                 if resolved_locale is None:
-                logger.info("gate_locale_switch_fastpath_invalid", requested_locale=requested_locale)
+                    logger.info("gate_locale_switch_fastpath_invalid", requested_locale=requested_locale)
                 else:
                     if redis_client:
                         resolved = await LocaleManager.set_locale(

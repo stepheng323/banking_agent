@@ -386,8 +386,12 @@ async def test_gate_turn_router_locale_switch_can_run_during_pending_interrupt_w
     assert planner.plan_calls == 0
 
 
-async def test_gate_turn_router_locale_switch_persists_language_in_redis() -> None:
+async def test_gate_turn_router_locale_switch_persists_language_in_redis(monkeypatch) -> None:
     redis_client = _TrackingLocaleRedis()
+    from shared.cache.redis_client import RedisClient
+
+    monkeypatch.setattr(RedisClient, "get_client", classmethod(lambda cls: redis_client))
+
     planner = _RouteTurnPlanner(
         TurnRouteDecision(
             decision="respond_directly",
