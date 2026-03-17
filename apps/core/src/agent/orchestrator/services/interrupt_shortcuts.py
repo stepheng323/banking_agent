@@ -64,8 +64,8 @@ CANCEL_PHRASES: dict[LocaleCode, set[str]] = {
 }
 
 STATUS_RECAP_PHRASES: dict[LocaleCode, set[str]] = {
-    LocaleCode.EN: {"where did we stop", "where are we", "recap", "which step"},
-    LocaleCode.PCM: {"where we stop", "where we dey", "which step"},
+    LocaleCode.EN: {"where did we stop", "where are we", "recap", "which step", "how far"},
+    LocaleCode.PCM: {"where we stop", "where we dey", "which step", "how far"},
     LocaleCode.YO: {"nibo la duro", "ibo la duro", "ta ni ipele"},
     LocaleCode.HA: {"ina muka tsaya", "a ina muka tsaya"},
     LocaleCode.IG: {"ebe ka anyi kwusiri", "ebe anyi kwusiri"},

@@ -338,7 +338,14 @@ def _build_transaction_processing_notice(completed_tasks: list[TaskSpec], *, loc
     if not lines:
         return None
 
-    return "\n".join(lines)
+    if len(lines) == 1:
+        return lines[0]
+
+    def _format_as_bullet(line: str) -> str:
+        stripped = line.strip()
+        return stripped if stripped.startswith("•") else f"• {stripped}"
+
+    return "\n\n".join(_format_as_bullet(line) for line in lines)
 
 
 async def _queue_single_transfer_receipt(
