@@ -4,8 +4,8 @@ from typing import Any, cast
 import pytest
 
 from apps.core.src.agent.orchestrator.models.intents import RequestConfirmation, Say
-from apps.core.src.messaging.presenters.base import PresentationContext
 from apps.core.src.messaging.presenters import telegram as telegram_presenter_module
+from apps.core.src.messaging.presenters.base import PresentationContext
 from apps.core.src.messaging.presenters.telegram import TelegramPresenter
 from shared.clients.abstractions.messaging import MessageResult, MessagingClient
 

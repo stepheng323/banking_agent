@@ -5,9 +5,9 @@ import time
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
+from apps.core.src.agent.graphs.query.session import is_query_session_stale
 from apps.core.src.agent.orchestrator.context.models import ContextFrameType
 from apps.core.src.agent.orchestrator.models.state import OrchestratorState
-from apps.core.src.agent.graphs.query.session import is_query_session_stale
 
 CONTEXT_BENEFICIARY_PREVIEW_LIMIT = 5
 CONTEXT_ACCOUNT_PREVIEW_LIMIT = 5

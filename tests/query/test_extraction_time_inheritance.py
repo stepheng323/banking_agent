@@ -8,12 +8,12 @@ from apps.core.src.agent.graphs.query.models import (
     NormalizedQuery,
     QueryExecutionContract,
     QueryExtractionResult,
+    QueryIntent,
     QueryParseResult,
     QueryTimeRange,
     ResolverOutcome,
     TimeRange,
     TimeReference,
-    QueryIntent,
 )
 from apps.core.src.agent.graphs.query.nodes.extraction import ExtractionStep
 from apps.core.src.agent.graphs.query.services.reasoner import QuerySemanticDecision
