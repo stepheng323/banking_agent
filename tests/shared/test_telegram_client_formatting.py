@@ -2,8 +2,9 @@ import httpx
 import pytest
 
 from shared.clients.abstractions.messaging import MessageResult
+from shared.clients.telegram import client as telegram_client_module
 from shared.clients.telegram.client import TelegramClient, _format_telegram_html
-from shared.config.settings import settings
+from shared.config.settings import Settings, settings
 
 
 def test_telegram_html_formatter_escapes_html_and_formats_markdown() -> None:
@@ -23,6 +24,18 @@ def test_telegram_html_formatter_does_not_break_plain_text() -> None:
 def test_telegram_html_formatter_handles_double_asterisk_bold() -> None:
     rendered = _format_telegram_html("**Ticket:** 123\n*Total:* **₦30,000**")
     assert rendered == "<b>Ticket:</b> 123\n<b>Total:</b> <b>₦30,000</b>"
+
+
+def test_telegram_message_draft_defaults_enabled_when_env_unset(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("TELEGRAM_ENABLE_MESSAGE_DRAFT", raising=False)
+    loaded = Settings()
+    assert loaded.telegram_enable_message_draft is True
+
+
+def test_telegram_message_draft_respects_false_env_override(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("TELEGRAM_ENABLE_MESSAGE_DRAFT", "false")
+    loaded = Settings()
+    assert loaded.telegram_enable_message_draft is False
 
 
 @pytest.mark.asyncio
@@ -91,6 +104,16 @@ async def test_send_text_streamed_disables_draft_when_endpoint_unsupported(monke
     monkeypatch.setattr(settings, "telegram_enable_message_draft", True)
     client = TelegramClient()
     calls: list[str] = []
+    log_events: list[tuple[str, dict[str, object]]] = []
+
+    class _Logger:
+        def info(self, event: str, **kwargs: object) -> None:
+            log_events.append((event, kwargs))
+
+        def warning(self, event: str, **kwargs: object) -> None:
+            log_events.append((event, kwargs))
+
+    monkeypatch.setattr(telegram_client_module, "logger", _Logger())
 
     async def _fake_call(
         method: str,
@@ -119,6 +142,8 @@ async def test_send_text_streamed_disables_draft_when_endpoint_unsupported(monke
     assert result.success is True
     assert result.message_id == "100"
     assert calls == ["sendMessageDraft", "sendMessage"]
+    assert ("telegram_draft_endpoint_unsupported_disabled", {"channel": "telegram", "method": "sendMessageDraft", "http_status": 400, "runtime_draft_enabled": False}) in log_events
+    assert ("telegram_draft_fallback_to_final_send", {"channel": "telegram", "method": "sendMessageDraft", "runtime_draft_enabled": False}) in log_events
 
     calls.clear()
     second = await client.send_text_streamed(
@@ -130,6 +155,52 @@ async def test_send_text_streamed_disables_draft_when_endpoint_unsupported(monke
     )
     assert second.success is True
     assert calls == ["sendMessage"]
+
+
+@pytest.mark.asyncio
+async def test_send_text_streamed_logs_fallback_after_unexpected_draft_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "telegram_bot_token", "test-token")
+    monkeypatch.setattr(settings, "telegram_enable_message_draft", True)
+    client = TelegramClient()
+    calls: list[str] = []
+    log_events: list[tuple[str, dict[str, object]]] = []
+
+    class _Logger:
+        def info(self, event: str, **kwargs: object) -> None:
+            log_events.append((event, kwargs))
+
+        def warning(self, event: str, **kwargs: object) -> None:
+            log_events.append((event, kwargs))
+
+    monkeypatch.setattr(telegram_client_module, "logger", _Logger())
+
+    async def _fake_call(
+        method: str,
+        payload: dict[str, object] | None = None,
+        files: dict[str, object] | None = None,
+        max_retries: int = 3,
+    ) -> dict[str, object]:
+        del payload, files, max_retries
+        calls.append(method)
+        if method == "sendMessageDraft":
+            raise RuntimeError("boom")
+        return {"ok": True, "result": {"message_id": 202}}
+
+    monkeypatch.setattr(client, "_call", _fake_call)
+
+    result = await client.send_text_streamed(
+        to="12345",
+        text="x" * 280,
+        draft_step_chars=100,
+        max_draft_updates=3,
+        draft_delay_seconds=0,
+    )
+
+    assert result.success is True
+    assert result.message_id == "202"
+    assert calls == ["sendMessageDraft", "sendMessage"]
+    assert ("telegram_draft_fallback_to_final_send", {"channel": "telegram", "method": "sendMessageDraft", "runtime_draft_enabled": True}) in log_events
+    assert any(event == "telegram_draft_attempt_failed" for event, _ in log_events)
 
 
 @pytest.mark.asyncio

@@ -9,8 +9,11 @@ import httpx
 
 from shared.clients.abstractions.messaging import MessageResult, MessagingClient
 from shared.config.settings import settings
+from shared.utils.logging import get_logger
 
 TELEGRAM_API_BASE = "https://api.telegram.org"
+_DRAFT_UNSUPPORTED_STATUS_CODES = {400, 404, 405, 501}
+logger = get_logger(__name__)
 
 
 def _format_telegram_html(text: str) -> str:
@@ -127,9 +130,6 @@ class TelegramClient(MessagingClient):
         message_id: str | None = None,
     ) -> MessageResult:
         """Send a plain text message via Telegram."""
-        if message_id:
-            await self.send_typing_indicator(to)
-
         html_text = _format_telegram_html(text)
         payload: dict[str, Any] = {
             "chat_id": to,
@@ -161,20 +161,50 @@ class TelegramClient(MessagingClient):
             "chat_id": to,
             "text": draft_text[:4096],
         }
+        logger.info(
+            "telegram_draft_attempt_started",
+            channel="telegram",
+            method="sendMessageDraft",
+        )
         try:
             await self._call("sendMessageDraft", payload, max_retries=1)
+            logger.info(
+                "telegram_draft_attempt_succeeded",
+                channel="telegram",
+                method="sendMessageDraft",
+            )
             return True
         except httpx.HTTPStatusError as e:
             status = e.response.status_code
-            # Some bots/runtimes may not support sendMessageDraft yet.
-            if status in {400, 404, 405, 501}:
+            if status in _DRAFT_UNSUPPORTED_STATUS_CODES:
                 self._draft_supported = False
-                print(f"⚠️ sendMessageDraft unsupported (HTTP {status}); disabling draft streaming for this runtime.")
+                logger.warning(
+                    "telegram_draft_endpoint_unsupported_disabled",
+                    channel="telegram",
+                    method="sendMessageDraft",
+                    http_status=status,
+                    runtime_draft_enabled=self._draft_supported,
+                )
                 return False
-            print(f"⚠️ sendMessageDraft failed: {e}")
+            logger.warning(
+                "telegram_draft_attempt_failed",
+                channel="telegram",
+                method="sendMessageDraft",
+                http_status=status,
+                runtime_draft_enabled=self._draft_supported,
+                fallback_to_final_send=True,
+                error=str(e),
+            )
             return False
         except Exception as e:
-            print(f"⚠️ sendMessageDraft failed: {e}")
+            logger.warning(
+                "telegram_draft_attempt_failed",
+                channel="telegram",
+                method="sendMessageDraft",
+                runtime_draft_enabled=self._draft_supported,
+                fallback_to_final_send=True,
+                error=str(e),
+            )
             return False
 
     async def send_text_streamed(
@@ -189,19 +219,34 @@ class TelegramClient(MessagingClient):
     ) -> MessageResult:
         """Stream a response as Telegram drafts, then publish the final message."""
         clean_text = (text or "").strip()
+        draft_attempted = False
+        draft_failed = False
         if clean_text:
             clipped = clean_text[:4096]
             sent = 0
             cursor = min(len(clipped), max(1, draft_step_chars))
             draft_enabled = self._draft_supported
             while cursor < len(clipped) and sent < max_draft_updates and draft_enabled:
+                draft_attempted = True
                 draft_enabled = await self.send_message_draft(to=to, text=clipped[:cursor])
+                if not draft_enabled:
+                    draft_failed = True
                 sent += 1
                 if draft_delay_seconds > 0:
                     await asyncio.sleep(draft_delay_seconds)
                 cursor = min(len(clipped), cursor + max(1, draft_step_chars))
             if draft_enabled:
-                await self.send_message_draft(to=to, text=clipped)
+                draft_attempted = True
+                draft_enabled = await self.send_message_draft(to=to, text=clipped)
+                if not draft_enabled:
+                    draft_failed = True
+            if draft_attempted and draft_failed:
+                logger.info(
+                    "telegram_draft_fallback_to_final_send",
+                    channel="telegram",
+                    method="sendMessageDraft",
+                    runtime_draft_enabled=self._draft_supported,
+                )
 
         return await self.send_text(to=to, text=text, message_id=message_id)
 
@@ -215,9 +260,6 @@ class TelegramClient(MessagingClient):
         message_id: str | None = None,
     ) -> MessageResult:
         """Send an interactive message with inline keyboard buttons."""
-        if message_id:
-            await self.send_typing_indicator(to)
-
         parts: list[str] = []
         if header:
             parts.append(f"*{header}*")
@@ -257,9 +299,6 @@ class TelegramClient(MessagingClient):
         message_id: str | None = None,
     ) -> MessageResult:
         """Send an image by URL."""
-        if message_id:
-            await self.send_typing_indicator(to)
-
         payload: dict[str, Any] = {
             "chat_id": to,
             "photo": image_url,
@@ -285,9 +324,6 @@ class TelegramClient(MessagingClient):
         message_id: str | None = None,
     ) -> MessageResult:
         """Send an image from bytes via multipart upload."""
-        if message_id:
-            await self.send_typing_indicator(to)
-
         ext = mime_type.split("/")[-1]
         filename = f"image.{ext}"
 
@@ -329,9 +365,6 @@ class TelegramClient(MessagingClient):
         message_id: str | None = None,
     ) -> MessageResult:
         """Send a document via multipart upload."""
-        if message_id:
-            await self.send_typing_indicator(to)
-
         form_data: dict[str, Any] = {"chat_id": to}
         if caption:
             form_data["caption"] = caption
@@ -388,9 +421,6 @@ class TelegramClient(MessagingClient):
                 text=body_text or "This action requires a Mini App. Please contact support.",
                 message_id=message_id,
             )
-
-        if message_id:
-            await self.send_typing_indicator(to)
 
         if flow_token.startswith("link-"):
             endpoint = "linking.html"
