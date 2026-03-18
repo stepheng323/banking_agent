@@ -89,6 +89,11 @@ class QuerySessionManager:
                     session_active=bool(session.get("session_active")),
                 )
                 session["session_active"] = False
+                session["query_contract"] = None
+                session["query_result"] = None
+                session["pending_clarification"] = None
+                session["current_page"] = 0
+                session["show_expanded"] = False
             else:
                 try:
                     await self.redis.expire(key, SESSION_TTL)
