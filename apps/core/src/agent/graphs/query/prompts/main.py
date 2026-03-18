@@ -100,12 +100,14 @@ CONTINUATION RULES
     use continuation_type="unclear" and followup_intent="none" so the system can clarify
   - unrelated full query -> decision="new_query"
   - do not guess continuation behavior from short phrases or keyword patterns alone
-  - possessive or natural time narrowing like "only this week's", "just this week", or "only this month's"
-    is explicit scope replacement, not pagination
+  - explicit time narrowing/replacement like "only today", "just this week", "for yesterday only",
+    "only this month's", or "for last month only" is scope replacement, not pagination
   - examples:
+    - "How much did I spend today" -> fresh/new query with explicit today aggregate spend shape
     - "How much did I spend this week" -> fresh/new query with explicit this_week aggregate spend shape
-    - "Show them" after that summary -> continuation_type="show_more" and followup_intent="refine_existing"
-    - "Only this week's" after that summary/list -> continuation_type="time_delta" and followup_intent="replace_scope"
+    - "How much did I spend last month" -> fresh/new query with explicit last_month aggregate spend shape
+    - "Show them" or "show me" after that summary -> continuation_type="show_more" and followup_intent="refine_existing"
+    - "Only today", "Only this week's", or "for last month only" after that summary/list -> continuation_type="time_delta" and followup_intent="replace_scope"
     - "more" or "next page" on that list -> continuation_type="show_more" and followup_intent="continue_pagination"
 
 ACTIVE-RESULT FACT BOUNDARY
@@ -178,9 +180,18 @@ TIME NORMALIZATION
   - "today" → days_back=0
   - "yesterday" → days_back=1
 - natural and possessive variants still count as explicit periods:
+  - "How much did I spend today" → explicit period today
+  - "today's spending" → explicit period today
+  - "for yesterday only" → explicit period yesterday
   - "How much did I spend this week" → explicit period this_week
   - "this week's spending" → explicit period this_week
   - "just this week" → explicit period this_week
+  - "How much did I spend last week" → explicit period last_week
+  - "last week's transfers" → explicit period last_week
+  - "How much did I spend this month" → explicit period this_month
+  - "this month's transactions" → explicit period this_month
+  - "only this month" → explicit period this_month
+  - "How much did I spend last month" → explicit period last_month
 - vague ("recently", "sometime ago") → reference_type=vague, estimate days_back
 - no time mentioned → reference_type=unspecified
 - for time_comparison intent, the primary period must be explicit; if missing, keep reference_type=unspecified

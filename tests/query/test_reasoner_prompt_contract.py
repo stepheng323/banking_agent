@@ -75,6 +75,27 @@ def test_query_reasoner_prompt_covers_weekly_scope_replacement_transcript() -> N
 
 
 def test_query_parser_prompt_covers_weekly_aggregate_and_possessive_period_phrasing() -> None:
+    assert '"How much did I spend today" → explicit period today' in QUERY_PARSER_PROMPT
+    assert '"today\'s spending" → explicit period today' in QUERY_PARSER_PROMPT
+    assert '"for yesterday only" → explicit period yesterday' in QUERY_PARSER_PROMPT
     assert '"How much did I spend this week" → explicit period this_week' in QUERY_PARSER_PROMPT
     assert '"this week\'s spending" → explicit period this_week' in QUERY_PARSER_PROMPT
     assert '"just this week" → explicit period this_week' in QUERY_PARSER_PROMPT
+    assert '"How much did I spend last week" → explicit period last_week' in QUERY_PARSER_PROMPT
+    assert '"last week\'s transfers" → explicit period last_week' in QUERY_PARSER_PROMPT
+    assert '"How much did I spend this month" → explicit period this_month' in QUERY_PARSER_PROMPT
+    assert '"this month\'s transactions" → explicit period this_month' in QUERY_PARSER_PROMPT
+    assert '"only this month" → explicit period this_month' in QUERY_PARSER_PROMPT
+    assert '"How much did I spend last month" → explicit period last_month' in QUERY_PARSER_PROMPT
+
+
+def test_query_reasoner_prompt_covers_generic_timeframe_scope_replacement() -> None:
+    assert '"How much did I spend today" -> fresh/new query with explicit today aggregate spend shape' in (
+        QUERY_SEMANTIC_REASONER_PROMPT
+    )
+    assert '"How much did I spend last month" -> fresh/new query with explicit last_month aggregate spend shape' in (
+        QUERY_SEMANTIC_REASONER_PROMPT
+    )
+    assert '"Only today", "Only this week\'s", or "for last month only" after that summary/list -> continuation_type="time_delta" and followup_intent="replace_scope"' in (
+        QUERY_SEMANTIC_REASONER_PROMPT
+    )

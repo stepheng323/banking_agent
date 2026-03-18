@@ -468,6 +468,99 @@ async def test_weekly_summary_show_them_then_only_this_weeks_replaces_scope_and_
 
 
 @pytest.mark.asyncio
+async def test_summary_only_today_replaces_scope_and_preserves_filters() -> None:
+    step = ExtractionStep(_DummyLLM())
+    today = date(2026, 3, 19)
+    session_query = NormalizedQuery(
+        intent=QueryIntent.TRANSACTION_LIST,
+        time_range=TimeRange(start=date(2026, 3, 1), end=today),
+        filters=Filters(transaction_type="debit", merchant=["Mum"]),
+    )
+    session_contract = QueryExecutionContract.from_normalized_query(session_query)
+
+    async def _fake_reason(context: object) -> QuerySemanticDecision:
+        del context
+        return QuerySemanticDecision(
+            decision="continuation",
+            continuation_type="time_delta",
+            followup_intent="replace_scope",
+            time_range=TimeRange(start=today, end=today, granularity="day"),
+            delta_type="time",
+            confidence=0.96,
+            reason="llm_replace_scope_today",
+        )
+
+    step.reasoner.reason = _fake_reason  # type: ignore[method-assign]
+
+    updates = await step._handle_continuation(
+        {"message": "only today", "today": today, "language": "en"},
+        {
+            "session_active": True,
+            "query_contract": session_contract.model_dump(),
+            "query_result": {"items": []},
+            "current_page": 3,
+            "show_expanded": True,
+        },
+    )
+
+    query = updates["query_contract"].normalized_query
+    assert query.time_range is not None
+    assert query.time_range.start == today
+    assert query.time_range.end == today
+    assert query.filters is not None
+    assert query.filters.transaction_type == "debit"
+    assert query.filters.merchant == ["Mum"]
+    assert updates["current_page"] == 0
+    assert updates["show_expanded"] is False
+
+
+@pytest.mark.asyncio
+async def test_summary_last_month_only_replaces_scope_and_preserves_debit_filter() -> None:
+    step = ExtractionStep(_DummyLLM())
+    today = date(2026, 3, 19)
+    session_query = NormalizedQuery(
+        intent=QueryIntent.TRANSACTION_LIST,
+        time_range=TimeRange(start=date(2026, 1, 1), end=today),
+        filters=Filters(transaction_type="debit"),
+    )
+    session_contract = QueryExecutionContract.from_normalized_query(session_query)
+
+    async def _fake_reason(context: object) -> QuerySemanticDecision:
+        del context
+        return QuerySemanticDecision(
+            decision="continuation",
+            continuation_type="time_delta",
+            followup_intent="replace_scope",
+            time_range=TimeRange(start=date(2026, 2, 1), end=date(2026, 2, 28), granularity="month"),
+            delta_type="time",
+            confidence=0.98,
+            reason="llm_replace_scope_last_month",
+        )
+
+    step.reasoner.reason = _fake_reason  # type: ignore[method-assign]
+
+    updates = await step._handle_continuation(
+        {"message": "for last month only", "today": today, "language": "en"},
+        {
+            "session_active": True,
+            "query_contract": session_contract.model_dump(),
+            "query_result": {"items": []},
+            "current_page": 4,
+            "show_expanded": True,
+        },
+    )
+
+    query = updates["query_contract"].normalized_query
+    assert query.time_range is not None
+    assert query.time_range.start == date(2026, 2, 1)
+    assert query.time_range.end == date(2026, 2, 28)
+    assert query.filters is not None
+    assert query.filters.transaction_type == "debit"
+    assert updates["current_page"] == 0
+    assert updates["show_expanded"] is False
+
+
+@pytest.mark.asyncio
 async def test_low_confidence_unclear_followup_requests_clarification() -> None:
     step = ExtractionStep(_DummyLLM())
     today = date(2026, 3, 14)
