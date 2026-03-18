@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import json
+from time import time
+
 from apps.core.src.agent.orchestrator.context.models import ContextEntity, ContextFrame, ContextFrameType, EntityType
 from apps.core.src.agent.orchestrator.models.domain import ActiveSession, PendingInterrupt, TaskSpec, TaskStage
 from apps.core.src.agent.orchestrator.models.state import OrchestratorState
@@ -35,6 +38,54 @@ async def test_load_query_session_snapshot_prefers_redis_then_stashed() -> None:
     assert source == "redis"
     assert snapshot is not None
     assert snapshot["query_result"]["summary_text"] == "You spent ₦5,000 today."
+
+
+async def test_load_query_session_snapshot_marks_stale_redis_session_inactive() -> None:
+    class _Redis:
+        async def get(self, key: str) -> str:
+            assert key == "query:session:2348000000306"
+            return json.dumps(
+                {
+                    "session_active": True,
+                    "timestamp": time() - 600,
+                    "query_result": {"summary_text": "You spent ₦5,000 yesterday."},
+                }
+            )
+
+    state = OrchestratorState(
+        user_id="u_ctx_redis_stale",
+        phone_number="2348000000306",
+        channel="whatsapp",
+        stashed_query_session=None,
+    )
+
+    snapshot, source = await _load_query_session_snapshot(state, _Redis())
+
+    assert source == "redis"
+    assert snapshot is not None
+    assert snapshot["session_active"] is False
+    assert snapshot["query_result"]["summary_text"] == "You spent ₦5,000 yesterday."
+
+
+@pytest.mark.asyncio
+async def test_load_query_session_snapshot_marks_stale_stashed_session_inactive() -> None:
+    state = OrchestratorState(
+        user_id="u_ctx_stashed_stale",
+        phone_number="2348000000307",
+        channel="whatsapp",
+        stashed_query_session={
+            "session_active": True,
+            "timestamp": 0.0,
+            "query_result": {"summary_text": "You spent ₦4,000 yesterday."},
+        },
+    )
+
+    snapshot, source = await _load_query_session_snapshot(state, None)
+
+    assert source == "stashed"
+    assert snapshot is not None
+    assert snapshot["session_active"] is False
+    assert snapshot["query_result"]["summary_text"] == "You spent ₦4,000 yesterday."
 
 
 def test_turn_context_summary_builds_compact_shared_view() -> None:
@@ -138,6 +189,23 @@ def test_router_and_user_state_render_from_shared_summary() -> None:
     assert "User State:" in user_state_summary
     assert "mandate:" in user_state_summary
     assert "Beneficiaries:" in user_state_summary
+
+
+def test_router_context_ignores_inactive_query_session_for_continuation() -> None:
+    summary = build_turn_context_summary(
+        OrchestratorState(
+            user_id="u_ctx_router_1",
+            phone_number="2348000000307",
+            channel="whatsapp",
+            active_domain="query",
+        ),
+        query_session_snapshot={"session_active": False, "query_result": {"summary_text": "You spent ₦5,000 today."}},
+        query_session_source="redis",
+    )
+
+    router_context = build_router_context_from_summary(summary, expected_executors=["transfer"])
+
+    assert "QUERY_SESSION:" not in router_context
 
 
 def test_interrupt_and_quoted_context_render_from_shared_summary() -> None:

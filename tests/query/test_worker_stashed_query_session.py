@@ -95,15 +95,21 @@ async def test_worker_restores_from_stashed_query_session_and_marks_patch() -> N
 
 
 @pytest.mark.asyncio
-async def test_worker_ignores_legacy_stashed_query_session_without_contract() -> None:
+async def test_worker_does_not_restore_stale_stashed_query_session() -> None:
     session_manager = _SessionManager()
     worker = QueryWorker(_DummyLLM(), _DummyProvider(), session_manager)  # type: ignore[arg-type]
     stashed_query_session = {
         "session_active": True,
-        "query": {
-            "intent": "transaction_list",
-            "time_range": {"start": "2026-03-01", "end": "2026-03-06", "granularity": "day"},
-        },
+        "timestamp": 0.0,
+        "query_contract": QueryExecutionContract(
+            intent=QueryIntent.TRANSACTION_LIST,
+            time_start=date(2026, 3, 1),
+            time_end=date(2026, 3, 6),
+            normalized_query=NormalizedQuery(
+                intent=QueryIntent.TRANSACTION_LIST,
+                time_range=TimeRange(start=date(2026, 3, 1), end=date(2026, 3, 6)),
+            ),
+        ).model_dump(),
         "current_page": 0,
     }
 
@@ -114,19 +120,21 @@ async def test_worker_ignores_legacy_stashed_query_session_without_contract() ->
 
     worker.pipeline.run = _fake_pipeline_run  # type: ignore[method-assign]
 
-    await worker.run(
-        payload={"message": "show my transactions"},
+    result = await worker.run(
+        payload={"message": "any credits?"},
         context={
-            "phone_number": "2348000000300",
+            "phone_number": "2348000000308",
             "user_id": "u1",
             "accounts": [],
             "language": "en",
-            "today": date(2026, 3, 6),
+            "today": date(2026, 3, 4),
             "stashed_query_session": stashed_query_session,
         },
     )
 
-    assert session_manager.saved_state is not None
+    assert result.outcome == TransactionOutcome.OK
+    assert result.patch is not None
+    assert result.patch.get("restored_from_stashed_query_session") is None
 
 
 @pytest.mark.asyncio

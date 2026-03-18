@@ -43,3 +43,17 @@ def test_query_reasoner_prompt_covers_conversational_reactions_in_active_session
     assert "Do not trigger pagination, expand, drill-down, or any other mutation for conversational reactions." in (
         QUERY_SEMANTIC_REASONER_PROMPT
     )
+
+
+def test_query_reasoner_prompt_requires_followup_intent_for_continuations() -> None:
+    assert "`followup_intent` is required for every continuation decision" in QUERY_SEMANTIC_REASONER_PROMPT
+    assert 'continuation_type="unclear" and followup_intent="none"' in QUERY_SEMANTIC_REASONER_PROMPT
+
+
+def test_query_reasoner_prompt_defines_legal_followup_intent_combinations() -> None:
+    assert 'continuation_type="show_more"' in QUERY_SEMANTIC_REASONER_PROMPT
+    assert 'followup_intent="continue_pagination"' in QUERY_SEMANTIC_REASONER_PROMPT
+    assert 'followup_intent="refine_existing"' in QUERY_SEMANTIC_REASONER_PROMPT
+    assert 'continuation_type="time_delta"' in QUERY_SEMANTIC_REASONER_PROMPT
+    assert 'followup_intent="replace_scope"' in QUERY_SEMANTIC_REASONER_PROMPT
+    assert 'continuation_type="filter_delta"' in QUERY_SEMANTIC_REASONER_PROMPT

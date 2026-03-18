@@ -1,37 +1,20 @@
 from datetime import date
 
+import pytest
+
 from apps.core.src.agent.graphs.query.models import QueryResultItem, ResultSurface, SurfaceType
 from apps.core.src.agent.graphs.query.services.continuity import ContinuationClassifier
 
 
 def _classifier() -> ContinuationClassifier:
-    return ContinuationClassifier(object())
+    return ContinuationClassifier()
 
 
-def test_summary_show_my_transactions_is_expand_guardrail() -> None:
-    classifier = _classifier()
-    surface = ResultSurface(type=SurfaceType.SUMMARY, items=[], context={"view": "summary"})
-
-    guarded = classifier._guardrail_classify(
-        message="show my transactions",
-        today=date.today().isoformat(),
-        items=None,
-        surface=surface,
-        language="en",
-    )
-
-    assert guarded is not None
-    continuation_type, data = guarded
-    assert continuation_type == "expand"
-    assert data["reason"] == "deterministic_expand"
-
-
-def test_recipient_ranking_followup_forces_new_query_override() -> None:
+def test_end_session_phrase_still_hits_guardrail() -> None:
     classifier = _classifier()
 
     guarded = classifier._guardrail_classify(
-        message="Who did I send money to the most this week",
-        today="2026-03-07",
+        message="thank you",
         items=None,
         surface=None,
         language="en",
@@ -39,79 +22,8 @@ def test_recipient_ranking_followup_forces_new_query_override() -> None:
 
     assert guarded is not None
     continuation_type, data = guarded
-    assert continuation_type == "new_query"
-    assert data["reason"] == "deterministic_recipient_ranking_new_query"
-    assert data["is_new_query_override"] is True
-    assert data["restates_query"] is True
-
-
-def test_aggregate_phrases_hit_guardrail() -> None:
-    classifier = _classifier()
-
-    guarded = classifier._guardrail_classify(
-        message="How much have I spent today",
-        today=date.today().isoformat(),
-        items=None,
-        surface=None,
-        language="en",
-    )
-
-    assert guarded is not None
-    continuation_type, data = guarded
-    assert continuation_type == "aggregate"
-    assert data["reason"] == "deterministic_aggregate"
-    assert data["confidence"] == 0.95
-
-
-def test_time_delta_shortcut_for_yesterday_followup() -> None:
-    classifier = _classifier()
-
-    guarded = classifier._guardrail_classify(
-        message="what about yesterday",
-        today="2026-03-06",
-        items=None,
-        surface=None,
-        language="en",
-    )
-
-    assert guarded is not None
-    continuation_type, data = guarded
-    assert continuation_type == "time_delta"
-    assert data["reason"] == "deterministic_time_delta"
-    assert data["delta_type"] == "time"
-    assert data["time_range"].start.isoformat() == "2026-03-05"
-    assert data["time_range"].end.isoformat() == "2026-03-05"
-
-
-def test_filter_delta_shortcut_for_credit_debit_followups() -> None:
-    classifier = _classifier()
-
-    guarded = classifier._guardrail_classify(
-        message="only debits",
-        today="2026-03-06",
-        items=None,
-        surface=None,
-        language="en",
-    )
-
-    assert guarded is not None
-    continuation_type, data = guarded
-    assert continuation_type == "filter_delta"
-    assert data["reason"] == "deterministic_tx_type_filter"
-    assert data["delta_type"] == "filter"
-    assert data["filters"].transaction_type == "debit"
-
-    guarded2 = classifier._guardrail_classify(
-        message="what about credits",
-        today="2026-03-06",
-        items=None,
-        surface=None,
-        language="en",
-    )
-
-    assert guarded2 is not None
-    _, data2 = guarded2
-    assert data2["filters"].transaction_type == "credit"
+    assert continuation_type == "end_session"
+    assert data["reason"] == "deterministic_end_session"
 
 
 def test_beneficiary_summary_name_reply_maps_to_recipient_drilldown() -> None:
@@ -121,7 +33,6 @@ def test_beneficiary_summary_name_reply_maps_to_recipient_drilldown() -> None:
 
     guarded = classifier._guardrail_classify(
         message="Gaines.",
-        today="2026-03-10",
         items=items,
         surface=surface,
         language="en",
@@ -132,3 +43,47 @@ def test_beneficiary_summary_name_reply_maps_to_recipient_drilldown() -> None:
     assert continuation_type == "recipient_drill_down"
     assert data["reason"] == "deterministic_recipient_drill_down"
     assert data["recipient_name"] == "Gaines"
+
+
+def test_retransfer_phrase_maps_to_drill_down_for_list_surface() -> None:
+    classifier = _classifier()
+    surface = ResultSurface(type=SurfaceType.LIST, items=[], context={"type": "transaction_list"})
+
+    guarded = classifier._guardrail_classify(
+        message="send again",
+        items=None,
+        surface=surface,
+        language="en",
+    )
+
+    assert guarded is not None
+    continuation_type, data = guarded
+    assert continuation_type == "drill_down"
+    assert data["reason"] == "deterministic_retransfer"
+    assert data["drill_down_action"] == "re_transfer"
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        "show me",
+        "what about yesterday",
+        "for last week only",
+        "only debits",
+        "How much have I spent today",
+        "Who did I send money to the most this week",
+        "show my transactions",
+    ],
+)
+def test_scope_and_pagination_phrases_no_longer_hit_guardrail(message: str) -> None:
+    classifier = _classifier()
+    surface = ResultSurface(type=SurfaceType.SUMMARY, items=[], context={"view": "summary"})
+
+    guarded = classifier._guardrail_classify(
+        message=message,
+        items=None,
+        surface=surface,
+        language="en",
+    )
+
+    assert guarded is None

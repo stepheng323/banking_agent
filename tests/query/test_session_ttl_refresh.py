@@ -1,5 +1,6 @@
 import json
 from datetime import date
+from time import time
 
 import pytest
 
@@ -48,7 +49,7 @@ class _RedisStoreStub(_RedisStub):
 @pytest.mark.asyncio
 async def test_load_refreshes_ttl_on_success() -> None:
     key = "query:session:2348000000000"
-    redis = _RedisStub(json.dumps({"session_active": True, "current_page": 1}))
+    redis = _RedisStub(json.dumps({"session_active": True, "timestamp": time(), "current_page": 1}))
     manager = QuerySessionManager(redis)  # type: ignore[arg-type]
 
     loaded = await manager.load(key)
@@ -66,6 +67,40 @@ async def test_load_does_not_refresh_ttl_when_session_missing() -> None:
     loaded = await manager.load("query:session:2348000000001")
 
     assert loaded is None
+    assert redis.expire_calls == []
+
+
+@pytest.mark.asyncio
+async def test_load_disarms_stale_query_session_without_refresh() -> None:
+    key = "query:session:2348000000004"
+    redis = _RedisStub(
+        json.dumps(
+            {
+                "session_active": True,
+                "timestamp": time() - SESSION_TTL - 10,
+                "current_page": 2,
+                "query_contract": {
+                    "intent": "transaction_list",
+                    "time_start": "2026-03-01",
+                    "time_end": "2026-03-14",
+                    "timezone": "Africa/Lagos",
+                    "normalized_query": {
+                        "intent": "transaction_list",
+                        "time_range": {"start": "2026-03-01", "end": "2026-03-14", "granularity": "day"},
+                        "accounts_scope": "all",
+                    },
+                },
+            }
+        )
+    )
+    manager = QuerySessionManager(redis)  # type: ignore[arg-type]
+
+    loaded = await manager.load(key)
+
+    assert isinstance(loaded, dict)
+    assert loaded["session_active"] is False
+    assert loaded["query_result"] is None
+    assert loaded.get("pending_clarification") is None
     assert redis.expire_calls == []
 
 

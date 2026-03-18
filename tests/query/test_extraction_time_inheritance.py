@@ -4,18 +4,21 @@ import pytest
 
 from apps.core.src.agent.graphs.query.models import (
     ExtractionIntent,
+    Filters,
     NormalizedQuery,
     QueryExecutionContract,
     QueryExtractionResult,
-    QueryIntent,
     QueryParseResult,
     QueryTimeRange,
     ResolverOutcome,
     TimeRange,
     TimeReference,
+    QueryIntent,
 )
 from apps.core.src.agent.graphs.query.nodes.extraction import ExtractionStep
 from apps.core.src.agent.graphs.query.services.reasoner import QuerySemanticDecision
+from apps.core.src.agent.orchestrator.models.domain import TransactionOutcome
+from shared.i18n import render_message
 
 
 class _DummyStructured:
@@ -30,8 +33,17 @@ class _DummyLLM:
         return _DummyStructured()
 
 
+def _ok_result(extraction: QueryExtractionResult, query: NormalizedQuery) -> QueryParseResult:
+    contract = QueryExecutionContract.from_normalized_query(query)
+    return QueryParseResult(
+        outcome=ResolverOutcome.OK,
+        extraction=extraction,
+        query_contract=contract.model_dump(mode="json"),
+    )
+
+
 @pytest.mark.asyncio
-async def test_parse_new_query_inherits_time_range_for_unspecified_time() -> None:
+async def test_parse_new_query_does_not_inherit_time_range_for_unspecified_time() -> None:
     step = ExtractionStep(_DummyLLM())
     today = date(2026, 3, 4)
     extraction = QueryExtractionResult(
@@ -39,28 +51,36 @@ async def test_parse_new_query_inherits_time_range_for_unspecified_time() -> Non
         time_range=QueryTimeRange(reference_type=TimeReference.UNSPECIFIED),
         raw_query="show my transfers",
     )
-    parse_result = QueryParseResult(outcome=ResolverOutcome.OK, extraction=extraction)
-
-    async def _fake_parse(message: str, today: date, language: str = "en") -> QueryParseResult:
-        del message, today, language
-        return parse_result
-
-    def _fake_convert(extraction: QueryExtractionResult, today: date | None = None) -> NormalizedQuery:
-        del extraction
-        base_today = today or date.today()
-        return NormalizedQuery(
-            intent=QueryIntent.TRANSACTION_LIST,
-            time_range=TimeRange(start=base_today - timedelta(days=30), end=base_today),
-        )
-
-    step.parser.parse = _fake_parse  # type: ignore[method-assign]
-    step.parser.convert_to_normalized = _fake_convert  # type: ignore[method-assign]
-
+    parsed_query = NormalizedQuery(
+        intent=QueryIntent.TRANSACTION_LIST,
+        time_range=TimeRange(start=today - timedelta(days=30), end=today),
+    )
     session_query = NormalizedQuery(
         intent=QueryIntent.TRANSACTION_LIST,
         time_range=TimeRange(start=today, end=today),
     )
     session_contract = QueryExecutionContract.from_normalized_query(session_query)
+
+    async def _fake_reason(context: object) -> QuerySemanticDecision:
+        del context
+        return QuerySemanticDecision(
+            decision="fresh_query",
+            confidence=0.95,
+            reason="fresh_unspecified_query",
+            extraction=extraction,
+        )
+
+    def _fake_resolve_existing(
+        parsed_extraction: QueryExtractionResult,
+        *,
+        today: date,
+        language: str,
+    ) -> QueryParseResult:
+        del today, language
+        return _ok_result(parsed_extraction, parsed_query)
+
+    step.reasoner.reason = _fake_reason  # type: ignore[method-assign]
+    step.parser.resolve_existing_extraction = _fake_resolve_existing  # type: ignore[method-assign]
 
     updates = await step._parse_new_query(
         {
@@ -69,109 +89,6 @@ async def test_parse_new_query_inherits_time_range_for_unspecified_time() -> Non
             "language": "en",
             "query_session": {
                 "session_active": True,
-                "query": session_query.model_dump(),
-                "query_contract": session_contract.model_dump(),
-            },
-        }
-    )
-
-    query = updates["query_contract"].normalized_query
-    assert query.time_range is not None
-    assert query.time_range.start == today
-    assert query.time_range.end == today
-
-
-@pytest.mark.asyncio
-async def test_parse_new_query_does_not_inherit_when_time_is_explicit() -> None:
-    step = ExtractionStep(_DummyLLM())
-    today = date(2026, 3, 4)
-    extraction = QueryExtractionResult(
-        intent=ExtractionIntent.TRANSACTION_LIST,
-        time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="this_month"),
-        raw_query="show my transfers this month",
-    )
-    parse_result = QueryParseResult(outcome=ResolverOutcome.OK, extraction=extraction)
-
-    async def _fake_parse(message: str, today: date, language: str = "en") -> QueryParseResult:
-        del message, today, language
-        return parse_result
-
-    def _fake_convert(extraction: QueryExtractionResult, today: date | None = None) -> NormalizedQuery:
-        del extraction
-        base_today = today or date.today()
-        return NormalizedQuery(
-            intent=QueryIntent.TRANSACTION_LIST,
-            time_range=TimeRange(start=base_today - timedelta(days=7), end=base_today),
-        )
-
-    step.parser.parse = _fake_parse  # type: ignore[method-assign]
-    step.parser.convert_to_normalized = _fake_convert  # type: ignore[method-assign]
-
-    session_query = NormalizedQuery(
-        intent=QueryIntent.TRANSACTION_LIST,
-        time_range=TimeRange(start=today, end=today),
-    )
-    session_contract = QueryExecutionContract.from_normalized_query(session_query)
-
-    updates = await step._parse_new_query(
-        {
-            "message": "show my transfers this month",
-            "today": today,
-            "language": "en",
-            "query_session": {
-                "session_active": True,
-                "query": session_query.model_dump(),
-                "query_contract": session_contract.model_dump(),
-            },
-        }
-    )
-
-    query = updates["query_contract"].normalized_query
-    assert query.time_range is not None
-    assert query.time_range.start == today - timedelta(days=7)
-    assert query.time_range.end == today
-
-
-@pytest.mark.asyncio
-async def test_parse_new_query_does_not_inherit_for_standalone_unspecified_question() -> None:
-    step = ExtractionStep(_DummyLLM())
-    today = date(2026, 3, 7)
-    extraction = QueryExtractionResult(
-        intent=ExtractionIntent.BENEFICIARY_SUMMARY,
-        time_range=QueryTimeRange(reference_type=TimeReference.UNSPECIFIED),
-        raw_query="who did I send money to the most",
-    )
-    parse_result = QueryParseResult(outcome=ResolverOutcome.OK, extraction=extraction)
-
-    async def _fake_parse(message: str, today: date, language: str = "en") -> QueryParseResult:
-        del message, today, language
-        return parse_result
-
-    def _fake_convert(extraction: QueryExtractionResult, today: date | None = None) -> NormalizedQuery:
-        del extraction
-        base_today = today or date.today()
-        return NormalizedQuery(
-            intent=QueryIntent.BENEFICIARY_SUMMARY,
-            time_range=TimeRange(start=base_today - timedelta(days=30), end=base_today),
-        )
-
-    step.parser.parse = _fake_parse  # type: ignore[method-assign]
-    step.parser.convert_to_normalized = _fake_convert  # type: ignore[method-assign]
-
-    session_query = NormalizedQuery(
-        intent=QueryIntent.TRANSACTION_LIST,
-        time_range=TimeRange(start=today, end=today),
-    )
-    session_contract = QueryExecutionContract.from_normalized_query(session_query)
-
-    updates = await step._parse_new_query(
-        {
-            "message": "who did I send money to the most",
-            "today": today,
-            "language": "en",
-            "query_session": {
-                "session_active": True,
-                "query": session_query.model_dump(),
                 "query_contract": session_contract.model_dump(),
             },
         }
@@ -194,10 +111,11 @@ async def test_recipient_ranking_followup_reparses_as_new_beneficiary_summary_qu
     session_contract = QueryExecutionContract.from_normalized_query(session_query)
 
     extraction = QueryExtractionResult(
-        intent=ExtractionIntent.TRANSACTION_LIST,
+        intent=ExtractionIntent.BENEFICIARY_SUMMARY,
         time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="this_week", days_back=5),
         raw_query="who did I send money to the most this week",
     )
+
     def _fake_resolve_existing(
         parsed_extraction: QueryExtractionResult,
         *,
@@ -205,7 +123,11 @@ async def test_recipient_ranking_followup_reparses_as_new_beneficiary_summary_qu
         language: str,
     ) -> QueryParseResult:
         del today, language
-        return QueryParseResult(outcome=ResolverOutcome.OK, extraction=parsed_extraction)
+        query = NormalizedQuery(
+            intent=QueryIntent.BENEFICIARY_SUMMARY,
+            time_range=TimeRange(start=date(2026, 3, 2), end=date(2026, 3, 7)),
+        )
+        return _ok_result(parsed_extraction, query)
 
     async def _fake_reason(context: object) -> QuerySemanticDecision:
         del context
@@ -220,11 +142,7 @@ async def test_recipient_ranking_followup_reparses_as_new_beneficiary_summary_qu
     step.parser.resolve_existing_extraction = _fake_resolve_existing  # type: ignore[method-assign]
 
     updates = await step._handle_continuation(
-        {
-            "message": "who did I send money to the most this week",
-            "today": today,
-            "language": "en",
-        },
+        {"message": "who did I send money to the most this week", "today": today, "language": "en"},
         {
             "session_active": True,
             "query_contract": session_contract.model_dump(),
@@ -240,12 +158,13 @@ async def test_recipient_ranking_followup_reparses_as_new_beneficiary_summary_qu
 
 
 @pytest.mark.asyncio
-async def test_time_delta_follow_up_preserves_time_comparison_intent() -> None:
+async def test_replace_scope_resets_pagination_and_preserves_filters() -> None:
     step = ExtractionStep(_DummyLLM())
-    today = date(2026, 3, 6)
+    today = date(2026, 3, 14)
     session_query = NormalizedQuery(
-        intent=QueryIntent.TIME_COMPARISON,
-        time_range=TimeRange(start=today - timedelta(days=6), end=today),
+        intent=QueryIntent.TRANSACTION_LIST,
+        time_range=TimeRange(start=date(2026, 3, 1), end=today),
+        filters=Filters(merchant=["Mum"], transaction_type="debit"),
     )
     session_contract = QueryExecutionContract.from_normalized_query(session_query)
 
@@ -254,26 +173,109 @@ async def test_time_delta_follow_up_preserves_time_comparison_intent() -> None:
         return QuerySemanticDecision(
             decision="continuation",
             continuation_type="time_delta",
-            time_range=TimeRange(start=date(2026, 3, 5), end=date(2026, 3, 5)),
+            followup_intent="replace_scope",
+            time_range=TimeRange(start=date(2026, 3, 8), end=date(2026, 3, 14), granularity="week"),
             delta_type="time",
-            confidence=0.9,
-            reason="User asked for yesterday",
+            confidence=0.96,
+            reason="llm_replace_scope",
         )
 
     step.reasoner.reason = _fake_reason  # type: ignore[method-assign]
 
     updates = await step._handle_continuation(
-        {"message": "what about yesterday", "today": today, "language": "en"},
+        {"message": "for last week only", "today": today, "language": "en"},
         {
             "session_active": True,
             "query_contract": session_contract.model_dump(),
             "query_result": {"items": []},
+            "current_page": 2,
+            "show_expanded": True,
         },
     )
 
-    assert updates["flow_state"] == "executing"
-    assert updates["query_contract"].intent == QueryIntent.TIME_COMPARISON
-    assert updates["query_contract"].normalized_query.intent == QueryIntent.TIME_COMPARISON
+    query = updates["query_contract"].normalized_query
+    assert query.time_range is not None
+    assert query.time_range.start == date(2026, 3, 8)
+    assert query.time_range.end == date(2026, 3, 14)
+    assert query.filters is not None
+    assert query.filters.merchant == ["Mum"]
+    assert query.filters.transaction_type == "debit"
+    assert updates["current_page"] == 0
+    assert updates["show_expanded"] is False
+
+
+@pytest.mark.asyncio
+async def test_continue_pagination_only_advances_page_without_scope_mutation() -> None:
+    step = ExtractionStep(_DummyLLM())
+    today = date(2026, 3, 14)
+    session_query = NormalizedQuery(
+        intent=QueryIntent.TRANSACTION_LIST,
+        time_range=TimeRange(start=date(2026, 3, 8), end=today),
+    )
+    session_contract = QueryExecutionContract.from_normalized_query(session_query)
+
+    async def _fake_reason(context: object) -> QuerySemanticDecision:
+        del context
+        return QuerySemanticDecision(
+            decision="continuation",
+            continuation_type="show_more",
+            followup_intent="continue_pagination",
+            confidence=0.97,
+            reason="llm_continue_pagination",
+        )
+
+    step.reasoner.reason = _fake_reason  # type: ignore[method-assign]
+
+    updates = await step._handle_continuation(
+        {"message": "more", "today": today, "language": "en"},
+        {
+            "session_active": True,
+            "query_contract": session_contract.model_dump(),
+            "query_result": {"items": []},
+            "current_page": 1,
+        },
+    )
+
+    assert updates["current_page"] == 2
+    assert "query_contract" not in updates
+
+
+@pytest.mark.asyncio
+async def test_invalid_time_delta_and_continue_pagination_combo_requests_clarification() -> None:
+    step = ExtractionStep(_DummyLLM())
+    today = date(2026, 3, 14)
+    session_query = NormalizedQuery(
+        intent=QueryIntent.TRANSACTION_LIST,
+        time_range=TimeRange(start=date(2026, 3, 8), end=today),
+    )
+    session_contract = QueryExecutionContract.from_normalized_query(session_query)
+
+    async def _fake_reason(context: object) -> QuerySemanticDecision:
+        del context
+        return QuerySemanticDecision(
+            decision="continuation",
+            continuation_type="time_delta",
+            followup_intent="continue_pagination",
+            time_range=TimeRange(start=date(2026, 3, 8), end=date(2026, 3, 14), granularity="week"),
+            delta_type="time",
+            confidence=0.9,
+            reason="invalid_pagination_time_combo",
+        )
+
+    step.reasoner.reason = _fake_reason  # type: ignore[method-assign]
+
+    updates = await step._handle_continuation(
+        {"message": "for last week only", "today": today, "language": "en"},
+        {
+            "session_active": True,
+            "query_contract": session_contract.model_dump(),
+            "query_result": {"items": []},
+            "current_page": 1,
+        },
+    )
+
+    assert updates["transaction_outcome"] == TransactionOutcome.NEEDS_INPUT
+    assert updates["response"] == render_message("query.clarify.unsure_rephrase", "en")
 
 
 @pytest.mark.asyncio
@@ -291,6 +293,7 @@ async def test_recipient_drilldown_follow_up_applies_merchant_filter() -> None:
         return QuerySemanticDecision(
             decision="continuation",
             continuation_type="recipient_drill_down",
+            followup_intent="none",
             recipient_name="Gaines",
             delta_type="filter",
             confidence=0.99,
@@ -312,3 +315,113 @@ async def test_recipient_drilldown_follow_up_applies_merchant_filter() -> None:
     assert updates["continuation_type"] == "recipient_drill_down"
     assert updates["query_contract"].normalized_query.filters is not None
     assert updates["query_contract"].normalized_query.filters.merchant == ["Gaines"]
+
+
+@pytest.mark.asyncio
+async def test_show_me_follow_up_converts_summary_to_transactions_when_explicitly_requested() -> None:
+    step = ExtractionStep(_DummyLLM())
+    today = date(2026, 3, 6)
+    session_query = NormalizedQuery(
+        intent=QueryIntent.ANALYTICS_SUMMARY,
+        time_range=TimeRange(start=date(2026, 3, 1), end=today),
+    )
+    session_contract = QueryExecutionContract.from_normalized_query(session_query)
+
+    async def _fake_reason(context: object) -> QuerySemanticDecision:
+        del context
+        return QuerySemanticDecision(
+            decision="continuation",
+            continuation_type="show_more",
+            followup_intent="refine_existing",
+            confidence=1.0,
+            reason="llm_show_underlying_transactions",
+            delta_type="none",
+        )
+
+    step.reasoner.reason = _fake_reason  # type: ignore[method-assign]
+
+    updates = await step._handle_continuation(
+        {"message": "show me", "today": today, "language": "en"},
+        {
+            "session_active": True,
+            "query_contract": session_contract.model_dump(),
+            "query_result": {"items": []},
+        },
+    )
+
+    assert updates["query_contract"].normalized_query.intent == QueryIntent.TRANSACTION_LIST
+    assert updates["query_contract"].normalized_query.time_range is not None
+    assert updates["query_contract"].normalized_query.time_range.start == date(2026, 3, 1)
+    assert updates["query_contract"].normalized_query.time_range.end == today
+    assert updates["current_page"] == 0
+
+
+@pytest.mark.asyncio
+async def test_show_me_follow_up_does_not_convert_summary_on_pagination_intent() -> None:
+    step = ExtractionStep(_DummyLLM())
+    today = date(2026, 3, 6)
+    session_query = NormalizedQuery(
+        intent=QueryIntent.ANALYTICS_SUMMARY,
+        time_range=TimeRange(start=date(2026, 3, 1), end=today),
+    )
+    session_contract = QueryExecutionContract.from_normalized_query(session_query)
+
+    async def _fake_reason(context: object) -> QuerySemanticDecision:
+        del context
+        return QuerySemanticDecision(
+            decision="continuation",
+            continuation_type="show_more",
+            followup_intent="continue_pagination",
+            confidence=0.95,
+            reason="pagination_on_summary_is_invalid",
+        )
+
+    step.reasoner.reason = _fake_reason  # type: ignore[method-assign]
+
+    updates = await step._handle_continuation(
+        {"message": "show me", "today": today, "language": "en"},
+        {
+            "session_active": True,
+            "query_contract": session_contract.model_dump(),
+            "query_result": {"items": []},
+        },
+    )
+
+    assert updates["transaction_outcome"] == TransactionOutcome.NEEDS_INPUT
+    assert updates["response"] == render_message("query.clarify.unsure_rephrase", "en")
+
+
+@pytest.mark.asyncio
+async def test_low_confidence_unclear_followup_requests_clarification() -> None:
+    step = ExtractionStep(_DummyLLM())
+    today = date(2026, 3, 14)
+    session_query = NormalizedQuery(
+        intent=QueryIntent.TRANSACTION_LIST,
+        time_range=TimeRange(start=date(2026, 3, 8), end=today),
+    )
+    session_contract = QueryExecutionContract.from_normalized_query(session_query)
+
+    async def _fake_reason(context: object) -> QuerySemanticDecision:
+        del context
+        return QuerySemanticDecision(
+            decision="continuation",
+            continuation_type="unclear",
+            followup_intent="none",
+            confidence=0.2,
+            reason="ambiguous_followup",
+        )
+
+    step.reasoner.reason = _fake_reason  # type: ignore[method-assign]
+
+    updates = await step._handle_continuation(
+        {"message": "for last week only", "today": today, "language": "en"},
+        {
+            "session_active": True,
+            "query_contract": session_contract.model_dump(),
+            "query_result": {"items": []},
+            "current_page": 3,
+        },
+    )
+
+    assert updates["transaction_outcome"] == TransactionOutcome.NEEDS_INPUT
+    assert updates["response"] == render_message("query.clarify.unsure_rephrase", "en")

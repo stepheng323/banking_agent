@@ -371,6 +371,115 @@ async def test_reasoner_logs_llm_backed_fresh_query_decision(monkeypatch: pytest
 
 
 @pytest.mark.asyncio
+async def test_reasoner_passes_through_replace_scope_followup_intent() -> None:
+    llm = _TrackingLLM(
+        QuerySemanticDecision(
+            decision="continuation",
+            confidence=0.92,
+            reason="llm_replace_scope",
+            continuation_type="time_delta",
+            followup_intent="replace_scope",
+            time_range=TimeRange(start=date(2026, 3, 8), end=date(2026, 3, 14), granularity="week"),
+        )
+    )
+    reasoner = QuerySemanticReasoner(llm)
+
+    decision = await reasoner.reason(
+        SemanticReasonerContext(
+            message="for last week only",
+            today=date(2026, 3, 14),
+            language="en",
+            query_contract=QueryExecutionContract(
+                intent=QueryIntent.TRANSACTION_LIST,
+                time_start=date(2026, 3, 1),
+                time_end=date(2026, 3, 14),
+                normalized_query=NormalizedQuery(
+                    intent=QueryIntent.TRANSACTION_LIST,
+                    time_range=TimeRange(start=date(2026, 3, 1), end=date(2026, 3, 14)),
+                ),
+            ),
+            surface=ResultSurface(type=SurfaceType.LIST, items=[], context={"type": "transaction_list"}),
+        )
+    )
+
+    assert decision.continuation_type == "time_delta"
+    assert decision.followup_intent == "replace_scope"
+    assert llm.structured.calls == 1
+
+
+@pytest.mark.asyncio
+async def test_reasoner_passes_through_continue_pagination_followup_intent() -> None:
+    llm = _TrackingLLM(
+        QuerySemanticDecision(
+            decision="continuation",
+            confidence=0.95,
+            reason="llm_continue_pagination",
+            continuation_type="show_more",
+            followup_intent="continue_pagination",
+        )
+    )
+    reasoner = QuerySemanticReasoner(llm)
+
+    decision = await reasoner.reason(
+        SemanticReasonerContext(
+            message="next page",
+            today=date(2026, 3, 14),
+            language="en",
+            query_contract=QueryExecutionContract(
+                intent=QueryIntent.TRANSACTION_LIST,
+                time_start=date(2026, 3, 8),
+                time_end=date(2026, 3, 14),
+                normalized_query=NormalizedQuery(
+                    intent=QueryIntent.TRANSACTION_LIST,
+                    time_range=TimeRange(start=date(2026, 3, 8), end=date(2026, 3, 14)),
+                ),
+            ),
+            surface=ResultSurface(type=SurfaceType.LIST, items=[], context={"type": "transaction_list"}),
+        )
+    )
+
+    assert decision.continuation_type == "show_more"
+    assert decision.followup_intent == "continue_pagination"
+    assert llm.structured.calls == 1
+
+
+@pytest.mark.asyncio
+async def test_reasoner_passes_through_unclear_followup_contract() -> None:
+    llm = _TrackingLLM(
+        QuerySemanticDecision(
+            decision="continuation",
+            confidence=0.31,
+            reason="ambiguous_followup",
+            continuation_type="unclear",
+            followup_intent="none",
+        )
+    )
+    reasoner = QuerySemanticReasoner(llm)
+
+    decision = await reasoner.reason(
+        SemanticReasonerContext(
+            message="for last week only",
+            today=date(2026, 3, 14),
+            language="en",
+            query_contract=QueryExecutionContract(
+                intent=QueryIntent.ANALYTICS_SUMMARY,
+                time_start=date(2026, 3, 1),
+                time_end=date(2026, 3, 14),
+                normalized_query=NormalizedQuery(
+                    intent=QueryIntent.ANALYTICS_SUMMARY,
+                    time_range=TimeRange(start=date(2026, 3, 1), end=date(2026, 3, 14)),
+                ),
+            ),
+            surface=ResultSurface(type=SurfaceType.SUMMARY, items=[], context={"type": "spending_total"}),
+        )
+    )
+
+    assert decision.continuation_type == "unclear"
+    assert decision.followup_intent == "none"
+    assert llm.structured.calls == 1
+
+
+@pytest.mark.asyncio
 async def test_reasoner_logs_deterministic_pending_clarification_answer_without_llm(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

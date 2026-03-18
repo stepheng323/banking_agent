@@ -7,6 +7,7 @@ from typing import Any
 
 from apps.core.src.agent.orchestrator.context.models import ContextFrameType
 from apps.core.src.agent.orchestrator.models.state import OrchestratorState
+from apps.core.src.agent.graphs.query.session import is_query_session_stale
 
 CONTEXT_BENEFICIARY_PREVIEW_LIMIT = 5
 CONTEXT_ACCOUNT_PREVIEW_LIMIT = 5
@@ -155,6 +156,8 @@ async def _load_query_session_snapshot(
                 if isinstance(parsed, dict):
                     query_session_snapshot = parsed
                     query_session_source = "redis"
+                    if is_query_session_stale(query_session_snapshot):
+                        query_session_snapshot["session_active"] = False
         except Exception:
             query_session_snapshot = None
             query_session_source = None
@@ -162,6 +165,8 @@ async def _load_query_session_snapshot(
     if query_session_snapshot is None and isinstance(state.stashed_query_session, dict):
         query_session_snapshot = dict(state.stashed_query_session)
         query_session_source = "stashed"
+        if is_query_session_stale(query_session_snapshot):
+            query_session_snapshot["session_active"] = False
 
     return query_session_snapshot, query_session_source
 

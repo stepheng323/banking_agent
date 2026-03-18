@@ -7,14 +7,13 @@ from langchain_core.runnables import Runnable
 
 from apps.core.src.agent.graphs.query.models import (
     AmbiguityCode,
-    NormalizedQuery,
     PendingClarificationState,
     QueryExecutionContract,
+    QueryIntent,
     QueryResultItem,
     ResolverOutcome,
     ResultSurface,
     SurfaceType,
-    TimeReference,
 )
 from apps.core.src.agent.graphs.query.pipeline import QueryStep
 from apps.core.src.agent.graphs.query.services.continuity import (
@@ -53,6 +52,18 @@ class ExtractionStep(QueryStep):
     def _append_query_session_transition(updates: dict[str, Any], transition: str) -> dict[str, Any]:
         updates["_query_session_transition"] = transition
         return updates
+
+    @staticmethod
+    def _ambiguous_followup_updates(*, locale: str, session: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "transaction_outcome": TransactionOutcome.NEEDS_INPUT,
+            "response": render_message("query.clarify.unsure_rephrase", locale),
+            "flow_state": "parsing",
+            "session_active": True,
+            "pending_clarification": None,
+            "show_expanded": bool(session.get("show_expanded", False)),
+            "current_page": session.get("current_page", 0),
+        }
 
     @staticmethod
     def _compose_conversational_reply(decision: Any, *, language: str) -> str:
@@ -204,6 +215,7 @@ class ExtractionStep(QueryStep):
         today_state = state.get("today")
         today = today_state if isinstance(today_state, date) else lagos_today()
         session_query_contract = self._load_session_query_contract(session)
+        locale = LocaleManager.normalize(state.get("language")).value
 
         # Reconstruct items for context if available
         items = []
@@ -221,31 +233,19 @@ class ExtractionStep(QueryStep):
 
         raw_surface = session.get("surface")
         surface = ResultSurface.model_validate(raw_surface) if isinstance(raw_surface, dict) else raw_surface
+        locale = LocaleManager.normalize(state.get("language")).value
 
         decision = await self.reasoner.reason(
             SemanticReasonerContext(
                 message=message,
                 today=today,
-                language=LocaleManager.normalize(state.get("language")).value,
+                language=locale,
                 query_contract=session_query_contract,
                 items=items,
                 surface=surface,
             )
         )
-        cont_type = decision.continuation_type or "new_query"
-        data = {
-            "confidence": decision.confidence,
-            "reason": decision.reason,
-            "delta_type": decision.delta_type,
-            "time_range": decision.time_range,
-            "filters": decision.filters,
-            "result_limit": decision.result_limit,
-            "result_reference": decision.result_reference,
-            "drill_down_index": decision.drill_down_index,
-            "drill_down_action": decision.drill_down_action,
-            "recipient_name": decision.recipient_name,
-            "end_session_response": decision.end_session_response,
-        }
+        cont_type = decision.continuation_type or "unclear"
 
         logger.info(
             "query_continuation_type",
@@ -256,7 +256,6 @@ class ExtractionStep(QueryStep):
         )
 
         if decision.decision == "end_session":
-            locale = LocaleManager.normalize(state.get("language")).value
             return self._append_query_session_transition({
                 "transaction_outcome": TransactionOutcome.OK,
                 "response": decision.end_session_response or render_message("query.session.goodbye", locale),
@@ -270,7 +269,7 @@ class ExtractionStep(QueryStep):
                 decision,
                 state=state,
                 today=today,
-                language=LocaleManager.normalize(state.get("language")).value,
+                language=locale,
             )
             semantic_updates.update(self._semantic_trace_updates(decision))
             self._append_query_session_transition(semantic_updates, "replace_session_new_query")
@@ -279,72 +278,92 @@ class ExtractionStep(QueryStep):
         if decision.decision != "continuation":
             return await self._parse_new_query(state)
 
-        if self._should_force_new_query(message, cont_type, data):
-            semantic_updates = self._parse_reasoner_extraction_to_updates(
-                decision,
-                state=state,
-                today=today,
-                language=LocaleManager.normalize(state.get("language")).value,
-            ) if decision.extraction is not None else await self._parse_new_query(state)
-            if isinstance(semantic_updates, dict):
-                semantic_updates.update(self._semantic_trace_updates(decision))
-            return semantic_updates
+        followup_intent = decision.followup_intent or "none"
+        if followup_intent not in ("refine_existing", "replace_scope", "continue_pagination", "none"):
+            followup_intent = "none"
 
-        # Trust the LLM classification unless it explicitly signals a new-query override.
+        if decision.confidence is not None and decision.confidence < self._LOW_CONFIDENCE_THRESHOLD:
+            if cont_type not in {"drill_down", "recipient_drill_down", "conversational"}:
+                return self._ambiguous_followup_updates(locale=locale, session=session)
 
-        # Default state updates
         updates: dict[str, Any] = {
             "flow_state": "executing",
             "continuation_type": cont_type,
             "continuation_delta_type": decision.delta_type,
             **self._semantic_trace_updates(decision),
-            # Merging session data is handled by the worker initiating the state,
-            # but we ensure critical keys are present or updated.
-            # Ideally the 'state' passed in already has session data merged.
         }
+        original_query = session_query_contract.normalized_query if session_query_contract else None
 
         if cont_type == "show_more":
-            # Just increment page, keep existing query
-            updates["current_page"] = session.get("current_page", 0) + 1
+            if original_query is None:
+                return self._ambiguous_followup_updates(locale=locale, session=session)
+            if followup_intent == "continue_pagination":
+                if original_query.intent != QueryIntent.TRANSACTION_LIST:
+                    return self._ambiguous_followup_updates(locale=locale, session=session)
+                updates["current_page"] = session.get("current_page", 0) + 1
+            elif followup_intent == "refine_existing":
+                list_query = original_query.model_copy(deep=True)
+                list_query.intent = QueryIntent.TRANSACTION_LIST
+                list_query.aggregation = None
+                updates["query_contract"] = QueryExecutionContract.from_normalized_query(
+                    list_query,
+                    continuation_type=cont_type,
+                    continuation_delta_type=decision.delta_type,
+                )
+                updates["current_page"] = 0
+                updates["show_expanded"] = False
+            else:
+                return self._ambiguous_followup_updates(locale=locale, session=session)
 
         elif cont_type == "time_delta":
-            original_query = session_query_contract.normalized_query if session_query_contract else None
-            if original_query and decision.time_range is not None:
+            if original_query is None or decision.time_range is None:
+                return self._ambiguous_followup_updates(locale=locale, session=session)
+            if followup_intent == "continue_pagination" or followup_intent == "none":
+                return self._ambiguous_followup_updates(locale=locale, session=session)
+
+            if followup_intent == "replace_scope":
+                new_query = original_query.model_copy(deep=True)
+                new_query.time_range = decision.time_range
+            else:
                 new_query = apply_time_delta(original_query, decision.time_range)
-                if decision.result_limit is not None:
-                    new_query.result_limit = decision.result_limit
-                if decision.result_reference is not None:
-                    new_query.result_reference = decision.result_reference
-                updates["query_contract"] = QueryExecutionContract.from_normalized_query(
-                    new_query,
-                    continuation_type=cont_type,
-                    continuation_delta_type=decision.delta_type,
-                )
-                updates["current_page"] = 0
-                updates["show_expanded"] = False
+
+            if decision.result_limit is not None:
+                new_query.result_limit = decision.result_limit
+            if decision.result_reference is not None:
+                new_query.result_reference = decision.result_reference
+            updates["query_contract"] = QueryExecutionContract.from_normalized_query(
+                new_query,
+                continuation_type=cont_type,
+                continuation_delta_type=decision.delta_type,
+            )
+            updates["current_page"] = 0
+            updates["show_expanded"] = False
 
         elif cont_type == "filter_delta":
-            original_query = session_query_contract.normalized_query if session_query_contract else None
-            if original_query:
-                delta_type = decision.delta_type
-                allow_limit = delta_type in (None, "limit", "reference")
-                allow_reference = delta_type in (None, "reference", "limit")
+            if original_query is None or followup_intent != "refine_existing":
+                return self._ambiguous_followup_updates(locale=locale, session=session)
 
-                new_query = apply_filter_delta(original_query, decision.filters) if decision.filters else original_query
+            delta_type = decision.delta_type
+            allow_limit = delta_type in (None, "limit", "reference")
+            allow_reference = delta_type in (None, "reference", "limit")
 
-                if decision.result_limit is not None and allow_limit:
-                    new_query.result_limit = decision.result_limit
-                if decision.result_reference is not None and allow_reference:
-                    new_query.result_reference = decision.result_reference
-                updates["query_contract"] = QueryExecutionContract.from_normalized_query(
-                    new_query,
-                    continuation_type=cont_type,
-                    continuation_delta_type=decision.delta_type,
-                )
-                updates["current_page"] = 0
-                updates["show_expanded"] = False
+            new_query = apply_filter_delta(original_query, decision.filters) if decision.filters else original_query
+
+            if decision.result_limit is not None and allow_limit:
+                new_query.result_limit = decision.result_limit
+            if decision.result_reference is not None and allow_reference:
+                new_query.result_reference = decision.result_reference
+            updates["query_contract"] = QueryExecutionContract.from_normalized_query(
+                new_query,
+                continuation_type=cont_type,
+                continuation_delta_type=decision.delta_type,
+            )
+            updates["current_page"] = 0
+            updates["show_expanded"] = False
 
         elif cont_type == "expand":
+            if followup_intent != "refine_existing":
+                return self._ambiguous_followup_updates(locale=locale, session=session)
             updates["show_expanded"] = True
 
         elif cont_type == "conversational":
@@ -353,7 +372,7 @@ class ExtractionStep(QueryStep):
                     "transaction_outcome": TransactionOutcome.OK,
                     "response": self._compose_conversational_reply(
                         decision,
-                        language=LocaleManager.normalize(state.get("language")).value,
+                        language=locale,
                     ),
                     "session_active": False,
                     "flow_state": "complete",
@@ -365,20 +384,15 @@ class ExtractionStep(QueryStep):
         elif cont_type == "drill_down":
             drill_idx = decision.drill_down_index if decision.drill_down_index is not None else 0
 
-            # Special handling for BREAKDOWN surface: Drill down means filter by category
             surface = session.get("surface")
             if surface and surface.type == SurfaceType.BREAKDOWN:
                 if items and 0 <= drill_idx < len(items):
                     selected_item = items[drill_idx]
-                    category_name = selected_item.description  # Description holds the category name (e.g., "Food")
+                    category_name = selected_item.description
 
-                    # Convert to filter_delta
                     from apps.core.src.agent.graphs.query.models import Filters
 
-                    original_query = session_query_contract.normalized_query if session_query_contract else None
                     if original_query:
-                        # Apply category filter
-                        # Normalize category name (lowercase, handle 'Other' if needed)
                         cat_filter = category_name.lower()
 
                         logger.info(
@@ -390,10 +404,6 @@ class ExtractionStep(QueryStep):
 
                         new_filters = Filters(category=[cat_filter])
                         new_query = apply_filter_delta(original_query, new_filters)
-
-                        # Reset aggregation to None (list view) or keep it?
-                        # If drilling down, we usually want to see the transactions (List), not a sub-breakdown.
-                        # Setting aggregation to None will switch to Transaction List.
                         new_query.aggregation = None
 
                         updates["query_contract"] = QueryExecutionContract.from_normalized_query(
@@ -404,7 +414,6 @@ class ExtractionStep(QueryStep):
                         updates["current_page"] = 0
                         updates["show_expanded"] = False
 
-            # Default behavior for LIST surface (Item Detail)
             elif items and 0 <= drill_idx < len(items):
                 updates["selected_item_index"] = drill_idx
                 updates["drill_down_action"] = decision.drill_down_action
@@ -414,30 +423,22 @@ class ExtractionStep(QueryStep):
                     updates["_query_session_transition"] = "answer_fact_active_result"
 
         elif cont_type == "recipient_drill_down":
-            # Recipient drill down (filter by this recipient)
             recipient_name = decision.recipient_name
-            if recipient_name:
+            if recipient_name and original_query:
                 from apps.core.src.agent.graphs.query.models import Filters
 
-                original_query = session_query_contract.normalized_query if session_query_contract else None
-                if original_query:
-                    new_filters = Filters(merchant=[recipient_name])
-                    new_query = apply_filter_delta(original_query, new_filters)
-                    updates["query_contract"] = QueryExecutionContract.from_normalized_query(
-                        new_query,
-                        continuation_type=cont_type,
-                        continuation_delta_type=decision.delta_type,
-                    )
-                    updates["current_page"] = 0
-                    updates["show_expanded"] = False
+                new_filters = Filters(merchant=[recipient_name])
+                new_query = apply_filter_delta(original_query, new_filters)
+                updates["query_contract"] = QueryExecutionContract.from_normalized_query(
+                    new_query,
+                    continuation_type=cont_type,
+                    continuation_delta_type=decision.delta_type,
+                )
+                updates["current_page"] = 0
+                updates["show_expanded"] = False
 
         elif cont_type == "unclear":
-            # Treat as needs input? Or simply fallback to new query?
-            # Usually fallback to new query check is safer.
-            return await self._parse_new_query(state)
-
-        elif cont_type == "new_query":
-            return await self._parse_new_query(state)
+            return self._ambiguous_followup_updates(locale=locale, session=session)
 
         elif cont_type == "aggregate":
             if decision.extraction is not None:
@@ -445,19 +446,9 @@ class ExtractionStep(QueryStep):
                     decision,
                     state=state,
                     today=today,
-                    language=LocaleManager.normalize(state.get("language")).value,
+                    language=locale,
                 )
             return await self._parse_new_query(state)
-
-        elif cont_type == "end_session":
-            locale = LocaleManager.normalize(state.get("language")).value
-            return self._append_query_session_transition({
-                "transaction_outcome": TransactionOutcome.OK,  # Or OK?
-                "response": decision.end_session_response or render_message("query.session.goodbye", locale),
-                "session_active": False,
-                "flow_state": "complete",
-                **self._semantic_trace_updates(decision),
-            }, "end_query_session")
 
         return updates
 
@@ -553,37 +544,6 @@ class ExtractionStep(QueryStep):
             query_ir = self.parser.build_query_ir_from_extraction(result.extraction, today=today, language=language)
             query_contract = self.parser.build_execution_contract_from_ir(query_ir)
 
-        # Derived legacy view for existing downstream formatters and compatibility.
-        query = query_contract.normalized_query
-
-        # If this is a fresh parse with unspecified time, inherit prior active-session window.
-        query_session = state.get("query_session")
-        message = message_override if message_override is not None else state.get("message", "")
-        if (
-            isinstance(query_session, dict)
-            and query_session.get("session_active")
-            and result.extraction.time_range.reference_type == TimeReference.UNSPECIFIED
-            and self._should_inherit_unspecified_time(message)
-        ):
-            previous_contract = self._load_session_query_contract(query_session)
-            previous_query = previous_contract.normalized_query if previous_contract else None
-            if previous_query:
-                try:
-                    if isinstance(previous_query, NormalizedQuery) and previous_query.time_range:
-                        old_start = query.time_range.start.isoformat() if query.time_range else None
-                        old_end = query.time_range.end.isoformat() if query.time_range else None
-                        query.time_range = previous_query.time_range.model_copy(deep=True)
-                        logger.info(
-                            "query_time_range_inherited_from_session",
-                            previous_start=query.time_range.start.isoformat(),
-                            previous_end=query.time_range.end.isoformat(),
-                            replaced_start=old_start,
-                            replaced_end=old_end,
-                        )
-                        query_contract = QueryExecutionContract.from_normalized_query(query)
-                except Exception as exc:
-                    logger.warning("query_time_range_inheritance_failed", error=str(exc))
-
         return {
             "query_contract": query_contract,
             "resolver_message": resolver_msg,
@@ -593,52 +553,3 @@ class ExtractionStep(QueryStep):
             "pending_clarification": None,
             "show_expanded": False,
         }
-
-    def _should_force_new_query(self, message: str, cont_type: str, data: dict[str, Any]) -> bool:
-        """Rule-based fallback when follow-up classification is low confidence."""
-        confidence = data.get("confidence")
-        if confidence is None or confidence >= self._LOW_CONFIDENCE_THRESHOLD:
-            return False
-
-        if cont_type in ("show_more", "end_session", "conversational"):
-            return False
-
-        word_count = len(message.split())
-        return word_count >= 3
-
-    @staticmethod
-    def _should_inherit_unspecified_time(message: str) -> bool:
-        """Allow inheritance only for short, clearly follow-up phrasing."""
-        normalized = " ".join(message.lower().split())
-        if not normalized:
-            return True
-
-        short_followups = {
-            "show them",
-            "show transactions",
-            "show my transactions",
-            "list them",
-            "list transactions",
-            "which ones",
-            "more",
-            "next",
-            "continue",
-            "show more",
-            "next page",
-            "another page",
-        }
-        if normalized in short_followups:
-            return True
-
-        if normalized.startswith(("what about ", "how about ", "and ", "also ", "then ")):
-            return True
-
-        tokens = normalized.split()
-        if not tokens:
-            return True
-
-        standalone_starters = {"who", "what", "when", "where", "why", "how"}
-        if tokens[0] in standalone_starters:
-            return False
-
-        return len(tokens) <= 4

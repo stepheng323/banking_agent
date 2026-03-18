@@ -61,6 +61,8 @@ _ISSUE_EXACT = {
     "problem",
     "report a problem",
 }
+
+
 class QuerySemanticDecision(BaseModel):
     """Unified semantic reasoner output for query turns."""
 
@@ -88,9 +90,10 @@ class QuerySemanticDecision(BaseModel):
         "recipient_drill_down",
         "aggregate",
         "unclear",
-        "end_session",
-        "new_query",
     ] | None = Field(default=None)
+    followup_intent: Literal["refine_existing", "replace_scope", "continue_pagination", "none"] | None = Field(
+        default=None
+    )
     delta_type: Literal["filter", "time", "limit", "reference", "none"] | None = Field(default=None)
     time_range: TimeRange | None = Field(default=None)
     filters: Filters | None = Field(default=None)
@@ -135,9 +138,8 @@ class QuerySemanticReasoner:
     """Single semantic reasoner for fresh query, clarification, and continuation."""
 
     def __init__(self, llm: Runnable):
-        self.llm = llm
         self.structured_llm = cast(Any, llm).with_structured_output(QuerySemanticDecision)
-        self._continuation_classifier = ContinuationClassifier(llm)
+        self._continuation_classifier = ContinuationClassifier()
 
     @staticmethod
     def _log_reasoner_decision(
@@ -218,7 +220,6 @@ class QuerySemanticReasoner:
         *,
         normalized: str,
         surface: ResultSurface | None,
-        language: str,
     ) -> QuerySemanticDecision | None:
         if surface is None or surface.type not in {SurfaceType.SINGLE_ITEM, SurfaceType.LIST}:
             return None
@@ -252,44 +253,6 @@ class QuerySemanticReasoner:
             )
         return None
 
-    def _continuation_guardrail_decision(self, context: SemanticReasonerContext) -> QuerySemanticDecision | None:
-        guarded = self._continuation_classifier._guardrail_classify(
-            message=context.message,
-            today=context.today.isoformat(),
-            items=context.items,
-            surface=context.surface,
-            language=context.language,
-        )
-        if guarded is None:
-            return None
-
-        continuation_type, data = guarded
-        if continuation_type == "end_session":
-            return QuerySemanticDecision(
-                decision="end_session",
-                confidence=data.get("confidence"),
-                reason=data.get("reason"),
-                end_session_response=data.get("end_session_response"),
-            )
-        if continuation_type in {"new_query", "aggregate"}:
-            return None
-
-        return QuerySemanticDecision(
-            decision="continuation",
-            confidence=data.get("confidence"),
-            reason=data.get("reason"),
-            continuation_type=cast(Any, continuation_type),
-            delta_type=cast(Any, data.get("delta_type")),
-            time_range=data.get("time_range"),
-            filters=data.get("filters"),
-            result_limit=data.get("result_limit"),
-            result_reference=data.get("result_reference"),
-            drill_down_index=data.get("drill_down_index"),
-            drill_down_action=data.get("drill_down_action"),
-            recipient_name=data.get("recipient_name"),
-            response_text=data.get("response_text"),
-        )
-
     async def reason(self, context: SemanticReasonerContext) -> QuerySemanticDecision:
         normalized = self._normalize(context.message)
 
@@ -319,7 +282,6 @@ class QuerySemanticReasoner:
             deterministic_surface = self._deterministic_surface_action(
                 normalized=normalized,
                 surface=context.surface,
-                language=context.language,
             )
             if deterministic_surface is not None:
                 deterministic_surface = self._annotate_decision(
@@ -341,8 +303,41 @@ class QuerySemanticReasoner:
                 )
                 return deterministic_surface
 
-            guardrail_decision = self._continuation_guardrail_decision(context)
-            if guardrail_decision is not None:
+            guarded = self._continuation_classifier._guardrail_classify(
+                message=context.message,
+                items=context.items,
+                surface=context.surface,
+                language=context.language,
+            )
+            if guarded is not None:
+                continuation_type, data = guarded
+                if continuation_type == "end_session":
+                    guardrail_decision = QuerySemanticDecision(
+                        decision="end_session",
+                        confidence=data.get("confidence"),
+                        reason=data.get("reason"),
+                        end_session_response=data.get("end_session_response"),
+                    )
+                elif continuation_type == "recipient_drill_down":
+                    guardrail_decision = QuerySemanticDecision(
+                        decision="continuation",
+                        confidence=data.get("confidence"),
+                        reason=data.get("reason"),
+                        continuation_type="recipient_drill_down",
+                        followup_intent="none",
+                        delta_type=cast(Any, data.get("delta_type")),
+                        recipient_name=data.get("recipient_name"),
+                    )
+                else:
+                    guardrail_decision = QuerySemanticDecision(
+                        decision="continuation",
+                        confidence=data.get("confidence"),
+                        reason=data.get("reason"),
+                        continuation_type="drill_down",
+                        followup_intent="none",
+                        drill_down_index=data.get("drill_down_index"),
+                        drill_down_action=data.get("drill_down_action"),
+                    )
                 guardrail_decision = self._annotate_decision(
                     context_mode=context.session_mode,
                     decision=guardrail_decision,

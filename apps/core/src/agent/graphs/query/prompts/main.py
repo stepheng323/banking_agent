@@ -48,6 +48,12 @@ RULES
 4) continuation
 - Use only for active result-session follow-ups.
 - Include `continuation_type` and the relevant structured continuation fields.
+- `followup_intent` is required for every continuation decision, even when it is `none`.
+- Include `followup_intent` as one of:
+  - refine_existing
+  - replace_scope
+  - continue_pagination
+  - none
 - Do not use this for brand-new standalone queries.
 - If `continuation_type="aggregate"`, also include `extraction` for the derived analytical query.
 
@@ -69,13 +75,18 @@ QUERY SHAPE RULES
 
 CONTINUATION RULES
 - For active result sessions:
-  - pagination only -> continuation_type="show_more"
-  - time-only change -> continuation_type="time_delta"
-  - filter-only change -> continuation_type="filter_delta"
-  - expand summary -> continuation_type="expand"
+  - pagination only on an existing transaction list -> continuation_type="show_more"
+    and followup_intent="continue_pagination"
+  - showing underlying transactions for the current summary/breakdown -> continuation_type="show_more"
+    and followup_intent="refine_existing"
+  - explicit scope replacement (time window/period replacement) -> continuation_type="time_delta"
+    and followup_intent="replace_scope" (preserve non-time filters and ranking limits)
+  - scoped time delta while keeping anchor -> continuation_type="time_delta" and followup_intent="refine_existing"
+  - scoped filter delta while keeping anchor -> continuation_type="filter_delta" and followup_intent="refine_existing"
+  - expand summary -> continuation_type="expand" and followup_intent="refine_existing"
   - conversational reactions/check-ins about the current result session -> continuation_type="conversational"
-    with a short `response_text` and optional one-line `contextual_hint`
-  - item action/detail/receipt/issue -> continuation_type="drill_down"
+    with followup_intent="none", plus a short `response_text` and optional one-line `contextual_hint`
+  - item action/detail/receipt/issue -> continuation_type="drill_down" and followup_intent="none"
   - factual questions about the currently displayed single item should also use continuation_type="drill_down"
     with drill_down_action="answer_fact" and fact_field set to one of:
     - status
@@ -83,9 +94,12 @@ CONTINUATION RULES
     - recipient
     - bank
     - date
-  - recipient reply on beneficiary summary -> continuation_type="recipient_drill_down"
-  - analytics over current result set -> continuation_type="aggregate"
+  - recipient reply on beneficiary summary -> continuation_type="recipient_drill_down" and followup_intent="none"
+  - analytics over current result set -> continuation_type="aggregate" and followup_intent="refine_existing"
+  - if the active result is still the reference point but the follow-up intent is unclear,
+    use continuation_type="unclear" and followup_intent="none" so the system can clarify
   - unrelated full query -> decision="new_query"
+  - do not guess continuation behavior from short phrases or keyword patterns alone
 
 ACTIVE-RESULT FACT BOUNDARY
 - Use drill_down_action="answer_fact" only when the user is clearly referring to the currently displayed item,

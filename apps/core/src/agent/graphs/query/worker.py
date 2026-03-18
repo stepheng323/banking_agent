@@ -15,7 +15,7 @@ from apps.core.src.agent.graphs.query.models import QueryExecutionContract
 from apps.core.src.agent.graphs.query.nodes.execution import ExecutionStep
 from apps.core.src.agent.graphs.query.nodes.extraction import ExtractionStep
 from apps.core.src.agent.graphs.query.pipeline import QueryPipeline
-from apps.core.src.agent.graphs.query.session import QuerySessionManager
+from apps.core.src.agent.graphs.query.session import QuerySessionManager, is_query_session_stale
 from apps.core.src.agent.graphs.query.utils.timezone import lagos_today
 from apps.core.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
 from shared.clients.abstractions.banking import BankDataProvider
@@ -113,6 +113,9 @@ class QueryWorker:
 
         if not query_session and isinstance(context.get("stashed_query_session"), dict):
             stashed_query_session = dict(cast(dict[str, Any], context["stashed_query_session"]))
+            if is_query_session_stale(stashed_query_session):
+                logger.info("stashed_query_session_stale", phone_number=phone_number)
+                stashed_query_session = {}
             raw_contract = stashed_query_session.get("query_contract")
             if raw_contract:
                 try:
@@ -126,8 +129,6 @@ class QueryWorker:
                     restored_from_stashed_query_session = True
                 except Exception:
                     logger.warning("stashed_query_session_invalid_contract_ignored")
-            else:
-                logger.info("stashed_query_session_without_contract_ignored")
 
         today_context = context.get("today")
         today = today_context if isinstance(today_context, date) else lagos_today()

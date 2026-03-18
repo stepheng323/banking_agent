@@ -1,6 +1,7 @@
 """Session management for query flow."""
 
 import json
+import time
 from typing import Any
 
 import redis.asyncio as redis
@@ -11,6 +12,22 @@ from shared.utils.logging import get_logger
 logger = get_logger(__name__)
 
 SESSION_TTL = 300
+
+
+def is_query_session_stale(session: dict[str, Any], *, now: float | None = None, ttl_seconds: int = SESSION_TTL) -> bool:
+    """Return True when a session snapshot is outside configured TTL."""
+    raw_timestamp = session.get("timestamp")
+    if raw_timestamp is None:
+        return False
+
+    try:
+        saved_at = float(raw_timestamp)
+    except (TypeError, ValueError):
+        logger.warning("query_session_timestamp_invalid", raw_timestamp=raw_timestamp)
+        return True
+
+    current_time = time.time() if now is None else float(now)
+    return current_time - saved_at > ttl_seconds
 
 
 class QuerySessionManager:
@@ -65,10 +82,18 @@ class QuerySessionManager:
                     logger.warning("surface_restore_error", error=str(e))
                     session["surface"] = None
 
-            try:
-                await self.redis.expire(key, SESSION_TTL)
-            except Exception as exc:
-                logger.warning("refresh_session_ttl_failed", error=str(exc))
+            if is_query_session_stale(session):
+                logger.info(
+                    "query_session_stale_disarmed",
+                    key=key,
+                    session_active=bool(session.get("session_active")),
+                )
+                session["session_active"] = False
+            else:
+                try:
+                    await self.redis.expire(key, SESSION_TTL)
+                except Exception as exc:
+                    logger.warning("refresh_session_ttl_failed", error=str(exc))
 
             return session
         except Exception as e:
@@ -97,14 +122,13 @@ class QuerySessionManager:
                 "session_active",
                 "query_contract",
                 "query_result",
-                "pending_support_item",
                 "show_expanded",
                 "clarification_attempts",
-                "confidence_level",
                 "recipient_name",
                 "filters",
                 "surface",
                 "pending_clarification",
+                "timestamp",
             )
             for k, v in state.items():
                 if k not in allowed_keys:

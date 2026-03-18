@@ -207,7 +207,6 @@ async def handle_drill_down(state: dict[str, Any]) -> TransactionResult:
             outcome=TransactionOutcome.OK,
             response=response,
             patch={
-                "pending_support_item": item.model_dump() if hasattr(item, "model_dump") else item,
                 "session_active": True,
             },
         )
