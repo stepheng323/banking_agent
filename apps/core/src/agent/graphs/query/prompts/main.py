@@ -100,6 +100,13 @@ CONTINUATION RULES
     use continuation_type="unclear" and followup_intent="none" so the system can clarify
   - unrelated full query -> decision="new_query"
   - do not guess continuation behavior from short phrases or keyword patterns alone
+  - possessive or natural time narrowing like "only this week's", "just this week", or "only this month's"
+    is explicit scope replacement, not pagination
+  - examples:
+    - "How much did I spend this week" -> fresh/new query with explicit this_week aggregate spend shape
+    - "Show them" after that summary -> continuation_type="show_more" and followup_intent="refine_existing"
+    - "Only this week's" after that summary/list -> continuation_type="time_delta" and followup_intent="replace_scope"
+    - "more" or "next page" on that list -> continuation_type="show_more" and followup_intent="continue_pagination"
 
 ACTIVE-RESULT FACT BOUNDARY
 - Use drill_down_action="answer_fact" only when the user is clearly referring to the currently displayed item,
@@ -170,6 +177,10 @@ TIME NORMALIZATION
 - explicit periods ("today", "yesterday", "last week", "this month", "January") → reference_type=explicit, set period
   - "today" → days_back=0
   - "yesterday" → days_back=1
+- natural and possessive variants still count as explicit periods:
+  - "How much did I spend this week" → explicit period this_week
+  - "this week's spending" → explicit period this_week
+  - "just this week" → explicit period this_week
 - vague ("recently", "sometime ago") → reference_type=vague, estimate days_back
 - no time mentioned → reference_type=unspecified
 - for time_comparison intent, the primary period must be explicit; if missing, keep reference_type=unspecified

@@ -408,6 +408,47 @@ async def test_reasoner_passes_through_replace_scope_followup_intent() -> None:
 
 
 @pytest.mark.asyncio
+async def test_reasoner_passes_through_possessive_week_replace_scope_followup_intent() -> None:
+    llm = _TrackingLLM(
+        QuerySemanticDecision(
+            decision="continuation",
+            confidence=0.94,
+            reason="llm_replace_scope_this_week_possessive",
+            continuation_type="time_delta",
+            followup_intent="replace_scope",
+            time_range=TimeRange(start=date(2026, 3, 16), end=date(2026, 3, 19), granularity="week"),
+        )
+    )
+    reasoner = QuerySemanticReasoner(llm)
+
+    decision = await reasoner.reason(
+        SemanticReasonerContext(
+            message="Only this week's",
+            today=date(2026, 3, 19),
+            language="en",
+            query_contract=QueryExecutionContract(
+                intent=QueryIntent.TRANSACTION_LIST,
+                time_start=date(2026, 2, 17),
+                time_end=date(2026, 3, 19),
+                normalized_query=NormalizedQuery(
+                    intent=QueryIntent.TRANSACTION_LIST,
+                    time_range=TimeRange(start=date(2026, 2, 17), end=date(2026, 3, 19)),
+                    filters=Filters(transaction_type="debit"),
+                ),
+            ),
+            surface=ResultSurface(type=SurfaceType.LIST, items=[], context={"type": "transaction_list"}),
+        )
+    )
+
+    assert decision.continuation_type == "time_delta"
+    assert decision.followup_intent == "replace_scope"
+    assert decision.time_range is not None
+    assert decision.time_range.start == date(2026, 3, 16)
+    assert decision.time_range.end == date(2026, 3, 19)
+    assert llm.structured.calls == 1
+
+
+@pytest.mark.asyncio
 async def test_reasoner_passes_through_continue_pagination_followup_intent() -> None:
     llm = _TrackingLLM(
         QuerySemanticDecision(

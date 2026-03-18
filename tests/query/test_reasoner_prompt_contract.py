@@ -1,4 +1,4 @@
-from apps.core.src.agent.graphs.query.prompts.main import QUERY_SEMANTIC_REASONER_PROMPT
+from apps.core.src.agent.graphs.query.prompts.main import QUERY_PARSER_PROMPT, QUERY_SEMANTIC_REASONER_PROMPT
 
 
 def test_query_reasoner_prompt_includes_unified_decisions() -> None:
@@ -57,3 +57,24 @@ def test_query_reasoner_prompt_defines_legal_followup_intent_combinations() -> N
     assert 'continuation_type="time_delta"' in QUERY_SEMANTIC_REASONER_PROMPT
     assert 'followup_intent="replace_scope"' in QUERY_SEMANTIC_REASONER_PROMPT
     assert 'continuation_type="filter_delta"' in QUERY_SEMANTIC_REASONER_PROMPT
+
+
+def test_query_reasoner_prompt_covers_weekly_scope_replacement_transcript() -> None:
+    assert '"How much did I spend this week" -> fresh/new query with explicit this_week aggregate spend shape' in (
+        QUERY_SEMANTIC_REASONER_PROMPT
+    )
+    assert '"Show them" after that summary -> continuation_type="show_more" and followup_intent="refine_existing"' in (
+        QUERY_SEMANTIC_REASONER_PROMPT
+    )
+    assert '"Only this week\'s" after that summary/list -> continuation_type="time_delta" and followup_intent="replace_scope"' in (
+        QUERY_SEMANTIC_REASONER_PROMPT
+    )
+    assert '"more" or "next page" on that list -> continuation_type="show_more" and followup_intent="continue_pagination"' in (
+        QUERY_SEMANTIC_REASONER_PROMPT
+    )
+
+
+def test_query_parser_prompt_covers_weekly_aggregate_and_possessive_period_phrasing() -> None:
+    assert '"How much did I spend this week" → explicit period this_week' in QUERY_PARSER_PROMPT
+    assert '"this week\'s spending" → explicit period this_week' in QUERY_PARSER_PROMPT
+    assert '"just this week" → explicit period this_week' in QUERY_PARSER_PROMPT

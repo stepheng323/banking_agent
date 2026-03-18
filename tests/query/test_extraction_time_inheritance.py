@@ -392,6 +392,82 @@ async def test_show_me_follow_up_does_not_convert_summary_on_pagination_intent()
 
 
 @pytest.mark.asyncio
+async def test_weekly_summary_show_them_then_only_this_weeks_replaces_scope_and_resets_pagination() -> None:
+    step = ExtractionStep(_DummyLLM())
+    today = date(2026, 3, 19)
+    session_query = NormalizedQuery(
+        intent=QueryIntent.ANALYTICS_SUMMARY,
+        time_range=TimeRange(start=date(2026, 2, 17), end=today),
+        filters=Filters(transaction_type="debit"),
+    )
+    session_contract = QueryExecutionContract.from_normalized_query(session_query)
+
+    decisions = iter(
+        [
+            QuerySemanticDecision(
+                decision="continuation",
+                continuation_type="show_more",
+                followup_intent="refine_existing",
+                confidence=0.99,
+                reason="llm_show_underlying_transactions",
+            ),
+            QuerySemanticDecision(
+                decision="continuation",
+                continuation_type="time_delta",
+                followup_intent="replace_scope",
+                time_range=TimeRange(start=date(2026, 3, 16), end=today, granularity="week"),
+                delta_type="time",
+                confidence=0.97,
+                reason="llm_replace_scope_this_week_possessive",
+            ),
+        ]
+    )
+
+    async def _fake_reason(context: object) -> QuerySemanticDecision:
+        del context
+        return next(decisions)
+
+    step.reasoner.reason = _fake_reason  # type: ignore[method-assign]
+
+    first_updates = await step._handle_continuation(
+        {"message": "Show them", "today": today, "language": "en"},
+        {
+            "session_active": True,
+            "query_contract": session_contract.model_dump(),
+            "query_result": {"items": []},
+            "current_page": 0,
+        },
+    )
+
+    assert first_updates["query_contract"].normalized_query.intent == QueryIntent.TRANSACTION_LIST
+    assert first_updates["query_contract"].normalized_query.time_range is not None
+    assert first_updates["query_contract"].normalized_query.time_range.start == date(2026, 2, 17)
+    assert first_updates["query_contract"].normalized_query.time_range.end == today
+    assert first_updates["current_page"] == 0
+
+    second_updates = await step._handle_continuation(
+        {"message": "Only this week's", "today": today, "language": "en"},
+        {
+            "session_active": True,
+            "query_contract": first_updates["query_contract"].model_dump(),
+            "query_result": {"items": []},
+            "current_page": 1,
+            "show_expanded": True,
+        },
+    )
+
+    query = second_updates["query_contract"].normalized_query
+    assert query.intent == QueryIntent.TRANSACTION_LIST
+    assert query.time_range is not None
+    assert query.time_range.start == date(2026, 3, 16)
+    assert query.time_range.end == today
+    assert query.filters is not None
+    assert query.filters.transaction_type == "debit"
+    assert second_updates["current_page"] == 0
+    assert second_updates["show_expanded"] is False
+
+
+@pytest.mark.asyncio
 async def test_low_confidence_unclear_followup_requests_clarification() -> None:
     step = ExtractionStep(_DummyLLM())
     today = date(2026, 3, 14)
