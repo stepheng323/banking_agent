@@ -21,6 +21,9 @@ ACTIVE RESULT SURFACE
 - items:
 {items_section}
 
+RECENT QUERY FRAMES
+{query_frames_section}
+
 AVAILABLE DECISIONS
 - fresh_query
 - clarification_answer
@@ -59,6 +62,15 @@ RULES
   - continue_pagination
   - none
 - Do not use this for brand-new standalone queries.
+- When the user refers to prior result frames indirectly ("both", "the first one", "the second one", "that week", "those two"),
+  resolve the reference against RECENT QUERY FRAMES in this same decision.
+- When you resolve a prior-frame reference, also populate:
+  - `referenced_frame_ids`
+  - `grounded_operation`
+  - `answer_mode` as one of:
+    - memory_answer
+    - grounded_query
+    - ask_clarify
 - If `continuation_type="aggregate"`, also include `extraction` for the derived analytical query.
 
 5) new_query
@@ -117,6 +129,34 @@ CONTINUATION RULES
     - "Only today", "Only this week's", or "for last month only" after that summary/list -> continuation_type="time_delta" and followup_intent="replace_scope"; runtime resolves the new time window from the user message
     - "What about last week", "what about yesterday", or "and last month?" after that summary/list -> continuation_type="time_delta" and followup_intent="replace_scope"; runtime resolves the new time window from the user message
     - "more" or "next page" on that list -> continuation_type="show_more" and followup_intent="continue_pagination"
+    - If the user refers to multiple recent result frames and asks to compare them, keep decision="continuation" and use `grounded_operation="compare_frames"`
+      with `answer_mode="memory_answer"` when the referenced frames already contain enough deterministic facts for the answer,
+      otherwise use `answer_mode="grounded_query"`.
+    - If the user points to an earlier frame ("the first one", "that one") and wants to reopen it, use `grounded_operation="select_frame"` and `answer_mode="grounded_query"`.
+    - If the user asks to see the underlying transactions for a referenced frame, use `grounded_operation="show_transactions"` and `answer_mode="grounded_query"`.
+    - If you cannot confidently resolve which prior frame(s) the user means, use `answer_mode="ask_clarify"`.
+
+FRAME GROUNDING EXAMPLES
+- Recent frames: qf_1=this week mum summary, qf_2=last week mum summary
+  User: "what's the difference between the 2 weeks"
+  -> decision="continuation", continuation_type="aggregate", followup_intent="refine_existing",
+     referenced_frame_ids=["qf_2","qf_1"], grounded_operation="compare_frames", answer_mode="memory_answer"
+- Recent frames: qf_1=this week mum summary, qf_2=last week mum summary
+  User: "compare both"
+  -> decision="continuation", continuation_type="aggregate", followup_intent="refine_existing",
+     referenced_frame_ids=["qf_2","qf_1"], grounded_operation="compare_frames", answer_mode="grounded_query"
+- Recent frames: qf_1=this week mum summary, qf_2=last week mum summary
+  User: "which one was higher"
+  -> decision="continuation", continuation_type="aggregate", followup_intent="refine_existing",
+     referenced_frame_ids=["qf_2","qf_1"], grounded_operation="compare_frames", answer_mode="memory_answer"
+- Recent frames: qf_1=this week mum summary, qf_2=last week mum summary
+  User: "what about the first one"
+  -> decision="continuation", continuation_type="aggregate", followup_intent="refine_existing",
+     referenced_frame_ids=["qf_1"], grounded_operation="select_frame", answer_mode="grounded_query"
+- Recent frames: qf_1=this week mum summary, qf_2=last week mum summary
+  User: "show transactions for that one"
+  -> decision="continuation", continuation_type="aggregate", followup_intent="refine_existing",
+     referenced_frame_ids=["qf_1"], grounded_operation="show_transactions", answer_mode="grounded_query"
 
 ACTIVE-RESULT FACT BOUNDARY
 - Use drill_down_action="answer_fact" only when the user is clearly referring to the currently displayed item,
@@ -150,54 +190,6 @@ EXTRACTION RULES
 
 MULTILINGUAL
 - Support English, Nigerian Pidgin, Yoruba, Igbo, Hausa, French, and mixed phrasing.
-
-Return STRICT JSON only.
-"""
-
-ACTIVE_QUERY_TIME_RESCOPE_PROMPT = """
-You classify whether an active-query follow-up is ONLY changing the time window of the current query.
-Return STRICT JSON only that conforms to the provided schema.
-
-TODAY: {today}
-LANGUAGE: {language}
-USER MESSAGE: {message}
-
-CURRENT QUERY SNAPSHOT
-{current_query}
-
-RULES
-- Return decision="time_only_rescope" only when the user is keeping the same active query and changing only the time window.
-- If the user introduces any new recipient, amount, category, bank, transaction type, narration, ranking, comparison, pagination, drill-down, or other non-time change, return decision="not_time_only".
-- If the user is really asking a fresh/new query shape, return decision="not_time_only".
-- If decision="time_only_rescope", include `normalized_time_message` as the normalized time-only phrase that should be parsed for the new time window.
-- Set `has_non_time_scope=true` whenever the user introduces any non-time change, even if the message also mentions time.
-- Do not rely on keyword heuristics. Interpret the message semantically in the context of the current active query.
-
-EXAMPLES
-- Current query: "How much did I send to mum this week"
-  User: "What about last week"
-  -> decision="time_only_rescope", normalized_time_message="last week", has_non_time_scope=false
-- Current query: "How much did I send to mum this week"
-  User: "What about yesterday"
-  -> decision="time_only_rescope", normalized_time_message="yesterday", has_non_time_scope=false
-- Current query: "How much did I send to mum this week"
-  User: "no, i meant last week"
-  -> decision="time_only_rescope", normalized_time_message="last week", has_non_time_scope=false
-- Current query: "How much did I send to mum this week"
-  User: "and last month?"
-  -> decision="time_only_rescope", normalized_time_message="last month", has_non_time_scope=false
-- Current query: "How much did I send to mum this week"
-  User: "What about dad last week"
-  -> decision="not_time_only", has_non_time_scope=true
-- Current query: active transaction list
-  User: "who did I send money to the most this week"
-  -> decision="not_time_only", has_non_time_scope=true
-- Current query: active result
-  User: "show them"
-  -> decision="not_time_only"
-- Current query: active result
-  User: "more"
-  -> decision="not_time_only"
 
 Return STRICT JSON only.
 """

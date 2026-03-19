@@ -204,6 +204,26 @@ class QueryExecutionContract(BaseModel):
         return contract
 
 
+class QueryFrameFacts(BaseModel):
+    """Compact derived facts for conversational follow-ups over prior query results."""
+
+    metric_kind: Literal[
+        "amount",
+        "count",
+        "average",
+        "ranked",
+        "transactions",
+        "comparison",
+        "single_item",
+        "unknown",
+    ] = "unknown"
+    amount: float | None = None
+    comparison_amount: float | None = None
+    count: int | None = None
+    direction: Literal["credit", "debit"] | None = None
+    label: str | None = None
+
+
 class SurfaceType(str, Enum):
     """Type of result surface presented to the user."""
 
@@ -222,6 +242,19 @@ class ResultSurface(BaseModel):
     type: SurfaceType
     items: list[dict[str, Any]] = Field(default_factory=list, description="Simplified items context (id, key, amount)")
     context: dict[str, Any] = Field(default_factory=dict, description="Context metadata (group_by, time_range, etc)")
+
+
+class QueryFrame(BaseModel):
+    """Compact session memory for recent query results."""
+
+    frame_id: str
+    turn_index: int = Field(ge=1)
+    query_contract: QueryExecutionContract
+    summary_text: str
+    interpretation: dict[str, Any] | None = None
+    surface_type: SurfaceType | None = None
+    surface_context: dict[str, Any] = Field(default_factory=dict)
+    facts: QueryFrameFacts = Field(default_factory=QueryFrameFacts)
 
 
 class QueryResultItem(BaseModel):

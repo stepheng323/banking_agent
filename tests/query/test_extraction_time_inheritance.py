@@ -16,7 +16,7 @@ from apps.core.src.agent.graphs.query.models import (
     TimeReference,
 )
 from apps.core.src.agent.graphs.query.nodes.extraction import ExtractionStep
-from apps.core.src.agent.graphs.query.services.reasoner import ActiveQueryTimeRescopeDecision, QuerySemanticDecision
+from apps.core.src.agent.graphs.query.services.reasoner import QuerySemanticDecision
 from apps.core.src.agent.orchestrator.models.domain import TransactionOutcome
 from shared.i18n import render_message
 
@@ -479,18 +479,20 @@ async def test_summary_contrastive_last_week_replaces_scope_and_preserves_recipi
     )
     session_contract = QueryExecutionContract.from_normalized_query(session_query)
 
-    async def _fake_time_rescope_parse(**_: object) -> ActiveQueryTimeRescopeDecision:
-        return ActiveQueryTimeRescopeDecision(
-            decision="time_only_rescope",
-            normalized_time_message="last week",
-            has_non_time_scope=False,
+    async def _fake_reason(_: object) -> QuerySemanticDecision:
+        return QuerySemanticDecision(
+            decision="continuation",
+            continuation_type="time_delta",
+            followup_intent="replace_scope",
+            extraction=QueryExtractionResult(
+                intent=ExtractionIntent.TRANSACTION_LIST,
+                time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="last_week"),
+            ),
+            confidence=0.97,
+            reason="llm_replace_scope_last_week",
         )
 
-    async def _unexpected_reason(_: object) -> QuerySemanticDecision:
-        raise AssertionError("time-only rescope should skip the general continuation reasoner")
-
-    step.time_rescope_parser.parse = _fake_time_rescope_parse  # type: ignore[method-assign]
-    step.reasoner.reason = _unexpected_reason  # type: ignore[method-assign]
+    step.reasoner.reason = _fake_reason  # type: ignore[method-assign]
 
     updates = await step._handle_continuation(
         {"message": "What about last week", "today": today, "language": "en"},
@@ -516,7 +518,7 @@ async def test_summary_contrastive_last_week_replaces_scope_and_preserves_recipi
 
 
 @pytest.mark.asyncio
-async def test_summary_contrastive_last_week_logs_parser_time_rescope(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_summary_contrastive_last_week_logs_semantic_reasoner_resolution(monkeypatch: pytest.MonkeyPatch) -> None:
     step = ExtractionStep(_DummyLLM())
     today = date(2026, 3, 19)
     events: list[tuple[str, dict[str, object]]] = []
@@ -532,14 +534,20 @@ async def test_summary_contrastive_last_week_logs_parser_time_rescope(monkeypatc
 
     monkeypatch.setattr("apps.core.src.agent.graphs.query.nodes.extraction.logger.info", _capture)
 
-    async def _fake_time_rescope_parse(**_: object) -> ActiveQueryTimeRescopeDecision:
-        return ActiveQueryTimeRescopeDecision(
-            decision="time_only_rescope",
-            normalized_time_message="last week",
-            has_non_time_scope=False,
+    async def _fake_reason(_: object) -> QuerySemanticDecision:
+        return QuerySemanticDecision(
+            decision="continuation",
+            continuation_type="time_delta",
+            followup_intent="replace_scope",
+            extraction=QueryExtractionResult(
+                intent=ExtractionIntent.TRANSACTION_LIST,
+                time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="last_week"),
+            ),
+            confidence=0.97,
+            reason="llm_replace_scope_last_week",
         )
 
-    step.time_rescope_parser.parse = _fake_time_rescope_parse  # type: ignore[method-assign]
+    step.reasoner.reason = _fake_reason  # type: ignore[method-assign]
 
     await step._handle_continuation(
         {"message": "What about last week", "today": today, "language": "en"},
@@ -554,11 +562,11 @@ async def test_summary_contrastive_last_week_logs_parser_time_rescope(monkeypatc
     assert (
         "query_continuation_resolution",
         {
-            "path": "parser_time_only_rescope",
+            "path": "semantic_reasoner",
+            "semantic_decision": "continuation",
             "continuation_type": "time_delta",
             "followup_intent": "replace_scope",
-            "time_start": "2026-03-09",
-            "time_end": "2026-03-15",
+            "delta_type": None,
         },
     ) in events
 
@@ -624,14 +632,20 @@ async def test_summary_contrastive_yesterday_without_reasoner_time_payload_repar
     )
     session_contract = QueryExecutionContract.from_normalized_query(session_query)
 
-    async def _fake_time_rescope_parse(**_: object) -> ActiveQueryTimeRescopeDecision:
-        return ActiveQueryTimeRescopeDecision(
-            decision="time_only_rescope",
-            normalized_time_message="yesterday",
-            has_non_time_scope=False,
+    async def _fake_reason(_: object) -> QuerySemanticDecision:
+        return QuerySemanticDecision(
+            decision="continuation",
+            continuation_type="time_delta",
+            followup_intent="replace_scope",
+            extraction=QueryExtractionResult(
+                intent=ExtractionIntent.TRANSACTION_LIST,
+                time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="yesterday"),
+            ),
+            confidence=0.96,
+            reason="llm_replace_scope_yesterday",
         )
 
-    step.time_rescope_parser.parse = _fake_time_rescope_parse  # type: ignore[method-assign]
+    step.reasoner.reason = _fake_reason  # type: ignore[method-assign]
 
     updates = await step._handle_continuation(
         {"message": "What about yesterday", "today": today, "language": "en"},
@@ -666,14 +680,17 @@ async def test_summary_contrastive_last_three_days_without_reasoner_time_payload
     )
     session_contract = QueryExecutionContract.from_normalized_query(session_query)
 
-    async def _fake_time_rescope_parse(**_: object) -> ActiveQueryTimeRescopeDecision:
-        return ActiveQueryTimeRescopeDecision(
-            decision="time_only_rescope",
-            normalized_time_message="last 3 days",
-            has_non_time_scope=False,
+    async def _fake_reason(_: object) -> QuerySemanticDecision:
+        return QuerySemanticDecision(
+            decision="continuation",
+            continuation_type="time_delta",
+            followup_intent="replace_scope",
+            time_period="last 3 days",
+            confidence=0.96,
+            reason="llm_replace_scope_last_three_days",
         )
 
-    step.time_rescope_parser.parse = _fake_time_rescope_parse  # type: ignore[method-assign]
+    step.reasoner.reason = _fake_reason  # type: ignore[method-assign]
 
     updates = await step._handle_continuation(
         {"message": "What about last 3 days", "today": today, "language": "en"},
@@ -791,7 +808,7 @@ async def test_summary_last_month_only_replaces_scope_and_preserves_debit_filter
 
 
 @pytest.mark.asyncio
-async def test_summary_contrastive_last_week_correction_wrapper_replaces_scope_without_reasoner() -> None:
+async def test_summary_contrastive_last_week_correction_wrapper_replaces_scope_via_reasoner() -> None:
     step = ExtractionStep(_DummyLLM())
     today = date(2026, 3, 19)
     session_query = NormalizedQuery(
@@ -801,18 +818,20 @@ async def test_summary_contrastive_last_week_correction_wrapper_replaces_scope_w
     )
     session_contract = QueryExecutionContract.from_normalized_query(session_query)
 
-    async def _fake_time_rescope_parse(**_: object) -> ActiveQueryTimeRescopeDecision:
-        return ActiveQueryTimeRescopeDecision(
-            decision="time_only_rescope",
-            normalized_time_message="last week",
-            has_non_time_scope=False,
+    async def _fake_reason(_: object) -> QuerySemanticDecision:
+        return QuerySemanticDecision(
+            decision="continuation",
+            continuation_type="time_delta",
+            followup_intent="replace_scope",
+            extraction=QueryExtractionResult(
+                intent=ExtractionIntent.TRANSACTION_LIST,
+                time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="last_week"),
+            ),
+            confidence=0.98,
+            reason="llm_replace_scope_last_week_correction",
         )
 
-    async def _unexpected_reason(_: object) -> QuerySemanticDecision:
-        raise AssertionError("correction wrapper should skip the general continuation reasoner")
-
-    step.time_rescope_parser.parse = _fake_time_rescope_parse  # type: ignore[method-assign]
-    step.reasoner.reason = _unexpected_reason  # type: ignore[method-assign]
+    step.reasoner.reason = _fake_reason  # type: ignore[method-assign]
 
     updates = await step._handle_continuation(
         {"message": "no, i meant last week", "today": today, "language": "en"},

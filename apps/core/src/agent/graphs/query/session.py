@@ -7,6 +7,7 @@ from typing import Any
 import redis.asyncio as redis
 
 from apps.core.src.agent.graphs.query.models import PendingClarificationState, QueryExecutionContract, QueryResult
+from apps.core.src.agent.graphs.query.services.grounding import restore_query_frames
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -82,6 +83,9 @@ class QuerySessionManager:
                     logger.warning("surface_restore_error", error=str(e))
                     session["surface"] = None
 
+            if session.get("query_frames"):
+                session["query_frames"] = restore_query_frames(session["query_frames"])
+
             if is_query_session_stale(session):
                 logger.info(
                     "query_session_stale_disarmed",
@@ -92,6 +96,7 @@ class QuerySessionManager:
                 session["query_contract"] = None
                 session["query_result"] = None
                 session["pending_clarification"] = None
+                session["query_frames"] = []
                 session["current_page"] = 0
                 session["show_expanded"] = False
             else:
@@ -133,6 +138,7 @@ class QuerySessionManager:
                 "filters",
                 "surface",
                 "pending_clarification",
+                "query_frames",
                 "timestamp",
             )
             for k, v in state.items():
@@ -142,6 +148,8 @@ class QuerySessionManager:
                     v, "model_dump"
                 ):
                     save_state[k] = v.model_dump()
+                elif k == "query_frames" and isinstance(v, list):
+                    save_state[k] = [frame.model_dump() if hasattr(frame, "model_dump") else frame for frame in v]
                 elif k == "cached_transactions" and v:
                     save_state[k] = [t.model_dump() if hasattr(t, "model_dump") else t for t in v]
                 else:

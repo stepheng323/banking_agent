@@ -4,6 +4,8 @@ from .domain import (
     Filters,
     NormalizedQuery,
     QueryExecutionContract,
+    QueryFrame,
+    QueryFrameFacts,
     QueryIntent,
     QueryIR,
     QueryResult,

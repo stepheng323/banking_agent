@@ -4,12 +4,15 @@ from typing import Any
 import pytest
 
 from apps.core.src.agent.graphs.query.models import (
+    Aggregation,
     ExtractionIntent,
+    Filters,
     NormalizedQuery,
     PendingClarificationState,
     QueryExecutionContract,
     QueryExtractionResult,
     QueryIntent,
+    QueryResult,
     QueryTimeRange,
     TimeRange,
     TimeReference,
@@ -186,6 +189,58 @@ async def test_worker_persists_pending_query_clarification_session() -> None:
     assert session_manager.saved_state is not None
     assert session_manager.saved_state["session_active"] is True
     assert session_manager.saved_state["pending_clarification"] == pending
+
+
+@pytest.mark.asyncio
+async def test_worker_appends_recent_query_frame_history_on_successful_query() -> None:
+    session_manager = _SessionManager()
+    worker = QueryWorker(_DummyLLM(), _DummyProvider(), session_manager)  # type: ignore[arg-type]
+    query_contract = QueryExecutionContract.from_normalized_query(
+        NormalizedQuery(
+            intent=QueryIntent.ANALYTICS_SUMMARY,
+            time_range=TimeRange(start=date(2026, 3, 16), end=date(2026, 3, 19), granularity="week"),
+            filters=Filters(transaction_type="debit"),
+            aggregation=Aggregation(type="sum"),
+        )
+    )
+    query_result = QueryResult(
+        summary_text="You spent ₦60,000 this week.",
+        interpretation={"intent": "analytics_summary"},
+        surface={"type": "summary", "items": [{"key": "total", "amount": 60000.0, "count": 2}], "context": {}},
+    )
+
+    async def _fake_pipeline_run(state: dict[str, Any], worker_context: Any) -> TransactionResult:
+        del state, worker_context
+        return TransactionResult(
+            outcome=TransactionOutcome.OK,
+            patch={
+                "session_active": True,
+                "query_contract": query_contract,
+                "query_result": query_result,
+                "flow_state": "complete",
+            },
+        )
+
+    worker.pipeline.run = _fake_pipeline_run  # type: ignore[method-assign]
+
+    result = await worker.run(
+        payload={"message": "How much did I spend this week"},
+        context={
+            "phone_number": "2348000000302",
+            "user_id": "u3",
+            "accounts": [],
+            "language": "en",
+            "today": date(2026, 3, 19),
+        },
+    )
+
+    assert result.outcome == TransactionOutcome.OK
+    assert session_manager.saved_state is not None
+    frames = session_manager.saved_state.get("query_frames")
+    assert isinstance(frames, list)
+    assert len(frames) == 1
+    assert frames[0].frame_id == "qf_1"
+    assert frames[0].facts.amount == 60000.0
 
 
 @pytest.mark.asyncio

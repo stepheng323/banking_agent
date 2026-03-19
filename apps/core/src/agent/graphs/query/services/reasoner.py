@@ -16,6 +16,7 @@ from apps.core.src.agent.graphs.query.models import (
     PendingClarificationState,
     QueryExecutionContract,
     QueryExtractionResult,
+    QueryFrame,
     QueryResultItem,
     ResultSurface,
     SurfaceType,
@@ -94,6 +95,11 @@ class QuerySemanticDecision(BaseModel):
     followup_intent: Literal["refine_existing", "replace_scope", "continue_pagination", "none"] | None = Field(
         default=None
     )
+    answer_mode: Literal["memory_answer", "grounded_query", "ask_clarify"] | None = Field(default=None)
+    referenced_frame_ids: list[str] | None = Field(default=None)
+    grounded_operation: Literal["compare_frames", "select_frame", "show_transactions", "reuse_frame"] | None = Field(
+        default=None
+    )
     delta_type: Literal["filter", "time", "limit", "reference", "none"] | None = Field(default=None)
     time_range: TimeRange | None = Field(default=None)
     filters: Filters | None = Field(default=None)
@@ -111,18 +117,6 @@ class QuerySemanticDecision(BaseModel):
     semantic_context_mode: Literal["none", "pending_clarification", "active_result"] | None = Field(default=None)
     semantic_llm_used: bool | None = Field(default=None)
     deterministic_surface_action: str | None = Field(default=None)
-
-
-class ActiveQueryTimeRescopeDecision(BaseModel):
-    """Dedicated semantic parser for active-query time-only follow-ups."""
-
-    decision: Literal["time_only_rescope", "not_time_only"]
-    confidence: float | None = Field(default=None)
-    reason: str | None = Field(default=None)
-    normalized_time_message: str | None = Field(default=None)
-    has_non_time_scope: bool = Field(default=False)
-
-
 @dataclass
 class SemanticReasonerContext:
     """Context passed into the semantic reasoner."""
@@ -134,6 +128,7 @@ class SemanticReasonerContext:
     pending_clarification: PendingClarificationState | None = None
     items: list[QueryResultItem] | None = None
     surface: ResultSurface | None = None
+    query_frames: list[QueryFrame] | None = None
 
     @property
     def session_mode(self) -> Literal["none", "pending_clarification", "active_result"]:
@@ -204,6 +199,45 @@ class QuerySemanticReasoner:
             return json.dumps(value, ensure_ascii=True, default=str)
         except Exception:
             return str(value)
+
+    @staticmethod
+    def _serialize_query_frames(query_frames: list[QueryFrame] | None) -> str:
+        if not query_frames:
+            return "[]"
+
+        payload = [
+            {
+                "frame_id": frame.frame_id,
+                "turn_index": frame.turn_index,
+                "summary_text": frame.summary_text,
+                "query_contract": {
+                    "intent": frame.query_contract.intent.value,
+                    "time_start": frame.query_contract.time_start.isoformat(),
+                    "time_end": frame.query_contract.time_end.isoformat(),
+                    "filters": (
+                        frame.query_contract.filters.model_dump(exclude_none=True)
+                        if frame.query_contract.filters
+                        else None
+                    ),
+                    "aggregation": (
+                        frame.query_contract.aggregation.model_dump(exclude_none=True)
+                        if frame.query_contract.aggregation
+                        else None
+                    ),
+                    "comparison": (
+                        frame.query_contract.comparison.model_dump(exclude_none=True)
+                        if frame.query_contract.comparison
+                        else None
+                    ),
+                },
+                "surface_type": frame.surface_type.value if frame.surface_type else None,
+                "surface_context": frame.surface_context,
+                "facts": frame.facts.model_dump(exclude_none=True),
+                "interpretation": frame.interpretation,
+            }
+            for frame in query_frames
+        ]
+        return QuerySemanticReasoner._serialize(payload)
 
     @classmethod
     def _looks_like_end_session(cls, text: str) -> bool:
@@ -373,6 +407,7 @@ class QuerySemanticReasoner:
             surface_type=context.surface.type.value if context.surface is not None else "none",
             surface_context=self._serialize(context.surface.context if context.surface is not None else None),
             items_section=self._serialize(context.items or []),
+            query_frames_section=self._serialize_query_frames(context.query_frames),
         )
 
         try:

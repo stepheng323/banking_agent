@@ -4,7 +4,16 @@ from time import time
 
 import pytest
 
-from apps.core.src.agent.graphs.query.models import QueryResult, QueryResultItem
+from apps.core.src.agent.graphs.query.models import (
+    NormalizedQuery,
+    QueryExecutionContract,
+    QueryFrame,
+    QueryFrameFacts,
+    QueryIntent,
+    QueryResult,
+    QueryResultItem,
+    TimeRange,
+)
 from apps.core.src.agent.graphs.query.session import SESSION_TTL, QuerySessionManager
 
 
@@ -146,3 +155,40 @@ async def test_query_result_interpretation_round_trips_through_session_storage()
     assert isinstance(restored_result, QueryResult)
     assert restored_result.interpretation is not None
     assert restored_result.interpretation["intent"] == "time_comparison"
+
+
+@pytest.mark.asyncio
+async def test_query_frames_round_trip_through_session_storage() -> None:
+    redis = _RedisStoreStub()
+    manager = QuerySessionManager(redis)  # type: ignore[arg-type]
+    key = "query:session:2348000000005"
+
+    frame = QueryFrame(
+        frame_id="qf_1",
+        turn_index=1,
+        query_contract=QueryExecutionContract.from_normalized_query(
+            NormalizedQuery(
+                intent=QueryIntent.ANALYTICS_SUMMARY,
+                time_range=TimeRange(start=date(2026, 3, 16), end=date(2026, 3, 19), granularity="week"),
+            )
+        ),
+        summary_text="You spent ₦60,000 this week.",
+        interpretation={"intent": "analytics_summary"},
+        facts=QueryFrameFacts(metric_kind="amount", amount=60000.0, count=2, direction="debit"),
+    )
+
+    await manager.save(
+        key,
+        {
+            "session_active": True,
+            "query_frames": [frame],
+        },
+    )
+    loaded = await manager.load(key)
+
+    assert isinstance(loaded, dict)
+    restored_frames = loaded.get("query_frames")
+    assert isinstance(restored_frames, list)
+    assert len(restored_frames) == 1
+    assert isinstance(restored_frames[0], QueryFrame)
+    assert restored_frames[0].facts.amount == 60000.0

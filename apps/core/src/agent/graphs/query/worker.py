@@ -11,10 +11,11 @@ from typing import Any, cast
 
 from langchain_core.runnables import Runnable
 
-from apps.core.src.agent.graphs.query.models import Filters, QueryExecutionContract, QueryIntent, TimeRange
+from apps.core.src.agent.graphs.query.models import Filters, QueryExecutionContract, QueryIntent, QueryResult, TimeRange
 from apps.core.src.agent.graphs.query.nodes.execution import ExecutionStep
 from apps.core.src.agent.graphs.query.nodes.extraction import ExtractionStep
 from apps.core.src.agent.graphs.query.pipeline import QueryPipeline
+from apps.core.src.agent.graphs.query.services.grounding import append_query_frame, restore_query_frames
 from apps.core.src.agent.graphs.query.session import QuerySessionManager, is_query_session_stale
 from apps.core.src.agent.graphs.query.utils.timezone import lagos_today
 from apps.core.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
@@ -327,6 +328,8 @@ class QueryWorker:
                         else QueryExecutionContract.model_validate(raw_contract)
                     )
                     stashed_query_session["query_contract"] = contract.model_dump()
+                    if stashed_query_session.get("query_frames") is not None:
+                        stashed_query_session["query_frames"] = restore_query_frames(stashed_query_session.get("query_frames"))
                     query_session = stashed_query_session
                     restored_from_stashed_query_session = True
                     session_source = "stashed"
@@ -349,6 +352,7 @@ class QueryWorker:
             "cache_fetched_at": query_session.get("cache_fetched_at"),
             "cache_fingerprint": query_session.get("cache_fingerprint"),
             "pending_clarification": query_session.get("pending_clarification"),
+            "query_frames": query_session.get("query_frames"),
         }
 
         # 2. Build Initial State
@@ -407,6 +411,25 @@ class QueryWorker:
                 session_active = final_state.get("session_active", False)
 
                 if session_active:
+                    query_contract = result.patch.get("query_contract")
+                    query_result = result.patch.get("query_result")
+                    query_frames = restore_query_frames(final_state.get("query_frames"))
+                    if isinstance(query_contract, dict):
+                        try:
+                            query_contract = QueryExecutionContract.model_validate(query_contract)
+                        except Exception:
+                            query_contract = None
+                    if isinstance(query_result, dict):
+                        try:
+                            query_result = QueryResult.model_validate(query_result)
+                        except Exception:
+                            query_result = None
+                    if query_contract and isinstance(query_result, QueryResult):
+                        final_state["query_frames"] = append_query_frame(
+                            query_frames,
+                            query_contract=query_contract,
+                            result=query_result,
+                        )
                     final_state["timestamp"] = __import__("time").time()
                     await self.session_manager.save(session_key, final_state)
                 else:

@@ -1,8 +1,4 @@
-from apps.core.src.agent.graphs.query.prompts.main import (
-    ACTIVE_QUERY_TIME_RESCOPE_PROMPT,
-    QUERY_PARSER_PROMPT,
-    QUERY_SEMANTIC_REASONER_PROMPT,
-)
+from apps.core.src.agent.graphs.query.prompts.main import QUERY_PARSER_PROMPT, QUERY_SEMANTIC_REASONER_PROMPT
 
 
 def test_query_reasoner_prompt_includes_unified_decisions() -> None:
@@ -67,6 +63,9 @@ def test_query_reasoner_prompt_defines_legal_followup_intent_combinations() -> N
     assert 'continuation_type="time_delta"' in QUERY_SEMANTIC_REASONER_PROMPT
     assert 'followup_intent="replace_scope"' in QUERY_SEMANTIC_REASONER_PROMPT
     assert 'continuation_type="filter_delta"' in QUERY_SEMANTIC_REASONER_PROMPT
+    assert "referenced_frame_ids" in QUERY_SEMANTIC_REASONER_PROMPT
+    assert "grounded_operation" in QUERY_SEMANTIC_REASONER_PROMPT
+    assert "answer_mode" in QUERY_SEMANTIC_REASONER_PROMPT
 
 
 def test_query_reasoner_prompt_covers_weekly_scope_replacement_transcript() -> None:
@@ -120,8 +119,9 @@ def test_query_reasoner_prompt_covers_generic_timeframe_scope_replacement() -> N
     )
 
 
-def test_active_query_time_rescope_prompt_uses_normalized_time_message_contract() -> None:
-    assert "normalized_time_message" in ACTIVE_QUERY_TIME_RESCOPE_PROMPT
-    assert "has_non_time_scope" in ACTIVE_QUERY_TIME_RESCOPE_PROMPT
-    assert '"no, i meant last week"' in ACTIVE_QUERY_TIME_RESCOPE_PROMPT
-    assert "include `extraction`" not in ACTIVE_QUERY_TIME_RESCOPE_PROMPT
+def test_query_reasoner_prompt_covers_recent_frame_grounding_examples() -> None:
+    assert 'User: "what\'s the difference between the 2 weeks"' in QUERY_SEMANTIC_REASONER_PROMPT
+    assert 'User: "compare both"' in QUERY_SEMANTIC_REASONER_PROMPT
+    assert 'User: "which one was higher"' in QUERY_SEMANTIC_REASONER_PROMPT
+    assert 'User: "what about the first one"' in QUERY_SEMANTIC_REASONER_PROMPT
+    assert 'User: "show transactions for that one"' in QUERY_SEMANTIC_REASONER_PROMPT

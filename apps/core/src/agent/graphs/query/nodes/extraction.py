@@ -1,7 +1,7 @@
 """Extraction step for query pipeline."""
 
 from datetime import date
-from typing import Any, cast
+from typing import Any
 
 from langchain_core.runnables import Runnable
 
@@ -10,6 +10,7 @@ from apps.core.src.agent.graphs.query.models import (
     PendingClarificationState,
     QueryExecutionContract,
     QueryExtractionResult,
+    QueryFrame,
     QueryIntent,
     QueryResultItem,
     ResolverOutcome,
@@ -19,14 +20,17 @@ from apps.core.src.agent.graphs.query.models import (
     TimeReference,
 )
 from apps.core.src.agent.graphs.query.pipeline import QueryStep
-from apps.core.src.agent.graphs.query.prompts.main import ACTIVE_QUERY_TIME_RESCOPE_PROMPT
 from apps.core.src.agent.graphs.query.services.continuity import (
     apply_filter_delta,
     apply_time_delta,
 )
+from apps.core.src.agent.graphs.query.services.grounding import (
+    build_grounded_query_contract,
+    build_memory_answer,
+    restore_query_frames,
+)
 from apps.core.src.agent.graphs.query.services.parser import QueryParser
 from apps.core.src.agent.graphs.query.services.reasoner import (
-    ActiveQueryTimeRescopeDecision,
     QuerySemanticReasoner,
     SemanticReasonerContext,
 )
@@ -38,29 +42,6 @@ from shared.utils.logging import get_logger
 logger = get_logger(__name__)
 
 
-class ActiveQueryTimeRescopeParser:
-    """Small semantic parser for time-only active-query follow-ups."""
-
-    def __init__(self, llm: Runnable):
-        self.structured_llm = cast(Any, llm).with_structured_output(ActiveQueryTimeRescopeDecision)
-
-    async def parse(
-        self,
-        *,
-        message: str,
-        today: date,
-        language: str,
-        query_contract: QueryExecutionContract,
-    ) -> ActiveQueryTimeRescopeDecision:
-        prompt = ACTIVE_QUERY_TIME_RESCOPE_PROMPT.format(
-            today=today.isoformat(),
-            language=language,
-            message=message,
-            current_query=query_contract.normalized_query.model_dump_json(),
-        )
-        return await self.structured_llm.ainvoke(prompt)
-
-
 class ExtractionStep(QueryStep):
     """Extracts intent and parameters for query."""
 
@@ -69,7 +50,6 @@ class ExtractionStep(QueryStep):
     def __init__(self, llm: Runnable):
         self.parser = QueryParser(llm)
         self.reasoner = QuerySemanticReasoner(llm)
-        self.time_rescope_parser = ActiveQueryTimeRescopeParser(llm)
 
     @staticmethod
     def _semantic_trace_updates(decision: Any) -> dict[str, Any]:
@@ -129,114 +109,8 @@ class ExtractionStep(QueryStep):
                 return None
         return None
 
-    @staticmethod
-    def _candidate_time_message_from_message(message: str, *, today: date, parser: QueryParser) -> str | None:
-        normalized_message = " ".join(message.strip().split())
-        if not normalized_message:
-            return None
-
-        parts = normalized_message.split()
-        for start in range(len(parts)):
-            candidate = " ".join(parts[start:])
-            parsed_time_range = parser.parse_clarification_time_range(candidate, today=today)
-            if parsed_time_range is None:
-                continue
-            return candidate
-        return None
-
-    @staticmethod
-    def _has_non_time_scope(extraction: QueryExtractionResult | None) -> bool:
-        if extraction is None:
-            return False
-
-        filters = extraction.filters
-        if any(
-            (
-                filters.recipient,
-                filters.min_amount is not None,
-                filters.max_amount is not None,
-                filters.category,
-                filters.transaction_type,
-                filters.bank,
-                filters.narration_keyword,
-            )
-        ):
-            return True
-
-        return any(
-            (
-                extraction.comparison is not None,
-                extraction.aggregation is not None,
-                extraction.result_limit is not None,
-                extraction.result_reference is not None,
-            )
-        )
-
-    @staticmethod
-    def _is_time_only_followup_shape(
-        extraction: QueryExtractionResult | None,
-        *,
-        original_query: Any,
-    ) -> bool:
-        if extraction is None:
-            return False
-        if ExtractionStep._has_non_time_scope(extraction):
-            return False
-
-        intent_value = getattr(extraction.intent, "value", str(extraction.intent))
-        original_intent_value = getattr(original_query.intent, "value", str(original_query.intent))
-
-        if intent_value == "transaction_list":
-            return True
-
-        return intent_value == "spending_total" and original_intent_value == "analytics_summary"
-
-    async def _resolve_parser_time_only_followup_range(
-        self,
-        *,
-        message: str,
-        today: date,
-        language: str,
-        original_query: Any,
-    ) -> TimeRange | None:
-        candidate_message = self._candidate_time_message_from_message(message, today=today, parser=self.parser)
-        if candidate_message is None:
-            return None
-
-        current_contract = QueryExecutionContract.from_normalized_query(original_query)
-        try:
-            decision = await self.time_rescope_parser.parse(
-                message=message,
-                today=today,
-                language=language,
-                query_contract=current_contract,
-            )
-        except Exception:
-            return None
-        if not isinstance(decision, ActiveQueryTimeRescopeDecision):
-            return None
-
-        if decision.decision != "time_only_rescope":
-            return None
-        if decision.has_non_time_scope:
-            return None
-
-        normalized_time_message = (decision.normalized_time_message or "").strip() or candidate_message
-        parsed_time_range = self.parser.parse_clarification_time_range(normalized_time_message, today=today)
-        if parsed_time_range is None and normalized_time_message != candidate_message:
-            parsed_time_range = self.parser.parse_clarification_time_range(candidate_message, today=today)
-        if parsed_time_range is None:
-            return None
-
-        query_ir = self.parser.build_query_ir_from_extraction(
-            QueryExtractionResult(
-                time_range=parsed_time_range,
-                raw_query=message,
-            ),
-            today=today,
-            language=language,
-        )
-        return query_ir.time_range
+    def _load_query_frames(self, session: dict[str, Any]) -> list[QueryFrame]:
+        return restore_query_frames(session.get("query_frames"))
 
     async def _resolve_time_delta_range(
         self,
@@ -326,6 +200,85 @@ class ExtractionStep(QueryStep):
 
         return None, None
 
+    def _resolve_grounded_followup(
+        self,
+        *,
+        decision: Any,
+        session: dict[str, Any],
+        language: str,
+    ) -> dict[str, Any] | None:
+        answer_mode = getattr(decision, "answer_mode", None)
+        if answer_mode is None:
+            return None
+
+        query_frames = self._load_query_frames(session)
+        frame_ids = getattr(decision, "referenced_frame_ids", None)
+        operation = getattr(decision, "grounded_operation", None)
+
+        if answer_mode == "ask_clarify":
+            return {
+                "transaction_outcome": TransactionOutcome.NEEDS_INPUT,
+                "response": render_message("query.clarify.unsure_rephrase", language),
+                "flow_state": "parsing",
+                "session_active": True,
+                "pending_clarification": None,
+                "show_expanded": bool(session.get("show_expanded", False)),
+                "current_page": session.get("current_page", 0),
+            }
+
+        if answer_mode == "memory_answer":
+            response = build_memory_answer(
+                query_frames=query_frames,
+                frame_ids=frame_ids,
+                operation=operation,
+                language=language,
+            )
+            if response is None:
+                return {
+                    "transaction_outcome": TransactionOutcome.NEEDS_INPUT,
+                    "response": render_message("query.clarify.unsure_rephrase", language),
+                    "flow_state": "parsing",
+                    "session_active": True,
+                    "pending_clarification": None,
+                    "show_expanded": bool(session.get("show_expanded", False)),
+                    "current_page": session.get("current_page", 0),
+                }
+            return {
+                "response": response,
+                "flow_state": "complete",
+                "session_active": True,
+                "pending_clarification": None,
+                "resolver_message": None,
+                "show_expanded": bool(session.get("show_expanded", False)),
+                "current_page": session.get("current_page", 0),
+            }
+
+        if answer_mode == "grounded_query":
+            query_contract = build_grounded_query_contract(
+                query_frames=query_frames,
+                frame_ids=frame_ids,
+                operation=operation,
+            )
+            if query_contract is None:
+                return {
+                    "transaction_outcome": TransactionOutcome.NEEDS_INPUT,
+                    "response": render_message("query.clarify.unsure_rephrase", language),
+                    "flow_state": "parsing",
+                    "session_active": True,
+                    "pending_clarification": None,
+                    "show_expanded": bool(session.get("show_expanded", False)),
+                    "current_page": session.get("current_page", 0),
+                }
+            return {
+                "flow_state": "executing",
+                "resolver_message": None,
+                "query_contract": query_contract,
+                "current_page": 0,
+                "show_expanded": False,
+            }
+
+        return None
+
     async def run(self, state: dict[str, Any], worker_context: Any = None) -> TransactionResult:
         """Run extraction logic."""
         query_session = state.get("query_session")
@@ -382,6 +335,7 @@ class ExtractionStep(QueryStep):
                 today=today,
                 language=locale,
                 pending_clarification=pending,
+                query_frames=self._load_query_frames(session),
             )
         )
         logger.info(
@@ -408,6 +362,15 @@ class ExtractionStep(QueryStep):
                 today=today,
                 language=locale,
             )
+
+        grounded_updates = self._resolve_grounded_followup(
+            decision=decision,
+            session=session,
+            language=locale,
+        )
+        if grounded_updates is not None:
+            grounded_updates.update(self._semantic_trace_updates(decision))
+            return grounded_updates
 
         if decision.decision == "clarification_answer":
             patched_extraction = pending.original_extraction.model_copy(deep=True)
@@ -455,42 +418,6 @@ class ExtractionStep(QueryStep):
             show_expanded=bool(session.get("show_expanded", False)),
         )
 
-        if original_query is not None:
-            parser_time_range = await self._resolve_parser_time_only_followup_range(
-                message=message,
-                today=today,
-                language=locale,
-                original_query=original_query,
-            )
-            if parser_time_range is not None:
-                new_query = original_query.model_copy(deep=True)
-                new_query.time_range = parser_time_range
-                logger.info(
-                    "query_continuation_resolution",
-                    path="parser_time_only_rescope",
-                    continuation_type="time_delta",
-                    followup_intent="replace_scope",
-                    time_start=parser_time_range.start.isoformat(),
-                    time_end=parser_time_range.end.isoformat(),
-                )
-                return {
-                    "flow_state": "executing",
-                    "continuation_type": "time_delta",
-                    "continuation_delta_type": "time",
-                    "query_contract": QueryExecutionContract.from_normalized_query(
-                        new_query,
-                        continuation_type="time_delta",
-                        continuation_delta_type="time",
-                    ),
-                    "current_page": 0,
-                    "show_expanded": False,
-                    "resolver_message": None,
-                    "_query_semantic_decision": "continuation",
-                    "_query_semantic_context_mode": "active_result",
-                    "_query_semantic_llm_used": False,
-                    "_query_deterministic_surface_action": None,
-                }
-
         # Reconstruct items for context if available
         items = []
         possible_result = session.get("query_result")
@@ -508,6 +435,7 @@ class ExtractionStep(QueryStep):
         raw_surface = session.get("surface")
         surface = ResultSurface.model_validate(raw_surface) if isinstance(raw_surface, dict) else raw_surface
         locale = LocaleManager.normalize(state.get("language")).value
+        query_frames = self._load_query_frames(session)
 
         decision = await self.reasoner.reason(
             SemanticReasonerContext(
@@ -517,6 +445,7 @@ class ExtractionStep(QueryStep):
                 query_contract=session_query_contract,
                 items=items,
                 surface=surface,
+                query_frames=query_frames,
             )
         )
         cont_type = decision.continuation_type or "unclear"
@@ -569,6 +498,15 @@ class ExtractionStep(QueryStep):
                 semantic_decision=decision.decision,
             )
             return await self._parse_new_query(state)
+
+        grounded_updates = self._resolve_grounded_followup(
+            decision=decision,
+            session=session,
+            language=locale,
+        )
+        if grounded_updates is not None:
+            grounded_updates.update(self._semantic_trace_updates(decision))
+            return grounded_updates
 
         followup_intent = decision.followup_intent or "none"
         if followup_intent not in ("refine_existing", "replace_scope", "continue_pagination", "none"):
