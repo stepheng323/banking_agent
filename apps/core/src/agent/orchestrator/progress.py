@@ -32,11 +32,13 @@ class TurnProgressTracker:
         self._stage_metadata: dict[str, Any] | None = None
         self._locale = locale
         self._lock = asyncio.Lock()
+        self._update_event = asyncio.Event()
 
     async def set_stage(self, stage_key: str, *, stage_metadata: dict[str, Any] | None = None) -> None:
         async with self._lock:
             self._stage_key = stage_key
             self._stage_metadata = dict(stage_metadata) if stage_metadata else None
+            self._update_event.set()
 
     async def snapshot(self) -> TurnProgressSnapshot:
         async with self._lock:
@@ -54,6 +56,18 @@ class TurnProgressTracker:
         async with self._lock:
             self._last_progress_sent_at = time.monotonic()
             self._progress_count += 1
+            self._update_event.set()
+
+    async def wait_for_update(self, timeout_seconds: float | None = None) -> None:
+        try:
+            if timeout_seconds is None:
+                await self._update_event.wait()
+            else:
+                await asyncio.wait_for(self._update_event.wait(), timeout=timeout_seconds)
+        except TimeoutError:
+            return
+        finally:
+            self._update_event.clear()
 
 
 def next_progress_delay_seconds(progress_count: int) -> float | None:

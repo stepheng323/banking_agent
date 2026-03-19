@@ -101,6 +101,24 @@ class ExtractionStep(QueryStep):
         return None
 
     @staticmethod
+    def _candidate_time_range_from_message(message: str, *, today: date, parser: QueryParser) -> QueryExtractionResult | None:
+        normalized_message = " ".join(message.strip().split())
+        if not normalized_message:
+            return None
+
+        parts = normalized_message.split()
+        for start in range(len(parts)):
+            candidate = " ".join(parts[start:])
+            parsed_time_range = parser.parse_clarification_time_range(candidate, today=today)
+            if parsed_time_range is None:
+                continue
+            return QueryExtractionResult(
+                time_range=parsed_time_range,
+                raw_query=message,
+            )
+        return None
+
+    @staticmethod
     def _has_non_time_scope(extraction: QueryExtractionResult | None) -> bool:
         if extraction is None:
             return False
@@ -128,19 +146,43 @@ class ExtractionStep(QueryStep):
             )
         )
 
+    @staticmethod
+    def _is_time_only_followup_shape(
+        extraction: QueryExtractionResult | None,
+        *,
+        original_query: Any,
+    ) -> bool:
+        if extraction is None:
+            return False
+        if ExtractionStep._has_non_time_scope(extraction):
+            return False
+
+        intent_value = getattr(extraction.intent, "value", str(extraction.intent))
+        original_intent_value = getattr(original_query.intent, "value", str(original_query.intent))
+
+        if intent_value == "transaction_list":
+            return True
+
+        return intent_value == "spending_total" and original_intent_value == "analytics_summary"
+
     async def _resolve_parser_time_only_followup_range(
         self,
         *,
         message: str,
         today: date,
         language: str,
+        original_query: Any,
     ) -> TimeRange | None:
+        candidate_extraction = self._candidate_time_range_from_message(message, today=today, parser=self.parser)
+        if candidate_extraction is None:
+            return None
+
         parsed_result = await self.parser.parse(message, today=today, language=language)
         if parsed_result.outcome == ResolverOutcome.NEEDS_INPUT:
             return None
 
         parsed_extraction = getattr(parsed_result, "extraction", None)
-        if self._has_non_time_scope(parsed_extraction):
+        if not self._is_time_only_followup_shape(parsed_extraction, original_query=original_query):
             return None
 
         parsed_reference_type = parsed_extraction.time_range.reference_type if parsed_extraction and parsed_extraction.time_range else None
@@ -159,27 +201,15 @@ class ExtractionStep(QueryStep):
                 query_ir = self.parser.build_query_ir_from_extraction(parsed_extraction, today=today, language=language)
                 return query_ir.time_range
 
-        normalized_message = " ".join(message.strip().split())
-        if not normalized_message:
+        if parsed_reference_type not in {TimeReference.VAGUE}:
             return None
 
-        parts = normalized_message.split()
-        for start in range(len(parts)):
-            candidate = " ".join(parts[start:])
-            parsed_time_range = self.parser.parse_clarification_time_range(candidate, today=today)
-            if parsed_time_range is None:
-                continue
-            query_ir = self.parser.build_query_ir_from_extraction(
-                QueryExtractionResult(
-                    time_range=parsed_time_range,
-                    raw_query=message,
-                ),
-                today=today,
-                language=language,
-            )
-            return query_ir.time_range
-
-        return None
+        query_ir = self.parser.build_query_ir_from_extraction(
+            candidate_extraction,
+            today=today,
+            language=language,
+        )
+        return query_ir.time_range
 
     async def _resolve_time_delta_range(
         self,
@@ -390,6 +420,34 @@ class ExtractionStep(QueryStep):
         locale = LocaleManager.normalize(state.get("language")).value
         original_query = session_query_contract.normalized_query if session_query_contract else None
 
+        if original_query is not None:
+            parser_time_range = await self._resolve_parser_time_only_followup_range(
+                message=message,
+                today=today,
+                language=locale,
+                original_query=original_query,
+            )
+            if parser_time_range is not None:
+                new_query = original_query.model_copy(deep=True)
+                new_query.time_range = parser_time_range
+                return {
+                    "flow_state": "executing",
+                    "continuation_type": "time_delta",
+                    "continuation_delta_type": "time",
+                    "query_contract": QueryExecutionContract.from_normalized_query(
+                        new_query,
+                        continuation_type="time_delta",
+                        continuation_delta_type="time",
+                    ),
+                    "current_page": 0,
+                    "show_expanded": False,
+                    "resolver_message": None,
+                    "_query_semantic_decision": "continuation",
+                    "_query_semantic_context_mode": "active_result",
+                    "_query_semantic_llm_used": False,
+                    "_query_deterministic_surface_action": None,
+                }
+
         # Reconstruct items for context if available
         items = []
         possible_result = session.get("query_result")
@@ -458,33 +516,6 @@ class ExtractionStep(QueryStep):
         if decision.confidence is not None and decision.confidence < self._LOW_CONFIDENCE_THRESHOLD:
             if cont_type not in {"drill_down", "recipient_drill_down", "conversational"}:
                 return self._ambiguous_followup_updates(locale=locale, session=session)
-
-        if original_query is not None and cont_type in {"time_delta", "unclear"}:
-            parser_time_range = await self._resolve_parser_time_only_followup_range(
-                message=message,
-                today=today,
-                language=locale,
-            )
-            if parser_time_range is not None:
-                new_query = original_query.model_copy(deep=True)
-                new_query.time_range = parser_time_range
-                return {
-                    "flow_state": "executing",
-                    "continuation_type": "time_delta",
-                    "continuation_delta_type": "time",
-                    "query_contract": QueryExecutionContract.from_normalized_query(
-                        new_query,
-                        continuation_type="time_delta",
-                        continuation_delta_type="time",
-                    ),
-                    "current_page": 0,
-                    "show_expanded": False,
-                    "resolver_message": None,
-                    "_query_semantic_decision": "continuation",
-                    "_query_semantic_context_mode": "active_result",
-                    "_query_semantic_llm_used": False,
-                    "_query_deterministic_surface_action": None,
-                }
 
         updates: dict[str, Any] = {
             "flow_state": "executing",

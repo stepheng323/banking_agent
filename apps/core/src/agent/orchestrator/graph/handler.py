@@ -228,12 +228,12 @@ class OrchestratorGraphHandler:
                     return
 
                 if not snapshot.stage_key:
-                    await asyncio.sleep(PROGRESS_POLL_INTERVAL_SECONDS)
+                    await tracker.wait_for_update(PROGRESS_POLL_INTERVAL_SECONDS)
                     continue
 
                 elapsed = time.monotonic() - snapshot.started_at
                 if elapsed < next_delay:
-                    await asyncio.sleep(min(PROGRESS_POLL_INTERVAL_SECONDS, next_delay - elapsed))
+                    await tracker.wait_for_update(min(PROGRESS_POLL_INTERVAL_SECONDS, next_delay - elapsed))
                     continue
 
                 text = render_progress_message(
