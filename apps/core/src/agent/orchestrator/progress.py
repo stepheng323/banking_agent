@@ -7,12 +7,33 @@ from typing import Any
 
 from shared.i18n import render_message
 
-FIRST_PROGRESS_DELAY_SECONDS = 3.0
-SECOND_PROGRESS_DELAY_SECONDS = 9.0
-MIN_PROGRESS_STAGE_AGE_SECONDS = 0.75
+FIRST_PROGRESS_DELAY_SECONDS = 4.5
+SECOND_PROGRESS_DELAY_SECONDS = 10.5
+MIN_PROGRESS_STAGE_AGE_SECONDS = 1.0
 PROGRESS_POLL_INTERVAL_SECONDS = 0.25
 MAX_PROGRESS_MESSAGES = 2
 FINAL_TYPING_SUPPRESSION_WINDOW_SECONDS = 2.5
+
+
+@dataclass(frozen=True, slots=True)
+class ProgressStagePolicy:
+    visible_to_user: bool
+    first_progress_delay_seconds: float = FIRST_PROGRESS_DELAY_SECONDS
+    followup_progress_delay_seconds: float = SECOND_PROGRESS_DELAY_SECONDS
+    min_stage_age_seconds: float = MIN_PROGRESS_STAGE_AGE_SECONDS
+
+
+_DEFAULT_PROGRESS_STAGE_POLICY = ProgressStagePolicy(visible_to_user=True)
+
+_PROGRESS_STAGE_POLICIES: dict[str, ProgressStagePolicy] = {
+    "query.resolving_followup": ProgressStagePolicy(visible_to_user=False),
+    "query.fetching_transactions": ProgressStagePolicy(visible_to_user=True),
+    "query.comparing_periods": ProgressStagePolicy(visible_to_user=True),
+    "transfer.resolving_recipient": ProgressStagePolicy(visible_to_user=False),
+    "transfer.confirming_details": ProgressStagePolicy(visible_to_user=False),
+    "transfer.authorizing_transfer": ProgressStagePolicy(visible_to_user=False),
+    "transfer.processing_transfer": ProgressStagePolicy(visible_to_user=True),
+}
 
 
 @dataclass(slots=True)
@@ -79,9 +100,25 @@ class TurnProgressTracker:
             self._update_event.clear()
 
 
-def next_progress_delay_seconds(progress_count: int) -> float | None:
+def progress_stage_policy(stage_key: str | None) -> ProgressStagePolicy | None:
+    """Return the configured policy for a progress stage."""
+    if stage_key is None:
+        return None
+    return _PROGRESS_STAGE_POLICIES.get(stage_key, _DEFAULT_PROGRESS_STAGE_POLICY)
+
+
+def is_progress_stage_user_visible(stage_key: str | None) -> bool:
+    """Return whether a progress stage can emit visible chat progress."""
+    policy = progress_stage_policy(stage_key)
+    return bool(policy and policy.visible_to_user)
+
+
+def next_progress_delay_seconds(stage_key: str | None, progress_count: int) -> float | None:
     """Return the absolute elapsed-time threshold for the next progress update."""
-    thresholds = (FIRST_PROGRESS_DELAY_SECONDS, SECOND_PROGRESS_DELAY_SECONDS)
+    policy = progress_stage_policy(stage_key)
+    if policy is None or not policy.visible_to_user:
+        return None
+    thresholds = (policy.first_progress_delay_seconds, policy.followup_progress_delay_seconds)
     if progress_count < 0 or progress_count >= len(thresholds):
         return None
     return thresholds[progress_count]
@@ -93,7 +130,11 @@ def seconds_until_progress_eligible(
     now: float | None = None,
 ) -> float | None:
     """Return seconds until the next progress message becomes useful to send."""
-    next_delay = next_progress_delay_seconds(snapshot.progress_count)
+    policy = progress_stage_policy(snapshot.stage_key)
+    if policy is None or not policy.visible_to_user:
+        return None
+
+    next_delay = next_progress_delay_seconds(snapshot.stage_key, snapshot.progress_count)
     if next_delay is None:
         return None
 
@@ -108,8 +149,8 @@ def seconds_until_progress_eligible(
         waits.append(PROGRESS_POLL_INTERVAL_SECONDS)
     else:
         stage_age = now_value - snapshot.stage_started_at
-        if stage_age < MIN_PROGRESS_STAGE_AGE_SECONDS:
-            waits.append(MIN_PROGRESS_STAGE_AGE_SECONDS - stage_age)
+        if stage_age < policy.min_stage_age_seconds:
+            waits.append(policy.min_stage_age_seconds - stage_age)
 
     return max(0.0, min(waits)) if waits else 0.0
 

@@ -7,7 +7,7 @@ import pytest
 
 from apps.core.src.agent.orchestrator.graph.handler import OrchestratorGraphHandler
 from apps.core.src.agent.orchestrator.models.message_context import MessageContext
-from apps.core.src.agent.orchestrator.progress import TurnProgressSnapshot
+from apps.core.src.agent.orchestrator.progress import MAX_PROGRESS_MESSAGES, TurnProgressSnapshot
 
 
 class _CheckpointerStub:
@@ -306,7 +306,10 @@ async def test_progress_update_finishes_when_progress_task_is_cancelled(monkeypa
     )
     monkeypatch.setattr("apps.core.src.agent.orchestrator.graph.handler.should_emit_progress", lambda snapshot: True)
     monkeypatch.setattr("apps.core.src.agent.orchestrator.graph.handler.seconds_until_progress_eligible", lambda snapshot: 0.0)
-    monkeypatch.setattr("apps.core.src.agent.orchestrator.graph.handler.next_progress_delay_seconds", lambda progress_count: 0.0)
+    monkeypatch.setattr(
+        "apps.core.src.agent.orchestrator.graph.handler.next_progress_delay_seconds",
+        lambda stage_key, progress_count: 0.0,
+    )
 
     delivery_events: list[str] = []
 
@@ -356,3 +359,116 @@ async def test_progress_update_finishes_when_progress_task_is_cancelled(monkeypa
         await progress_task
 
     assert delivery_events == ["started", "finished"]
+
+
+@pytest.mark.asyncio
+async def test_progress_task_waits_through_non_visible_stage_until_visible_stage_arrives(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    graph = _GraphStub()
+    monkeypatch.setattr(
+        "apps.core.src.agent.orchestrator.graph.handler.AsyncRedisSaver",
+        lambda redis_client: _CheckpointerStub(),
+    )
+    monkeypatch.setattr(
+        "apps.core.src.agent.orchestrator.graph.handler.build_orchestrator_graph",
+        lambda checkpointer: graph,
+    )
+    monkeypatch.setattr("apps.core.src.agent.orchestrator.graph.handler.should_emit_progress", lambda snapshot: True)
+    monkeypatch.setattr("apps.core.src.agent.orchestrator.graph.handler.seconds_until_progress_eligible", lambda snapshot: 0.0)
+    monkeypatch.setattr(
+        "apps.core.src.agent.orchestrator.graph.handler.next_progress_delay_seconds",
+        lambda stage_key, progress_count: 0.0,
+    )
+
+    delivery_events: list[str] = []
+
+    async def _enqueue_outbox_say(*args, **kwargs) -> None:
+        del args, kwargs
+        delivery_events.append("sent")
+
+    monkeypatch.setattr("apps.core.src.agent.orchestrator.graph.handler.enqueue_outbox_say", _enqueue_outbox_say)
+
+    handler = OrchestratorGraphHandler(
+        task_planner=SimpleNamespace(),
+        transfer_service=SimpleNamespace(),
+        airtime_service=SimpleNamespace(),
+        query_service=SimpleNamespace(),
+        data_service=SimpleNamespace(),
+        account_service=SimpleNamespace(),
+        support_service=SimpleNamespace(),
+        faq_service=SimpleNamespace(),
+        user_repo=SimpleNamespace(),
+        beneficiary_repo=SimpleNamespace(),
+        account_repo=SimpleNamespace(),
+        actionable_message_repo=SimpleNamespace(),
+        banking_provider=SimpleNamespace(),
+        context_manager=_ContextManagerStub(),
+        redis_client=SimpleNamespace(),
+        publisher=SimpleNamespace(),
+        beneficiary_suggestion_service=SimpleNamespace(),
+    )
+
+    class _StageFlippingTracker:
+        def __init__(self) -> None:
+            self._snapshots = [
+                TurnProgressSnapshot(
+                    stage_key="query.resolving_followup",
+                    started_at=0.0,
+                    stage_started_at=0.0,
+                    last_progress_sent_at=None,
+                    progress_count=0,
+                    stage_metadata={"scope_label": "what you sent to mum"},
+                    locale="en",
+                ),
+                TurnProgressSnapshot(
+                    stage_key="query.fetching_transactions",
+                    started_at=0.0,
+                    stage_started_at=0.0,
+                    last_progress_sent_at=None,
+                    progress_count=0,
+                    stage_metadata={"scope_label": "what you sent to mum"},
+                    locale="en",
+                ),
+            ]
+            self._index = 0
+            self._progress_count = 0
+
+        async def snapshot(self) -> TurnProgressSnapshot:
+            snapshot = self._snapshots[self._index]
+            return TurnProgressSnapshot(
+                stage_key=snapshot.stage_key,
+                started_at=snapshot.started_at,
+                stage_started_at=snapshot.stage_started_at,
+                last_progress_sent_at=snapshot.last_progress_sent_at,
+                progress_count=self._progress_count,
+                stage_metadata=snapshot.stage_metadata,
+                locale=snapshot.locale,
+            )
+
+        async def wait_for_update(self, timeout_seconds: float | None = None) -> None:
+            del timeout_seconds
+            self._index = 1
+            await asyncio.sleep(0)
+
+        async def record_progress_sent(self) -> None:
+            self._index = 1
+            self._progress_count = MAX_PROGRESS_MESSAGES
+
+    tracker = _StageFlippingTracker()
+    progress_task = asyncio.create_task(
+        handler._run_progress_updates(
+            tracker=tracker,
+            phone_number="2348000000004",
+            channel="whatsapp",
+            channel_identity="2348000000004",
+            inbound_message_id="wamid.44",
+            thread_id="whatsapp:2348000000004",
+        )
+    )
+    await asyncio.sleep(0.01)
+    progress_task.cancel()
+
+    await progress_task
+
+    assert delivery_events == ["sent"]

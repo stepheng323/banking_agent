@@ -22,6 +22,7 @@ from apps.core.src.agent.orchestrator.progress import (
     MAX_PROGRESS_MESSAGES,
     PROGRESS_POLL_INTERVAL_SECONDS,
     TurnProgressTracker,
+    is_progress_stage_user_visible,
     next_progress_delay_seconds,
     render_progress_message,
     seconds_until_progress_eligible,
@@ -263,13 +264,17 @@ class OrchestratorGraphHandler:
                 if snapshot.progress_count >= MAX_PROGRESS_MESSAGES:
                     return
 
-                next_delay = next_progress_delay_seconds(snapshot.progress_count)
-                if next_delay is None:
-                    return
-
                 if not snapshot.stage_key:
                     await tracker.wait_for_update(PROGRESS_POLL_INTERVAL_SECONDS)
                     continue
+
+                if not is_progress_stage_user_visible(snapshot.stage_key):
+                    await tracker.wait_for_update(PROGRESS_POLL_INTERVAL_SECONDS)
+                    continue
+
+                next_delay = next_progress_delay_seconds(snapshot.stage_key, snapshot.progress_count)
+                if next_delay is None:
+                    return
 
                 wait_seconds = seconds_until_progress_eligible(snapshot)
                 if wait_seconds is None:

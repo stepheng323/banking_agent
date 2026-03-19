@@ -3,10 +3,8 @@
 from apps.core.src.agent.graphs.__shared__.validation.service import (
     AsyncValidationService,
 )
-from apps.core.src.messaging.outbox import enqueue_outbox_say
 from shared.clients.whatsapp.client import WhatsAppClient
 from shared.queue.adapter import QueuePublisher
-from shared.utils.async_helpers import create_background_task
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -54,16 +52,7 @@ class AccountValidator:
             - resolved_account: Account resolution result or None if failed
             - balance: Balance info or None if not available
         """
-        if self.publisher and phone_number:
-            create_background_task(
-                enqueue_outbox_say(
-                    self.publisher,
-                    phone_number,
-                    "whatsapp",
-                    "🔍 Validating account details...",
-                    metadata={"source": "account_validator"},
-                )
-            )
+        del phone_number
 
         logger.debug(
             "account_validation_started",
