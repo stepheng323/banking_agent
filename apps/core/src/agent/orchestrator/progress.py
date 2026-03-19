@@ -7,6 +7,7 @@ from typing import Any
 
 FIRST_PROGRESS_DELAY_SECONDS = 3.0
 SECOND_PROGRESS_DELAY_SECONDS = 9.0
+MIN_PROGRESS_STAGE_AGE_SECONDS = 0.75
 PROGRESS_POLL_INTERVAL_SECONDS = 0.25
 MAX_PROGRESS_MESSAGES = 2
 
@@ -15,6 +16,7 @@ MAX_PROGRESS_MESSAGES = 2
 class TurnProgressSnapshot:
     stage_key: str | None
     started_at: float
+    stage_started_at: float | None
     last_progress_sent_at: float | None
     progress_count: int
     stage_metadata: dict[str, Any] | None
@@ -27,6 +29,7 @@ class TurnProgressTracker:
     def __init__(self, *, locale: str) -> None:
         self._started_at = time.monotonic()
         self._stage_key: str | None = None
+        self._stage_started_at: float | None = None
         self._last_progress_sent_at: float | None = None
         self._progress_count = 0
         self._stage_metadata: dict[str, Any] | None = None
@@ -36,6 +39,8 @@ class TurnProgressTracker:
 
     async def set_stage(self, stage_key: str, *, stage_metadata: dict[str, Any] | None = None) -> None:
         async with self._lock:
+            if stage_key != self._stage_key:
+                self._stage_started_at = time.monotonic()
             self._stage_key = stage_key
             self._stage_metadata = dict(stage_metadata) if stage_metadata else None
             self._update_event.set()
@@ -46,6 +51,7 @@ class TurnProgressTracker:
             return TurnProgressSnapshot(
                 stage_key=self._stage_key,
                 started_at=self._started_at,
+                stage_started_at=self._stage_started_at,
                 last_progress_sent_at=self._last_progress_sent_at,
                 progress_count=self._progress_count,
                 stage_metadata=metadata,
@@ -76,6 +82,43 @@ def next_progress_delay_seconds(progress_count: int) -> float | None:
     if progress_count < 0 or progress_count >= len(thresholds):
         return None
     return thresholds[progress_count]
+
+
+def seconds_until_progress_eligible(
+    snapshot: TurnProgressSnapshot,
+    *,
+    now: float | None = None,
+) -> float | None:
+    """Return seconds until the next progress message becomes useful to send."""
+    next_delay = next_progress_delay_seconds(snapshot.progress_count)
+    if next_delay is None:
+        return None
+
+    now_value = time.monotonic() if now is None else now
+    waits: list[float] = []
+
+    elapsed = now_value - snapshot.started_at
+    if elapsed < next_delay:
+        waits.append(next_delay - elapsed)
+
+    if snapshot.stage_key is None or snapshot.stage_started_at is None:
+        waits.append(PROGRESS_POLL_INTERVAL_SECONDS)
+    else:
+        stage_age = now_value - snapshot.stage_started_at
+        if stage_age < MIN_PROGRESS_STAGE_AGE_SECONDS:
+            waits.append(MIN_PROGRESS_STAGE_AGE_SECONDS - stage_age)
+
+    return max(0.0, min(waits)) if waits else 0.0
+
+
+def should_emit_progress(
+    snapshot: TurnProgressSnapshot,
+    *,
+    now: float | None = None,
+) -> bool:
+    """Return whether a progress message should be emitted now."""
+    wait_seconds = seconds_until_progress_eligible(snapshot, now=now)
+    return wait_seconds == 0.0
 
 
 def render_progress_message(

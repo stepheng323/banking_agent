@@ -24,6 +24,8 @@ from apps.core.src.agent.orchestrator.progress import (
     TurnProgressTracker,
     next_progress_delay_seconds,
     render_progress_message,
+    seconds_until_progress_eligible,
+    should_emit_progress,
 )
 from apps.core.src.messaging.outbox import _get_delivery_service, enqueue_outbox_say
 from shared.clients.abstractions.banking import BankDataProvider
@@ -231,9 +233,11 @@ class OrchestratorGraphHandler:
                     await tracker.wait_for_update(PROGRESS_POLL_INTERVAL_SECONDS)
                     continue
 
-                elapsed = time.monotonic() - snapshot.started_at
-                if elapsed < next_delay:
-                    await tracker.wait_for_update(min(PROGRESS_POLL_INTERVAL_SECONDS, next_delay - elapsed))
+                wait_seconds = seconds_until_progress_eligible(snapshot)
+                if wait_seconds is None:
+                    return
+                if not should_emit_progress(snapshot):
+                    await tracker.wait_for_update(min(PROGRESS_POLL_INTERVAL_SECONDS, wait_seconds))
                     continue
 
                 text = render_progress_message(
