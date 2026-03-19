@@ -93,6 +93,15 @@ TURN_ROUTER_QUERY_SESSION_META_ALLOW_PATTERNS = (
     r"\b(who are you|what can you do|help me|can you help)\b",
     r"\b(thank you|thanks)\b",
 )
+DETERMINISTIC_GREETING_EXACT = {
+    "hi",
+    "hello",
+    "hey",
+    "how far",
+    "good morning",
+    "good afternoon",
+    "good evening",
+}
 TURN_ROUTER_CONTEXT_HINT_PATTERNS = (
     r"\b(bank|account|acct|beneficiary|saved|debit|credit|transactions?|default|mandate|ready)\b",
 )
@@ -356,6 +365,13 @@ def _should_invoke_turn_router(message_text: str) -> bool:
     if any(re.search(pattern, normalized) for pattern in TURN_ROUTER_CONTEXT_HINT_PATTERNS):
         return True
     return any(re.search(pattern, normalized) for pattern in TURN_ROUTER_META_PATTERNS)
+
+
+def _deterministic_meta_response_key(message_text: str) -> str | None:
+    normalized = re.sub(r"\s+", " ", message_text.strip().lower()).rstrip("?.!,")
+    if normalized in DETERMINISTIC_GREETING_EXACT:
+        return "conversational.greeting"
+    return None
 
 
 def _build_turn_router_context(summary: TurnContextSummary, expected_executors: list[str]) -> str:
@@ -856,6 +872,20 @@ async def session_gate_fastpath(state: OrchestratorState, config: RunnableConfig
         path_label=summary_path_label,
     )
     summary_updates = summary_updates or {}
+    has_active_query_session = bool(
+        isinstance(query_session_snapshot, dict) and query_session_snapshot.get("session_active")
+    )
+
+    if not state.pending_interrupt and not state.has_quote and not has_active_query_session:
+        response_key = _deterministic_meta_response_key(message_text)
+        if response_key:
+            locale = LocaleManager.normalize((state.loaded_context or {}).get("language")).value
+            return {
+                **summary_updates,
+                "fast_path_triggered": True,
+                "final_response": render_message(response_key, locale),
+                "semantic_path_shape": "meta_direct",
+            }
 
     if (
         not state.pending_interrupt

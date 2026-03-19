@@ -113,6 +113,15 @@ class QuerySemanticDecision(BaseModel):
     deterministic_surface_action: str | None = Field(default=None)
 
 
+class ActiveQueryTimeRescopeDecision(BaseModel):
+    """Dedicated semantic parser for active-query time-only follow-ups."""
+
+    decision: Literal["time_only_rescope", "not_time_only"]
+    confidence: float | None = Field(default=None)
+    reason: str | None = Field(default=None)
+    extraction: QueryExtractionResult | None = Field(default=None)
+
+
 @dataclass
 class SemanticReasonerContext:
     """Context passed into the semantic reasoner."""

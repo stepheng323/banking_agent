@@ -1,7 +1,7 @@
 """Extraction step for query pipeline."""
 
 from datetime import date
-from typing import Any
+from typing import Any, cast
 
 from langchain_core.runnables import Runnable
 
@@ -19,18 +19,49 @@ from apps.core.src.agent.graphs.query.models import (
     TimeReference,
 )
 from apps.core.src.agent.graphs.query.pipeline import QueryStep
+from apps.core.src.agent.graphs.query.prompts.main import ACTIVE_QUERY_TIME_RESCOPE_PROMPT
 from apps.core.src.agent.graphs.query.services.continuity import (
     apply_filter_delta,
     apply_time_delta,
 )
 from apps.core.src.agent.graphs.query.services.parser import QueryParser
-from apps.core.src.agent.graphs.query.services.reasoner import QuerySemanticReasoner, SemanticReasonerContext
+from apps.core.src.agent.graphs.query.services.reasoner import (
+    ActiveQueryTimeRescopeDecision,
+    QuerySemanticReasoner,
+    SemanticReasonerContext,
+)
 from apps.core.src.agent.graphs.query.utils.timezone import lagos_today
 from apps.core.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
 from shared.i18n import LocaleManager, render_message
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
+
+
+class ActiveQueryTimeRescopeParser:
+    """Small semantic parser for time-only active-query follow-ups."""
+
+    def __init__(self, llm: Runnable):
+        self.structured_llm = cast(Any, llm).with_structured_output(ActiveQueryTimeRescopeDecision)
+
+    async def parse(
+        self,
+        *,
+        message: str,
+        today: date,
+        language: str,
+        query_contract: QueryExecutionContract,
+    ) -> ActiveQueryTimeRescopeDecision:
+        prompt = ACTIVE_QUERY_TIME_RESCOPE_PROMPT.format(
+            today=today.isoformat(),
+            language=language,
+            message=message,
+            current_query=query_contract.normalized_query.model_dump_json(),
+        )
+        decision = await self.structured_llm.ainvoke(prompt)
+        if decision.extraction is not None:
+            decision.extraction.raw_query = decision.extraction.raw_query or message
+        return decision
 
 
 class ExtractionStep(QueryStep):
@@ -41,6 +72,7 @@ class ExtractionStep(QueryStep):
     def __init__(self, llm: Runnable):
         self.parser = QueryParser(llm)
         self.reasoner = QuerySemanticReasoner(llm)
+        self.time_rescope_parser = ActiveQueryTimeRescopeParser(llm)
 
     @staticmethod
     def _semantic_trace_updates(decision: Any) -> dict[str, Any]:
@@ -177,39 +209,43 @@ class ExtractionStep(QueryStep):
         if candidate_extraction is None:
             return None
 
-        parsed_result = await self.parser.parse(message, today=today, language=language)
-        if parsed_result.outcome == ResolverOutcome.NEEDS_INPUT:
+        current_contract = QueryExecutionContract.from_normalized_query(original_query)
+        try:
+            decision = await self.time_rescope_parser.parse(
+                message=message,
+                today=today,
+                language=language,
+                query_contract=current_contract,
+            )
+        except Exception:
             return None
 
-        parsed_extraction = getattr(parsed_result, "extraction", None)
-        if not self._is_time_only_followup_shape(parsed_extraction, original_query=original_query):
+        if decision.decision != "time_only_rescope" or decision.extraction is None:
+            return None
+        if self._has_non_time_scope(decision.extraction):
+            return None
+        if not self._is_time_only_followup_shape(decision.extraction, original_query=original_query):
             return None
 
-        parsed_reference_type = parsed_extraction.time_range.reference_type if parsed_extraction and parsed_extraction.time_range else None
-        if parsed_reference_type in {TimeReference.EXPLICIT, TimeReference.ALL_TIME}:
-            query_contract = None
-            if isinstance(parsed_result.query_contract, dict):
-                try:
-                    query_contract = QueryExecutionContract.model_validate(parsed_result.query_contract)
-                except Exception:
-                    query_contract = None
-
-            if query_contract and query_contract.normalized_query.time_range is not None:
-                return query_contract.normalized_query.time_range
-
-            if parsed_extraction is not None and parsed_extraction.time_range is not None:
-                query_ir = self.parser.build_query_ir_from_extraction(parsed_extraction, today=today, language=language)
-                return query_ir.time_range
-
-        if parsed_reference_type not in {TimeReference.VAGUE}:
+        result = self.parser.resolve_existing_extraction(decision.extraction, today=today, language=language)
+        if result.outcome == ResolverOutcome.NEEDS_INPUT:
             return None
 
-        query_ir = self.parser.build_query_ir_from_extraction(
-            candidate_extraction,
-            today=today,
-            language=language,
-        )
-        return query_ir.time_range
+        query_contract = None
+        if isinstance(result.query_contract, dict):
+            try:
+                query_contract = QueryExecutionContract.model_validate(result.query_contract)
+            except Exception:
+                query_contract = None
+
+        if query_contract and query_contract.normalized_query.time_range is not None:
+            return query_contract.normalized_query.time_range
+
+        if result.extraction is not None and result.extraction.time_range is not None:
+            query_ir = self.parser.build_query_ir_from_extraction(result.extraction, today=today, language=language)
+            return query_ir.time_range
+
+        return None
 
     async def _resolve_time_delta_range(
         self,

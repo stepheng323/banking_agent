@@ -9,7 +9,7 @@ from shared.i18n import render_cancelled_prompt, render_locale_switched, render_
 from shared.types.planner import TurnRouteDecision
 
 
-async def test_gate_defers_greeting_meta_to_planner() -> None:
+async def test_gate_handles_greeting_meta_deterministically() -> None:
     state = OrchestratorState(
         user_id="u_gate_1",
         phone_number="2348777777777",
@@ -19,8 +19,9 @@ async def test_gate_defers_greeting_meta_to_planner() -> None:
     config: RunnableConfig = {"configurable": {}, "recursion_limit": 50}
 
     updates = await session_gate_fastpath(state, config)
-    assert "turn_context_summary" in updates
-    assert updates.get("semantic_path_shape") is None
+    assert updates["fast_path_triggered"] is True
+    assert updates["semantic_path_shape"] == "meta_direct"
+    assert updates["final_response"] == render_message("conversational.greeting", "en")
 
 
 async def test_gate_explicit_cancel_during_pending_interrupt_resets_immediately() -> None:
@@ -492,7 +493,7 @@ async def test_gate_turn_router_can_bypass_planner_with_direct_response() -> Non
         user_id="u_gate_5",
         phone_number="2348000000005",
         channel="whatsapp",
-        last_message_text="how far",
+        last_message_text="help me",
         loaded_context={"language": "en"},
     )
     config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}

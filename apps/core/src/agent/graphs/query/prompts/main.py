@@ -154,6 +154,50 @@ MULTILINGUAL
 Return STRICT JSON only.
 """
 
+ACTIVE_QUERY_TIME_RESCOPE_PROMPT = """
+You classify whether an active-query follow-up is ONLY changing the time window of the current query.
+Return STRICT JSON only that conforms to the provided schema.
+
+TODAY: {today}
+LANGUAGE: {language}
+USER MESSAGE: {message}
+
+CURRENT QUERY SNAPSHOT
+{current_query}
+
+RULES
+- Return decision="time_only_rescope" only when the user is keeping the same active query and changing only the time window.
+- If the user introduces any new recipient, amount, category, bank, transaction type, narration, ranking, comparison, pagination, drill-down, or other non-time change, return decision="not_time_only".
+- If the user is really asking a fresh/new query shape, return decision="not_time_only".
+- If decision="time_only_rescope", include `extraction` with only the time interpretation needed to resolve the new time window semantically.
+- Do not rely on keyword heuristics. Interpret the message semantically in the context of the current active query.
+
+EXAMPLES
+- Current query: "How much did I send to mum this week"
+  User: "What about last week"
+  -> decision="time_only_rescope", extraction.time_range.period="last_week"
+- Current query: "How much did I send to mum this week"
+  User: "What about yesterday"
+  -> decision="time_only_rescope", extraction.time_range.period="yesterday"
+- Current query: "How much did I send to mum this week"
+  User: "and last month?"
+  -> decision="time_only_rescope", extraction.time_range.period="last_month"
+- Current query: "How much did I send to mum this week"
+  User: "What about dad last week"
+  -> decision="not_time_only"
+- Current query: active transaction list
+  User: "who did I send money to the most this week"
+  -> decision="not_time_only"
+- Current query: active result
+  User: "show them"
+  -> decision="not_time_only"
+- Current query: active result
+  User: "more"
+  -> decision="not_time_only"
+
+Return STRICT JSON only.
+"""
+
 QUERY_PARSER_PROMPT = """
 You extract structured parameters for a banking transaction query.
 Return data that conforms exactly to the provided schema.
