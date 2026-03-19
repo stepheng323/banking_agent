@@ -9,6 +9,7 @@ from apps.core.src.agent.graphs.query.models import (
     AmbiguityCode,
     PendingClarificationState,
     QueryExecutionContract,
+    QueryExtractionResult,
     QueryIntent,
     QueryResultItem,
     ResolverOutcome,
@@ -132,7 +133,18 @@ class ExtractionStep(QueryStep):
                 return query_ir.time_range, None
 
         if decision.time_period:
-            return self.parser.parse_clarification_time_range(decision.time_period, today=today), None
+            parsed_time_range = self.parser.parse_clarification_time_range(decision.time_period, today=today)
+            if parsed_time_range is None:
+                return None, None
+            query_ir = self.parser.build_query_ir_from_extraction(
+                QueryExtractionResult(
+                    time_range=parsed_time_range,
+                    raw_query=message,
+                ),
+                today=today,
+                language=language,
+            )
+            return query_ir.time_range, None
 
         return None, None
 
