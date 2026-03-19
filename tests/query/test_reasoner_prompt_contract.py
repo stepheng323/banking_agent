@@ -66,7 +66,7 @@ def test_query_reasoner_prompt_covers_weekly_scope_replacement_transcript() -> N
     assert '"Show them" or "show me" after that summary -> continuation_type="show_more" and followup_intent="refine_existing"' in (
         QUERY_SEMANTIC_REASONER_PROMPT
     )
-    assert '"Only this week\'s" after that summary/list -> continuation_type="time_delta" and followup_intent="replace_scope"' in (
+    assert '"Only today", "Only this week\'s", or "for last month only" after that summary/list -> continuation_type="time_delta" and followup_intent="replace_scope"' in (
         QUERY_SEMANTIC_REASONER_PROMPT
     )
     assert '"more" or "next page" on that list -> continuation_type="show_more" and followup_intent="continue_pagination"' in (
