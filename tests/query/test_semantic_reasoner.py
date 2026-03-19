@@ -213,6 +213,42 @@ async def test_reasoner_uses_llm_for_active_result_appreciation_reaction() -> No
 
 
 @pytest.mark.asyncio
+async def test_reasoner_ends_active_result_session_for_thank_you_with_emoji_without_llm() -> None:
+    llm = _TrackingLLM(
+        QuerySemanticDecision(
+            decision="continuation",
+            confidence=0.9,
+            reason="should_not_be_used",
+            continuation_type="conversational",
+        )
+    )
+    reasoner = QuerySemanticReasoner(llm)
+    surface = ResultSurface(type=SurfaceType.SUMMARY, items=[], context={"type": "spending_total"})
+
+    decision = await reasoner.reason(
+        SemanticReasonerContext(
+            message="Thank you 😊",
+            today=date(2026, 3, 13),
+            language="en",
+            query_contract=QueryExecutionContract(
+                intent=QueryIntent.ANALYTICS_SUMMARY,
+                time_start=date(2026, 3, 9),
+                time_end=date(2026, 3, 13),
+                normalized_query=NormalizedQuery(
+                    intent=QueryIntent.ANALYTICS_SUMMARY,
+                    time_range=TimeRange(start=date(2026, 3, 9), end=date(2026, 3, 13)),
+                ),
+            ),
+            surface=surface,
+        )
+    )
+
+    assert decision.decision == "end_session"
+    assert decision.reason == "deterministic_end_session"
+    assert llm.structured.calls == 0
+
+
+@pytest.mark.asyncio
 async def test_reasoner_logs_deterministic_surface_action_without_llm(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -449,6 +485,47 @@ async def test_reasoner_passes_through_possessive_week_replace_scope_followup_in
 
 
 @pytest.mark.asyncio
+async def test_reasoner_passes_through_contrastive_last_week_replace_scope_followup_intent() -> None:
+    llm = _TrackingLLM(
+        QuerySemanticDecision(
+            decision="continuation",
+            confidence=0.94,
+            reason="llm_replace_scope_last_week_contrastive",
+            continuation_type="time_delta",
+            followup_intent="replace_scope",
+            time_range=TimeRange(start=date(2026, 3, 9), end=date(2026, 3, 15), granularity="week"),
+        )
+    )
+    reasoner = QuerySemanticReasoner(llm)
+
+    decision = await reasoner.reason(
+        SemanticReasonerContext(
+            message="What about last week",
+            today=date(2026, 3, 19),
+            language="en",
+            query_contract=QueryExecutionContract(
+                intent=QueryIntent.ANALYTICS_SUMMARY,
+                time_start=date(2026, 3, 16),
+                time_end=date(2026, 3, 19),
+                normalized_query=NormalizedQuery(
+                    intent=QueryIntent.ANALYTICS_SUMMARY,
+                    time_range=TimeRange(start=date(2026, 3, 16), end=date(2026, 3, 19)),
+                    filters=Filters(transaction_type="debit", merchant=["mum"]),
+                ),
+            ),
+            surface=ResultSurface(type=SurfaceType.SUMMARY, items=[], context={"type": "spending_total"}),
+        )
+    )
+
+    assert decision.continuation_type == "time_delta"
+    assert decision.followup_intent == "replace_scope"
+    assert decision.time_range is not None
+    assert decision.time_range.start == date(2026, 3, 9)
+    assert decision.time_range.end == date(2026, 3, 15)
+    assert llm.structured.calls == 1
+
+
+@pytest.mark.asyncio
 async def test_reasoner_passes_through_today_replace_scope_followup_intent() -> None:
     llm = _TrackingLLM(
         QuerySemanticDecision(
@@ -486,6 +563,47 @@ async def test_reasoner_passes_through_today_replace_scope_followup_intent() -> 
     assert decision.time_range is not None
     assert decision.time_range.start == date(2026, 3, 19)
     assert decision.time_range.end == date(2026, 3, 19)
+    assert llm.structured.calls == 1
+
+
+@pytest.mark.asyncio
+async def test_reasoner_passes_through_contrastive_yesterday_replace_scope_followup_intent() -> None:
+    llm = _TrackingLLM(
+        QuerySemanticDecision(
+            decision="continuation",
+            confidence=0.93,
+            reason="llm_replace_scope_yesterday_contrastive",
+            continuation_type="time_delta",
+            followup_intent="replace_scope",
+            time_range=TimeRange(start=date(2026, 3, 18), end=date(2026, 3, 18), granularity="day"),
+        )
+    )
+    reasoner = QuerySemanticReasoner(llm)
+
+    decision = await reasoner.reason(
+        SemanticReasonerContext(
+            message="what about yesterday",
+            today=date(2026, 3, 19),
+            language="en",
+            query_contract=QueryExecutionContract(
+                intent=QueryIntent.TRANSACTION_LIST,
+                time_start=date(2026, 3, 16),
+                time_end=date(2026, 3, 19),
+                normalized_query=NormalizedQuery(
+                    intent=QueryIntent.TRANSACTION_LIST,
+                    time_range=TimeRange(start=date(2026, 3, 16), end=date(2026, 3, 19)),
+                    filters=Filters(transaction_type="debit"),
+                ),
+            ),
+            surface=ResultSurface(type=SurfaceType.LIST, items=[], context={"type": "transaction_list"}),
+        )
+    )
+
+    assert decision.continuation_type == "time_delta"
+    assert decision.followup_intent == "replace_scope"
+    assert decision.time_range is not None
+    assert decision.time_range.start == date(2026, 3, 18)
+    assert decision.time_range.end == date(2026, 3, 18)
     assert llm.structured.calls == 1
 
 

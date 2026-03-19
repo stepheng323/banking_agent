@@ -63,10 +63,16 @@ def test_query_reasoner_prompt_covers_weekly_scope_replacement_transcript() -> N
     assert '"How much did I spend this week" -> fresh/new query with explicit this_week aggregate spend shape' in (
         QUERY_SEMANTIC_REASONER_PROMPT
     )
+    assert '"How much did I send to mum this week" -> fresh/new query with recipient + debit + this_week aggregate spend shape' in (
+        QUERY_SEMANTIC_REASONER_PROMPT
+    )
     assert '"Show them" or "show me" after that summary -> continuation_type="show_more" and followup_intent="refine_existing"' in (
         QUERY_SEMANTIC_REASONER_PROMPT
     )
     assert '"Only today", "Only this week\'s", or "for last month only" after that summary/list -> continuation_type="time_delta" and followup_intent="replace_scope"' in (
+        QUERY_SEMANTIC_REASONER_PROMPT
+    )
+    assert '"What about last week", "what about yesterday", or "and last month?" after that summary/list -> continuation_type="time_delta" and followup_intent="replace_scope"' in (
         QUERY_SEMANTIC_REASONER_PROMPT
     )
     assert '"more" or "next page" on that list -> continuation_type="show_more" and followup_intent="continue_pagination"' in (
@@ -97,5 +103,8 @@ def test_query_reasoner_prompt_covers_generic_timeframe_scope_replacement() -> N
         QUERY_SEMANTIC_REASONER_PROMPT
     )
     assert '"Only today", "Only this week\'s", or "for last month only" after that summary/list -> continuation_type="time_delta" and followup_intent="replace_scope"' in (
+        QUERY_SEMANTIC_REASONER_PROMPT
+    )
+    assert '"What about last week", "what about yesterday", or "and last month?" after that summary/list -> continuation_type="time_delta" and followup_intent="replace_scope"' in (
         QUERY_SEMANTIC_REASONER_PROMPT
     )

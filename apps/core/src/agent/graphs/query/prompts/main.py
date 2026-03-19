@@ -102,12 +102,16 @@ CONTINUATION RULES
   - do not guess continuation behavior from short phrases or keyword patterns alone
   - explicit time narrowing/replacement like "only today", "just this week", "for yesterday only",
     "only this month's", or "for last month only" is scope replacement, not pagination
+  - contrastive time follow-ups like "what about last week", "what about yesterday",
+    "how about this month", or "and last month?" are also scope replacement when they refer to the active result
   - examples:
     - "How much did I spend today" -> fresh/new query with explicit today aggregate spend shape
     - "How much did I spend this week" -> fresh/new query with explicit this_week aggregate spend shape
     - "How much did I spend last month" -> fresh/new query with explicit last_month aggregate spend shape
+    - "How much did I send to mum this week" -> fresh/new query with recipient + debit + this_week aggregate spend shape
     - "Show them" or "show me" after that summary -> continuation_type="show_more" and followup_intent="refine_existing"
     - "Only today", "Only this week's", or "for last month only" after that summary/list -> continuation_type="time_delta" and followup_intent="replace_scope"
+    - "What about last week", "what about yesterday", or "and last month?" after that summary/list -> continuation_type="time_delta" and followup_intent="replace_scope"
     - "more" or "next page" on that list -> continuation_type="show_more" and followup_intent="continue_pagination"
 
 ACTIVE-RESULT FACT BOUNDARY

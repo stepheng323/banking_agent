@@ -469,6 +469,54 @@ async def test_weekly_summary_show_them_then_only_this_weeks_replaces_scope_and_
 
 
 @pytest.mark.asyncio
+async def test_summary_contrastive_last_week_replaces_scope_and_preserves_recipient_and_debit_filters() -> None:
+    step = ExtractionStep(_DummyLLM())
+    today = date(2026, 3, 19)
+    session_query = NormalizedQuery(
+        intent=QueryIntent.ANALYTICS_SUMMARY,
+        time_range=TimeRange(start=date(2026, 3, 16), end=today, granularity="week"),
+        filters=Filters(transaction_type="debit", merchant=["mum"]),
+    )
+    session_contract = QueryExecutionContract.from_normalized_query(session_query)
+
+    async def _fake_reason(context: object) -> QuerySemanticDecision:
+        del context
+        return QuerySemanticDecision(
+            decision="continuation",
+            continuation_type="time_delta",
+            followup_intent="replace_scope",
+            time_range=TimeRange(start=date(2026, 3, 9), end=date(2026, 3, 15), granularity="week"),
+            delta_type="time",
+            confidence=0.96,
+            reason="llm_replace_scope_last_week_contrastive",
+        )
+
+    step.reasoner.reason = _fake_reason  # type: ignore[method-assign]
+
+    updates = await step._handle_continuation(
+        {"message": "What about last week", "today": today, "language": "en"},
+        {
+            "session_active": True,
+            "query_contract": session_contract.model_dump(),
+            "query_result": {"items": []},
+            "current_page": 2,
+            "show_expanded": True,
+        },
+    )
+
+    query = updates["query_contract"].normalized_query
+    assert query.intent == QueryIntent.ANALYTICS_SUMMARY
+    assert query.time_range is not None
+    assert query.time_range.start == date(2026, 3, 9)
+    assert query.time_range.end == date(2026, 3, 15)
+    assert query.filters is not None
+    assert query.filters.transaction_type == "debit"
+    assert query.filters.merchant == ["mum"]
+    assert updates["current_page"] == 0
+    assert updates["show_expanded"] is False
+
+
+@pytest.mark.asyncio
 async def test_summary_only_today_replaces_scope_and_preserves_filters() -> None:
     step = ExtractionStep(_DummyLLM())
     today = date(2026, 3, 19)
