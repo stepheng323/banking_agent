@@ -40,6 +40,7 @@ from shared.repositories.actionable_message_repository import ActionableMessageR
 from shared.repositories.beneficiary_repository import BeneficiaryRepository
 from shared.repositories.user_repository import UserRepository
 from shared.services.context_manager import ContextManager
+from shared.services.delivery_service import DeliveryAttemptResult
 from shared.services.task_planner import OrchestratorTaskPlanner
 from shared.utils.async_helpers import create_background_task
 from shared.utils.logging import get_logger
@@ -115,7 +116,6 @@ class OrchestratorGraphHandler:
     async def _deliver_progress_update(
         self,
         *,
-        tracker: TurnProgressTracker,
         phone_number: str,
         channel: str,
         text: str,
@@ -123,25 +123,36 @@ class OrchestratorGraphHandler:
         thread_id: str,
         stage_key: str,
         progress_count: int,
-    ) -> None:
+        turn_id: str,
+    ) -> DeliveryAttemptResult:
         try:
-            await enqueue_outbox_say(
+            result = await enqueue_outbox_say(
                 self.publisher,
                 phone_number,
                 channel,
                 text,
                 metadata=metadata,
             )
+            logger.info(
+                "progress_delivery_attempt",
+                thread_id=thread_id,
+                turn_id=turn_id,
+                stage_key=stage_key,
+                progress_count_before_attempt=progress_count,
+                dedupe_key=metadata.get("dedupe_key"),
+                delivery_status=result.status,
+            )
+            return result
         except Exception as exc:
             logger.warning(
                 "progress_message_send_failed",
                 thread_id=thread_id,
+                turn_id=turn_id,
                 stage_key=stage_key,
                 progress_count=progress_count,
                 error=str(exc),
             )
-        finally:
-            await tracker.record_progress_sent()
+            return DeliveryAttemptResult(status="failed", error=str(exc))
 
     async def _ensure_checkpointer(self) -> None:
         """Ensure checkpointer is initialized."""
@@ -257,7 +268,9 @@ class OrchestratorGraphHandler:
         channel_identity: str | None,
         inbound_message_id: str | None,
         thread_id: str,
+        turn_id: str,
     ) -> None:
+        deduped_progress_keys: set[str] = set()
         try:
             while True:
                 snapshot = await tracker.snapshot()
@@ -289,15 +302,20 @@ class OrchestratorGraphHandler:
                     locale=snapshot.locale,
                     stage_metadata=snapshot.stage_metadata,
                 )
+                dedupe_key = f"{thread_id}:{turn_id}:progress:{snapshot.progress_count}:{snapshot.stage_key}"
+                if dedupe_key in deduped_progress_keys:
+                    await tracker.wait_for_update(PROGRESS_POLL_INTERVAL_SECONDS)
+                    continue
                 metadata = {
-                    "dedupe_key": f"{thread_id}:progress:{snapshot.progress_count}:{snapshot.stage_key}",
+                    "dedupe_key": dedupe_key,
                     "progress_stage": snapshot.stage_key,
                     "progress_count": snapshot.progress_count,
+                    "progress_turn_id": turn_id,
+                    "inbound_message_id": inbound_message_id,
                     "force_typing_indicator": True,
                 }
                 delivery_task = asyncio.create_task(
                     self._deliver_progress_update(
-                        tracker=tracker,
                         phone_number=phone_number,
                         channel=channel,
                         text=text,
@@ -305,13 +323,19 @@ class OrchestratorGraphHandler:
                         thread_id=thread_id,
                         stage_key=snapshot.stage_key,
                         progress_count=snapshot.progress_count,
+                        turn_id=turn_id,
                     )
                 )
                 try:
-                    await asyncio.shield(delivery_task)
+                    delivery_result = await asyncio.shield(delivery_task)
                 except asyncio.CancelledError:
                     await delivery_task
                     raise
+                if delivery_result.delivered:
+                    await tracker.record_progress_sent()
+                    continue
+                if delivery_result.status in {"deduped_completed", "deduped_resumed"}:
+                    deduped_progress_keys.add(dedupe_key)
         except asyncio.CancelledError:
             raise
 
@@ -374,6 +398,7 @@ class OrchestratorGraphHandler:
                 progress_tracker = TurnProgressTracker(locale=loaded_context["language"])
                 config["configurable"]["progress_tracker"] = progress_tracker
                 thread_id = config["configurable"]["thread_id"]
+                turn_id = context.message_id or f"invoke-{time.monotonic_ns()}"
                 progress_task = asyncio.create_task(
                     self._run_progress_updates(
                         tracker=progress_tracker,
@@ -382,6 +407,7 @@ class OrchestratorGraphHandler:
                         channel_identity=context.channel_identity,
                         inbound_message_id=context.message_id,
                         thread_id=thread_id,
+                        turn_id=turn_id,
                     ),
                     name="orchestrator_progress_updates",
                 )

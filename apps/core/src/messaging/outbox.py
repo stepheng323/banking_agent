@@ -4,7 +4,7 @@ from typing import Any
 
 from apps.core.src.agent.orchestrator.models.intents import Say, UiIntent
 from shared.queue.adapter import QueuePublisher
-from shared.services.delivery_service import DeliveryService
+from shared.services.delivery_service import DeliveryAttemptResult, DeliveryService
 
 _delivery_service: DeliveryService | None = None
 
@@ -22,7 +22,7 @@ async def enqueue_outbox_intents(
     channel: str,
     intents: list[UiIntent | dict[str, Any]],
     metadata: dict[str, Any] | None = None,
-) -> None:
+) -> DeliveryAttemptResult:
     """Deliver intents directly.
 
     The publisher argument is intentionally retained for backwards
@@ -31,13 +31,13 @@ async def enqueue_outbox_intents(
     del publisher
 
     if not intents:
-        return
+        return DeliveryAttemptResult(status="delivered")
 
     dedupe_key = None
     if metadata:
         dedupe_key = metadata.get("message_id") or metadata.get("idempotency_key") or metadata.get("dedupe_key")
 
-    await _get_delivery_service().deliver_intents(
+    return await _get_delivery_service().deliver_intents(
         phone_number=phone_number,
         channel=channel,
         intents=intents,
@@ -52,8 +52,8 @@ async def enqueue_outbox_say(
     channel: str,
     text: str,
     metadata: dict[str, Any] | None = None,
-) -> None:
+) -> DeliveryAttemptResult:
     """Deliver one text message directly."""
     if not text:
-        return
-    await enqueue_outbox_intents(publisher, phone_number, channel, [Say(text=text)], metadata=metadata)
+        return DeliveryAttemptResult(status="delivered")
+    return await enqueue_outbox_intents(publisher, phone_number, channel, [Say(text=text)], metadata=metadata)

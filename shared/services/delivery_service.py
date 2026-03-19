@@ -5,9 +5,10 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Awaitable, Sequence
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from inspect import isawaitable
-from typing import Any, TypeVar, cast
+from typing import Any, Literal, TypeVar, cast
 
 from sqlalchemy.exc import IntegrityError
 
@@ -27,6 +28,20 @@ from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
 _T = TypeVar("_T")
+DeliveryAttemptStatus = Literal["delivered", "deduped_completed", "deduped_resumed", "failed"]
+
+
+@dataclass(frozen=True, slots=True)
+class DeliveryAttemptResult:
+    """Structured direct-delivery outcome for internal callers."""
+
+    status: DeliveryAttemptStatus
+    message_ids: tuple[str, ...] = field(default_factory=tuple)
+    error: str | None = None
+
+    @property
+    def delivered(self) -> bool:
+        return self.status == "delivered"
 
 
 async def _await_maybe(value: _T | Awaitable[_T]) -> _T:
@@ -72,7 +87,7 @@ class DeliveryService:
         metadata: dict[str, Any] | None = None,
         dedupe_key: str | None = None,
         strict_actionable: bool = False,
-    ) -> bool:
+    ) -> DeliveryAttemptResult:
         """Deliver plain text using the same pipeline as intent delivery."""
         return await self.deliver_intents(
             phone_number=phone_number,
@@ -91,11 +106,11 @@ class DeliveryService:
         metadata: dict[str, Any] | None = None,
         dedupe_key: str | None = None,
         strict_actionable: bool = False,
-    ) -> bool:
+    ) -> DeliveryAttemptResult:
         """Deliver UI intents directly via channel clients."""
         ui_intents = self._normalize_intents(intents)
         if not ui_intents:
-            return True
+            return DeliveryAttemptResult(status="delivered")
 
         ledger_key, payload_hash = self._build_ledger_key(
             phone_number=phone_number,
@@ -111,9 +126,10 @@ class DeliveryService:
                 channel=channel,
                 intents=ui_intents,
                 strict_actionable=strict_actionable,
+                metadata=metadata or {},
             )
-            if resumed:
-                return True
+            if resumed is not None:
+                return resumed
 
             await _await_maybe(self.redis.hset(ledger_key, mapping={"status": "pending", "payload_hash": payload_hash}))
             await _await_maybe(self.redis.expire(ledger_key, 86400))
@@ -152,7 +168,7 @@ class DeliveryService:
 
         if ledger_key:
             await _await_maybe(self.redis.hset(ledger_key, mapping={"status": "completed"}))
-        return True
+        return DeliveryAttemptResult(status="delivered", message_ids=tuple(result.message_ids))
 
     @staticmethod
     def _normalize_intents(intents: Sequence[UiIntent | dict[str, Any]]) -> list[UiIntent]:
@@ -199,14 +215,20 @@ class DeliveryService:
         channel: str,
         intents: list[UiIntent],
         strict_actionable: bool,
-    ) -> bool:
+        metadata: dict[str, Any],
+    ) -> DeliveryAttemptResult | None:
         status = await _await_maybe(self.redis.hget(ledger_key, "status"))
         if status == "completed":
             logger.info("delivery_dedupe_hit", ledger_key=ledger_key, status=status)
-            return True
+            self._log_progress_dedupe(
+                status="deduped_completed",
+                ledger_key=ledger_key,
+                metadata=metadata,
+            )
+            return DeliveryAttemptResult(status="deduped_completed")
 
         if status != "sent":
-            return False
+            return None
 
         message_ids_raw = await _await_maybe(self.redis.hget(ledger_key, "message_ids"))
         message_ids = []
@@ -227,7 +249,31 @@ class DeliveryService:
         )
         await _await_maybe(self.redis.hset(ledger_key, mapping={"status": "completed"}))
         logger.info("delivery_dedupe_resume_completed", ledger_key=ledger_key)
-        return True
+        self._log_progress_dedupe(
+            status="deduped_resumed",
+            ledger_key=ledger_key,
+            metadata=metadata,
+        )
+        return DeliveryAttemptResult(status="deduped_resumed", message_ids=tuple(message_ids))
+
+    @staticmethod
+    def _log_progress_dedupe(
+        *,
+        status: DeliveryAttemptStatus,
+        ledger_key: str,
+        metadata: dict[str, Any],
+    ) -> None:
+        progress_stage = metadata.get("progress_stage")
+        if not isinstance(progress_stage, str) or not progress_stage:
+            return
+        logger.info(
+            "delivery_progress_dedupe_hit",
+            status=status,
+            ledger_key=ledger_key,
+            progress_stage=progress_stage,
+            turn_id=metadata.get("progress_turn_id"),
+            dedupe_key=metadata.get("dedupe_key"),
+        )
 
     async def _persist_actionable_if_any(
         self,

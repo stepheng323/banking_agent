@@ -8,6 +8,7 @@ import pytest
 from apps.core.src.agent.orchestrator.graph.handler import OrchestratorGraphHandler
 from apps.core.src.agent.orchestrator.models.message_context import MessageContext
 from apps.core.src.agent.orchestrator.progress import MAX_PROGRESS_MESSAGES, TurnProgressSnapshot
+from shared.services.delivery_service import DeliveryAttemptResult
 
 
 class _CheckpointerStub:
@@ -387,6 +388,7 @@ async def test_progress_update_finishes_when_progress_task_is_cancelled(monkeypa
         delivery_events.append("started")
         await asyncio.sleep(0.01)
         delivery_events.append("finished")
+        return DeliveryAttemptResult(status="delivered")
 
     monkeypatch.setattr("apps.core.src.agent.orchestrator.graph.handler.enqueue_outbox_say", _enqueue_outbox_say)
 
@@ -419,6 +421,7 @@ async def test_progress_update_finishes_when_progress_task_is_cancelled(monkeypa
             channel_identity="2348000000003",
             inbound_message_id="wamid.33",
             thread_id="whatsapp:2348000000003",
+            turn_id="wamid.33",
         )
     )
     await asyncio.sleep(0)
@@ -452,9 +455,10 @@ async def test_progress_task_waits_through_non_visible_stage_until_visible_stage
 
     delivery_events: list[str] = []
 
-    async def _enqueue_outbox_say(*args, **kwargs) -> None:
+    async def _enqueue_outbox_say(*args, **kwargs) -> DeliveryAttemptResult:
         del args, kwargs
         delivery_events.append("sent")
+        return DeliveryAttemptResult(status="delivered")
 
     monkeypatch.setattr("apps.core.src.agent.orchestrator.graph.handler.enqueue_outbox_say", _enqueue_outbox_say)
 
@@ -533,6 +537,7 @@ async def test_progress_task_waits_through_non_visible_stage_until_visible_stage
             channel_identity="2348000000004",
             inbound_message_id="wamid.44",
             thread_id="whatsapp:2348000000004",
+            turn_id="wamid.44",
         )
     )
     await asyncio.sleep(0.01)
@@ -541,3 +546,184 @@ async def test_progress_task_waits_through_non_visible_stage_until_visible_stage
     await progress_task
 
     assert delivery_events == ["sent"]
+
+
+@pytest.mark.asyncio
+async def test_progress_dedupe_keys_are_turn_scoped_by_inbound_message_id(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    graph = _GraphStub()
+    monkeypatch.setattr(
+        "apps.core.src.agent.orchestrator.graph.handler.AsyncRedisSaver",
+        lambda redis_client: _CheckpointerStub(),
+    )
+    monkeypatch.setattr(
+        "apps.core.src.agent.orchestrator.graph.handler.build_orchestrator_graph",
+        lambda checkpointer: graph,
+    )
+    monkeypatch.setattr("apps.core.src.agent.orchestrator.graph.handler.should_emit_progress", lambda snapshot: True)
+    monkeypatch.setattr("apps.core.src.agent.orchestrator.graph.handler.seconds_until_progress_eligible", lambda snapshot: 0.0)
+    monkeypatch.setattr(
+        "apps.core.src.agent.orchestrator.graph.handler.next_progress_delay_seconds",
+        lambda stage_key, progress_count: 0.0,
+    )
+
+    dedupe_keys: list[str] = []
+
+    async def _enqueue_outbox_say(*args, **kwargs) -> DeliveryAttemptResult:
+        metadata = kwargs.get("metadata", {})
+        dedupe_keys.append(str(metadata["dedupe_key"]))
+        return DeliveryAttemptResult(status="delivered")
+
+    monkeypatch.setattr("apps.core.src.agent.orchestrator.graph.handler.enqueue_outbox_say", _enqueue_outbox_say)
+
+    handler = OrchestratorGraphHandler(
+        task_planner=SimpleNamespace(),
+        transfer_service=SimpleNamespace(),
+        airtime_service=SimpleNamespace(),
+        query_service=SimpleNamespace(),
+        data_service=SimpleNamespace(),
+        account_service=SimpleNamespace(),
+        support_service=SimpleNamespace(),
+        faq_service=SimpleNamespace(),
+        user_repo=SimpleNamespace(),
+        beneficiary_repo=SimpleNamespace(),
+        account_repo=SimpleNamespace(),
+        actionable_message_repo=SimpleNamespace(),
+        banking_provider=SimpleNamespace(),
+        context_manager=_ContextManagerStub(),
+        redis_client=SimpleNamespace(),
+        publisher=SimpleNamespace(),
+        beneficiary_suggestion_service=SimpleNamespace(),
+    )
+
+    tracker_a = _ProgressTrackerStub(progress_count=0, last_progress_sent_at=None)
+    tracker_b = _ProgressTrackerStub(progress_count=0, last_progress_sent_at=None)
+
+    async def _stop_after_first_send(self) -> None:
+        self.progress_count = MAX_PROGRESS_MESSAGES
+
+    tracker_a.record_progress_sent = _stop_after_first_send.__get__(tracker_a, _ProgressTrackerStub)
+    tracker_b.record_progress_sent = _stop_after_first_send.__get__(tracker_b, _ProgressTrackerStub)
+
+    task_a = asyncio.create_task(
+        handler._run_progress_updates(
+            tracker=tracker_a,
+            phone_number="2348000000006",
+            channel="telegram",
+            channel_identity="123",
+            inbound_message_id="tg.1",
+            thread_id="telegram:2348000000006",
+            turn_id="tg.1",
+        )
+    )
+    task_b = asyncio.create_task(
+        handler._run_progress_updates(
+            tracker=tracker_b,
+            phone_number="2348000000006",
+            channel="telegram",
+            channel_identity="123",
+            inbound_message_id="tg.2",
+            thread_id="telegram:2348000000006",
+            turn_id="tg.2",
+        )
+    )
+
+    await asyncio.sleep(0.01)
+    task_a.cancel()
+    task_b.cancel()
+    await asyncio.gather(task_a, task_b, return_exceptions=True)
+
+    assert len(dedupe_keys) == 2
+    assert dedupe_keys[0] != dedupe_keys[1]
+    assert "tg.1" in dedupe_keys[0]
+    assert "tg.2" in dedupe_keys[1]
+
+
+@pytest.mark.asyncio
+async def test_deduped_progress_attempt_does_not_advance_progress_or_suppress_typing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    graph = _GraphStub()
+    monkeypatch.setattr(
+        "apps.core.src.agent.orchestrator.graph.handler.AsyncRedisSaver",
+        lambda redis_client: _CheckpointerStub(),
+    )
+    monkeypatch.setattr(
+        "apps.core.src.agent.orchestrator.graph.handler.build_orchestrator_graph",
+        lambda checkpointer: graph,
+    )
+    monkeypatch.setattr("apps.core.src.agent.orchestrator.graph.handler.should_emit_progress", lambda snapshot: True)
+    monkeypatch.setattr("apps.core.src.agent.orchestrator.graph.handler.seconds_until_progress_eligible", lambda snapshot: 0.0)
+    monkeypatch.setattr(
+        "apps.core.src.agent.orchestrator.graph.handler.next_progress_delay_seconds",
+        lambda stage_key, progress_count: 0.0,
+    )
+
+    class _SingleSnapshotTracker:
+        def __init__(self) -> None:
+            self.record_calls = 0
+
+        async def snapshot(self) -> TurnProgressSnapshot:
+            return TurnProgressSnapshot(
+                stage_key="query.fetching_transactions",
+                started_at=0.0,
+                stage_started_at=0.0,
+                last_progress_sent_at=None,
+                progress_count=0,
+                stage_metadata={"scope_label": "what you sent to mum"},
+                locale="en",
+            )
+
+        async def wait_for_update(self, timeout_seconds: float | None = None) -> None:
+            del timeout_seconds
+            await asyncio.sleep(0)
+
+        async def record_progress_sent(self) -> None:
+            self.record_calls += 1
+
+    async def _enqueue_outbox_say(*args, **kwargs) -> DeliveryAttemptResult:
+        del args, kwargs
+        return DeliveryAttemptResult(status="deduped_completed")
+
+    monkeypatch.setattr("apps.core.src.agent.orchestrator.graph.handler.enqueue_outbox_say", _enqueue_outbox_say)
+
+    handler = OrchestratorGraphHandler(
+        task_planner=SimpleNamespace(),
+        transfer_service=SimpleNamespace(),
+        airtime_service=SimpleNamespace(),
+        query_service=SimpleNamespace(),
+        data_service=SimpleNamespace(),
+        account_service=SimpleNamespace(),
+        support_service=SimpleNamespace(),
+        faq_service=SimpleNamespace(),
+        user_repo=SimpleNamespace(),
+        beneficiary_repo=SimpleNamespace(),
+        account_repo=SimpleNamespace(),
+        actionable_message_repo=SimpleNamespace(),
+        banking_provider=SimpleNamespace(),
+        context_manager=_ContextManagerStub(),
+        redis_client=SimpleNamespace(),
+        publisher=SimpleNamespace(),
+        beneficiary_suggestion_service=SimpleNamespace(),
+    )
+
+    tracker = _SingleSnapshotTracker()
+    progress_task = asyncio.create_task(
+        handler._run_progress_updates(
+            tracker=tracker,
+            phone_number="2348000000007",
+            channel="telegram",
+            channel_identity="123",
+            inbound_message_id="tg.3",
+            thread_id="telegram:2348000000007",
+            turn_id="tg.3",
+        )
+    )
+    await asyncio.sleep(0.01)
+    progress_task.cancel()
+    await asyncio.gather(progress_task, return_exceptions=True)
+
+    snapshot = await tracker.snapshot()
+    assert tracker.record_calls == 0
+    assert handler._delivery_metadata_from_progress_snapshot(snapshot) == {}
