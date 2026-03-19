@@ -49,6 +49,11 @@ RULES
 - Use only for active result-session follow-ups.
 - Include `continuation_type` and the relevant structured continuation fields.
 - `followup_intent` is required for every continuation decision, even when it is `none`.
+- For `continuation_type="time_delta"`, include `time_range` when you can resolve exact dates.
+- If the user names a natural period like "last week", "yesterday", or "this month" and exact dates are not explicit,
+  include `time_period` with that natural period phrase so the system can resolve it deterministically.
+- For broader time expressions, prefer including `extraction` for the follow-up so the system can resolve the new time window with the full query parser.
+- For `time_delta` continuations, any provided `extraction` is used only to resolve the new time window; the existing non-time filters stay anchored to the active query unless explicitly changed elsewhere.
 - Include `followup_intent` as one of:
   - refine_existing
   - replace_scope
@@ -111,7 +116,7 @@ CONTINUATION RULES
     - "How much did I send to mum this week" -> fresh/new query with recipient + debit + this_week aggregate spend shape
     - "Show them" or "show me" after that summary -> continuation_type="show_more" and followup_intent="refine_existing"
     - "Only today", "Only this week's", or "for last month only" after that summary/list -> continuation_type="time_delta" and followup_intent="replace_scope"
-    - "What about last week", "what about yesterday", or "and last month?" after that summary/list -> continuation_type="time_delta" and followup_intent="replace_scope"
+    - "What about last week", "what about yesterday", or "and last month?" after that summary/list -> continuation_type="time_delta", followup_intent="replace_scope", and include time_period or extraction for the new time window if exact dates are not explicit
     - "more" or "next page" on that list -> continuation_type="show_more" and followup_intent="continue_pagination"
 
 ACTIVE-RESULT FACT BOUNDARY

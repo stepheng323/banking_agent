@@ -12,9 +12,11 @@ from apps.core.src.agent.graphs.query.models import (
     QueryFilters,
     QueryIntent,
     QueryResultItem,
+    QueryTimeRange,
     ResultSurface,
     SurfaceType,
     TimeRange,
+    TimeReference,
 )
 from apps.core.src.agent.graphs.query.nodes.extraction import ExtractionStep
 from apps.core.src.agent.graphs.query.services.reasoner import (
@@ -604,6 +606,50 @@ async def test_reasoner_passes_through_contrastive_yesterday_replace_scope_follo
     assert decision.time_range is not None
     assert decision.time_range.start == date(2026, 3, 18)
     assert decision.time_range.end == date(2026, 3, 18)
+    assert llm.structured.calls == 1
+
+
+@pytest.mark.asyncio
+async def test_reasoner_passes_through_contrastive_last_week_replace_scope_with_extraction() -> None:
+    llm = _TrackingLLM(
+        QuerySemanticDecision(
+            decision="continuation",
+            confidence=0.94,
+            reason="llm_replace_scope_last_week_contrastive_extraction",
+            continuation_type="time_delta",
+            followup_intent="replace_scope",
+            extraction=QueryExtractionResult(
+                intent=ExtractionIntent.TRANSACTION_LIST,
+                time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="last_week"),
+            ),
+        )
+    )
+    reasoner = QuerySemanticReasoner(llm)
+
+    decision = await reasoner.reason(
+        SemanticReasonerContext(
+            message="What about last week",
+            today=date(2026, 3, 19),
+            language="en",
+            query_contract=QueryExecutionContract(
+                intent=QueryIntent.ANALYTICS_SUMMARY,
+                time_start=date(2026, 3, 16),
+                time_end=date(2026, 3, 19),
+                normalized_query=NormalizedQuery(
+                    intent=QueryIntent.ANALYTICS_SUMMARY,
+                    time_range=TimeRange(start=date(2026, 3, 16), end=date(2026, 3, 19)),
+                    filters=Filters(transaction_type="debit", merchant=["mum"]),
+                ),
+            ),
+            surface=ResultSurface(type=SurfaceType.SUMMARY, items=[], context={"type": "spending_total"}),
+        )
+    )
+
+    assert decision.continuation_type == "time_delta"
+    assert decision.followup_intent == "replace_scope"
+    assert decision.extraction is not None
+    assert decision.extraction.time_range is not None
+    assert decision.extraction.time_range.period == "last_week"
     assert llm.structured.calls == 1
 
 

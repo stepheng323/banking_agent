@@ -14,6 +14,7 @@ from apps.core.src.agent.graphs.query.models import (
     ResolverOutcome,
     ResultSurface,
     SurfaceType,
+    TimeRange,
 )
 from apps.core.src.agent.graphs.query.pipeline import QueryStep
 from apps.core.src.agent.graphs.query.services.continuity import (
@@ -96,6 +97,44 @@ class ExtractionStep(QueryStep):
             except Exception:
                 return None
         return None
+
+    def _resolve_time_delta_range(
+        self,
+        *,
+        decision: Any,
+        message: str,
+        today: date,
+        language: str,
+    ) -> tuple[TimeRange | None, str | None]:
+        if decision.time_range is not None:
+            return decision.time_range, None
+
+        extraction = getattr(decision, "extraction", None)
+        if extraction is not None:
+            if not extraction.raw_query:
+                extraction = extraction.model_copy(update={"raw_query": message})
+            result = self.parser.resolve_existing_extraction(extraction, today=today, language=language)
+            if result.outcome == ResolverOutcome.NEEDS_INPUT:
+                return None, result.resolver_message or render_message("query.clarify.default", language)
+
+            query_contract = None
+            if isinstance(result.query_contract, dict):
+                try:
+                    query_contract = QueryExecutionContract.model_validate(result.query_contract)
+                except Exception:
+                    query_contract = None
+
+            if query_contract and query_contract.normalized_query.time_range is not None:
+                return query_contract.normalized_query.time_range, None
+
+            if result.extraction is not None:
+                query_ir = self.parser.build_query_ir_from_extraction(result.extraction, today=today, language=language)
+                return query_ir.time_range, None
+
+        if decision.time_period:
+            return self.parser.parse_clarification_time_range(decision.time_period, today=today), None
+
+        return None, None
 
     async def run(self, state: dict[str, Any], worker_context: Any = None) -> TransactionResult:
         """Run extraction logic."""
@@ -317,16 +356,33 @@ class ExtractionStep(QueryStep):
                 return self._ambiguous_followup_updates(locale=locale, session=session)
 
         elif cont_type == "time_delta":
-            if original_query is None or decision.time_range is None:
+            resolved_time_range, clarification_message = self._resolve_time_delta_range(
+                decision=decision,
+                message=message,
+                today=today,
+                language=locale,
+            )
+
+            if original_query is None or resolved_time_range is None:
+                if clarification_message:
+                    return {
+                        "transaction_outcome": TransactionOutcome.NEEDS_INPUT,
+                        "response": clarification_message,
+                        "flow_state": "parsing",
+                        "session_active": True,
+                        "pending_clarification": None,
+                        "show_expanded": bool(session.get("show_expanded", False)),
+                        "current_page": session.get("current_page", 0),
+                    }
                 return self._ambiguous_followup_updates(locale=locale, session=session)
             if followup_intent == "continue_pagination" or followup_intent == "none":
                 return self._ambiguous_followup_updates(locale=locale, session=session)
 
             if followup_intent == "replace_scope":
                 new_query = original_query.model_copy(deep=True)
-                new_query.time_range = decision.time_range
+                new_query.time_range = resolved_time_range
             else:
-                new_query = apply_time_delta(original_query, decision.time_range)
+                new_query = apply_time_delta(original_query, resolved_time_range)
 
             if decision.result_limit is not None:
                 new_query.result_limit = decision.result_limit

@@ -610,6 +610,56 @@ async def test_summary_last_month_only_replaces_scope_and_preserves_debit_filter
 
 
 @pytest.mark.asyncio
+async def test_summary_contrastive_last_week_resolves_time_window_from_followup_extraction() -> None:
+    step = ExtractionStep(_DummyLLM())
+    today = date(2026, 3, 19)
+    session_query = NormalizedQuery(
+        intent=QueryIntent.ANALYTICS_SUMMARY,
+        time_range=TimeRange(start=date(2026, 3, 16), end=today, granularity="week"),
+        filters=Filters(transaction_type="debit", merchant=["mum"]),
+    )
+    session_contract = QueryExecutionContract.from_normalized_query(session_query)
+
+    async def _fake_reason(context: object) -> QuerySemanticDecision:
+        del context
+        return QuerySemanticDecision(
+            decision="continuation",
+            continuation_type="time_delta",
+            followup_intent="replace_scope",
+            extraction=QueryExtractionResult(
+                intent=ExtractionIntent.TRANSACTION_LIST,
+                time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="last_week"),
+            ),
+            delta_type="time",
+            confidence=0.96,
+            reason="llm_replace_scope_last_week_contrastive_extraction",
+        )
+
+    step.reasoner.reason = _fake_reason  # type: ignore[method-assign]
+
+    updates = await step._handle_continuation(
+        {"message": "What about last week", "today": today, "language": "en"},
+        {
+            "session_active": True,
+            "query_contract": session_contract.model_dump(),
+            "query_result": {"items": []},
+            "current_page": 1,
+            "show_expanded": True,
+        },
+    )
+
+    query = updates["query_contract"].normalized_query
+    assert query.time_range is not None
+    assert query.time_range.start == date(2026, 3, 9)
+    assert query.time_range.end == date(2026, 3, 15)
+    assert query.filters is not None
+    assert query.filters.transaction_type == "debit"
+    assert query.filters.merchant == ["mum"]
+    assert updates["current_page"] == 0
+    assert updates["show_expanded"] is False
+
+
+@pytest.mark.asyncio
 async def test_low_confidence_unclear_followup_requests_clarification() -> None:
     step = ExtractionStep(_DummyLLM())
     today = date(2026, 3, 14)
