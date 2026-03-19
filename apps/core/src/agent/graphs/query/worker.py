@@ -14,6 +14,7 @@ from langchain_core.runnables import Runnable
 from apps.core.src.agent.graphs.query.models import QueryExecutionContract, QueryIntent
 from apps.core.src.agent.graphs.query.nodes.execution import ExecutionStep
 from apps.core.src.agent.graphs.query.nodes.extraction import ExtractionStep
+from apps.core.src.agent.graphs.query.pipeline import QueryPipeline
 from apps.core.src.agent.graphs.query.session import QuerySessionManager, is_query_session_stale
 from apps.core.src.agent.graphs.query.utils.timezone import lagos_today
 from apps.core.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
@@ -22,6 +23,14 @@ from shared.i18n import LocaleManager, render_message
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
+
+
+class _InstrumentedQueryPipeline:
+    def __init__(self, worker: "QueryWorker") -> None:
+        self._worker = worker
+
+    async def run(self, state: dict[str, Any], worker_context: Any = None) -> TransactionResult:
+        return await self._worker._run_pipeline(state, worker_context)
 
 
 class QueryWorker:
@@ -40,6 +49,8 @@ class QueryWorker:
         # Initialize pipeline steps once
         self.extractor = ExtractionStep(llm)
         self.executor = ExecutionStep()
+        self._default_pipeline = QueryPipeline([self.extractor, self.executor])
+        self.pipeline: Any = _InstrumentedQueryPipeline(self)
 
     @staticmethod
     def _query_context_mode(state: dict[str, Any]) -> str:
@@ -175,13 +186,12 @@ class QueryWorker:
             "message": payload.get("message", ""),
             "force_new_query": bool(payload.get("force_new_query")),
             "phone_number": phone_number,
-            "account_id": payload.get("account_id"),  # Might come from previous context or current
+            "account_id": payload.get("account_id"),
             "account_ids": payload.get("account_ids"),
             "accounts": context.get("accounts", []),
             "language": locale,
             "query_session": query_session,
             "flow_state": "parsing",
-            # Default pagination params
             "current_page": query_session.get("current_page", 0),
             "page_size": 5,
             "today": today,
@@ -200,34 +210,12 @@ class QueryWorker:
 
         # 4. Run Pipeline
         try:
-            if worker_context.progress_tracker is not None:
-                await worker_context.progress_tracker.set_stage("query.resolving_timeframe")
-
-            extraction_result = cast(TransactionResult, await self.extractor.run(state, worker_context))
-            if extraction_result.patch:
-                state.update(extraction_result.patch)
-
-            if extraction_result.outcome != TransactionOutcome.OK:
-                result = self._finalize_result(extraction_result, state)
-            elif state.get("flow_state") != "executing":
-                result = self._finalize_result(extraction_result, state)
-            else:
-                await self._set_execution_progress_stage(state, worker_context)
-                execution_result = cast(TransactionResult, await self.executor.run(state, worker_context))
-                if execution_result.patch:
-                    state.update(execution_result.patch)
-                result = self._finalize_result(execution_result, state)
-
+            result = cast(TransactionResult, await self.pipeline.run(state, worker_context))
             self._log_turn_summary(state=state, result=result)
 
             # 5. Handle Session Persistence
             if result.outcome in (TransactionOutcome.OK, TransactionOutcome.NEEDS_INPUT) and result.patch:
-                # Merge patch for saving
                 final_state = {**state, **result.patch}
-
-                # Determine if session should remain active
-                # Logic: If we have results, session is active. If errors or specific end intent, close.
-                # The 'session_active' flag might be set by ExecutionStep.
                 session_active = final_state.get("session_active", False)
 
                 if session_active:
@@ -247,3 +235,26 @@ class QueryWorker:
                 outcome=TransactionOutcome.FAILED,
                 error=render_message("query.error.general", locale),
             )
+
+    async def _run_pipeline(
+        self,
+        state: dict[str, Any],
+        worker_context: Any = None,
+    ) -> TransactionResult:
+        if getattr(worker_context, "progress_tracker", None) is not None:
+            await worker_context.progress_tracker.set_stage("query.resolving_timeframe")
+
+        extraction_result = cast(TransactionResult, await self.extractor.run(state, worker_context))
+        if extraction_result.patch:
+            state.update(extraction_result.patch)
+
+        if extraction_result.outcome != TransactionOutcome.OK:
+            return self._finalize_result(extraction_result, state)
+        if state.get("flow_state") != "executing":
+            return self._finalize_result(extraction_result, state)
+
+        await self._set_execution_progress_stage(state, cast(SimpleNamespace, worker_context))
+        execution_result = cast(TransactionResult, await self.executor.run(state, worker_context))
+        if execution_result.patch:
+            state.update(execution_result.patch)
+        return self._finalize_result(execution_result, state)

@@ -109,6 +109,9 @@ class ExtractionStep(QueryStep):
         language: str,
     ) -> tuple[TimeRange | None, str | None]:
         parsed_result = await self.parser.parse(message, today=today, language=language)
+        if parsed_result.outcome == ResolverOutcome.NEEDS_INPUT:
+            return None, parsed_result.resolver_message or render_message("query.clarify.default", language)
+
         parsed_extraction = getattr(parsed_result, "extraction", None)
         parsed_reference_type = parsed_extraction.time_range.reference_type if parsed_extraction and parsed_extraction.time_range else None
         if parsed_reference_type in {TimeReference.EXPLICIT, TimeReference.ALL_TIME}:
@@ -122,15 +125,30 @@ class ExtractionStep(QueryStep):
             if query_contract and query_contract.normalized_query.time_range is not None:
                 return query_contract.normalized_query.time_range, None
 
-            if parsed_extraction is not None:
+            if parsed_extraction is not None and parsed_extraction.time_range is not None:
                 query_ir = self.parser.build_query_ir_from_extraction(parsed_extraction, today=today, language=language)
                 return query_ir.time_range, None
 
-        if parsed_result.outcome == ResolverOutcome.NEEDS_INPUT:
-            return None, parsed_result.resolver_message or render_message("query.clarify.default", language)
-
         if decision.time_range is not None:
             return decision.time_range, None
+
+        normalized_message = " ".join(message.strip().split())
+        if normalized_message:
+            parts = normalized_message.split()
+            for start in range(len(parts)):
+                candidate = " ".join(parts[start:])
+                parsed_time_range = self.parser.parse_clarification_time_range(candidate, today=today)
+                if parsed_time_range is None:
+                    continue
+                query_ir = self.parser.build_query_ir_from_extraction(
+                    QueryExtractionResult(
+                        time_range=parsed_time_range,
+                        raw_query=message,
+                    ),
+                    today=today,
+                    language=language,
+                )
+                return query_ir.time_range, None
 
         extraction = getattr(decision, "extraction", None)
         if extraction is not None:
