@@ -561,15 +561,22 @@ class QueryParser:
 
         days_back = extraction.time_range.days_back
         period_lower = (extraction.time_range.period or "").strip().lower()
+        reference_type = extraction.time_range.reference_type
+
+        if reference_type == TimeReference.EXPLICIT and period_lower:
+            explicit_range = QueryParser._resolve_period_to_range(period_lower, today=today)
+            if explicit_range is not None:
+                return explicit_range
+
         if period_lower == "today":
             days_back = 0
         elif period_lower == "yesterday":
             days_back = 1
         if days_back is None:
             days_back = 30
-        if extraction.time_range.reference_type == TimeReference.ALL_TIME:
+        if reference_type == TimeReference.ALL_TIME:
             days_back = QUERY_LIMITS["max_lookback_days"]
-        elif extraction.time_range.reference_type == TimeReference.UNSPECIFIED:
+        elif reference_type == TimeReference.UNSPECIFIED:
             days_back = 30
 
         range_start = today - timedelta(days=days_back)

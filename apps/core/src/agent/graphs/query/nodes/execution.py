@@ -155,6 +155,7 @@ class ExecutionStep(QueryStep):
                 "query_result": result,
                 "query_contract": query_contract,
                 "surface": result.surface,  # Persist surface state
+                "resolver_message": None,
                 "session_active": True,
                 "flow_state": "complete",
                 "cached_transactions": result.cached_transactions,

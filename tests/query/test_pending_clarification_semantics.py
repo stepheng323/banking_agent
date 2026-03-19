@@ -174,3 +174,30 @@ async def test_pending_clarification_abort_ends_query_session() -> None:
     assert result.outcome == TransactionOutcome.OK
     assert result.patch["session_active"] is False
     assert "Transaction cancelled" not in result.response
+
+
+@pytest.mark.asyncio
+async def test_reasoner_fresh_query_without_raw_query_injects_message_for_debit_inference() -> None:
+    step = ExtractionStep(_DummyLLM())
+    today = date(2026, 3, 19)
+
+    updates = step._parse_reasoner_extraction_to_updates(
+        QuerySemanticDecision(
+            decision="fresh_query",
+            extraction=QueryExtractionResult(
+                intent=ExtractionIntent.SPENDING_TOTAL,
+                time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="this_week"),
+            ),
+        ),
+        state={"message": "How much did I spend this week"},
+        today=today,
+        language="en",
+    )
+
+    query = updates["query_contract"].normalized_query
+    assert query.intent == QueryIntent.ANALYTICS_SUMMARY
+    assert query.filters is not None
+    assert query.filters.transaction_type == "debit"
+    assert query.time_range is not None
+    assert query.time_range.start == date(2026, 3, 16)
+    assert query.time_range.end == today

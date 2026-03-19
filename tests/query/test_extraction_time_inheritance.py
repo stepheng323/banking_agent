@@ -354,6 +354,7 @@ async def test_show_me_follow_up_converts_summary_to_transactions_when_explicitl
     assert updates["query_contract"].normalized_query.time_range.start == date(2026, 3, 1)
     assert updates["query_contract"].normalized_query.time_range.end == today
     assert updates["current_page"] == 0
+    assert updates["resolver_message"] is None
 
 
 @pytest.mark.asyncio

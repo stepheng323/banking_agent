@@ -290,6 +290,7 @@ class ExtractionStep(QueryStep):
             "flow_state": "executing",
             "continuation_type": cont_type,
             "continuation_delta_type": decision.delta_type,
+            "resolver_message": None,
             **self._semantic_trace_updates(decision),
         }
         original_query = session_query_contract.normalized_query if session_query_contract else None
@@ -486,6 +487,8 @@ class ExtractionStep(QueryStep):
                 "response": render_message("query.error.general", language),
                 "flow_state": "parsing",
             }
+        if not extraction.raw_query:
+            extraction = extraction.model_copy(update={"raw_query": state.get("message", "")})
         result = self.parser.resolve_existing_extraction(extraction, today=today, language=language)
         return self._parse_result_to_updates(result, state=state, today=today, language=language)
 

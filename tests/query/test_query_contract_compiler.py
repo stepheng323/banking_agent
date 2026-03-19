@@ -74,6 +74,42 @@ def test_targeted_recipient_ranking_cue_upgrades_to_beneficiary_summary() -> Non
     assert query_ir.time_range.end == today
 
 
+def test_explicit_this_week_without_days_back_compiles_to_calendar_week_to_date() -> None:
+    parser = QueryParser(_DummyLLM())
+    today = date(2026, 3, 19)
+    extraction = QueryExtractionResult(
+        intent=ExtractionIntent.SPENDING_TOTAL,
+        time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="this_week"),
+        raw_query="how much did I spend this week",
+    )
+
+    query_ir = parser.build_query_ir_from_extraction(extraction, today=today, language="en")
+    contract = parser.build_execution_contract_from_ir(query_ir)
+
+    assert query_ir.time_range.start == date(2026, 3, 16)
+    assert query_ir.time_range.end == today
+    assert contract.time_start == date(2026, 3, 16)
+    assert contract.time_end == today
+
+
+def test_explicit_last_month_without_days_back_compiles_to_full_previous_month() -> None:
+    parser = QueryParser(_DummyLLM())
+    today = date(2026, 3, 19)
+    extraction = QueryExtractionResult(
+        intent=ExtractionIntent.TRANSACTION_LIST,
+        time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="last_month"),
+        raw_query="show my transactions last month",
+    )
+
+    query_ir = parser.build_query_ir_from_extraction(extraction, today=today, language="en")
+    contract = parser.build_execution_contract_from_ir(query_ir)
+
+    assert query_ir.time_range.start == date(2026, 2, 1)
+    assert query_ir.time_range.end == date(2026, 2, 28)
+    assert contract.time_start == date(2026, 2, 1)
+    assert contract.time_end == date(2026, 2, 28)
+
+
 def test_contract_compiles_from_legacy_normalized_query() -> None:
     parser = QueryParser(_DummyLLM())
     normalized = parser.convert_to_normalized(
@@ -127,7 +163,7 @@ def test_structured_comparison_explicit_period_compiles_to_explicit_range() -> N
     assert query_ir.comparison.mode == "explicit_range"
     assert query_ir.comparison.explicit_range is not None
     assert query_ir.comparison.explicit_range.start == date(2026, 2, 1)
-    assert query_ir.comparison.explicit_range.end == date(2026, 2, 28)
+    assert query_ir.comparison.explicit_range.end == date(2026, 2, 6)
     assert contract.comparison is not None
     assert contract.comparison.mode == "explicit_range"
 
@@ -169,7 +205,7 @@ def test_structured_comparison_last_week_compiles_to_explicit_range() -> None:
     assert query_ir.comparison.mode == "explicit_range"
     assert query_ir.comparison.explicit_range is not None
     assert query_ir.comparison.explicit_range.start == date(2026, 2, 23)
-    assert query_ir.comparison.explicit_range.end == date(2026, 3, 1)
+    assert query_ir.comparison.explicit_range.end == date(2026, 2, 27)
     assert contract.comparison is not None
     assert contract.comparison.mode == "explicit_range"
 
@@ -211,7 +247,7 @@ def test_structured_comparison_explicit_period_handles_leap_february() -> None:
     assert query_ir.comparison.mode == "explicit_range"
     assert query_ir.comparison.explicit_range is not None
     assert query_ir.comparison.explicit_range.start == date(2024, 2, 1)
-    assert query_ir.comparison.explicit_range.end == date(2024, 2, 29)
+    assert query_ir.comparison.explicit_range.end == date(2024, 2, 6)
     assert contract.comparison is not None
     assert contract.comparison.mode == "explicit_range"
 
