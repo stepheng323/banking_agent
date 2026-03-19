@@ -173,7 +173,8 @@ class QuerySemanticReasoner:
 
     @staticmethod
     def _normalize(text: str) -> str:
-        return " ".join(text.lower().strip().split())
+        normalized = " ".join(text.lower().strip().split())
+        return re.sub(r"[^\w\s']+$", "", normalized).strip()
 
     @staticmethod
     def _serialize(value: Any) -> str:

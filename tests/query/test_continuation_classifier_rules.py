@@ -26,6 +26,22 @@ def test_end_session_phrase_still_hits_guardrail() -> None:
     assert data["reason"] == "deterministic_end_session"
 
 
+def test_end_session_phrase_with_emoji_still_hits_guardrail() -> None:
+    classifier = _classifier()
+
+    guarded = classifier._guardrail_classify(
+        message="thank you 😊",
+        items=None,
+        surface=None,
+        language="en",
+    )
+
+    assert guarded is not None
+    continuation_type, data = guarded
+    assert continuation_type == "end_session"
+    assert data["reason"] == "deterministic_end_session"
+
+
 def test_beneficiary_summary_name_reply_maps_to_recipient_drilldown() -> None:
     classifier = _classifier()
     surface = ResultSurface(type=SurfaceType.SUMMARY, items=[], context={"view": "beneficiary_summary"})
