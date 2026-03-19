@@ -49,11 +49,10 @@ RULES
 - Use only for active result-session follow-ups.
 - Include `continuation_type` and the relevant structured continuation fields.
 - `followup_intent` is required for every continuation decision, even when it is `none`.
-- For `continuation_type="time_delta"`, include `time_range` when you can resolve exact dates.
-- If the user names a natural period like "last week", "yesterday", or "this month" and exact dates are not explicit,
-  include `time_period` with that natural period phrase so the system can resolve it deterministically.
-- For broader time expressions, prefer including `extraction` for the follow-up so the system can resolve the new time window with the full query parser.
-- For `time_delta` continuations, any provided `extraction` is used only to resolve the new time window; the existing non-time filters stay anchored to the active query unless explicitly changed elsewhere.
+- For `continuation_type="time_delta"`, focus on correct semantic classification:
+  choose whether the follow-up is `replace_scope` or `refine_existing`.
+- The runtime resolves the new time window from the user message with the full query parser.
+- You may still include `time_range`, `time_period`, or `extraction` when useful, but runtime correctness must not depend on them.
 - Include `followup_intent` as one of:
   - refine_existing
   - replace_scope
@@ -115,8 +114,8 @@ CONTINUATION RULES
     - "How much did I spend last month" -> fresh/new query with explicit last_month aggregate spend shape
     - "How much did I send to mum this week" -> fresh/new query with recipient + debit + this_week aggregate spend shape
     - "Show them" or "show me" after that summary -> continuation_type="show_more" and followup_intent="refine_existing"
-    - "Only today", "Only this week's", or "for last month only" after that summary/list -> continuation_type="time_delta" and followup_intent="replace_scope"
-    - "What about last week", "what about yesterday", or "and last month?" after that summary/list -> continuation_type="time_delta", followup_intent="replace_scope", and include time_period or extraction for the new time window if exact dates are not explicit
+    - "Only today", "Only this week's", or "for last month only" after that summary/list -> continuation_type="time_delta" and followup_intent="replace_scope"; runtime resolves the new time window from the user message
+    - "What about last week", "what about yesterday", or "and last month?" after that summary/list -> continuation_type="time_delta" and followup_intent="replace_scope"; runtime resolves the new time window from the user message
     - "more" or "next page" on that list -> continuation_type="show_more" and followup_intent="continue_pagination"
 
 ACTIVE-RESULT FACT BOUNDARY

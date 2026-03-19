@@ -48,10 +48,10 @@ def test_query_reasoner_prompt_covers_conversational_reactions_in_active_session
 def test_query_reasoner_prompt_requires_followup_intent_for_continuations() -> None:
     assert "`followup_intent` is required for every continuation decision" in QUERY_SEMANTIC_REASONER_PROMPT
     assert 'continuation_type="unclear" and followup_intent="none"' in QUERY_SEMANTIC_REASONER_PROMPT
-    assert 'For `continuation_type="time_delta"`, include `time_range` when you can resolve exact dates.' in (
+    assert "The runtime resolves the new time window from the user message with the full query parser." in (
         QUERY_SEMANTIC_REASONER_PROMPT
     )
-    assert "prefer including `extraction` for the follow-up so the system can resolve the new time window with the full query parser." in (
+    assert "You may still include `time_range`, `time_period`, or `extraction` when useful, but runtime correctness must not depend on them." in (
         QUERY_SEMANTIC_REASONER_PROMPT
     )
 
@@ -75,10 +75,10 @@ def test_query_reasoner_prompt_covers_weekly_scope_replacement_transcript() -> N
     assert '"Show them" or "show me" after that summary -> continuation_type="show_more" and followup_intent="refine_existing"' in (
         QUERY_SEMANTIC_REASONER_PROMPT
     )
-    assert '"Only today", "Only this week\'s", or "for last month only" after that summary/list -> continuation_type="time_delta" and followup_intent="replace_scope"' in (
+    assert '"Only today", "Only this week\'s", or "for last month only" after that summary/list -> continuation_type="time_delta" and followup_intent="replace_scope"; runtime resolves the new time window from the user message' in (
         QUERY_SEMANTIC_REASONER_PROMPT
     )
-    assert '"What about last week", "what about yesterday", or "and last month?" after that summary/list -> continuation_type="time_delta", followup_intent="replace_scope", and include time_period or extraction for the new time window if exact dates are not explicit' in (
+    assert '"What about last week", "what about yesterday", or "and last month?" after that summary/list -> continuation_type="time_delta" and followup_intent="replace_scope"; runtime resolves the new time window from the user message' in (
         QUERY_SEMANTIC_REASONER_PROMPT
     )
     assert '"more" or "next page" on that list -> continuation_type="show_more" and followup_intent="continue_pagination"' in (
@@ -108,9 +108,9 @@ def test_query_reasoner_prompt_covers_generic_timeframe_scope_replacement() -> N
     assert '"How much did I spend last month" -> fresh/new query with explicit last_month aggregate spend shape' in (
         QUERY_SEMANTIC_REASONER_PROMPT
     )
-    assert '"Only today", "Only this week\'s", or "for last month only" after that summary/list -> continuation_type="time_delta" and followup_intent="replace_scope"' in (
+    assert '"Only today", "Only this week\'s", or "for last month only" after that summary/list -> continuation_type="time_delta" and followup_intent="replace_scope"; runtime resolves the new time window from the user message' in (
         QUERY_SEMANTIC_REASONER_PROMPT
     )
-    assert '"What about last week", "what about yesterday", or "and last month?" after that summary/list -> continuation_type="time_delta", followup_intent="replace_scope", and include time_period or extraction for the new time window if exact dates are not explicit' in (
+    assert '"What about last week", "what about yesterday", or "and last month?" after that summary/list -> continuation_type="time_delta" and followup_intent="replace_scope"; runtime resolves the new time window from the user message' in (
         QUERY_SEMANTIC_REASONER_PROMPT
     )

@@ -495,7 +495,6 @@ async def test_reasoner_passes_through_contrastive_last_week_replace_scope_follo
             reason="llm_replace_scope_last_week_contrastive",
             continuation_type="time_delta",
             followup_intent="replace_scope",
-            time_range=TimeRange(start=date(2026, 3, 9), end=date(2026, 3, 15), granularity="week"),
         )
     )
     reasoner = QuerySemanticReasoner(llm)
@@ -521,9 +520,7 @@ async def test_reasoner_passes_through_contrastive_last_week_replace_scope_follo
 
     assert decision.continuation_type == "time_delta"
     assert decision.followup_intent == "replace_scope"
-    assert decision.time_range is not None
-    assert decision.time_range.start == date(2026, 3, 9)
-    assert decision.time_range.end == date(2026, 3, 15)
+    assert decision.time_range is None
     assert llm.structured.calls == 1
 
 

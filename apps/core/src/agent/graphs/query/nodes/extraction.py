@@ -16,6 +16,7 @@ from apps.core.src.agent.graphs.query.models import (
     ResultSurface,
     SurfaceType,
     TimeRange,
+    TimeReference,
 )
 from apps.core.src.agent.graphs.query.pipeline import QueryStep
 from apps.core.src.agent.graphs.query.services.continuity import (
@@ -99,7 +100,7 @@ class ExtractionStep(QueryStep):
                 return None
         return None
 
-    def _resolve_time_delta_range(
+    async def _resolve_time_delta_range(
         self,
         *,
         decision: Any,
@@ -107,6 +108,27 @@ class ExtractionStep(QueryStep):
         today: date,
         language: str,
     ) -> tuple[TimeRange | None, str | None]:
+        parsed_result = await self.parser.parse(message, today=today, language=language)
+        parsed_extraction = getattr(parsed_result, "extraction", None)
+        parsed_reference_type = parsed_extraction.time_range.reference_type if parsed_extraction and parsed_extraction.time_range else None
+        if parsed_reference_type in {TimeReference.EXPLICIT, TimeReference.ALL_TIME}:
+            query_contract = None
+            if isinstance(parsed_result.query_contract, dict):
+                try:
+                    query_contract = QueryExecutionContract.model_validate(parsed_result.query_contract)
+                except Exception:
+                    query_contract = None
+
+            if query_contract and query_contract.normalized_query.time_range is not None:
+                return query_contract.normalized_query.time_range, None
+
+            if parsed_extraction is not None:
+                query_ir = self.parser.build_query_ir_from_extraction(parsed_extraction, today=today, language=language)
+                return query_ir.time_range, None
+
+        if parsed_result.outcome == ResolverOutcome.NEEDS_INPUT:
+            return None, parsed_result.resolver_message or render_message("query.clarify.default", language)
+
         if decision.time_range is not None:
             return decision.time_range, None
 
@@ -368,7 +390,7 @@ class ExtractionStep(QueryStep):
                 return self._ambiguous_followup_updates(locale=locale, session=session)
 
         elif cont_type == "time_delta":
-            resolved_time_range, clarification_message = self._resolve_time_delta_range(
+            resolved_time_range, clarification_message = await self._resolve_time_delta_range(
                 decision=decision,
                 message=message,
                 today=today,
