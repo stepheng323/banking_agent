@@ -119,7 +119,8 @@ class ActiveQueryTimeRescopeDecision(BaseModel):
     decision: Literal["time_only_rescope", "not_time_only"]
     confidence: float | None = Field(default=None)
     reason: str | None = Field(default=None)
-    extraction: QueryExtractionResult | None = Field(default=None)
+    normalized_time_message: str | None = Field(default=None)
+    has_non_time_scope: bool = Field(default=False)
 
 
 @dataclass

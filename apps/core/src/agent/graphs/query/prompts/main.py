@@ -169,25 +169,29 @@ RULES
 - Return decision="time_only_rescope" only when the user is keeping the same active query and changing only the time window.
 - If the user introduces any new recipient, amount, category, bank, transaction type, narration, ranking, comparison, pagination, drill-down, or other non-time change, return decision="not_time_only".
 - If the user is really asking a fresh/new query shape, return decision="not_time_only".
-- If decision="time_only_rescope", include `extraction` with only the time interpretation needed to resolve the new time window semantically.
+- If decision="time_only_rescope", include `normalized_time_message` as the normalized time-only phrase that should be parsed for the new time window.
+- Set `has_non_time_scope=true` whenever the user introduces any non-time change, even if the message also mentions time.
 - Do not rely on keyword heuristics. Interpret the message semantically in the context of the current active query.
 
 EXAMPLES
 - Current query: "How much did I send to mum this week"
   User: "What about last week"
-  -> decision="time_only_rescope", extraction.time_range.period="last_week"
+  -> decision="time_only_rescope", normalized_time_message="last week", has_non_time_scope=false
 - Current query: "How much did I send to mum this week"
   User: "What about yesterday"
-  -> decision="time_only_rescope", extraction.time_range.period="yesterday"
+  -> decision="time_only_rescope", normalized_time_message="yesterday", has_non_time_scope=false
+- Current query: "How much did I send to mum this week"
+  User: "no, i meant last week"
+  -> decision="time_only_rescope", normalized_time_message="last week", has_non_time_scope=false
 - Current query: "How much did I send to mum this week"
   User: "and last month?"
-  -> decision="time_only_rescope", extraction.time_range.period="last_month"
+  -> decision="time_only_rescope", normalized_time_message="last month", has_non_time_scope=false
 - Current query: "How much did I send to mum this week"
   User: "What about dad last week"
-  -> decision="not_time_only"
+  -> decision="not_time_only", has_non_time_scope=true
 - Current query: active transaction list
   User: "who did I send money to the most this week"
-  -> decision="not_time_only"
+  -> decision="not_time_only", has_non_time_scope=true
 - Current query: active result
   User: "show them"
   -> decision="not_time_only"

@@ -1,4 +1,8 @@
-from apps.core.src.agent.graphs.query.prompts.main import QUERY_PARSER_PROMPT, QUERY_SEMANTIC_REASONER_PROMPT
+from apps.core.src.agent.graphs.query.prompts.main import (
+    ACTIVE_QUERY_TIME_RESCOPE_PROMPT,
+    QUERY_PARSER_PROMPT,
+    QUERY_SEMANTIC_REASONER_PROMPT,
+)
 
 
 def test_query_reasoner_prompt_includes_unified_decisions() -> None:
@@ -114,3 +118,10 @@ def test_query_reasoner_prompt_covers_generic_timeframe_scope_replacement() -> N
     assert '"What about last week", "what about yesterday", or "and last month?" after that summary/list -> continuation_type="time_delta" and followup_intent="replace_scope"; runtime resolves the new time window from the user message' in (
         QUERY_SEMANTIC_REASONER_PROMPT
     )
+
+
+def test_active_query_time_rescope_prompt_uses_normalized_time_message_contract() -> None:
+    assert "normalized_time_message" in ACTIVE_QUERY_TIME_RESCOPE_PROMPT
+    assert "has_non_time_scope" in ACTIVE_QUERY_TIME_RESCOPE_PROMPT
+    assert '"no, i meant last week"' in ACTIVE_QUERY_TIME_RESCOPE_PROMPT
+    assert "include `extraction`" not in ACTIVE_QUERY_TIME_RESCOPE_PROMPT

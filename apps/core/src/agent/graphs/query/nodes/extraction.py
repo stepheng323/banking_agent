@@ -58,10 +58,7 @@ class ActiveQueryTimeRescopeParser:
             message=message,
             current_query=query_contract.normalized_query.model_dump_json(),
         )
-        decision = await self.structured_llm.ainvoke(prompt)
-        if decision.extraction is not None:
-            decision.extraction.raw_query = decision.extraction.raw_query or message
-        return decision
+        return await self.structured_llm.ainvoke(prompt)
 
 
 class ExtractionStep(QueryStep):
@@ -133,7 +130,7 @@ class ExtractionStep(QueryStep):
         return None
 
     @staticmethod
-    def _candidate_time_range_from_message(message: str, *, today: date, parser: QueryParser) -> QueryExtractionResult | None:
+    def _candidate_time_message_from_message(message: str, *, today: date, parser: QueryParser) -> str | None:
         normalized_message = " ".join(message.strip().split())
         if not normalized_message:
             return None
@@ -144,10 +141,7 @@ class ExtractionStep(QueryStep):
             parsed_time_range = parser.parse_clarification_time_range(candidate, today=today)
             if parsed_time_range is None:
                 continue
-            return QueryExtractionResult(
-                time_range=parsed_time_range,
-                raw_query=message,
-            )
+            return candidate
         return None
 
     @staticmethod
@@ -205,8 +199,8 @@ class ExtractionStep(QueryStep):
         language: str,
         original_query: Any,
     ) -> TimeRange | None:
-        candidate_extraction = self._candidate_time_range_from_message(message, today=today, parser=self.parser)
-        if candidate_extraction is None:
+        candidate_message = self._candidate_time_message_from_message(message, today=today, parser=self.parser)
+        if candidate_message is None:
             return None
 
         current_contract = QueryExecutionContract.from_normalized_query(original_query)
@@ -219,33 +213,30 @@ class ExtractionStep(QueryStep):
             )
         except Exception:
             return None
-
-        if decision.decision != "time_only_rescope" or decision.extraction is None:
-            return None
-        if self._has_non_time_scope(decision.extraction):
-            return None
-        if not self._is_time_only_followup_shape(decision.extraction, original_query=original_query):
+        if not isinstance(decision, ActiveQueryTimeRescopeDecision):
             return None
 
-        result = self.parser.resolve_existing_extraction(decision.extraction, today=today, language=language)
-        if result.outcome == ResolverOutcome.NEEDS_INPUT:
+        if decision.decision != "time_only_rescope":
+            return None
+        if decision.has_non_time_scope:
             return None
 
-        query_contract = None
-        if isinstance(result.query_contract, dict):
-            try:
-                query_contract = QueryExecutionContract.model_validate(result.query_contract)
-            except Exception:
-                query_contract = None
+        normalized_time_message = (decision.normalized_time_message or "").strip() or candidate_message
+        parsed_time_range = self.parser.parse_clarification_time_range(normalized_time_message, today=today)
+        if parsed_time_range is None and normalized_time_message != candidate_message:
+            parsed_time_range = self.parser.parse_clarification_time_range(candidate_message, today=today)
+        if parsed_time_range is None:
+            return None
 
-        if query_contract and query_contract.normalized_query.time_range is not None:
-            return query_contract.normalized_query.time_range
-
-        if result.extraction is not None and result.extraction.time_range is not None:
-            query_ir = self.parser.build_query_ir_from_extraction(result.extraction, today=today, language=language)
-            return query_ir.time_range
-
-        return None
+        query_ir = self.parser.build_query_ir_from_extraction(
+            QueryExtractionResult(
+                time_range=parsed_time_range,
+                raw_query=message,
+            ),
+            today=today,
+            language=language,
+        )
+        return query_ir.time_range
 
     async def _resolve_time_delta_range(
         self,
