@@ -17,6 +17,7 @@ from apps.core.src.agent.graphs.query.models import (
     TimeRange,
     TimeReference,
 )
+from apps.core.src.agent.graphs.query.services.reasoner import QuerySemanticDecision
 from apps.core.src.agent.graphs.query.worker import QueryWorker
 from apps.core.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
 
@@ -53,6 +54,20 @@ class _SessionManager:
 
     async def clear(self, key: str) -> None:
         del key
+
+
+class _LoadedSessionManager(_SessionManager):
+    def __init__(self, loaded_state: dict[str, Any]) -> None:
+        super().__init__()
+        self.loaded_state = loaded_state
+        self.cleared_key: str | None = None
+
+    async def load(self, key: str) -> dict[str, Any] | None:
+        del key
+        return dict(self.loaded_state)
+
+    async def clear(self, key: str) -> None:
+        self.cleared_key = key
 
 
 class _ProgressTracker:
@@ -522,3 +537,178 @@ async def test_worker_logs_query_turn_summary_for_conversational_active_result_r
             "restored_from_stashed_query_session": True,
         },
     ) in events
+
+
+@pytest.mark.asyncio
+async def test_worker_logs_restored_stashed_query_session_shape(monkeypatch: pytest.MonkeyPatch) -> None:
+    session_manager = _SessionManager()
+    worker = QueryWorker(_DummyLLM(), _DummyProvider(), session_manager)  # type: ignore[arg-type]
+    events: list[tuple[str, dict[str, Any]]] = []
+
+    def _capture(event: str, **kwargs: Any) -> None:
+        events.append((event, kwargs))
+
+    monkeypatch.setattr("apps.core.src.agent.graphs.query.worker.logger.info", _capture)
+
+    async def _fake_pipeline_run(state: dict[str, Any], worker_context: Any) -> TransactionResult:
+        del state, worker_context
+        return TransactionResult(outcome=TransactionOutcome.OK, patch={"session_active": True})
+
+    worker.pipeline.run = _fake_pipeline_run  # type: ignore[method-assign]
+
+    stashed_query_session = {
+        "session_active": True,
+        "query_contract": QueryExecutionContract.from_normalized_query(
+            NormalizedQuery(
+                intent=QueryIntent.ANALYTICS_SUMMARY,
+                time_range=TimeRange(start=date(2026, 3, 16), end=date(2026, 3, 19), granularity="week"),
+            )
+        ).model_dump(),
+        "query_result": {"summary_text": "You spent ₦60,000 this week.", "items": []},
+        "surface": {"type": "summary", "items": [], "context": {"type": "spending_total"}},
+        "query_frames": [],
+    }
+
+    result = await worker.run(
+        payload={"message": "What about last week"},
+        context={
+            "phone_number": "2348000000310",
+            "user_id": "u-log-shape",
+            "accounts": [],
+            "language": "en",
+            "today": date(2026, 3, 19),
+            "stashed_query_session": stashed_query_session,
+        },
+    )
+
+    assert result.outcome == TransactionOutcome.OK
+    assert (
+        "query_session_restored_from_stash",
+        {
+            "session_source": "stashed",
+            "session_active": True,
+            "has_query_contract": True,
+            "has_query_result": True,
+            "has_surface": True,
+            "has_query_frames": False,
+            "has_pending_clarification": False,
+        },
+    ) in events
+
+
+@pytest.mark.asyncio
+async def test_worker_warns_when_loaded_active_session_is_missing_query_contract(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session_manager = _LoadedSessionManager(
+        {
+            "session_active": True,
+            "query_result": {"summary_text": "Earlier summary", "items": []},
+            "surface": {"type": "summary", "items": [], "context": {"type": "spending_total"}},
+            "query_frames": [],
+        }
+    )
+    worker = QueryWorker(_DummyLLM(), _DummyProvider(), session_manager)  # type: ignore[arg-type]
+    warnings: list[tuple[str, dict[str, Any]]] = []
+
+    def _capture_warning(event: str, **kwargs: Any) -> None:
+        warnings.append((event, kwargs))
+
+    monkeypatch.setattr("apps.core.src.agent.graphs.query.worker.logger.warning", _capture_warning)
+
+    async def _fake_pipeline_run(state: dict[str, Any], worker_context: Any) -> TransactionResult:
+        del worker_context
+        assert state["query_session"] == {}
+        return TransactionResult(outcome=TransactionOutcome.OK, patch={"session_active": False})
+
+    worker.pipeline.run = _fake_pipeline_run  # type: ignore[method-assign]
+
+    result = await worker.run(
+        payload={"message": "What about last week"},
+        context={
+            "phone_number": "2348000000311",
+            "user_id": "u-missing-contract",
+            "accounts": [],
+            "language": "en",
+            "today": date(2026, 3, 19),
+        },
+    )
+
+    assert result.outcome == TransactionOutcome.OK
+    assert session_manager.cleared_key == "query:session:2348000000311"
+    assert (
+        "query_session_missing_contract_cleared",
+        {
+            "session_source": "redis",
+            "session_active": True,
+            "has_query_result": True,
+            "has_surface": True,
+            "has_query_frames": False,
+        },
+    ) in warnings
+
+
+@pytest.mark.asyncio
+async def test_worker_recovers_ambiguous_last_week_followup_from_stashed_session() -> None:
+    session_manager = _SessionManager()
+    worker = QueryWorker(_DummyLLM(), _DummyProvider(), session_manager)  # type: ignore[arg-type]
+    stashed_query_session = {
+        "session_active": True,
+        "query_contract": QueryExecutionContract.from_normalized_query(
+            NormalizedQuery(
+                intent=QueryIntent.ANALYTICS_SUMMARY,
+                time_range=TimeRange(start=date(2026, 3, 16), end=date(2026, 3, 19), granularity="week"),
+                filters=Filters(transaction_type="debit", merchant=["mum"]),
+                aggregation=Aggregation(type="sum"),
+            )
+        ).model_dump(),
+        "query_result": {"summary_text": "You spent ₦60,000 on mum this week.", "items": []},
+        "current_page": 1,
+        "show_expanded": True,
+    }
+
+    async def _fake_reason(_: object) -> QuerySemanticDecision:
+        return QuerySemanticDecision(
+            decision="continuation",
+            continuation_type="unclear",
+            followup_intent="none",
+            confidence=0.21,
+            reason="ambiguous_followup",
+        )
+
+    captured_ranges: list[tuple[date, date]] = []
+
+    async def _fake_execute(state: dict[str, Any], worker_context: Any) -> TransactionResult:
+        del worker_context
+        query_contract = state["query_contract"]
+        if isinstance(query_contract, dict):
+            query_contract = QueryExecutionContract.model_validate(query_contract)
+        captured_ranges.append((query_contract.time_start, query_contract.time_end))
+        return TransactionResult(
+            outcome=TransactionOutcome.OK,
+            response="Recovered last week summary.",
+            patch={
+                "session_active": True,
+                "query_contract": query_contract,
+                "query_result": QueryResult(summary_text="Recovered last week summary.", items=[]),
+                "flow_state": "complete",
+            },
+        )
+
+    worker.extractor.reasoner.reason = _fake_reason  # type: ignore[method-assign]
+    worker.executor.run = _fake_execute  # type: ignore[method-assign]
+
+    result = await worker.run(
+        payload={"message": "What about last week"},
+        context={
+            "phone_number": "2348000000312",
+            "user_id": "u-worker-recovery",
+            "accounts": [{"account_id": "acc_1"}],
+            "language": "en",
+            "today": date(2026, 3, 19),
+            "stashed_query_session": stashed_query_session,
+        },
+    )
+
+    assert result.outcome == TransactionOutcome.OK
+    assert captured_ranges == [(date(2026, 3, 9), date(2026, 3, 15))]

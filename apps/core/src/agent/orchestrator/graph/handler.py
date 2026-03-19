@@ -436,6 +436,13 @@ class OrchestratorGraphHandler:
                     "locale": resolved_locale,
                     "delivery_metadata": self._delivery_metadata_from_progress_snapshot(progress_snapshot),
                 }
+                logger.info(
+                    "orchestrator_progress_delivery_summary",
+                    progress_stage=progress_snapshot.stage_key,
+                    progress_count=progress_snapshot.progress_count,
+                    visible_progress_sent=progress_snapshot.progress_count > 0,
+                    suppress_followup_typing=bool(result["delivery_metadata"].get("suppress_typing_indicator")),
+                )
                 total_duration = (time.perf_counter() - turn_start) * 1000
                 self._log_latency_span(
                     span="orchestrator_turn_total",

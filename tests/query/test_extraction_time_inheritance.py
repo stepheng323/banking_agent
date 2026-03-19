@@ -572,6 +572,117 @@ async def test_summary_contrastive_last_week_logs_semantic_reasoner_resolution(m
 
 
 @pytest.mark.asyncio
+async def test_low_confidence_unclear_last_week_recovers_via_time_rescope_recovery(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    step = ExtractionStep(_DummyLLM())
+    today = date(2026, 3, 19)
+    events: list[tuple[str, dict[str, object]]] = []
+    session_query = NormalizedQuery(
+        intent=QueryIntent.ANALYTICS_SUMMARY,
+        time_range=TimeRange(start=date(2026, 3, 16), end=today, granularity="week"),
+        filters=Filters(transaction_type="debit", merchant=["mum"]),
+    )
+    session_contract = QueryExecutionContract.from_normalized_query(session_query)
+
+    def _capture(event: str, **kwargs: object) -> None:
+        events.append((event, kwargs))
+
+    monkeypatch.setattr("apps.core.src.agent.graphs.query.nodes.extraction.logger.info", _capture)
+
+    async def _fake_reason(_: object) -> QuerySemanticDecision:
+        return QuerySemanticDecision(
+            decision="continuation",
+            continuation_type="unclear",
+            followup_intent="none",
+            confidence=0.2,
+            reason="ambiguous_followup",
+        )
+
+    step.reasoner.reason = _fake_reason  # type: ignore[method-assign]
+
+    updates = await step._handle_continuation(
+        {"message": "What about last week", "today": today, "language": "en"},
+        {
+            "session_active": True,
+            "query_contract": session_contract.model_dump(),
+            "query_result": {"items": []},
+            "current_page": 2,
+            "show_expanded": True,
+        },
+    )
+
+    query = updates["query_contract"].normalized_query
+    assert query.time_range is not None
+    assert query.time_range.start == date(2026, 3, 9)
+    assert query.time_range.end == date(2026, 3, 15)
+    assert query.filters is not None
+    assert query.filters.transaction_type == "debit"
+    assert query.filters.merchant == ["mum"]
+    assert updates["current_page"] == 0
+    assert updates["show_expanded"] is False
+    assert (
+        "query_continuation_resolution",
+        {
+            "path": "time_rescope_recovery",
+            "trigger_reason": "low_confidence_unclear",
+            "recovered": True,
+            "session_has_query_contract": True,
+            "resolved_time_range": True,
+            "resolved_time_start": "2026-03-09",
+            "resolved_time_end": "2026-03-15",
+            "preserved_query_shape": True,
+            "skip_reason": None,
+        },
+    ) in events
+
+
+@pytest.mark.asyncio
+async def test_grounded_ask_clarify_last_week_recovers_via_time_rescope_recovery() -> None:
+    step = ExtractionStep(_DummyLLM())
+    today = date(2026, 3, 19)
+    session_query = NormalizedQuery(
+        intent=QueryIntent.ANALYTICS_SUMMARY,
+        time_range=TimeRange(start=date(2026, 3, 16), end=today, granularity="week"),
+        filters=Filters(transaction_type="debit", merchant=["mum"]),
+    )
+    session_contract = QueryExecutionContract.from_normalized_query(session_query)
+
+    async def _fake_reason(_: object) -> QuerySemanticDecision:
+        return QuerySemanticDecision(
+            decision="continuation",
+            continuation_type="aggregate",
+            followup_intent="refine_existing",
+            answer_mode="ask_clarify",
+            confidence=0.84,
+            reason="grounded_reference_ambiguous",
+        )
+
+    step.reasoner.reason = _fake_reason  # type: ignore[method-assign]
+
+    updates = await step._handle_continuation(
+        {"message": "What about last week", "today": today, "language": "en"},
+        {
+            "session_active": True,
+            "query_contract": session_contract.model_dump(),
+            "query_result": {"items": []},
+            "current_page": 1,
+            "show_expanded": True,
+        },
+    )
+
+    query = updates["query_contract"].normalized_query
+    assert query.time_range is not None
+    assert query.time_range.start == date(2026, 3, 9)
+    assert query.time_range.end == date(2026, 3, 15)
+    assert query.filters is not None
+    assert query.filters.transaction_type == "debit"
+    assert query.filters.merchant == ["mum"]
+    assert updates["current_page"] == 0
+    assert updates["show_expanded"] is False
+
+
+@pytest.mark.asyncio
 async def test_show_me_logs_semantic_reasoner_continuation_resolution(monkeypatch: pytest.MonkeyPatch) -> None:
     step = ExtractionStep(_DummyLLM())
     today = date(2026, 3, 6)

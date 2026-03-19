@@ -90,6 +90,52 @@ async def test_load_query_session_snapshot_marks_stale_stashed_session_inactive(
     assert snapshot["query_result"]["summary_text"] == "You spent ₦4,000 yesterday."
 
 
+@pytest.mark.asyncio
+async def test_load_query_session_snapshot_logs_session_shape(monkeypatch: pytest.MonkeyPatch) -> None:
+    events: list[tuple[str, dict[str, object]]] = []
+
+    def _capture(event: str, **kwargs: object) -> None:
+        events.append((event, kwargs))
+
+    monkeypatch.setattr("apps.core.src.agent.orchestrator.nodes.planner_context.logger.info", _capture)
+
+    class _Redis:
+        async def get(self, key: str) -> str:
+            assert key == "query:session:2348000000313"
+            return json.dumps(
+                {
+                    "session_active": True,
+                    "query_contract": {"intent": "analytics_summary"},
+                    "query_result": {"summary_text": "You spent ₦5,000 today."},
+                    "surface": {"type": "summary", "items": [], "context": {"type": "spending_total"}},
+                    "query_frames": [{"frame_id": "qf_1"}],
+                }
+            )
+
+    state = OrchestratorState(
+        user_id="u_ctx_log_shape",
+        phone_number="2348000000313",
+        channel="whatsapp",
+        stashed_query_session=None,
+    )
+
+    snapshot, source = await _load_query_session_snapshot(state, _Redis())
+
+    assert source == "redis"
+    assert snapshot is not None
+    assert (
+        "planner_query_session_snapshot",
+        {
+            "query_session_source": "redis",
+            "session_active": True,
+            "has_query_contract": True,
+            "has_query_result": True,
+            "has_surface": True,
+            "has_query_frames": True,
+        },
+    ) in events
+
+
 def test_turn_context_summary_builds_compact_shared_view() -> None:
     state = OrchestratorState(
         user_id="u_ctx_1",

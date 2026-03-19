@@ -294,6 +294,75 @@ async def test_graph_handler_attaches_delivery_metadata_after_visible_progress(
 
 
 @pytest.mark.asyncio
+async def test_graph_handler_keeps_delivery_metadata_empty_without_visible_progress(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    graph = _GraphStub()
+    monkeypatch.setattr(
+        "apps.core.src.agent.orchestrator.graph.handler.AsyncRedisSaver",
+        lambda redis_client: _CheckpointerStub(),
+    )
+    monkeypatch.setattr(
+        "apps.core.src.agent.orchestrator.graph.handler.build_orchestrator_graph",
+        lambda checkpointer: graph,
+    )
+    monkeypatch.setattr(
+        "apps.core.src.agent.orchestrator.graph.handler.TurnProgressTracker",
+        lambda locale: _ProgressTrackerStub(progress_count=0, last_progress_sent_at=None),
+    )
+
+    events: list[tuple[str, dict]] = []
+
+    def _capture(event: str, **kwargs) -> None:
+        events.append((event, kwargs))
+
+    monkeypatch.setattr("apps.core.src.agent.orchestrator.graph.handler.logger.info", _capture)
+
+    handler = OrchestratorGraphHandler(
+        task_planner=SimpleNamespace(),
+        transfer_service=SimpleNamespace(),
+        airtime_service=SimpleNamespace(),
+        query_service=SimpleNamespace(),
+        data_service=SimpleNamespace(),
+        account_service=SimpleNamespace(),
+        support_service=SimpleNamespace(),
+        faq_service=SimpleNamespace(),
+        user_repo=SimpleNamespace(),
+        beneficiary_repo=SimpleNamespace(),
+        account_repo=SimpleNamespace(),
+        actionable_message_repo=SimpleNamespace(),
+        banking_provider=SimpleNamespace(),
+        context_manager=_ContextManagerStub(),
+        redis_client=SimpleNamespace(),
+        publisher=SimpleNamespace(),
+        beneficiary_suggestion_service=SimpleNamespace(),
+    )
+    handler._cleanup_if_idle = AsyncMock()
+    handler._apply_session_ttl = AsyncMock()
+
+    result = await handler.invoke(
+        MessageContext(
+            phone_number="2348000000005",
+            text="What about last week",
+            message_id="wamid.55",
+            channel="whatsapp",
+            channel_identity="2348000000005",
+        )
+    )
+
+    assert result["delivery_metadata"] == {}
+    assert (
+        "orchestrator_progress_delivery_summary",
+        {
+            "progress_stage": "query.fetching_transactions",
+            "progress_count": 0,
+            "visible_progress_sent": False,
+            "suppress_followup_typing": False,
+        },
+    ) in events
+
+
+@pytest.mark.asyncio
 async def test_progress_update_finishes_when_progress_task_is_cancelled(monkeypatch: pytest.MonkeyPatch) -> None:
     graph = _GraphStub()
     monkeypatch.setattr(

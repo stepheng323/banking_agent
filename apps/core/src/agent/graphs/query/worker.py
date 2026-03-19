@@ -74,6 +74,26 @@ class QueryWorker:
             return None
         return getattr(raw_type, "value", str(raw_type))
 
+    @classmethod
+    def _log_session_shape(
+        cls,
+        *,
+        event: str,
+        session: dict[str, Any] | None,
+        session_source: str,
+    ) -> None:
+        snapshot = session if isinstance(session, dict) else {}
+        logger.info(
+            event,
+            session_source=session_source,
+            session_active=bool(snapshot.get("session_active")),
+            has_query_contract=bool(snapshot.get("query_contract")),
+            has_query_result=bool(snapshot.get("query_result")),
+            has_surface=bool(snapshot.get("surface")),
+            has_query_frames=bool(snapshot.get("query_frames")),
+            has_pending_clarification=bool(snapshot.get("pending_clarification")),
+        )
+
     def _log_turn_summary(
         self,
         *,
@@ -308,8 +328,21 @@ class QueryWorker:
         query_session = await self.session_manager.load(session_key) or {}
         restored_from_stashed_query_session = False
         session_source = "redis" if query_session else "none"
+        if query_session:
+            self._log_session_shape(
+                event="query_session_loaded",
+                session=query_session,
+                session_source=session_source,
+            )
         if query_session and not query_session.get("query_contract") and not query_session.get("pending_clarification"):
-            logger.warning("query_session_missing_contract_cleared")
+            logger.warning(
+                "query_session_missing_contract_cleared",
+                session_source=session_source,
+                session_active=bool(query_session.get("session_active")),
+                has_query_result=bool(query_session.get("query_result")),
+                has_surface=bool(query_session.get("surface")),
+                has_query_frames=bool(query_session.get("query_frames")),
+            )
             await self.session_manager.clear(session_key)
             query_session = {}
             session_source = "none"
@@ -333,6 +366,11 @@ class QueryWorker:
                     query_session = stashed_query_session
                     restored_from_stashed_query_session = True
                     session_source = "stashed"
+                    self._log_session_shape(
+                        event="query_session_restored_from_stash",
+                        session=query_session,
+                        session_source=session_source,
+                    )
                 except Exception:
                     logger.warning("stashed_query_session_invalid_contract_ignored")
 
@@ -381,6 +419,20 @@ class QueryWorker:
             user_id=context.get("user_id"),
             progress_tracker=context.get("progress_tracker"),
         )
+
+        if (
+            isinstance(query_session, dict)
+            and query_session.get("session_active")
+            and not query_session.get("query_contract")
+            and not query_session.get("pending_clarification")
+        ):
+            logger.warning(
+                "query_active_session_missing_continuation_context",
+                session_source=session_source,
+                has_query_result=bool(query_session.get("query_result")),
+                has_surface=bool(query_session.get("surface")),
+                has_query_frames=bool(query_session.get("query_frames")),
+            )
 
         if (
             isinstance(query_session, dict)

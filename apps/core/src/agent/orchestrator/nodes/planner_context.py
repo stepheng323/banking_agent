@@ -8,6 +8,9 @@ from typing import Any
 from apps.core.src.agent.graphs.query.session import is_query_session_stale
 from apps.core.src.agent.orchestrator.context.models import ContextFrameType
 from apps.core.src.agent.orchestrator.models.state import OrchestratorState
+from shared.utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 CONTEXT_BENEFICIARY_PREVIEW_LIMIT = 5
 CONTEXT_ACCOUNT_PREVIEW_LIMIT = 5
@@ -167,6 +170,17 @@ async def _load_query_session_snapshot(
         query_session_source = "stashed"
         if is_query_session_stale(query_session_snapshot):
             query_session_snapshot["session_active"] = False
+
+    snapshot = query_session_snapshot if isinstance(query_session_snapshot, dict) else {}
+    logger.info(
+        "planner_query_session_snapshot",
+        query_session_source=query_session_source or "none",
+        session_active=bool(snapshot.get("session_active")),
+        has_query_contract=bool(snapshot.get("query_contract")),
+        has_query_result=bool(snapshot.get("query_result")),
+        has_surface=bool(snapshot.get("surface")),
+        has_query_frames=bool(snapshot.get("query_frames")),
+    )
 
     return query_session_snapshot, query_session_source
 

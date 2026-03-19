@@ -112,6 +112,98 @@ class ExtractionStep(QueryStep):
     def _load_query_frames(self, session: dict[str, Any]) -> list[QueryFrame]:
         return restore_query_frames(session.get("query_frames"))
 
+    @staticmethod
+    def _log_time_rescope_recovery(
+        *,
+        trigger_reason: str,
+        recovered: bool,
+        session_has_query_contract: bool,
+        resolved_time_range: TimeRange | None = None,
+        skip_reason: str | None = None,
+        preserved_query_shape: bool | None = None,
+    ) -> None:
+        logger.info(
+            "query_continuation_resolution",
+            path="time_rescope_recovery",
+            trigger_reason=trigger_reason,
+            recovered=recovered,
+            session_has_query_contract=session_has_query_contract,
+            resolved_time_range=resolved_time_range is not None,
+            resolved_time_start=resolved_time_range.start.isoformat() if resolved_time_range is not None else None,
+            resolved_time_end=resolved_time_range.end.isoformat() if resolved_time_range is not None else None,
+            preserved_query_shape=preserved_query_shape,
+            skip_reason=skip_reason,
+        )
+
+    async def _maybe_recover_time_rescope_continuation(
+        self,
+        *,
+        trigger_reason: str,
+        decision: Any,
+        session: dict[str, Any],
+        session_query_contract: QueryExecutionContract | None,
+        message: str,
+        today: date,
+        language: str,
+    ) -> dict[str, Any] | None:
+        original_query = session_query_contract.normalized_query if session_query_contract is not None else None
+        if original_query is None:
+            self._log_time_rescope_recovery(
+                trigger_reason=trigger_reason,
+                recovered=False,
+                session_has_query_contract=False,
+                skip_reason="missing_query_contract",
+            )
+            return None
+
+        resolved_time_range, clarification_message = await self._resolve_time_delta_range(
+            decision=decision,
+            message=message,
+            today=today,
+            language=language,
+        )
+        if resolved_time_range is None:
+            self._log_time_rescope_recovery(
+                trigger_reason=trigger_reason,
+                recovered=False,
+                session_has_query_contract=True,
+                skip_reason="parser_requested_clarification" if clarification_message else "time_not_resolved",
+            )
+            return None
+
+        new_query = original_query.model_copy(deep=True)
+        new_query.time_range = resolved_time_range
+        if decision.result_limit is not None:
+            new_query.result_limit = decision.result_limit
+        if decision.result_reference is not None:
+            new_query.result_reference = decision.result_reference
+
+        preserved_query_shape = (
+            new_query.intent == original_query.intent
+            and new_query.filters == original_query.filters
+            and new_query.aggregation == original_query.aggregation
+        )
+        self._log_time_rescope_recovery(
+            trigger_reason=trigger_reason,
+            recovered=True,
+            session_has_query_contract=True,
+            resolved_time_range=resolved_time_range,
+            preserved_query_shape=preserved_query_shape,
+        )
+        return {
+            "flow_state": "executing",
+            "continuation_type": "time_delta",
+            "continuation_delta_type": decision.delta_type or "time",
+            "resolver_message": None,
+            "query_contract": QueryExecutionContract.from_normalized_query(
+                new_query,
+                continuation_type="time_delta",
+                continuation_delta_type=decision.delta_type or "time",
+            ),
+            "current_page": 0,
+            "show_expanded": False,
+        }
+
     async def _resolve_time_delta_range(
         self,
         *,
@@ -505,6 +597,19 @@ class ExtractionStep(QueryStep):
             language=locale,
         )
         if grounded_updates is not None:
+            if decision.answer_mode == "ask_clarify":
+                recovered_updates = await self._maybe_recover_time_rescope_continuation(
+                    trigger_reason="grounded_ask_clarify",
+                    decision=decision,
+                    session=session,
+                    session_query_contract=session_query_contract,
+                    message=message,
+                    today=today,
+                    language=locale,
+                )
+                if recovered_updates is not None:
+                    recovered_updates.update(self._semantic_trace_updates(decision))
+                    return recovered_updates
             grounded_updates.update(self._semantic_trace_updates(decision))
             return grounded_updates
 
@@ -514,6 +619,18 @@ class ExtractionStep(QueryStep):
 
         if decision.confidence is not None and decision.confidence < self._LOW_CONFIDENCE_THRESHOLD:
             if cont_type not in {"drill_down", "recipient_drill_down", "conversational"}:
+                recovered_updates = await self._maybe_recover_time_rescope_continuation(
+                    trigger_reason="low_confidence_unclear",
+                    decision=decision,
+                    session=session,
+                    session_query_contract=session_query_contract,
+                    message=message,
+                    today=today,
+                    language=locale,
+                )
+                if recovered_updates is not None:
+                    recovered_updates.update(self._semantic_trace_updates(decision))
+                    return recovered_updates
                 return self._ambiguous_followup_updates(locale=locale, session=session)
 
         updates: dict[str, Any] = {
@@ -564,8 +681,34 @@ class ExtractionStep(QueryStep):
                         "show_expanded": bool(session.get("show_expanded", False)),
                         "current_page": session.get("current_page", 0),
                     }
+                recovered_updates = await self._maybe_recover_time_rescope_continuation(
+                    trigger_reason="missing_usable_delta",
+                    decision=decision,
+                    session=session,
+                    session_query_contract=session_query_contract,
+                    message=message,
+                    today=today,
+                    language=locale,
+                )
+                if recovered_updates is not None:
+                    recovered_updates.update(self._semantic_trace_updates(decision))
+                    return recovered_updates
                 return self._ambiguous_followup_updates(locale=locale, session=session)
-            if followup_intent == "continue_pagination" or followup_intent == "none":
+            if followup_intent == "continue_pagination":
+                return self._ambiguous_followup_updates(locale=locale, session=session)
+            if followup_intent == "none":
+                recovered_updates = await self._maybe_recover_time_rescope_continuation(
+                    trigger_reason="missing_usable_delta",
+                    decision=decision,
+                    session=session,
+                    session_query_contract=session_query_contract,
+                    message=message,
+                    today=today,
+                    language=locale,
+                )
+                if recovered_updates is not None:
+                    recovered_updates.update(self._semantic_trace_updates(decision))
+                    return recovered_updates
                 return self._ambiguous_followup_updates(locale=locale, session=session)
 
             if followup_intent == "replace_scope":
@@ -685,6 +828,18 @@ class ExtractionStep(QueryStep):
                 updates["show_expanded"] = False
 
         elif cont_type == "unclear":
+            recovered_updates = await self._maybe_recover_time_rescope_continuation(
+                trigger_reason="unclear_continuation",
+                decision=decision,
+                session=session,
+                session_query_contract=session_query_contract,
+                message=message,
+                today=today,
+                language=locale,
+            )
+            if recovered_updates is not None:
+                recovered_updates.update(self._semantic_trace_updates(decision))
+                return recovered_updates
             return self._ambiguous_followup_updates(locale=locale, session=session)
 
         elif cont_type == "aggregate":
