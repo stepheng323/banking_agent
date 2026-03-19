@@ -26,8 +26,9 @@ from apps.core.src.agent.orchestrator.progress import (
     render_progress_message,
     seconds_until_progress_eligible,
     should_emit_progress,
+    should_suppress_followup_typing,
 )
-from apps.core.src.messaging.outbox import _get_delivery_service, enqueue_outbox_say
+from apps.core.src.messaging.outbox import enqueue_outbox_say
 from shared.clients.abstractions.banking import BankDataProvider
 from shared.config.settings import settings
 from shared.i18n import LocaleManager
@@ -103,6 +104,43 @@ class OrchestratorGraphHandler:
         self._error_window: deque[int] = deque(maxlen=200)
 
         self.graph: CompiledStateGraph = build_orchestrator_graph(checkpointer=self.checkpointer)
+
+    @staticmethod
+    def _delivery_metadata_from_progress_snapshot(snapshot: Any) -> dict[str, Any]:
+        if should_suppress_followup_typing(snapshot):
+            return {"suppress_typing_indicator": True}
+        return {}
+
+    async def _deliver_progress_update(
+        self,
+        *,
+        tracker: TurnProgressTracker,
+        phone_number: str,
+        channel: str,
+        text: str,
+        metadata: dict[str, Any],
+        thread_id: str,
+        stage_key: str,
+        progress_count: int,
+    ) -> None:
+        try:
+            await enqueue_outbox_say(
+                self.publisher,
+                phone_number,
+                channel,
+                text,
+                metadata=metadata,
+            )
+        except Exception as exc:
+            logger.warning(
+                "progress_message_send_failed",
+                thread_id=thread_id,
+                stage_key=stage_key,
+                progress_count=progress_count,
+                error=str(exc),
+            )
+        finally:
+            await tracker.record_progress_sent()
 
     async def _ensure_checkpointer(self) -> None:
         """Ensure checkpointer is initialized."""
@@ -250,57 +288,27 @@ class OrchestratorGraphHandler:
                     "dedupe_key": f"{thread_id}:progress:{snapshot.progress_count}:{snapshot.stage_key}",
                     "progress_stage": snapshot.stage_key,
                     "progress_count": snapshot.progress_count,
+                    "force_typing_indicator": True,
                 }
-                try:
-                    await self._send_progress_typing(
+                delivery_task = asyncio.create_task(
+                    self._deliver_progress_update(
+                        tracker=tracker,
                         phone_number=phone_number,
                         channel=channel,
-                        channel_identity=channel_identity,
-                        inbound_message_id=inbound_message_id,
-                    )
-                    await enqueue_outbox_say(
-                        self.publisher,
-                        phone_number,
-                        channel,
-                        text,
+                        text=text,
                         metadata=metadata,
-                    )
-                except Exception as exc:
-                    logger.warning(
-                        "progress_message_send_failed",
                         thread_id=thread_id,
                         stage_key=snapshot.stage_key,
                         progress_count=snapshot.progress_count,
-                        error=str(exc),
                     )
-                finally:
-                    await tracker.record_progress_sent()
+                )
+                try:
+                    await asyncio.shield(delivery_task)
+                except asyncio.CancelledError:
+                    await delivery_task
+                    raise
         except asyncio.CancelledError:
             raise
-
-    async def _send_progress_typing(
-        self,
-        *,
-        phone_number: str,
-        channel: str,
-        channel_identity: str | None,
-        inbound_message_id: str | None,
-    ) -> None:
-        client = _get_delivery_service()._get_client(channel)
-        try:
-            if channel == "telegram":
-                chat_id = channel_identity or phone_number
-                if chat_id:
-                    await client.send_typing_indicator(chat_id)
-            elif channel == "whatsapp" and inbound_message_id:
-                await client.send_typing_indicator(inbound_message_id)
-        except Exception as exc:
-            logger.warning(
-                "progress_typing_send_failed",
-                channel=channel,
-                phone_number=phone_number,
-                error=str(exc),
-            )
 
     async def invoke(self, context: MessageContext) -> dict[str, Any]:
         """
@@ -384,6 +392,7 @@ class OrchestratorGraphHandler:
                         await progress_task
                     except asyncio.CancelledError:
                         pass
+                progress_snapshot = await progress_tracker.snapshot()
                 g_duration = (time.perf_counter() - g_start) * 1000
                 path_label = self._resolve_path_label(context, final_state)
                 semantic_path_shape = self._resolve_semantic_path_shape(context, final_state, path_label)
@@ -420,6 +429,7 @@ class OrchestratorGraphHandler:
                     "intents": intents,
                     "outbox": outbox,  # Keep raw outbox for logging/debug if needed
                     "locale": resolved_locale,
+                    "delivery_metadata": self._delivery_metadata_from_progress_snapshot(progress_snapshot),
                 }
                 total_duration = (time.perf_counter() - turn_start) * 1000
                 self._log_latency_span(

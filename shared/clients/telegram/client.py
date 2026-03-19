@@ -128,8 +128,10 @@ class TelegramClient(MessagingClient):
         to: str,
         text: str,
         message_id: str | None = None,
+        suppress_typing_indicator: bool = False,
     ) -> MessageResult:
         """Send a plain text message via Telegram."""
+        del suppress_typing_indicator
         html_text = _format_telegram_html(text)
         payload: dict[str, Any] = {
             "chat_id": to,
@@ -258,8 +260,10 @@ class TelegramClient(MessagingClient):
         header: str = "",
         footer: str = "",
         message_id: str | None = None,
+        suppress_typing_indicator: bool = False,
     ) -> MessageResult:
         """Send an interactive message with inline keyboard buttons."""
+        del message_id, suppress_typing_indicator
         parts: list[str] = []
         if header:
             parts.append(f"*{header}*")
@@ -297,8 +301,10 @@ class TelegramClient(MessagingClient):
         image_url: str,
         caption: str = "",
         message_id: str | None = None,
+        suppress_typing_indicator: bool = False,
     ) -> MessageResult:
         """Send an image by URL."""
+        del message_id, suppress_typing_indicator
         payload: dict[str, Any] = {
             "chat_id": to,
             "photo": image_url,
@@ -322,8 +328,10 @@ class TelegramClient(MessagingClient):
         caption: str = "",
         mime_type: str = "image/png",
         message_id: str | None = None,
+        suppress_typing_indicator: bool = False,
     ) -> MessageResult:
         """Send an image from bytes via multipart upload."""
+        del message_id, suppress_typing_indicator
         ext = mime_type.split("/")[-1]
         filename = f"image.{ext}"
 
@@ -386,6 +394,7 @@ class TelegramClient(MessagingClient):
         flow_id: str,
         flow_config: dict[str, Any],
         message_id: str | None = None,
+        suppress_typing_indicator: bool = False,
     ) -> MessageResult:
         """Send a flow via Telegram Mini App.
 
@@ -399,6 +408,7 @@ class TelegramClient(MessagingClient):
             body_text=flow_config.get("text_body", ""),
             cta_text=flow_config.get("flow_cta", "Open"),
             message_id=message_id,
+            suppress_typing_indicator=suppress_typing_indicator,
         )
 
     async def send_mini_app(
@@ -409,6 +419,7 @@ class TelegramClient(MessagingClient):
         body_text: str = "",
         cta_text: str = "Open",
         message_id: str | None = None,
+        suppress_typing_indicator: bool = False,
     ) -> MessageResult:
         """Send an inline keyboard button that opens a Telegram Mini App.
 
@@ -420,6 +431,7 @@ class TelegramClient(MessagingClient):
                 to=to,
                 text=body_text or "This action requires a Mini App. Please contact support.",
                 message_id=message_id,
+                suppress_typing_indicator=suppress_typing_indicator,
             )
 
         if flow_token.startswith("link-"):

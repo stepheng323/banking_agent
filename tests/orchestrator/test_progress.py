@@ -1,7 +1,9 @@
 from apps.core.src.agent.orchestrator.progress import (
     TurnProgressSnapshot,
+    render_progress_message,
     seconds_until_progress_eligible,
     should_emit_progress,
+    should_suppress_followup_typing,
 )
 
 
@@ -35,3 +37,51 @@ def test_progress_emits_once_execution_stage_has_been_active_long_enough() -> No
 
     assert seconds_until_progress_eligible(snapshot, now=3.8) == 0.0
     assert should_emit_progress(snapshot, now=3.8) is True
+
+
+def test_progress_renders_context_aware_query_followup_message() -> None:
+    text = render_progress_message(
+        stage_key="query.resolving_followup",
+        progress_count=0,
+        locale="en",
+        stage_metadata={"scope_label": "what you sent to mum"},
+    )
+
+    assert text == "Checking what you sent to mum."
+
+
+def test_progress_renders_context_aware_query_fetch_message() -> None:
+    text = render_progress_message(
+        stage_key="query.fetching_transactions",
+        progress_count=1,
+        locale="en",
+        stage_metadata={"scope_label": "what you sent to mum from Mar 9 to Mar 15"},
+    )
+
+    assert text == "Still working. I'm fetching the matching transactions for what you sent to mum from Mar 9 to Mar 15."
+
+
+def test_progress_falls_back_to_generic_when_scope_missing() -> None:
+    text = render_progress_message(
+        stage_key="query.resolving_followup",
+        progress_count=0,
+        locale="en",
+        stage_metadata=None,
+    )
+
+    assert text == "Checking your request."
+
+
+def test_progress_recent_visible_update_suppresses_duplicate_typing() -> None:
+    snapshot = TurnProgressSnapshot(
+        stage_key="query.fetching_transactions",
+        started_at=0.0,
+        stage_started_at=0.0,
+        last_progress_sent_at=4.0,
+        progress_count=1,
+        stage_metadata=None,
+        locale="en",
+    )
+
+    assert should_suppress_followup_typing(snapshot, now=5.5) is True
+    assert should_suppress_followup_typing(snapshot, now=7.0) is False

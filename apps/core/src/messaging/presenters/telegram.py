@@ -30,6 +30,16 @@ class TelegramPresenter(Presenter):
     def __init__(self, messaging_client: MessagingClient) -> None:
         self.client = messaging_client
 
+    @staticmethod
+    def _suppress_typing(context: PresentationContext) -> bool:
+        return bool(context.metadata.get("suppress_typing_indicator", False))
+
+    @staticmethod
+    def _typing_delay_seconds(context: PresentationContext) -> float:
+        if context.metadata.get("force_typing_indicator"):
+            return 0.0
+        return _TYPING_DELAY_SECONDS
+
     async def present(self, intents: list[UiIntent], context: PresentationContext) -> PresentationResult:
         """Render intents to Telegram."""
         result = PresentationResult()
@@ -84,9 +94,16 @@ class TelegramPresenter(Presenter):
     def _arm_delayed_typing(self, intents: list[UiIntent], context: PresentationContext) -> asyncio.Task[None] | None:
         if not intents:
             return None
+        if self._suppress_typing(context):
+            return None
         if self._first_send_uses_streaming_draft(intents[0], context):
             return None
-        return asyncio.create_task(self._send_typing_after_delay(context.phone_number))
+        return asyncio.create_task(
+            self._send_typing_after_delay(
+                context.phone_number,
+                delay_seconds=self._typing_delay_seconds(context),
+            )
+        )
 
     @staticmethod
     async def _cancel_typing_task(task: asyncio.Task[None] | None) -> None:
@@ -98,8 +115,9 @@ class TelegramPresenter(Presenter):
         except asyncio.CancelledError:
             pass
 
-    async def _send_typing_after_delay(self, chat_id: str) -> None:
-        await asyncio.sleep(_TYPING_DELAY_SECONDS)
+    async def _send_typing_after_delay(self, chat_id: str, *, delay_seconds: float) -> None:
+        if delay_seconds > 0:
+            await asyncio.sleep(delay_seconds)
         await self.client.send_typing_indicator(chat_id)
 
     def _first_send_uses_streaming_draft(self, intent: UiIntent, context: PresentationContext) -> bool:
@@ -141,6 +159,7 @@ class TelegramPresenter(Presenter):
             resp = await self.client.send_text(
                 to=context.phone_number,
                 text=intent.text,
+                suppress_typing_indicator=self._suppress_typing(context),
             )
         return self._extract_message_id(resp)
 
@@ -150,6 +169,7 @@ class TelegramPresenter(Presenter):
             resp = await self.client.send_text(
                 to=context.phone_number,
                 text="Authentication method not supported on Telegram.",
+                suppress_typing_indicator=self._suppress_typing(context),
             )
             return str(resp.get("message_id")) if isinstance(resp, dict) and "message_id" in resp else None
 
@@ -172,6 +192,7 @@ class TelegramPresenter(Presenter):
                 "flow_cta": "🔐 Enter PIN",
                 "flow_token": flow_token,
             },
+            suppress_typing_indicator=self._suppress_typing(context),
         )
         return resp.message_id
 
@@ -200,6 +221,7 @@ class TelegramPresenter(Presenter):
                 "flow_cta": "🔐 Authorize",
                 "flow_token": flow_token,
             },
+            suppress_typing_indicator=self._suppress_typing(context),
         )
         return resp.message_id
 
@@ -215,6 +237,7 @@ class TelegramPresenter(Presenter):
                 data=image_bytes,
                 caption=intent.caption or "Transaction Receipt",
                 mime_type=mime_type,
+                suppress_typing_indicator=self._suppress_typing(context),
             )
             return str(resp.get("message_id")) if isinstance(resp, dict) and "message_id" in resp else None
 
@@ -223,6 +246,7 @@ class TelegramPresenter(Presenter):
                 to=context.phone_number,
                 image_url=receipt_data["url"],
                 caption=intent.caption or "Transaction Receipt",
+                suppress_typing_indicator=self._suppress_typing(context),
             )
             return str(resp.get("message_id")) if isinstance(resp, dict) and "message_id" in resp else None
         else:
@@ -238,6 +262,7 @@ class TelegramPresenter(Presenter):
             resp = await self.client.send_text(
                 to=context.phone_number,
                 text="\n".join(lines),
+                suppress_typing_indicator=self._suppress_typing(context),
             )
             return str(resp.get("message_id")) if isinstance(resp, dict) and "message_id" in resp else None
 
@@ -248,11 +273,16 @@ class TelegramPresenter(Presenter):
                 to=context.phone_number,
                 flow_id=intent.flow_id,
                 flow_config=intent.flow_config,
+                suppress_typing_indicator=self._suppress_typing(context),
             )
             return resp.message_id
         else:
             fallback = intent.fallback_text or "This action requires flow support."
-            resp = await self.client.send_text(to=context.phone_number, text=fallback)
+            resp = await self.client.send_text(
+                to=context.phone_number,
+                text=fallback,
+                suppress_typing_indicator=self._suppress_typing(context),
+            )
             return str(resp.get("message_id")) if isinstance(resp, dict) and "message_id" in resp else None
 
     async def _present_options(self, intent: ShowOptions, context: PresentationContext) -> str | None:
@@ -273,6 +303,7 @@ class TelegramPresenter(Presenter):
             to=context.phone_number,
             body_text=intent.title,
             options=options,
+            suppress_typing_indicator=self._suppress_typing(context),
         )
         if resp.success:
             return resp.message_id
@@ -282,7 +313,11 @@ class TelegramPresenter(Presenter):
         logger.info("option_render_mode", channel="telegram", mode="text", option_count=len(options))
         logger.info("option_fallback_text_used", channel="telegram", option_count=len(options))
         fallback_text = f"{intent.title}\n{numbered}"
-        text_resp = await self.client.send_text(to=context.phone_number, text=fallback_text)
+        text_resp = await self.client.send_text(
+            to=context.phone_number,
+            text=fallback_text,
+            suppress_typing_indicator=self._suppress_typing(context),
+        )
         return self._extract_message_id(text_resp)
 
     @staticmethod

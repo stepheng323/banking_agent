@@ -143,6 +143,7 @@ class WhatsAppClient(MessagingClient):
         text: str,
         preview_url: bool = False,
         message_id: str | None = None,
+        suppress_typing_indicator: bool = False,
     ) -> dict[str, Any]:
         """Send a text message to a WhatsApp number.
 
@@ -157,7 +158,7 @@ class WhatsAppClient(MessagingClient):
         # Always try to get message_id for typing indicator
         message_id = await self._ensure_message_id(to, message_id)
 
-        if message_id:
+        if message_id and not suppress_typing_indicator:
             await self.send_typing_indicator(message_id)
         payload = {
             "messaging_product": "whatsapp",
@@ -203,6 +204,7 @@ class WhatsAppClient(MessagingClient):
         header: str = "",
         footer: str = "",
         message_id: str | None = None,
+        suppress_typing_indicator: bool = False,
     ) -> dict[str, Any]:
         """
         Send an interactive button message.
@@ -222,7 +224,7 @@ class WhatsAppClient(MessagingClient):
 
         # Send typing indicator before button message
         message_id = await self._ensure_message_id(to, message_id)
-        if message_id:
+        if message_id and not suppress_typing_indicator:
             await self.send_typing_indicator(message_id)
 
         # Build button rows (max 3 buttons)
@@ -264,6 +266,7 @@ class WhatsAppClient(MessagingClient):
         footer: str = "",
         list_button_text: str = "View options",
         message_id: str | None = None,
+        suppress_typing_indicator: bool = False,
     ) -> dict[str, Any]:
         """Send an interactive list message (up to 10 options)."""
         if not options:
@@ -271,7 +274,7 @@ class WhatsAppClient(MessagingClient):
 
         url = self._get_url()
         message_id = await self._ensure_message_id(to, message_id)
-        if message_id:
+        if message_id and not suppress_typing_indicator:
             await self.send_typing_indicator(message_id)
 
         rows: list[dict[str, str]] = []
@@ -320,6 +323,7 @@ class WhatsAppClient(MessagingClient):
         flow_id: str,
         flow_config: dict[str, Any],
         message_id: str | None = None,
+        suppress_typing_indicator: bool = False,
     ) -> MessageResult:
         """Send a WhatsApp flow.
 
@@ -342,7 +346,7 @@ class WhatsAppClient(MessagingClient):
         url = self._get_url()
 
         message_id = await self._ensure_message_id(to, message_id)
-        if message_id:
+        if message_id and not suppress_typing_indicator:
             await self.send_typing_indicator(message_id)
 
         # Extract config
@@ -427,7 +431,14 @@ class WhatsAppClient(MessagingClient):
             print(f"❌ Failed to upload media to WhatsApp: {e}")
             raise
 
-    async def send_image(self, to: str, image_url: str, caption: str = "") -> dict[str, Any]:
+    async def send_image(
+        self,
+        to: str,
+        image_url: str,
+        caption: str = "",
+        message_id: str | None = None,
+        suppress_typing_indicator: bool = False,
+    ) -> dict[str, Any]:
         """
         Send an image to a WhatsApp number.
 
@@ -440,6 +451,9 @@ class WhatsAppClient(MessagingClient):
             API response from WhatsApp
         """
         try:
+            message_id = await self._ensure_message_id(to, message_id)
+            if message_id and not suppress_typing_indicator:
+                await self.send_typing_indicator(message_id)
             media_id = await self._upload_media_to_whatsapp(image_url)
             url = self._get_url()
             image_payload: dict[str, Any] = {
@@ -469,6 +483,8 @@ class WhatsAppClient(MessagingClient):
         data: bytes,
         caption: str = "",
         mime_type: str = "image/png",
+        message_id: str | None = None,
+        suppress_typing_indicator: bool = False,
     ) -> dict[str, Any]:
         """
         Send an image from bytes data to a WhatsApp number.
@@ -483,6 +499,9 @@ class WhatsAppClient(MessagingClient):
             API response from WhatsApp
         """
         try:
+            message_id = await self._ensure_message_id(to, message_id)
+            if message_id and not suppress_typing_indicator:
+                await self.send_typing_indicator(message_id)
             # Generate a filename based on mime type
             extension = mime_type.split("/")[-1]
             filename = f"image.{extension}"
@@ -605,6 +624,7 @@ class WhatsAppClient(MessagingClient):
         caption: str = "",
         mime_type: str = "application/pdf",
         message_id: str | None = None,
+        suppress_typing_indicator: bool = False,
     ) -> dict[str, Any]:
         """
         Send a document (PDF, etc.) to a WhatsApp number.
@@ -621,7 +641,7 @@ class WhatsAppClient(MessagingClient):
             API response from WhatsApp
         """
         message_id = await self._ensure_message_id(to, message_id)
-        if message_id:
+        if message_id and not suppress_typing_indicator:
             await self.send_typing_indicator(message_id)
 
         try:
@@ -662,6 +682,7 @@ class WhatsAppClient(MessagingClient):
         header: str = "",
         footer: str = "",
         message_id: str | None = None,
+        suppress_typing_indicator: bool = False,
     ) -> MessageResult:
         """Implement MessagingClient.send_interactive using WhatsApp native buttons/lists."""
         try:
@@ -673,6 +694,7 @@ class WhatsAppClient(MessagingClient):
                     header=header,
                     footer=footer,
                     message_id=message_id,
+                    suppress_typing_indicator=suppress_typing_indicator,
                 )
             elif len(options) <= 10:
                 result = await self.send_list(
@@ -682,6 +704,7 @@ class WhatsAppClient(MessagingClient):
                     header=header,
                     footer=footer,
                     message_id=message_id,
+                    suppress_typing_indicator=suppress_typing_indicator,
                 )
             else:
                 raise ValueError("WhatsApp interactive supports at most 10 options")

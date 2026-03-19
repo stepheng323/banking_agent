@@ -160,3 +160,47 @@ async def test_telegram_presenter_streamed_first_send_skips_typing(monkeypatch: 
 
     assert len(client.stream_calls) == 1
     assert client.typing_calls == []
+
+
+@pytest.mark.asyncio
+async def test_telegram_presenter_suppresses_typing_when_metadata_requests_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(telegram_presenter_module, "UnitOfWork", _StubUnitOfWork)
+    monkeypatch.setattr(telegram_presenter_module, "_TYPING_DELAY_SECONDS", 0.001)
+    client = _StubDelayedTelegramClient(send_delay_seconds=0.02)
+    presenter = TelegramPresenter(cast(MessagingClient, client))
+
+    await presenter.present(
+        [Say(text="short response")],
+        PresentationContext(
+            channel="telegram",
+            phone_number="123456789",
+            metadata={"telegram_stream_response": False, "suppress_typing_indicator": True},
+        ),
+    )
+
+    assert client.send_text_calls
+    assert client.typing_calls == []
+
+
+@pytest.mark.asyncio
+async def test_telegram_presenter_force_typing_indicator_sends_immediately(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(telegram_presenter_module, "UnitOfWork", _StubUnitOfWork)
+    monkeypatch.setattr(telegram_presenter_module, "_TYPING_DELAY_SECONDS", 1.0)
+    client = _StubDelayedTelegramClient(send_delay_seconds=0.02)
+    presenter = TelegramPresenter(cast(MessagingClient, client))
+
+    await presenter.present(
+        [Say(text="progress update")],
+        PresentationContext(
+            channel="telegram",
+            phone_number="123456789",
+            metadata={"telegram_stream_response": False, "force_typing_indicator": True},
+        ),
+    )
+
+    assert client.send_text_calls
+    assert client.typing_calls == ["123456789"]

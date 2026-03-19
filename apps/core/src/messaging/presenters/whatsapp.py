@@ -25,6 +25,10 @@ class WhatsAppPresenter(Presenter):
     def __init__(self, messaging_client: MessagingClient):
         self.client = messaging_client
 
+    @staticmethod
+    def _suppress_typing(context: PresentationContext) -> bool:
+        return bool(context.metadata.get("suppress_typing_indicator", False))
+
     async def present(self, intents: list[UiIntent], context: PresentationContext) -> PresentationResult:
         """Render intents to WhatsApp."""
         result = PresentationResult()
@@ -60,6 +64,7 @@ class WhatsAppPresenter(Presenter):
         resp = await self.client.send_text(
             to=context.phone_number,
             text=intent.text,
+            suppress_typing_indicator=self._suppress_typing(context),
         )
         return resp.get("messages", [{}])[0].get("id") if isinstance(resp, dict) else None
 
@@ -92,6 +97,7 @@ class WhatsAppPresenter(Presenter):
                         "screen": "Pin",
                     },
                 },
+                suppress_typing_indicator=self._suppress_typing(context),
             )
             return resp.message_id
         else:
@@ -99,6 +105,7 @@ class WhatsAppPresenter(Presenter):
             resp = await self.client.send_text(
                 to=context.phone_number,
                 text="Secure transaction requires WhatsApp Flows support. Please update your WhatsApp version.",
+                suppress_typing_indicator=self._suppress_typing(context),
             )
             return resp.get("messages", [{}])[0].get("id") if isinstance(resp, dict) else None
 
@@ -126,6 +133,7 @@ class WhatsAppPresenter(Presenter):
                         "screen": "Pin",
                     },
                 },
+                suppress_typing_indicator=self._suppress_typing(context),
             )
             return resp.message_id
         else:
@@ -133,6 +141,7 @@ class WhatsAppPresenter(Presenter):
             resp = await self.client.send_text(
                 to=context.phone_number,
                 text="Confirmation requires WhatsApp Flows support. Please update your WhatsApp version.",
+                suppress_typing_indicator=self._suppress_typing(context),
             )
             return resp.get("messages", [{}])[0].get("id") if isinstance(resp, dict) else None
 
@@ -155,6 +164,7 @@ class WhatsAppPresenter(Presenter):
                 data=image_bytes,
                 caption=intent.caption or "Transaction Receipt",
                 mime_type=mime_type,
+                suppress_typing_indicator=self._suppress_typing(context),
             )
             return resp.get("messages", [{}])[0].get("id") if isinstance(resp, dict) else None
 
@@ -163,6 +173,7 @@ class WhatsAppPresenter(Presenter):
                 to=context.phone_number,
                 image_url=receipt_data["url"],
                 caption=intent.caption or "Transaction Receipt",
+                suppress_typing_indicator=self._suppress_typing(context),
             )
             return resp.get("messages", [{}])[0].get("id") if isinstance(resp, dict) else None
         else:
@@ -174,6 +185,7 @@ class WhatsAppPresenter(Presenter):
             resp = await self.client.send_text(
                 to=context.phone_number,
                 text="\n".join(lines),
+                suppress_typing_indicator=self._suppress_typing(context),
             )
             return resp.get("messages", [{}])[0].get("id") if isinstance(resp, dict) else None
 
@@ -184,11 +196,16 @@ class WhatsAppPresenter(Presenter):
                 to=context.phone_number,
                 flow_id=intent.flow_id,
                 flow_config=intent.flow_config,
+                suppress_typing_indicator=self._suppress_typing(context),
             )
             return resp.message_id
         else:
             fallback = intent.fallback_text or "This action requires flow support on your channel."
-            resp = await self.client.send_text(to=context.phone_number, text=fallback)
+            resp = await self.client.send_text(
+                to=context.phone_number,
+                text=fallback,
+                suppress_typing_indicator=self._suppress_typing(context),
+            )
             return resp.get("messages", [{}])[0].get("id") if isinstance(resp, dict) else None
 
     async def _present_options(self, intent: ShowOptions, context: PresentationContext) -> str | None:
@@ -212,6 +229,7 @@ class WhatsAppPresenter(Presenter):
                 to=context.phone_number,
                 body_text=intent.title,
                 options=options,
+                suppress_typing_indicator=self._suppress_typing(context),
             )
             if interactive_resp.success:
                 return interactive_resp.message_id
@@ -221,5 +239,9 @@ class WhatsAppPresenter(Presenter):
         logger.info("option_render_mode", channel="whatsapp", mode="text", option_count=len(options))
         logger.info("option_fallback_text_used", channel="whatsapp", option_count=len(options))
         fallback_text = f"{intent.title}\n{numbered}"
-        text_resp = await self.client.send_text(to=context.phone_number, text=fallback_text)
+        text_resp = await self.client.send_text(
+            to=context.phone_number,
+            text=fallback_text,
+            suppress_typing_indicator=self._suppress_typing(context),
+        )
         return text_resp.get("messages", [{}])[0].get("id") if isinstance(text_resp, dict) else None

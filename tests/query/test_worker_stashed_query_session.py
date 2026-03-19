@@ -52,6 +52,14 @@ class _SessionManager:
         del key
 
 
+class _ProgressTracker:
+    def __init__(self) -> None:
+        self.stage_calls: list[tuple[str, dict[str, Any] | None]] = []
+
+    async def set_stage(self, stage_key: str, *, stage_metadata: dict[str, Any] | None = None) -> None:
+        self.stage_calls.append((stage_key, stage_metadata))
+
+
 @pytest.mark.asyncio
 async def test_worker_restores_from_stashed_query_session_and_marks_patch() -> None:
     session_manager = _SessionManager()
@@ -178,6 +186,60 @@ async def test_worker_persists_pending_query_clarification_session() -> None:
     assert session_manager.saved_state is not None
     assert session_manager.saved_state["session_active"] is True
     assert session_manager.saved_state["pending_clarification"] == pending
+
+
+@pytest.mark.asyncio
+async def test_worker_sets_followup_progress_stage_before_pipeline_run() -> None:
+    session_manager = _SessionManager()
+    worker = QueryWorker(_DummyLLM(), _DummyProvider(), session_manager)  # type: ignore[arg-type]
+    tracker = _ProgressTracker()
+    stashed_query_session = {
+        "session_active": True,
+        "query_contract": QueryExecutionContract(
+            intent=QueryIntent.ANALYTICS_SUMMARY,
+            time_start=date(2026, 3, 16),
+            time_end=date(2026, 3, 19),
+            filters={"transaction_type": "debit", "merchant": ["mum"]},
+            normalized_query=NormalizedQuery(
+                intent=QueryIntent.ANALYTICS_SUMMARY,
+                time_range=TimeRange(start=date(2026, 3, 16), end=date(2026, 3, 19), granularity="week"),
+                filters={"transaction_type": "debit", "merchant": ["mum"]},
+            ),
+        ).model_dump(),
+        "current_page": 0,
+    }
+
+    async def _fake_pipeline_run(state: dict[str, Any], worker_context: Any) -> TransactionResult:
+        del state, worker_context
+        assert tracker.stage_calls == [
+            (
+                "query.resolving_followup",
+                {
+                    "intent_family": "analytics_summary",
+                    "direction": "sent",
+                    "counterparty_label": "mum",
+                    "scope_label": "what you sent to mum",
+                },
+            )
+        ]
+        return TransactionResult(outcome=TransactionOutcome.OK, patch={"session_active": True})
+
+    worker.pipeline.run = _fake_pipeline_run  # type: ignore[method-assign]
+
+    result = await worker.run(
+        payload={"message": "What about last week"},
+        context={
+            "phone_number": "2348000000399",
+            "user_id": "u-progress",
+            "accounts": [],
+            "language": "en",
+            "today": date(2026, 3, 19),
+            "stashed_query_session": stashed_query_session,
+            "progress_tracker": tracker,
+        },
+    )
+
+    assert result.outcome == TransactionOutcome.OK
 
 
 @pytest.mark.asyncio

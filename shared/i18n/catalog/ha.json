@@ -777,6 +777,68 @@
       "max_100": "Percentage cannot exceed 100%."
     }
   },
+  "progress": {
+    "common": {
+      "first_generic": "Working on your request.",
+      "followup_generic": "Still working on your request."
+    },
+    "query": {
+      "resolving_followup": {
+        "first_generic": "Checking your request.",
+        "first_scoped": "Checking {scope_label}.",
+        "followup_generic": "Still working. I'm checking that.",
+        "followup_scoped": "Still working. I'm checking {scope_label}."
+      },
+      "fetching_transactions": {
+        "first_generic": "Fetching your transactions.",
+        "first_scoped": "Fetching the matching transactions for {scope_label}.",
+        "followup_generic": "Still working. I'm fetching your transactions.",
+        "followup_scoped": "Still working. I'm fetching the matching transactions for {scope_label}."
+      },
+      "comparing_periods": {
+        "first_generic": "Comparing the matching time periods.",
+        "first_scoped": "Comparing the matching time periods for {scope_label}.",
+        "followup_generic": "Still working. I'm comparing the matching time periods.",
+        "followup_scoped": "Still working. I'm comparing the matching time periods for {scope_label}."
+      }
+    },
+    "transfer": {
+      "resolving_recipient": {
+        "first_generic": "Resolving the recipient details.",
+        "followup_generic": "Still working. I'm resolving the recipient details."
+      },
+      "confirming_details": {
+        "first_generic": "Confirming the transfer details.",
+        "followup_generic": "Still working. I'm confirming the transfer details."
+      },
+      "authorizing_transfer": {
+        "first_generic": "Authorizing the transfer.",
+        "followup_generic": "Still working. I'm authorizing the transfer."
+      },
+      "processing_transfer": {
+        "first_generic": "Processing the transfer.",
+        "followup_generic": "Still working. I'm processing the transfer."
+      }
+    },
+    "scope": {
+      "transactions": "your transactions",
+      "outgoing_transactions": "your outgoing transactions",
+      "incoming_transactions": "your incoming transactions",
+      "spending": "your spending",
+      "sent": "what you sent",
+      "received": "what you received",
+      "sent_to": "what you sent to {counterparty}",
+      "received_from": "what you received from {counterparty}",
+      "transactions_with": "your transactions with {counterparty}",
+      "with_category": "{scope_label} for {category}",
+      "with_time": "{scope_label} {time_phrase}"
+    },
+    "time": {
+      "today": "today",
+      "this_month": "this month",
+      "range": "from {start} to {end}"
+    }
+  },
   "response": {
     "common": {
       "recipient_fallback": "recipient",

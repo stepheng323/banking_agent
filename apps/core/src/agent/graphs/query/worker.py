@@ -11,7 +11,7 @@ from typing import Any, cast
 
 from langchain_core.runnables import Runnable
 
-from apps.core.src.agent.graphs.query.models import QueryExecutionContract, QueryIntent
+from apps.core.src.agent.graphs.query.models import Filters, QueryExecutionContract, QueryIntent, TimeRange
 from apps.core.src.agent.graphs.query.nodes.execution import ExecutionStep
 from apps.core.src.agent.graphs.query.nodes.extraction import ExtractionStep
 from apps.core.src.agent.graphs.query.pipeline import QueryPipeline
@@ -117,11 +117,164 @@ class QueryWorker:
         return result
 
     @staticmethod
-    async def _set_execution_progress_stage(state: dict[str, Any], worker_context: SimpleNamespace) -> None:
+    def _format_progress_date(value: date) -> str:
+        return value.strftime("%b %d").replace(" 0", " ")
+
+    @classmethod
+    def _build_time_phrase(cls, time_range: TimeRange | None, locale: str) -> str | None:
+        if time_range is None:
+            return None
+
+        today = lagos_today()
+        if time_range.start == time_range.end == today:
+            return render_message("progress.time.today", locale)
+
+        this_month_start = today.replace(day=1)
+        if time_range.start == this_month_start and time_range.end == today:
+            return render_message("progress.time.this_month", locale)
+
+        return render_message(
+            "progress.time.range",
+            locale,
+            {
+                "start": cls._format_progress_date(time_range.start),
+                "end": cls._format_progress_date(time_range.end),
+            },
+        )
+
+    @classmethod
+    def _build_scope_label(
+        cls,
+        *,
+        intent: QueryIntent,
+        filters: Filters | None,
+        time_range: TimeRange | None,
+        locale: str,
+        include_time: bool,
+    ) -> str | None:
+        merchant_values = filters.merchant if filters and filters.merchant else []
+        category_values = filters.category if filters and filters.category else []
+        merchant = next((item.strip() for item in merchant_values if isinstance(item, str) and item.strip()), None)
+        category = next((item.strip().title() for item in category_values if isinstance(item, str) and item.strip()), None)
+        tx_type = filters.transaction_type if filters else None
+
+        if merchant:
+            if intent == QueryIntent.ANALYTICS_SUMMARY and tx_type == "debit":
+                scope_label = render_message("progress.scope.sent_to", locale, {"counterparty": merchant})
+            elif intent == QueryIntent.ANALYTICS_SUMMARY and tx_type == "credit":
+                scope_label = render_message("progress.scope.received_from", locale, {"counterparty": merchant})
+            else:
+                scope_label = render_message("progress.scope.transactions_with", locale, {"counterparty": merchant})
+        elif intent == QueryIntent.ANALYTICS_SUMMARY and tx_type == "debit":
+            scope_label = render_message("progress.scope.sent", locale)
+        elif intent == QueryIntent.ANALYTICS_SUMMARY and tx_type == "credit":
+            scope_label = render_message("progress.scope.received", locale)
+        elif intent == QueryIntent.ANALYTICS_SUMMARY:
+            scope_label = render_message("progress.scope.spending", locale)
+        elif tx_type == "debit":
+            scope_label = render_message("progress.scope.outgoing_transactions", locale)
+        elif tx_type == "credit":
+            scope_label = render_message("progress.scope.incoming_transactions", locale)
+        else:
+            scope_label = render_message("progress.scope.transactions", locale)
+
+        if category:
+            scope_label = render_message(
+                "progress.scope.with_category",
+                locale,
+                {"scope_label": scope_label, "category": category},
+            )
+
+        if include_time:
+            time_phrase = cls._build_time_phrase(time_range, locale)
+            if time_phrase:
+                scope_label = render_message(
+                    "progress.scope.with_time",
+                    locale,
+                    {"scope_label": scope_label, "time_phrase": time_phrase},
+                )
+
+        return scope_label
+
+    @classmethod
+    def _build_query_progress_stage_metadata(
+        cls,
+        query_contract: QueryExecutionContract | dict[str, Any] | None,
+        *,
+        locale: str,
+        include_time: bool,
+    ) -> dict[str, str] | None:
+        if isinstance(query_contract, dict):
+            try:
+                query_contract = QueryExecutionContract.model_validate(query_contract)
+            except Exception:
+                return None
+        if not isinstance(query_contract, QueryExecutionContract):
+            return None
+
+        query = query_contract.normalized_query
+        filters = query.filters
+        merchant_values = filters.merchant if filters and filters.merchant else []
+        category_values = filters.category if filters and filters.category else []
+        merchant = next((item.strip() for item in merchant_values if isinstance(item, str) and item.strip()), None)
+        category = next((item.strip().title() for item in category_values if isinstance(item, str) and item.strip()), None)
+        tx_type = filters.transaction_type if filters else None
+        time_phrase = cls._build_time_phrase(query.time_range, locale) if include_time else None
+        scope_label = cls._build_scope_label(
+            intent=query.intent,
+            filters=filters,
+            time_range=query.time_range,
+            locale=locale,
+            include_time=include_time,
+        )
+
+        direction = "all"
+        if query.intent == QueryIntent.ANALYTICS_SUMMARY and tx_type == "debit":
+            direction = "sent"
+        elif query.intent == QueryIntent.ANALYTICS_SUMMARY and tx_type == "credit":
+            direction = "received"
+        elif tx_type == "debit":
+            direction = "outgoing"
+        elif tx_type == "credit":
+            direction = "incoming"
+
+        metadata = {
+            "intent_family": query.intent.value,
+            "direction": direction,
+        }
+        if merchant:
+            metadata["counterparty_label"] = merchant
+        if category:
+            metadata["category_label"] = category
+        if time_phrase:
+            metadata["time_label"] = time_phrase
+        if scope_label:
+            metadata["scope_label"] = scope_label
+        return metadata
+
+    @classmethod
+    async def _set_query_progress_stage(
+        cls,
+        stage_key: str,
+        *,
+        state: dict[str, Any],
+        worker_context: SimpleNamespace,
+        include_time: bool,
+    ) -> None:
         progress_tracker = getattr(worker_context, "progress_tracker", None)
         if progress_tracker is None:
             return
 
+        locale = LocaleManager.normalize(state.get("language")).value
+        stage_metadata = cls._build_query_progress_stage_metadata(
+            state.get("query_contract"),
+            locale=locale,
+            include_time=include_time,
+        )
+        await progress_tracker.set_stage(stage_key, stage_metadata=stage_metadata)
+
+    @staticmethod
+    async def _set_execution_progress_stage(state: dict[str, Any], worker_context: SimpleNamespace) -> None:
         query_contract = state.get("query_contract")
         if isinstance(query_contract, dict):
             query_contract = QueryExecutionContract.model_validate(query_contract)
@@ -131,7 +284,12 @@ class QueryWorker:
             if query_contract.comparison is not None or query_contract.intent == QueryIntent.TIME_COMPARISON:
                 stage_key = "query.comparing_periods"
 
-        await progress_tracker.set_stage(stage_key)
+        await QueryWorker._set_query_progress_stage(
+            stage_key,
+            state=state,
+            worker_context=worker_context,
+            include_time=True,
+        )
 
     async def run(
         self,
@@ -219,6 +377,19 @@ class QueryWorker:
             user_id=context.get("user_id"),
             progress_tracker=context.get("progress_tracker"),
         )
+
+        if (
+            isinstance(query_session, dict)
+            and query_session.get("session_active")
+            and not query_session.get("pending_clarification")
+            and not state["force_new_query"]
+        ):
+            await self._set_query_progress_stage(
+                "query.resolving_followup",
+                state=state,
+                worker_context=worker_context,
+                include_time=False,
+            )
 
         # 4. Run Pipeline
         try:

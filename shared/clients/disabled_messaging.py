@@ -23,8 +23,15 @@ class DisabledMessagingClient(MessagingClient):
         to: str,
         text: str,
         message_id: str | None = None,
+        suppress_typing_indicator: bool = False,
     ) -> MessageResult:
-        return self._skip("send_text", to=to, message_id=message_id, text=text)
+        return self._skip(
+            "send_text",
+            to=to,
+            message_id=message_id,
+            text=text,
+            suppress_typing_indicator=suppress_typing_indicator,
+        )
 
     async def send_interactive(
         self,
@@ -34,6 +41,7 @@ class DisabledMessagingClient(MessagingClient):
         header: str = "",
         footer: str = "",
         message_id: str | None = None,
+        suppress_typing_indicator: bool = False,
     ) -> MessageResult:
         return self._skip(
             "send_interactive",
@@ -43,6 +51,7 @@ class DisabledMessagingClient(MessagingClient):
             header=header,
             footer=footer,
             option_count=len(options),
+            suppress_typing_indicator=suppress_typing_indicator,
         )
 
     async def send_image(
@@ -51,8 +60,16 @@ class DisabledMessagingClient(MessagingClient):
         image_url: str,
         caption: str = "",
         message_id: str | None = None,
+        suppress_typing_indicator: bool = False,
     ) -> MessageResult:
-        return self._skip("send_image", to=to, image_url=image_url, caption=caption, message_id=message_id)
+        return self._skip(
+            "send_image",
+            to=to,
+            image_url=image_url,
+            caption=caption,
+            message_id=message_id,
+            suppress_typing_indicator=suppress_typing_indicator,
+        )
 
     async def send_image_data(
         self,
@@ -61,6 +78,7 @@ class DisabledMessagingClient(MessagingClient):
         caption: str = "",
         mime_type: str = "image/png",
         message_id: str | None = None,
+        suppress_typing_indicator: bool = False,
     ) -> MessageResult:
         return self._skip(
             "send_image_data",
@@ -69,6 +87,7 @@ class DisabledMessagingClient(MessagingClient):
             caption=caption,
             mime_type=mime_type,
             message_id=message_id,
+            suppress_typing_indicator=suppress_typing_indicator,
         )
 
     async def get_media_url(self, media_id: str) -> str:

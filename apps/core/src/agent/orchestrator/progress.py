@@ -5,11 +5,14 @@ import time
 from dataclasses import dataclass
 from typing import Any
 
+from shared.i18n import render_message
+
 FIRST_PROGRESS_DELAY_SECONDS = 3.0
 SECOND_PROGRESS_DELAY_SECONDS = 9.0
 MIN_PROGRESS_STAGE_AGE_SECONDS = 0.75
 PROGRESS_POLL_INTERVAL_SECONDS = 0.25
 MAX_PROGRESS_MESSAGES = 2
+FINAL_TYPING_SUPPRESSION_WINDOW_SECONDS = 2.5
 
 
 @dataclass(slots=True)
@@ -121,6 +124,30 @@ def should_emit_progress(
     return wait_seconds == 0.0
 
 
+def should_suppress_followup_typing(
+    snapshot: TurnProgressSnapshot,
+    *,
+    now: float | None = None,
+) -> bool:
+    """Return whether a recent visible progress update should suppress a duplicate typing pulse."""
+    if snapshot.progress_count <= 0 or snapshot.last_progress_sent_at is None:
+        return False
+
+    now_value = time.monotonic() if now is None else now
+    return (now_value - snapshot.last_progress_sent_at) <= FINAL_TYPING_SUPPRESSION_WINDOW_SECONDS
+
+
+def _render_progress_scope_label(
+    *,
+    locale: str,
+    stage_metadata: dict[str, Any] | None,
+) -> str | None:
+    if not stage_metadata:
+        return None
+    scope_label = stage_metadata.get("scope_label")
+    return str(scope_label).strip() if isinstance(scope_label, str) and scope_label.strip() else None
+
+
 def render_progress_message(
     *,
     stage_key: str,
@@ -129,26 +156,60 @@ def render_progress_message(
     stage_metadata: dict[str, Any] | None = None,
 ) -> str:
     """Render a chat-safe progress message for the active stage."""
-    del locale
-    del stage_metadata
-
-    first_messages = {
-        "query.fetching_transactions": "Fetching your transactions.",
-        "query.comparing_periods": "Comparing the matching time periods.",
-        "transfer.resolving_recipient": "Resolving the recipient details.",
-        "transfer.confirming_details": "Confirming the transfer details.",
-        "transfer.authorizing_transfer": "Authorizing the transfer.",
-        "transfer.processing_transfer": "Processing the transfer.",
+    scope_label = _render_progress_scope_label(locale=locale, stage_metadata=stage_metadata)
+    variant = "first" if progress_count <= 0 else "followup"
+    scoped_key_by_stage = {
+        "query.resolving_followup": {
+            "first": "progress.query.resolving_followup.first_scoped",
+            "followup": "progress.query.resolving_followup.followup_scoped",
+        },
+        "query.fetching_transactions": {
+            "first": "progress.query.fetching_transactions.first_scoped",
+            "followup": "progress.query.fetching_transactions.followup_scoped",
+        },
+        "query.comparing_periods": {
+            "first": "progress.query.comparing_periods.first_scoped",
+            "followup": "progress.query.comparing_periods.followup_scoped",
+        },
     }
-    followup_messages = {
-        "query.fetching_transactions": "Still working. I am fetching your transactions.",
-        "query.comparing_periods": "Still working. I am comparing the matching time periods.",
-        "transfer.resolving_recipient": "Still working. I am resolving the recipient details.",
-        "transfer.confirming_details": "Still working. I am confirming the transfer details.",
-        "transfer.authorizing_transfer": "Still working. I am authorizing the transfer.",
-        "transfer.processing_transfer": "Still working. I am processing the transfer.",
+    generic_key_by_stage = {
+        "query.resolving_followup": {
+            "first": "progress.query.resolving_followup.first_generic",
+            "followup": "progress.query.resolving_followup.followup_generic",
+        },
+        "query.fetching_transactions": {
+            "first": "progress.query.fetching_transactions.first_generic",
+            "followup": "progress.query.fetching_transactions.followup_generic",
+        },
+        "query.comparing_periods": {
+            "first": "progress.query.comparing_periods.first_generic",
+            "followup": "progress.query.comparing_periods.followup_generic",
+        },
+        "transfer.resolving_recipient": {
+            "first": "progress.transfer.resolving_recipient.first_generic",
+            "followup": "progress.transfer.resolving_recipient.followup_generic",
+        },
+        "transfer.confirming_details": {
+            "first": "progress.transfer.confirming_details.first_generic",
+            "followup": "progress.transfer.confirming_details.followup_generic",
+        },
+        "transfer.authorizing_transfer": {
+            "first": "progress.transfer.authorizing_transfer.first_generic",
+            "followup": "progress.transfer.authorizing_transfer.followup_generic",
+        },
+        "transfer.processing_transfer": {
+            "first": "progress.transfer.processing_transfer.first_generic",
+            "followup": "progress.transfer.processing_transfer.followup_generic",
+        },
     }
 
-    if progress_count <= 0:
-        return first_messages.get(stage_key, "Working on your request.")
-    return followup_messages.get(stage_key, "Still working on your request.")
+    scoped_key = scoped_key_by_stage.get(stage_key, {}).get(variant)
+    if scope_label and scoped_key:
+        return render_message(scoped_key, locale, {"scope_label": scope_label})
+
+    generic_key = generic_key_by_stage.get(stage_key, {}).get(variant)
+    if generic_key:
+        return render_message(generic_key, locale)
+
+    fallback_key = "progress.common.first_generic" if progress_count <= 0 else "progress.common.followup_generic"
+    return render_message(fallback_key, locale)

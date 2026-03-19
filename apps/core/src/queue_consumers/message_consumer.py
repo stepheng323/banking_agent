@@ -141,6 +141,8 @@ class MessageConsumer:
 
         text = response.get("text") or response.get("final_response")
         outbox = response.get("outbox", [])
+        raw_delivery_metadata = response.get("delivery_metadata")
+        delivery_metadata = raw_delivery_metadata if isinstance(raw_delivery_metadata, dict) else {}
 
         intents_to_send: list[UiIntent | dict[str, Any]] = []
         if text:
@@ -160,7 +162,7 @@ class MessageConsumer:
             outbox_phone,
             channel,
             intents_to_send,
-            metadata={"source": "flow_event_handler", "flow_type": flow_type},
+            metadata={"source": "flow_event_handler", "flow_type": flow_type, **delivery_metadata},
         )
         logger.info("pin_response_enqueued_outbox", outbox_phone=outbox_phone, mapped_from=phone_number)
 
@@ -231,6 +233,11 @@ class MessageConsumer:
 
             intents: list[UiIntent] = orchestrator_output.get("intents", [])
             response_text = orchestrator_output.get("text")
+            delivery_metadata = (
+                orchestrator_output.get("delivery_metadata")
+                if isinstance(orchestrator_output.get("delivery_metadata"), dict)
+                else {}
+            )
             has_primary_interaction = any(
                 isinstance(intent, (RequestAuth, RequestConfirmation, ShowReceipt, ShowOptions, ShowFlow))
                 for intent in intents
@@ -244,7 +251,7 @@ class MessageConsumer:
                     channel_user_id,
                     message.channel,
                     cast(list[UiIntent | dict[str, Any]], intents),
-                    metadata={"source": "message_consumer", "message_id": message.message_id},
+                    metadata={"source": "message_consumer", "message_id": message.message_id, **delivery_metadata},
                 )
                 logger.info("message_consumer_enqueued_outbox", count=len(intents))
         except Exception:

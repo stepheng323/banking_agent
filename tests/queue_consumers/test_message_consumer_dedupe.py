@@ -256,3 +256,47 @@ async def test_non_transaction_pin_verified_flow_is_ignored(monkeypatch: pytest.
 
     assert orchestrator.resume_calls == []
     assert enqueue_calls == []
+
+
+@pytest.mark.asyncio
+async def test_message_consumer_passes_delivery_metadata_to_outbox(monkeypatch: pytest.MonkeyPatch) -> None:
+    context_manager = _ContextManagerStub(should_claim=True)
+    orchestrator = _OrchestratorStub(
+        context_manager,
+        output={
+            "intents": [Say(text="done")],
+            "text": "done",
+            "delivery_metadata": {"suppress_typing_indicator": True},
+        },
+    )
+    consumer = MessageConsumer(
+        user_repository=_UserRepoStub(),
+        onboarding_executor=_OnboardingStub(),
+        orchestrator=orchestrator,
+    )
+
+    captured_kwargs: list[dict[str, Any]] = []
+
+    async def _enqueue_outbox_intents(*args: Any, **kwargs: Any) -> None:
+        del args
+        captured_kwargs.append(kwargs)
+
+    monkeypatch.setattr("apps.core.src.queue_consumers.message_consumer.message_rate_limiter", _RateLimiterAllow())
+    monkeypatch.setattr(
+        "apps.core.src.queue_consumers.message_consumer.enqueue_outbox_intents",
+        _enqueue_outbox_intents,
+    )
+
+    response = await consumer._handle_message(_message("wamid-meta-1"))
+
+    assert response is not None
+    assert response["status"] == "success"
+    assert captured_kwargs == [
+        {
+            "metadata": {
+                "source": "message_consumer",
+                "message_id": "wamid-meta-1",
+                "suppress_typing_indicator": True,
+            }
+        }
+    ]

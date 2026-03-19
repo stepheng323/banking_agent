@@ -48,6 +48,7 @@ class MessagingClient(ABC):
         to: str,
         text: str,
         message_id: str | None = None,
+        suppress_typing_indicator: bool = False,
     ) -> MessageResult:
         """
         Send a plain text message.
@@ -56,6 +57,7 @@ class MessagingClient(ABC):
             to: Recipient identifier (phone number, user ID, etc.)
             text: Message content
             message_id: Optional reference message ID (for reply context)
+            suppress_typing_indicator: Skip channel typing UX before sending when True
 
         Returns:
             MessageResult with success status and message ID
@@ -71,6 +73,7 @@ class MessagingClient(ABC):
         header: str = "",
         footer: str = "",
         message_id: str | None = None,
+        suppress_typing_indicator: bool = False,
     ) -> MessageResult:
         """
         Send an interactive message with options.
@@ -87,6 +90,7 @@ class MessagingClient(ABC):
             header: Optional header text
             footer: Optional footer text
             message_id: Optional reference message ID
+            suppress_typing_indicator: Skip channel typing UX before sending when True
 
         Returns:
             MessageResult with success status
@@ -100,6 +104,7 @@ class MessagingClient(ABC):
         image_url: str,
         caption: str = "",
         message_id: str | None = None,
+        suppress_typing_indicator: bool = False,
     ) -> MessageResult:
         """
         Send an image with optional caption.
@@ -109,6 +114,7 @@ class MessagingClient(ABC):
             image_url: URL of the image to send
             caption: Optional caption text
             message_id: Optional reference message ID
+            suppress_typing_indicator: Skip channel typing UX before sending when True
 
         Returns:
             MessageResult with success status
@@ -122,6 +128,7 @@ class MessagingClient(ABC):
         caption: str = "",
         mime_type: str = "image/png",
         message_id: str | None = None,
+        suppress_typing_indicator: bool = False,
     ) -> MessageResult:
         """
         Send an image from bytes data.
@@ -148,6 +155,7 @@ class MessagingClient(ABC):
         flow_id: str,
         flow_config: dict[str, Any],
         message_id: str | None = None,
+        suppress_typing_indicator: bool = False,
     ) -> MessageResult:
         """
         Send a structured flow/form.
