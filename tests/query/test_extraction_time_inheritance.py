@@ -516,6 +516,104 @@ async def test_summary_contrastive_last_week_replaces_scope_and_preserves_recipi
 
 
 @pytest.mark.asyncio
+async def test_summary_contrastive_last_week_logs_parser_time_rescope(monkeypatch: pytest.MonkeyPatch) -> None:
+    step = ExtractionStep(_DummyLLM())
+    today = date(2026, 3, 19)
+    events: list[tuple[str, dict[str, object]]] = []
+    session_query = NormalizedQuery(
+        intent=QueryIntent.ANALYTICS_SUMMARY,
+        time_range=TimeRange(start=date(2026, 3, 16), end=today, granularity="week"),
+        filters=Filters(transaction_type="debit", merchant=["mum"]),
+    )
+    session_contract = QueryExecutionContract.from_normalized_query(session_query)
+
+    def _capture(event: str, **kwargs: object) -> None:
+        events.append((event, kwargs))
+
+    monkeypatch.setattr("apps.core.src.agent.graphs.query.nodes.extraction.logger.info", _capture)
+
+    async def _fake_time_rescope_parse(**_: object) -> ActiveQueryTimeRescopeDecision:
+        return ActiveQueryTimeRescopeDecision(
+            decision="time_only_rescope",
+            normalized_time_message="last week",
+            has_non_time_scope=False,
+        )
+
+    step.time_rescope_parser.parse = _fake_time_rescope_parse  # type: ignore[method-assign]
+
+    await step._handle_continuation(
+        {"message": "What about last week", "today": today, "language": "en"},
+        {
+            "session_active": True,
+            "query_contract": session_contract.model_dump(),
+            "query_result": {"items": []},
+            "current_page": 0,
+        },
+    )
+
+    assert (
+        "query_continuation_resolution",
+        {
+            "path": "parser_time_only_rescope",
+            "continuation_type": "time_delta",
+            "followup_intent": "replace_scope",
+            "time_start": "2026-03-09",
+            "time_end": "2026-03-15",
+        },
+    ) in events
+
+
+@pytest.mark.asyncio
+async def test_show_me_logs_semantic_reasoner_continuation_resolution(monkeypatch: pytest.MonkeyPatch) -> None:
+    step = ExtractionStep(_DummyLLM())
+    today = date(2026, 3, 6)
+    events: list[tuple[str, dict[str, object]]] = []
+    session_query = NormalizedQuery(
+        intent=QueryIntent.ANALYTICS_SUMMARY,
+        time_range=TimeRange(start=date(2026, 3, 1), end=today),
+    )
+    session_contract = QueryExecutionContract.from_normalized_query(session_query)
+
+    def _capture(event: str, **kwargs: object) -> None:
+        events.append((event, kwargs))
+
+    monkeypatch.setattr("apps.core.src.agent.graphs.query.nodes.extraction.logger.info", _capture)
+
+    async def _fake_reason(context: object) -> QuerySemanticDecision:
+        del context
+        return QuerySemanticDecision(
+            decision="continuation",
+            continuation_type="show_more",
+            followup_intent="refine_existing",
+            confidence=1.0,
+            reason="llm_show_underlying_transactions",
+            delta_type="none",
+        )
+
+    step.reasoner.reason = _fake_reason  # type: ignore[method-assign]
+
+    await step._handle_continuation(
+        {"message": "show me", "today": today, "language": "en"},
+        {
+            "session_active": True,
+            "query_contract": session_contract.model_dump(),
+            "query_result": {"items": []},
+        },
+    )
+
+    assert (
+        "query_continuation_resolution",
+        {
+            "path": "semantic_reasoner",
+            "semantic_decision": "continuation",
+            "continuation_type": "show_more",
+            "followup_intent": "refine_existing",
+            "delta_type": "none",
+        },
+    ) in events
+
+
+@pytest.mark.asyncio
 async def test_summary_contrastive_yesterday_without_reasoner_time_payload_reparses_message() -> None:
     step = ExtractionStep(_DummyLLM())
     today = date(2026, 3, 19)

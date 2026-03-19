@@ -778,12 +778,12 @@ async def test_gate_turn_router_can_answer_grounded_query_follow_up_without_plan
 
     updates = await session_gate_fastpath(state, config)
 
-    assert planner.route_calls == 1
-    assert planner.plan_calls == 0
-    assert "QUERY_SESSION:" in (planner.last_context or "")
-    assert "3 debits" in (planner.last_context or "")
+    assert planner.route_calls == 0
     assert updates["fast_path_triggered"] is True
-    assert updates["final_response"] == "Yes. The transactions shown after that include more debits."
+    assert updates["semantic_path_shape"] == "query_active_session"
+    task = updates["tasks"]["direct_query"]
+    assert task.type == "query"
+    assert task.payload["message"] == "Any more debits after that"
 
 
 async def test_gate_turn_router_can_answer_grounded_flow_recap_without_planner() -> None:
@@ -1076,10 +1076,156 @@ async def test_gate_query_session_ignores_generic_checkin_direct_response_for_fo
 
     updates = await session_gate_fastpath(state, config)
 
-    assert planner.route_calls == 1
-    assert updates.get("fast_path_triggered") is None
-    assert "final_response" not in updates
-    assert "turn_context_summary" in updates
+    assert planner.route_calls == 0
+    assert updates["fast_path_triggered"] is True
+    assert updates["semantic_path_shape"] == "query_active_session"
+    task = updates["tasks"]["direct_query"]
+    assert task.type == "query"
+    assert task.payload["message"] == "Really?"
+
+
+async def test_gate_routes_show_me_active_query_followup_directly_to_query_worker() -> None:
+    planner = _RouteTurnPlanner(
+        TurnRouteDecision(
+            decision="respond_directly",
+            confidence=0.87,
+            detected_language="English",
+            response_key="conversational.checkin",
+            response=None,
+            expected_transaction_executors=[],
+            reason="misclassified semantic followup",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_gate_query_followup_1",
+        phone_number="2348000002072",
+        channel="whatsapp",
+        last_message_text="show me",
+        loaded_context={"language": "en"},
+        stashed_query_session={
+            "session_active": True,
+            "query_result": {"summary_text": "You spent ₦60,000 on mum this week."},
+            "query_contract": {
+                "intent": "analytics_summary",
+                "time_start": "2026-03-16",
+                "time_end": "2026-03-19",
+                "timezone": "Africa/Lagos",
+                "normalized_query": {
+                    "intent": "analytics_summary",
+                    "time_range": {"start": "2026-03-16", "end": "2026-03-19", "granularity": "week"},
+                    "filters": {"transaction_type": "debit", "merchant": ["mum"]},
+                    "accounts_scope": "all",
+                },
+            },
+        },
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await session_gate_fastpath(state, config)
+
+    assert planner.route_calls == 0
+    assert updates["fast_path_triggered"] is True
+    assert updates["semantic_path_shape"] == "query_active_session"
+    task = updates["tasks"]["direct_query"]
+    assert task.type == "query"
+    assert task.payload["message"] == "show me"
+    assert task.payload.get("force_new_query") is None
+
+
+async def test_gate_routes_last_week_active_query_followup_directly_to_query_worker() -> None:
+    planner = _RouteTurnPlanner(
+        TurnRouteDecision(
+            decision="go_planner",
+            confidence=0.84,
+            detected_language="English",
+            response_key=None,
+            response=None,
+            expected_transaction_executors=[],
+            reason="misclassified semantic followup",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_gate_query_followup_2",
+        phone_number="2348000002073",
+        channel="whatsapp",
+        last_message_text="What about last week",
+        loaded_context={"language": "en"},
+        stashed_query_session={
+            "session_active": True,
+            "query_result": {"summary_text": "You spent ₦60,000 on mum this week."},
+            "query_contract": {
+                "intent": "analytics_summary",
+                "time_start": "2026-03-16",
+                "time_end": "2026-03-19",
+                "timezone": "Africa/Lagos",
+                "normalized_query": {
+                    "intent": "analytics_summary",
+                    "time_range": {"start": "2026-03-16", "end": "2026-03-19", "granularity": "week"},
+                    "filters": {"transaction_type": "debit", "merchant": ["mum"]},
+                    "accounts_scope": "all",
+                },
+            },
+        },
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await session_gate_fastpath(state, config)
+
+    assert planner.route_calls == 0
+    assert updates["fast_path_triggered"] is True
+    assert updates["semantic_path_shape"] == "query_active_session"
+    task = updates["tasks"]["direct_query"]
+    assert task.type == "query"
+    assert task.payload["message"] == "What about last week"
+
+
+async def test_gate_logs_query_routing_breadcrumb_for_active_query_handoff(monkeypatch) -> None:
+    events: list[tuple[str, dict[str, object]]] = []
+
+    def _capture(event: str, **kwargs: object) -> None:
+        events.append((event, kwargs))
+
+    monkeypatch.setattr("apps.core.src.agent.orchestrator.nodes.gate.logger.info", _capture)
+
+    state = OrchestratorState(
+        user_id="u_gate_query_followup_3",
+        phone_number="2348000002074",
+        channel="whatsapp",
+        last_message_text="show me",
+        loaded_context={"language": "en"},
+        stashed_query_session={
+            "session_active": True,
+            "query_result": {"summary_text": "You spent ₦60,000 on mum this week."},
+            "query_contract": {
+                "intent": "analytics_summary",
+                "time_start": "2026-03-16",
+                "time_end": "2026-03-19",
+                "timezone": "Africa/Lagos",
+                "normalized_query": {
+                    "intent": "analytics_summary",
+                    "time_range": {"start": "2026-03-16", "end": "2026-03-19", "granularity": "week"},
+                    "filters": {"transaction_type": "debit", "merchant": ["mum"]},
+                    "accounts_scope": "all",
+                },
+            },
+        },
+    )
+    config: RunnableConfig = {"configurable": {}, "recursion_limit": 50}
+
+    updates = await session_gate_fastpath(state, config)
+
+    assert updates["semantic_path_shape"] == "query_active_session"
+    assert (
+        "gate_query_routing_breadcrumb",
+        {
+            "path": "active_query_session_handoff_check",
+            "has_active_query_session": True,
+            "query_session_source": "stashed",
+            "handoff_to_query": True,
+            "handoff_reason": "active_query_session_semantic_handoff",
+            "response_class": None,
+        },
+    ) in events
 
 
 async def test_gate_exits_active_query_session_on_greeting_direct_reply() -> None:

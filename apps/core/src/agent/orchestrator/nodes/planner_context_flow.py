@@ -18,10 +18,10 @@ from apps.core.src.agent.orchestrator.nodes.planner_fastpath import (
     TRANSACTION_EXECUTORS,
 )
 from apps.core.src.agent.orchestrator.nodes.planner_query_shortcuts import (
-    _is_query_continuation_blocked,
-    _looks_like_explicit_query_continuation,
     _next_query_continuation_task_id,
+    resolve_query_shortcut_with_reason,
 )
+from shared.i18n import LocaleManager
 from shared.services.task_planner_prompt_models import PlannerPromptSignals
 from shared.types.planner import TransactionExecutor
 from shared.utils.logging import get_logger
@@ -114,11 +114,22 @@ async def _build_planner_context(
     if query_session_snapshot and not is_transactional_flow:
         session_active = bool(query_session_snapshot.get("session_active"))
         query_session_active = session_active
+        shortcut_decision, shortcut_reason = resolve_query_shortcut_with_reason(
+            text,
+            LocaleManager.normalize((state.loaded_context or {}).get("language")).value,
+        )
+        logger.info(
+            "planner_query_shortcut_resolution",
+            session_active=session_active,
+            query_session_source=query_session_source,
+            shortcut_kind=shortcut_decision.kind if shortcut_decision else None,
+            shortcut_action=shortcut_decision.action if shortcut_decision else None,
+            reason=shortcut_reason,
+        )
         if (
             session_active
             and state.pending_interrupt is None
-            and _looks_like_explicit_query_continuation(text)
-            and not _is_query_continuation_blocked(text)
+            and shortcut_decision is not None
         ):
             shortcut_task_id = _next_query_continuation_task_id(state.tasks)
             shortcut_task = TaskSpec(
@@ -131,7 +142,11 @@ async def _build_planner_context(
                     "message": text,
                 },
             )
-            logger.info("planner_query_continuation_shortcut_hit", message=text)
+            logger.info(
+                "planner_query_continuation_shortcut_hit",
+                shortcut_kind=shortcut_decision.kind,
+                shortcut_action=shortcut_decision.action,
+            )
             return PlannerContextBuildResult(
                 planner_context="None",
                 active_intent=None,

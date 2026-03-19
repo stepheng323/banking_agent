@@ -234,6 +234,8 @@ async def test_worker_logs_query_turn_summary(monkeypatch: pytest.MonkeyPatch) -
             "surface_type": None,
             "session_active": True,
             "has_pending_clarification": False,
+            "session_source": "none",
+            "restored_from_stashed_query_session": False,
         },
     ) in events
 
@@ -399,5 +401,7 @@ async def test_worker_logs_query_turn_summary_for_conversational_active_result_r
             "surface_type": "summary",
             "session_active": False,
             "has_pending_clarification": False,
+            "session_source": "stashed",
+            "restored_from_stashed_query_session": True,
         },
     ) in events

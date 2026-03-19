@@ -5,6 +5,9 @@ from __future__ import annotations
 import re
 from typing import Any, Literal
 
+from apps.core.src.agent.orchestrator.services.query_shortcuts import resolve_query_shortcut
+from shared.i18n import LocaleManager
+
 ResponseClass = Literal[
     "FACT_BOOL",
     "FACT_COUNT",
@@ -40,21 +43,6 @@ _BENEFICIARY_LIST_PATTERNS = (
     re.compile(r"\b(show|list)\s+(?:me\s+)?(?:my\s+)?saved\s+beneficiar(?:y|ies)\b", re.IGNORECASE),
     re.compile(r"\bwhat\s+beneficiar(?:y|ies)\s+do\s+i\s+have\b", re.IGNORECASE),
 )
-_QUERY_PAGINATION_EXACT = {
-    "more",
-    "next",
-    "show more",
-    "next page",
-    "show them",
-    "which ones",
-    "details",
-    "show details",
-}
-_QUERY_ACTIONABLE_EXACT = {
-    "receipt",
-    "issue",
-    "report issue",
-}
 _COUNT_PATTERNS = (
     re.compile(r"\bhow\s+many\s+(?:linked\s+)?accounts\b", re.IGNORECASE),
     re.compile(r"\bnumber\s+of\s+(?:my\s+)?linked\s+accounts\b", re.IGNORECASE),
@@ -77,7 +65,6 @@ def classify_read_only_response_class(
     query_session_snapshot: dict[str, Any] | None = None,
 ) -> ResponseClass | None:
     """Classify read-only turns into fact vs structured-surface response classes."""
-    del loaded_context
     normalized = _normalize_message(message_text)
     if not normalized:
         return None
@@ -89,12 +76,16 @@ def classify_read_only_response_class(
     if any(pattern.search(normalized) for pattern in _BENEFICIARY_LIST_PATTERNS):
         return "SURFACE_LIST"
 
-    if normalized in _QUERY_ACTIONABLE_EXACT and isinstance(query_session_snapshot, dict):
-        if query_session_snapshot.get("session_active"):
-            return "SURFACE_ACTIONABLE"
-    if normalized in _QUERY_PAGINATION_EXACT and isinstance(query_session_snapshot, dict):
-        if query_session_snapshot.get("session_active"):
-            return "SURFACE_PAGINATED"
+    if isinstance(query_session_snapshot, dict) and query_session_snapshot.get("session_active"):
+        locale = LocaleManager.normalize((loaded_context or {}).get("language")).value
+        query_shortcut = resolve_query_shortcut(message_text, locale)
+        if query_shortcut is not None:
+            if query_shortcut.kind == "actionable":
+                return "SURFACE_ACTIONABLE"
+            if query_shortcut.kind == "detail":
+                return "SURFACE_DETAIL"
+            if query_shortcut.kind == "pagination":
+                return "SURFACE_PAGINATED"
 
     if any(pattern.search(normalized) for pattern in _COUNT_PATTERNS):
         return "FACT_COUNT"

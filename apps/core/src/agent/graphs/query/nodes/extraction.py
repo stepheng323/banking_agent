@@ -446,6 +446,14 @@ class ExtractionStep(QueryStep):
         session_query_contract = self._load_session_query_contract(session)
         locale = LocaleManager.normalize(state.get("language")).value
         original_query = session_query_contract.normalized_query if session_query_contract else None
+        logger.info(
+            "query_continuation_entry",
+            has_query_contract=original_query is not None,
+            has_surface=bool(session.get("surface")),
+            has_query_result=bool(session.get("query_result")),
+            current_page=session.get("current_page", 0),
+            show_expanded=bool(session.get("show_expanded", False)),
+        )
 
         if original_query is not None:
             parser_time_range = await self._resolve_parser_time_only_followup_range(
@@ -457,6 +465,14 @@ class ExtractionStep(QueryStep):
             if parser_time_range is not None:
                 new_query = original_query.model_copy(deep=True)
                 new_query.time_range = parser_time_range
+                logger.info(
+                    "query_continuation_resolution",
+                    path="parser_time_only_rescope",
+                    continuation_type="time_delta",
+                    followup_intent="replace_scope",
+                    time_start=parser_time_range.start.isoformat(),
+                    time_end=parser_time_range.end.isoformat(),
+                )
                 return {
                     "flow_state": "executing",
                     "continuation_type": "time_delta",
@@ -512,6 +528,14 @@ class ExtractionStep(QueryStep):
             reason=decision.reason,
             semantic_decision=decision.decision,
         )
+        logger.info(
+            "query_continuation_resolution",
+            path="semantic_reasoner",
+            semantic_decision=decision.decision,
+            continuation_type=cont_type,
+            followup_intent=decision.followup_intent,
+            delta_type=decision.delta_type,
+        )
 
         if decision.decision == "end_session":
             return self._append_query_session_transition({
@@ -523,6 +547,11 @@ class ExtractionStep(QueryStep):
             }, "end_query_session")
 
         if decision.decision in {"fresh_query", "new_query", "reinterpret_query"}:
+            logger.info(
+                "query_continuation_resolution",
+                path="semantic_reparse",
+                semantic_decision=decision.decision,
+            )
             semantic_updates = self._parse_reasoner_extraction_to_updates(
                 decision,
                 state=state,
@@ -534,6 +563,11 @@ class ExtractionStep(QueryStep):
             return semantic_updates
 
         if decision.decision != "continuation":
+            logger.info(
+                "query_continuation_resolution",
+                path="fallback_parse_new_query",
+                semantic_decision=decision.decision,
+            )
             return await self._parse_new_query(state)
 
         followup_intent = decision.followup_intent or "none"

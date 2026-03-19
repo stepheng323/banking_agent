@@ -29,10 +29,10 @@ from apps.core.src.agent.orchestrator.nodes.planner_context import (
 )
 from apps.core.src.agent.orchestrator.nodes.planner_fastpath import synthesize_account_fastpath_response
 from apps.core.src.agent.orchestrator.nodes.planner_query_shortcuts import (
-    _looks_like_explicit_query_continuation,
-    _normalize_shortcut_message,
+    resolve_query_shortcut_with_reason,
 )
 from apps.core.src.agent.orchestrator.nodes.response_classes import (
+    ResponseClass,
     classify_read_only_response_class,
     is_surface_response_class,
 )
@@ -367,6 +367,13 @@ def _should_invoke_turn_router(message_text: str) -> bool:
     return any(re.search(pattern, normalized) for pattern in TURN_ROUTER_META_PATTERNS)
 
 
+def _looks_like_turn_router_meta(message_text: str) -> bool:
+    normalized = re.sub(r"\s+", " ", message_text.strip().lower())
+    if not normalized:
+        return False
+    return any(re.search(pattern, normalized) for pattern in TURN_ROUTER_META_PATTERNS)
+
+
 def _deterministic_meta_response_key(message_text: str) -> str | None:
     normalized = re.sub(r"\s+", " ", message_text.strip().lower()).rstrip("?.!,")
     if normalized in DETERMINISTIC_GREETING_EXACT:
@@ -480,6 +487,44 @@ def _should_ignore_query_session_direct_response(
     }:
         return not _is_explicit_meta_turn(message_text)
     return False
+
+
+def _should_handoff_active_query_session_to_query_worker(
+    *,
+    message_text: str,
+    loaded_context: dict[str, Any] | None,
+    query_session_snapshot: dict[str, Any] | None,
+    has_query_session_stack: bool,
+) -> tuple[bool, str, ResponseClass | None]:
+    session_active = bool(
+        (
+            isinstance(query_session_snapshot, dict)
+            and query_session_snapshot.get("session_active")
+        )
+        or has_query_session_stack
+    )
+    if not session_active:
+        return False, "no_active_query_session", None
+    if isinstance(query_session_snapshot, dict) and query_session_snapshot.get("pending_clarification"):
+        return False, "pending_clarification_active", None
+    if _looks_like_turn_router_meta(message_text):
+        return False, "explicit_meta_turn", None
+    if _is_account_balance_request(message_text):
+        return False, "account_balance_request", None
+
+    normalized = re.sub(r"\s+", " ", message_text.strip().lower())
+    if any(re.search(pattern, normalized) for pattern in TURN_ROUTER_TRANSACTION_HINT_PATTERNS):
+        return False, "transaction_hint", None
+
+    response_class = classify_read_only_response_class(
+        message_text,
+        loaded_context=loaded_context,
+        query_session_snapshot=query_session_snapshot,
+    )
+    if response_class is not None:
+        return False, f"response_class:{response_class}", response_class
+
+    return True, "active_query_session_semantic_handoff", None
 
 
 def _build_query_session_exit_updates(
@@ -784,40 +829,24 @@ async def session_gate_fastpath(state: OrchestratorState, config: RunnableConfig
 
         # --- 3. Fast Query Resume ---
         if session.domain == "query":
-            normalized_query_turn = _normalize_shortcut_message(message_text)
-            fast_keywords = {
-                "more",
-                "next",
-                "back",
-                "previous",
-                "prev",
-                "details",
-                "show details",
-                "receipt",
-                "issue",
-                "report issue",
-                "show more",
-                "show them",
-                "which ones",
-                "next page",
-                "last month",
-                "this month",
-                "yesterday",
-                "today",
-                "only debits",
-                "only credits",
-                "first",
-                "latest",
-                "oldest",
-            }
-            is_fast_match = (
-                normalized_query_turn in fast_keywords
-                or _looks_like_explicit_query_continuation(message_text)
-                or re.fullmatch(r"page\s+\d+", normalized_query_turn) is not None
+            shortcut_decision, shortcut_reason = resolve_query_shortcut_with_reason(
+                message_text,
+                LocaleManager.normalize((state.loaded_context or {}).get("language")).value,
+            )
+            logger.info(
+                "gate_query_shortcut_resolution",
+                source="session_stack",
+                shortcut_kind=shortcut_decision.kind if shortcut_decision else None,
+                shortcut_action=shortcut_decision.action if shortcut_decision else None,
+                shortcut_reason=shortcut_reason,
             )
 
-            if is_fast_match:
-                logger.info("fast_path_query_match", phrase=normalized_query_turn)
+            if shortcut_decision is not None:
+                logger.info(
+                    "fast_path_query_match",
+                    shortcut_kind=shortcut_decision.kind,
+                    shortcut_action=shortcut_decision.action,
+                )
 
                 task_id = _next_fast_query_task_id(state.tasks)
                 spec = TaskSpec(
@@ -875,6 +904,21 @@ async def session_gate_fastpath(state: OrchestratorState, config: RunnableConfig
     has_active_query_session = bool(
         isinstance(query_session_snapshot, dict) and query_session_snapshot.get("session_active")
     )
+    has_query_session_stack = bool(session and session.domain == "query")
+    shortcut_decision, shortcut_reason = resolve_query_shortcut_with_reason(
+        message_text,
+        LocaleManager.normalize((state.loaded_context or {}).get("language")).value,
+    )
+    logger.info(
+        "gate_query_routing_breadcrumb",
+        path="query_session_context",
+        has_active_query_session=has_active_query_session or has_query_session_stack,
+        query_session_source=query_session_source,
+        query_session_stack=has_query_session_stack,
+        shortcut_kind=shortcut_decision.kind if shortcut_decision else None,
+        shortcut_action=shortcut_decision.action if shortcut_decision else None,
+        shortcut_reason=shortcut_reason,
+    )
 
     if not state.pending_interrupt and not state.has_quote and not has_active_query_session:
         response_key = _deterministic_meta_response_key(message_text)
@@ -914,6 +958,43 @@ async def session_gate_fastpath(state: OrchestratorState, config: RunnableConfig
             "fast_path_triggered": True,
             "semantic_path_shape": "query_direct",
         }
+
+    if not state.pending_interrupt and not state.has_quote:
+        should_handoff, handoff_reason, response_class = _should_handoff_active_query_session_to_query_worker(
+            message_text=message_text,
+            loaded_context=state.loaded_context,
+            query_session_snapshot=query_session_snapshot,
+            has_query_session_stack=has_query_session_stack,
+        )
+        logger.info(
+            "gate_query_routing_breadcrumb",
+            path="active_query_session_handoff_check",
+            has_active_query_session=has_active_query_session or has_query_session_stack,
+            query_session_source=query_session_source,
+            handoff_to_query=should_handoff,
+            handoff_reason=handoff_reason,
+            response_class=response_class,
+        )
+        if should_handoff:
+            task_id = _next_direct_query_task_id(state.tasks)
+            spec = TaskSpec(
+                id=task_id,
+                type="query",
+                stage=TaskStage.DRAFT,
+                payload={
+                    "message": state.last_message_text,
+                },
+            )
+            logger.info("gate_active_query_session_handoff", task_id=task_id, reason=handoff_reason)
+            return {
+                **summary_updates,
+                "tasks": {task_id: spec},
+                "waves": [[task_id]],
+                "current_wave_index": 0,
+                "planner_output": None,
+                "fast_path_triggered": True,
+                "semantic_path_shape": "query_active_session",
+            }
 
     if not state.pending_interrupt and not state.has_quote and _looks_like_pure_query_turn(message_text):
         task_id = _next_direct_query_task_id(state.tasks)

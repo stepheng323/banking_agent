@@ -73,7 +73,14 @@ class QueryWorker:
             return None
         return getattr(raw_type, "value", str(raw_type))
 
-    def _log_turn_summary(self, *, state: dict[str, Any], result: TransactionResult) -> None:
+    def _log_turn_summary(
+        self,
+        *,
+        state: dict[str, Any],
+        result: TransactionResult,
+        session_source: str,
+        restored_from_stashed_query_session: bool,
+    ) -> None:
         patch = result.patch or {}
         final_state = {**state, **patch}
         session_transition = patch.get("_query_session_transition")
@@ -98,6 +105,8 @@ class QueryWorker:
             surface_type=self._surface_type_name(final_state.get("surface")),
             session_active=final_state.get("session_active"),
             has_pending_clarification=bool(final_state.get("pending_clarification")),
+            session_source=session_source,
+            restored_from_stashed_query_session=restored_from_stashed_query_session,
         )
 
     @staticmethod
@@ -139,10 +148,12 @@ class QueryWorker:
         session_key = f"query:session:{phone_number}"
         query_session = await self.session_manager.load(session_key) or {}
         restored_from_stashed_query_session = False
+        session_source = "redis" if query_session else "none"
         if query_session and not query_session.get("query_contract") and not query_session.get("pending_clarification"):
             logger.warning("query_session_missing_contract_cleared")
             await self.session_manager.clear(session_key)
             query_session = {}
+            session_source = "none"
 
         if not query_session and isinstance(context.get("stashed_query_session"), dict):
             stashed_query_session = dict(cast(dict[str, Any], context["stashed_query_session"]))
@@ -160,6 +171,7 @@ class QueryWorker:
                     stashed_query_session["query_contract"] = contract.model_dump()
                     query_session = stashed_query_session
                     restored_from_stashed_query_session = True
+                    session_source = "stashed"
                 except Exception:
                     logger.warning("stashed_query_session_invalid_contract_ignored")
 
@@ -211,7 +223,12 @@ class QueryWorker:
         # 4. Run Pipeline
         try:
             result = cast(TransactionResult, await self.pipeline.run(state, worker_context))
-            self._log_turn_summary(state=state, result=result)
+            self._log_turn_summary(
+                state=state,
+                result=result,
+                session_source=session_source,
+                restored_from_stashed_query_session=restored_from_stashed_query_session,
+            )
 
             # 5. Handle Session Persistence
             if result.outcome in (TransactionOutcome.OK, TransactionOutcome.NEEDS_INPUT) and result.patch:
