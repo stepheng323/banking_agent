@@ -25,7 +25,7 @@ from apps.core.src.agent.orchestrator.progress import (
     next_progress_delay_seconds,
     render_progress_message,
 )
-from apps.core.src.messaging.outbox import enqueue_outbox_say
+from apps.core.src.messaging.outbox import _get_delivery_service, enqueue_outbox_say
 from shared.clients.abstractions.banking import BankDataProvider
 from shared.config.settings import settings
 from shared.i18n import LocaleManager
@@ -213,6 +213,8 @@ class OrchestratorGraphHandler:
         tracker: TurnProgressTracker,
         phone_number: str,
         channel: str,
+        channel_identity: str | None,
+        inbound_message_id: str | None,
         thread_id: str,
     ) -> None:
         try:
@@ -246,6 +248,12 @@ class OrchestratorGraphHandler:
                     "progress_count": snapshot.progress_count,
                 }
                 try:
+                    await self._send_progress_typing(
+                        phone_number=phone_number,
+                        channel=channel,
+                        channel_identity=channel_identity,
+                        inbound_message_id=inbound_message_id,
+                    )
                     await enqueue_outbox_say(
                         self.publisher,
                         phone_number,
@@ -265,6 +273,30 @@ class OrchestratorGraphHandler:
                     await tracker.record_progress_sent()
         except asyncio.CancelledError:
             raise
+
+    async def _send_progress_typing(
+        self,
+        *,
+        phone_number: str,
+        channel: str,
+        channel_identity: str | None,
+        inbound_message_id: str | None,
+    ) -> None:
+        client = _get_delivery_service()._get_client(channel)
+        try:
+            if channel == "telegram":
+                chat_id = channel_identity or phone_number
+                if chat_id:
+                    await client.send_typing_indicator(chat_id)
+            elif channel == "whatsapp" and inbound_message_id:
+                await client.send_typing_indicator(inbound_message_id)
+        except Exception as exc:
+            logger.warning(
+                "progress_typing_send_failed",
+                channel=channel,
+                phone_number=phone_number,
+                error=str(exc),
+            )
 
     async def invoke(self, context: MessageContext) -> dict[str, Any]:
         """
@@ -330,6 +362,8 @@ class OrchestratorGraphHandler:
                         tracker=progress_tracker,
                         phone_number=phone_number,
                         channel=context.channel,
+                        channel_identity=context.channel_identity,
+                        inbound_message_id=context.message_id,
                         thread_id=thread_id,
                     ),
                     name="orchestrator_progress_updates",

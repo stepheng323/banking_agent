@@ -241,9 +241,6 @@ class QueryWorker:
         state: dict[str, Any],
         worker_context: Any = None,
     ) -> TransactionResult:
-        if getattr(worker_context, "progress_tracker", None) is not None:
-            await worker_context.progress_tracker.set_stage("query.resolving_timeframe")
-
         extraction_result = cast(TransactionResult, await self.extractor.run(state, worker_context))
         if extraction_result.patch:
             state.update(extraction_result.patch)

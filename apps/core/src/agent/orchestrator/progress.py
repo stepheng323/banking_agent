@@ -76,7 +76,6 @@ def render_progress_message(
     del stage_metadata
 
     first_messages = {
-        "query.resolving_timeframe": "Resolving the timeframe for your query.",
         "query.fetching_transactions": "Fetching your transactions.",
         "query.comparing_periods": "Comparing the matching time periods.",
         "transfer.resolving_recipient": "Resolving the recipient details.",
@@ -85,7 +84,6 @@ def render_progress_message(
         "transfer.processing_transfer": "Processing the transfer.",
     }
     followup_messages = {
-        "query.resolving_timeframe": "Still working. I am resolving the timeframe for your query.",
         "query.fetching_transactions": "Still working. I am fetching your transactions.",
         "query.comparing_periods": "Still working. I am comparing the matching time periods.",
         "transfer.resolving_recipient": "Still working. I am resolving the recipient details.",
