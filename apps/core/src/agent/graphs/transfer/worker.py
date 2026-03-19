@@ -64,6 +64,7 @@ class TransferWorkerContext:
     validation_service: Any
     required_fields: list[str]
     previous_response: str | None
+    progress_tracker: Any | None = None
 
 
 class TransferWorker:
@@ -129,6 +130,7 @@ class TransferWorker:
             validation_service=self.validation_service,
             required_fields=required_fields if isinstance(required_fields, list) else [],
             previous_response=previous_response if isinstance(previous_response, str) else None,
+            progress_tracker=context.get("progress_tracker"),
         )
 
     @staticmethod

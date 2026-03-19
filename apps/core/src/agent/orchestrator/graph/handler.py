@@ -18,6 +18,14 @@ from apps.core.src.agent.graphs.__shared__.beneficiary.suggestion_service import
 from apps.core.src.agent.orchestrator.graph import build_orchestrator_graph
 from apps.core.src.agent.orchestrator.models.message_context import MessageContext
 from apps.core.src.agent.orchestrator.presentation.intents import map_outbox_to_intents
+from apps.core.src.agent.orchestrator.progress import (
+    MAX_PROGRESS_MESSAGES,
+    PROGRESS_POLL_INTERVAL_SECONDS,
+    TurnProgressTracker,
+    next_progress_delay_seconds,
+    render_progress_message,
+)
+from apps.core.src.messaging.outbox import enqueue_outbox_say
 from shared.clients.abstractions.banking import BankDataProvider
 from shared.config.settings import settings
 from shared.i18n import LocaleManager
@@ -199,6 +207,65 @@ class OrchestratorGraphHandler:
                 recommendation="roll_back_recent_latency_changes",
             )
 
+    async def _run_progress_updates(
+        self,
+        *,
+        tracker: TurnProgressTracker,
+        phone_number: str,
+        channel: str,
+        thread_id: str,
+    ) -> None:
+        try:
+            while True:
+                snapshot = await tracker.snapshot()
+                if snapshot.progress_count >= MAX_PROGRESS_MESSAGES:
+                    return
+
+                next_delay = next_progress_delay_seconds(snapshot.progress_count)
+                if next_delay is None:
+                    return
+
+                if not snapshot.stage_key:
+                    await asyncio.sleep(PROGRESS_POLL_INTERVAL_SECONDS)
+                    continue
+
+                elapsed = time.monotonic() - snapshot.started_at
+                if elapsed < next_delay:
+                    await asyncio.sleep(min(PROGRESS_POLL_INTERVAL_SECONDS, next_delay - elapsed))
+                    continue
+
+                text = render_progress_message(
+                    stage_key=snapshot.stage_key,
+                    progress_count=snapshot.progress_count,
+                    locale=snapshot.locale,
+                    stage_metadata=snapshot.stage_metadata,
+                )
+                metadata = {
+                    "dedupe_key": f"{thread_id}:progress:{snapshot.progress_count}:{snapshot.stage_key}",
+                    "progress_stage": snapshot.stage_key,
+                    "progress_count": snapshot.progress_count,
+                }
+                try:
+                    await enqueue_outbox_say(
+                        self.publisher,
+                        phone_number,
+                        channel,
+                        text,
+                        metadata=metadata,
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        "progress_message_send_failed",
+                        thread_id=thread_id,
+                        stage_key=snapshot.stage_key,
+                        progress_count=snapshot.progress_count,
+                        error=str(exc),
+                    )
+                finally:
+                    await tracker.record_progress_sent()
+        except asyncio.CancelledError:
+            raise
+
     async def invoke(self, context: MessageContext) -> dict[str, Any]:
         """
         Run the graph.
@@ -255,11 +322,30 @@ class OrchestratorGraphHandler:
                 inputs["loaded_context"] = loaded_context
 
                 config = self._get_config(phone_number, channel=context.channel)
+                progress_tracker = TurnProgressTracker(locale=loaded_context["language"])
+                config["configurable"]["progress_tracker"] = progress_tracker
+                thread_id = config["configurable"]["thread_id"]
+                progress_task = asyncio.create_task(
+                    self._run_progress_updates(
+                        tracker=progress_tracker,
+                        phone_number=phone_number,
+                        channel=context.channel,
+                        thread_id=thread_id,
+                    ),
+                    name="orchestrator_progress_updates",
+                )
 
                 logger.info("orchestrator_graph_invoke", user=phone_number)
 
                 g_start = time.perf_counter()
-                final_state = await self.graph.ainvoke(inputs, config=config)
+                try:
+                    final_state = await self.graph.ainvoke(inputs, config=config)
+                finally:
+                    progress_task.cancel()
+                    try:
+                        await progress_task
+                    except asyncio.CancelledError:
+                        pass
                 g_duration = (time.perf_counter() - g_start) * 1000
                 path_label = self._resolve_path_label(context, final_state)
                 semantic_path_shape = self._resolve_semantic_path_shape(context, final_state, path_label)
@@ -284,7 +370,6 @@ class OrchestratorGraphHandler:
                 intents = map_outbox_to_intents(outbox, response_text)
 
                 # Apply cleanup policy
-                thread_id = config["configurable"]["thread_id"]
                 await self._run_housekeeping(
                     thread_id=thread_id,
                     state=final_state,

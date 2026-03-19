@@ -295,6 +295,7 @@ async def handle_transfer_task(task: Any, task_id: str, ctx: ExecutionContext) -
         "language": _state_locale(ctx.state),
         "required_fields": required_fields,
         "previous_response": previous_response,
+        "progress_tracker": ctx.config["configurable"].get("progress_tracker"),
     }
 
     logger.info("transfer_worker_start", payload=task.payload, task_id=task_id)
@@ -615,6 +616,7 @@ async def handle_query_task(task: Any, task_id: str, ctx: ExecutionContext) -> N
         "accounts": ctx.state.loaded_context.get("accounts", []),
         "language": _state_locale(ctx.state),
         "stashed_query_session": ctx.state.stashed_query_session,
+        "progress_tracker": ctx.config["configurable"].get("progress_tracker"),
     }
 
     result = await worker.run(

@@ -11,10 +11,9 @@ from typing import Any, cast
 
 from langchain_core.runnables import Runnable
 
-from apps.core.src.agent.graphs.query.models import QueryExecutionContract
+from apps.core.src.agent.graphs.query.models import QueryExecutionContract, QueryIntent
 from apps.core.src.agent.graphs.query.nodes.execution import ExecutionStep
 from apps.core.src.agent.graphs.query.nodes.extraction import ExtractionStep
-from apps.core.src.agent.graphs.query.pipeline import QueryPipeline
 from apps.core.src.agent.graphs.query.session import QuerySessionManager, is_query_session_stale
 from apps.core.src.agent.graphs.query.utils.timezone import lagos_today
 from apps.core.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
@@ -41,7 +40,6 @@ class QueryWorker:
         # Initialize pipeline steps once
         self.extractor = ExtractionStep(llm)
         self.executor = ExecutionStep()
-        self.pipeline = QueryPipeline([self.extractor, self.executor])
 
     @staticmethod
     def _query_context_mode(state: dict[str, Any]) -> str:
@@ -90,6 +88,30 @@ class QueryWorker:
             session_active=final_state.get("session_active"),
             has_pending_clarification=bool(final_state.get("pending_clarification")),
         )
+
+    @staticmethod
+    def _finalize_result(result: TransactionResult, state: dict[str, Any]) -> TransactionResult:
+        if result.patch is None:
+            result.patch = {}
+        result.patch.update(state)
+        return result
+
+    @staticmethod
+    async def _set_execution_progress_stage(state: dict[str, Any], worker_context: SimpleNamespace) -> None:
+        progress_tracker = getattr(worker_context, "progress_tracker", None)
+        if progress_tracker is None:
+            return
+
+        query_contract = state.get("query_contract")
+        if isinstance(query_contract, dict):
+            query_contract = QueryExecutionContract.model_validate(query_contract)
+
+        stage_key = "query.fetching_transactions"
+        if isinstance(query_contract, QueryExecutionContract):
+            if query_contract.comparison is not None or query_contract.intent == QueryIntent.TIME_COMPARISON:
+                stage_key = "query.comparing_periods"
+
+        await progress_tracker.set_stage(stage_key)
 
     async def run(
         self,
@@ -173,11 +195,29 @@ class QueryWorker:
         worker_context = SimpleNamespace(
             banking_provider=self.banking_provider,
             user_id=context.get("user_id"),
+            progress_tracker=context.get("progress_tracker"),
         )
 
         # 4. Run Pipeline
         try:
-            result = cast(TransactionResult, await self.pipeline.run(state, worker_context))
+            if worker_context.progress_tracker is not None:
+                await worker_context.progress_tracker.set_stage("query.resolving_timeframe")
+
+            extraction_result = cast(TransactionResult, await self.extractor.run(state, worker_context))
+            if extraction_result.patch:
+                state.update(extraction_result.patch)
+
+            if extraction_result.outcome != TransactionOutcome.OK:
+                result = self._finalize_result(extraction_result, state)
+            elif state.get("flow_state") != "executing":
+                result = self._finalize_result(extraction_result, state)
+            else:
+                await self._set_execution_progress_stage(state, worker_context)
+                execution_result = cast(TransactionResult, await self.executor.run(state, worker_context))
+                if execution_result.patch:
+                    state.update(execution_result.patch)
+                result = self._finalize_result(execution_result, state)
+
             self._log_turn_summary(state=state, result=result)
 
             # 5. Handle Session Persistence

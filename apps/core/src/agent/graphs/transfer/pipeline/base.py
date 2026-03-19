@@ -63,6 +63,19 @@ class TransferPipeline:
                 normalized_patch["recipient_account"] = normalized_account
         return normalized_patch
 
+    @staticmethod
+    def _stage_key_for_step(step_name: str) -> str | None:
+        return {
+            "ExtractionStep": "transfer.resolving_recipient",
+            "ResolutionStep": "transfer.resolving_recipient",
+            "SourceSelectionStep": "transfer.confirming_details",
+            "ValidationStep": "transfer.confirming_details",
+            "FundingStep": "transfer.confirming_details",
+            "ConfirmationStep": "transfer.confirming_details",
+            "AuthorizationStep": "transfer.authorizing_transfer",
+            "ExecutionStep": "transfer.processing_transfer",
+        }.get(step_name)
+
     async def run(
         self,
         data: TransferPayload,
@@ -74,6 +87,11 @@ class TransferPipeline:
         last_result = None
         for step in self.steps:
             step_name = step.__class__.__name__
+            progress_tracker = getattr(worker_context, "progress_tracker", None) if worker_context is not None else None
+            if progress_tracker is not None:
+                stage_key = self._stage_key_for_step(step_name)
+                if stage_key:
+                    await progress_tracker.set_stage(stage_key)
             s_start = time.perf_counter()
             result = await step.execute(data, context, gates, worker_context)
             s_duration = (time.perf_counter() - s_start) * 1000
