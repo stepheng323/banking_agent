@@ -108,10 +108,7 @@ class TelegramWebhookService:
         if msg.text and msg.text.startswith("/"):
             msg.text = msg.text.lstrip("/").strip()
 
-        # 5. Show typing indicator immediately so user sees activity while LLM processes
-        await self.telegram_client.send_typing_indicator(msg.chat_id)
-
-        # 6. User is linked, enqueue normal message
+        # 5. User is linked, enqueue normal message
         message = self._build_message(msg)
         return await self._enqueue(message, msg.chat_id, msg.type)
 
