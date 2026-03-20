@@ -126,4 +126,4 @@ async def test_today_query_with_only_out_of_window_local_rows_returns_no_results
     )
     result.query_snapshot = query
 
-    assert QueryFormatter.format(result, locale="en") == "No debit transactions found today."
+    assert QueryFormatter.format(result, locale="en") == "You had no debit transactions today."
