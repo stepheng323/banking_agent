@@ -614,6 +614,53 @@ async def test_reasoner_passes_through_contrastive_yesterday_replace_scope_follo
 
 
 @pytest.mark.asyncio
+async def test_reasoner_passes_through_single_item_contrastive_yesterday_replace_scope_followup_intent() -> None:
+    llm = _TrackingLLM(
+        QuerySemanticDecision(
+            decision="continuation",
+            confidence=0.92,
+            reason="llm_single_item_replace_scope_yesterday",
+            continuation_type="time_delta",
+            followup_intent="replace_scope",
+            extraction=QueryExtractionResult(
+                intent=ExtractionIntent.TRANSACTION_LIST,
+                time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="yesterday"),
+            ),
+        )
+    )
+    reasoner = QuerySemanticReasoner(llm)
+
+    decision = await reasoner.reason(
+        SemanticReasonerContext(
+            message="no transaction yesterday?",
+            today=date(2026, 3, 19),
+            language="en",
+            query_contract=QueryExecutionContract(
+                intent=QueryIntent.TRANSACTION_SEARCH,
+                time_start=date(2026, 3, 17),
+                time_end=date(2026, 3, 19),
+                normalized_query=NormalizedQuery(
+                    intent=QueryIntent.TRANSACTION_SEARCH,
+                    time_range=TimeRange(start=date(2026, 3, 17), end=date(2026, 3, 19)),
+                    result_limit=1,
+                    result_reference="latest",
+                ),
+                result_limit=1,
+                result_reference="latest",
+            ),
+            surface=ResultSurface(type=SurfaceType.SINGLE_ITEM, items=[], context={"type": "single_transaction"}),
+        )
+    )
+
+    assert decision.continuation_type == "time_delta"
+    assert decision.followup_intent == "replace_scope"
+    assert decision.extraction is not None
+    assert decision.extraction.time_range is not None
+    assert decision.extraction.time_range.period == "yesterday"
+    assert llm.structured.calls == 1
+
+
+@pytest.mark.asyncio
 async def test_reasoner_passes_through_contrastive_last_week_replace_scope_with_extraction() -> None:
     llm = _TrackingLLM(
         QuerySemanticDecision(

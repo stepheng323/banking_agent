@@ -34,6 +34,9 @@ def test_query_reasoner_prompt_tightens_active_result_answer_fact_boundary() -> 
         '"How much have I sent to mum this week?" -> fresh_query or new_query, not answer_fact.'
         in QUERY_SEMANTIC_REASONER_PROMPT
     )
+    assert '"No transaction yesterday?" after showing one last transaction -> time_delta replace_scope, not answer_fact.' in (
+        QUERY_SEMANTIC_REASONER_PROMPT
+    )
 
 
 def test_query_reasoner_prompt_covers_conversational_reactions_in_active_sessions() -> None:
@@ -82,6 +85,9 @@ def test_query_reasoner_prompt_covers_weekly_scope_replacement_transcript() -> N
         QUERY_SEMANTIC_REASONER_PROMPT
     )
     assert '"What about last week", "what about yesterday", or "and last month?" after that summary/list -> continuation_type="time_delta" and followup_intent="replace_scope"; runtime resolves the new time window from the user message' in (
+        QUERY_SEMANTIC_REASONER_PROMPT
+    )
+    assert '"What about yesterday?" after showing the last transaction -> continuation_type="time_delta" and followup_intent="replace_scope"; preserve the singular/latest shape in the new time window' in (
         QUERY_SEMANTIC_REASONER_PROMPT
     )
     assert '"more" or "next page" on that list -> continuation_type="show_more" and followup_intent="continue_pagination"' in (

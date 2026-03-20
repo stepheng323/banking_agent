@@ -155,6 +155,13 @@ class ExecutionStep(QueryStep):
         if state.get("resolver_message"):
             formatted_response = f"_{state['resolver_message']}_\n\n{formatted_response}"
 
+        logger.info(
+            "query_execution_response_summary",
+            resolver_message_attached=bool(state.get("resolver_message")),
+            surface_type=result.surface.type.value if result.surface else None,
+            continuation_type=state.get("continuation_type"),
+        )
+
         return TransactionResult(
             outcome=TransactionOutcome.OK,
             response=formatted_response,

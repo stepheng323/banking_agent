@@ -506,6 +506,47 @@ class ExtractionStep(QueryStep):
 
         return None
 
+    @staticmethod
+    def _should_attach_resolver_message(result: Any) -> bool:
+        if getattr(result, "outcome", None) != ResolverOutcome.NEGOTIATED:
+            return True
+
+        extraction = getattr(result, "extraction", None)
+        if extraction is None:
+            return True
+
+        filters = getattr(extraction, "filters", None)
+        narration_keyword = getattr(filters, "narration_keyword", None) if filters is not None else None
+        return bool(isinstance(narration_keyword, str) and narration_keyword.strip())
+
+    @staticmethod
+    def _is_single_item_surface(surface: ResultSurface | None) -> bool:
+        return bool(
+            surface
+            and surface.type == SurfaceType.SINGLE_ITEM
+            and isinstance(surface.context, dict)
+            and surface.context.get("type") == "single_transaction"
+        )
+
+    def _log_single_item_followup(
+        self,
+        *,
+        surface: ResultSurface | None,
+        continuation_type: str | None,
+        followup_outcome: str,
+        decision: str | None = None,
+    ) -> None:
+        if not self._is_single_item_surface(surface):
+            return
+        logger.info(
+            "query_single_item_followup",
+            surface_type="single_item",
+            session_mode="active_result",
+            continuation_type=continuation_type,
+            followup_outcome=followup_outcome,
+            semantic_decision=decision,
+        )
+
     async def run(self, state: dict[str, Any], worker_context: Any = None) -> TransactionResult:
         """Run extraction logic."""
         query_session = state.get("query_session")
@@ -638,14 +679,6 @@ class ExtractionStep(QueryStep):
         session_query_contract = self._load_session_query_contract(session)
         locale = LocaleManager.normalize(state.get("language")).value
         original_query = session_query_contract.normalized_query if session_query_contract else None
-        logger.info(
-            "query_continuation_entry",
-            has_query_contract=original_query is not None,
-            has_surface=bool(session.get("surface")),
-            has_query_result=bool(session.get("query_result")),
-            current_page=session.get("current_page", 0),
-            show_expanded=bool(session.get("show_expanded", False)),
-        )
 
         # Reconstruct items for context if available
         items = []
@@ -663,6 +696,15 @@ class ExtractionStep(QueryStep):
 
         raw_surface = session.get("surface")
         surface = ResultSurface.model_validate(raw_surface) if isinstance(raw_surface, dict) else raw_surface
+        logger.info(
+            "query_continuation_entry",
+            has_query_contract=original_query is not None,
+            has_surface=bool(session.get("surface")),
+            has_query_result=bool(session.get("query_result")),
+            current_page=session.get("current_page", 0),
+            show_expanded=bool(session.get("show_expanded", False)),
+            surface_type=surface.type.value if isinstance(surface, ResultSurface) else None,
+        )
         locale = LocaleManager.normalize(state.get("language")).value
         query_frames = self._load_query_frames(session)
 
@@ -698,6 +740,12 @@ class ExtractionStep(QueryStep):
         )
 
         if decision.decision == "end_session":
+            self._log_single_item_followup(
+                surface=surface,
+                continuation_type=cont_type,
+                followup_outcome="end_session",
+                decision=decision.decision,
+            )
             return self._append_query_session_transition({
                 "transaction_outcome": TransactionOutcome.OK,
                 "response": decision.end_session_response or render_message("query.session.goodbye", locale),
@@ -707,6 +755,12 @@ class ExtractionStep(QueryStep):
             }, "end_query_session")
 
         if decision.decision in {"fresh_query", "new_query", "reinterpret_query"}:
+            self._log_single_item_followup(
+                surface=surface,
+                continuation_type=cont_type,
+                followup_outcome="reparse_query",
+                decision=decision.decision,
+            )
             logger.info(
                 "query_continuation_resolution",
                 path="semantic_reparse",
@@ -723,6 +777,12 @@ class ExtractionStep(QueryStep):
             return semantic_updates
 
         if decision.decision != "continuation":
+            self._log_single_item_followup(
+                surface=surface,
+                continuation_type=cont_type,
+                followup_outcome="fallback_parse_new_query",
+                decision=decision.decision,
+            )
             logger.info(
                 "query_continuation_resolution",
                 path="fallback_parse_new_query",
@@ -748,8 +808,20 @@ class ExtractionStep(QueryStep):
                     language=locale,
                 )
                 if recovered_updates is not None:
+                    self._log_single_item_followup(
+                        surface=surface,
+                        continuation_type="time_delta",
+                        followup_outcome="time_rescope_query",
+                        decision=decision.decision,
+                    )
                     recovered_updates.update(self._semantic_trace_updates(decision))
                     return recovered_updates
+            self._log_single_item_followup(
+                surface=surface,
+                continuation_type=cont_type,
+                followup_outcome="clarify" if decision.answer_mode == "ask_clarify" else "grounded_answer",
+                decision=decision.decision,
+            )
             grounded_updates.update(self._semantic_trace_updates(decision))
             return grounded_updates
 
@@ -770,8 +842,20 @@ class ExtractionStep(QueryStep):
                     language=locale,
                 )
                 if recovered_updates is not None:
+                    self._log_single_item_followup(
+                        surface=surface,
+                        continuation_type="time_delta",
+                        followup_outcome="time_rescope_query",
+                        decision=decision.decision,
+                    )
                     recovered_updates.update(self._semantic_trace_updates(decision))
                     return recovered_updates
+                self._log_single_item_followup(
+                    surface=surface,
+                    continuation_type=cont_type,
+                    followup_outcome="clarify",
+                    decision=decision.decision,
+                )
                 return self._ambiguous_followup_updates(locale=locale, session=session)
 
         updates: dict[str, Any] = {
@@ -834,8 +918,20 @@ class ExtractionStep(QueryStep):
                     language=locale,
                 )
                 if recovered_updates is not None:
+                    self._log_single_item_followup(
+                        surface=surface,
+                        continuation_type="time_delta",
+                        followup_outcome="time_rescope_query",
+                        decision=decision.decision,
+                    )
                     recovered_updates.update(self._semantic_trace_updates(decision))
                     return recovered_updates
+                self._log_single_item_followup(
+                    surface=surface,
+                    continuation_type=cont_type,
+                    followup_outcome="clarify",
+                    decision=decision.decision,
+                )
                 return self._ambiguous_followup_updates(locale=locale, session=session)
             if followup_intent == "continue_pagination":
                 return self._ambiguous_followup_updates(locale=locale, session=session)
@@ -851,8 +947,20 @@ class ExtractionStep(QueryStep):
                     language=locale,
                 )
                 if recovered_updates is not None:
+                    self._log_single_item_followup(
+                        surface=surface,
+                        continuation_type="time_delta",
+                        followup_outcome="time_rescope_query",
+                        decision=decision.decision,
+                    )
                     recovered_updates.update(self._semantic_trace_updates(decision))
                     return recovered_updates
+                self._log_single_item_followup(
+                    surface=surface,
+                    continuation_type=cont_type,
+                    followup_outcome="clarify",
+                    decision=decision.decision,
+                )
                 return self._ambiguous_followup_updates(locale=locale, session=session)
 
             if followup_intent == "replace_scope":
@@ -872,6 +980,12 @@ class ExtractionStep(QueryStep):
             )
             updates["current_page"] = 0
             updates["show_expanded"] = False
+            self._log_single_item_followup(
+                surface=surface,
+                continuation_type=cont_type,
+                followup_outcome="time_rescope_query",
+                decision=decision.decision,
+            )
 
         elif cont_type == "filter_delta":
             if original_query is None or followup_intent != "refine_existing":
@@ -1069,7 +1183,7 @@ class ExtractionStep(QueryStep):
             return updates
 
         resolver_msg_parts = []
-        if result.resolver_message:
+        if result.resolver_message and self._should_attach_resolver_message(result):
             resolver_msg_parts.append(result.resolver_message)
 
         if result.notices:

@@ -9,6 +9,7 @@ from apps.core.src.agent.graphs.query.models import (
     QueryExtractionResult,
     QueryFilters,
     QueryTimeRange,
+    RequestedCapability,
     ResolverOutcome,
     TimeReference,
 )
@@ -108,5 +109,28 @@ async def test_latest_matching_transaction_shape_does_not_clarify_time() -> None
     assert result.resolver_message is None
     assert result.query_contract is not None
     assert result.query_contract["intent"] == "transaction_search"
+    assert result.query_contract["result_limit"] == 1
+    assert result.query_contract["result_reference"] == "latest"
+
+
+@pytest.mark.asyncio
+async def test_latest_transaction_query_drops_spurious_narration_negotiation_without_keyword() -> None:
+    extraction = QueryExtractionResult(
+        intent=ExtractionIntent.TRANSACTION_LIST,
+        result_limit=1,
+        result_reference="latest",
+        requested_capabilities=[RequestedCapability.SEARCH_NARRATION_FUZZY],
+    )
+    parser = QueryParser(_DummyLLM(extraction))
+
+    result = await parser.parse(
+        "show my last transaction",
+        today=date(2026, 3, 13),
+        language="en",
+    )
+
+    assert result.outcome == ResolverOutcome.OK
+    assert result.resolver_message is None
+    assert result.query_contract is not None
     assert result.query_contract["result_limit"] == 1
     assert result.query_contract["result_reference"] == "latest"

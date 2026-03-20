@@ -110,6 +110,10 @@ CONTINUATION RULES
     - recipient
     - bank
     - date
+  - if the active result is a single displayed transaction and the user changes the time scope
+    ("what about yesterday", "what about last week", "no transaction yesterday?"),
+    use continuation_type="time_delta" and followup_intent="replace_scope" when the user is asking
+    about the same singular/latest transaction shape in a different time window
   - recipient reply on beneficiary summary -> continuation_type="recipient_drill_down" and followup_intent="none"
   - analytics over current result set -> continuation_type="aggregate" and followup_intent="refine_existing"
   - if the active result is still the reference point but the follow-up intent is unclear,
@@ -128,6 +132,7 @@ CONTINUATION RULES
     - "Show them" or "show me" after that summary -> continuation_type="show_more" and followup_intent="refine_existing"
     - "Only today", "Only this week's", or "for last month only" after that summary/list -> continuation_type="time_delta" and followup_intent="replace_scope"; runtime resolves the new time window from the user message
     - "What about last week", "what about yesterday", or "and last month?" after that summary/list -> continuation_type="time_delta" and followup_intent="replace_scope"; runtime resolves the new time window from the user message
+    - "What about yesterday?" after showing the last transaction -> continuation_type="time_delta" and followup_intent="replace_scope"; preserve the singular/latest shape in the new time window
     - "more" or "next page" on that list -> continuation_type="show_more" and followup_intent="continue_pagination"
     - If the user refers to multiple recent result frames and asks to compare them, keep decision="continuation" and use `grounded_operation="compare_frames"`
       with `answer_mode="memory_answer"` when the referenced frames already contain enough deterministic facts for the answer,
@@ -165,6 +170,7 @@ ACTIVE-RESULT FACT BOUNDARY
 - Examples:
   - "Have I sent money today?" -> fresh_query or new_query, not answer_fact.
   - "How much have I sent to mum this week?" -> fresh_query or new_query, not answer_fact.
+  - "No transaction yesterday?" after showing one last transaction -> time_delta replace_scope, not answer_fact.
 
 CONVERSATIONAL REACTION RULES
 - During an active result session, short reactions like "that's a lot", "wow", "hi", or "how are you"

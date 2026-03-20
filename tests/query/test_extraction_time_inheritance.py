@@ -1,4 +1,5 @@
 from datetime import date, timedelta
+from typing import Any
 
 import pytest
 
@@ -10,8 +11,10 @@ from apps.core.src.agent.graphs.query.models import (
     QueryExtractionResult,
     QueryIntent,
     QueryParseResult,
+    QueryResultItem,
     QueryTimeRange,
     ResolverOutcome,
+    ResultSurface,
     TimeRange,
     TimeReference,
 )
@@ -870,6 +873,137 @@ async def test_summary_only_today_replaces_scope_and_preserves_filters() -> None
     assert query.filters.merchant == ["Mum"]
     assert updates["current_page"] == 0
     assert updates["show_expanded"] is False
+
+
+@pytest.mark.asyncio
+async def test_single_item_contrastive_yesterday_preserves_latest_shape() -> None:
+    step = ExtractionStep(_DummyLLM())
+    today = date(2026, 3, 19)
+    session_query = NormalizedQuery(
+        intent=QueryIntent.TRANSACTION_SEARCH,
+        time_range=TimeRange(start=date(2026, 3, 16), end=today),
+        result_limit=1,
+        result_reference="latest",
+    )
+    session_contract = QueryExecutionContract.from_normalized_query(session_query)
+
+    async def _fake_reason(_: object) -> QuerySemanticDecision:
+        return QuerySemanticDecision(
+            decision="continuation",
+            continuation_type="time_delta",
+            followup_intent="replace_scope",
+            extraction=QueryExtractionResult(
+                intent=ExtractionIntent.TRANSACTION_LIST,
+                time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="yesterday"),
+            ),
+            confidence=0.94,
+            reason="llm_single_item_yesterday",
+        )
+
+    step.reasoner.reason = _fake_reason  # type: ignore[method-assign]
+
+    updates = await step._handle_continuation(
+        {"message": "What about yesterday?", "today": today, "language": "en"},
+        {
+            "session_active": True,
+            "query_contract": session_contract.model_dump(),
+            "query_result": {
+                "items": [
+                    QueryResultItem(
+                        id="txn_last",
+                        description="Salary from Acme Corp",
+                        amount=950000.0,
+                        date=date(2026, 3, 17),
+                        metadata={"type": "credit", "bank_name": "First Bank"},
+                    ).model_dump(mode="json")
+                ]
+            },
+            "surface": ResultSurface(type="single_item", items=[], context={"type": "single_transaction"}).model_dump(),
+            "current_page": 0,
+            "show_expanded": False,
+        },
+    )
+
+    query = updates["query_contract"].normalized_query
+    assert query.time_range is not None
+    assert query.time_range.start == date(2026, 3, 18)
+    assert query.time_range.end == date(2026, 3, 18)
+    assert query.result_limit == 1
+    assert query.result_reference == "latest"
+
+
+@pytest.mark.asyncio
+async def test_single_item_grounded_ask_clarify_recovers_to_yesterday_time_rescope(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    step = ExtractionStep(_DummyLLM())
+    today = date(2026, 3, 19)
+    events: list[tuple[str, dict[str, Any]]] = []
+
+    def _capture(event: str, **kwargs: Any) -> None:
+        events.append((event, kwargs))
+
+    monkeypatch.setattr("apps.core.src.agent.graphs.query.nodes.extraction.logger.info", _capture)
+    session_query = NormalizedQuery(
+        intent=QueryIntent.TRANSACTION_SEARCH,
+        time_range=TimeRange(start=date(2026, 3, 16), end=today),
+        result_limit=1,
+        result_reference="latest",
+    )
+    session_contract = QueryExecutionContract.from_normalized_query(session_query)
+
+    async def _fake_reason(_: object) -> QuerySemanticDecision:
+        return QuerySemanticDecision(
+            decision="continuation",
+            continuation_type="unclear",
+            followup_intent="none",
+            answer_mode="ask_clarify",
+            confidence=0.91,
+            reason="llm_single_item_ask_clarify",
+        )
+
+    step.reasoner.reason = _fake_reason  # type: ignore[method-assign]
+
+    updates = await step._handle_continuation(
+        {"message": "No transaction yesterday?", "today": today, "language": "en"},
+        {
+            "session_active": True,
+            "query_contract": session_contract.model_dump(),
+            "query_result": {
+                "items": [
+                    QueryResultItem(
+                        id="txn_last",
+                        description="Salary from Acme Corp",
+                        amount=950000.0,
+                        date=date(2026, 3, 17),
+                        metadata={"type": "credit", "bank_name": "First Bank"},
+                    ).model_dump(mode="json")
+                ]
+            },
+            "surface": ResultSurface(type="single_item", items=[], context={"type": "single_transaction"}).model_dump(),
+            "current_page": 0,
+            "show_expanded": False,
+        },
+    )
+
+    assert updates["flow_state"] == "executing"
+    assert updates["continuation_type"] == "time_delta"
+    query = updates["query_contract"].normalized_query
+    assert query.time_range is not None
+    assert query.time_range.start == date(2026, 3, 18)
+    assert query.time_range.end == date(2026, 3, 18)
+    assert query.result_limit == 1
+    assert query.result_reference == "latest"
+    assert (
+        "query_single_item_followup",
+        {
+            "surface_type": "single_item",
+            "session_mode": "active_result",
+            "continuation_type": "time_delta",
+            "followup_outcome": "time_rescope_query",
+            "semantic_decision": "continuation",
+        },
+    ) in events
 
 
 @pytest.mark.asyncio

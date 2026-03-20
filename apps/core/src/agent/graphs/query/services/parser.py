@@ -311,6 +311,17 @@ class QueryParser:
             TimeReference,
         )
 
+        if not extraction.filters.narration_keyword:
+            extraction.requested_capabilities = [
+                capability
+                for capability in extraction.requested_capabilities
+                if capability
+                not in {
+                    RequestedCapability.SEARCH_NARRATION_KEYWORD,
+                    RequestedCapability.SEARCH_NARRATION_FUZZY,
+                }
+            ]
+
         if extraction.filters.min_amount is not None or extraction.filters.max_amount is not None:
             if RequestedCapability.FILTER_AMOUNT not in extraction.requested_capabilities:
                 extraction.requested_capabilities.append(RequestedCapability.FILTER_AMOUNT)
