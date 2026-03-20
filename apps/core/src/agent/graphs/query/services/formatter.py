@@ -1,6 +1,7 @@
 """Formatter for query responses."""
 
 from datetime import date, datetime, timedelta
+from typing import cast
 
 from apps.core.src.agent.graphs.query.models import (
     NormalizedQuery,
@@ -12,6 +13,7 @@ from apps.core.src.agent.graphs.query.models import (
 )
 from apps.core.src.agent.graphs.query.utils.timezone import lagos_today
 from shared.i18n import render_message
+from shared.i18n.message_keys import MessageKey
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -19,6 +21,58 @@ logger = get_logger(__name__)
 
 class QueryFormatter:
     """Formatter for query execution results."""
+
+    @staticmethod
+    def _has_search_shaped_no_results_context(query_snapshot: NormalizedQuery | None) -> bool:
+        """Return whether no-results wording should stay generic/search-oriented."""
+        if not query_snapshot:
+            return False
+        if query_snapshot.aggregation is not None:
+            return True
+
+        filters = query_snapshot.filters
+        if not filters:
+            return False
+
+        return any(
+            (
+                bool(filters.category),
+                bool(filters.merchant),
+                filters.min_amount is not None,
+                filters.max_amount is not None,
+                bool(filters.exclude),
+                filters.account_filter is not None,
+                query_snapshot.account_name is not None,
+            )
+        )
+
+    @staticmethod
+    def _format_factual_no_results(
+        time_range: TimeRange,
+        locale: str,
+        transaction_type: str | None,
+    ) -> str:
+        """Format direct factual no-results copy for plain time-scoped transaction lookups."""
+        today = lagos_today()
+        yesterday = today - timedelta(days=1)
+
+        if time_range.start == time_range.end == today:
+            suffix = "today"
+        elif time_range.start == time_range.end == yesterday:
+            suffix = "yesterday"
+        else:
+            suffix = "period"
+
+        if transaction_type in ("credit", "debit"):
+            key = cast(MessageKey, f"query.format.no_transactions_with_type_{suffix}")
+            return render_message(
+                key,
+                locale,
+                {"transaction_type": transaction_type},
+            )
+
+        key = cast(MessageKey, f"query.format.no_transactions_{suffix}")
+        return render_message(key, locale)
 
     @staticmethod
     def _parse_summary_parts(summary_text: str | None) -> dict[str, str]:
@@ -132,13 +186,22 @@ class QueryFormatter:
     def _format_no_results(result: QueryResult, locale: str) -> str:
         """Format no-results output using available query context."""
         query_snapshot = result.query_snapshot
+        time_range = query_snapshot.time_range if query_snapshot else None
         tx_type = query_snapshot.filters.transaction_type if query_snapshot and query_snapshot.filters else None
+        if (
+            query_snapshot
+            and query_snapshot.intent in {QueryIntent.TRANSACTION_LIST, QueryIntent.TRANSACTION_SEARCH}
+            and time_range is not None
+            and not QueryFormatter._has_search_shaped_no_results_context(query_snapshot)
+        ):
+            return QueryFormatter._format_factual_no_results(time_range, locale, tx_type)
+
         if tx_type not in ("credit", "debit"):
             return render_message("query.format.no_matching_transactions", locale)
 
         time_suffix = ""
-        if query_snapshot and query_snapshot.time_range:
-            if query_snapshot.time_range.start == query_snapshot.time_range.end == lagos_today():
+        if time_range:
+            if time_range.start == time_range.end == lagos_today():
                 time_suffix = render_message("query.format.no_results_time_suffix_today", locale)
             else:
                 time_suffix = render_message("query.format.no_results_time_suffix_period", locale)

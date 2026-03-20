@@ -101,7 +101,7 @@ def test_formatter_no_results_with_type_for_today() -> None:
         ),
     )
 
-    assert QueryFormatter.format(result, locale="en") == "No credit transactions found today."
+    assert QueryFormatter.format(result, locale="en") == "You had no credit transactions today."
 
 
 def test_formatter_no_results_with_type_for_period() -> None:
@@ -116,7 +116,38 @@ def test_formatter_no_results_with_type_for_period() -> None:
         ),
     )
 
-    assert QueryFormatter.format(result, locale="en") == "No debit transactions found for this period."
+    assert QueryFormatter.format(result, locale="en") == "You had no debit transactions during that period."
+
+
+def test_formatter_no_results_without_type_for_yesterday_uses_direct_fact() -> None:
+    yesterday = lagos_today() - timedelta(days=1)
+    result = QueryResult(
+        summary_text="",
+        items=[],
+        query_snapshot=NormalizedQuery(
+            intent=QueryIntent.TRANSACTION_SEARCH,
+            time_range=TimeRange(start=yesterday, end=yesterday),
+            result_limit=1,
+            result_reference="latest",
+        ),
+    )
+
+    assert QueryFormatter.format(result, locale="en") == "You had no transactions yesterday."
+
+
+def test_formatter_search_shaped_no_results_for_yesterday_stays_generic() -> None:
+    yesterday = lagos_today() - timedelta(days=1)
+    result = QueryResult(
+        summary_text="",
+        items=[],
+        query_snapshot=NormalizedQuery(
+            intent=QueryIntent.TRANSACTION_SEARCH,
+            filters=Filters(merchant=["mum"]),
+            time_range=TimeRange(start=yesterday, end=yesterday),
+        ),
+    )
+
+    assert QueryFormatter.format(result, locale="en") == "No matching transactions found for your search."
 
 
 def test_formatter_no_results_without_type_uses_generic_message() -> None:
