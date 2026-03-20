@@ -104,6 +104,9 @@ class ExecutionStep(QueryStep):
             "cached_transactions": query_session.get("cached_transactions"),
             "cache_fetched_at": query_session.get("cache_fetched_at"),
             "cache_fingerprint": query_session.get("cache_fingerprint"),
+            "cache_scope_fingerprint": query_session.get("cache_scope_fingerprint"),
+            "cache_window_start": query_session.get("cache_window_start"),
+            "cache_window_end": query_session.get("cache_window_end"),
         }
 
         if "selected_item_index" in state and state.get("query_session"):
@@ -130,6 +133,10 @@ class ExecutionStep(QueryStep):
             continuation_type=state.get("continuation_type"),
             continuation_delta_type=state.get("continuation_delta_type"),
             session_cache=session_cache,
+            trace_context={
+                "turn_id": state.get("turn_id"),
+                "inbound_message_id": state.get("inbound_message_id"),
+            },
         )
         result.interpretation = self._build_interpretation(
             query_contract,
@@ -161,5 +168,8 @@ class ExecutionStep(QueryStep):
                 "cached_transactions": result.cached_transactions,
                 "cache_fetched_at": result.cache_fetched_at,
                 "cache_fingerprint": result.cache_fingerprint,
+                "cache_scope_fingerprint": result.cache_scope_fingerprint,
+                "cache_window_start": result.cache_window_start,
+                "cache_window_end": result.cache_window_end,
             },
         )

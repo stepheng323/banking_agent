@@ -615,6 +615,8 @@ async def handle_query_task(task: Any, task_id: str, ctx: ExecutionContext) -> N
         "profile": ctx.state.loaded_context.get("profile", {}),
         "accounts": ctx.state.loaded_context.get("accounts", []),
         "language": _state_locale(ctx.state),
+        "inbound_message_id": ctx.state.last_message_id,
+        "turn_id": ctx.state.last_message_id,
         "stashed_query_session": ctx.state.stashed_query_session,
         "progress_tracker": ctx.config["configurable"].get("progress_tracker"),
     }

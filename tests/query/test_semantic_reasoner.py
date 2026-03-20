@@ -10,6 +10,7 @@ from apps.core.src.agent.graphs.query.models import (
     QueryExecutionContract,
     QueryExtractionResult,
     QueryFilters,
+    QueryFrame,
     QueryIntent,
     QueryResultItem,
     QueryTimeRange,
@@ -43,9 +44,10 @@ class _TrackingStructured:
     def __init__(self, decision: QuerySemanticDecision) -> None:
         self.decision = decision
         self.calls = 0
+        self.prompts: list[str] = []
 
     async def ainvoke(self, prompt: str) -> QuerySemanticDecision:
-        del prompt
+        self.prompts.append(prompt)
         self.calls += 1
         return self.decision
 
@@ -364,6 +366,11 @@ async def test_reasoner_logs_llm_fact_answer_decision(
             "reason": "llm_fact_recipient",
         },
     ) in events
+    query_trace_events = [payload for event, payload in events if event == "query_trace"]
+    assert query_trace_events
+    assert query_trace_events[0]["query_phase"] == "semantic_reasoner"
+    assert query_trace_events[0]["llm_used"] is True
+    assert query_trace_events[0]["prompt_item_count"] == 1
 
 
 @pytest.mark.asyncio
@@ -764,7 +771,7 @@ async def test_reasoner_passes_through_last_month_replace_scope_followup_intent(
 
 
 @pytest.mark.asyncio
-async def test_reasoner_logs_deterministic_pending_clarification_answer_without_llm(
+async def test_reasoner_uses_llm_for_pending_clarification_time_reply(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     events: list[tuple[str, dict]] = []
@@ -774,7 +781,15 @@ async def test_reasoner_logs_deterministic_pending_clarification_answer_without_
 
     monkeypatch.setattr("apps.core.src.agent.graphs.query.services.reasoner.logger.info", _capture)
 
-    reasoner = QuerySemanticReasoner(_FailingLLM())
+    llm = _TrackingLLM(
+        QuerySemanticDecision(
+            decision="clarification_answer",
+            confidence=0.9,
+            reason="llm_pending_time_reply",
+            time_period="last 3 days",
+        )
+    )
+    reasoner = QuerySemanticReasoner(llm)
     decision = await reasoner.reason(
         SemanticReasonerContext(
             message="last 3 days",
@@ -791,17 +806,90 @@ async def test_reasoner_logs_deterministic_pending_clarification_answer_without_
     )
 
     assert decision.decision == "clarification_answer"
+    assert llm.structured.calls == 1
     assert (
         "query_reasoner_decision",
         {
             "reasoner_decision": "clarification_answer",
             "reasoner_context_mode": "pending_clarification",
-            "reasoner_llm_used": False,
+            "reasoner_llm_used": True,
             "continuation_type": None,
-            "confidence": 0.99,
-            "reason": "deterministic_time_reply",
+            "confidence": 0.9,
+            "reason": "llm_pending_time_reply",
         },
     ) in events
+
+
+@pytest.mark.asyncio
+async def test_reasoner_bounds_prompt_items_and_frames() -> None:
+    llm = _TrackingLLM(
+        QuerySemanticDecision(
+            decision="continuation",
+            confidence=0.93,
+            reason="llm_bounded_prompt",
+            continuation_type="time_delta",
+            followup_intent="replace_scope",
+        )
+    )
+    reasoner = QuerySemanticReasoner(llm)
+
+    items = [
+        QueryResultItem(
+            id=f"txn-{index}",
+            description=f"Payment {index}",
+            amount=1000.0 + index,
+            date=date(2026, 3, 13),
+            metadata={"status": "success", "bank_name": "Zenith"},
+        )
+        for index in range(5)
+    ]
+    query_frames = [
+        QueryFrame(
+            frame_id=f"qf_{index}",
+            turn_index=index + 1,
+            summary_text=f"summary {index}",
+            query_contract=QueryExecutionContract(
+                intent=QueryIntent.TRANSACTION_LIST,
+                time_start=date(2026, 3, 13),
+                time_end=date(2026, 3, 13),
+                normalized_query=NormalizedQuery(
+                    intent=QueryIntent.TRANSACTION_LIST,
+                    time_range=TimeRange(start=date(2026, 3, 13), end=date(2026, 3, 13)),
+                ),
+            ),
+        )
+        for index in range(5)
+    ]
+
+    await reasoner.reason(
+        SemanticReasonerContext(
+            message="what about last week",
+            today=date(2026, 3, 19),
+            language="en",
+            query_contract=QueryExecutionContract(
+                intent=QueryIntent.ANALYTICS_SUMMARY,
+                time_start=date(2026, 3, 16),
+                time_end=date(2026, 3, 19),
+                normalized_query=NormalizedQuery(
+                    intent=QueryIntent.ANALYTICS_SUMMARY,
+                    time_range=TimeRange(start=date(2026, 3, 16), end=date(2026, 3, 19)),
+                ),
+            ),
+            items=items,
+            surface=ResultSurface(type=SurfaceType.LIST, items=[], context={"type": "transaction_list", "count": 5}),
+            query_frames=query_frames,
+        )
+    )
+
+    assert llm.structured.calls == 1
+    assert llm.structured.prompts
+    prompt = llm.structured.prompts[0]
+    assert "Payment 0" in prompt
+    assert "Payment 2" in prompt
+    assert "Payment 3" not in prompt
+    assert "summary 4" in prompt
+    assert "summary 2" in prompt
+    assert "summary 1" not in prompt
 
 
 @pytest.mark.asyncio

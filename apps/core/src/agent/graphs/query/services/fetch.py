@@ -1,9 +1,11 @@
 """Fetch and filter utilities for query execution."""
 
+import asyncio
 import hashlib
 import json
 from dataclasses import asdict, is_dataclass
 from datetime import date, datetime
+from time import perf_counter
 from typing import Any, cast
 
 from apps.core.src.agent.graphs.query.models import Filters, NormalizedQuery, match_category
@@ -13,6 +15,7 @@ from shared.i18n import render_message
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
+_MULTI_ACCOUNT_FETCH_CONCURRENCY = 4
 
 
 def parse_date(date_str: str) -> date:
@@ -146,6 +149,46 @@ def build_cache_fingerprint(
     return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
 
 
+def build_cache_scope_fingerprint(
+    query: NormalizedQuery,
+    account_id: str,
+    account_ids: list[str],
+    user_id: str | None = None,
+) -> str:
+    """Build fingerprint for cache reuse across narrower time windows."""
+    payload = {
+        "intent": str(query.intent),
+        "accounts_scope": query.accounts_scope,
+        "account_id": account_id,
+        "account_ids": sorted(str(acc) for acc in account_ids),
+        "user_id": str(user_id or ""),
+    }
+    serialized = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
+
+
+def _log_query_trace(
+    *,
+    trace_context: dict[str, Any] | None,
+    phase: str,
+    latency_ms: float,
+    outcome: str,
+    fetch_account_count: int,
+    used_parallel_fetch: bool,
+) -> None:
+    context = trace_context or {}
+    logger.info(
+        "query_trace",
+        turn_id=context.get("turn_id"),
+        inbound_message_id=context.get("inbound_message_id"),
+        query_phase=phase,
+        latency_ms=round(latency_ms, 2),
+        outcome=outcome,
+        fetch_account_count=fetch_account_count,
+        used_parallel_fetch=used_parallel_fetch,
+    )
+
+
 async def fetch_and_filter(
     provider: BankDataProvider,
     query: NormalizedQuery,
@@ -154,6 +197,7 @@ async def fetch_and_filter(
     accounts_info: list[dict] | None = None,
     user_id: str | None = None,
     language: str = "en",
+    trace_context: dict[str, Any] | None = None,
 ) -> list[dict]:
     """Fetch transactions and apply filters."""
     transactions = await fetch_transactions_base(
@@ -164,6 +208,7 @@ async def fetch_and_filter(
         accounts_info,
         user_id=user_id,
         language=language,
+        trace_context=trace_context,
     )
 
     if query.filters:
@@ -180,8 +225,10 @@ async def fetch_transactions_base(
     accounts_info: list[dict] | None = None,
     user_id: str | None = None,
     language: str = "en",
+    trace_context: dict[str, Any] | None = None,
 ) -> list[dict]:
     """Fetch transaction base set for the query time/account envelope (no query.filters applied)."""
+    started_at = perf_counter()
     start, end = resolve_query_date_bounds(query)
 
     bank_map: dict[str, str] = {}
@@ -206,16 +253,30 @@ async def fetch_transactions_base(
             return cast(dict[str, Any], t)
         return {"raw": str(t)}
 
+    fetch_account_count = 1
+    used_parallel_fetch = False
     if query.accounts_scope == "all" and len(account_ids) > 1:
         all_txns: list[dict[str, Any]] = []
-        for acc_id in account_ids:
-            txns = await provider.get_transactions(acc_id, start_date=start, end_date=end, limit=100)
+        fetch_account_count = len(account_ids)
+        used_parallel_fetch = True
+        semaphore = asyncio.Semaphore(min(_MULTI_ACCOUNT_FETCH_CONCURRENCY, len(account_ids)))
+
+        async def _fetch_account_transactions(acc_id: str) -> list[dict[str, Any]]:
+            async with semaphore:
+                txns = await provider.get_transactions(acc_id, start_date=start, end_date=end, limit=100)
+            account_transactions: list[dict[str, Any]] = []
             for t in txns:
                 td = to_dict(t)
                 td["bank_name"] = bank_map.get(acc_id, "")
-                all_txns.append(td)
+                account_transactions.append(td)
+            return account_transactions
+
+        per_account_transactions = await asyncio.gather(*(_fetch_account_transactions(acc_id) for acc_id in account_ids))
+        for account_transactions in per_account_transactions:
+            all_txns.extend(account_transactions)
         transactions = sorted(all_txns, key=lambda t: (t.get("date", ""), t.get("id", "")), reverse=True)
     else:
+        fetch_account_count = len(account_ids) if query.accounts_scope == "all" and account_ids else 1
         txns = await provider.get_transactions(account_id, start_date=start, end_date=end, limit=100)
         transactions = [to_dict(t) for t in txns]
 
@@ -289,4 +350,12 @@ async def fetch_transactions_base(
 
     transactions = [t for t in transactions if start <= t.get("date", "")[:10] <= end]
 
+    _log_query_trace(
+        trace_context=trace_context,
+        phase="fetch_transactions",
+        latency_ms=(perf_counter() - started_at) * 1000.0,
+        outcome="ok",
+        fetch_account_count=fetch_account_count,
+        used_parallel_fetch=used_parallel_fetch,
+    )
     return transactions

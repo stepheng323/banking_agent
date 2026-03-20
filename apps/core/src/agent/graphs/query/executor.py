@@ -1,7 +1,8 @@
 """Query executor - thin dispatch layer for query execution contracts."""
 
 from collections.abc import Awaitable, Callable
-from typing import cast
+from time import perf_counter
+from typing import Any, cast
 
 from apps.core.src.agent.graphs.__shared__.account_selection.service import find_account_by_bank_name
 from apps.core.src.agent.graphs.query.handlers import HANDLER_REGISTRY
@@ -37,6 +38,7 @@ class QueryExecutor:
         continuation_type: str | None = None,
         continuation_delta_type: str | None = None,
         session_cache: dict[str, object] | None = None,
+        trace_context: dict[str, Any] | None = None,
     ) -> QueryResult:
         """
         Execute a query execution contract.
@@ -77,6 +79,7 @@ class QueryExecutor:
             return QueryResult(summary_text=render_message("query.error.unknown_intent", language))
 
         typed_handler = cast(Callable[..., Awaitable[QueryResult]], handler)
+        started_at = perf_counter()
 
         try:
             if query.intent in {QueryIntent.TRANSACTION_LIST, QueryIntent.TRANSACTION_SEARCH}:
@@ -93,6 +96,7 @@ class QueryExecutor:
                     continuation_type=continuation_type,
                     continuation_delta_type=continuation_delta_type,
                     session_cache=session_cache,
+                    trace_context=trace_context,
                 )
             else:
                 result = await typed_handler(
@@ -108,9 +112,31 @@ class QueryExecutor:
                 )
             result.query_snapshot = query.normalized_query
             result.query_contract = query
+            logger.info(
+                "query_trace",
+                turn_id=(trace_context or {}).get("turn_id"),
+                inbound_message_id=(trace_context or {}).get("inbound_message_id"),
+                query_phase="execution",
+                latency_ms=round((perf_counter() - started_at) * 1000.0, 2),
+                outcome="ok",
+                intent=query.intent.value,
+                cache_reused=result.cache_reused,
+                continuation_type=continuation_type,
+            )
             return result
         except Exception as e:
             logger.error("query_execution_error", intent=query.intent, error=str(e))
+            logger.info(
+                "query_trace",
+                turn_id=(trace_context or {}).get("turn_id"),
+                inbound_message_id=(trace_context or {}).get("inbound_message_id"),
+                query_phase="execution",
+                latency_ms=round((perf_counter() - started_at) * 1000.0, 2),
+                outcome="failed",
+                intent=query.intent.value,
+                cache_reused=False,
+                continuation_type=continuation_type,
+            )
             return QueryResult(summary_text=render_message("query.error.execution_failed", language))
 
     def _resolve_account_by_name(self, name: str, accounts: list[dict]) -> str | None:

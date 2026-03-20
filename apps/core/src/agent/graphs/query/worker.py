@@ -389,6 +389,9 @@ class QueryWorker:
             "cached_transactions": query_session.get("cached_transactions"),
             "cache_fetched_at": query_session.get("cache_fetched_at"),
             "cache_fingerprint": query_session.get("cache_fingerprint"),
+            "cache_scope_fingerprint": query_session.get("cache_scope_fingerprint"),
+            "cache_window_start": query_session.get("cache_window_start"),
+            "cache_window_end": query_session.get("cache_window_end"),
             "pending_clarification": query_session.get("pending_clarification"),
             "query_frames": query_session.get("query_frames"),
         }
@@ -402,6 +405,8 @@ class QueryWorker:
             "account_ids": payload.get("account_ids"),
             "accounts": context.get("accounts", []),
             "language": locale,
+            "turn_id": context.get("turn_id") or context.get("inbound_message_id"),
+            "inbound_message_id": context.get("inbound_message_id") or context.get("turn_id"),
             "query_session": query_session,
             "flow_state": "parsing",
             "current_page": query_session.get("current_page", 0),

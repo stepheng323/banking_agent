@@ -285,6 +285,9 @@ class QueryResult(BaseModel):
     cached_transactions: list[dict[str, Any]] | None = None
     cache_fetched_at: float | None = None
     cache_fingerprint: str | None = None
+    cache_scope_fingerprint: str | None = None
+    cache_window_start: str | None = None
+    cache_window_end: str | None = None
     cache_reused: bool = False
 
 
