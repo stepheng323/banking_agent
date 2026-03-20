@@ -234,6 +234,82 @@ async def test_open_world_fallback_when_no_supported_tasks() -> None:
 
 
 @pytest.mark.asyncio
+async def test_planner_recovers_high_confidence_faq_no_task_into_worker_task() -> None:
+    planner_output = PlannerOutput(
+        primary_intent="faq",
+        response="",
+        confidence=0.91,
+        is_complex=False,
+        is_cancellation=False,
+        is_confirmation=False,
+        detected_language="English",
+        normalized_instruction="how do transfer fees work",
+        tasks=[],
+    )
+
+    state = OrchestratorState(
+        user_id="u_2b",
+        phone_number="2348111111112",
+        channel="whatsapp",
+        last_message_text="how do transfer fees work",
+    )
+    config: RunnableConfig = {
+        "configurable": {
+            "task_planner": _MockPlanner(planner_output),
+            "services": {},
+            "redis_client": None,
+        },
+        "recursion_limit": 50,
+    }
+
+    state = _apply(state, await ingest_message(state))
+    state = _apply(state, await plan_tasks(state, config))
+
+    assert state.final_response is None
+    assert list(state.tasks.keys()) == ["faq_unexpected_question"]
+    assert state.tasks["faq_unexpected_question"].type == "faq"
+    assert state.waves == [["faq_unexpected_question"]]
+
+
+@pytest.mark.asyncio
+async def test_planner_recovers_high_confidence_support_no_task_into_worker_task() -> None:
+    planner_output = PlannerOutput(
+        primary_intent="support",
+        response="",
+        confidence=0.88,
+        is_complex=False,
+        is_cancellation=False,
+        is_confirmation=False,
+        detected_language="English",
+        normalized_instruction="why did my transfer fail",
+        tasks=[],
+    )
+
+    state = OrchestratorState(
+        user_id="u_2c",
+        phone_number="2348111111113",
+        channel="whatsapp",
+        last_message_text="why did my transfer fail",
+    )
+    config: RunnableConfig = {
+        "configurable": {
+            "task_planner": _MockPlanner(planner_output),
+            "services": {},
+            "redis_client": None,
+        },
+        "recursion_limit": 50,
+    }
+
+    state = _apply(state, await ingest_message(state))
+    state = _apply(state, await plan_tasks(state, config))
+
+    assert state.final_response is None
+    assert list(state.tasks.keys()) == ["support_unexpected_question"]
+    assert state.tasks["support_unexpected_question"].type == "support"
+    assert state.waves == [["support_unexpected_question"]]
+
+
+@pytest.mark.asyncio
 async def test_conversational_response_key_renders_deterministically() -> None:
     """Conversational no-task replies should prefer keyed deterministic rendering."""
     planner_output = PlannerOutput(
@@ -435,6 +511,62 @@ async def test_conversational_out_of_scope_uses_meta_empathy_plus_redirect() -> 
     state = _apply(state, await plan_tasks(state, config))
 
     assert state.final_response == "I can't book flights yet.\n" + render_message("conversational.out_of_scope", "en")
+
+
+@pytest.mark.asyncio
+async def test_conversational_out_of_scope_logs_policy_blocked_breadcrumb(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    events: list[tuple[str, dict[str, object]]] = []
+
+    def _capture(event: str, **kwargs: object) -> None:
+        events.append((event, kwargs))
+
+    monkeypatch.setattr("apps.core.src.agent.orchestrator.nodes.planner_response_flow.logger.info", _capture)
+
+    planner_output = PlannerOutput(
+        primary_intent="conversational",
+        response="I can't book flights yet.",
+        response_key="conversational.out_of_scope",
+        confidence=0.93,
+        is_complex=False,
+        is_cancellation=False,
+        is_confirmation=False,
+        detected_language="English",
+        normalized_instruction="book me a flight",
+        tasks=[],
+    )
+
+    state = OrchestratorState(
+        user_id="u_5b",
+        phone_number="2348444444445",
+        channel="whatsapp",
+        last_message_text="book me a flight",
+    )
+    config: RunnableConfig = {
+        "configurable": {
+            "task_planner": _MockPlanner(planner_output, planner_llm=object()),
+            "services": {},
+            "redis_client": None,
+        },
+        "recursion_limit": 50,
+    }
+
+    state = _apply(state, await ingest_message(state))
+    state = _apply(state, await plan_tasks(state, config))
+
+    assert state.final_response == "I can't book flights yet.\n" + render_message("conversational.out_of_scope", "en")
+    assert (
+        "unexpected_turn_route_breadcrumb",
+        {
+            "user_turn_kind": "conversational",
+            "active_session_present": False,
+            "selected_route": "out_of_scope",
+            "route_reason": "conversational_out_of_scope",
+            "policy_blocked": True,
+            "fallback_path": "planner_non_task",
+        },
+    ) in events
 
 
 @pytest.mark.asyncio

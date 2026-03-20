@@ -23,6 +23,26 @@ from shared.utils.logging import get_logger
 logger = get_logger(__name__)
 
 
+def _log_unexpected_turn_route(
+    *,
+    state: OrchestratorState,
+    planner_output: Any,
+    selected_route: str,
+    route_reason: str,
+    policy_blocked: bool,
+    fallback_path: str | None,
+) -> None:
+    logger.info(
+        "unexpected_turn_route_breadcrumb",
+        user_turn_kind=str(getattr(planner_output, "primary_intent", "unknown") or "unknown"),
+        active_session_present=bool(state.session_stack),
+        selected_route=selected_route,
+        route_reason=route_reason,
+        policy_blocked=policy_blocked,
+        fallback_path=fallback_path,
+    )
+
+
 async def _build_non_task_response(
     *,
     state: OrchestratorState,
@@ -101,6 +121,14 @@ async def _build_non_task_response(
                         locale=conversational_locale,
                         handoff=handoff,
                     )
+            _log_unexpected_turn_route(
+                state=state,
+                planner_output=planner_output,
+                selected_route="out_of_scope",
+                route_reason="conversational_out_of_scope",
+                policy_blocked=True,
+                fallback_path="planner_non_task",
+            )
             return {
                 "final_response": format_out_of_scope_reply(conversational_locale, empathy_source),
                 **conversational_locale_updates,
@@ -109,6 +137,14 @@ async def _build_non_task_response(
 
         if planner_output.response:
             logger.info("planner_direct_response_used", locale=conversational_locale)
+            _log_unexpected_turn_route(
+                state=state,
+                planner_output=planner_output,
+                selected_route="direct_response",
+                route_reason="planner_conversational_response",
+                policy_blocked=False,
+                fallback_path="planner_non_task",
+            )
             return {
                 "final_response": _localized_planner_response(planner_output.response),
                 **conversational_locale_updates,
@@ -147,6 +183,14 @@ async def _build_non_task_response(
                         locale=conversational_locale,
                         intent=meta_intent.value,
                     )
+                    _log_unexpected_turn_route(
+                        state=state,
+                        planner_output=planner_output,
+                        selected_route="meta_reply",
+                        route_reason=f"response_key:{response_key}",
+                        policy_blocked=False,
+                        fallback_path="planner_non_task",
+                    )
                     return {
                         "final_response": meta_message,
                         **conversational_locale_updates,
@@ -158,6 +202,14 @@ async def _build_non_task_response(
                     locale=conversational_locale,
                     handoff=handoff,
                 )
+            _log_unexpected_turn_route(
+                state=state,
+                planner_output=planner_output,
+                selected_route="response_key_render",
+                route_reason=f"response_key:{response_key}",
+                policy_blocked=response_key == "conversational.out_of_scope",
+                fallback_path="planner_non_task",
+            )
             return {
                 "final_response": render_message(response_key, conversational_locale),
                 **conversational_locale_updates,
@@ -171,6 +223,14 @@ async def _build_non_task_response(
         )
         fallback_key: MessageKey = "conversational.clarify"
         logger.info("conversational_fallback_deterministic_used", key=fallback_key, locale=conversational_locale)
+        _log_unexpected_turn_route(
+            state=state,
+            planner_output=planner_output,
+            selected_route="clarify",
+            route_reason="missing_conversational_response_key",
+            policy_blocked=False,
+            fallback_path="planner_non_task",
+        )
         return {
             "final_response": render_message(fallback_key, conversational_locale),
             **conversational_locale_updates,
@@ -188,11 +248,27 @@ async def _build_non_task_response(
             }
 
     if planner_output and planner_output.response:
+        _log_unexpected_turn_route(
+            state=state,
+            planner_output=planner_output,
+            selected_route="direct_response",
+            route_reason="planner_non_conversational_response",
+            policy_blocked=False,
+            fallback_path="planner_non_task",
+        )
         return {
             "final_response": _localized_planner_response(planner_output.response),
             **locale_updates,
             **fastpath_context_updates,
         }
+    _log_unexpected_turn_route(
+        state=state,
+        planner_output=planner_output,
+        selected_route="capability_fallback",
+        route_reason="no_tasks_no_response",
+        policy_blocked=False,
+        fallback_path="planner_non_task",
+    )
     return {
         "final_response": render_safe_capability_fallback(current_locale),
         **locale_updates,
@@ -200,4 +276,4 @@ async def _build_non_task_response(
     }
 
 
-__all__ = ["_build_non_task_response"]
+__all__ = ["_build_non_task_response", "_log_unexpected_turn_route"]

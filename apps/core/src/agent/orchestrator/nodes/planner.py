@@ -31,12 +31,41 @@ from apps.core.src.agent.orchestrator.nodes.planner_quoted_replay import (
 from apps.core.src.agent.orchestrator.nodes.planner_response_flow import _build_non_task_response
 from apps.core.src.agent.orchestrator.nodes.planner_task_flow import _build_planner_task_updates
 from shared.i18n import LocaleManager, render_safe_capability_fallback
+from shared.types.planner import PlannedTask, TaskParameters
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
 
 SAFE_CAPABILITY_FALLBACK = render_safe_capability_fallback("en")
 QUOTED_REPLAY_MIN_CONFIDENCE = _QUOTED_REPLAY_MIN_CONFIDENCE
+_UNEXPECTED_ROUTE_RECOVERY_MIN_CONFIDENCE = 0.5
+
+
+def _recover_unexpected_question_task(planner_output: Any, text: str) -> PlannedTask | None:
+    if not planner_output or getattr(planner_output, "tasks", None):
+        return None
+
+    primary_intent = str(getattr(planner_output, "primary_intent", "") or "").strip().lower()
+    if primary_intent not in {"faq", "support"}:
+        return None
+
+    confidence = float(getattr(planner_output, "confidence", 0.0) or 0.0)
+    if confidence < _UNEXPECTED_ROUTE_RECOVERY_MIN_CONFIDENCE:
+        return None
+
+    instruction = str(getattr(planner_output, "normalized_instruction", "") or "").strip() or text
+    if not instruction:
+        return None
+
+    action = "answer_question" if primary_intent == "faq" else "handle_request"
+    return PlannedTask(
+        task_id=f"{primary_intent}_unexpected_question",
+        action=action,
+        executor=primary_intent,
+        instruction=instruction,
+        parameters=TaskParameters(),
+        risk="READ_ONLY",
+    )
 
 
 async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[str, Any]:
@@ -106,6 +135,20 @@ async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[s
     planner_output = execution_result.planner_output
     current_locale = execution_result.current_locale
     fastpath_context_updates = execution_result.fastpath_context_updates
+    recovered_task = _recover_unexpected_question_task(planner_output, text)
+    if recovered_task is not None:
+        planner_output.tasks = [recovered_task]
+        planner_output.response = ""
+        planner_output.response_key = None
+        logger.info(
+            "unexpected_turn_route_breadcrumb",
+            user_turn_kind=planner_output.primary_intent,
+            active_session_present=bool(state.session_stack),
+            selected_route=f"{planner_output.primary_intent}_task",
+            route_reason="planner_primary_intent_no_task_recovery",
+            policy_blocked=False,
+            fallback_path="worker_task_injected",
+        )
 
     handled_response = await _build_non_task_response(
         state=state,

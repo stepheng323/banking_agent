@@ -559,6 +559,35 @@ def _should_block_direct_router_surface_response(
     return is_surface_response_class(response_class)
 
 
+def _should_ignore_turn_router_direct_clarify_for_unexpected_question(
+    *,
+    message_text: str,
+    route: Any,
+) -> bool:
+    if getattr(route, "decision", None) not in {"respond_directly", "direct_context_answer"}:
+        return False
+
+    response_key = str(getattr(route, "response_key", "") or "")
+    response = str(getattr(route, "response", "") or "").strip()
+    if response_key not in {"", "conversational.clarify"}:
+        return False
+    if response:
+        return False
+
+    normalized = re.sub(r"\s+", " ", message_text.strip().lower())
+    if not normalized:
+        return False
+    if _has_explicit_cancel(normalized):
+        return False
+    if _is_account_balance_request(normalized):
+        return False
+    if any(re.search(pattern, normalized) for pattern in TURN_ROUTER_TRANSACTION_HINT_PATTERNS):
+        return False
+
+    first_word = normalized.split()[0] if normalized else ""
+    return normalized.endswith("?") or first_word in TURN_ROUTER_QUESTION_STARTERS
+
+
 def _normalize_suggestion_text(value: str) -> str:
     return re.sub(r"\s+", " ", value.strip().lower())
 
@@ -1098,6 +1127,21 @@ async def session_gate_fastpath(state: OrchestratorState, config: RunnableConfig
                     "gate_turn_router_surface_response_blocked",
                     decision=getattr(route, "decision", None),
                     response_key=getattr(route, "response_key", None),
+                )
+                route = None
+
+            if route is not None and _should_ignore_turn_router_direct_clarify_for_unexpected_question(
+                message_text=message_text,
+                route=route,
+            ):
+                logger.info(
+                    "unexpected_turn_route_breadcrumb",
+                    user_turn_kind="unexpected_question",
+                    active_session_present=bool(state.session_stack),
+                    selected_route="planner",
+                    route_reason="turn_router_direct_clarify_demoted",
+                    policy_blocked=False,
+                    fallback_path="turn_router_demoted_to_planner",
                 )
                 route = None
 

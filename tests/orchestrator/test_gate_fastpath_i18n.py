@@ -506,6 +506,55 @@ async def test_gate_turn_router_can_bypass_planner_with_direct_response() -> Non
     assert updates["loaded_context"]["language"] == "pcm"
 
 
+async def test_gate_turn_router_direct_clarify_for_question_falls_through_to_planner(
+    monkeypatch,
+) -> None:
+    events: list[tuple[str, dict[str, object]]] = []
+
+    def _capture(event: str, **kwargs: object) -> None:
+        events.append((event, kwargs))
+
+    monkeypatch.setattr("apps.core.src.agent.orchestrator.nodes.gate.logger.info", _capture)
+
+    planner = _RouteTurnPlanner(
+        TurnRouteDecision(
+            decision="respond_directly",
+            confidence=0.67,
+            detected_language="English",
+            response_key=None,
+            response=None,
+            expected_transaction_executors=[],
+            reason="unclear short question",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_gate_5b",
+        phone_number="23480000000051",
+        channel="whatsapp",
+        last_message_text="How do your limits work?",
+        loaded_context={"language": "en"},
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await session_gate_fastpath(state, config)
+
+    assert planner.route_calls == 1
+    assert updates.get("fast_path_triggered") is None
+    assert "final_response" not in updates
+    assert "turn_context_summary" in updates
+    assert (
+        "unexpected_turn_route_breadcrumb",
+        {
+            "user_turn_kind": "unexpected_question",
+            "active_session_present": False,
+            "selected_route": "planner",
+            "route_reason": "turn_router_direct_clarify_demoted",
+            "policy_blocked": False,
+            "fallback_path": "turn_router_demoted_to_planner",
+        },
+    ) in events
+
+
 async def test_gate_turn_router_can_answer_grounded_account_follow_up_without_planner() -> None:
     planner = _RouteTurnPlanner(
         TurnRouteDecision(
