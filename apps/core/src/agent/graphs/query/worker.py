@@ -309,7 +309,7 @@ class QueryWorker:
             stage_key,
             state=state,
             worker_context=worker_context,
-            include_time=True,
+            include_time=False,
         )
 
     async def run(

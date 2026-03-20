@@ -1,6 +1,5 @@
 """Telegram implementation of the Presenter protocol."""
 
-import asyncio
 import base64
 import html
 from typing import Any, cast
@@ -21,7 +20,6 @@ from shared.repositories.unit_of_work import UnitOfWork
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
-_TYPING_DELAY_SECONDS = 0.6
 
 
 class TelegramPresenter(Presenter):
@@ -35,10 +33,35 @@ class TelegramPresenter(Presenter):
         return bool(context.metadata.get("suppress_typing_indicator", False))
 
     @staticmethod
-    def _typing_delay_seconds(context: PresentationContext) -> float:
-        if context.metadata.get("force_typing_indicator"):
-            return 0.0
-        return _TYPING_DELAY_SECONDS
+    def _message_kind(intent: UiIntent) -> str:
+        if isinstance(intent, Say):
+            return "say"
+        if isinstance(intent, RequestAuth):
+            return "request_auth"
+        if isinstance(intent, RequestConfirmation):
+            return "request_confirmation"
+        if isinstance(intent, ShowReceipt):
+            return "show_receipt"
+        if isinstance(intent, ShowFlow):
+            return "show_flow"
+        if isinstance(intent, ShowOptions):
+            return "show_options"
+        return type(intent).__name__.lower()
+
+    async def _send_typing_before_intent(self, intent: UiIntent, context: PresentationContext) -> None:
+        if self._suppress_typing(context):
+            return
+        logger.info(
+            "outbound_typing_indicator_requested",
+            channel="telegram",
+            message_kind=self._message_kind(intent),
+            phone_number=context.phone_number,
+            turn_id=context.metadata.get("progress_turn_id") or context.metadata.get("turn_id"),
+            inbound_message_id=context.metadata.get("inbound_message_id") or context.metadata.get("message_id"),
+            progress_stage=context.metadata.get("progress_stage"),
+            typing_requested=True,
+        )
+        await self.client.send_typing_indicator(context.phone_number)
 
     async def present(self, intents: list[UiIntent], context: PresentationContext) -> PresentationResult:
         """Render intents to Telegram."""
@@ -51,11 +74,9 @@ class TelegramPresenter(Presenter):
                 if identity:
                     context.phone_number = identity  # override context for downstream calls
 
-        typing_task = self._arm_delayed_typing(intents, context)
-        first_send_completed = False
-
         for intent in intents:
             try:
+                await self._send_typing_before_intent(intent, context)
                 msg_id = None
                 if isinstance(intent, Say):
                     msg_id = await self._present_say(intent, context)
@@ -72,62 +93,14 @@ class TelegramPresenter(Presenter):
                 else:
                     logger.warning("unsupported_intent", type=type(intent).__name__)
 
-                if not first_send_completed:
-                    await self._cancel_typing_task(typing_task)
-                    typing_task = None
-                    first_send_completed = True
-
                 if msg_id:
                     result.message_ids.append(msg_id)
             except Exception as e:
-                if not first_send_completed:
-                    await self._cancel_typing_task(typing_task)
-                    typing_task = None
-                    first_send_completed = True
                 logger.error("telegram_presenter_error", intent=type(intent).__name__, error=str(e))
                 result.errors.append(str(e))
                 result.success = False
 
-        await self._cancel_typing_task(typing_task)
         return result
-
-    def _arm_delayed_typing(self, intents: list[UiIntent], context: PresentationContext) -> asyncio.Task[None] | None:
-        if not intents:
-            return None
-        if self._suppress_typing(context):
-            return None
-        if self._first_send_uses_streaming_draft(intents[0], context):
-            return None
-        return asyncio.create_task(
-            self._send_typing_after_delay(
-                context.phone_number,
-                delay_seconds=self._typing_delay_seconds(context),
-            )
-        )
-
-    @staticmethod
-    async def _cancel_typing_task(task: asyncio.Task[None] | None) -> None:
-        if task is None or task.done():
-            return
-        task.cancel()
-        try:
-            await task
-        except asyncio.CancelledError:
-            pass
-
-    async def _send_typing_after_delay(self, chat_id: str, *, delay_seconds: float) -> None:
-        if delay_seconds > 0:
-            await asyncio.sleep(delay_seconds)
-        await self.client.send_typing_indicator(chat_id)
-
-    def _first_send_uses_streaming_draft(self, intent: UiIntent, context: PresentationContext) -> bool:
-        if not isinstance(intent, Say):
-            return False
-        stream_client = cast(Any, self.client)
-        stream_enabled = bool(context.metadata.get("telegram_stream_response", True))
-        stream_min_chars = int(context.metadata.get("telegram_stream_min_chars", 48))
-        draft_supported = bool(getattr(stream_client, "_draft_supported", True))
-        return stream_enabled and draft_supported and len(intent.text.strip()) >= stream_min_chars
 
     async def _present_say(self, intent: Say, context: PresentationContext) -> str | None:
         if context.metadata.get("request_contact"):

@@ -242,7 +242,7 @@ async def test_graph_handler_logs_semantic_path_shape(monkeypatch: pytest.Monkey
 
 
 @pytest.mark.asyncio
-async def test_graph_handler_attaches_delivery_metadata_after_visible_progress(
+async def test_graph_handler_keeps_delivery_metadata_empty_after_visible_progress(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     graph = _GraphStub()
@@ -291,7 +291,7 @@ async def test_graph_handler_attaches_delivery_metadata_after_visible_progress(
         )
     )
 
-    assert result["delivery_metadata"] == {"suppress_typing_indicator": True}
+    assert result["delivery_metadata"] == {}
 
 
 @pytest.mark.asyncio
@@ -358,7 +358,7 @@ async def test_graph_handler_keeps_delivery_metadata_empty_without_visible_progr
             "progress_stage": "query.fetching_transactions",
             "progress_count": 0,
             "visible_progress_sent": False,
-            "suppress_followup_typing": False,
+            "typing_policy": "per_outbound_message",
         },
     ) in events
 
@@ -641,7 +641,7 @@ async def test_progress_dedupe_keys_are_turn_scoped_by_inbound_message_id(
 
 
 @pytest.mark.asyncio
-async def test_deduped_progress_attempt_does_not_advance_progress_or_suppress_typing(
+async def test_deduped_progress_attempt_does_not_advance_progress_or_attach_delivery_metadata(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     graph = _GraphStub()

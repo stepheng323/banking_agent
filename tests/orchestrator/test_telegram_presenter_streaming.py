@@ -110,9 +110,8 @@ async def test_telegram_presenter_confirmation_formats_double_asterisk_bold() ->
 
 
 @pytest.mark.asyncio
-async def test_telegram_presenter_fast_send_does_not_emit_typing(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_telegram_presenter_fast_send_emits_typing(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(telegram_presenter_module, "UnitOfWork", _StubUnitOfWork)
-    monkeypatch.setattr(telegram_presenter_module, "_TYPING_DELAY_SECONDS", 0.05)
     client = _StubDelayedTelegramClient()
     presenter = TelegramPresenter(cast(MessagingClient, client))
 
@@ -120,16 +119,14 @@ async def test_telegram_presenter_fast_send_does_not_emit_typing(monkeypatch: py
         [Say(text="short response")],
         PresentationContext(channel="telegram", phone_number="123456789", metadata={"telegram_stream_response": False}),
     )
-    await asyncio.sleep(0.06)
 
     assert client.send_text_calls
-    assert client.typing_calls == []
+    assert client.typing_calls == ["123456789"]
 
 
 @pytest.mark.asyncio
 async def test_telegram_presenter_slow_non_stream_send_emits_typing_once(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(telegram_presenter_module, "UnitOfWork", _StubUnitOfWork)
-    monkeypatch.setattr(telegram_presenter_module, "_TYPING_DELAY_SECONDS", 0.001)
     client = _StubDelayedTelegramClient(send_delay_seconds=0.02)
     presenter = TelegramPresenter(cast(MessagingClient, client))
 
@@ -143,9 +140,8 @@ async def test_telegram_presenter_slow_non_stream_send_emits_typing_once(monkeyp
 
 
 @pytest.mark.asyncio
-async def test_telegram_presenter_streamed_first_send_skips_typing(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_telegram_presenter_streamed_first_send_emits_typing(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(telegram_presenter_module, "UnitOfWork", _StubUnitOfWork)
-    monkeypatch.setattr(telegram_presenter_module, "_TYPING_DELAY_SECONDS", 0.001)
     client = _StubStreamingTelegramClient()
     presenter = TelegramPresenter(cast(MessagingClient, client))
 
@@ -159,7 +155,7 @@ async def test_telegram_presenter_streamed_first_send_skips_typing(monkeypatch: 
     )
 
     assert len(client.stream_calls) == 1
-    assert client.typing_calls == []
+    assert client.typing_calls == ["123456789"]
 
 
 @pytest.mark.asyncio
@@ -167,7 +163,6 @@ async def test_telegram_presenter_suppresses_typing_when_metadata_requests_it(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(telegram_presenter_module, "UnitOfWork", _StubUnitOfWork)
-    monkeypatch.setattr(telegram_presenter_module, "_TYPING_DELAY_SECONDS", 0.001)
     client = _StubDelayedTelegramClient(send_delay_seconds=0.02)
     presenter = TelegramPresenter(cast(MessagingClient, client))
 
@@ -189,7 +184,6 @@ async def test_telegram_presenter_force_typing_indicator_sends_immediately(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(telegram_presenter_module, "UnitOfWork", _StubUnitOfWork)
-    monkeypatch.setattr(telegram_presenter_module, "_TYPING_DELAY_SECONDS", 1.0)
     client = _StubDelayedTelegramClient(send_delay_seconds=0.02)
     presenter = TelegramPresenter(cast(MessagingClient, client))
 
@@ -204,3 +198,18 @@ async def test_telegram_presenter_force_typing_indicator_sends_immediately(
 
     assert client.send_text_calls
     assert client.typing_calls == ["123456789"]
+
+
+@pytest.mark.asyncio
+async def test_telegram_presenter_emits_typing_before_each_outbound_message(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(telegram_presenter_module, "UnitOfWork", _StubUnitOfWork)
+    client = _StubDelayedTelegramClient()
+    presenter = TelegramPresenter(cast(MessagingClient, client))
+
+    await presenter.present(
+        [Say(text="first"), Say(text="second")],
+        PresentationContext(channel="telegram", phone_number="123456789", metadata={"telegram_stream_response": False}),
+    )
+
+    assert len(client.send_text_calls) == 2
+    assert client.typing_calls == ["123456789", "123456789"]

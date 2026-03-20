@@ -27,7 +27,6 @@ from apps.core.src.agent.orchestrator.progress import (
     render_progress_message,
     seconds_until_progress_eligible,
     should_emit_progress,
-    should_suppress_followup_typing,
 )
 from apps.core.src.messaging.outbox import enqueue_outbox_say
 from shared.clients.abstractions.banking import BankDataProvider
@@ -109,8 +108,7 @@ class OrchestratorGraphHandler:
 
     @staticmethod
     def _delivery_metadata_from_progress_snapshot(snapshot: Any) -> dict[str, Any]:
-        if should_suppress_followup_typing(snapshot):
-            return {"suppress_typing_indicator": True}
+        del snapshot
         return {}
 
     async def _deliver_progress_update(
@@ -467,7 +465,7 @@ class OrchestratorGraphHandler:
                     progress_stage=progress_snapshot.stage_key,
                     progress_count=progress_snapshot.progress_count,
                     visible_progress_sent=progress_snapshot.progress_count > 0,
-                    suppress_followup_typing=bool(result["delivery_metadata"].get("suppress_typing_indicator")),
+                    typing_policy="per_outbound_message",
                 )
                 total_duration = (time.perf_counter() - turn_start) * 1000
                 self._log_latency_span(

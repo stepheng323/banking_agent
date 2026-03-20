@@ -29,12 +29,44 @@ class WhatsAppPresenter(Presenter):
     def _suppress_typing(context: PresentationContext) -> bool:
         return bool(context.metadata.get("suppress_typing_indicator", False))
 
+    @staticmethod
+    def _message_kind(intent: UiIntent) -> str:
+        if isinstance(intent, Say):
+            return "say"
+        if isinstance(intent, RequestAuth):
+            return "request_auth"
+        if isinstance(intent, RequestConfirmation):
+            return "request_confirmation"
+        if isinstance(intent, ShowReceipt):
+            return "show_receipt"
+        if isinstance(intent, ShowFlow):
+            return "show_flow"
+        if isinstance(intent, ShowOptions):
+            return "show_options"
+        return type(intent).__name__.lower()
+
+    @classmethod
+    def _log_typing_request(cls, intent: UiIntent, context: PresentationContext) -> None:
+        if cls._suppress_typing(context):
+            return
+        logger.info(
+            "outbound_typing_indicator_requested",
+            channel="whatsapp",
+            message_kind=cls._message_kind(intent),
+            phone_number=context.phone_number,
+            turn_id=context.metadata.get("progress_turn_id") or context.metadata.get("turn_id"),
+            inbound_message_id=context.metadata.get("inbound_message_id") or context.metadata.get("message_id"),
+            progress_stage=context.metadata.get("progress_stage"),
+            typing_requested=True,
+        )
+
     async def present(self, intents: list[UiIntent], context: PresentationContext) -> PresentationResult:
         """Render intents to WhatsApp."""
         result = PresentationResult()
 
         for intent in intents:
             try:
+                self._log_typing_request(intent, context)
                 msg_id = None
                 if isinstance(intent, Say):
                     msg_id = await self._present_say(intent, context)

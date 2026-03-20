@@ -7,12 +7,11 @@ from typing import Any
 
 from shared.i18n import render_message
 
-FIRST_PROGRESS_DELAY_SECONDS = 4.5
+FIRST_PROGRESS_DELAY_SECONDS = 3.5
 SECOND_PROGRESS_DELAY_SECONDS = 10.5
 MIN_PROGRESS_STAGE_AGE_SECONDS = 1.0
 PROGRESS_POLL_INTERVAL_SECONDS = 0.25
 MAX_PROGRESS_MESSAGES = 2
-FINAL_TYPING_SUPPRESSION_WINDOW_SECONDS = 2.5
 
 
 @dataclass(frozen=True, slots=True)
@@ -165,19 +164,6 @@ def should_emit_progress(
     return wait_seconds == 0.0
 
 
-def should_suppress_followup_typing(
-    snapshot: TurnProgressSnapshot,
-    *,
-    now: float | None = None,
-) -> bool:
-    """Return whether a recent visible progress update should suppress a duplicate typing pulse."""
-    if snapshot.progress_count <= 0 or snapshot.last_progress_sent_at is None:
-        return False
-
-    now_value = time.monotonic() if now is None else now
-    return (now_value - snapshot.last_progress_sent_at) <= FINAL_TYPING_SUPPRESSION_WINDOW_SECONDS
-
-
 def _render_progress_scope_label(
     *,
     locale: str,
@@ -185,8 +171,42 @@ def _render_progress_scope_label(
 ) -> str | None:
     if not stage_metadata:
         return None
+    counterparty = stage_metadata.get("counterparty_label")
+    direction = stage_metadata.get("direction")
+    category = stage_metadata.get("category_label")
+    time_label = stage_metadata.get("time_label")
+
+    if isinstance(counterparty, str) and counterparty.strip():
+        counterparty_value = counterparty.strip()
+        if direction == "sent":
+            return render_message("progress.scope.sent_to", locale, {"counterparty": counterparty_value})
+        if direction == "received":
+            return render_message("progress.scope.received_from", locale, {"counterparty": counterparty_value})
+        return render_message("progress.scope.transactions_with", locale, {"counterparty": counterparty_value})
+
+    if isinstance(category, str) and category.strip():
+        if direction == "sent":
+            base_scope = render_message("progress.scope.sent", locale)
+        elif direction == "received":
+            base_scope = render_message("progress.scope.received", locale)
+        elif direction == "outgoing":
+            base_scope = render_message("progress.scope.outgoing_transactions", locale)
+        elif direction == "incoming":
+            base_scope = render_message("progress.scope.incoming_transactions", locale)
+        else:
+            base_scope = render_message("progress.scope.transactions", locale)
+        return render_message(
+            "progress.scope.with_category",
+            locale,
+            {"scope_label": base_scope, "category": category.strip()},
+        )
+
     scope_label = stage_metadata.get("scope_label")
-    return str(scope_label).strip() if isinstance(scope_label, str) and scope_label.strip() else None
+    if isinstance(scope_label, str) and scope_label.strip():
+        scope_value = scope_label.strip()
+        if not isinstance(time_label, str) or not time_label.strip() or time_label.strip() not in scope_value:
+            return scope_value
+    return None
 
 
 def render_progress_message(
