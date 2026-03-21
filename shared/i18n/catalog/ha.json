@@ -785,45 +785,45 @@
   },
   "progress": {
     "common": {
-      "first_generic": "Working on your request.",
-      "followup_generic": "Still working on your request."
+      "first_generic": "Let me handle that.",
+      "followup_generic": "Still working on it."
     },
     "query": {
       "resolving_followup": {
-        "first_generic": "Checking your request.",
-        "first_scoped": "Checking {scope_label}.",
-        "followup_generic": "Still working. I'm checking that.",
-        "followup_scoped": "Still working. I'm checking {scope_label}."
+        "first_generic": "Let me check that.",
+        "first_scoped": "Let me check {scope_label}.",
+        "followup_generic": "Still checking that.",
+        "followup_scoped": "Still checking {scope_label}."
       },
       "fetching_transactions": {
-        "first_generic": "Fetching your transactions.",
-        "first_scoped": "Fetching the matching transactions for {scope_label}.",
-        "followup_generic": "Still working. I'm fetching your transactions.",
-        "followup_scoped": "Still working. I'm fetching the matching transactions for {scope_label}."
+        "first_generic": "Let me check that.",
+        "first_scoped": "Let me check {scope_label}.",
+        "followup_generic": "Still checking that.",
+        "followup_scoped": "Still checking {scope_label}."
       },
       "comparing_periods": {
-        "first_generic": "Comparing the matching time periods.",
-        "first_scoped": "Comparing the matching time periods for {scope_label}.",
-        "followup_generic": "Still working. I'm comparing the matching time periods.",
-        "followup_scoped": "Still working. I'm comparing the matching time periods for {scope_label}."
+        "first_generic": "Let me compare that.",
+        "first_scoped": "Let me compare {scope_label}.",
+        "followup_generic": "Still comparing that.",
+        "followup_scoped": "Still comparing {scope_label}."
       }
     },
     "transfer": {
       "resolving_recipient": {
-        "first_generic": "Resolving the recipient details.",
-        "followup_generic": "Still working. I'm resolving the recipient details."
+        "first_generic": "Let me sort that out.",
+        "followup_generic": "Still working on that."
       },
       "confirming_details": {
-        "first_generic": "Confirming the transfer details.",
-        "followup_generic": "Still working. I'm confirming the transfer details."
+        "first_generic": "Let me sort that out.",
+        "followup_generic": "Still working on that."
       },
       "authorizing_transfer": {
-        "first_generic": "Authorizing the transfer.",
-        "followup_generic": "Still working. I'm authorizing the transfer."
+        "first_generic": "Let me sort that out.",
+        "followup_generic": "Still working on that."
       },
       "processing_transfer": {
-        "first_generic": "Processing the transfer.",
-        "followup_generic": "Still working. I'm processing the transfer."
+        "first_generic": "Processing your transfer now.",
+        "followup_generic": "Still processing your transfer."
       }
     },
     "scope": {

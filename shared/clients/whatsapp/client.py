@@ -110,6 +110,24 @@ class WhatsAppClient(MessagingClient):
     def _get_url(self) -> str:
         return f"{GRAPH_API_BASE}/{self.phone_number_id}/messages"
 
+    async def _maybe_send_typing_indicator(
+        self,
+        *,
+        to: str,
+        message_id: str | None,
+        suppress_typing_indicator: bool,
+    ) -> str | None:
+        """Resolve the reference message and surface typing before a visible outbound send."""
+        resolved_message_id = await self._ensure_message_id(to, message_id)
+        if not resolved_message_id or suppress_typing_indicator:
+            return resolved_message_id
+
+        await self.send_typing_indicator(resolved_message_id)
+        delay_seconds = max(0.0, settings.whatsapp_typing_indicator_delay_ms / 1000)
+        if delay_seconds > 0:
+            await asyncio.sleep(delay_seconds)
+        return resolved_message_id
+
     async def _ensure_message_id(self, to: str, message_id: str | None) -> str | None:
         """Helper to get message_id from parameter or Redis for typing indicator support.
 
@@ -155,11 +173,11 @@ class WhatsAppClient(MessagingClient):
         """
         url = self._get_url()
 
-        # Always try to get message_id for typing indicator
-        message_id = await self._ensure_message_id(to, message_id)
-
-        if message_id and not suppress_typing_indicator:
-            await self.send_typing_indicator(message_id)
+        await self._maybe_send_typing_indicator(
+            to=to,
+            message_id=message_id,
+            suppress_typing_indicator=suppress_typing_indicator,
+        )
         payload = {
             "messaging_product": "whatsapp",
             "to": to,
@@ -222,10 +240,11 @@ class WhatsAppClient(MessagingClient):
         """
         url = self._get_url()
 
-        # Send typing indicator before button message
-        message_id = await self._ensure_message_id(to, message_id)
-        if message_id and not suppress_typing_indicator:
-            await self.send_typing_indicator(message_id)
+        await self._maybe_send_typing_indicator(
+            to=to,
+            message_id=message_id,
+            suppress_typing_indicator=suppress_typing_indicator,
+        )
 
         # Build button rows (max 3 buttons)
         button_rows = [{"type": "reply", "reply": {"id": btn["id"], "title": btn["title"][:20]}} for btn in buttons[:3]]
@@ -273,9 +292,11 @@ class WhatsAppClient(MessagingClient):
             raise ValueError("List options cannot be empty")
 
         url = self._get_url()
-        message_id = await self._ensure_message_id(to, message_id)
-        if message_id and not suppress_typing_indicator:
-            await self.send_typing_indicator(message_id)
+        await self._maybe_send_typing_indicator(
+            to=to,
+            message_id=message_id,
+            suppress_typing_indicator=suppress_typing_indicator,
+        )
 
         rows: list[dict[str, str]] = []
         for idx, option in enumerate(options[:10], start=1):
@@ -345,9 +366,11 @@ class WhatsAppClient(MessagingClient):
         """
         url = self._get_url()
 
-        message_id = await self._ensure_message_id(to, message_id)
-        if message_id and not suppress_typing_indicator:
-            await self.send_typing_indicator(message_id)
+        await self._maybe_send_typing_indicator(
+            to=to,
+            message_id=message_id,
+            suppress_typing_indicator=suppress_typing_indicator,
+        )
 
         # Extract config
         header = flow_config.get("header", "")
@@ -451,9 +474,11 @@ class WhatsAppClient(MessagingClient):
             API response from WhatsApp
         """
         try:
-            message_id = await self._ensure_message_id(to, message_id)
-            if message_id and not suppress_typing_indicator:
-                await self.send_typing_indicator(message_id)
+            await self._maybe_send_typing_indicator(
+                to=to,
+                message_id=message_id,
+                suppress_typing_indicator=suppress_typing_indicator,
+            )
             media_id = await self._upload_media_to_whatsapp(image_url)
             url = self._get_url()
             image_payload: dict[str, Any] = {
@@ -499,9 +524,11 @@ class WhatsAppClient(MessagingClient):
             API response from WhatsApp
         """
         try:
-            message_id = await self._ensure_message_id(to, message_id)
-            if message_id and not suppress_typing_indicator:
-                await self.send_typing_indicator(message_id)
+            await self._maybe_send_typing_indicator(
+                to=to,
+                message_id=message_id,
+                suppress_typing_indicator=suppress_typing_indicator,
+            )
             # Generate a filename based on mime type
             extension = mime_type.split("/")[-1]
             filename = f"image.{extension}"
@@ -640,9 +667,11 @@ class WhatsAppClient(MessagingClient):
         Returns:
             API response from WhatsApp
         """
-        message_id = await self._ensure_message_id(to, message_id)
-        if message_id and not suppress_typing_indicator:
-            await self.send_typing_indicator(message_id)
+        await self._maybe_send_typing_indicator(
+            to=to,
+            message_id=message_id,
+            suppress_typing_indicator=suppress_typing_indicator,
+        )
 
         try:
             media_id = await self._upload_buffer(data, filename, mime_type)

@@ -8,6 +8,7 @@ from apps.core.src.messaging.presenters import telegram as telegram_presenter_mo
 from apps.core.src.messaging.presenters.base import PresentationContext
 from apps.core.src.messaging.presenters.telegram import TelegramPresenter
 from shared.clients.abstractions.messaging import MessageResult, MessagingClient
+from shared.config.settings import settings
 
 
 class _StubStreamingTelegramClient:
@@ -112,6 +113,7 @@ async def test_telegram_presenter_confirmation_formats_double_asterisk_bold() ->
 @pytest.mark.asyncio
 async def test_telegram_presenter_fast_send_emits_typing(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(telegram_presenter_module, "UnitOfWork", _StubUnitOfWork)
+    monkeypatch.setattr(settings, "telegram_typing_indicator_delay_ms", 0)
     client = _StubDelayedTelegramClient()
     presenter = TelegramPresenter(cast(MessagingClient, client))
 
@@ -127,6 +129,7 @@ async def test_telegram_presenter_fast_send_emits_typing(monkeypatch: pytest.Mon
 @pytest.mark.asyncio
 async def test_telegram_presenter_slow_non_stream_send_emits_typing_once(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(telegram_presenter_module, "UnitOfWork", _StubUnitOfWork)
+    monkeypatch.setattr(settings, "telegram_typing_indicator_delay_ms", 0)
     client = _StubDelayedTelegramClient(send_delay_seconds=0.02)
     presenter = TelegramPresenter(cast(MessagingClient, client))
 
@@ -142,6 +145,7 @@ async def test_telegram_presenter_slow_non_stream_send_emits_typing_once(monkeyp
 @pytest.mark.asyncio
 async def test_telegram_presenter_streamed_first_send_emits_typing(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(telegram_presenter_module, "UnitOfWork", _StubUnitOfWork)
+    monkeypatch.setattr(settings, "telegram_typing_indicator_delay_ms", 0)
     client = _StubStreamingTelegramClient()
     presenter = TelegramPresenter(cast(MessagingClient, client))
 
@@ -163,6 +167,7 @@ async def test_telegram_presenter_suppresses_typing_when_metadata_requests_it(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(telegram_presenter_module, "UnitOfWork", _StubUnitOfWork)
+    monkeypatch.setattr(settings, "telegram_typing_indicator_delay_ms", 650)
     client = _StubDelayedTelegramClient(send_delay_seconds=0.02)
     presenter = TelegramPresenter(cast(MessagingClient, client))
 
@@ -184,6 +189,7 @@ async def test_telegram_presenter_force_typing_indicator_sends_immediately(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(telegram_presenter_module, "UnitOfWork", _StubUnitOfWork)
+    monkeypatch.setattr(settings, "telegram_typing_indicator_delay_ms", 0)
     client = _StubDelayedTelegramClient(send_delay_seconds=0.02)
     presenter = TelegramPresenter(cast(MessagingClient, client))
 
@@ -203,6 +209,7 @@ async def test_telegram_presenter_force_typing_indicator_sends_immediately(
 @pytest.mark.asyncio
 async def test_telegram_presenter_emits_typing_before_each_outbound_message(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(telegram_presenter_module, "UnitOfWork", _StubUnitOfWork)
+    monkeypatch.setattr(settings, "telegram_typing_indicator_delay_ms", 0)
     client = _StubDelayedTelegramClient()
     presenter = TelegramPresenter(cast(MessagingClient, client))
 
@@ -213,3 +220,35 @@ async def test_telegram_presenter_emits_typing_before_each_outbound_message(monk
 
     assert len(client.send_text_calls) == 2
     assert client.typing_calls == ["123456789", "123456789"]
+
+
+@pytest.mark.asyncio
+async def test_telegram_presenter_waits_briefly_after_typing(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(telegram_presenter_module, "UnitOfWork", _StubUnitOfWork)
+    monkeypatch.setattr(settings, "telegram_typing_indicator_delay_ms", 650)
+    client = _StubDelayedTelegramClient()
+    presenter = TelegramPresenter(cast(MessagingClient, client))
+
+    events: list[str] = []
+
+    async def _sleep(delay_seconds: float) -> None:
+        events.append(f"sleep:{delay_seconds}")
+
+    async def _send_typing_indicator(chat_id: str) -> bool:
+        events.append(f"typing:{chat_id}")
+        return True
+
+    async def _send_text(**kwargs: Any) -> MessageResult:
+        events.append(f"send:{kwargs['text']}")
+        return MessageResult(success=True, message_id="plain-msg-2")
+
+    monkeypatch.setattr(telegram_presenter_module.asyncio, "sleep", _sleep)
+    monkeypatch.setattr(client, "send_typing_indicator", _send_typing_indicator)
+    monkeypatch.setattr(client, "send_text", _send_text)
+
+    await presenter.present(
+        [Say(text="short response")],
+        PresentationContext(channel="telegram", phone_number="123456789", metadata={"telegram_stream_response": False}),
+    )
+
+    assert events == ["typing:123456789", "sleep:0.65", "send:short response"]

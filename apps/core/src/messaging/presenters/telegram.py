@@ -1,5 +1,6 @@
 """Telegram implementation of the Presenter protocol."""
 
+import asyncio
 import base64
 import html
 from typing import Any, cast
@@ -16,6 +17,7 @@ from apps.core.src.agent.orchestrator.models.intents import (
 from apps.core.src.messaging.presenters.base import PresentationContext, PresentationResult, Presenter
 from shared.clients.abstractions.messaging import MessagingClient
 from shared.clients.telegram.client import _format_telegram_html
+from shared.config.settings import settings
 from shared.repositories.unit_of_work import UnitOfWork
 from shared.utils.logging import get_logger
 
@@ -62,6 +64,9 @@ class TelegramPresenter(Presenter):
             typing_requested=True,
         )
         await self.client.send_typing_indicator(context.phone_number)
+        delay_seconds = max(0.0, settings.telegram_typing_indicator_delay_ms / 1000)
+        if delay_seconds > 0:
+            await asyncio.sleep(delay_seconds)
 
     async def present(self, intents: list[UiIntent], context: PresentationContext) -> PresentationResult:
         """Render intents to Telegram."""

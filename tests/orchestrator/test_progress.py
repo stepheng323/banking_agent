@@ -24,6 +24,23 @@ def test_progress_waits_for_stage_age_even_after_global_threshold() -> None:
     assert should_emit_progress(snapshot, now=3.6) is False
 
 
+def test_progress_waits_until_earlier_first_threshold() -> None:
+    snapshot = TurnProgressSnapshot(
+        stage_key="query.fetching_transactions",
+        started_at=0.0,
+        stage_started_at=0.0,
+        last_progress_sent_at=None,
+        progress_count=0,
+        stage_metadata=None,
+        locale="en",
+    )
+
+    wait_seconds = seconds_until_progress_eligible(snapshot, now=1.4)
+    assert wait_seconds is not None
+    assert wait_seconds > 0.0
+    assert should_emit_progress(snapshot, now=1.4) is False
+
+
 def test_progress_emits_once_execution_stage_has_been_active_long_enough() -> None:
     snapshot = TurnProgressSnapshot(
         stage_key="query.fetching_transactions",
@@ -70,7 +87,7 @@ def test_progress_renders_context_aware_query_followup_message() -> None:
         stage_metadata={"scope_label": "what you sent to mum"},
     )
 
-    assert text == "On it. Checking what you sent to mum."
+    assert text == "Let me check what you sent to mum."
 
 
 def test_progress_renders_context_aware_query_fetch_message() -> None:
@@ -86,7 +103,7 @@ def test_progress_renders_context_aware_query_fetch_message() -> None:
         },
     )
 
-    assert text == "Still on it. Checking what you sent to mum."
+    assert text == "Still checking what you sent to mum."
 
 
 def test_progress_falls_back_to_generic_when_scope_missing() -> None:
@@ -97,4 +114,4 @@ def test_progress_falls_back_to_generic_when_scope_missing() -> None:
         stage_metadata=None,
     )
 
-    assert text == "On it. Checking that."
+    assert text == "Let me check that."

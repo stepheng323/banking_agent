@@ -785,45 +785,45 @@
   },
   "progress": {
     "common": {
-      "first_generic": "On it.",
-      "followup_generic": "Still on it."
+      "first_generic": "Let me handle that.",
+      "followup_generic": "Still working on it."
     },
     "query": {
       "resolving_followup": {
-        "first_generic": "On it. Checking that.",
-        "first_scoped": "On it. Checking {scope_label}.",
-        "followup_generic": "Still on it. Checking that.",
-        "followup_scoped": "Still on it. Checking {scope_label}."
+        "first_generic": "Let me check that.",
+        "first_scoped": "Let me check {scope_label}.",
+        "followup_generic": "Still checking that.",
+        "followup_scoped": "Still checking {scope_label}."
       },
       "fetching_transactions": {
-        "first_generic": "On it. Checking that.",
-        "first_scoped": "On it. Checking {scope_label}.",
-        "followup_generic": "Still on it. Checking that.",
-        "followup_scoped": "Still on it. Checking {scope_label}."
+        "first_generic": "Let me check that.",
+        "first_scoped": "Let me check {scope_label}.",
+        "followup_generic": "Still checking that.",
+        "followup_scoped": "Still checking {scope_label}."
       },
       "comparing_periods": {
-        "first_generic": "On it. Comparing that.",
-        "first_scoped": "On it. Comparing {scope_label}.",
-        "followup_generic": "Still on it. Comparing that.",
-        "followup_scoped": "Still on it. Comparing {scope_label}."
+        "first_generic": "Let me compare that.",
+        "first_scoped": "Let me compare {scope_label}.",
+        "followup_generic": "Still comparing that.",
+        "followup_scoped": "Still comparing {scope_label}."
       }
     },
     "transfer": {
       "resolving_recipient": {
-        "first_generic": "On it.",
-        "followup_generic": "Still on it."
+        "first_generic": "Let me sort that out.",
+        "followup_generic": "Still working on that."
       },
       "confirming_details": {
-        "first_generic": "On it.",
-        "followup_generic": "Still on it."
+        "first_generic": "Let me sort that out.",
+        "followup_generic": "Still working on that."
       },
       "authorizing_transfer": {
-        "first_generic": "On it.",
-        "followup_generic": "Still on it."
+        "first_generic": "Let me sort that out.",
+        "followup_generic": "Still working on that."
       },
       "processing_transfer": {
-        "first_generic": "On it. Processing your transfer.",
-        "followup_generic": "Still on it. Processing your transfer."
+        "first_generic": "Processing your transfer now.",
+        "followup_generic": "Still processing your transfer."
       }
     },
     "scope": {

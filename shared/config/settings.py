@@ -75,11 +75,13 @@ class Settings:
         self.telegram_mini_app_base_url: str = os.getenv("TELEGRAM_MINI_APP_BASE_URL", "")
         self.telegram_webhook_secret_token: str = os.getenv("TELEGRAM_WEBHOOK_SECRET_TOKEN", "")
         self.telegram_enable_message_draft: bool = os.getenv("TELEGRAM_ENABLE_MESSAGE_DRAFT", "true").lower() == "true"
+        self.telegram_typing_indicator_delay_ms: int = int(os.getenv("TELEGRAM_TYPING_INDICATOR_DELAY_MS", "650"))
         self.receipt_verification_base_url: str = os.getenv("RECEIPT_VERIFICATION_BASE_URL", "").strip()
         raw_whatsapp_allowed_numbers = os.getenv("WHATSAPP_ALLOWED_NUMBERS", "")
         self.whatsapp_allowed_numbers: set[str] = {
             n.strip() for n in raw_whatsapp_allowed_numbers.split(",") if n.strip()
         }
+        self.whatsapp_typing_indicator_delay_ms: int = int(os.getenv("WHATSAPP_TYPING_INDICATOR_DELAY_MS", "650"))
 
         self.soul_policy_path: str = os.getenv("SOUL_POLICY_PATH", "config/soul_policy.json")
         self.enable_channel_option_ux_v2: bool = os.getenv("ENABLE_CHANNEL_OPTION_UX_V2", "false").lower() == "true"
