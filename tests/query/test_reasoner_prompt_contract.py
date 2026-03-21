@@ -93,6 +93,21 @@ def test_query_reasoner_prompt_covers_weekly_scope_replacement_transcript() -> N
     assert '"more" or "next page" on that list -> continuation_type="show_more" and followup_intent="continue_pagination"' in (
         QUERY_SEMANTIC_REASONER_PROMPT
     )
+    assert '"How much total", "what\'s the total", or "sum it up" after that transaction list/summary -> continuation_type="aggregate" and followup_intent="refine_existing"; preserve the current scope' in (
+        QUERY_SEMANTIC_REASONER_PROMPT
+    )
+    assert '"total for mum" after that transaction list/summary -> continuation_type="aggregate" and followup_intent="refine_existing"; keep the active time scope and narrow recipient filter' in (
+        QUERY_SEMANTIC_REASONER_PROMPT
+    )
+    assert '"wetin be total", "nawa be total", or "lapapo meloo" after that transaction list/summary -> continuation_type="aggregate" and followup_intent="refine_existing"' in (
+        QUERY_SEMANTIC_REASONER_PROMPT
+    )
+    assert '"Show my credit transactions this month" after a spending summary -> decision="new_query" with a fresh credit/list extraction, not continuation_type="time_delta"' in (
+        QUERY_SEMANTIC_REASONER_PROMPT
+    )
+    assert '"Show my debit transactions this month" after a credit summary -> decision="new_query" with a fresh debit/list extraction' in (
+        QUERY_SEMANTIC_REASONER_PROMPT
+    )
 
 
 def test_query_parser_prompt_covers_weekly_aggregate_and_possessive_period_phrasing() -> None:

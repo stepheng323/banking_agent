@@ -712,3 +712,79 @@ async def test_worker_recovers_ambiguous_last_week_followup_from_stashed_session
 
     assert result.outcome == TransactionOutcome.OK
     assert captured_ranges == [(date(2026, 3, 9), date(2026, 3, 15))]
+
+
+@pytest.mark.asyncio
+async def test_worker_reuses_active_query_scope_for_how_much_total_followup() -> None:
+    session_manager = _SessionManager()
+    worker = QueryWorker(_DummyLLM(), _DummyProvider(), session_manager)  # type: ignore[arg-type]
+    stashed_query_session = {
+        "session_active": True,
+        "query_contract": QueryExecutionContract.from_normalized_query(
+            NormalizedQuery(
+                intent=QueryIntent.TRANSACTION_LIST,
+                time_range=TimeRange(start=date(2026, 3, 1), end=date(2026, 3, 19), granularity="month"),
+                filters=Filters(transaction_type="debit", merchant=["mum"]),
+                result_limit=5,
+                result_reference="latest",
+            )
+        ).model_dump(),
+        "query_result": {"summary_text": "Transactions to Mum this month.", "items": []},
+        "current_page": 0,
+        "show_expanded": False,
+    }
+
+    async def _fake_reason(_: object) -> QuerySemanticDecision:
+        return QuerySemanticDecision(
+            decision="continuation",
+            continuation_type="aggregate",
+            followup_intent="refine_existing",
+            confidence=0.94,
+            reason="llm_total_followup",
+        )
+
+    captured_contracts: list[QueryExecutionContract] = []
+
+    async def _fake_execute(state: dict[str, Any], worker_context: Any) -> TransactionResult:
+        del worker_context
+        query_contract = state["query_contract"]
+        if isinstance(query_contract, dict):
+            query_contract = QueryExecutionContract.model_validate(query_contract)
+        captured_contracts.append(query_contract)
+        return TransactionResult(
+            outcome=TransactionOutcome.OK,
+            response="Total sent to Mum this month.",
+            patch={
+                "session_active": True,
+                "query_contract": query_contract,
+                "query_result": QueryResult(summary_text="Total sent to Mum this month.", items=[]),
+                "flow_state": "complete",
+            },
+        )
+
+    worker.extractor.reasoner.reason = _fake_reason  # type: ignore[method-assign]
+    worker.executor.run = _fake_execute  # type: ignore[method-assign]
+
+    result = await worker.run(
+        payload={"message": "How much total"},
+        context={
+            "phone_number": "2348000000313",
+            "user_id": "u-worker-total",
+            "accounts": [{"account_id": "acc_1"}],
+            "language": "en",
+            "today": date(2026, 3, 19),
+            "stashed_query_session": stashed_query_session,
+        },
+    )
+
+    assert result.outcome == TransactionOutcome.OK
+    assert len(captured_contracts) == 1
+    query_contract = captured_contracts[0]
+    assert query_contract.intent == QueryIntent.ANALYTICS_SUMMARY
+    assert query_contract.time_start == date(2026, 3, 1)
+    assert query_contract.time_end == date(2026, 3, 19)
+    assert query_contract.normalized_query.filters is not None
+    assert query_contract.normalized_query.filters.transaction_type == "debit"
+    assert query_contract.normalized_query.filters.merchant == ["mum"]
+    assert query_contract.normalized_query.aggregation is not None
+    assert query_contract.normalized_query.aggregation.type == "sum"

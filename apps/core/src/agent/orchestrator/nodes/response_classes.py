@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from typing import Any, Literal
 
-from apps.core.src.agent.orchestrator.services.query_shortcuts import resolve_query_shortcut
+from apps.core.src.agent.graphs.query.services.query_shortcuts import resolve_query_shortcut
 from shared.i18n import LocaleManager
 
 ResponseClass = Literal[

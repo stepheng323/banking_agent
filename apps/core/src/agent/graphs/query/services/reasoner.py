@@ -24,7 +24,7 @@ from apps.core.src.agent.graphs.query.models import (
 )
 from apps.core.src.agent.graphs.query.prompts.main import QUERY_SEMANTIC_REASONER_PROMPT
 from apps.core.src.agent.graphs.query.services.continuity import ContinuationClassifier
-from apps.core.src.agent.orchestrator.services.query_shortcuts import resolve_query_shortcut
+from apps.core.src.agent.graphs.query.services.query_shortcuts import resolve_query_shortcut
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)

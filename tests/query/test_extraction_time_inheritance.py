@@ -686,6 +686,57 @@ async def test_grounded_ask_clarify_last_week_recovers_via_time_rescope_recovery
 
 
 @pytest.mark.asyncio
+async def test_aggregate_followup_without_extraction_preserves_active_query_scope() -> None:
+    step = ExtractionStep(_DummyLLM())
+    today = date(2026, 3, 19)
+    session_query = NormalizedQuery(
+        intent=QueryIntent.TRANSACTION_LIST,
+        time_range=TimeRange(start=date(2026, 3, 1), end=today, granularity="month"),
+        filters=Filters(transaction_type="debit", merchant=["mum"]),
+        result_limit=5,
+        result_reference="latest",
+    )
+    session_contract = QueryExecutionContract.from_normalized_query(session_query)
+
+    async def _fake_reason(_: object) -> QuerySemanticDecision:
+        return QuerySemanticDecision(
+            decision="continuation",
+            continuation_type="aggregate",
+            followup_intent="refine_existing",
+            confidence=0.93,
+            reason="llm_total_followup",
+        )
+
+    step.reasoner.reason = _fake_reason  # type: ignore[method-assign]
+
+    updates = await step._handle_continuation(
+        {"message": "How much total", "today": today, "language": "en"},
+        {
+            "session_active": True,
+            "query_contract": session_contract.model_dump(),
+            "query_result": {"items": []},
+            "current_page": 2,
+            "show_expanded": True,
+        },
+    )
+
+    query = updates["query_contract"].normalized_query
+    assert query.intent == QueryIntent.ANALYTICS_SUMMARY
+    assert query.time_range is not None
+    assert query.time_range.start == date(2026, 3, 1)
+    assert query.time_range.end == today
+    assert query.filters is not None
+    assert query.filters.transaction_type == "debit"
+    assert query.filters.merchant == ["mum"]
+    assert query.aggregation is not None
+    assert query.aggregation.type == "sum"
+    assert query.result_limit is None
+    assert query.result_reference is None
+    assert updates["current_page"] == 0
+    assert updates["show_expanded"] is False
+
+
+@pytest.mark.asyncio
 async def test_show_me_logs_semantic_reasoner_continuation_resolution(monkeypatch: pytest.MonkeyPatch) -> None:
     step = ExtractionStep(_DummyLLM())
     today = date(2026, 3, 6)

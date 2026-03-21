@@ -1,0 +1,64 @@
+[
+  {
+    "id": "greeting_direct_reply",
+    "text": "Hi",
+    "context": "None",
+    "expected_decision": "direct_reply",
+    "expected_response_key": "conversational.greeting"
+  },
+  {
+    "id": "income_query_en",
+    "text": "What's my income this month",
+    "context": "None",
+    "expected_decision": "domain_query",
+    "expected_target_intent": "query",
+    "allowed_modes": ["new", null]
+  },
+  {
+    "id": "income_query_pidgin",
+    "text": "Wetin be my income this month",
+    "context": "None",
+    "expected_decision": "domain_query",
+    "expected_target_intent": "query",
+    "allowed_modes": ["new", null]
+  },
+  {
+    "id": "pending_query_clarification",
+    "text": "last 3 days",
+    "context": "Pending Query Clarification. Original query: \"How much did I spend last\". Missing detail: time period. Recent domain focus=query.",
+    "expected_decision": "domain_query",
+    "expected_target_intent": "query",
+    "allowed_modes": ["continuation"]
+  },
+  {
+    "id": "active_query_total_followup",
+    "text": "How much total",
+    "context": "Active Query Session. Last summary: \"Transactions shown for mum this month.\" Active result scope: debit transactions to Mum this month. Recent domain focus=query.",
+    "expected_decision": "domain_query",
+    "expected_target_intent": "query",
+    "allowed_modes": ["continuation"]
+  },
+  {
+    "id": "balance_account_guardrail",
+    "text": "check my balance",
+    "context": "None",
+    "expected_decision": "domain_account",
+    "expected_target_intent": "account",
+    "allowed_modes": ["new", null]
+  },
+  {
+    "id": "single_transfer_direct",
+    "text": "Send 5k to Mum",
+    "context": "None",
+    "expected_decision": "domain_transfer",
+    "expected_target_intent": "transfer",
+    "allowed_modes": ["new", null]
+  },
+  {
+    "id": "mixed_transfer_query",
+    "text": "send 10k to mum and show my last 3 credits",
+    "context": "None",
+    "expected_decision": "planner_mixed",
+    "expected_executors": ["transfer"]
+  }
+]

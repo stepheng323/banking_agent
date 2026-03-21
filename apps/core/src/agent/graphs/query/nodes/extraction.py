@@ -7,7 +7,9 @@ from typing import Any
 from langchain_core.runnables import Runnable
 
 from apps.core.src.agent.graphs.query.models import (
+    Aggregation,
     AmbiguityCode,
+    NormalizedQuery,
     PendingClarificationState,
     QueryExecutionContract,
     QueryExtractionResult,
@@ -65,6 +67,83 @@ class ExtractionStep(QueryStep):
     def _append_query_session_transition(updates: dict[str, Any], transition: str) -> dict[str, Any]:
         updates["_query_session_transition"] = transition
         return updates
+
+    def _compile_aggregate_continuation_updates(
+        self,
+        *,
+        decision: Any,
+        state: dict[str, Any],
+        today: date,
+        language: str,
+        original_query: NormalizedQuery | None,
+    ) -> dict[str, Any] | None:
+        extraction = getattr(decision, "extraction", None)
+        if extraction is not None and not extraction.raw_query:
+            extraction = extraction.model_copy(update={"raw_query": state.get("message", "")})
+
+        if original_query is None:
+            if extraction is None:
+                return None
+            patched_decision = decision.model_copy(update={"extraction": extraction}) if hasattr(decision, "model_copy") else decision
+            return self._parse_reasoner_extraction_to_updates(
+                patched_decision,
+                state=state,
+                today=today,
+                language=language,
+            )
+
+        extracted_query: NormalizedQuery | None = None
+        if extraction is not None:
+            extracted_query = self.parser.convert_to_normalized(extraction, today=today)
+            if extracted_query.intent in {
+                QueryIntent.TIME_COMPARISON,
+                QueryIntent.BENEFICIARY_SUMMARY,
+                QueryIntent.AFFORDABILITY,
+            }:
+                patched_decision = (
+                    decision.model_copy(update={"extraction": extraction}) if hasattr(decision, "model_copy") else decision
+                )
+                return self._parse_reasoner_extraction_to_updates(
+                    patched_decision,
+                    state=state,
+                    today=today,
+                    language=language,
+                )
+
+        aggregate_query = original_query.model_copy(deep=True)
+        if extracted_query is not None and extracted_query.filters is not None:
+            aggregate_query = apply_filter_delta(aggregate_query, extracted_query.filters)
+        aggregate_query.intent = QueryIntent.ANALYTICS_SUMMARY
+        aggregate_query.aggregation = (
+            extracted_query.aggregation.model_copy(deep=True)
+            if extracted_query is not None and extracted_query.aggregation is not None
+            else Aggregation(type="sum")
+        )
+        aggregate_query.result_limit = extracted_query.result_limit if extracted_query is not None else None
+        aggregate_query.result_reference = extracted_query.result_reference if extracted_query is not None else None
+
+        query_contract = QueryExecutionContract.from_normalized_query(
+            aggregate_query,
+            continuation_type=getattr(decision, "continuation_type", None),
+            continuation_delta_type=getattr(decision, "delta_type", None),
+        )
+        logger.info(
+            "query_aggregate_continuation_compiled",
+            source="reasoner_extraction" if extracted_query is not None else "active_query_scope_default",
+            aggregation_type=query_contract.aggregation.type if query_contract.aggregation is not None else None,
+            time_start=query_contract.time_start.isoformat(),
+            time_end=query_contract.time_end.isoformat(),
+            has_filters=bool(query_contract.normalized_query.filters),
+        )
+        return {
+            "query_contract": query_contract,
+            "resolver_message": None,
+            "flow_state": "executing",
+            "current_page": 0,
+            "session_active": True,
+            "pending_clarification": None,
+            "show_expanded": False,
+        }
 
     @staticmethod
     def _ambiguous_followup_updates(*, locale: str, session: dict[str, Any]) -> dict[str, Any]:
@@ -1102,13 +1181,15 @@ class ExtractionStep(QueryStep):
             return self._ambiguous_followup_updates(locale=locale, session=session)
 
         elif cont_type == "aggregate":
-            if decision.extraction is not None:
-                return self._parse_reasoner_extraction_to_updates(
-                    decision,
-                    state=state,
-                    today=today,
-                    language=locale,
-                )
+            aggregate_updates = self._compile_aggregate_continuation_updates(
+                decision=decision,
+                state=state,
+                today=today,
+                language=locale,
+                original_query=original_query,
+            )
+            if aggregate_updates is not None:
+                return aggregate_updates
             return await self._parse_new_query(state)
 
         return updates

@@ -116,9 +116,14 @@ CONTINUATION RULES
     about the same singular/latest transaction shape in a different time window
   - recipient reply on beneficiary summary -> continuation_type="recipient_drill_down" and followup_intent="none"
   - analytics over current result set -> continuation_type="aggregate" and followup_intent="refine_existing"
+  - short aggregate follow-ups anchored to the active result set should stay aggregate continuations, not new queries
+  - for aggregate continuations, preserve the current result scope unless the user explicitly changes it
+  - when possible, include `extraction` for the derived analytical query so runtime can reuse the active scope cleanly
   - if the active result is still the reference point but the follow-up intent is unclear,
     use continuation_type="unclear" and followup_intent="none" so the system can clarify
   - unrelated full query -> decision="new_query"
+  - explicit fresh restatements that introduce a new query shape, direction, or result surface should be new_query,
+    not time_delta, even if they mention a time period
   - do not guess continuation behavior from short phrases or keyword patterns alone
   - explicit time narrowing/replacement like "only today", "just this week", "for yesterday only",
     "only this month's", or "for last month only" is scope replacement, not pagination
@@ -129,11 +134,16 @@ CONTINUATION RULES
     - "How much did I spend this week" -> fresh/new query with explicit this_week aggregate spend shape
     - "How much did I spend last month" -> fresh/new query with explicit last_month aggregate spend shape
     - "How much did I send to mum this week" -> fresh/new query with recipient + debit + this_week aggregate spend shape
+    - "How much total", "what's the total", or "sum it up" after that transaction list/summary -> continuation_type="aggregate" and followup_intent="refine_existing"; preserve the current scope
+    - "total for mum" after that transaction list/summary -> continuation_type="aggregate" and followup_intent="refine_existing"; keep the active time scope and narrow recipient filter
+    - "wetin be total", "nawa be total", or "lapapo meloo" after that transaction list/summary -> continuation_type="aggregate" and followup_intent="refine_existing"
     - "Show them" or "show me" after that summary -> continuation_type="show_more" and followup_intent="refine_existing"
     - "Only today", "Only this week's", or "for last month only" after that summary/list -> continuation_type="time_delta" and followup_intent="replace_scope"; runtime resolves the new time window from the user message
     - "What about last week", "what about yesterday", or "and last month?" after that summary/list -> continuation_type="time_delta" and followup_intent="replace_scope"; runtime resolves the new time window from the user message
     - "What about yesterday?" after showing the last transaction -> continuation_type="time_delta" and followup_intent="replace_scope"; preserve the singular/latest shape in the new time window
     - "more" or "next page" on that list -> continuation_type="show_more" and followup_intent="continue_pagination"
+    - "Show my credit transactions this month" after a spending summary -> decision="new_query" with a fresh credit/list extraction, not continuation_type="time_delta"
+    - "Show my debit transactions this month" after a credit summary -> decision="new_query" with a fresh debit/list extraction
     - If the user refers to multiple recent result frames and asks to compare them, keep decision="continuation" and use `grounded_operation="compare_frames"`
       with `answer_mode="memory_answer"` when the referenced frames already contain enough deterministic facts for the answer,
       otherwise use `answer_mode="grounded_query"`.

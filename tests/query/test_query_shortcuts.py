@@ -1,4 +1,4 @@
-from apps.core.src.agent.orchestrator.services.query_shortcuts import (
+from apps.core.src.agent.graphs.query.services.query_shortcuts import (
     resolve_query_shortcut_with_reason,
 )
 
