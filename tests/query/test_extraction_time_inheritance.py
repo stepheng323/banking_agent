@@ -835,6 +835,124 @@ async def test_income_repair_followup_after_credit_list_preserves_active_credit_
 
 
 @pytest.mark.asyncio
+async def test_low_confidence_unclear_income_followup_recovers_via_parser() -> None:
+    step = ExtractionStep(_DummyLLM())
+    today = date(2026, 3, 20)
+    session_query = NormalizedQuery(
+        intent=QueryIntent.TRANSACTION_LIST,
+        time_range=TimeRange(start=date(2026, 3, 1), end=today, granularity="month"),
+        filters=Filters(transaction_type="credit"),
+    )
+    session_contract = QueryExecutionContract.from_normalized_query(session_query)
+    extraction = QueryExtractionResult(
+        intent=ExtractionIntent.SPENDING_TOTAL,
+        time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="this_month"),
+        raw_query="What's my income this month",
+    )
+    parsed_query = NormalizedQuery(
+        intent=QueryIntent.ANALYTICS_SUMMARY,
+        time_range=TimeRange(start=date(2026, 3, 1), end=today, granularity="month"),
+        filters=Filters(transaction_type="credit"),
+    )
+
+    async def _fake_reason(_: object) -> QuerySemanticDecision:
+        return QuerySemanticDecision(
+            decision="continuation",
+            continuation_type="unclear",
+            followup_intent="none",
+            confidence=0.2,
+            reason="ambiguous_income_followup",
+        )
+
+    async def _fake_parse(question: str, *, today: date, language: str) -> QueryParseResult:
+        del today, language
+        assert question == "What's my income this month"
+        return _ok_result(extraction, parsed_query)
+
+    step.reasoner.reason = _fake_reason  # type: ignore[method-assign]
+    step.parser.parse = _fake_parse  # type: ignore[method-assign]
+
+    updates = await step._handle_continuation(
+        {"message": "What's my income this month", "today": today, "language": "en"},
+        {
+            "session_active": True,
+            "query_contract": session_contract.model_dump(),
+            "query_result": {"items": []},
+            "current_page": 1,
+        },
+    )
+
+    query = updates["query_contract"].normalized_query
+    assert query.intent == QueryIntent.ANALYTICS_SUMMARY
+    assert query.time_range is not None
+    assert query.time_range.start == date(2026, 3, 1)
+    assert query.time_range.end == today
+    assert query.filters is not None
+    assert query.filters.transaction_type == "credit"
+    assert updates["current_page"] == 0
+    assert updates["_query_session_transition"] == "replace_session_new_query"
+
+
+@pytest.mark.asyncio
+async def test_unclear_income_repair_followup_recovers_via_parser() -> None:
+    step = ExtractionStep(_DummyLLM())
+    today = date(2026, 3, 20)
+    session_query = NormalizedQuery(
+        intent=QueryIntent.TRANSACTION_LIST,
+        time_range=TimeRange(start=date(2026, 3, 1), end=today, granularity="month"),
+        filters=Filters(transaction_type="credit"),
+    )
+    session_contract = QueryExecutionContract.from_normalized_query(session_query)
+    extraction = QueryExtractionResult(
+        intent=ExtractionIntent.SPENDING_TOTAL,
+        time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="this_month"),
+        raw_query="I mean my income this month",
+    )
+    parsed_query = NormalizedQuery(
+        intent=QueryIntent.ANALYTICS_SUMMARY,
+        time_range=TimeRange(start=date(2026, 3, 1), end=today, granularity="month"),
+        filters=Filters(transaction_type="credit"),
+    )
+
+    async def _fake_reason(_: object) -> QuerySemanticDecision:
+        return QuerySemanticDecision(
+            decision="continuation",
+            continuation_type="unclear",
+            followup_intent="none",
+            confidence=0.76,
+            reason="repair_phrase_not_grounded",
+        )
+
+    async def _fake_parse(question: str, *, today: date, language: str) -> QueryParseResult:
+        del today, language
+        assert question == "I mean my income this month"
+        return _ok_result(extraction, parsed_query)
+
+    step.reasoner.reason = _fake_reason  # type: ignore[method-assign]
+    step.parser.parse = _fake_parse  # type: ignore[method-assign]
+
+    updates = await step._handle_continuation(
+        {"message": "I mean my income this month", "today": today, "language": "en"},
+        {
+            "session_active": True,
+            "query_contract": session_contract.model_dump(),
+            "query_result": {"items": []},
+            "current_page": 1,
+        },
+    )
+
+    query = updates["query_contract"].normalized_query
+    assert query.intent == QueryIntent.ANALYTICS_SUMMARY
+    assert query.time_range is not None
+    assert query.time_range.start == date(2026, 3, 1)
+    assert query.time_range.end == today
+    assert query.filters is not None
+    assert query.filters.transaction_type == "credit"
+    assert updates["current_page"] == 0
+    assert updates["_query_session_transition"] == "replace_session_new_query"
+
+
+@pytest.mark.asyncio
 async def test_show_me_logs_semantic_reasoner_continuation_resolution(monkeypatch: pytest.MonkeyPatch) -> None:
     step = ExtractionStep(_DummyLLM())
     today = date(2026, 3, 6)

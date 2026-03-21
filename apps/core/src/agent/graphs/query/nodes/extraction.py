@@ -68,6 +68,88 @@ class ExtractionStep(QueryStep):
         updates["_query_session_transition"] = transition
         return updates
 
+    @staticmethod
+    def _has_supported_followup_query_signal(query: NormalizedQuery) -> bool:
+        if query.intent != QueryIntent.TRANSACTION_LIST:
+            return True
+
+        filters = query.filters
+        if filters is not None and any(
+            (
+                bool(filters.transaction_type),
+                bool(filters.merchant),
+                bool(filters.category),
+                filters.min_amount is not None,
+                filters.max_amount is not None,
+                bool(filters.exclude),
+                bool(filters.account_filter),
+            )
+        ):
+            return True
+
+        return any(
+            (
+                query.aggregation is not None,
+                query.result_limit is not None,
+                query.result_reference is not None,
+                bool(query.account_name),
+                query.amount_check is not None,
+                bool(query.item_name),
+            )
+        )
+
+    async def _maybe_recover_supported_followup_query(
+        self,
+        *,
+        state: dict[str, Any],
+        today: date,
+        language: str,
+    ) -> dict[str, Any] | None:
+        parsed_result = await self.parser.parse(state.get("message", ""), today=today, language=language)
+        if parsed_result.outcome != ResolverOutcome.OK or parsed_result.extraction is None:
+            logger.info(
+                "query_continuation_resolution",
+                path="fallback_parse_supported_query",
+                recovered=False,
+                skip_reason="parser_not_ok",
+                parser_outcome=parsed_result.outcome.value if hasattr(parsed_result.outcome, "value") else str(parsed_result.outcome),
+            )
+            return None
+
+        query_contract: QueryExecutionContract | dict[str, Any] | None = parsed_result.query_contract
+        if isinstance(query_contract, dict):
+            try:
+                query_contract = QueryExecutionContract.model_validate(query_contract)
+            except Exception:
+                query_contract = None
+        if not isinstance(query_contract, QueryExecutionContract):
+            logger.info(
+                "query_continuation_resolution",
+                path="fallback_parse_supported_query",
+                recovered=False,
+                skip_reason="missing_query_contract",
+            )
+            return None
+
+        if not self._has_supported_followup_query_signal(query_contract.normalized_query):
+            logger.info(
+                "query_continuation_resolution",
+                path="fallback_parse_supported_query",
+                recovered=False,
+                skip_reason="time_only_or_weak_query_signal",
+                parsed_intent=query_contract.normalized_query.intent.value,
+            )
+            return None
+
+        logger.info(
+            "query_continuation_resolution",
+            path="fallback_parse_supported_query",
+            recovered=True,
+            parsed_intent=query_contract.normalized_query.intent.value,
+        )
+        recovered_updates = self._parse_result_to_updates(parsed_result, state=state, today=today, language=language)
+        return self._append_query_session_transition(recovered_updates, "replace_session_new_query")
+
     def _compile_aggregate_continuation_updates(
         self,
         *,
@@ -910,6 +992,14 @@ class ExtractionStep(QueryStep):
 
         if decision.confidence is not None and decision.confidence < self._LOW_CONFIDENCE_THRESHOLD:
             if cont_type not in {"drill_down", "recipient_drill_down", "conversational"}:
+                supported_query_updates = await self._maybe_recover_supported_followup_query(
+                    state=state,
+                    today=today,
+                    language=locale,
+                )
+                if supported_query_updates is not None:
+                    supported_query_updates.update(self._semantic_trace_updates(decision))
+                    return supported_query_updates
                 recovered_updates = await self._maybe_recover_time_rescope_continuation(
                     trigger_reason="low_confidence_unclear",
                     decision=decision,
@@ -1165,6 +1255,14 @@ class ExtractionStep(QueryStep):
                 updates["show_expanded"] = False
 
         elif cont_type == "unclear":
+            supported_query_updates = await self._maybe_recover_supported_followup_query(
+                state=state,
+                today=today,
+                language=locale,
+            )
+            if supported_query_updates is not None:
+                supported_query_updates.update(self._semantic_trace_updates(decision))
+                return supported_query_updates
             recovered_updates = await self._maybe_recover_time_rescope_continuation(
                 trigger_reason="unclear_continuation",
                 decision=decision,
