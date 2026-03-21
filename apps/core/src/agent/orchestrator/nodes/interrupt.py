@@ -748,11 +748,11 @@ async def _build_enriched_transaction_switch_tasks(
     if target_intent == "transfer" and action == "send_money":
         planned_tasks, _ = _expand_underproduced_transfer_tasks(planned_tasks, text)
 
-    payload_overrides_by_task_id = (
-        {planned_tasks[0].task_id: payload_seed}
-        if len(planned_tasks) == 1 and payload_seed
-        else None
-    )
+    payload_overrides_by_task_id: dict[str, dict[str, Any]] = {
+        task.task_id: {"message": text} for task in planned_tasks
+    }
+    if len(planned_tasks) == 1 and payload_seed:
+        payload_overrides_by_task_id[planned_tasks[0].task_id].update(payload_seed)
     new_tasks, waves = build_task_specs_and_waves_from_plan_items(
         planned_tasks,
         text,
@@ -1687,10 +1687,12 @@ async def _handle_switch_intent_route(
             )
 
         resolved_target_intent = direct_transaction_domains.get(semantic_decision, target_intent)
-        new_tasks, waves, new_task_types = _build_direct_transaction_switch_tasks(
+        new_tasks, waves, new_task_types = await _build_enriched_transaction_switch_tasks(
             state=state,
             text=text,
             target_intent=resolved_target_intent,
+            interrupt=interrupt,
+            services=services,
         )
         target_intent = resolved_target_intent
 
