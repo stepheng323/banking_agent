@@ -8,6 +8,7 @@ import pytest
 from apps.core.src.agent.orchestrator.graph.handler import OrchestratorGraphHandler
 from apps.core.src.agent.orchestrator.models.message_context import MessageContext
 from apps.core.src.agent.orchestrator.progress import MAX_PROGRESS_MESSAGES, TurnProgressSnapshot
+from shared.config.settings import settings
 from shared.services.delivery_service import DeliveryAttemptResult
 
 
@@ -185,8 +186,8 @@ async def test_graph_handler_logs_semantic_path_shape(monkeypatch: pytest.Monkey
                 "outbox": [{"type": "say", "text": "linked and pending"}],
                 "final_response": "linked and pending",
                 "loaded_context": {"language": "en"},
-                "semantic_path_shape": "turn_router_only",
-                "fast_path_triggered": True,
+                "semantic_path_shape": "semantic_router_direct",
+                "direct_path_triggered": True,
             }
 
     graph = _SemanticGraphStub()
@@ -238,7 +239,94 @@ async def test_graph_handler_logs_semantic_path_shape(monkeypatch: pytest.Monkey
         )
     )
 
-    assert ("orchestrator_semantic_path", {"semantic_path_shape": "turn_router_only", "path_label": "fast_path", "phone_number": "2348000000001"}) in events
+    assert ("orchestrator_semantic_path", {"semantic_path_shape": "semantic_router_direct", "path_label": "direct_path", "phone_number": "2348000000001"}) in events
+
+
+@pytest.mark.asyncio
+async def test_graph_handler_logs_route_metrics_summary(monkeypatch: pytest.MonkeyPatch) -> None:
+    class _RouteMetricsGraphStub(_GraphStub):
+        async def ainvoke(self, inputs: dict, config: dict) -> dict:
+            del inputs, config
+            return {
+                "outbox": [],
+                "final_response": "checking",
+                "loaded_context": {"language": "en"},
+                "semantic_path_shape": "semantic_router_domain",
+                "direct_path_triggered": True,
+                "routing_owner": "semantic_router",
+                "routing_decision": "domain_query",
+                "routing_target_domain": "query",
+                "routing_mode": "continuation",
+                "planner_used": False,
+                "preplanner_expected_transaction_executors": [],
+            }
+
+    graph = _RouteMetricsGraphStub()
+    monkeypatch.setattr(
+        "apps.core.src.agent.orchestrator.graph.handler.AsyncRedisSaver",
+        lambda redis_client: _CheckpointerStub(),
+    )
+    monkeypatch.setattr(
+        "apps.core.src.agent.orchestrator.graph.handler.build_orchestrator_graph",
+        lambda checkpointer: graph,
+    )
+
+    events: list[tuple[str, dict]] = []
+
+    def _capture(event: str, **kwargs) -> None:
+        events.append((event, kwargs))
+
+    monkeypatch.setattr("apps.core.src.agent.orchestrator.graph.handler.logger.info", _capture)
+
+    handler = OrchestratorGraphHandler(
+        task_planner=SimpleNamespace(),
+        transfer_service=SimpleNamespace(),
+        airtime_service=SimpleNamespace(),
+        query_service=SimpleNamespace(),
+        data_service=SimpleNamespace(),
+        account_service=SimpleNamespace(),
+        support_service=SimpleNamespace(),
+        faq_service=SimpleNamespace(),
+        user_repo=SimpleNamespace(),
+        beneficiary_repo=SimpleNamespace(),
+        account_repo=SimpleNamespace(),
+        actionable_message_repo=SimpleNamespace(),
+        banking_provider=SimpleNamespace(),
+        context_manager=_ContextManagerStub(),
+        redis_client=SimpleNamespace(),
+        publisher=SimpleNamespace(),
+        beneficiary_suggestion_service=SimpleNamespace(),
+    )
+    handler._cleanup_if_idle = AsyncMock()
+    handler._apply_session_ttl = AsyncMock()
+
+    await handler.invoke(
+        MessageContext(
+            phone_number="2348000000007",
+            text="How much total",
+            message_id="wamid.77",
+            channel="whatsapp",
+            channel_identity="2348000000007",
+        )
+    )
+
+    route_metrics = next(payload for event, payload in events if event == "orchestrator_route_metrics")
+    assert route_metrics["phone_number"] == "2348000000007"
+    assert route_metrics["path_label"] == "direct_path"
+    assert route_metrics["semantic_path_shape"] == "semantic_router_domain"
+    assert route_metrics["routing_owner"] == "semantic_router"
+    assert route_metrics["routing_decision"] == "domain_query"
+    assert route_metrics["routing_target_domain"] == "query"
+    assert route_metrics["routing_mode"] == "continuation"
+    assert route_metrics["planner_used"] is False
+    assert route_metrics["planner_primary_intent"] is None
+    assert route_metrics["direct_path_triggered"] is True
+    assert route_metrics["expected_transaction_executors"] == []
+    assert route_metrics["task_executors"] == []
+    assert route_metrics["task_count"] == 0
+    assert route_metrics["wave_count"] == 0
+    assert route_metrics["progress_count"] == 0
+    assert route_metrics["total_duration_ms"] == pytest.approx(0, abs=5000)
 
 
 @pytest.mark.asyncio
@@ -318,6 +406,7 @@ async def test_graph_handler_keeps_delivery_metadata_empty_without_visible_progr
         events.append((event, kwargs))
 
     monkeypatch.setattr("apps.core.src.agent.orchestrator.graph.handler.logger.info", _capture)
+    monkeypatch.setattr(settings, "whatsapp_typing_indicator_delay_ms", 650)
 
     handler = OrchestratorGraphHandler(
         task_planner=SimpleNamespace(),
@@ -358,7 +447,8 @@ async def test_graph_handler_keeps_delivery_metadata_empty_without_visible_progr
             "progress_stage": "query.fetching_transactions",
             "progress_count": 0,
             "visible_progress_sent": False,
-            "typing_policy": "per_outbound_message",
+            "typing_policy": "per_outbound_message_with_pre_send_delay",
+            "typing_visibility_delay_ms": 650,
         },
     ) in events
 

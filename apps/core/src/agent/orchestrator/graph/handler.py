@@ -182,8 +182,8 @@ class OrchestratorGraphHandler:
     def _resolve_path_label(context: MessageContext, final_state: dict[str, Any]) -> str:
         if getattr(context, "is_media_input", False) or bool(context.image_data):
             return "media_path"
-        if final_state.get("fast_path_triggered"):
-            return "fast_path"
+        if final_state.get("direct_path_triggered"):
+            return "direct_path"
         if final_state.get("last_interrupt") or final_state.get("pending_interrupt"):
             return "interrupt_path"
         return "planner_path"
@@ -226,6 +226,57 @@ class OrchestratorGraphHandler:
             semantic_path_shape=semantic_path_shape,
             path_label=path_label,
             phone_number=phone_number,
+        )
+
+    @staticmethod
+    def _task_executor_labels(final_state: dict[str, Any]) -> list[str]:
+        labels: list[str] = []
+        tasks = final_state.get("tasks") or {}
+        if not isinstance(tasks, dict):
+            return labels
+        for spec in tasks.values():
+            executor = getattr(spec, "type", None)
+            if isinstance(executor, str) and executor and executor not in labels:
+                labels.append(executor)
+        return labels
+
+    @staticmethod
+    def _planner_primary_intent(final_state: dict[str, Any]) -> str | None:
+        planner_output = final_state.get("planner_output")
+        primary_intent = getattr(planner_output, "primary_intent", None)
+        return primary_intent if isinstance(primary_intent, str) and primary_intent else None
+
+    def _log_route_metrics(
+        self,
+        *,
+        final_state: dict[str, Any],
+        phone_number: str,
+        path_label: str,
+        semantic_path_shape: str,
+        total_duration_ms: float,
+        progress_count: int,
+    ) -> None:
+        task_executors = self._task_executor_labels(final_state)
+        task_map = final_state.get("tasks")
+        task_count = len(task_map) if isinstance(task_map, dict) else len(task_executors)
+        logger.info(
+            "orchestrator_route_metrics",
+            phone_number=phone_number,
+            path_label=path_label,
+            semantic_path_shape=semantic_path_shape,
+            routing_owner=final_state.get("routing_owner"),
+            routing_decision=final_state.get("routing_decision"),
+            routing_target_domain=final_state.get("routing_target_domain"),
+            routing_mode=final_state.get("routing_mode"),
+            planner_used=bool(final_state.get("planner_used")),
+            planner_primary_intent=self._planner_primary_intent(final_state),
+            direct_path_triggered=bool(final_state.get("direct_path_triggered")),
+            expected_transaction_executors=list(final_state.get("preplanner_expected_transaction_executors") or []),
+            task_executors=task_executors,
+            task_count=task_count,
+            wave_count=len(final_state.get("waves") or []),
+            progress_count=progress_count,
+            total_duration_ms=round(total_duration_ms, 2),
         )
 
     def _record_guardrail_signal(self, *, path_label: str, duration_ms: float, errored: bool) -> None:
@@ -460,12 +511,23 @@ class OrchestratorGraphHandler:
                     "locale": resolved_locale,
                     "delivery_metadata": self._delivery_metadata_from_progress_snapshot(progress_snapshot),
                 }
+                if context.channel == "whatsapp":
+                    typing_visibility_delay_ms = settings.whatsapp_typing_indicator_delay_ms
+                elif context.channel == "telegram":
+                    typing_visibility_delay_ms = settings.telegram_typing_indicator_delay_ms
+                else:
+                    typing_visibility_delay_ms = 0
                 logger.info(
                     "orchestrator_progress_delivery_summary",
                     progress_stage=progress_snapshot.stage_key,
                     progress_count=progress_snapshot.progress_count,
                     visible_progress_sent=progress_snapshot.progress_count > 0,
-                    typing_policy="per_outbound_message",
+                    typing_policy=(
+                        "per_outbound_message_with_pre_send_delay"
+                        if typing_visibility_delay_ms > 0
+                        else "per_outbound_message"
+                    ),
+                    typing_visibility_delay_ms=typing_visibility_delay_ms,
                 )
                 total_duration = (time.perf_counter() - turn_start) * 1000
                 self._log_latency_span(
@@ -479,6 +541,14 @@ class OrchestratorGraphHandler:
                     semantic_path_shape=semantic_path_shape,
                     path_label=path_label,
                     phone_number=phone_number,
+                )
+                self._log_route_metrics(
+                    final_state=final_state,
+                    phone_number=phone_number,
+                    path_label=path_label,
+                    semantic_path_shape=semantic_path_shape,
+                    total_duration_ms=total_duration,
+                    progress_count=progress_snapshot.progress_count,
                 )
                 self._record_guardrail_signal(path_label=path_label, duration_ms=total_duration, errored=False)
                 return result
