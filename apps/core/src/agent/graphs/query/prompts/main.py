@@ -137,6 +137,9 @@ CONTINUATION RULES
     - "How much total", "what's the total", or "sum it up" after that transaction list/summary -> continuation_type="aggregate" and followup_intent="refine_existing"; preserve the current scope
     - "total for mum" after that transaction list/summary -> continuation_type="aggregate" and followup_intent="refine_existing"; keep the active time scope and narrow recipient filter
     - "wetin be total", "nawa be total", or "lapapo meloo" after that transaction list/summary -> continuation_type="aggregate" and followup_intent="refine_existing"
+    - "What my income this month" or "what's my income this month" after that credit transaction list -> continuation_type="aggregate" and followup_intent="refine_existing"; treat income as total credit inflows for the active month scope
+    - "I mean my income this month" or "total income then" after that credit transaction list -> continuation_type="aggregate" and followup_intent="refine_existing"; keep the active credit scope and recover from the repair phrasing
+    - explicit salary-only asks like "salary this month" are narrower than generic income and should only narrow when the user clearly says salary/earnings/paycheck
     - "Show them" or "show me" after that summary -> continuation_type="show_more" and followup_intent="refine_existing"
     - "Only today", "Only this week's", or "for last month only" after that summary/list -> continuation_type="time_delta" and followup_intent="replace_scope"; runtime resolves the new time window from the user message
     - "What about last week", "what about yesterday", or "and last month?" after that summary/list -> continuation_type="time_delta" and followup_intent="replace_scope"; runtime resolves the new time window from the user message

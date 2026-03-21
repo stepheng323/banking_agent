@@ -312,6 +312,7 @@ class QueryFormatter:
     ) -> str:
         """Format QueryResult to response string."""
         summary_parts = QueryFormatter._parse_summary_parts(result.summary_text)
+        surface_type = result.surface.type if result.surface is not None else None
 
         if not show_expanded and result.summary_text and not summary_parts:
             if not result.items:
@@ -455,7 +456,7 @@ class QueryFormatter:
             return QueryFormatter._format_no_results(result, locale)
 
         # Special handling for single transaction - show detailed view
-        if len(result.items) == 1:
+        if len(result.items) == 1 and surface_type == SurfaceType.SINGLE_ITEM:
             item = result.items[0]
             title = render_message("query.format.transaction_details_title", locale)
             if result.query_snapshot and result.query_snapshot.result_reference == "latest":

@@ -737,6 +737,104 @@ async def test_aggregate_followup_without_extraction_preserves_active_query_scop
 
 
 @pytest.mark.asyncio
+async def test_income_followup_after_credit_list_preserves_active_credit_scope() -> None:
+    step = ExtractionStep(_DummyLLM())
+    today = date(2026, 3, 20)
+    session_query = NormalizedQuery(
+        intent=QueryIntent.TRANSACTION_LIST,
+        time_range=TimeRange(start=date(2026, 3, 1), end=today, granularity="month"),
+        filters=Filters(transaction_type="credit"),
+        result_limit=5,
+        result_reference="latest",
+    )
+    session_contract = QueryExecutionContract.from_normalized_query(session_query)
+
+    async def _fake_reason(_: object) -> QuerySemanticDecision:
+        return QuerySemanticDecision(
+            decision="continuation",
+            continuation_type="aggregate",
+            followup_intent="refine_existing",
+            confidence=0.94,
+            reason="llm_income_followup",
+        )
+
+    step.reasoner.reason = _fake_reason  # type: ignore[method-assign]
+
+    updates = await step._handle_continuation(
+        {"message": "What my income this month", "today": today, "language": "en"},
+        {
+            "session_active": True,
+            "query_contract": session_contract.model_dump(),
+            "query_result": {"items": []},
+            "current_page": 1,
+        },
+    )
+
+    query = updates["query_contract"].normalized_query
+    assert query.intent == QueryIntent.ANALYTICS_SUMMARY
+    assert query.time_range is not None
+    assert query.time_range.start == date(2026, 3, 1)
+    assert query.time_range.end == today
+    assert query.filters is not None
+    assert query.filters.transaction_type == "credit"
+    assert query.aggregation is not None
+    assert query.aggregation.type == "sum"
+    assert query.result_limit is None
+    assert query.result_reference is None
+    assert updates["current_page"] == 0
+    assert updates["show_expanded"] is False
+
+
+@pytest.mark.asyncio
+async def test_income_repair_followup_after_credit_list_preserves_active_credit_scope() -> None:
+    step = ExtractionStep(_DummyLLM())
+    today = date(2026, 3, 20)
+    session_query = NormalizedQuery(
+        intent=QueryIntent.TRANSACTION_LIST,
+        time_range=TimeRange(start=date(2026, 3, 1), end=today, granularity="month"),
+        filters=Filters(transaction_type="credit"),
+        result_limit=5,
+        result_reference="latest",
+    )
+    session_contract = QueryExecutionContract.from_normalized_query(session_query)
+
+    async def _fake_reason(_: object) -> QuerySemanticDecision:
+        return QuerySemanticDecision(
+            decision="continuation",
+            continuation_type="aggregate",
+            followup_intent="refine_existing",
+            confidence=0.91,
+            reason="llm_income_repair_followup",
+        )
+
+    step.reasoner.reason = _fake_reason  # type: ignore[method-assign]
+
+    updates = await step._handle_continuation(
+        {"message": "I mean my income this month", "today": today, "language": "en"},
+        {
+            "session_active": True,
+            "query_contract": session_contract.model_dump(),
+            "query_result": {"items": []},
+            "current_page": 1,
+        },
+    )
+
+    query = updates["query_contract"].normalized_query
+    assert query.intent == QueryIntent.ANALYTICS_SUMMARY
+    assert query.time_range is not None
+    assert query.time_range.start == date(2026, 3, 1)
+    assert query.time_range.end == today
+    assert query.filters is not None
+    assert query.filters.transaction_type == "credit"
+    assert query.aggregation is not None
+    assert query.aggregation.type == "sum"
+    assert query.result_limit is None
+    assert query.result_reference is None
+    assert updates["current_page"] == 0
+    assert updates["show_expanded"] is False
+
+
+@pytest.mark.asyncio
 async def test_show_me_logs_semantic_reasoner_continuation_resolution(monkeypatch: pytest.MonkeyPatch) -> None:
     step = ExtractionStep(_DummyLLM())
     today = date(2026, 3, 6)

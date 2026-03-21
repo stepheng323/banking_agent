@@ -102,6 +102,15 @@ def test_query_reasoner_prompt_covers_weekly_scope_replacement_transcript() -> N
     assert '"wetin be total", "nawa be total", or "lapapo meloo" after that transaction list/summary -> continuation_type="aggregate" and followup_intent="refine_existing"' in (
         QUERY_SEMANTIC_REASONER_PROMPT
     )
+    assert '"What my income this month" or "what\'s my income this month" after that credit transaction list -> continuation_type="aggregate" and followup_intent="refine_existing"; treat income as total credit inflows for the active month scope' in (
+        QUERY_SEMANTIC_REASONER_PROMPT
+    )
+    assert '"I mean my income this month" or "total income then" after that credit transaction list -> continuation_type="aggregate" and followup_intent="refine_existing"; keep the active credit scope and recover from the repair phrasing' in (
+        QUERY_SEMANTIC_REASONER_PROMPT
+    )
+    assert 'explicit salary-only asks like "salary this month" are narrower than generic income and should only narrow when the user clearly says salary/earnings/paycheck' in (
+        QUERY_SEMANTIC_REASONER_PROMPT
+    )
     assert '"Show my credit transactions this month" after a spending summary -> decision="new_query" with a fresh credit/list extraction, not continuation_type="time_delta"' in (
         QUERY_SEMANTIC_REASONER_PROMPT
     )

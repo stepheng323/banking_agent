@@ -195,6 +195,39 @@ def test_formatter_heading_uses_credit_context() -> None:
     assert response.splitlines()[0] == "*Credit Transactions*"
 
 
+def test_formatter_preserves_paginated_credit_list_shape_for_single_remaining_item() -> None:
+    today = lagos_today()
+    result = QueryResult(
+        summary_text="accounts:1|showing:6-6|total:6",
+        items=[
+            QueryResultItem(
+                id="tx6",
+                description="Transfer from JOHNSON MARY - Refund",
+                amount=35000,
+                date=today.replace(day=1),
+                metadata={"type": "credit", "bank_name": "Zenith Bank"},
+            )
+        ],
+        query_snapshot=NormalizedQuery(
+            intent=QueryIntent.TRANSACTION_LIST,
+            filters=Filters(transaction_type="credit"),
+            time_range=TimeRange(start=today.replace(day=1), end=today),
+        ),
+        surface=ResultSurface(
+            type=SurfaceType.LIST,
+            items=[{"id": "tx6", "key": "Transfer from JOHNSON MARY - Refund", "amount": 35000, "count": 1}],
+            context={"count": 1, "total_results": 6, "has_more": False},
+        ),
+    )
+
+    response = QueryFormatter.format(result, current_page=1, locale="en")
+
+    assert response.splitlines()[0] == "*Credit Transactions* — This Month"
+    assert "Your last credit transaction was:" not in response
+    assert "₦35,000" in response
+    assert "_Showing 6-6 of 6_" in response
+
+
 def test_formatter_heading_uses_category_spending_for_debit() -> None:
     result = _sample_list_result(
         NormalizedQuery(
