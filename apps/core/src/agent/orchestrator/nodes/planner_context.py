@@ -37,6 +37,8 @@ QUERY_SESSION_CONTEXT_GUIDANCE = (
     "- Continuation/refinement/analytics on shown transactions stay in query "
     "(for example: 'more', 'next', 'details', 'receipt', 'any credits?', "
     "'any debit?', 'only debits', 'last month', 'how much did I spend?', 'total spending').\n"
+    "- If query is waiting for clarification, short answers that complete the missing query detail stay in query "
+    "(for example: 'last 3 days', 'today', 'this month').\n"
     "- Fresh transaction-history asks are also query tasks.\n"
     "- Data questions are NOT conversational questions. Always route them as query tasks.\n"
     "- Balance/account-status asks are NOT query continuation; route them to account tasks."
@@ -135,8 +137,8 @@ def _derive_recent_answer_focus(state: OrchestratorState) -> str | None:
             return "receipt"
 
     planner_output = state.planner_output
-    if planner_output and getattr(planner_output, "context_fastpath_subtype", None):
-        return str(planner_output.context_fastpath_subtype)
+    if planner_output and getattr(planner_output, "context_read_subtype", None):
+        return str(planner_output.context_read_subtype)
 
     return None
 
@@ -193,7 +195,14 @@ def _query_session_summary_text(query_session_snapshot: dict[str, Any] | None) -
     query_result = query_session_snapshot.get("query_result")
     if isinstance(query_result, dict):
         summary_text = query_result.get("summary_text")
-    return _build_query_session_context(summary_text if isinstance(summary_text, str) else None), session_active
+    pending_clarification = query_session_snapshot.get("pending_clarification")
+    return (
+        _build_query_session_context(
+            summary_text if isinstance(summary_text, str) else None,
+            pending_clarification if isinstance(pending_clarification, dict) else None,
+        ),
+        session_active,
+    )
 
 
 def _build_account_lines(accounts: list[dict[str, Any]]) -> tuple[list[str], int]:
@@ -302,7 +311,7 @@ def build_turn_context_summary(
                         state.pending_interrupt.fields_by_task.get(active_task.id, []) or []
                     )
 
-    from apps.core.src.agent.orchestrator.nodes.planner_fastpath import _infer_recent_domain_focus
+    from apps.core.src.agent.orchestrator.nodes.planner_context_read import _infer_recent_domain_focus
     from apps.core.src.agent.orchestrator.services.context_manager import OrchestratorContextManager
 
     return TurnContextSummary(
@@ -566,11 +575,25 @@ def build_quoted_replay_context_from_summary(
     return context
 
 
-def _build_query_session_context(summary_text: str | None) -> str:
+def _build_query_session_context(
+    summary_text: str | None,
+    pending_clarification: dict[str, Any] | None = None,
+) -> str:
     summary_snippet = ""
     if summary_text:
         summary_snippet = f' Last summary: "{_clip_text(summary_text, 180)}".'
-    return f"{QUERY_SESSION_CONTEXT_HEADER}{summary_snippet}\n{QUERY_SESSION_CONTEXT_GUIDANCE}"
+    clarification_snippet = ""
+    if pending_clarification:
+        original_query = str(pending_clarification.get("original_query") or "").strip()
+        resolver_message = str(pending_clarification.get("resolver_message") or "").strip()
+        clarification_parts: list[str] = []
+        if original_query:
+            clarification_parts.append(f'Unresolved query: "{_clip_text(original_query, 120)}".')
+        if resolver_message:
+            clarification_parts.append(f'Waiting for: "{_clip_text(resolver_message, 120)}".')
+        if clarification_parts:
+            clarification_snippet = " " + " ".join(clarification_parts)
+    return f"{QUERY_SESSION_CONTEXT_HEADER}{summary_snippet}{clarification_snippet}\n{QUERY_SESSION_CONTEXT_GUIDANCE}"
 
 
 def _assemble_planner_context(

@@ -14,6 +14,7 @@ from apps.core.src.agent.orchestrator.nodes.cancellation import (
 from apps.core.src.agent.orchestrator.nodes.planner_context import (
     INTERRUPT_CONTEXT_MAX_CHARS,
     build_interrupt_context_from_summary,
+    build_router_context_from_summary,
     get_or_build_turn_context_summary,
 )
 from apps.core.src.agent.orchestrator.nodes.planner_postprocess import _expand_underproduced_transfer_tasks
@@ -29,7 +30,14 @@ from shared.formatters.confirmation import build_confirmation_summary
 from shared.formatters.prompts import format_auth_reason, sanitize_recipient_display_name
 from shared.formatters.recipient_display import format_recipient_display_label
 from shared.i18n import LocaleManager, render_message
-from shared.types.planner import InterruptRouteDecision, PlannedTask, PlannerOutput, RecipientAllocation, TaskParameters
+from shared.types.planner import (
+    InterruptRouteDecision,
+    PlannedTask,
+    PlannerOutput,
+    RecipientAllocation,
+    SemanticRouteDecision,
+    TaskParameters,
+)
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -145,6 +153,12 @@ def _is_transaction_replacement(
     if _is_transaction_intent(primary_intent):
         return True
     return bool(new_task_types) and new_task_types.issubset(TRANSACTION_INTENTS)
+
+
+def _is_resumable_interrupt(interrupt: Any) -> bool:
+    kind = getattr(interrupt, "kind", None)
+    task_ids = getattr(interrupt, "task_ids", None)
+    return kind in {"input", "confirmation", "auth"} and isinstance(task_ids, list) and bool(task_ids)
 
 
 def _build_interrupt_context(
@@ -751,6 +765,25 @@ async def _build_enriched_transaction_switch_tasks(
     return new_tasks, waves, {target_intent}
 
 
+def _build_direct_transaction_switch_tasks(
+    *,
+    state: OrchestratorState,
+    text: str,
+    target_intent: str,
+) -> tuple[dict[str, TaskSpec], list[list[str]], set[str]]:
+    task_id = _next_interrupt_task_id(state=state, target_intent=target_intent)
+    task = TaskSpec(
+        id=task_id,
+        type=cast(Any, target_intent),
+        stage=TaskStage.DRAFT,
+        payload={
+            "instruction": text,
+            "message": text,
+        },
+    )
+    return {task_id: task}, [[task_id]], {target_intent}
+
+
 def _build_direct_non_transaction_switch_tasks(
     *,
     state: OrchestratorState,
@@ -908,6 +941,51 @@ def _build_transaction_replacement_updates(
     return updates
 
 
+def _build_planner_switch_updates(
+    *,
+    state: OrchestratorState,
+    interrupt: Any,
+    active_type: str,
+    current_task_types: set[str],
+    text: str,
+    expected_executors: list[str],
+) -> dict[str, Any]:
+    cleaned_stack, active_domain = _clear_current_domain_sessions(state, current_task_types)
+    updates: dict[str, Any] = {
+        "pending_interrupt": None,
+        "last_interrupt": interrupt,
+        "tasks": {},
+        "waves": [],
+        "current_wave_index": 0,
+        "normalized_instruction": text,
+        "planner_output": None,
+        "task_results": {},
+        "session_stack": cleaned_stack,
+        "active_domain": active_domain,
+        "pin_verified": False,
+    }
+    if expected_executors:
+        updates["preplanner_expected_transaction_executors"] = expected_executors
+
+    if current_task_types.issubset(TRANSACTION_INTENTS) and _is_resumable_interrupt(interrupt):
+        stashed = _stash_current_session(state, interrupt=interrupt, intent=active_type)
+        updates["stashed_sessions"] = stashed
+        logger.info(
+            "interrupt_switch_to_planner_stashed",
+            kind=interrupt.kind,
+            from_types=sorted(current_task_types),
+            expected_executors=expected_executors,
+        )
+    else:
+        logger.info(
+            "interrupt_switch_to_planner_replaced",
+            kind=interrupt.kind,
+            from_types=sorted(current_task_types),
+            expected_executors=expected_executors,
+        )
+    return updates
+
+
 def _switch_updates(
     *,
     state: OrchestratorState,
@@ -926,9 +1004,10 @@ def _switch_updates(
         new_task_types=new_task_types,
         primary_intent=primary_intent,
     ):
-        return _build_transaction_replacement_updates(
+        return _build_stash_switch_updates(
             state=state,
             interrupt=interrupt,
+            active_type=active_type,
             current_task_types=current_task_types,
             new_tasks=new_tasks,
             waves=waves,
@@ -1523,6 +1602,7 @@ async def _handle_switch_intent_route(
     state: OrchestratorState,
     interrupt: Any,
     route: InterruptRouteDecision,
+    task_planner: Any,
     text: str,
     active_type: str,
     current_task_types: set[str],
@@ -1554,13 +1634,65 @@ async def _handle_switch_intent_route(
             route=route,
         )
     else:
-        new_tasks, waves, new_task_types = await _build_enriched_transaction_switch_tasks(
+        semantic_route: SemanticRouteDecision | None = None
+        try:
+            stashed_query_session = (
+                state.stashed_query_session if isinstance(state.stashed_query_session, dict) else None
+            )
+            summary, _ = get_or_build_turn_context_summary(
+                state,
+                query_session_snapshot=stashed_query_session,
+                query_session_source="stashed" if stashed_query_session is not None else None,
+                path_label="interrupt_path",
+            )
+            semantic_context = build_router_context_from_summary(
+                summary,
+                expected_executors=state.preplanner_expected_transaction_executors,
+            )
+            semantic_route = await task_planner.route_semantic_turn(
+                state.phone_number,
+                text,
+                context=semantic_context,
+                path_label="interrupt_path",
+            )
+        except TypeError:
+            semantic_route = await task_planner.route_semantic_turn(
+                state.phone_number,
+                text,
+                context=semantic_context,
+            )
+        except Exception as exc:
+            logger.warning("interrupt_semantic_router_failed", error=str(exc), target_intent=target_intent)
+            semantic_route = None
+
+        semantic_decision = str(getattr(semantic_route, "decision", "") or "")
+        expected_executors = [
+            str(item)
+            for item in (getattr(semantic_route, "expected_transaction_executors", None) or [])
+            if str(item) in TRANSACTION_INTENTS
+        ]
+        direct_transaction_domains = {
+            "domain_transfer": "transfer",
+            "domain_airtime": "airtime",
+            "domain_data": "data",
+        }
+        if semantic_decision in {"planner_mixed", "planner_ambiguous"}:
+            return _build_planner_switch_updates(
+                state=state,
+                interrupt=interrupt,
+                active_type=active_type,
+                current_task_types=current_task_types,
+                text=text,
+                expected_executors=expected_executors,
+            )
+
+        resolved_target_intent = direct_transaction_domains.get(semantic_decision, target_intent)
+        new_tasks, waves, new_task_types = _build_direct_transaction_switch_tasks(
             state=state,
             text=text,
-            target_intent=target_intent,
-            interrupt=interrupt,
-            services=services,
+            target_intent=resolved_target_intent,
         )
+        target_intent = resolved_target_intent
 
     return _switch_updates(
         state=state,
@@ -1669,6 +1801,7 @@ async def handle_pending_interrupt(state: OrchestratorState, config: RunnableCon
                 state=state,
                 interrupt=interrupt,
                 route=route,
+                task_planner=task_planner,
                 text=text,
                 active_type=active_type,
                 current_task_types=current_task_types,
@@ -1762,6 +1895,7 @@ async def handle_pending_interrupt(state: OrchestratorState, config: RunnableCon
             state=state,
             interrupt=interrupt,
             route=route,
+            task_planner=task_planner,
             text=text,
             active_type=active_type,
             current_task_types=current_task_types,

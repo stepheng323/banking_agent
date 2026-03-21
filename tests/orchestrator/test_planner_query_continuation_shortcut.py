@@ -8,10 +8,58 @@ from apps.core.src.agent.orchestrator.models.state import OrchestratorState
 from apps.core.src.agent.orchestrator.nodes.planner import plan_tasks
 
 
-class _FailingPlanner:
-    async def plan_tasks(self, phone_number: str, text: str, *, context: str = "None", prompt_signals: object | None = None) -> Any:
-        del phone_number, text, context
-        raise AssertionError("planner LLM should not run for deterministic query-continuation shortcut")
+class _PlannerReturningQueryTask:
+    def __init__(self) -> None:
+        self.plan_calls = 0
+
+    async def plan_tasks(
+        self,
+        phone_number: str,
+        text: str,
+        *,
+        context: str = "None",
+        prompt_signals: object | None = None,
+    ) -> Any:
+        del phone_number, context, prompt_signals
+        self.plan_calls += 1
+
+        class _Params:
+            def model_dump(self) -> dict[str, object]:
+                return {}
+
+        class _PlannedTask:
+            def __init__(self, instruction: str) -> None:
+                self.task_id = "q1"
+                self.action = "transaction_list"
+                self.executor = "query"
+                self.instruction = instruction
+                self.description = None
+                self.parameters = _Params()
+                self.depends_on: list[str] = []
+                self.condition = None
+                self.risk = "READ_ONLY"
+
+            def model_copy(self, *, deep: bool = False) -> "_PlannedTask":
+                del deep
+                return _PlannedTask(self.instruction)
+
+        return type(
+            "PlannerOutput",
+            (),
+            {
+                "primary_intent": "query",
+                "response": "",
+                "response_key": None,
+                "confidence": 0.9,
+                "is_complex": False,
+                "is_cancellation": False,
+                "is_confirmation": False,
+                "detected_language": None,
+                "context_read_subtype": None,
+                "normalized_instruction": text,
+                "tasks": [_PlannedTask(text)],
+            },
+        )()
 
 
 class _PlannerReturningDirectResponse:
@@ -33,7 +81,7 @@ class _PlannerReturningDirectResponse:
                 "is_cancellation": False,
                 "is_confirmation": False,
                 "detected_language": None,
-                "context_fastpath_subtype": None,
+                "context_read_subtype": None,
                 "normalized_instruction": "show me",
                 "tasks": [],
             },
@@ -55,9 +103,14 @@ class _RedisWithQuerySession:
             )
         return None
 
+    async def delete(self, key: str) -> int:
+        del key
+        return 1
+
 
 @pytest.mark.asyncio
-async def test_planner_shortcuts_obvious_query_continuation() -> None:
+async def test_planner_no_longer_shortcuts_obvious_query_continuation() -> None:
+    planner = _PlannerReturningQueryTask()
     state = OrchestratorState(
         user_id="u_shortcut_1",
         phone_number="2348000000002",
@@ -70,7 +123,7 @@ async def test_planner_shortcuts_obvious_query_continuation() -> None:
     )
     config: RunnableConfig = {
         "configurable": {
-            "task_planner": _FailingPlanner(),
+            "task_planner": planner,
             "redis_client": _RedisWithQuerySession(),
             "services": {},
         },
@@ -79,6 +132,7 @@ async def test_planner_shortcuts_obvious_query_continuation() -> None:
 
     updates = await plan_tasks(state, config)
 
+    assert planner.plan_calls == 1
     assert "tasks" in updates
     assert "waves" in updates
     task = next(iter(updates["tasks"].values()))

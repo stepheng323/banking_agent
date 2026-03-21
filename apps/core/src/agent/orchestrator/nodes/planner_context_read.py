@@ -1,4 +1,4 @@
-"""Context read fastpath planner helpers."""
+"""Planner-owned context-read helpers."""
 
 import re
 import time
@@ -15,8 +15,8 @@ from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
 
-CONTEXT_READ_FASTPATH_LIST_LIMIT = 5
-CONTEXT_FASTPATH_ACCOUNT_SUBTYPES = {
+CONTEXT_READ_LIST_LIMIT = 5
+CONTEXT_READ_ACCOUNT_SUBTYPES = {
     "account_count",
     "linked_accounts_summary",
     "default_account_identity",
@@ -24,23 +24,25 @@ CONTEXT_FASTPATH_ACCOUNT_SUBTYPES = {
     "account_mandate_readiness_summary",
     "account_linked_bank_existence_check",
 }
-CONTEXT_FASTPATH_BENEFICIARY_SUBTYPES = {
+CONTEXT_READ_BENEFICIARY_SUBTYPES = {
     "beneficiary_count",
     "beneficiary_list",
     "beneficiary_existence_check",
     "beneficiary_name_match_preview",
 }
-CONTEXT_FASTPATH_FLOW_SUBTYPES = {
+CONTEXT_READ_FLOW_SUBTYPES = {
     "flow_recap",
     "flow_missing_requirements",
 }
-CONTEXT_FASTPATH_SUBTYPES = (
-    CONTEXT_FASTPATH_ACCOUNT_SUBTYPES | CONTEXT_FASTPATH_BENEFICIARY_SUBTYPES | CONTEXT_FASTPATH_FLOW_SUBTYPES
+CONTEXT_READ_SUBTYPES = (
+    CONTEXT_READ_ACCOUNT_SUBTYPES | CONTEXT_READ_BENEFICIARY_SUBTYPES | CONTEXT_READ_FLOW_SUBTYPES
 )
 TRANSACTION_EXECUTORS = {"transfer", "airtime", "data"}
 BENEFICIARY_MATCH_PREVIEW_LIMIT = 3
-BENEFICIARY_FASTPATH_PERSIST_SUBTYPES = {"beneficiary_list", "beneficiary_name_match_preview"}
-NO_ACTIVE_FLOW_FASTPATH_MESSAGE = "There is no active transfer flow right now. Start a transfer and I will guide you."
+BENEFICIARY_CONTEXT_READ_PERSIST_SUBTYPES = {"beneficiary_list", "beneficiary_name_match_preview"}
+NO_ACTIVE_FLOW_CONTEXT_READ_MESSAGE = (
+    "There is no active transfer flow right now. Start a transfer and I will guide you."
+)
 _NON_ALNUM_RE = re.compile(r"[^a-z0-9]+")
 
 
@@ -48,12 +50,12 @@ def _infer_recent_domain_focus(state: OrchestratorState) -> str | None:
     """Infer the most recent domain focus from prior planner output/state."""
     prior_output = state.planner_output
     if prior_output:
-        prior_subtype = _planner_fastpath_subtype(prior_output)
-        if prior_subtype in CONTEXT_FASTPATH_ACCOUNT_SUBTYPES:
+        prior_subtype = _planner_context_read_subtype(prior_output)
+        if prior_subtype in CONTEXT_READ_ACCOUNT_SUBTYPES:
             return "account"
-        if prior_subtype in CONTEXT_FASTPATH_BENEFICIARY_SUBTYPES:
+        if prior_subtype in CONTEXT_READ_BENEFICIARY_SUBTYPES:
             return "beneficiary"
-        if prior_subtype in CONTEXT_FASTPATH_FLOW_SUBTYPES:
+        if prior_subtype in CONTEXT_READ_FLOW_SUBTYPES:
             return "orchestrator"
 
         prior_tasks = getattr(prior_output, "tasks", None) or []
@@ -71,10 +73,10 @@ def _infer_recent_domain_focus(state: OrchestratorState) -> str | None:
     return None
 
 
-def _planner_fastpath_subtype(planner_output: Any) -> str | None:
-    """Read planner-provided fastpath subtype when it is recognized."""
-    subtype = getattr(planner_output, "context_fastpath_subtype", None)
-    if isinstance(subtype, str) and subtype in CONTEXT_FASTPATH_SUBTYPES:
+def _planner_context_read_subtype(planner_output: Any) -> str | None:
+    """Read planner-provided context-read subtype when it is recognized."""
+    subtype = getattr(planner_output, "context_read_subtype", None)
+    if isinstance(subtype, str) and subtype in CONTEXT_READ_SUBTYPES:
         return subtype
     return None
 
@@ -106,13 +108,13 @@ def _extract_requested_bank_label(text: str) -> str | None:
     return None
 
 
-def synthesize_account_fastpath_response(
+def synthesize_account_context_read_response(
     state: OrchestratorState,
     subtype: str,
     text: str,
     locale: str,
 ) -> str | None:
-    """Build deterministic account fastpath responses from loaded context when beneficial."""
+    """Build deterministic account context-read responses from loaded context when beneficial."""
     accounts_raw = (state.loaded_context or {}).get("accounts")
     accounts = accounts_raw if isinstance(accounts_raw, list) else []
     if subtype != "account_linked_bank_existence_check" or not accounts:
@@ -134,8 +136,8 @@ def synthesize_account_fastpath_response(
     return f"Yes, you have {bank_name} linked, but it is not ready for payments yet.\n\n{pending_message}"
 
 
-def _has_context_for_fastpath_subtype(state: OrchestratorState, subtype: str) -> bool:
-    """Check whether current loaded context is sufficient for fastpath answer."""
+def _has_context_for_read_subtype(state: OrchestratorState, subtype: str) -> bool:
+    """Check whether current loaded context is sufficient for a context-read answer."""
     ctx = state.loaded_context or {}
     accounts_raw = ctx.get("accounts")
     beneficiaries_raw = ctx.get("beneficiaries")
@@ -149,9 +151,9 @@ def _has_context_for_fastpath_subtype(state: OrchestratorState, subtype: str) ->
         return isinstance(accounts_raw, list) and any(bool(acc.get("is_default")) for acc in accounts)
     if subtype == "pending_mandate_explanation":
         return isinstance(accounts_raw, list) and any(acc.get("mandate_status") == "pending" for acc in accounts)
-    if subtype in CONTEXT_FASTPATH_BENEFICIARY_SUBTYPES:
+    if subtype in CONTEXT_READ_BENEFICIARY_SUBTYPES:
         return isinstance(beneficiaries_raw, list)
-    if subtype in CONTEXT_FASTPATH_FLOW_SUBTYPES:
+    if subtype in CONTEXT_READ_FLOW_SUBTYPES:
         pending_interrupt = state.pending_interrupt
         if not pending_interrupt or not pending_interrupt.task_ids:
             return False
@@ -162,8 +164,8 @@ def _has_context_for_fastpath_subtype(state: OrchestratorState, subtype: str) ->
     return False
 
 
-def _context_fastpath_total_items(state: OrchestratorState, subtype: str) -> int | None:
-    """Return total list size for list-style fastpath requests."""
+def _context_read_total_items(state: OrchestratorState, subtype: str) -> int | None:
+    """Return total list size for list-style context-read requests."""
     ctx = state.loaded_context or {}
     if subtype == "linked_accounts_summary":
         accounts = ctx.get("accounts")
@@ -177,19 +179,19 @@ def _context_fastpath_total_items(state: OrchestratorState, subtype: str) -> int
     return None
 
 
-def _context_fastpath_shown_limit(subtype: str) -> int:
+def _context_read_shown_limit(subtype: str) -> int:
     if subtype == "beneficiary_name_match_preview":
         return BENEFICIARY_MATCH_PREVIEW_LIMIT
-    return CONTEXT_READ_FASTPATH_LIST_LIMIT
+    return CONTEXT_READ_LIST_LIMIT
 
 
-def _build_beneficiary_fastpath_context_updates(
+def _build_beneficiary_context_read_updates(
     state: OrchestratorState,
     planner_output: Any,
     subtype: str | None,
 ) -> dict[str, Any]:
-    """Persist beneficiary fastpath entities as context frames for pronoun follow-ups."""
-    if subtype not in BENEFICIARY_FASTPATH_PERSIST_SUBTYPES:
+    """Persist beneficiary context-read entities as context frames for pronoun follow-ups."""
+    if subtype not in BENEFICIARY_CONTEXT_READ_PERSIST_SUBTYPES:
         return {}
     if (
         not planner_output
@@ -197,7 +199,7 @@ def _build_beneficiary_fastpath_context_updates(
         or getattr(planner_output, "tasks", None)
     ):
         return {}
-    if not _has_context_for_fastpath_subtype(state, subtype):
+    if not _has_context_for_read_subtype(state, subtype):
         return {}
 
     raw_beneficiaries = (state.loaded_context or {}).get("beneficiaries")
@@ -233,18 +235,18 @@ def _build_beneficiary_fastpath_context_updates(
         source_message_id=state.last_message_id,
     )
     OrchestratorContextManager().push_frame(state, frame)
-    logger.info("planner_fastpath_context_frame_pushed", subtype=subtype, count=len(entities))
+    logger.info("planner_context_read_frame_pushed", subtype=subtype, count=len(entities))
     return {"context_frames": state.context_frames}
 
 
-def _build_fastpath_fallback_task(
+def _build_context_read_fallback_task(
     subtype: str,
     message_text: str,
     *,
     account_action_override: str | None = None,
 ) -> PlannedTask | None:
-    """Build a read-only worker task when fastpath should not answer directly."""
-    if subtype in CONTEXT_FASTPATH_ACCOUNT_SUBTYPES:
+    """Build a read-only worker task when context-read should not answer directly."""
+    if subtype in CONTEXT_READ_ACCOUNT_SUBTYPES:
         action = account_action_override or "list_accounts"
         if action == "list":
             action = "list_accounts"
@@ -260,7 +262,7 @@ def _build_fastpath_fallback_task(
             risk=risk,
         )
 
-    if subtype in CONTEXT_FASTPATH_BENEFICIARY_SUBTYPES:
+    if subtype in CONTEXT_READ_BENEFICIARY_SUBTYPES:
         return PlannedTask(
             task_id="t1",
             action="list_beneficiaries",
@@ -274,14 +276,14 @@ def _build_fastpath_fallback_task(
 
 
 __all__ = [
-    "NO_ACTIVE_FLOW_FASTPATH_MESSAGE",
+    "NO_ACTIVE_FLOW_CONTEXT_READ_MESSAGE",
     "TRANSACTION_EXECUTORS",
-    "_build_beneficiary_fastpath_context_updates",
-    "_build_fastpath_fallback_task",
-    "_context_fastpath_shown_limit",
-    "_context_fastpath_total_items",
-    "_has_context_for_fastpath_subtype",
+    "_build_beneficiary_context_read_updates",
+    "_build_context_read_fallback_task",
+    "_context_read_shown_limit",
+    "_context_read_total_items",
+    "_has_context_for_read_subtype",
     "_infer_recent_domain_focus",
-    "_planner_fastpath_subtype",
-    "synthesize_account_fastpath_response",
+    "_planner_context_read_subtype",
+    "synthesize_account_context_read_response",
 ]

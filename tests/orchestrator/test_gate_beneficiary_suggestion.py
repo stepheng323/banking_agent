@@ -6,9 +6,9 @@ from langchain_core.runnables import RunnableConfig
 from apps.core.src.agent.orchestrator.models.state import OrchestratorState
 from apps.core.src.agent.orchestrator.nodes.gate import (
     _resolve_beneficiary_suggestion_reply,
-    session_gate_fastpath,
+    session_gate_direct_path,
 )
-from shared.types.planner import TurnRouteDecision
+from shared.types.planner import SemanticRouteDecision
 
 
 class _SuggestionRedis:
@@ -27,11 +27,11 @@ class _SuggestionRedis:
 
 
 class _RouteTurnPlanner:
-    def __init__(self, decision: TurnRouteDecision) -> None:
+    def __init__(self, decision: SemanticRouteDecision) -> None:
         self._decision = decision
         self.route_calls = 0
 
-    async def route_turn(self, phone_number: str, text: str, context: str = "None") -> TurnRouteDecision:
+    async def route_semantic_turn(self, phone_number: str, text: str, context: str = "None") -> SemanticRouteDecision:
         del phone_number, text, context
         self.route_calls += 1
         return self._decision
@@ -90,8 +90,8 @@ def test_beneficiary_suggestion_resolver_allows_two_word_bare_alias() -> None:
 
 async def test_gate_suggestion_save_alias_creates_beneficiary_task_without_planner() -> None:
     planner = _RouteTurnPlanner(
-        TurnRouteDecision(
-            decision="respond_directly",
+        SemanticRouteDecision(
+            decision="direct_reply",
             confidence=0.95,
             detected_language="English",
             response_key="conversational.checkin",
@@ -119,12 +119,12 @@ async def test_gate_suggestion_save_alias_creates_beneficiary_task_without_plann
         "recursion_limit": 50,
     }
 
-    updates = await session_gate_fastpath(state, config)
+    updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 0
-    assert updates["fast_path_triggered"] is True
-    assert updates["waves"] == [["fast_beneficiary_save"]]
-    task = updates["tasks"]["fast_beneficiary_save"]
+    assert updates["direct_path_triggered"] is True
+    assert updates["waves"] == [["direct_beneficiary_save"]]
+    task = updates["tasks"]["direct_beneficiary_save"]
     assert task.type == "beneficiary"
     assert task.payload["action"] == "save_beneficiary"
     assert task.payload["alias"] == "Mum"
@@ -151,11 +151,11 @@ async def test_gate_suggestion_affirmation_creates_default_save_task() -> None:
         "recursion_limit": 50,
     }
 
-    updates = await session_gate_fastpath(state, config)
+    updates = await session_gate_direct_path(state, config)
 
-    assert updates["fast_path_triggered"] is True
-    assert updates["waves"] == [["fast_beneficiary_save"]]
-    task = updates["tasks"]["fast_beneficiary_save"]
+    assert updates["direct_path_triggered"] is True
+    assert updates["waves"] == [["direct_beneficiary_save"]]
+    task = updates["tasks"]["direct_beneficiary_save"]
     assert task.type == "beneficiary"
     assert task.payload["action"] == "save_beneficiary"
     assert "alias" not in task.payload
@@ -182,7 +182,7 @@ async def test_gate_suggestion_transaction_turn_dismisses_and_falls_through() ->
         "recursion_limit": 50,
     }
 
-    updates = await session_gate_fastpath(state, config)
+    updates = await session_gate_direct_path(state, config)
 
     assert "turn_context_summary" in updates
     assert updates.get("semantic_path_shape") is None
@@ -209,7 +209,7 @@ async def test_gate_suggestion_non_save_reply_dismisses_and_falls_through() -> N
         "recursion_limit": 50,
     }
 
-    updates = await session_gate_fastpath(state, config)
+    updates = await session_gate_direct_path(state, config)
 
     assert "turn_context_summary" in updates
     assert updates.get("semantic_path_shape") is None
@@ -218,8 +218,8 @@ async def test_gate_suggestion_non_save_reply_dismisses_and_falls_through() -> N
 
 async def test_gate_suggestion_bare_alias_creates_beneficiary_task_without_planner() -> None:
     planner = _RouteTurnPlanner(
-        TurnRouteDecision(
-            decision="respond_directly",
+        SemanticRouteDecision(
+            decision="direct_reply",
             confidence=0.95,
             detected_language="English",
             response_key="conversational.checkin",
@@ -247,12 +247,12 @@ async def test_gate_suggestion_bare_alias_creates_beneficiary_task_without_plann
         "recursion_limit": 50,
     }
 
-    updates = await session_gate_fastpath(state, config)
+    updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 0
-    assert updates["fast_path_triggered"] is True
-    assert updates["waves"] == [["fast_beneficiary_save"]]
-    task = updates["tasks"]["fast_beneficiary_save"]
+    assert updates["direct_path_triggered"] is True
+    assert updates["waves"] == [["direct_beneficiary_save"]]
+    task = updates["tasks"]["direct_beneficiary_save"]
     assert task.type == "beneficiary"
     assert task.payload["action"] == "save_beneficiary"
     assert task.payload["alias"] == "Tols"

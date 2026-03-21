@@ -58,14 +58,19 @@ class OrchestratorState(BaseModel):
     # Context Frames (Upstream)
     context_frames: list[ContextFrame] = Field(default_factory=list)
 
-    # Fast Path & Session Stack (Optimization)
-    fast_path_triggered: bool = False
+    # Direct Path & Session Stack (Optimization)
+    direct_path_triggered: bool = False
     session_stack: list[ActiveSession] = Field(default_factory=list)
     active_domain: str | None = None
 
     loaded_context: dict[str, Any] = Field(default_factory=dict)
     turn_context_summary: dict[str, Any] | None = None
     semantic_path_shape: str | None = None
+    routing_owner: str | None = None
+    routing_decision: str | None = None
+    routing_target_domain: str | None = None
+    routing_mode: str | None = None
+    planner_used: bool = False
 
     # Stashed Sessions (Upstream)
     stashed_sessions: list[dict[str, Any]] = Field(default_factory=list)

@@ -24,7 +24,7 @@ class _CapturingPlanner:
             is_cancellation=False,
             is_confirmation=False,
             detected_language=None,
-            context_fastpath_subtype=None,
+            context_read_subtype=None,
             normalized_instruction="",
             tasks=[],
         )
@@ -76,4 +76,4 @@ async def test_planner_injects_filter_refinement_guidance_for_active_query_sessi
     assert planner.last_context is not None
     assert "any credits?" in planner.last_context
     assert "NOT conversational questions" in planner.last_context
-    assert "Always route them as query tasks." in planner.last_context
+    assert "Always route them as q" in planner.last_context

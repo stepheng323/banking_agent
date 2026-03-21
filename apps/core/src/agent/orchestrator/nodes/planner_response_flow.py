@@ -53,7 +53,7 @@ async def _build_non_task_response(
     active_intent: str | None,
     current_locale: str,
     locale_updates: dict[str, Any],
-    fastpath_context_updates: dict[str, Any],
+    context_read_updates: dict[str, Any],
 ) -> dict[str, Any] | None:
     detected_locale = _detected_locale_value(planner_output)
 
@@ -72,7 +72,7 @@ async def _build_non_task_response(
             return {
                 "final_response": clarify_message(state, cancel_locale),
                 **cancel_locale_updates,
-                **fastpath_context_updates,
+                **context_read_updates,
             }
         cancel_message = cancelled_message(state, cancel_locale)
         reset_updates = await build_cancellation_reset_updates(state, redis_client)
@@ -132,7 +132,7 @@ async def _build_non_task_response(
             return {
                 "final_response": format_out_of_scope_reply(conversational_locale, empathy_source),
                 **conversational_locale_updates,
-                **fastpath_context_updates,
+                **context_read_updates,
             }
 
         if planner_output.response:
@@ -148,7 +148,7 @@ async def _build_non_task_response(
             return {
                 "final_response": _localized_planner_response(planner_output.response),
                 **conversational_locale_updates,
-                **fastpath_context_updates,
+                **context_read_updates,
             }
 
         if response_key:
@@ -157,7 +157,7 @@ async def _build_non_task_response(
                 return {
                     "final_response": _build_policy_aware_greeting(conversational_locale),
                     **conversational_locale_updates,
-                    **fastpath_context_updates,
+                    **context_read_updates,
                 }
 
             meta_intent = _meta_intent_from_response_key(response_key)
@@ -194,7 +194,7 @@ async def _build_non_task_response(
                     return {
                         "final_response": meta_message,
                         **conversational_locale_updates,
-                        **fastpath_context_updates,
+                        **context_read_updates,
                     }
                 logger.info(
                     "planner_meta_reply_fallback",
@@ -213,7 +213,7 @@ async def _build_non_task_response(
             return {
                 "final_response": render_message(response_key, conversational_locale),
                 **conversational_locale_updates,
-                **fastpath_context_updates,
+                **context_read_updates,
             }
 
         logger.info(
@@ -234,7 +234,7 @@ async def _build_non_task_response(
         return {
             "final_response": render_message(fallback_key, conversational_locale),
             **conversational_locale_updates,
-            **fastpath_context_updates,
+            **context_read_updates,
         }
 
     if state.waves and planner_output and planner_output.primary_intent != "conversational":
@@ -244,7 +244,7 @@ async def _build_non_task_response(
                 "waves": [],
                 "final_response": _localized_planner_response(planner_output.response),
                 **locale_updates,
-                **fastpath_context_updates,
+                **context_read_updates,
             }
 
     if planner_output and planner_output.response:
@@ -259,7 +259,7 @@ async def _build_non_task_response(
         return {
             "final_response": _localized_planner_response(planner_output.response),
             **locale_updates,
-            **fastpath_context_updates,
+            **context_read_updates,
         }
     _log_unexpected_turn_route(
         state=state,
@@ -272,7 +272,7 @@ async def _build_non_task_response(
     return {
         "final_response": render_safe_capability_fallback(current_locale),
         **locale_updates,
-        **fastpath_context_updates,
+        **context_read_updates,
     }
 
 

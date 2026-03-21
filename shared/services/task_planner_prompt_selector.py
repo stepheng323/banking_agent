@@ -6,7 +6,6 @@ from shared.services.task_planner_prompt_atoms import (
     PLANNER_BASE_RULE_ATOMS,
     PLANNER_CONTEXT_RULE_ATOMS,
     PLANNER_MONEY_MOVE_RULE_ATOMS,
-    PLANNER_QUERY_RULE_ATOMS,
     PLANNER_RULE_ATOM_ORDER,
 )
 from shared.services.task_planner_prompt_models import PlannerPromptSignals
@@ -29,13 +28,6 @@ def _include_money_move_bundle(signals: PlannerPromptSignals) -> bool:
         return True
     return False
 
-
-def _include_query_bundle(signals: PlannerPromptSignals) -> bool:
-    if signals.query_session_active:
-        return True
-    return signals.recent_domain_focus == "query"
-
-
 def _include_context_bundle(signals: PlannerPromptSignals) -> bool:
     if signals.has_beneficiary_suggestion:
         return True
@@ -54,8 +46,6 @@ def select_prompt_bundles(signals: PlannerPromptSignals) -> tuple[str, ...]:
     selected: list[str] = []
     if _include_money_move_bundle(signals):
         selected.append("money_move")
-    if _include_query_bundle(signals):
-        selected.append("query")
     if _include_context_bundle(signals):
         selected.append("context")
     if _include_executor_coverage_guard(signals):
@@ -69,8 +59,6 @@ def select_rule_ids(signals: PlannerPromptSignals) -> tuple[str, ...]:
 
     if "money_move" in bundles:
         selected.update(PLANNER_MONEY_MOVE_RULE_ATOMS)
-    if "query" in bundles:
-        selected.update(PLANNER_QUERY_RULE_ATOMS)
     if "context" in bundles:
         selected.update(PLANNER_CONTEXT_RULE_ATOMS)
 

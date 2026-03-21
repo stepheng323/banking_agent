@@ -3,7 +3,7 @@
 import hashlib
 from typing import Any
 
-from apps.core.src.agent.orchestrator.nodes.planner_fastpath import TRANSACTION_EXECUTORS
+from apps.core.src.agent.orchestrator.nodes.planner_context_read import TRANSACTION_EXECUTORS
 from shared.services.onboarding.mandate_messages import build_pending_mandate_message
 from shared.utils.logging import get_logger
 
@@ -184,7 +184,7 @@ def _apply_clarify_fallback(planner_output: Any) -> Any:
     planner_output.is_complex = False
     planner_output.response = ""
     planner_output.response_key = "conversational.clarify"
-    planner_output.context_fastpath_subtype = None
+    planner_output.context_read_subtype = None
     return planner_output
 
 

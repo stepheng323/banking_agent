@@ -1,0 +1,74 @@
+[
+  {
+    "id": "query_income_en",
+    "prompt_line": "\"What's my income this month\" -> domain_query"
+  },
+  {
+    "id": "query_income_pidgin",
+    "prompt_line": "\"Wetin be my income this month\" -> domain_query"
+  },
+  {
+    "id": "query_credits_yoruba",
+    "prompt_line": "\"Fihan mi awon credit transactions mi fun osu yi\" -> domain_query"
+  },
+  {
+    "id": "query_income_hausa",
+    "prompt_line": "\"Nawa na karba a wannan watan\" -> domain_query"
+  },
+  {
+    "id": "query_income_igbo",
+    "prompt_line": "\"Ego ole ka m natara n'onwa a\" -> domain_query"
+  },
+  {
+    "id": "query_credits_french",
+    "prompt_line": "\"Montre mes transactions credit de ce mois\" -> domain_query"
+  },
+  {
+    "id": "query_credits_en",
+    "prompt_line": "\"Show my credit transactions for this month\" -> domain_query"
+  },
+  {
+    "id": "query_top_recipients_en",
+    "prompt_line": "\"Top recipients this month\" -> domain_query"
+  },
+  {
+    "id": "query_followup_more_en",
+    "prompt_line": "\"More\" while viewing transactions -> domain_query with mode=continuation"
+  },
+  {
+    "id": "query_followup_pending_last_3_days",
+    "prompt_line": "pending query clarification + \"last 3 days\" -> domain_query with mode=continuation"
+  },
+  {
+    "id": "query_followup_total_en",
+    "prompt_line": "\"How much total\" after a transaction list -> domain_query with mode=continuation"
+  },
+  {
+    "id": "query_followup_total_pidgin",
+    "prompt_line": "\"wetin be total\" after a transaction list -> domain_query with mode=continuation"
+  },
+  {
+    "id": "query_followup_total_yoruba",
+    "prompt_line": "\"lapapo meloo\" after a transaction list -> domain_query with mode=continuation"
+  },
+  {
+    "id": "account_balance_guardrail",
+    "prompt_line": "\"check my balance\" -> domain_account"
+  },
+  {
+    "id": "transfer_single_direct",
+    "prompt_line": "\"Send 5k to Mum\" -> domain_transfer"
+  },
+  {
+    "id": "mixed_transfer_batch",
+    "prompt_line": "\"Send 10k to Mum and 5k to Gaines\" -> planner_mixed"
+  },
+  {
+    "id": "mixed_cross_domain",
+    "prompt_line": "\"send 10k to mum and show my last 3 credits\" -> planner_mixed"
+  },
+  {
+    "id": "mixed_cross_domain_executor_boundary",
+    "prompt_line": "\"send 10k to mum and show my last 3 credits\" -> [\"transfer\"]"
+  }
+]

@@ -140,7 +140,7 @@ async def test_plan_tasks_caps_large_context_before_planner_call() -> None:
             is_cancellation=False,
             is_confirmation=False,
             detected_language="English",
-            context_fastpath_subtype=None,
+            context_read_subtype=None,
             normalized_instruction="continue",
             tasks=[],
         )

@@ -92,19 +92,19 @@ def _critical_signature(output: PlannerOutput) -> dict[str, Any]:
     normalized_intent = output.primary_intent
     if executors:
         normalized_intent = executors[0] if len(set(executors)) == 1 else "mixed"
-    normalized_fastpath_subtype = output.context_fastpath_subtype
+    normalized_context_read_subtype = output.context_read_subtype
     fastpath_equivalence = {
         "account_count": "linked_accounts_summary",
         "beneficiary_count": "beneficiary_list",
     }
-    if normalized_fastpath_subtype in fastpath_equivalence:
-        normalized_fastpath_subtype = fastpath_equivalence[normalized_fastpath_subtype]
+    if normalized_context_read_subtype in fastpath_equivalence:
+        normalized_context_read_subtype = fastpath_equivalence[normalized_context_read_subtype]
 
     return {
         "primary_intent": normalized_intent,
         "beneficiary_route": output.beneficiary_route,
         "is_cancellation": output.is_cancellation,
-        "context_fastpath_subtype": normalized_fastpath_subtype,
+        "context_read_subtype": normalized_context_read_subtype,
         "task_count": len(tasks),
         "tasks": tasks,
     }
@@ -223,7 +223,7 @@ def _assert_case_signature(case_id: str, signature: dict[str, Any]) -> None:
     if case_id == "context_list_them_accounts":
         assert signature["primary_intent"] in {"account", "conversational"}, case_id
         if signature["task_count"] == 0:
-            assert signature["context_fastpath_subtype"] == "linked_accounts_summary", case_id
+            assert signature["context_read_subtype"] == "linked_accounts_summary", case_id
         else:
             assert first_task is not None and first_task["executor"] == "account", case_id
             assert first_task["action"] == "list_accounts", case_id
@@ -278,10 +278,10 @@ def test_compact_prompt_remains_bundle_driven() -> None:
     )
 
     compact = build_planner_system_prompt(prompt_input)
-    assert compact.selected_bundle_ids == ("money_move", "query", "context", "executor_coverage_guard")
+    assert compact.selected_bundle_ids == ("money_move", "context", "executor_coverage_guard")
     assert "TARGETED EXAMPLES (MONEY_MOVE)" in compact.system_prompt
-    assert "TARGETED EXAMPLES (QUERY)" in compact.system_prompt
     assert "TARGETED EXAMPLES (CONTEXT)" in compact.system_prompt
+    assert "TARGETED EXAMPLES (QUERY)" not in compact.system_prompt
 
 
 @pytest.mark.asyncio

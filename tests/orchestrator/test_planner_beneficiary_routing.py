@@ -48,7 +48,7 @@ async def test_show_saved_beneficiaries_routes_to_list_beneficiaries_on_first_pa
         is_cancellation=False,
         is_confirmation=False,
         detected_language="English",
-        context_fastpath_subtype=None,
+        context_read_subtype=None,
         beneficiary_route="beneficiary_list",
         normalized_instruction="show saved beneficiaries",
         tasks=[
@@ -96,7 +96,7 @@ async def test_top_recipients_query_keeps_query_beneficiary_summary_task() -> No
         is_cancellation=False,
         is_confirmation=False,
         detected_language="English",
-        context_fastpath_subtype=None,
+        context_read_subtype=None,
         beneficiary_route="recipient_ranking",
         normalized_instruction="who did i send money to the most this month",
         tasks=[
@@ -144,7 +144,7 @@ async def test_invalid_beneficiary_route_contract_returns_clarify_instead_of_rew
         is_cancellation=False,
         is_confirmation=False,
         detected_language="English",
-        context_fastpath_subtype=None,
+        context_read_subtype=None,
         beneficiary_route="beneficiary_list",
         normalized_instruction="show saved beneficiaries",
         tasks=[
@@ -191,7 +191,7 @@ async def test_save_beneficiary_without_suggestion_context_returns_clarify() -> 
         is_cancellation=False,
         is_confirmation=False,
         detected_language="English",
-        context_fastpath_subtype=None,
+        context_read_subtype=None,
         beneficiary_route="none",
         normalized_instruction="save as mum",
         tasks=[
@@ -238,7 +238,7 @@ async def test_planner_originated_save_beneficiary_is_rejected_even_with_pending
         is_cancellation=False,
         is_confirmation=False,
         detected_language="English",
-        context_fastpath_subtype=None,
+        context_read_subtype=None,
         beneficiary_route="none",
         normalized_instruction="save as mum",
         tasks=[

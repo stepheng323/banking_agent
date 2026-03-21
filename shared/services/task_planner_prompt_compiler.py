@@ -10,7 +10,6 @@ from shared.services.task_planner_prompt_atoms import (
     PLANNER_RUNTIME_CONTEXT_EXAMPLES,
     PLANNER_RUNTIME_MONEY_MOVE_EXAMPLES,
     PLANNER_RUNTIME_PROMPT_SUFFIX,
-    PLANNER_RUNTIME_QUERY_EXAMPLES,
     PLANNER_RUNTIME_SCHEMA_PROMPT,
     PLANNER_TRANSFER_PRECISION_PROMPT,
 )
@@ -57,9 +56,6 @@ def build_planner_system_prompt(
         sections.append(PLANNER_TRANSFER_PRECISION_PROMPT)
         sections.append(PLANNER_RUNTIME_MONEY_MOVE_EXAMPLES)
         profile_parts.extend(["precision_money_move", "ex_money_move"])
-    if "query" in bundles:
-        sections.append(PLANNER_RUNTIME_QUERY_EXAMPLES)
-        profile_parts.append("ex_query")
     if "context" in bundles:
         sections.append(PLANNER_RUNTIME_CONTEXT_EXAMPLES)
         profile_parts.append("ex_context")

@@ -15,7 +15,13 @@ from apps.core.src.agent.orchestrator.models.state import OrchestratorState
 from apps.core.src.agent.orchestrator.nodes.execution import advance_wave
 from apps.core.src.agent.orchestrator.nodes.interrupt import handle_pending_interrupt
 from shared.i18n import render_cancelled_prompt
-from shared.types.planner import InterruptRouteDecision, PlannedTask, PlannerOutput, TaskParameters
+from shared.types.planner import (
+    InterruptRouteDecision,
+    PlannedTask,
+    PlannerOutput,
+    SemanticRouteDecision,
+    TaskParameters,
+)
 
 
 class _MockPlanner:
@@ -23,9 +29,11 @@ class _MockPlanner:
         self,
         output: PlannerOutput,
         route: InterruptRouteDecision | None = None,
+        semantic_route: SemanticRouteDecision | None = None,
     ) -> None:
         self._output = output
         self._route = route
+        self._semantic_route = semantic_route
 
     async def plan_tasks(self, phone_number: str, text: str, *, context: str = "None", prompt_signals: object | None = None) -> PlannerOutput:
         del phone_number, text, context
@@ -49,10 +57,37 @@ class _MockPlanner:
             )
         return self._route
 
+    async def route_semantic_turn(
+        self,
+        phone_number: str,
+        text: str,
+        context: str = "None",
+        *,
+        path_label: str = "interrupt_path",
+    ) -> SemanticRouteDecision:
+        del phone_number, text, context, path_label
+        if self._semantic_route is not None:
+            return self._semantic_route
+        target_intent = (self._route.target_intent if self._route else None) or "transfer"
+        decision_map = {
+            "transfer": "domain_transfer",
+            "airtime": "domain_airtime",
+            "data": "domain_data",
+        }
+        return SemanticRouteDecision(
+            decision=decision_map.get(target_intent, "planner_ambiguous"),
+            confidence=0.8,
+            detected_language="English",
+            target_intent=target_intent if target_intent in {"transfer", "airtime", "data"} else None,
+            expected_transaction_executors=[target_intent] if target_intent in {"transfer", "airtime", "data"} else [],
+            reason="mock semantic route",
+        )
+
 
 class _RouteOnlyPlanner:
-    def __init__(self, route: InterruptRouteDecision) -> None:
+    def __init__(self, route: InterruptRouteDecision, semantic_route: SemanticRouteDecision | None = None) -> None:
         self._route = route
+        self._semantic_route = semantic_route
 
     async def route_pending_input(
         self,
@@ -62,6 +97,26 @@ class _RouteOnlyPlanner:
     ) -> InterruptRouteDecision:
         del phone_number, text, context
         return self._route
+
+    async def route_semantic_turn(
+        self,
+        phone_number: str,
+        text: str,
+        context: str = "None",
+        *,
+        path_label: str = "interrupt_path",
+    ) -> SemanticRouteDecision:
+        del phone_number, text, context, path_label
+        if self._semantic_route is not None:
+            return self._semantic_route
+        return SemanticRouteDecision(
+            decision="planner_ambiguous",
+            confidence=0.0,
+            detected_language=None,
+            target_intent=None,
+            expected_transaction_executors=[],
+            reason="mock default",
+        )
 
     async def plan_tasks(self, phone_number: str, text: str, *, context: str = "None", prompt_signals: object | None = None) -> PlannerOutput:
         del phone_number, text, context
@@ -81,6 +136,17 @@ class _FailIfRouterCalledPlanner:
     async def plan_tasks(self, phone_number: str, text: str, *, context: str = "None", prompt_signals: object | None = None) -> PlannerOutput:
         del phone_number, text, context
         raise AssertionError("plan_tasks should not be called for callback auto-approve")
+
+    async def route_semantic_turn(
+        self,
+        phone_number: str,
+        text: str,
+        context: str = "None",
+        *,
+        path_label: str = "interrupt_path",
+    ) -> SemanticRouteDecision:
+        del phone_number, text, context, path_label
+        raise AssertionError("route_semantic_turn should not be called for callback auto-approve")
 
 
 class _AccountBalanceWorker:
@@ -276,7 +342,7 @@ async def test_interrupt_input_with_pending_beneficiary_clarification_blocks_int
 
 
 @pytest.mark.asyncio
-async def test_interrupt_input_replaces_transfer_with_new_transfer_without_stash() -> None:
+async def test_interrupt_input_stashes_transfer_and_routes_new_single_transfer_directly() -> None:
     state = OrchestratorState(
         user_id="u_interrupt_3",
         phone_number="2348033333333",
@@ -335,18 +401,20 @@ async def test_interrupt_input_replaces_transfer_with_new_transfer_without_stash
     updates = await handle_pending_interrupt(state, config)
 
     assert updates["pending_interrupt"] is None
-    assert "stashed_sessions" not in updates
+    assert len(updates["stashed_sessions"]) == 1
     switched_task_ids = list(updates["tasks"].keys())
     assert len(switched_task_ids) == 1
     assert updates["waves"] == [switched_task_ids]
     assert updates["tasks"][switched_task_ids[0]].type == "transfer"
+    assert updates["tasks"][switched_task_ids[0]].payload["message"] == "send 8k to tolu"
+    assert "skip_extraction" not in updates["tasks"][switched_task_ids[0]].payload
     assert len(updates["session_stack"]) == 1
     assert updates["session_stack"][0].domain == "query"
     assert updates["active_domain"] == "query"
 
 
 @pytest.mark.asyncio
-async def test_interrupt_confirmation_replaces_transfer_with_airtime_without_stash() -> None:
+async def test_interrupt_confirmation_stashes_transfer_and_routes_new_airtime_directly() -> None:
     state = OrchestratorState(
         user_id="u_interrupt_4",
         phone_number="2348044444444",
@@ -403,17 +471,19 @@ async def test_interrupt_confirmation_replaces_transfer_with_airtime_without_sta
     updates = await handle_pending_interrupt(state, config)
 
     assert updates["pending_interrupt"] is None
-    assert "stashed_sessions" not in updates
+    assert len(updates["stashed_sessions"]) == 1
     switched_task_ids = list(updates["tasks"].keys())
     assert len(switched_task_ids) == 1
     assert updates["waves"] == [switched_task_ids]
     assert updates["tasks"][switched_task_ids[0]].type == "airtime"
+    assert updates["tasks"][switched_task_ids[0]].payload["message"] == "buy 2k airtime"
+    assert "skip_extraction" not in updates["tasks"][switched_task_ids[0]].payload
     assert [s.domain for s in updates["session_stack"]] == ["support"]
     assert updates["active_domain"] == "support"
 
 
 @pytest.mark.asyncio
-async def test_interrupt_auth_replaces_transfer_with_data_without_stash() -> None:
+async def test_interrupt_auth_stashes_transfer_and_routes_new_data_directly() -> None:
     state = OrchestratorState(
         user_id="u_interrupt_5",
         phone_number="2348055555555",
@@ -467,11 +537,68 @@ async def test_interrupt_auth_replaces_transfer_with_data_without_stash() -> Non
     updates = await handle_pending_interrupt(state, config)
 
     assert updates["pending_interrupt"] is None
-    assert "stashed_sessions" not in updates
+    assert len(updates["stashed_sessions"]) == 1
     switched_task_ids = list(updates["tasks"].keys())
     assert len(switched_task_ids) == 1
     assert updates["tasks"][switched_task_ids[0]].type == "data"
+    assert updates["tasks"][switched_task_ids[0]].payload["message"] == "buy 1gb data"
+    assert "skip_extraction" not in updates["tasks"][switched_task_ids[0]].payload
     assert updates["waves"] == [switched_task_ids]
+    assert updates["session_stack"] == []
+    assert updates["active_domain"] is None
+
+
+@pytest.mark.asyncio
+async def test_interrupt_input_stashes_transfer_and_hands_multi_transfer_replacement_to_planner() -> None:
+    state = OrchestratorState(
+        user_id="u_interrupt_5b",
+        phone_number="2348055555566",
+        channel="whatsapp",
+        last_message_text="send 10k to mum and 5k to gaines",
+        pending_interrupt=PendingInterrupt(kind="input", task_ids=["t_old"], fields_by_task={"t_old": ["amount"]}),
+        tasks={
+            "t_old": TaskSpec(
+                id="t_old",
+                type="transfer",
+                stage=TaskStage.EXTRACTED,
+                payload={"recipient_name": "Grace", "amount": 5000},
+            )
+        },
+        waves=[["t_old"]],
+        current_wave_index=0,
+        session_stack=[ActiveSession(domain="transfer", state="WAITING_FOR_INPUT", interrupt_policy="CONFIRM")],
+        active_domain="transfer",
+    )
+    config: RunnableConfig = {
+        "configurable": {
+            "task_planner": _RouteOnlyPlanner(
+                InterruptRouteDecision(
+                    decision="switch_intent",
+                    confidence=0.92,
+                    detected_language="English",
+                    target_intent="transfer",
+                    reason="fresh transfer replacement",
+                ),
+                semantic_route=SemanticRouteDecision(
+                    decision="planner_mixed",
+                    confidence=0.9,
+                    detected_language="English",
+                    target_intent="transfer",
+                    expected_transaction_executors=["transfer"],
+                    reason="multi transfer needs decomposition",
+                ),
+            )
+        },
+        "recursion_limit": 50,
+    }
+
+    updates = await handle_pending_interrupt(state, config)
+
+    assert updates["pending_interrupt"] is None
+    assert updates["tasks"] == {}
+    assert updates["waves"] == []
+    assert updates["preplanner_expected_transaction_executors"] == ["transfer"]
+    assert len(updates["stashed_sessions"]) == 1
     assert updates["session_stack"] == []
     assert updates["active_domain"] is None
 

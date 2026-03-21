@@ -40,6 +40,27 @@ SAFE_CAPABILITY_FALLBACK = render_safe_capability_fallback("en")
 QUOTED_REPLAY_MIN_CONFIDENCE = _QUOTED_REPLAY_MIN_CONFIDENCE
 _UNEXPECTED_ROUTE_RECOVERY_MIN_CONFIDENCE = 0.5
 
+_PLANNER_DOMAIN_TARGETS = {"query", "account", "support", "beneficiary", "transfer", "airtime", "data"}
+
+
+def _planner_route_updates(
+    *,
+    decision: str,
+    planner_output: Any | None = None,
+    target_domain: str | None = None,
+) -> dict[str, Any]:
+    resolved_target = target_domain
+    if resolved_target is None and planner_output is not None:
+        primary_intent = str(getattr(planner_output, "primary_intent", "") or "").strip().lower()
+        if primary_intent in _PLANNER_DOMAIN_TARGETS:
+            resolved_target = primary_intent
+    return {
+        "routing_owner": "planner",
+        "routing_decision": decision,
+        "routing_target_domain": resolved_target,
+        "planner_used": True,
+    }
+
 
 def _recover_unexpected_question_task(planner_output: Any, text: str) -> PlannedTask | None:
     if not planner_output or getattr(planner_output, "tasks", None):
@@ -83,7 +104,10 @@ async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[s
     redis_client = config["configurable"].get("redis_client")
     if task_planner is None:
         logger.error("task_planner_missing")
-        return {"final_response": render_safe_capability_fallback(current_locale)}
+        return {
+            "final_response": render_safe_capability_fallback(current_locale),
+            **_planner_route_updates(decision="planner_unavailable"),
+        }
 
     locale_updates = _build_locale_update(state, current_locale)
 
@@ -97,7 +121,10 @@ async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[s
         quoted_replay_min_confidence=QUOTED_REPLAY_MIN_CONFIDENCE,
     )
     if quoted_replay_updates is not None:
-        return quoted_replay_updates
+        return {
+            **quoted_replay_updates,
+            **_planner_route_updates(decision="quoted_replay"),
+        }
 
     context_result = await _build_planner_context(
         state=state,
@@ -109,6 +136,7 @@ async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[s
         return {
             **context_result.shortcut_updates,
             "semantic_path_shape": context_result.shortcut_updates.get("semantic_path_shape") or "planner",
+            **_planner_route_updates(decision="planner_context_read"),
         }
 
     planner_context = context_result.planner_context
@@ -130,11 +158,11 @@ async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[s
         )
     except Exception as e:
         logger.error("planner_failed", error=str(e))
-        return {}
+        return _planner_route_updates(decision="planner_failed")
 
     planner_output = execution_result.planner_output
     current_locale = execution_result.current_locale
-    fastpath_context_updates = execution_result.fastpath_context_updates
+    context_read_updates = execution_result.context_read_updates
     recovered_task = _recover_unexpected_question_task(planner_output, text)
     if recovered_task is not None:
         planner_output.tasks = [recovered_task]
@@ -159,12 +187,16 @@ async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[s
         active_intent=active_intent,
         current_locale=current_locale,
         locale_updates=locale_updates,
-        fastpath_context_updates=fastpath_context_updates,
+        context_read_updates=context_read_updates,
     )
     if handled_response is not None:
         return {
             **handled_response,
             "semantic_path_shape": handled_response.get("semantic_path_shape") or "planner",
+            **_planner_route_updates(
+                decision=str(getattr(planner_output, "primary_intent", "") or "planner_non_task_response"),
+                planner_output=planner_output,
+            ),
         }
 
     if state.waves and active_intent:
@@ -196,6 +228,10 @@ async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[s
         "semantic_path_shape": "planner",
         "stashed_query_session": (
             stashed_query_session_update if stashed_query_session_update else state.stashed_query_session
+        ),
+        **_planner_route_updates(
+            decision=str(getattr(planner_output, "primary_intent", "") or "planner_task_plan"),
+            planner_output=planner_output,
         ),
         **locale_updates,
     }

@@ -1,12 +1,12 @@
-"""Fast-path gate tests for conversational i18n behavior."""
+"""Direct-path gate tests for conversational i18n behavior."""
 
 from langchain_core.runnables import RunnableConfig
 
 from apps.core.src.agent.orchestrator.models.domain import ActiveSession, PendingInterrupt, TaskSpec, TaskStage
 from apps.core.src.agent.orchestrator.models.state import OrchestratorState
-from apps.core.src.agent.orchestrator.nodes.gate import session_gate_fastpath
+from apps.core.src.agent.orchestrator.nodes.gate import session_gate_direct_path
 from shared.i18n import render_cancelled_prompt, render_locale_switched, render_message
-from shared.types.planner import TurnRouteDecision
+from shared.types.planner import SemanticRouteDecision
 
 
 async def test_gate_handles_greeting_meta_deterministically() -> None:
@@ -18,10 +18,12 @@ async def test_gate_handles_greeting_meta_deterministically() -> None:
     )
     config: RunnableConfig = {"configurable": {}, "recursion_limit": 50}
 
-    updates = await session_gate_fastpath(state, config)
-    assert updates["fast_path_triggered"] is True
+    updates = await session_gate_direct_path(state, config)
+    assert updates["direct_path_triggered"] is True
     assert updates["semantic_path_shape"] == "meta_direct"
     assert updates["final_response"] == render_message("conversational.greeting", "en")
+    assert updates["routing_owner"] == "guardrail"
+    assert updates["routing_decision"] == "meta_direct"
 
 
 async def test_gate_explicit_cancel_during_pending_interrupt_resets_immediately() -> None:
@@ -41,8 +43,8 @@ async def test_gate_explicit_cancel_during_pending_interrupt_resets_immediately(
     )
     config: RunnableConfig = {"configurable": {}, "recursion_limit": 50}
 
-    updates = await session_gate_fastpath(state, config)
-    assert updates["fast_path_triggered"] is True
+    updates = await session_gate_direct_path(state, config)
+    assert updates["direct_path_triggered"] is True
     assert updates["final_response"] == render_cancelled_prompt("en")
     assert updates["pending_interrupt"] is None
     assert updates["tasks"] == {}
@@ -50,7 +52,20 @@ async def test_gate_explicit_cancel_during_pending_interrupt_resets_immediately(
     assert updates["current_wave_index"] == 0
 
 
-async def test_gate_query_fast_path_still_applies_without_pending_interrupt() -> None:
+async def test_gate_query_followup_routes_via_semantic_router_without_pending_interrupt() -> None:
+    planner = _RouteTurnPlanner(
+        SemanticRouteDecision(
+            decision="domain_query",
+            mode="continuation",
+            target_intent="query",
+            confidence=0.95,
+            detected_language="English",
+            response_key=None,
+            response=None,
+            expected_transaction_executors=[],
+            reason="active query continuation",
+        )
+    )
     state = OrchestratorState(
         user_id="u_gate_3",
         phone_number="2348999999999",
@@ -64,27 +79,35 @@ async def test_gate_query_fast_path_still_applies_without_pending_interrupt() ->
             )
         ],
     )
-    config: RunnableConfig = {"configurable": {}, "recursion_limit": 50}
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
 
-    updates = await session_gate_fastpath(state, config)
-    assert updates.get("fast_path_triggered") is True
-    assert updates.get("waves") == [["fast_query_resume"]]
+    updates = await session_gate_direct_path(state, config)
+    assert updates.get("direct_path_triggered") is True
+    assert planner.route_calls == 1
+    assert updates["semantic_path_shape"] == "semantic_router_domain"
+    assert updates["routing_owner"] == "semantic_router"
+    assert updates["routing_decision"] == "domain_query"
+    assert updates["routing_target_domain"] == "query"
+    assert updates["routing_mode"] == "continuation"
+    assert updates.get("waves") == [["direct_query"]]
 
 
 async def test_gate_bypasses_planner_for_pure_query_detail_turn() -> None:
     planner = _RouteTurnPlanner(
-        TurnRouteDecision(
-            decision="go_planner",
+        SemanticRouteDecision(
+            decision="domain_query",
+            mode="new",
+            target_intent="query",
             confidence=0.95,
             detected_language="English",
             response_key=None,
             response=None,
             expected_transaction_executors=[],
-            reason="should not be used",
+            reason="fresh query route",
         )
     )
     state = OrchestratorState(
-        user_id="u_gate_query_direct_1",
+        user_id="u_gate_query_clarification_bypass_1",
         phone_number="2348999999901",
         channel="whatsapp",
         last_message_text="Show my last transaction",
@@ -92,12 +115,12 @@ async def test_gate_bypasses_planner_for_pure_query_detail_turn() -> None:
     )
     config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
 
-    updates = await session_gate_fastpath(state, config)
+    updates = await session_gate_direct_path(state, config)
 
-    assert planner.route_calls == 0
+    assert planner.route_calls == 1
     assert planner.plan_calls == 0
-    assert updates["fast_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "query_direct"
+    assert updates["direct_path_triggered"] is True
+    assert updates["semantic_path_shape"] == "semantic_router_domain"
     task = updates["tasks"]["direct_query"]
     assert task.type == "query"
     assert task.payload["message"] == "Show my last transaction"
@@ -106,18 +129,20 @@ async def test_gate_bypasses_planner_for_pure_query_detail_turn() -> None:
 
 async def test_gate_bypasses_planner_for_pure_query_analytics_turn() -> None:
     planner = _RouteTurnPlanner(
-        TurnRouteDecision(
-            decision="go_planner",
+        SemanticRouteDecision(
+            decision="domain_query",
+            mode="new",
+            target_intent="query",
             confidence=0.95,
             detected_language="English",
             response_key=None,
             response=None,
             expected_transaction_executors=[],
-            reason="should not be used",
+            reason="fresh query route",
         )
     )
     state = OrchestratorState(
-        user_id="u_gate_query_direct_2",
+        user_id="u_gate_query_clarification_bypass_2",
         phone_number="2348999999902",
         channel="whatsapp",
         last_message_text="How much did I spend yesterday",
@@ -125,10 +150,11 @@ async def test_gate_bypasses_planner_for_pure_query_analytics_turn() -> None:
     )
     config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
 
-    updates = await session_gate_fastpath(state, config)
+    updates = await session_gate_direct_path(state, config)
 
-    assert planner.route_calls == 0
-    assert updates["fast_path_triggered"] is True
+    assert planner.route_calls == 1
+    assert updates["direct_path_triggered"] is True
+    assert updates["semantic_path_shape"] == "semantic_router_domain"
     task = updates["tasks"]["direct_query"]
     assert task.type == "query"
     assert task.payload["force_new_query"] is True
@@ -136,18 +162,20 @@ async def test_gate_bypasses_planner_for_pure_query_analytics_turn() -> None:
 
 async def test_gate_bypasses_planner_for_pure_query_sent_analytics_turn() -> None:
     planner = _RouteTurnPlanner(
-        TurnRouteDecision(
-            decision="go_planner",
+        SemanticRouteDecision(
+            decision="domain_query",
+            mode="new",
+            target_intent="query",
             confidence=0.95,
             detected_language="English",
             response_key=None,
             response=None,
             expected_transaction_executors=[],
-            reason="should not be used",
+            reason="fresh query route",
         )
     )
     state = OrchestratorState(
-        user_id="u_gate_query_direct_2b",
+        user_id="u_gate_query_clarification_bypass_2b",
         phone_number="2348999999912",
         channel="whatsapp",
         last_message_text="How much have I sent to Mum this week",
@@ -155,11 +183,11 @@ async def test_gate_bypasses_planner_for_pure_query_sent_analytics_turn() -> Non
     )
     config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
 
-    updates = await session_gate_fastpath(state, config)
+    updates = await session_gate_direct_path(state, config)
 
-    assert planner.route_calls == 0
-    assert updates["fast_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "query_direct"
+    assert planner.route_calls == 1
+    assert updates["direct_path_triggered"] is True
+    assert updates["semantic_path_shape"] == "semantic_router_domain"
     task = updates["tasks"]["direct_query"]
     assert task.type == "query"
     assert task.payload["force_new_query"] is True
@@ -167,18 +195,20 @@ async def test_gate_bypasses_planner_for_pure_query_sent_analytics_turn() -> Non
 
 async def test_gate_bypasses_planner_for_pure_query_have_i_sent_turn() -> None:
     planner = _RouteTurnPlanner(
-        TurnRouteDecision(
-            decision="go_planner",
+        SemanticRouteDecision(
+            decision="domain_query",
+            mode="new",
+            target_intent="query",
             confidence=0.95,
             detected_language="English",
             response_key=None,
             response=None,
             expected_transaction_executors=[],
-            reason="should not be used",
+            reason="fresh query route",
         )
     )
     state = OrchestratorState(
-        user_id="u_gate_query_direct_2c",
+        user_id="u_gate_query_clarification_bypass_2c",
         phone_number="2348999999913",
         channel="whatsapp",
         last_message_text="Have I sent money today",
@@ -186,11 +216,11 @@ async def test_gate_bypasses_planner_for_pure_query_have_i_sent_turn() -> None:
     )
     config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
 
-    updates = await session_gate_fastpath(state, config)
+    updates = await session_gate_direct_path(state, config)
 
-    assert planner.route_calls == 0
-    assert updates["fast_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "query_direct"
+    assert planner.route_calls == 1
+    assert updates["direct_path_triggered"] is True
+    assert updates["semantic_path_shape"] == "semantic_router_domain"
     task = updates["tasks"]["direct_query"]
     assert task.type == "query"
     assert task.payload["force_new_query"] is True
@@ -198,18 +228,20 @@ async def test_gate_bypasses_planner_for_pure_query_have_i_sent_turn() -> None:
 
 async def test_gate_bypasses_planner_for_pure_query_beneficiary_ranking_turn() -> None:
     planner = _RouteTurnPlanner(
-        TurnRouteDecision(
-            decision="go_planner",
+        SemanticRouteDecision(
+            decision="domain_query",
+            mode="new",
+            target_intent="query",
             confidence=0.95,
             detected_language="English",
             response_key=None,
             response=None,
             expected_transaction_executors=[],
-            reason="should not be used",
+            reason="fresh query route",
         )
     )
     state = OrchestratorState(
-        user_id="u_gate_query_direct_3",
+        user_id="u_gate_query_clarification_bypass_3",
         phone_number="2348999999903",
         channel="whatsapp",
         last_message_text="Who did I send money to the most this week",
@@ -217,10 +249,11 @@ async def test_gate_bypasses_planner_for_pure_query_beneficiary_ranking_turn() -
     )
     config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
 
-    updates = await session_gate_fastpath(state, config)
+    updates = await session_gate_direct_path(state, config)
 
-    assert planner.route_calls == 0
-    assert updates["fast_path_triggered"] is True
+    assert planner.route_calls == 1
+    assert updates["direct_path_triggered"] is True
+    assert updates["semantic_path_shape"] == "semantic_router_domain"
     task = updates["tasks"]["direct_query"]
     assert task.type == "query"
     assert task.payload["force_new_query"] is True
@@ -228,18 +261,20 @@ async def test_gate_bypasses_planner_for_pure_query_beneficiary_ranking_turn() -
 
 async def test_gate_direct_query_bypass_forces_new_query_with_active_query_session() -> None:
     planner = _RouteTurnPlanner(
-        TurnRouteDecision(
-            decision="go_planner",
+        SemanticRouteDecision(
+            decision="domain_query",
+            mode="new",
+            target_intent="query",
             confidence=0.95,
             detected_language="English",
             response_key=None,
             response=None,
             expected_transaction_executors=[],
-            reason="should not be used",
+            reason="fresh query route",
         )
     )
     state = OrchestratorState(
-        user_id="u_gate_query_direct_4",
+        user_id="u_gate_query_clarification_bypass_4",
         phone_number="2348999999904",
         channel="whatsapp",
         last_message_text="Show my last transaction",
@@ -249,18 +284,19 @@ async def test_gate_direct_query_bypass_forces_new_query_with_active_query_sessi
     )
     config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
 
-    updates = await session_gate_fastpath(state, config)
+    updates = await session_gate_direct_path(state, config)
 
-    assert planner.route_calls == 0
-    assert updates["fast_path_triggered"] is True
+    assert planner.route_calls == 1
+    assert updates["direct_path_triggered"] is True
+    assert updates["semantic_path_shape"] == "semantic_router_domain"
     task = updates["tasks"]["direct_query"]
     assert task.payload["force_new_query"] is True
 
 
 async def test_gate_mixed_query_and_transfer_turn_still_falls_through_to_planner() -> None:
     planner = _RouteTurnPlanner(
-        TurnRouteDecision(
-            decision="go_planner",
+        SemanticRouteDecision(
+            decision="planner_mixed",
             confidence=0.96,
             detected_language="English",
             response_key=None,
@@ -270,7 +306,7 @@ async def test_gate_mixed_query_and_transfer_turn_still_falls_through_to_planner
         )
     )
     state = OrchestratorState(
-        user_id="u_gate_query_direct_5",
+        user_id="u_gate_query_clarification_bypass_5",
         phone_number="2348999999905",
         channel="whatsapp",
         last_message_text="Send 5k to Mum and show my last transaction",
@@ -278,18 +314,21 @@ async def test_gate_mixed_query_and_transfer_turn_still_falls_through_to_planner
     )
     config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
 
-    updates = await session_gate_fastpath(state, config)
+    updates = await session_gate_direct_path(state, config)
 
-    assert planner.route_calls == 0
-    assert updates.get("fast_path_triggered") is None
+    assert planner.route_calls == 1
+    assert updates.get("direct_path_triggered") is None
     assert "tasks" not in updates
     assert "turn_context_summary" in updates
+    assert updates["preplanner_expected_transaction_executors"] == ["transfer"]
+    assert updates["routing_owner"] == "planner"
+    assert updates["routing_decision"] == "planner_mixed"
 
 
 async def test_gate_mixed_query_and_airtime_turn_still_falls_through_to_planner() -> None:
     planner = _RouteTurnPlanner(
-        TurnRouteDecision(
-            decision="go_planner",
+        SemanticRouteDecision(
+            decision="planner_mixed",
             confidence=0.96,
             detected_language="English",
             response_key=None,
@@ -299,7 +338,7 @@ async def test_gate_mixed_query_and_airtime_turn_still_falls_through_to_planner(
         )
     )
     state = OrchestratorState(
-        user_id="u_gate_query_direct_6",
+        user_id="u_gate_query_clarification_bypass_6",
         phone_number="2348999999906",
         channel="whatsapp",
         last_message_text="Buy airtime and how much did I spend today",
@@ -307,18 +346,152 @@ async def test_gate_mixed_query_and_airtime_turn_still_falls_through_to_planner(
     )
     config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
 
-    updates = await session_gate_fastpath(state, config)
+    updates = await session_gate_direct_path(state, config)
 
-    assert planner.route_calls == 0
-    assert updates.get("fast_path_triggered") is None
+    assert planner.route_calls == 1
+    assert updates.get("direct_path_triggered") is None
     assert "tasks" not in updates
     assert "turn_context_summary" in updates
+    assert updates["preplanner_expected_transaction_executors"] == ["airtime"]
 
 
-async def test_gate_turn_router_can_switch_language_before_planner() -> None:
+async def test_gate_semantic_router_routes_income_query_clarification_bypass_to_query_worker() -> None:
     planner = _RouteTurnPlanner(
-        TurnRouteDecision(
-            decision="respond_directly",
+        SemanticRouteDecision(
+            decision="domain_query",
+            mode="new",
+            target_intent="query",
+            confidence=0.97,
+            detected_language="English",
+            response_key=None,
+            response=None,
+            expected_transaction_executors=[],
+            reason="fresh inflow analytics query",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_gate_router_query_1",
+        phone_number="2348999999916",
+        channel="whatsapp",
+        last_message_text="What's my income this month",
+        loaded_context={"language": "en"},
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert planner.route_calls == 1
+    assert planner.plan_calls == 0
+    assert updates["direct_path_triggered"] is True
+    assert updates["semantic_path_shape"] == "semantic_router_domain"
+    task = updates["tasks"]["direct_query"]
+    assert task.type == "query"
+    assert task.payload["message"] == "What's my income this month"
+    assert task.payload["force_new_query"] is True
+
+
+async def test_gate_semantic_router_routes_account_list_direct_to_account_worker() -> None:
+    planner = _RouteTurnPlanner(
+        SemanticRouteDecision(
+            decision="domain_account",
+            mode="new",
+            target_intent="account",
+            confidence=0.95,
+            detected_language="English",
+            response_key=None,
+            response=None,
+            expected_transaction_executors=[],
+            reason="single-domain account request",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_gate_router_account_1",
+        phone_number="2348999999917",
+        channel="whatsapp",
+        last_message_text="Show my linked accounts",
+        loaded_context={"language": "en"},
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert planner.route_calls == 1
+    assert planner.plan_calls == 0
+    assert updates["direct_path_triggered"] is True
+    assert updates["semantic_path_shape"] == "semantic_router_domain"
+    task = updates["tasks"]["direct_account"]
+    assert task.type == "account"
+    assert task.payload["message"] == "Show my linked accounts"
+
+
+async def test_gate_semantic_router_routes_transfer_direct_to_worker_without_planner() -> None:
+    planner = _RouteTurnPlanner(
+        SemanticRouteDecision(
+            decision="domain_transfer",
+            mode="new",
+            target_intent="transfer",
+            confidence=0.94,
+            detected_language="English",
+            response_key=None,
+            response=None,
+            expected_transaction_executors=["transfer"],
+            reason="single-domain transfer request",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_gate_router_transfer_1",
+        phone_number="2348999999918",
+        channel="whatsapp",
+        last_message_text="Send 5k to Mum",
+        loaded_context={"language": "en"},
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert planner.route_calls == 1
+    assert planner.plan_calls == 0
+    assert updates["direct_path_triggered"] is True
+    assert updates["semantic_path_shape"] == "semantic_router_domain"
+    task = updates["tasks"]["direct_transfer"]
+    assert task.type == "transfer"
+    assert task.payload["message"] == "Send 5k to Mum"
+    assert "skip_extraction" not in task.payload
+
+
+async def test_gate_semantic_router_routes_same_domain_multi_transfer_to_planner() -> None:
+    planner = _RouteTurnPlanner(
+        SemanticRouteDecision(
+            decision="planner_mixed",
+            confidence=0.93,
+            detected_language="English",
+            response_key=None,
+            response=None,
+            expected_transaction_executors=["transfer"],
+            reason="multi transfer batch requires decomposition",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_gate_router_transfer_batch_1",
+        phone_number="2348999999918",
+        channel="whatsapp",
+        last_message_text="Send 10k to Mum and 5k to Gaines",
+        loaded_context={"language": "en"},
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert planner.route_calls == 1
+    assert planner.plan_calls == 0
+    assert updates.get("direct_path_triggered") is None
+    assert updates["preplanner_expected_transaction_executors"] == ["transfer"]
+
+
+async def test_gate_semantic_router_can_switch_language_before_planner() -> None:
+    planner = _RouteTurnPlanner(
+        SemanticRouteDecision(
+            decision="direct_reply",
             confidence=0.98,
             detected_language="English",
             requested_language="Pidgin",
@@ -337,20 +510,20 @@ async def test_gate_turn_router_can_switch_language_before_planner() -> None:
     )
     config: RunnableConfig = {"configurable": {"task_planner": planner, "redis_client": None}, "recursion_limit": 50}
 
-    updates = await session_gate_fastpath(state, config)
+    updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 1
-    assert updates["fast_path_triggered"] is True
+    assert updates["direct_path_triggered"] is True
     assert updates["loaded_context"]["language"] == "pcm"
     assert updates["loaded_context"]["detected_language"] == "pcm"
     assert updates["final_response"] == render_locale_switched("pcm")
     assert planner.plan_calls == 0
 
 
-async def test_gate_turn_router_locale_switch_can_run_during_pending_interrupt_without_reset() -> None:
+async def test_gate_semantic_router_locale_switch_can_run_during_pending_interrupt_without_reset() -> None:
     planner = _RouteTurnPlanner(
-        TurnRouteDecision(
-            decision="respond_directly",
+        SemanticRouteDecision(
+            decision="direct_reply",
             confidence=0.98,
             detected_language="English",
             requested_language="Yoruba",
@@ -374,10 +547,10 @@ async def test_gate_turn_router_locale_switch_can_run_during_pending_interrupt_w
     )
     config: RunnableConfig = {"configurable": {"task_planner": planner, "redis_client": None}, "recursion_limit": 50}
 
-    updates = await session_gate_fastpath(state, config)
+    updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 1
-    assert updates["fast_path_triggered"] is True
+    assert updates["direct_path_triggered"] is True
     assert updates["loaded_context"]["language"] == "yo"
     assert updates["loaded_context"]["detected_language"] == "yo"
     assert updates["final_response"] == render_locale_switched("yo")
@@ -387,15 +560,15 @@ async def test_gate_turn_router_locale_switch_can_run_during_pending_interrupt_w
     assert planner.plan_calls == 0
 
 
-async def test_gate_turn_router_locale_switch_persists_language_in_redis(monkeypatch) -> None:
+async def test_gate_semantic_router_locale_switch_persists_language_in_redis(monkeypatch) -> None:
     redis_client = _TrackingLocaleRedis()
     from shared.cache.redis_client import RedisClient
 
     monkeypatch.setattr(RedisClient, "get_client", classmethod(lambda cls: redis_client))
 
     planner = _RouteTurnPlanner(
-        TurnRouteDecision(
-            decision="respond_directly",
+        SemanticRouteDecision(
+            decision="direct_reply",
             confidence=0.99,
             detected_language="English",
             requested_language="Hausa",
@@ -417,9 +590,9 @@ async def test_gate_turn_router_locale_switch_persists_language_in_redis(monkeyp
         "recursion_limit": 50,
     }
 
-    updates = await session_gate_fastpath(state, config)
+    updates = await session_gate_direct_path(state, config)
 
-    assert updates["fast_path_triggered"] is True
+    assert updates["direct_path_triggered"] is True
     assert updates["loaded_context"]["language"] == "ha"
     assert updates["final_response"] == render_locale_switched("ha")
     assert redis_client.set_calls
@@ -428,13 +601,13 @@ async def test_gate_turn_router_locale_switch_persists_language_in_redis(monkeyp
 
 
 class _RouteTurnPlanner:
-    def __init__(self, decision: TurnRouteDecision) -> None:
+    def __init__(self, decision: SemanticRouteDecision) -> None:
         self._decision = decision
         self.route_calls = 0
         self.plan_calls = 0
         self.last_context: str | None = None
 
-    async def route_turn(self, phone_number: str, text: str, context: str = "None") -> TurnRouteDecision:
+    async def route_semantic_turn(self, phone_number: str, text: str, context: str = "None") -> SemanticRouteDecision:
         del phone_number, text
         self.route_calls += 1
         self.last_context = context
@@ -477,10 +650,10 @@ class _TrackingRedisWithSession(_TrackingRedis):
         return None
 
 
-async def test_gate_turn_router_can_bypass_planner_with_direct_response() -> None:
+async def test_gate_semantic_router_can_bypass_planner_with_direct_response() -> None:
     planner = _RouteTurnPlanner(
-        TurnRouteDecision(
-            decision="respond_directly",
+        SemanticRouteDecision(
+            decision="direct_reply",
             confidence=0.95,
             detected_language="Pidgin",
             response_key="conversational.checkin",
@@ -498,15 +671,15 @@ async def test_gate_turn_router_can_bypass_planner_with_direct_response() -> Non
     )
     config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
 
-    updates = await session_gate_fastpath(state, config)
+    updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 1
-    assert updates["fast_path_triggered"] is True
+    assert updates["direct_path_triggered"] is True
     assert isinstance(updates.get("final_response"), str)
     assert updates["loaded_context"]["language"] == "pcm"
 
 
-async def test_gate_turn_router_direct_clarify_for_question_falls_through_to_planner(
+async def test_gate_semantic_router_direct_clarify_for_question_falls_through_to_planner(
     monkeypatch,
 ) -> None:
     events: list[tuple[str, dict[str, object]]] = []
@@ -517,8 +690,8 @@ async def test_gate_turn_router_direct_clarify_for_question_falls_through_to_pla
     monkeypatch.setattr("apps.core.src.agent.orchestrator.nodes.gate.logger.info", _capture)
 
     planner = _RouteTurnPlanner(
-        TurnRouteDecision(
-            decision="respond_directly",
+        SemanticRouteDecision(
+            decision="direct_reply",
             confidence=0.67,
             detected_language="English",
             response_key=None,
@@ -536,28 +709,18 @@ async def test_gate_turn_router_direct_clarify_for_question_falls_through_to_pla
     )
     config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
 
-    updates = await session_gate_fastpath(state, config)
+    updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 1
-    assert updates.get("fast_path_triggered") is None
-    assert "final_response" not in updates
-    assert "turn_context_summary" in updates
-    assert (
-        "unexpected_turn_route_breadcrumb",
-        {
-            "user_turn_kind": "unexpected_question",
-            "active_session_present": False,
-            "selected_route": "planner",
-            "route_reason": "turn_router_direct_clarify_demoted",
-            "policy_blocked": False,
-            "fallback_path": "turn_router_demoted_to_planner",
-        },
-    ) in events
+    assert updates["direct_path_triggered"] is True
+    assert updates["semantic_path_shape"] == "semantic_router_direct"
+    assert updates["final_response"] == render_message("conversational.clarify", "en")
+    assert not any(event == "unexpected_turn_route_breadcrumb" for event, _ in events)
 
 
-async def test_gate_turn_router_can_answer_grounded_account_follow_up_without_planner() -> None:
+async def test_gate_semantic_router_can_answer_grounded_account_follow_up_without_planner() -> None:
     planner = _RouteTurnPlanner(
-        TurnRouteDecision(
+        SemanticRouteDecision(
             decision="direct_context_answer",
             confidence=0.96,
             detected_language="English",
@@ -582,20 +745,20 @@ async def test_gate_turn_router_can_answer_grounded_account_follow_up_without_pl
     )
     config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
 
-    updates = await session_gate_fastpath(state, config)
+    updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 1
     assert planner.plan_calls == 0
     assert "ACCOUNTS:" in (planner.last_context or "")
     assert "First Bank" in (planner.last_context or "")
-    assert updates["fast_path_triggered"] is True
+    assert updates["direct_path_triggered"] is True
     assert updates["final_response"] == "Your First Bank account is linked, but it is not ready for payments yet."
 
 
-async def test_gate_overrides_meta_router_reply_with_grounded_account_fastpath() -> None:
+async def test_gate_no_longer_overrides_meta_router_reply_with_grounded_account_fastpath() -> None:
     planner = _RouteTurnPlanner(
-        TurnRouteDecision(
-            decision="respond_directly",
+        SemanticRouteDecision(
+            decision="direct_reply",
             confidence=0.82,
             detected_language="English",
             response_key="conversational.identity",
@@ -624,19 +787,17 @@ async def test_gate_overrides_meta_router_reply_with_grounded_account_fastpath()
     )
     config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
 
-    updates = await session_gate_fastpath(state, config)
+    updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 1
     assert planner.plan_calls == 0
-    assert updates["fast_path_triggered"] is True
-    assert "First Bank" in updates["final_response"]
-    assert "not ready for payments yet" in updates["final_response"]
-    assert "identity" not in updates["final_response"].lower()
+    assert updates["direct_path_triggered"] is True
+    assert updates["final_response"] == render_message("conversational.identity", "en")
 
 
-async def test_gate_turn_router_can_answer_grounded_account_follow_up_with_typo() -> None:
+async def test_gate_semantic_router_can_answer_grounded_account_follow_up_with_typo() -> None:
     planner = _RouteTurnPlanner(
-        TurnRouteDecision(
+        SemanticRouteDecision(
             decision="direct_context_answer",
             confidence=0.94,
             detected_language="English",
@@ -660,17 +821,17 @@ async def test_gate_turn_router_can_answer_grounded_account_follow_up_with_typo(
     )
     config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
 
-    updates = await session_gate_fastpath(state, config)
+    updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 1
     assert planner.plan_calls == 0
-    assert updates["fast_path_triggered"] is True
+    assert updates["direct_path_triggered"] is True
     assert updates["final_response"] == "Your First Bank account is linked, but it is not ready for payments yet."
 
 
-async def test_gate_turn_router_can_answer_grounded_beneficiary_follow_up_without_planner() -> None:
+async def test_gate_semantic_router_can_answer_grounded_beneficiary_follow_up_without_planner() -> None:
     planner = _RouteTurnPlanner(
-        TurnRouteDecision(
+        SemanticRouteDecision(
             decision="direct_context_answer",
             confidence=0.95,
             detected_language="English",
@@ -699,19 +860,19 @@ async def test_gate_turn_router_can_answer_grounded_beneficiary_follow_up_withou
     )
     config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
 
-    updates = await session_gate_fastpath(state, config)
+    updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 1
     assert planner.plan_calls == 0
     assert "BENEFICIARIES:" in (planner.last_context or "")
     assert "Mum" in (planner.last_context or "")
-    assert updates["fast_path_triggered"] is True
+    assert updates["direct_path_triggered"] is True
     assert updates["final_response"] == "Yes, you still have Mum saved on Opay ending in 1023."
 
 
-async def test_gate_turn_router_can_answer_grounded_beneficiary_preview_without_planner() -> None:
+async def test_gate_semantic_router_can_answer_grounded_beneficiary_preview_without_planner() -> None:
     planner = _RouteTurnPlanner(
-        TurnRouteDecision(
+        SemanticRouteDecision(
             decision="direct_context_answer",
             confidence=0.95,
             detected_language="English",
@@ -740,19 +901,19 @@ async def test_gate_turn_router_can_answer_grounded_beneficiary_preview_without_
     )
     config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
 
-    updates = await session_gate_fastpath(state, config)
+    updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 1
     assert planner.plan_calls == 0
     assert "BENEFICIARIES:" in (planner.last_context or "")
     assert "Tolu" in (planner.last_context or "")
-    assert updates["fast_path_triggered"] is True
+    assert updates["direct_path_triggered"] is True
     assert updates["final_response"] == "You have Tolu Adedayo on First Bank ending in 5261."
 
 
-async def test_gate_turn_router_can_answer_grounded_default_account_follow_up_without_planner() -> None:
+async def test_gate_semantic_router_can_answer_grounded_default_account_follow_up_without_planner() -> None:
     planner = _RouteTurnPlanner(
-        TurnRouteDecision(
+        SemanticRouteDecision(
             decision="direct_context_answer",
             confidence=0.95,
             detected_language="English",
@@ -782,19 +943,19 @@ async def test_gate_turn_router_can_answer_grounded_default_account_follow_up_wi
     )
     config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
 
-    updates = await session_gate_fastpath(state, config)
+    updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 1
     assert planner.plan_calls == 0
     assert "ACCOUNTS:" in (planner.last_context or "")
     assert "default" in (planner.last_context or "").lower()
-    assert updates["fast_path_triggered"] is True
+    assert updates["direct_path_triggered"] is True
     assert updates["final_response"] == "Your default account is Zenith Bank ending in 9384."
 
 
-async def test_gate_turn_router_can_answer_grounded_query_follow_up_without_planner() -> None:
+async def test_gate_semantic_router_can_answer_grounded_query_follow_up_without_planner() -> None:
     planner = _RouteTurnPlanner(
-        TurnRouteDecision(
+        SemanticRouteDecision(
             decision="direct_context_answer",
             confidence=0.94,
             detected_language="English",
@@ -825,19 +986,17 @@ async def test_gate_turn_router_can_answer_grounded_query_follow_up_without_plan
         "recursion_limit": 50,
     }
 
-    updates = await session_gate_fastpath(state, config)
+    updates = await session_gate_direct_path(state, config)
 
-    assert planner.route_calls == 0
-    assert updates["fast_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "query_active_session"
-    task = updates["tasks"]["direct_query"]
-    assert task.type == "query"
-    assert task.payload["message"] == "Any more debits after that"
+    assert planner.route_calls == 1
+    assert updates["direct_path_triggered"] is True
+    assert updates["semantic_path_shape"] == "semantic_router_direct"
+    assert updates["final_response"] == "Yes. The transactions shown after that include more debits."
 
 
-async def test_gate_turn_router_can_answer_grounded_flow_recap_without_planner() -> None:
+async def test_gate_semantic_router_can_answer_grounded_flow_recap_without_planner() -> None:
     planner = _RouteTurnPlanner(
-        TurnRouteDecision(
+        SemanticRouteDecision(
             decision="direct_context_answer",
             confidence=0.96,
             detected_language="English",
@@ -866,23 +1025,23 @@ async def test_gate_turn_router_can_answer_grounded_flow_recap_without_planner()
     )
     config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
 
-    updates = await session_gate_fastpath(state, config)
+    updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 1
     assert planner.plan_calls == 0
     assert "ACTIVE_FLOW:" in (planner.last_context or "")
     assert "Current Task Data:" in (planner.last_context or "")
-    assert updates["fast_path_triggered"] is True
+    assert updates["direct_path_triggered"] is True
     assert (
         updates["final_response"]
         == "We are on your transfer. I still have your amount and recipient, and the flow is waiting to continue from there."
     )
 
 
-async def test_gate_turn_router_out_of_scope_includes_empathy_and_redirect() -> None:
+async def test_gate_semantic_router_out_of_scope_includes_empathy_and_redirect() -> None:
     planner = _RouteTurnPlanner(
-        TurnRouteDecision(
-            decision="respond_directly",
+        SemanticRouteDecision(
+            decision="direct_reply",
             confidence=0.97,
             detected_language="English",
             response_key="conversational.out_of_scope",
@@ -900,16 +1059,16 @@ async def test_gate_turn_router_out_of_scope_includes_empathy_and_redirect() -> 
     )
     config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
 
-    updates = await session_gate_fastpath(state, config)
+    updates = await session_gate_direct_path(state, config)
 
-    assert updates["fast_path_triggered"] is True
+    assert updates["direct_path_triggered"] is True
     assert updates["final_response"] == "I hear you.\n" + render_message("conversational.out_of_scope", "en")
 
 
-async def test_gate_turn_router_out_of_scope_without_empathy_uses_redirect_only() -> None:
+async def test_gate_semantic_router_out_of_scope_without_empathy_uses_redirect_only() -> None:
     planner = _RouteTurnPlanner(
-        TurnRouteDecision(
-            decision="respond_directly",
+        SemanticRouteDecision(
+            decision="direct_reply",
             confidence=0.97,
             detected_language="English",
             response_key="conversational.out_of_scope",
@@ -927,16 +1086,16 @@ async def test_gate_turn_router_out_of_scope_without_empathy_uses_redirect_only(
     )
     config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
 
-    updates = await session_gate_fastpath(state, config)
+    updates = await session_gate_direct_path(state, config)
 
-    assert updates["fast_path_triggered"] is True
+    assert updates["direct_path_triggered"] is True
     assert updates["final_response"] == render_message("conversational.out_of_scope", "en")
 
 
-async def test_gate_turn_router_passes_expected_executors_without_fastpath() -> None:
+async def test_gate_semantic_router_passes_expected_executors_without_direct_path() -> None:
     planner = _RouteTurnPlanner(
-        TurnRouteDecision(
-            decision="go_planner",
+        SemanticRouteDecision(
+            decision="planner_mixed",
             confidence=0.91,
             detected_language="English",
             response_key=None,
@@ -954,23 +1113,25 @@ async def test_gate_turn_router_passes_expected_executors_without_fastpath() -> 
     )
     config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
 
-    updates = await session_gate_fastpath(state, config)
+    updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 1
-    assert updates.get("fast_path_triggered") is None
+    assert updates.get("direct_path_triggered") is None
     assert updates["preplanner_expected_transaction_executors"] == ["transfer", "airtime"]
 
 
-async def test_gate_fast_path_routes_balance_request_without_turn_router() -> None:
+async def test_gate_direct_path_routes_balance_request_without_turn_router() -> None:
     planner = _RouteTurnPlanner(
-        TurnRouteDecision(
-            decision="query_continuation",
+        SemanticRouteDecision(
+            decision="domain_query",
+            mode="continuation",
+            target_intent="query",
             confidence=0.95,
             detected_language="English",
             response_key=None,
             response=None,
             expected_transaction_executors=[],
-            reason="misrouted continuation",
+            reason="unused because balance fastpath should win first",
         )
     )
     state = OrchestratorState(
@@ -984,17 +1145,30 @@ async def test_gate_fast_path_routes_balance_request_without_turn_router() -> No
     )
     config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
 
-    updates = await session_gate_fastpath(state, config)
+    updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 0
-    assert updates["fast_path_triggered"] is True
-    assert updates["waves"] == [["fast_account_balance"]]
-    task = updates["tasks"]["fast_account_balance"]
+    assert updates["direct_path_triggered"] is True
+    assert updates["waves"] == [["direct_account_balance"]]
+    task = updates["tasks"]["direct_account_balance"]
     assert task.type == "account"
     assert task.payload["action"] == "check_balance"
 
 
 async def test_gate_query_session_does_not_swallow_full_query_restatement_as_fast_resume() -> None:
+    planner = _RouteTurnPlanner(
+        SemanticRouteDecision(
+            decision="domain_query",
+            mode="new",
+            target_intent="query",
+            confidence=0.95,
+            detected_language="English",
+            response_key=None,
+            response=None,
+            expected_transaction_executors=[],
+            reason="fresh query restatement",
+        )
+    )
     state = OrchestratorState(
         user_id="u_gate_query_1",
         phone_number="2348000000071",
@@ -1004,12 +1178,13 @@ async def test_gate_query_session_does_not_swallow_full_query_restatement_as_fas
         session_stack=[ActiveSession(domain="query", state="RUNNING", interrupt_policy="ALLOW")],
         active_domain="query",
     )
-    config: RunnableConfig = {"configurable": {}, "recursion_limit": 50}
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
 
-    updates = await session_gate_fastpath(state, config)
+    updates = await session_gate_direct_path(state, config)
 
-    assert updates["fast_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "query_direct"
+    assert planner.route_calls == 1
+    assert updates["direct_path_triggered"] is True
+    assert updates["semantic_path_shape"] == "semantic_router_domain"
     task = updates["tasks"]["direct_query"]
     assert task.type == "query"
     assert task.payload["message"] == "Show my last transaction"
@@ -1018,14 +1193,16 @@ async def test_gate_query_session_does_not_swallow_full_query_restatement_as_fas
 
 async def test_gate_routes_last_transaction_surface_to_structured_path() -> None:
     planner = _RouteTurnPlanner(
-        TurnRouteDecision(
-            decision="direct_context_answer",
-            confidence=0.79,
+        SemanticRouteDecision(
+            decision="domain_query",
+            mode="new",
+            target_intent="query",
+            confidence=0.91,
             detected_language="English",
             response_key=None,
-            response="Your last transaction was 10k to Mum.",
+            response=None,
             expected_transaction_executors=[],
-            reason="unused because turn should bypass router",
+            reason="structured query surface",
         )
     )
     state = OrchestratorState(
@@ -1037,11 +1214,11 @@ async def test_gate_routes_last_transaction_surface_to_structured_path() -> None
     )
     config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
 
-    updates = await session_gate_fastpath(state, config)
+    updates = await session_gate_direct_path(state, config)
 
-    assert planner.route_calls == 0
-    assert updates["fast_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "query_direct"
+    assert planner.route_calls == 1
+    assert updates["direct_path_triggered"] is True
+    assert updates["semantic_path_shape"] == "semantic_router_domain"
     task = updates["tasks"]["direct_query"]
     assert task.type == "query"
     assert task.payload["message"] == "Show my last transaction"
@@ -1050,14 +1227,16 @@ async def test_gate_routes_last_transaction_surface_to_structured_path() -> None
 
 async def test_gate_blocks_router_direct_text_for_linked_accounts_surface() -> None:
     planner = _RouteTurnPlanner(
-        TurnRouteDecision(
-            decision="respond_directly",
-            confidence=0.81,
+        SemanticRouteDecision(
+            decision="domain_account",
+            mode="new",
+            target_intent="account",
+            confidence=0.93,
             detected_language="English",
-            response_key="conversational.checkin",
-            response="You have two linked accounts.",
+            response_key=None,
+            response=None,
             expected_transaction_executors=[],
-            reason="misclassified list surface",
+            reason="structured account surface",
         )
     )
     state = OrchestratorState(
@@ -1075,12 +1254,13 @@ async def test_gate_blocks_router_direct_text_for_linked_accounts_surface() -> N
     )
     config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
 
-    updates = await session_gate_fastpath(state, config)
+    updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 1
-    assert updates.get("fast_path_triggered") is None
-    assert "final_response" not in updates
-    assert "turn_context_summary" in updates
+    assert updates["direct_path_triggered"] is True
+    assert updates["semantic_path_shape"] == "semantic_router_domain"
+    task = updates["tasks"]["direct_account"]
+    assert task.type == "account"
 
 
 async def test_gate_balance_fastpath_does_not_swallow_mixed_transaction_and_balance_request() -> None:
@@ -1093,7 +1273,7 @@ async def test_gate_balance_fastpath_does_not_swallow_mixed_transaction_and_bala
     )
     config: RunnableConfig = {"configurable": {}, "recursion_limit": 50}
 
-    updates = await session_gate_fastpath(state, config)
+    updates = await session_gate_direct_path(state, config)
 
     assert "turn_context_summary" in updates
     assert updates.get("semantic_path_shape") is None
@@ -1101,14 +1281,16 @@ async def test_gate_balance_fastpath_does_not_swallow_mixed_transaction_and_bala
 
 async def test_gate_query_session_ignores_generic_checkin_direct_response_for_follow_up_question() -> None:
     planner = _RouteTurnPlanner(
-        TurnRouteDecision(
-            decision="respond_directly",
+        SemanticRouteDecision(
+            decision="domain_query",
+            mode="continuation",
+            target_intent="query",
             confidence=0.87,
             detected_language="English",
-            response_key="conversational.checkin",
+            response_key=None,
             response=None,
             expected_transaction_executors=[],
-            reason="misclassified skeptical follow-up",
+            reason="active query continuation",
         )
     )
     state = OrchestratorState(
@@ -1123,11 +1305,11 @@ async def test_gate_query_session_ignores_generic_checkin_direct_response_for_fo
     )
     config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
 
-    updates = await session_gate_fastpath(state, config)
+    updates = await session_gate_direct_path(state, config)
 
-    assert planner.route_calls == 0
-    assert updates["fast_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "query_active_session"
+    assert planner.route_calls == 1
+    assert updates["direct_path_triggered"] is True
+    assert updates["semantic_path_shape"] == "semantic_router_domain"
     task = updates["tasks"]["direct_query"]
     assert task.type == "query"
     assert task.payload["message"] == "Really?"
@@ -1135,14 +1317,16 @@ async def test_gate_query_session_ignores_generic_checkin_direct_response_for_fo
 
 async def test_gate_routes_show_me_active_query_followup_directly_to_query_worker() -> None:
     planner = _RouteTurnPlanner(
-        TurnRouteDecision(
-            decision="respond_directly",
+        SemanticRouteDecision(
+            decision="domain_query",
+            mode="continuation",
+            target_intent="query",
             confidence=0.87,
             detected_language="English",
-            response_key="conversational.checkin",
+            response_key=None,
             response=None,
             expected_transaction_executors=[],
-            reason="misclassified semantic followup",
+            reason="active query continuation",
         )
     )
     state = OrchestratorState(
@@ -1170,11 +1354,11 @@ async def test_gate_routes_show_me_active_query_followup_directly_to_query_worke
     )
     config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
 
-    updates = await session_gate_fastpath(state, config)
+    updates = await session_gate_direct_path(state, config)
 
-    assert planner.route_calls == 0
-    assert updates["fast_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "query_active_session"
+    assert planner.route_calls == 1
+    assert updates["direct_path_triggered"] is True
+    assert updates["semantic_path_shape"] == "semantic_router_domain"
     task = updates["tasks"]["direct_query"]
     assert task.type == "query"
     assert task.payload["message"] == "show me"
@@ -1183,14 +1367,16 @@ async def test_gate_routes_show_me_active_query_followup_directly_to_query_worke
 
 async def test_gate_routes_last_week_active_query_followup_directly_to_query_worker() -> None:
     planner = _RouteTurnPlanner(
-        TurnRouteDecision(
-            decision="go_planner",
+        SemanticRouteDecision(
+            decision="domain_query",
+            mode="continuation",
+            target_intent="query",
             confidence=0.84,
             detected_language="English",
             response_key=None,
             response=None,
             expected_transaction_executors=[],
-            reason="misclassified semantic followup",
+            reason="active query continuation",
         )
     )
     state = OrchestratorState(
@@ -1218,14 +1404,63 @@ async def test_gate_routes_last_week_active_query_followup_directly_to_query_wor
     )
     config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
 
-    updates = await session_gate_fastpath(state, config)
+    updates = await session_gate_direct_path(state, config)
 
-    assert planner.route_calls == 0
-    assert updates["fast_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "query_active_session"
+    assert planner.route_calls == 1
+    assert updates["direct_path_triggered"] is True
+    assert updates["semantic_path_shape"] == "semantic_router_domain"
     task = updates["tasks"]["direct_query"]
     assert task.type == "query"
     assert task.payload["message"] == "What about last week"
+
+
+async def test_gate_routes_how_much_total_active_query_followup_directly_to_query_worker() -> None:
+    planner = _RouteTurnPlanner(
+        SemanticRouteDecision(
+            decision="domain_query",
+            mode="continuation",
+            target_intent="query",
+            confidence=0.74,
+            detected_language="English",
+            response_key=None,
+            response=None,
+            expected_transaction_executors=[],
+            reason="active query continuation",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_gate_query_followup_2b",
+        phone_number="23480000020735",
+        channel="whatsapp",
+        last_message_text="How much total",
+        loaded_context={"language": "en"},
+        stashed_query_session={
+            "session_active": True,
+            "query_result": {"summary_text": "You showed 5 transactions to Mum this month.", "items": []},
+            "query_contract": {
+                "intent": "transaction_list",
+                "time_start": "2026-03-01",
+                "time_end": "2026-03-19",
+                "timezone": "Africa/Lagos",
+                "normalized_query": {
+                    "intent": "transaction_list",
+                    "time_range": {"start": "2026-03-01", "end": "2026-03-19", "granularity": "month"},
+                    "filters": {"transaction_type": "debit", "merchant": ["mum"]},
+                    "accounts_scope": "all",
+                },
+            },
+        },
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert planner.route_calls == 1
+    assert updates["direct_path_triggered"] is True
+    assert updates["semantic_path_shape"] == "semantic_router_domain"
+    task = updates["tasks"]["direct_query"]
+    assert task.type == "query"
+    assert task.payload["message"] == "How much total"
 
 
 async def test_gate_logs_query_routing_breadcrumb_for_active_query_handoff(monkeypatch) -> None:
@@ -1235,6 +1470,20 @@ async def test_gate_logs_query_routing_breadcrumb_for_active_query_handoff(monke
         events.append((event, kwargs))
 
     monkeypatch.setattr("apps.core.src.agent.orchestrator.nodes.gate.logger.info", _capture)
+
+    planner = _RouteTurnPlanner(
+        SemanticRouteDecision(
+            decision="domain_query",
+            mode="continuation",
+            target_intent="query",
+            confidence=0.9,
+            detected_language="English",
+            response_key=None,
+            response=None,
+            expected_transaction_executors=[],
+            reason="active query continuation",
+        )
+    )
 
     state = OrchestratorState(
         user_id="u_gate_query_followup_3",
@@ -1259,28 +1508,26 @@ async def test_gate_logs_query_routing_breadcrumb_for_active_query_handoff(monke
             },
         },
     )
-    config: RunnableConfig = {"configurable": {}, "recursion_limit": 50}
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
 
-    updates = await session_gate_fastpath(state, config)
+    updates = await session_gate_direct_path(state, config)
 
-    assert updates["semantic_path_shape"] == "query_active_session"
+    assert updates["semantic_path_shape"] == "semantic_router_domain"
     assert (
-        "gate_query_routing_breadcrumb",
+        "gate_semantic_router_domain_dispatch",
         {
-            "path": "active_query_session_handoff_check",
-            "has_active_query_session": True,
-            "query_session_source": "stashed",
-            "handoff_to_query": True,
-            "handoff_reason": "active_query_session_semantic_handoff",
-            "response_class": None,
+            "decision": "domain_query",
+            "domain": "query",
+            "mode": "continuation",
+            "task_id": "direct_query",
         },
     ) in events
 
 
 async def test_gate_exits_active_query_session_on_greeting_direct_reply() -> None:
     planner = _RouteTurnPlanner(
-        TurnRouteDecision(
-            decision="respond_directly",
+        SemanticRouteDecision(
+            decision="direct_reply",
             confidence=0.89,
             detected_language="English",
             response_key="conversational.greeting",
@@ -1305,11 +1552,11 @@ async def test_gate_exits_active_query_session_on_greeting_direct_reply() -> Non
     )
     config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
 
-    updates = await session_gate_fastpath(state, config)
+    updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 1
-    assert updates["fast_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "turn_router_only"
+    assert updates["direct_path_triggered"] is True
+    assert updates["semantic_path_shape"] == "semantic_router_direct"
     assert updates["final_response"] == render_message("conversational.greeting", "en")
     assert updates["stashed_query_session"] is None
     assert updates["session_stack"] == []
@@ -1317,10 +1564,10 @@ async def test_gate_exits_active_query_session_on_greeting_direct_reply() -> Non
     assert "tasks" not in updates or "direct_query" not in updates["tasks"]
 
 
-async def test_gate_turn_router_cancel_response_clears_query_state() -> None:
+async def test_gate_semantic_router_cancel_response_clears_query_state() -> None:
     planner = _RouteTurnPlanner(
-        TurnRouteDecision(
-            decision="respond_directly",
+        SemanticRouteDecision(
+            decision="direct_reply",
             confidence=0.98,
             detected_language="English",
             response_key="planner.cancelled",
@@ -1348,11 +1595,11 @@ async def test_gate_turn_router_cancel_response_clears_query_state() -> None:
         "recursion_limit": 50,
     }
 
-    updates = await session_gate_fastpath(state, config)
+    updates = await session_gate_direct_path(state, config)
 
     assert planner.route_calls == 1
-    assert updates["fast_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "turn_router_only"
+    assert updates["direct_path_triggered"] is True
+    assert updates["semantic_path_shape"] == "semantic_router_direct"
     assert updates["final_response"] == render_cancelled_prompt("en")
     assert updates["stashed_query_session"] is None
     assert updates["session_stack"] == []
@@ -1370,9 +1617,9 @@ async def test_gate_explicit_cancel_without_active_state_returns_clarify() -> No
     )
     config: RunnableConfig = {"configurable": {"redis_client": None}, "recursion_limit": 50}
 
-    updates = await session_gate_fastpath(state, config)
+    updates = await session_gate_direct_path(state, config)
 
-    assert updates["fast_path_triggered"] is True
+    assert updates["direct_path_triggered"] is True
     assert updates["final_response"] == render_message("conversational.clarify", "en")
 
 
@@ -1389,26 +1636,28 @@ async def test_gate_explicit_cancel_during_pending_query_clarification_uses_quer
     )
     config: RunnableConfig = {"configurable": {"redis_client": redis_client}, "recursion_limit": 50}
 
-    updates = await session_gate_fastpath(state, config)
+    updates = await session_gate_direct_path(state, config)
 
-    assert updates["fast_path_triggered"] is True
+    assert updates["direct_path_triggered"] is True
     assert updates["final_response"] == render_message("query.session.goodbye", "en")
     assert redis_client.deleted_keys == ["query:session:2348000000019"]
 
 
-async def test_gate_pending_query_clarification_time_reply_bypasses_to_query_worker() -> None:
+async def test_gate_pending_query_clarification_time_reply_routes_via_semantic_router() -> None:
     redis_client = _TrackingRedisWithSession(
         '{"session_active": true, "pending_clarification": {"kind": "pending_clarification", "original_query": "How much did I spend last", "current_intent": "spending_total", "original_extraction": {"intent": "spending_total", "filters": {}, "time_range": {"reference_type": "vague", "days_back": 30}, "requested_capabilities": [], "ambiguities": [{"code": "TIME_VAGUE", "context": "last"}], "raw_query": "How much did I spend last"}, "ambiguities": [{"code": "TIME_VAGUE", "context": "last"}], "resolver_message": "What time period did you mean by last?", "language": "en"}}'
     )
     planner = _RouteTurnPlanner(
-        TurnRouteDecision(
-            decision="go_planner",
+        SemanticRouteDecision(
+            decision="domain_query",
+            mode="continuation",
             confidence=0.9,
             detected_language="English",
+            target_intent="query",
             response_key=None,
             response=None,
             expected_transaction_executors=[],
-            reason="should not be used",
+            reason="pending query clarification answer",
         )
     )
     state = OrchestratorState(
@@ -1423,18 +1672,18 @@ async def test_gate_pending_query_clarification_time_reply_bypasses_to_query_wor
         "recursion_limit": 50,
     }
 
-    updates = await session_gate_fastpath(state, config)
+    updates = await session_gate_direct_path(state, config)
 
-    assert planner.route_calls == 0
-    assert updates["fast_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "query_direct"
+    assert planner.route_calls == 1
+    assert updates["direct_path_triggered"] is True
+    assert updates["semantic_path_shape"] == "semantic_router_domain"
     task = updates["tasks"]["direct_query"]
     assert task.type == "query"
     assert task.payload["message"] == "last 3 days"
     assert "force_new_query" not in task.payload
 
 
-async def test_gate_fast_path_cancel_and_balance_cleans_query_and_runs_balance() -> None:
+async def test_gate_direct_path_cancel_and_balance_cleans_query_and_runs_balance() -> None:
     redis_client = _TrackingRedis()
     state = OrchestratorState(
         user_id="u_gate_9",
@@ -1451,11 +1700,11 @@ async def test_gate_fast_path_cancel_and_balance_cleans_query_and_runs_balance()
     )
     config: RunnableConfig = {"configurable": {"redis_client": redis_client}, "recursion_limit": 50}
 
-    updates = await session_gate_fastpath(state, config)
+    updates = await session_gate_direct_path(state, config)
 
-    assert updates["fast_path_triggered"] is True
-    assert updates["waves"] == [["fast_account_balance"]]
-    task = updates["tasks"]["fast_account_balance"]
+    assert updates["direct_path_triggered"] is True
+    assert updates["waves"] == [["direct_account_balance"]]
+    task = updates["tasks"]["direct_account_balance"]
     assert task.type == "account"
     assert task.payload["action"] == "check_balance"
     assert updates["session_stack"] == []

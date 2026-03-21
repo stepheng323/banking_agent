@@ -4,7 +4,6 @@ import re
 from dataclasses import dataclass
 from typing import Any, cast
 
-from apps.core.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
 from apps.core.src.agent.orchestrator.models.state import OrchestratorState
 from apps.core.src.agent.orchestrator.nodes.planner_context import (
     PLANNER_CONTEXT_MAX_CHARS,
@@ -14,14 +13,9 @@ from apps.core.src.agent.orchestrator.nodes.planner_context import (
     build_user_state_summary_from_summary,
     get_or_build_turn_context_summary,
 )
-from apps.core.src.agent.orchestrator.nodes.planner_fastpath import (
+from apps.core.src.agent.orchestrator.nodes.planner_context_read import (
     TRANSACTION_EXECUTORS,
 )
-from apps.core.src.agent.orchestrator.nodes.planner_query_shortcuts import (
-    _next_query_continuation_task_id,
-    resolve_query_shortcut_with_reason,
-)
-from shared.i18n import LocaleManager
 from shared.services.task_planner_prompt_models import PlannerPromptSignals
 from shared.types.planner import TransactionExecutor
 from shared.utils.logging import get_logger
@@ -114,53 +108,6 @@ async def _build_planner_context(
     if query_session_snapshot and not is_transactional_flow:
         session_active = bool(query_session_snapshot.get("session_active"))
         query_session_active = session_active
-        shortcut_decision, shortcut_reason = resolve_query_shortcut_with_reason(
-            text,
-            LocaleManager.normalize((state.loaded_context or {}).get("language")).value,
-        )
-        logger.info(
-            "planner_query_shortcut_resolution",
-            session_active=session_active,
-            query_session_source=query_session_source,
-            shortcut_kind=shortcut_decision.kind if shortcut_decision else None,
-            shortcut_action=shortcut_decision.action if shortcut_decision else None,
-            reason=shortcut_reason,
-        )
-        if (
-            session_active
-            and state.pending_interrupt is None
-            and shortcut_decision is not None
-        ):
-            shortcut_task_id = _next_query_continuation_task_id(state.tasks)
-            shortcut_task = TaskSpec(
-                id=shortcut_task_id,
-                type="query",
-                stage=TaskStage.DRAFT,
-                payload={
-                    "action": "transaction_list",
-                    "instruction": text,
-                    "message": text,
-                },
-            )
-            logger.info(
-                "planner_query_continuation_shortcut_hit",
-                shortcut_kind=shortcut_decision.kind,
-                shortcut_action=shortcut_decision.action,
-            )
-            return PlannerContextBuildResult(
-                planner_context="None",
-                active_intent=None,
-                query_session_snapshot=query_session_snapshot,
-                query_session_source=query_session_source,
-                prompt_signals=PlannerPromptSignals(),
-                shortcut_updates={
-                    "tasks": {shortcut_task_id: shortcut_task},
-                    "waves": [[shortcut_task_id]],
-                    "current_wave_index": 0,
-                    "normalized_instruction": text,
-                    **locale_updates,
-                },
-            )
     elif query_session_snapshot and is_transactional_flow:
         logger.info("planner_query_context_skipped", reason="active_transaction_flow")
 

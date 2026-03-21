@@ -41,7 +41,7 @@ async def test_fastpath_uses_direct_response_when_context_is_sufficient() -> Non
         is_cancellation=False,
         is_confirmation=False,
         detected_language="English",
-        context_fastpath_subtype="account_count",
+        context_read_subtype="account_count",
         normalized_instruction="how many accounts do i have",
         tasks=[],
     )
@@ -83,7 +83,7 @@ async def test_fastpath_falls_back_to_worker_when_context_missing() -> None:
         is_cancellation=False,
         is_confirmation=False,
         detected_language="English",
-        context_fastpath_subtype="beneficiary_count",
+        context_read_subtype="beneficiary_count",
         normalized_instruction="how many beneficiaries do i have",
         tasks=[],
     )
@@ -121,7 +121,7 @@ async def test_fastpath_falls_back_when_planner_shape_is_not_conversational() ->
         is_cancellation=False,
         is_confirmation=False,
         detected_language="English",
-        context_fastpath_subtype="default_account_identity",
+        context_read_subtype="default_account_identity",
         normalized_instruction="which account is default",
         tasks=[],
     )
@@ -164,7 +164,7 @@ async def test_fastpath_is_language_agnostic_when_planner_sets_subtype() -> None
         is_cancellation=False,
         is_confirmation=False,
         detected_language="Yoruba",
-        context_fastpath_subtype="account_count",
+        context_read_subtype="account_count",
         normalized_instruction="melo ni account mi",
         tasks=[],
     )
@@ -206,7 +206,7 @@ async def test_fastpath_v2_account_mandate_readiness_summary_uses_direct_respons
         is_cancellation=False,
         is_confirmation=False,
         detected_language="English",
-        context_fastpath_subtype="account_mandate_readiness_summary",
+        context_read_subtype="account_mandate_readiness_summary",
         normalized_instruction="which of my accounts are ready",
         tasks=[],
     )
@@ -244,7 +244,7 @@ async def test_fastpath_v2_account_linked_bank_existence_check_falls_back_when_a
         is_cancellation=False,
         is_confirmation=False,
         detected_language="English",
-        context_fastpath_subtype="account_linked_bank_existence_check",
+        context_read_subtype="account_linked_bank_existence_check",
         normalized_instruction="do i have zenith linked",
         tasks=[],
     )
@@ -278,7 +278,7 @@ async def test_fastpath_v2_account_linked_bank_existence_check_synthesizes_pendi
         is_cancellation=False,
         is_confirmation=False,
         detected_language="English",
-        context_fastpath_subtype="account_linked_bank_existence_check",
+        context_read_subtype="account_linked_bank_existence_check",
         normalized_instruction="what about first bank",
         tasks=[],
     )
@@ -324,7 +324,7 @@ async def test_fastpath_v2_account_linked_bank_existence_check_synthesizes_absen
         is_cancellation=False,
         is_confirmation=False,
         detected_language="English",
-        context_fastpath_subtype="account_linked_bank_existence_check",
+        context_read_subtype="account_linked_bank_existence_check",
         normalized_instruction="what about first bank",
         tasks=[],
     )
@@ -360,7 +360,7 @@ async def test_fastpath_v2_link_account_request_bypasses_account_summary_read_pa
         is_cancellation=False,
         is_confirmation=False,
         detected_language="English",
-        context_fastpath_subtype="linked_accounts_summary",
+        context_read_subtype="linked_accounts_summary",
         account_action_hint="link",
         normalized_instruction="link account",
         tasks=[],
@@ -403,7 +403,7 @@ async def test_fastpath_v2_beneficiary_name_match_preview_uses_direct_response()
         is_cancellation=False,
         is_confirmation=False,
         detected_language="English",
-        context_fastpath_subtype="beneficiary_name_match_preview",
+        context_read_subtype="beneficiary_name_match_preview",
         normalized_instruction="which tolu do i have",
         tasks=[],
     )
@@ -456,7 +456,7 @@ async def test_fastpath_v2_flow_recap_without_active_flow_returns_no_active_flow
         is_cancellation=False,
         is_confirmation=False,
         detected_language="English",
-        context_fastpath_subtype="flow_recap",
+        context_read_subtype="flow_recap",
         normalized_instruction="where did we stop",
         tasks=[],
     )
@@ -491,7 +491,7 @@ async def test_recent_domain_focus_is_injected_for_follow_up_binding() -> None:
         is_cancellation=False,
         is_confirmation=False,
         detected_language="English",
-        context_fastpath_subtype="linked_accounts_summary",
+        context_read_subtype="linked_accounts_summary",
         normalized_instruction="list them",
         tasks=[],
     )
@@ -520,7 +520,7 @@ async def test_recent_domain_focus_is_injected_for_follow_up_binding() -> None:
             is_cancellation=False,
             is_confirmation=False,
             detected_language="English",
-            context_fastpath_subtype="account_count",
+            context_read_subtype="account_count",
             normalized_instruction="how many accounts do i have linked",
             tasks=[],
         ),
@@ -546,7 +546,7 @@ async def test_fastpath_v2_flow_recap_with_active_interrupt_uses_direct_response
         is_cancellation=False,
         is_confirmation=False,
         detected_language="English",
-        context_fastpath_subtype="flow_recap",
+        context_read_subtype="flow_recap",
         normalized_instruction="where did we stop",
         tasks=[],
     )
@@ -588,7 +588,7 @@ async def test_fastpath_beneficiary_list_persists_context_frame() -> None:
         is_cancellation=False,
         is_confirmation=False,
         detected_language="English",
-        context_fastpath_subtype="beneficiary_list",
+        context_read_subtype="beneficiary_list",
         normalized_instruction="show my beneficiaries",
         tasks=[],
     )
@@ -636,7 +636,7 @@ async def test_fastpath_beneficiary_name_preview_persists_context_frame() -> Non
         is_cancellation=False,
         is_confirmation=False,
         detected_language="English",
-        context_fastpath_subtype="beneficiary_name_match_preview",
+        context_read_subtype="beneficiary_name_match_preview",
         normalized_instruction="which tolu do i have",
         tasks=[],
     )

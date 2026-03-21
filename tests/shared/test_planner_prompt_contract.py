@@ -7,12 +7,12 @@ import tiktoken
 from shared.services.task_planner import (
     INTERRUPT_ROUTER_SYSTEM_PROMPT,
     PLANNER_PROMPT_BASELINE_RESULT,
-    TURN_ROUTER_SYSTEM_PROMPT,
+    SEMANTIC_ROUTER_SYSTEM_PROMPT,
     PlannerPromptBuildInput,
     PlannerPromptSignals,
     build_planner_system_prompt,
 )
-from shared.types.planner import ContextFastpathSubtype
+from shared.types.planner import ContextReadSubtype
 
 
 def _build_prompt(
@@ -38,15 +38,13 @@ def test_beneficiary_reactive_save_requires_explicit_intent() -> None:
     assert 'Save-beneficiary prompt + "Hi" -> conversational' in runtime_prompt
 
 
-def test_context_read_fastpath_rules_present() -> None:
-    """Prompt must define context-read fastpath + fallback contract."""
+def test_context_read_fastpath_rules_removed_from_planner_prompt() -> None:
+    """Planner prompt should no longer spend budget on router-owned context fastpath rules."""
     runtime_prompt, _, _ = _build_prompt("Which account is default?", "User State has default account")
-    assert "R16_FASTPATH_CONTEXT_READ" in runtime_prompt
-    assert "R17_FASTPATH_FALLBACK" in runtime_prompt
-    assert "R17:context_missing|stale->worker_task" in runtime_prompt
-    assert "R18_FASTPATH_SUBTYPE" in runtime_prompt
-    assert "context_fastpath_subtype" in runtime_prompt
-    fastpath_values = set(get_args(ContextFastpathSubtype))
+    assert "R16_FASTPATH_CONTEXT_READ" not in runtime_prompt
+    assert "R17_FASTPATH_FALLBACK" not in runtime_prompt
+    assert "R18_FASTPATH_SUBTYPE" not in runtime_prompt
+    fastpath_values = set(get_args(ContextReadSubtype))
     assert "account_mandate_readiness_summary" in fastpath_values
     assert "account_linked_bank_existence_check" in fastpath_values
     assert "beneficiary_name_match_preview" in fastpath_values
@@ -93,13 +91,11 @@ def test_follow_up_referent_binding_rules_present() -> None:
         "Recent Chat last turn was beneficiary_count answer",
         PlannerPromptSignals(recent_domain_focus="query", active_flow_type="query"),
     )
-    assert "query" in bundles
     assert "R14_REFERENCE_BINDING" in runtime_prompt
     assert "R14:pronoun|index->selector_ref" in runtime_prompt
-    assert "Fallback only: router handles short grounded read-only follow-ups first." in runtime_prompt
-    assert 'Recent Chat account_count + "List them" -> linked_accounts_summary.' in runtime_prompt
-    assert 'Recent Chat beneficiary_count + "List them" -> beneficiary_list.' in runtime_prompt
+    assert "TARGETED EXAMPLES (QUERY)" not in runtime_prompt
     assert 'Active transfer flow + "Where did we stop?" -> flow_recap.' not in runtime_prompt
+    assert "query" not in bundles
 
 
 def test_transfer_pronoun_reference_continuity_rules_present() -> None:
@@ -165,36 +161,77 @@ def test_mixed_money_move_coverage_rules_present() -> None:
     assert "EXECUTOR COVERAGE GUARD" in runtime_prompt
 
 
-def test_turn_router_expected_executor_coverage_rules_present() -> None:
-    """Turn-router prompt should require all explicit mixed transaction executors."""
-    assert "direct_context_answer" in TURN_ROUTER_SYSTEM_PROMPT
-    assert "expected_transaction_executors" in TURN_ROUTER_SYSTEM_PROMPT
-    assert "explicit mixed transaction requests" in TURN_ROUTER_SYSTEM_PROMPT
-    assert "include every mentioned executor" in TURN_ROUTER_SYSTEM_PROMPT
-    assert '["transfer","airtime"]' in TURN_ROUTER_SYSTEM_PROMPT
-    assert '"Can I use First Bank now?" -> direct_context_answer' in TURN_ROUTER_SYSTEM_PROMPT
-    assert '"Is First Bank ready?" -> direct_context_answer' in TURN_ROUTER_SYSTEM_PROMPT
-    assert '"Is my First Bank account ready?" -> direct_context_answer' in TURN_ROUTER_SYSTEM_PROMPT
-    assert '"Which account is default now?" -> direct_context_answer' in TURN_ROUTER_SYSTEM_PROMPT
-    assert '"Can I use fisr bank now?" -> direct_context_answer' in TURN_ROUTER_SYSTEM_PROMPT
-    assert '"Do I still have Mum saved?" -> direct_context_answer' in TURN_ROUTER_SYSTEM_PROMPT
-    assert '"Any more debits after that?" -> direct_context_answer' in TURN_ROUTER_SYSTEM_PROMPT
-    assert '"Where did we stop?" -> direct_context_answer' in TURN_ROUTER_SYSTEM_PROMPT
-    assert '"What are we doing again?" -> direct_context_answer' in TURN_ROUTER_SYSTEM_PROMPT
-    assert '"Show my last transaction" -> go_planner' in TURN_ROUTER_SYSTEM_PROMPT
-    assert '"Show my linked accounts" -> go_planner' in TURN_ROUTER_SYSTEM_PROMPT
-    assert '"More" while viewing transactions -> query_continuation' in TURN_ROUTER_SYSTEM_PROMPT
+def test_semantic_router_expected_executor_coverage_rules_present() -> None:
+    """Semantic-router prompt should require all explicit mixed transaction executors."""
+    assert "direct_context_answer" in SEMANTIC_ROUTER_SYSTEM_PROMPT
+    assert "domain_query" in SEMANTIC_ROUTER_SYSTEM_PROMPT
+    assert "domain_account" in SEMANTIC_ROUTER_SYSTEM_PROMPT
+    assert "planner_mixed" in SEMANTIC_ROUTER_SYSTEM_PROMPT
+    assert "expected_transaction_executors" in SEMANTIC_ROUTER_SYSTEM_PROMPT
+    assert "explicit mixed transaction requests" in SEMANTIC_ROUTER_SYSTEM_PROMPT
+    assert "include every mentioned executor" in SEMANTIC_ROUTER_SYSTEM_PROMPT
+    assert '["transfer","airtime"]' in SEMANTIC_ROUTER_SYSTEM_PROMPT
+    assert "Do NOT add executors for non-transaction clauses inside a mixed request." in (
+        SEMANTIC_ROUTER_SYSTEM_PROMPT
+    )
+    assert (
+        '"send 10k to mum and show my last 3 credits" -> ["transfer"]' in SEMANTIC_ROUTER_SYSTEM_PROMPT
+    )
+    assert 'Do not infer data executor from words like "credit", "transaction data"' in (
+        SEMANTIC_ROUTER_SYSTEM_PROMPT
+    )
+    assert '"Can I use First Bank now?" -> direct_context_answer' in SEMANTIC_ROUTER_SYSTEM_PROMPT
+    assert '"Is First Bank ready?" -> direct_context_answer' in SEMANTIC_ROUTER_SYSTEM_PROMPT
+    assert '"Is my First Bank account ready?" -> direct_context_answer' in SEMANTIC_ROUTER_SYSTEM_PROMPT
+    assert '"Show my linked accounts" -> domain_account' in SEMANTIC_ROUTER_SYSTEM_PROMPT
+    assert '"Can I use fisr bank now?" -> direct_context_answer' in SEMANTIC_ROUTER_SYSTEM_PROMPT
+    assert '"Do I still have Mum saved?" -> direct_context_answer' in SEMANTIC_ROUTER_SYSTEM_PROMPT
+    assert '"What\'s my income this month" -> domain_query' in SEMANTIC_ROUTER_SYSTEM_PROMPT
+    assert '"Where did we stop?" -> direct_context_answer' in SEMANTIC_ROUTER_SYSTEM_PROMPT
+    assert '"What are we doing again?" -> direct_context_answer' in SEMANTIC_ROUTER_SYSTEM_PROMPT
+    assert '"Show my last transaction" -> domain_query' in SEMANTIC_ROUTER_SYSTEM_PROMPT
+    assert '"Show my beneficiaries" -> domain_beneficiary' in SEMANTIC_ROUTER_SYSTEM_PROMPT
+    assert '"Send 5k to Mum" -> domain_transfer' in SEMANTIC_ROUTER_SYSTEM_PROMPT
+    assert '"Buy 2k airtime for 08031234567" -> domain_airtime' in SEMANTIC_ROUTER_SYSTEM_PROMPT
+    assert '"Buy 1gb for me" -> domain_data' in SEMANTIC_ROUTER_SYSTEM_PROMPT
+    assert '"Send 10k to Mum and 5k to Gaines" -> planner_mixed' in SEMANTIC_ROUTER_SYSTEM_PROMPT
+    assert '"Split 20k between Mum and Dad" -> planner_mixed' in SEMANTIC_ROUTER_SYSTEM_PROMPT
+    assert '"Buy airtime and tell me my balance" -> planner_mixed' in SEMANTIC_ROUTER_SYSTEM_PROMPT
+    assert '"More" while viewing transactions -> domain_query with mode=continuation' in SEMANTIC_ROUTER_SYSTEM_PROMPT
+    assert '"send 10k to mum and show my last 3 credits" -> planner_mixed' in SEMANTIC_ROUTER_SYSTEM_PROMPT
 
 
-def test_turn_router_language_switch_contract_present() -> None:
-    """Turn-router contract must expose explicit language-switch request capture."""
-    assert "requested_language: English | Pidgin | Yoruba | Hausa | Igbo | null" in TURN_ROUTER_SYSTEM_PROMPT
-    assert "If user asks to switch language (for example, \"Can you switch to Pidgin?\", \"speak Yoruba now\"), set" in TURN_ROUTER_SYSTEM_PROMPT
-    assert '"Can you switch to Pidgin?"' in TURN_ROUTER_SYSTEM_PROMPT
-    assert '"speak Yoruba now"' in TURN_ROUTER_SYSTEM_PROMPT
-    assert "requested_language to the requested locale" in TURN_ROUTER_SYSTEM_PROMPT
-    assert "Do not apply cancellation/flow-guess logic for this request." in TURN_ROUTER_SYSTEM_PROMPT
-    assert "decision=respond_directly" in TURN_ROUTER_SYSTEM_PROMPT
+def test_semantic_router_language_switch_contract_present() -> None:
+    """Semantic-router contract must expose explicit language-switch request capture."""
+    assert "requested_language: English | Pidgin | Yoruba | Hausa | Igbo | null" in SEMANTIC_ROUTER_SYSTEM_PROMPT
+    assert "If user asks to switch language (for example, \"Can you switch to Pidgin?\", \"speak Yoruba now\"), set" in SEMANTIC_ROUTER_SYSTEM_PROMPT
+    assert '"Can you switch to Pidgin?"' in SEMANTIC_ROUTER_SYSTEM_PROMPT
+    assert '"speak Yoruba now"' in SEMANTIC_ROUTER_SYSTEM_PROMPT
+    assert "requested_language to the requested locale" in SEMANTIC_ROUTER_SYSTEM_PROMPT
+    assert "Do not apply cancellation/flow-guess logic for this request." in SEMANTIC_ROUTER_SYSTEM_PROMPT
+    assert "decision=direct_reply" in SEMANTIC_ROUTER_SYSTEM_PROMPT
+
+
+def test_semantic_router_pending_query_clarification_contract_present() -> None:
+    """Semantic-router prompt should route pending clarification answers back to query."""
+    assert "If the context shows a pending query clarification" in SEMANTIC_ROUTER_SYSTEM_PROMPT
+    assert 'pending query clarification + "last 3 days" -> domain_query with mode=continuation' in SEMANTIC_ROUTER_SYSTEM_PROMPT
+    assert 'pending query clarification + "this month" -> domain_query with mode=continuation' in SEMANTIC_ROUTER_SYSTEM_PROMPT
+
+
+def test_semantic_router_multilingual_query_examples_present() -> None:
+    """Semantic-router prompt should anchor multilingual query-first examples."""
+    assert '"Wetin be my income this month" -> domain_query' in SEMANTIC_ROUTER_SYSTEM_PROMPT
+    assert '"Fihan mi awon credit transactions mi fun osu yi" -> domain_query' in SEMANTIC_ROUTER_SYSTEM_PROMPT
+    assert '"Nawa na karba a wannan watan" -> domain_query' in SEMANTIC_ROUTER_SYSTEM_PROMPT
+    assert '"Ego ole ka m natara n\'onwa a" -> domain_query' in SEMANTIC_ROUTER_SYSTEM_PROMPT
+    assert '"Montre mes transactions credit de ce mois" -> domain_query' in SEMANTIC_ROUTER_SYSTEM_PROMPT
+    assert '"wetin be total" after a transaction list -> domain_query with mode=continuation' in (
+        SEMANTIC_ROUTER_SYSTEM_PROMPT
+    )
+    assert '"lapapo meloo" after a transaction list -> domain_query with mode=continuation' in (
+        SEMANTIC_ROUTER_SYSTEM_PROMPT
+    )
 
 
 def test_runtime_planner_prompt_is_compact_for_generic_turns() -> None:
@@ -219,7 +256,7 @@ def test_runtime_planner_prompt_is_compact_for_generic_turns() -> None:
     assert "schema" in profile
     assert "ex_common" in profile
     assert not bundles
-    assert set(expanded_bundles) == {"money_move", "query", "context", "executor_coverage_guard"}
+    assert set(expanded_bundles) == {"money_move", "context", "executor_coverage_guard"}
     assert len(runtime_prompt) <= PLANNER_PROMPT_BASELINE_RESULT.char_count
     assert len(runtime_prompt) < len(expanded_prompt)
 
@@ -258,17 +295,17 @@ def test_runtime_planner_prompt_adds_money_move_examples_when_relevant() -> None
     assert "R09_CONTEXT_OVERRIDE" in runtime_prompt
 
 
-def test_runtime_planner_prompt_adds_query_examples_when_relevant() -> None:
-    """Runtime prompt should include query examples and query-specific rule atoms for query turns."""
+def test_runtime_planner_prompt_omits_query_examples_when_query_signals_present() -> None:
+    """Planner prompt should stay lean even if query-related signals are present."""
     runtime_prompt, profile, bundles = _build_prompt(
         "How much did I spend last week?",
         "None",
         PlannerPromptSignals(query_session_active=True, recent_domain_focus="query"),
     )
-    assert "query" in bundles
-    assert "TARGETED EXAMPLES (QUERY)" in runtime_prompt
-    assert "R13_QUERY_CONTINUATION" in runtime_prompt
-    assert "ex_query" in profile
+    assert "query" not in bundles
+    assert "TARGETED EXAMPLES (QUERY)" not in runtime_prompt
+    assert "R13_QUERY_CONTINUATION" not in runtime_prompt
+    assert "ex_query" not in profile
 
 
 def test_runtime_planner_prompt_adds_context_examples_when_contextful() -> None:
@@ -282,3 +319,4 @@ def test_runtime_planner_prompt_adds_context_examples_when_contextful() -> None:
     assert "TARGETED EXAMPLES (CONTEXT)" in runtime_prompt
     assert "R15_RESUMPTION" in runtime_prompt
     assert "ex_context" in profile
+    assert 'Active transfer flow + "send it to her" -> send_money with selector reference.' in runtime_prompt

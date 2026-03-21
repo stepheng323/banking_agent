@@ -239,6 +239,32 @@ def test_router_and_user_state_render_from_shared_summary() -> None:
     assert "Beneficiaries:" in user_state_summary
 
 
+def test_router_context_includes_pending_query_clarification_hint() -> None:
+    summary = build_turn_context_summary(
+        OrchestratorState(
+            user_id="u_ctx_router_pending_1",
+            phone_number="2348000000314",
+            channel="whatsapp",
+            active_domain="query",
+        ),
+        query_session_snapshot={
+            "session_active": True,
+            "query_result": {"summary_text": "You spent ₦5,000 today."},
+            "pending_clarification": {
+                "original_query": "How much did I spend last",
+                "resolver_message": "What time period did you mean by last?",
+            },
+        },
+        query_session_source="redis",
+    )
+
+    router_context = build_router_context_from_summary(summary, expected_executors=["transfer"])
+
+    assert "QUERY_SESSION:" in router_context
+    assert 'Unresolved query: "How much did I spend last".' in router_context
+    assert 'Waiting for: "What time period did you mean by last?".' in router_context
+
+
 def test_router_context_ignores_inactive_query_session_for_continuation() -> None:
     summary = build_turn_context_summary(
         OrchestratorState(

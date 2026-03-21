@@ -91,6 +91,15 @@ PlannerResponseKey: TypeAlias = Literal[
 
 TransactionExecutor: TypeAlias = Literal["transfer", "airtime", "data"]
 BeneficiaryRouteHint: TypeAlias = Literal["beneficiary_list", "recipient_ranking", "none"]
+RouterDomainIntent: TypeAlias = Literal[
+    "query",
+    "account",
+    "support",
+    "beneficiary",
+    "transfer",
+    "airtime",
+    "data",
+]
 AccountActionHint: TypeAlias = Literal[
     "list",
     "list_accounts",
@@ -106,14 +115,24 @@ AccountActionHint: TypeAlias = Literal[
     "none",
 ]
 
-TurnRoutingDecision: TypeAlias = Literal[
-    "go_planner",
-    "respond_directly",
+SemanticRoutingDecision: TypeAlias = Literal[
+    "direct_reply",
     "direct_context_answer",
-    "query_continuation",
+    "domain_query",
+    "domain_account",
+    "domain_support",
+    "domain_beneficiary",
+    "domain_transfer",
+    "domain_airtime",
+    "domain_data",
+    "planner_mixed",
+    "planner_ambiguous",
+    "cancel",
 ]
 
-ContextFastpathSubtype: TypeAlias = Literal[
+SemanticRoutingMode: TypeAlias = Literal["new", "continuation", "quoted_replay", "active_flow_interrupt"]
+
+ContextReadSubtype: TypeAlias = Literal[
     "account_count",
     "linked_accounts_summary",
     "default_account_identity",
@@ -166,23 +185,31 @@ class InterruptRouteDecision(BaseModel):
     reason: str | None = Field(default=None, description="Short explanation for observability/debugging")
 
 
-class TurnRouteDecision(BaseModel):
-    """LLM decision for low-cost pre-planner routing."""
+class SemanticRouteDecision(BaseModel):
+    """LLM decision for first-pass semantic routing before planner-owned dispatch."""
 
-    decision: TurnRoutingDecision = Field(default="go_planner", description="Routing action before planner")
+    decision: SemanticRoutingDecision = Field(default="planner_ambiguous", description="Top-level routing action")
     confidence: float = Field(default=0.0, description="Confidence in routing decision (0.0-1.0)")
     detected_language: str | None = Field(default=None, description="Detected language for this turn")
     requested_language: str | None = Field(
         default=None,
         description="Explicit language requested for switch when user asks to change locale.",
     )
+    mode: SemanticRoutingMode | None = Field(
+        default=None,
+        description="Optional routing mode hint such as new-vs-continuation semantics.",
+    )
+    target_intent: RouterDomainIntent | None = Field(
+        default=None,
+        description="Optional normalized domain owner for observability/debugging.",
+    )
     response_key: PlannerResponseKey | None = Field(
         default=None,
-        description="Deterministic keyed response when decision=respond_directly",
+        description="Deterministic keyed response when decision=direct_reply or cancel",
     )
     response: str | None = Field(
         default=None,
-        description="Direct response text when decision=respond_directly or direct_context_answer",
+        description="Direct response text when decision=direct_reply or direct_context_answer",
     )
     expected_transaction_executors: list[TransactionExecutor] = Field(
         default_factory=list,
@@ -217,11 +244,11 @@ class PlannerOutput(BaseModel):
     detected_language: str | None = Field(
         default=None, description="Detected language: English, Yoruba, Hausa, Igbo, Pidgin, French"
     )
-    context_fastpath_subtype: ContextFastpathSubtype | None = Field(
+    context_read_subtype: ContextReadSubtype | None = Field(
         default=None,
         description=(
-            "Set only for context-backed read-only account/beneficiary asks that are eligible for fastpath; "
-            "otherwise null"
+            "Set only for context-backed read-only account/beneficiary asks that are eligible for planner-owned "
+            "context-read synthesis; otherwise null"
         ),
     )
     beneficiary_route: BeneficiaryRouteHint = Field(
@@ -235,7 +262,7 @@ class PlannerOutput(BaseModel):
     account_action_hint: AccountActionHint = Field(
         default="none",
         description=(
-            "Account action hint for context-fastpath disambiguation: "
+            "Account action hint for planner context-read disambiguation: "
             "list/list_accounts/count/check_balance/link/unlink/set_default, else none"
         ),
     )

@@ -3,7 +3,7 @@
 from typing import Any
 
 from apps.core.src.agent.orchestrator.models.state import OrchestratorState
-from apps.core.src.agent.orchestrator.nodes.planner_fastpath import TRANSACTION_EXECUTORS
+from apps.core.src.agent.orchestrator.nodes.planner_context_read import TRANSACTION_EXECUTORS
 from apps.core.src.agent.orchestrator.nodes.planner_postprocess import (
     _expand_underproduced_transfer_tasks,
     _strip_transactional_depends_on_edges,

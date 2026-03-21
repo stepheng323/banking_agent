@@ -71,7 +71,7 @@ async def test_planner_stashes_live_query_session_when_switching_to_transfer() -
             is_cancellation=False,
             is_confirmation=False,
             detected_language=None,
-            context_fastpath_subtype=None,
+            context_read_subtype=None,
             normalized_instruction="send 5k to Ada",
             tasks=[
                 PlannedTask(
@@ -124,7 +124,7 @@ async def test_planner_uses_stashed_query_session_context_when_redis_session_mis
             is_cancellation=False,
             is_confirmation=False,
             detected_language=None,
-            context_fastpath_subtype=None,
+            context_read_subtype=None,
             normalized_instruction="any credits?",
             tasks=[],
         )
@@ -172,7 +172,7 @@ async def test_planner_uses_stashed_query_session_context_without_redis_client()
             is_cancellation=False,
             is_confirmation=False,
             detected_language=None,
-            context_fastpath_subtype=None,
+            context_read_subtype=None,
             normalized_instruction="any credits?",
             tasks=[],
         )

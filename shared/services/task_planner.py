@@ -18,11 +18,11 @@ from shared.services.task_planner_router_prompts import (
     INTERRUPT_ROUTER_USER_PROMPT_TEMPLATE,
     QUOTED_REPLAY_SYSTEM_PROMPT,
     QUOTED_REPLAY_USER_PROMPT_TEMPLATE,
-    TURN_ROUTER_SYSTEM_PROMPT,
-    TURN_ROUTER_USER_PROMPT_TEMPLATE,
+    SEMANTIC_ROUTER_SYSTEM_PROMPT,
+    SEMANTIC_ROUTER_USER_PROMPT_TEMPLATE,
 )
 from shared.services.task_queue.service import TaskQueueService
-from shared.types.planner import InterruptRouteDecision, PlannerOutput, TurnRouteDecision
+from shared.types.planner import InterruptRouteDecision, PlannerOutput, SemanticRouteDecision
 from shared.types.quoted_replay import QuotedReplayInterpretation
 from shared.utils.logging import get_logger
 
@@ -47,7 +47,7 @@ class TaskPlanner:
         self.interrupt_llm = interrupt_llm or planner_llm
         self.uses_dedicated_interrupt_model = interrupt_llm is not None
         self.structured_planner = planner_llm.with_structured_output(PlannerOutput)
-        self.structured_turn_router = self.interrupt_llm.with_structured_output(TurnRouteDecision)
+        self.structured_semantic_router = self.interrupt_llm.with_structured_output(SemanticRouteDecision)
         self.structured_interrupt_router = self.interrupt_llm.with_structured_output(InterruptRouteDecision)
         self.structured_quoted_replay = planner_llm.with_structured_output(QuotedReplayInterpretation)
         self.task_queue_service = task_queue_service
@@ -114,23 +114,23 @@ class TaskPlanner:
         parsed = cast(PlannerOutput, PlannerOutput.model_validate(result))
         return normalize_planner_transaction_output(parsed, text)
 
-    async def route_turn(
+    async def route_semantic_turn(
         self,
         phone_number: str,
         text: str,
         context: str = "None",
         *,
-        path_label: str = "fast_path",
-    ) -> TurnRouteDecision:
-        """Lightweight pre-planner routing for ambiguous/meta turns."""
-        user_prompt = TURN_ROUTER_USER_PROMPT_TEMPLATE.format(
+        path_label: str = "direct_path",
+    ) -> SemanticRouteDecision:
+        """Top-level semantic routing before planner-owned dispatch."""
+        user_prompt = SEMANTIC_ROUTER_USER_PROMPT_TEMPLATE.format(
             phone_number=phone_number,
             user_message=text,
             context=context,
         )
-        system_prompt = TURN_ROUTER_SYSTEM_PROMPT
+        system_prompt = SEMANTIC_ROUTER_SYSTEM_PROMPT
         start = time.perf_counter()
-        result = await self.structured_turn_router.ainvoke(
+        result = await self.structured_semantic_router.ainvoke(
             [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
@@ -138,15 +138,15 @@ class TaskPlanner:
         )
         duration_ms = (time.perf_counter() - start) * 1000
         logger.info(
-            "preplanner_turn_router_llm_call",
+            "semantic_router_llm_call",
             duration_ms=round(duration_ms, 2),
             system_chars=len(system_prompt),
             user_chars=len(user_prompt),
         )
-        self._log_latency_span(span="turn_router_llm", duration_ms=duration_ms, path_label=path_label)
-        if isinstance(result, TurnRouteDecision):
+        self._log_latency_span(span="semantic_router_llm", duration_ms=duration_ms, path_label=path_label)
+        if isinstance(result, SemanticRouteDecision):
             return result
-        return cast(TurnRouteDecision, TurnRouteDecision.model_validate(result))
+        return cast(SemanticRouteDecision, SemanticRouteDecision.model_validate(result))
 
     async def route_pending_input(
         self,
@@ -229,7 +229,7 @@ __all__ = [
     "PlannerPromptSignals",
     "QUOTED_REPLAY_SYSTEM_PROMPT",
     "TaskPlanner",
-    "TURN_ROUTER_SYSTEM_PROMPT",
+    "SEMANTIC_ROUTER_SYSTEM_PROMPT",
     "build_planner_system_prompt",
     "refresh_planner_system_prompt",
     "OrchestratorTaskPlanner",

@@ -29,7 +29,7 @@ class _CancelPlanner:
             is_cancellation=True,
             is_confirmation=False,
             detected_language="English",
-            context_fastpath_subtype=None,
+            context_read_subtype=None,
             normalized_instruction="cancel",
             tasks=[],
         )

@@ -1,7 +1,7 @@
-"""Session Gate Node (Fast Path).
+"""Session Gate Node.
 
-Determines whether to skip the Planner LLM based on active session context.
-Implements deterministic routing for active sessions and query continuation.
+Applies deterministic guardrails, invokes the semantic router, and only falls through
+to planner for planner-owned routes.
 """
 
 import re
@@ -27,72 +27,13 @@ from apps.core.src.agent.orchestrator.nodes.planner_context import (
     build_router_context_from_summary,
     get_or_build_turn_context_summary,
 )
-from apps.core.src.agent.orchestrator.nodes.planner_fastpath import synthesize_account_fastpath_response
-from apps.core.src.agent.orchestrator.nodes.planner_query_shortcuts import (
-    resolve_query_shortcut_with_reason,
-)
-from apps.core.src.agent.orchestrator.nodes.response_classes import (
-    ResponseClass,
-    classify_read_only_response_class,
-    is_surface_response_class,
-)
 from shared.i18n import LocaleManager, render_locale_switched, render_message
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
 
 TRANSACTION_EXECUTORS = {"transfer", "airtime", "data"}
-TURN_ROUTER_MAX_WORDS = 8
-TURN_ROUTER_MAX_CHARS = 64
-TURN_ROUTER_MULTI_CLAUSE_MARKERS = (" and ", " & ", " then ", ",")
-PURE_QUERY_MULTI_CLAUSE_ALLOWED_PHRASES = {
-    "credits and debits",
-    "debits and credits",
-}
-TURN_ROUTER_META_PATTERNS = (
-    r"\b(hi|hello|hey|how far|good (morning|afternoon|evening))\b",
-    r"\b(who are you|what can you do|help me|can you help)\b",
-    r"\b(loan|borrow|hungry|starving|food|book (a|my)|flight|hotel)\b",
-    r"\b(thank you|thanks|sorry|get out|leave me)\b",
-    r"\b(cancel|abort|stop|nevermind|never mind)\b",
-)
-TURN_ROUTER_TRANSACTION_HINT_PATTERNS = (
-    r"\b(send|transfer|buy|airtime|data|bundle|pay|fund|withdraw)\b",
-)
-TURN_ROUTER_QUESTION_STARTERS = {
-    "can",
-    "do",
-    "does",
-    "did",
-    "is",
-    "are",
-    "was",
-    "were",
-    "what",
-    "which",
-    "who",
-    "how",
-    "where",
-    "when",
-    "why",
-    "any",
-    "more",
-    "still",
-}
-TURN_ROUTER_IMPERATIVE_ACTION_PREFIXES = (
-    "show ",
-    "list ",
-    "set ",
-    "unlink ",
-    "link ",
-    "delete ",
-    "remove ",
-)
-TURN_ROUTER_QUERY_SESSION_META_ALLOW_PATTERNS = (
-    r"\b(hi|hello|hey|how far|good (morning|afternoon|evening))\b",
-    r"\b(who are you|what can you do|help me|can you help)\b",
-    r"\b(thank you|thanks)\b",
-)
+SEMANTIC_ROUTER_MULTI_CLAUSE_MARKERS = (" and ", " & ", " then ", ",")
 DETERMINISTIC_GREETING_EXACT = {
     "hi",
     "hello",
@@ -102,51 +43,6 @@ DETERMINISTIC_GREETING_EXACT = {
     "good afternoon",
     "good evening",
 }
-TURN_ROUTER_CONTEXT_HINT_PATTERNS = (
-    r"\b(bank|account|acct|beneficiary|saved|debit|credit|transactions?|default|mandate|ready)\b",
-)
-PURE_QUERY_HISTORY_PATTERNS = (
-    re.compile(
-        r"\b(show|list|find|search|what(?:'s| is)|what was|give|tell)\s+(?:me\s+)?(?:my\s+)?"
-        r"(?:last|latest|most\s+recent|\d+\s+)?\s*"
-        r"(?:transaction|transactions|transfer|transfers|payment|payments|debit|debits|credit|credits|history|statement)\b",
-        re.IGNORECASE,
-    ),
-    re.compile(
-        r"\b(?:last|latest|most\s+recent)\s+"
-        r"(?:transaction|transfer|payment|debit|credit)\b",
-        re.IGNORECASE,
-    ),
-)
-PURE_QUERY_ANALYTICS_PATTERNS = (
-    re.compile(
-        r"\bhow\s+much\s+(?:did|do|have)\s+i\s+"
-        r"(?:spend|spent|pay|paid|send|sent|transfer|transferred|receive|received|earn|earned)\b",
-        re.IGNORECASE,
-    ),
-    re.compile(
-        r"\b(?:have|did)\s+i\s+"
-        r"(?:send|sent|transfer|transferred|spend|spent|pay|paid|receive|received)\b",
-        re.IGNORECASE,
-    ),
-    re.compile(r"\btotal\s+(?:spending|spent|received|income)\b", re.IGNORECASE),
-    re.compile(r"\bhow\s+many\s+transactions\b", re.IGNORECASE),
-)
-PURE_QUERY_BENEFICIARY_SUMMARY_PATTERNS = (
-    re.compile(r"\bwho\s+did\s+i\s+(?:send\s+money|transfer)\s+to\s+the\s+most\b", re.IGNORECASE),
-    re.compile(r"\btop\s+recipients?\b", re.IGNORECASE),
-    re.compile(r"\bmost\s+frequent\s+recipients?\b", re.IGNORECASE),
-)
-PURE_QUERY_MUTATION_HINT_PATTERNS = (
-    re.compile(r"\bsend\b", re.IGNORECASE),
-    re.compile(r"\bbuy\b", re.IGNORECASE),
-    re.compile(r"\bpay\b", re.IGNORECASE),
-    re.compile(r"\bfund\b", re.IGNORECASE),
-    re.compile(r"\bwithdraw\b", re.IGNORECASE),
-    re.compile(r"\bairtime\b", re.IGNORECASE),
-    re.compile(r"\bdata\b", re.IGNORECASE),
-    re.compile(r"\bbundle\b", re.IGNORECASE),
-)
 ACCOUNT_BALANCE_REQUEST_PATTERNS = (
     r"\bbalance\b",
     r"\baccount\s+balance\b",
@@ -155,10 +51,10 @@ ACCOUNT_BALANCE_REQUEST_PATTERNS = (
     r"\bhow\s+much\s+do\s+i\s+have\b",
     r"\bhow\s+much\s+is\s+in\s+my\s+account\b",
 )
-BALANCE_FASTPATH_TRANSACTION_HINT_PATTERNS = (
+BALANCE_DIRECT_TRANSACTION_HINT_PATTERNS = (
     r"\b(send|transfer|pay|buy|airtime|data|bundle|fund|withdraw)\b",
 )
-BALANCE_FASTPATH_CANCEL_PREFIX_RE = re.compile(
+BALANCE_DIRECT_CANCEL_PREFIX_RE = re.compile(
     r"^(?:cancel|abort|stop|nevermind|never\s+mind)(?:\s+(?:and|then))?\s+",
     re.IGNORECASE,
 )
@@ -301,21 +197,12 @@ class BeneficiarySuggestionDecision:
     reason: str = "unknown"
 
 
-def _next_fast_query_task_id(existing_tasks: dict[str, TaskSpec]) -> str:
+def _next_direct_account_task_id(existing_tasks: dict[str, TaskSpec]) -> str:
     idx = 1
-    task_id = "fast_query_resume"
+    task_id = "direct_account_balance"
     while task_id in existing_tasks:
         idx += 1
-        task_id = f"fast_query_resume_{idx}"
-    return task_id
-
-
-def _next_fast_account_task_id(existing_tasks: dict[str, TaskSpec]) -> str:
-    idx = 1
-    task_id = "fast_account_balance"
-    while task_id in existing_tasks:
-        idx += 1
-        task_id = f"fast_account_balance_{idx}"
+        task_id = f"direct_account_balance_{idx}"
     return task_id
 
 
@@ -328,6 +215,55 @@ def _next_direct_query_task_id(existing_tasks: dict[str, TaskSpec]) -> str:
     return task_id
 
 
+def _next_direct_domain_task_id(existing_tasks: dict[str, TaskSpec], domain: str) -> str:
+    idx = 1
+    task_id = f"direct_{domain}"
+    while task_id in existing_tasks:
+        idx += 1
+        task_id = f"direct_{domain}_{idx}"
+    return task_id
+
+
+def _semantic_route_decision(route: Any) -> str | None:
+    decision = str(getattr(route, "decision", "") or "")
+    return decision or None
+
+
+def _semantic_route_mode(route: Any) -> str | None:
+    mode = getattr(route, "mode", None)
+    if isinstance(mode, str) and mode:
+        return mode
+    return None
+
+
+def _build_direct_domain_task(
+    *,
+    state: OrchestratorState,
+    domain: Literal["query", "account", "support", "beneficiary", "transfer", "airtime", "data"],
+    mode: str | None = None,
+) -> tuple[str, TaskSpec]:
+    if domain == "query":
+        task_id = _next_direct_query_task_id(state.tasks)
+    else:
+        task_id = _next_direct_domain_task_id(state.tasks, domain)
+
+    payload: dict[str, Any] = {
+        "message": state.last_message_text,
+        "instruction": state.last_message_text,
+    }
+    if domain == "query":
+        if mode == "new":
+            payload["force_new_query"] = True
+
+    spec = TaskSpec(
+        id=task_id,
+        type=domain,
+        stage=TaskStage.DRAFT,
+        payload=payload,
+    )
+    return task_id, spec
+
+
 def _locale_update(state: OrchestratorState, locale: str) -> dict[str, Any]:
     loaded_context = dict(state.loaded_context or {})
     loaded_context["language"] = locale
@@ -335,43 +271,9 @@ def _locale_update(state: OrchestratorState, locale: str) -> dict[str, Any]:
     return {"loaded_context": loaded_context}
 
 
-def _should_invoke_turn_router(message_text: str) -> bool:
+def _should_invoke_semantic_router(message_text: str) -> bool:
     normalized = re.sub(r"\s+", " ", message_text.strip().lower())
-    if not normalized:
-        return False
-    if _is_account_balance_request(normalized):
-        return False
-    has_multi_clause = any(marker in normalized for marker in TURN_ROUTER_MULTI_CLAUSE_MARKERS)
-    has_money_move = bool(re.search(r"\b(send|transfer|pay|fund)\b", normalized))
-    has_airtime_or_data = bool(re.search(r"\b(buy|airtime|data|bundle)\b", normalized))
-    looks_mixed_transaction = has_multi_clause and has_money_move and has_airtime_or_data
-    if looks_mixed_transaction:
-        return True
-    if any(char.isdigit() for char in normalized):
-        return False
-    if any(marker in normalized for marker in TURN_ROUTER_MULTI_CLAUSE_MARKERS):
-        return False
-    if len(normalized) > TURN_ROUTER_MAX_CHARS or len(normalized.split()) > TURN_ROUTER_MAX_WORDS:
-        return False
-    if any(re.search(pattern, normalized) for pattern in TURN_ROUTER_TRANSACTION_HINT_PATTERNS):
-        return False
-    if normalized.startswith(TURN_ROUTER_IMPERATIVE_ACTION_PREFIXES):
-        return False
-    if normalized.endswith("?"):
-        return True
-    first_word = normalized.split()[0] if normalized else ""
-    if first_word in TURN_ROUTER_QUESTION_STARTERS:
-        return True
-    if any(re.search(pattern, normalized) for pattern in TURN_ROUTER_CONTEXT_HINT_PATTERNS):
-        return True
-    return any(re.search(pattern, normalized) for pattern in TURN_ROUTER_META_PATTERNS)
-
-
-def _looks_like_turn_router_meta(message_text: str) -> bool:
-    normalized = re.sub(r"\s+", " ", message_text.strip().lower())
-    if not normalized:
-        return False
-    return any(re.search(pattern, normalized) for pattern in TURN_ROUTER_META_PATTERNS)
+    return bool(normalized)
 
 
 def _deterministic_meta_response_key(message_text: str) -> str | None:
@@ -381,7 +283,7 @@ def _deterministic_meta_response_key(message_text: str) -> str | None:
     return None
 
 
-def _build_turn_router_context(summary: TurnContextSummary, expected_executors: list[str]) -> str:
+def _build_semantic_router_context(summary: TurnContextSummary, expected_executors: list[str]) -> str:
     return build_router_context_from_summary(
         summary,
         expected_executors=expected_executors,
@@ -392,63 +294,10 @@ def _is_account_balance_request(message_text: str) -> bool:
     normalized = re.sub(r"\s+", " ", message_text.strip().lower())
     if not normalized:
         return False
-    candidate = BALANCE_FASTPATH_CANCEL_PREFIX_RE.sub("", normalized)
-    if any(re.search(pattern, candidate) for pattern in BALANCE_FASTPATH_TRANSACTION_HINT_PATTERNS):
+    candidate = BALANCE_DIRECT_CANCEL_PREFIX_RE.sub("", normalized)
+    if any(re.search(pattern, candidate) for pattern in BALANCE_DIRECT_TRANSACTION_HINT_PATTERNS):
         return False
     return any(re.search(pattern, candidate) for pattern in ACCOUNT_BALANCE_REQUEST_PATTERNS)
-
-
-def _looks_like_pure_query_turn(message_text: str) -> bool:
-    normalized = re.sub(r"\s+", " ", message_text.strip().lower())
-    if not normalized:
-        return False
-    if _is_account_balance_request(normalized):
-        return False
-    if any(re.search(pattern, normalized) for pattern in EXPLICIT_CANCEL_PATTERNS):
-        return False
-
-    history_like = any(pattern.search(normalized) for pattern in PURE_QUERY_HISTORY_PATTERNS)
-    analytics_like = any(pattern.search(normalized) for pattern in PURE_QUERY_ANALYTICS_PATTERNS)
-    ranking_like = any(pattern.search(normalized) for pattern in PURE_QUERY_BENEFICIARY_SUMMARY_PATTERNS)
-    query_like = history_like or analytics_like or ranking_like
-    if not query_like:
-        return False
-    has_mutation_hint = any(pattern.search(normalized) for pattern in PURE_QUERY_MUTATION_HINT_PATTERNS)
-    analytics_query_frame = normalized.startswith(("how much ", "have i ", "did i "))
-
-    has_multi_clause = any(marker in normalized for marker in TURN_ROUTER_MULTI_CLAUSE_MARKERS)
-    if has_multi_clause and not any(phrase in normalized for phrase in PURE_QUERY_MULTI_CLAUSE_ALLOWED_PHRASES):
-        if has_mutation_hint and not (analytics_like and analytics_query_frame):
-            return False
-
-    if not ranking_like and has_mutation_hint and not (analytics_like and analytics_query_frame):
-        return False
-
-    return True
-
-
-def _looks_like_pending_query_clarification_followup(message_text: str) -> bool:
-    normalized = re.sub(r"\s+", " ", message_text.strip().lower()).rstrip("?.!,")
-    if not normalized:
-        return False
-    if _is_explicit_meta_turn(normalized):
-        return False
-    if _is_account_balance_request(normalized):
-        return False
-    if any(re.search(pattern, normalized) for pattern in TURN_ROUTER_TRANSACTION_HINT_PATTERNS):
-        return False
-    if normalized in {
-        "today",
-        "yesterday",
-        "this week",
-        "last week",
-        "this month",
-        "last month",
-        "this year",
-        "last year",
-    }:
-        return True
-    return re.fullmatch(r"(last|past)\s+\d{1,3}\s+(day|days|week|weeks|month|months)", normalized) is not None
 
 
 def _has_explicit_cancel(message_text: str) -> bool:
@@ -456,75 +305,6 @@ def _has_explicit_cancel(message_text: str) -> bool:
     if not normalized:
         return False
     return any(re.search(pattern, normalized) for pattern in EXPLICIT_CANCEL_PATTERNS)
-
-
-def _is_explicit_meta_turn(message_text: str) -> bool:
-    normalized = re.sub(r"\s+", " ", message_text.strip().lower())
-    if not normalized:
-        return False
-    return any(re.search(pattern, normalized) for pattern in TURN_ROUTER_QUERY_SESSION_META_ALLOW_PATTERNS)
-
-
-def _should_ignore_query_session_direct_response(
-    *,
-    message_text: str,
-    route: Any,
-    query_session_snapshot: dict[str, Any] | None,
-) -> bool:
-    if not isinstance(query_session_snapshot, dict) or not query_session_snapshot.get("session_active"):
-        return False
-    if getattr(route, "decision", None) != "respond_directly":
-        return False
-
-    response_key = str(getattr(route, "response_key", "") or "")
-    if response_key == "planner.cancelled":
-        return not _has_explicit_cancel(message_text)
-    if response_key in {
-        "conversational.checkin",
-        "conversational.identity",
-        "conversational.brand_origin",
-        "conversational.capability_question",
-    }:
-        return not _is_explicit_meta_turn(message_text)
-    return False
-
-
-def _should_handoff_active_query_session_to_query_worker(
-    *,
-    message_text: str,
-    loaded_context: dict[str, Any] | None,
-    query_session_snapshot: dict[str, Any] | None,
-    has_query_session_stack: bool,
-) -> tuple[bool, str, ResponseClass | None]:
-    session_active = bool(
-        (
-            isinstance(query_session_snapshot, dict)
-            and query_session_snapshot.get("session_active")
-        )
-        or has_query_session_stack
-    )
-    if not session_active:
-        return False, "no_active_query_session", None
-    if isinstance(query_session_snapshot, dict) and query_session_snapshot.get("pending_clarification"):
-        return False, "pending_clarification_active", None
-    if _looks_like_turn_router_meta(message_text):
-        return False, "explicit_meta_turn", None
-    if _is_account_balance_request(message_text):
-        return False, "account_balance_request", None
-
-    normalized = re.sub(r"\s+", " ", message_text.strip().lower())
-    if any(re.search(pattern, normalized) for pattern in TURN_ROUTER_TRANSACTION_HINT_PATTERNS):
-        return False, "transaction_hint", None
-
-    response_class = classify_read_only_response_class(
-        message_text,
-        loaded_context=loaded_context,
-        query_session_snapshot=query_session_snapshot,
-    )
-    if response_class is not None:
-        return False, f"response_class:{response_class}", response_class
-
-    return True, "active_query_session_semantic_handoff", None
 
 
 def _build_query_session_exit_updates(
@@ -540,53 +320,6 @@ def _build_query_session_exit_updates(
         "session_stack": remaining_sessions,
         "active_domain": None if state.active_domain == "query" else state.active_domain,
     }
-
-
-def _should_block_direct_router_surface_response(
-    *,
-    message_text: str,
-    route: Any,
-    loaded_context: dict[str, Any] | None,
-    query_session_snapshot: dict[str, Any] | None,
-) -> bool:
-    if getattr(route, "decision", None) not in {"respond_directly", "direct_context_answer"}:
-        return False
-    response_class = classify_read_only_response_class(
-        message_text,
-        loaded_context=loaded_context,
-        query_session_snapshot=query_session_snapshot,
-    )
-    return is_surface_response_class(response_class)
-
-
-def _should_ignore_turn_router_direct_clarify_for_unexpected_question(
-    *,
-    message_text: str,
-    route: Any,
-) -> bool:
-    if getattr(route, "decision", None) not in {"respond_directly", "direct_context_answer"}:
-        return False
-
-    response_key = str(getattr(route, "response_key", "") or "")
-    response = str(getattr(route, "response", "") or "").strip()
-    if response_key not in {"", "conversational.clarify"}:
-        return False
-    if response:
-        return False
-
-    normalized = re.sub(r"\s+", " ", message_text.strip().lower())
-    if not normalized:
-        return False
-    if _has_explicit_cancel(normalized):
-        return False
-    if _is_account_balance_request(normalized):
-        return False
-    if any(re.search(pattern, normalized) for pattern in TURN_ROUTER_TRANSACTION_HINT_PATTERNS):
-        return False
-
-    first_word = normalized.split()[0] if normalized else ""
-    return normalized.endswith("?") or first_word in TURN_ROUTER_QUESTION_STARTERS
-
 
 def _normalize_suggestion_text(value: str) -> str:
     return re.sub(r"\s+", " ", value.strip().lower())
@@ -664,7 +397,7 @@ def _is_bare_alias_candidate(message_text: str, alias: str) -> bool:
     normalized = _normalize_suggestion_text(message_text)
     if not normalized:
         return False
-    if any(marker in normalized for marker in TURN_ROUTER_MULTI_CLAUSE_MARKERS):
+    if any(marker in normalized for marker in SEMANTIC_ROUTER_MULTI_CLAUSE_MARKERS):
         return False
     words = alias.split()
     if not words or len(words) > _BENEFICIARY_BARE_ALIAS_MAX_WORDS:
@@ -709,22 +442,36 @@ def _resolve_beneficiary_suggestion_reply(
     return BeneficiarySuggestionDecision(action="dismiss", reason="ambiguous_dismiss")
 
 
-def _next_fast_beneficiary_task_id(existing_tasks: dict[str, TaskSpec]) -> str:
+def _next_direct_beneficiary_task_id(existing_tasks: dict[str, TaskSpec]) -> str:
     idx = 1
-    task_id = "fast_beneficiary_save"
+    task_id = "direct_beneficiary_save"
     while task_id in existing_tasks:
         idx += 1
-        task_id = f"fast_beneficiary_save_{idx}"
+        task_id = f"direct_beneficiary_save_{idx}"
     return task_id
 
 
-async def session_gate_fastpath(state: OrchestratorState, config: RunnableConfig) -> dict[str, Any]:
-    """
-    Fast Path Gate.
+def _route_observability_updates(
+    *,
+    owner: str,
+    decision: str,
+    target_domain: str | None = None,
+    mode: str | None = None,
+) -> dict[str, Any]:
+    return {
+        "routing_owner": owner,
+        "routing_decision": decision,
+        "routing_target_domain": target_domain,
+        "routing_mode": mode,
+    }
 
-    1. Check for Active Sessions (Input Interrupt).
-    2. Check for Query Continuation.
-    3. Fallback to Planner (LLM-first for conversational/meta routing).
+
+async def session_gate_direct_path(state: OrchestratorState, config: RunnableConfig) -> dict[str, Any]:
+    """
+    Direct-path gate.
+
+    Applies deterministic guardrails first, then delegates first-pass semantic routing
+    to the semantic router, and falls through to planner only for planner-owned routes.
     """
 
     task_planner = config["configurable"].get("task_planner")
@@ -748,19 +495,22 @@ async def session_gate_fastpath(state: OrchestratorState, config: RunnableConfig
             await clear_query_session(redis_client, state.phone_number)
             locale = LocaleManager.normalize((state.loaded_context or {}).get("language")).value
             return {
-                "fast_path_triggered": True,
+                "direct_path_triggered": True,
                 "final_response": render_message("query.session.goodbye", locale),
+                **_route_observability_updates(owner="guardrail", decision="cancel"),
             }
         if has_cancelable_state(state):
             cleanup_updates = await build_cancellation_reset_updates(state, redis_client)
             return {
                 **cleanup_updates,
-                "fast_path_triggered": True,
+                "direct_path_triggered": True,
                 "final_response": cancelled_message(state),
+                **_route_observability_updates(owner="guardrail", decision="cancel"),
             }
         return {
-            "fast_path_triggered": True,
+            "direct_path_triggered": True,
             "final_response": clarify_message(state),
+            **_route_observability_updates(owner="guardrail", decision="cancel"),
         }
 
     if not state.pending_interrupt and redis_client:
@@ -795,7 +545,7 @@ async def session_gate_fastpath(state: OrchestratorState, config: RunnableConfig
                 alias_present=bool(decision.alias),
             )
             if decision.action in {"save_default", "save_alias"}:
-                task_id = _next_fast_beneficiary_task_id(state.tasks)
+                task_id = _next_direct_beneficiary_task_id(state.tasks)
                 task_payload: dict[str, Any] = {
                     "action": "save_beneficiary",
                     "instruction": state.last_message_text,
@@ -815,7 +565,13 @@ async def session_gate_fastpath(state: OrchestratorState, config: RunnableConfig
                     "current_wave_index": 0,
                     "planner_output": None,
                     "pending_interrupt": None,
-                    "fast_path_triggered": True,
+                    "direct_path_triggered": True,
+                    **_route_observability_updates(
+                        owner="guardrail",
+                        decision="beneficiary_save",
+                        target_domain="beneficiary",
+                        mode="new",
+                    ),
                 }
 
             try:
@@ -830,7 +586,7 @@ async def session_gate_fastpath(state: OrchestratorState, config: RunnableConfig
         if _has_explicit_cancel(message_text):
             cleanup_updates = await build_cancellation_reset_updates(state, redis_client)
 
-        task_id = _next_fast_account_task_id(state.tasks)
+        task_id = _next_direct_account_task_id(state.tasks)
         spec = TaskSpec(
             id=task_id,
             type="account",
@@ -841,7 +597,7 @@ async def session_gate_fastpath(state: OrchestratorState, config: RunnableConfig
                 "instruction": state.last_message_text,
             },
         )
-        logger.info("gate_fast_account_balance", task_id=task_id, with_cleanup=bool(cleanup_updates))
+        logger.info("gate_direct_account_balance", task_id=task_id, with_cleanup=bool(cleanup_updates))
         return {
             **cleanup_updates,
             "tasks": {task_id: spec},
@@ -849,75 +605,38 @@ async def session_gate_fastpath(state: OrchestratorState, config: RunnableConfig
             "current_wave_index": 0,
             "planner_output": None,
             "pending_interrupt": None,
-            "fast_path_triggered": True,
+            "direct_path_triggered": True,
+            **_route_observability_updates(
+                owner="guardrail",
+                decision="balance_direct",
+                target_domain="account",
+                mode="new",
+            ),
         }
-
-    if not state.pending_interrupt and session:
-        message_lowered = message_text.lower()
-        logger.info("gate_tier0_check", domain=session.domain, input_fragment=message_lowered[:20])
-
-        # --- 3. Fast Query Resume ---
-        if session.domain == "query":
-            shortcut_decision, shortcut_reason = resolve_query_shortcut_with_reason(
-                message_text,
-                LocaleManager.normalize((state.loaded_context or {}).get("language")).value,
-            )
-            logger.info(
-                "gate_query_shortcut_resolution",
-                source="session_stack",
-                shortcut_kind=shortcut_decision.kind if shortcut_decision else None,
-                shortcut_action=shortcut_decision.action if shortcut_decision else None,
-                shortcut_reason=shortcut_reason,
-            )
-
-            if shortcut_decision is not None:
-                logger.info(
-                    "fast_path_query_match",
-                    shortcut_kind=shortcut_decision.kind,
-                    shortcut_action=shortcut_decision.action,
-                )
-
-                task_id = _next_fast_query_task_id(state.tasks)
-                spec = TaskSpec(
-                    id=task_id,
-                    type="query",
-                    stage=TaskStage.DRAFT,
-                    payload={
-                        "message": state.last_message_text,
-                        "is_fast_path": True,
-                    },
-                )
-
-                return {
-                    "tasks": {task_id: spec},
-                    "waves": [[task_id]],
-                    "current_wave_index": 0,
-                    "planner_output": None,
-                    "fast_path_triggered": True,
-                }
 
     # --- PIN callback with no active session (checkpoint was cleaned) ---
     if state.pin_verified and not state.pending_interrupt:
         locale = LocaleManager.normalize((state.loaded_context or {}).get("language")).value
         logger.warning("gate_pin_verified_no_session", reason="checkpoint_cleaned")
         return {
-            "fast_path_triggered": True,
+            "direct_path_triggered": True,
             "final_response": render_message(
                 "orchestrator.session.expired_pin",
                 locale,
                 fallback_en="Your transaction session has expired. Please start a new transaction.",
             ),
+            **_route_observability_updates(owner="guardrail", decision="expired_pin_session"),
         }
 
     summary_path_label = (
         "interrupt_path"
         if state.pending_interrupt
         else (
-            "fast_path"
+            "direct_path"
             if (
                 not state.has_quote
-                and callable(getattr(task_planner, "route_turn", None))
-                and _should_invoke_turn_router(message_text)
+                and callable(getattr(task_planner, "route_semantic_turn", None))
+                and _should_invoke_semantic_router(message_text)
             )
             else "planner_path"
         )
@@ -934,19 +653,12 @@ async def session_gate_fastpath(state: OrchestratorState, config: RunnableConfig
         isinstance(query_session_snapshot, dict) and query_session_snapshot.get("session_active")
     )
     has_query_session_stack = bool(session and session.domain == "query")
-    shortcut_decision, shortcut_reason = resolve_query_shortcut_with_reason(
-        message_text,
-        LocaleManager.normalize((state.loaded_context or {}).get("language")).value,
-    )
     logger.info(
         "gate_query_routing_breadcrumb",
         path="query_session_context",
         has_active_query_session=has_active_query_session or has_query_session_stack,
         query_session_source=query_session_source,
         query_session_stack=has_query_session_stack,
-        shortcut_kind=shortcut_decision.kind if shortcut_decision else None,
-        shortcut_action=shortcut_decision.action if shortcut_decision else None,
-        shortcut_reason=shortcut_reason,
     )
 
     if not state.pending_interrupt and not state.has_quote and not has_active_query_session:
@@ -955,128 +667,53 @@ async def session_gate_fastpath(state: OrchestratorState, config: RunnableConfig
             locale = LocaleManager.normalize((state.loaded_context or {}).get("language")).value
             return {
                 **summary_updates,
-                "fast_path_triggered": True,
+                "direct_path_triggered": True,
                 "final_response": render_message(response_key, locale),
                 "semantic_path_shape": "meta_direct",
+                **_route_observability_updates(owner="guardrail", decision="meta_direct"),
             }
-
-    if (
-        not state.pending_interrupt
-        and not state.has_quote
-        and isinstance(query_session_snapshot, dict)
-        and query_session_snapshot.get("session_active")
-        and query_session_snapshot.get("pending_clarification")
-        and _looks_like_pending_query_clarification_followup(message_text)
-    ):
-        task_id = _next_direct_query_task_id(state.tasks)
-        spec = TaskSpec(
-            id=task_id,
-            type="query",
-            stage=TaskStage.DRAFT,
-            payload={
-                "message": state.last_message_text,
-            },
-        )
-        logger.info("gate_pending_query_clarification_followup_bypass", task_id=task_id)
-        return {
-            **summary_updates,
-            "tasks": {task_id: spec},
-            "waves": [[task_id]],
-            "current_wave_index": 0,
-            "planner_output": None,
-            "fast_path_triggered": True,
-            "semantic_path_shape": "query_direct",
-        }
-
-    if not state.pending_interrupt and not state.has_quote:
-        should_handoff, handoff_reason, response_class = _should_handoff_active_query_session_to_query_worker(
-            message_text=message_text,
-            loaded_context=state.loaded_context,
-            query_session_snapshot=query_session_snapshot,
-            has_query_session_stack=has_query_session_stack,
-        )
-        logger.info(
-            "gate_query_routing_breadcrumb",
-            path="active_query_session_handoff_check",
-            has_active_query_session=has_active_query_session or has_query_session_stack,
-            query_session_source=query_session_source,
-            handoff_to_query=should_handoff,
-            handoff_reason=handoff_reason,
-            response_class=response_class,
-        )
-        if should_handoff:
-            task_id = _next_direct_query_task_id(state.tasks)
-            spec = TaskSpec(
-                id=task_id,
-                type="query",
-                stage=TaskStage.DRAFT,
-                payload={
-                    "message": state.last_message_text,
-                },
-            )
-            logger.info("gate_active_query_session_handoff", task_id=task_id, reason=handoff_reason)
-            return {
-                **summary_updates,
-                "tasks": {task_id: spec},
-                "waves": [[task_id]],
-                "current_wave_index": 0,
-                "planner_output": None,
-                "fast_path_triggered": True,
-                "semantic_path_shape": "query_active_session",
-            }
-
-    if not state.pending_interrupt and not state.has_quote and _looks_like_pure_query_turn(message_text):
-        task_id = _next_direct_query_task_id(state.tasks)
-        spec = TaskSpec(
-            id=task_id,
-            type="query",
-            stage=TaskStage.DRAFT,
-            payload={
-                "message": state.last_message_text,
-                "force_new_query": True,
-            },
-        )
-        logger.info("gate_direct_query_bypass", task_id=task_id)
-        return {
-            **summary_updates,
-            "tasks": {task_id: spec},
-            "waves": [[task_id]],
-            "current_wave_index": 0,
-            "planner_output": None,
-            "fast_path_triggered": True,
-            "semantic_path_shape": "query_direct",
-        }
 
     if (
         not state.has_quote
-        and callable(getattr(task_planner, "route_turn", None))
-        and (not state.pending_interrupt and _should_invoke_turn_router(message_text) or state.pending_interrupt)
+        and callable(getattr(task_planner, "route_semantic_turn", None))
+        and (
+            state.pending_interrupt is not None
+            or (
+                not state.pending_interrupt
+                and _should_invoke_semantic_router(message_text)
+            )
+        )
     ):
         try:
-            route_context = _build_turn_router_context(turn_summary, state.preplanner_expected_transaction_executors)
+            route_context = _build_semantic_router_context(
+                turn_summary,
+                state.preplanner_expected_transaction_executors,
+            )
             try:
-                route = await task_planner.route_turn(
+                route = await task_planner.route_semantic_turn(
                     state.phone_number,
                     message_text,
                     context=route_context,
-                    path_label="fast_path",
+                    path_label="direct_path",
                 )
             except TypeError:
-                route = await task_planner.route_turn(
+                route = await task_planner.route_semantic_turn(
                     state.phone_number,
                     message_text,
                     context=route_context,
                 )
         except Exception as exc:
-            logger.warning("gate_turn_router_failed", error=str(exc))
+            logger.warning("gate_semantic_router_failed", error=str(exc))
             route = None
 
         if route is not None:
+            canonical_decision = _semantic_route_decision(route)
+            canonical_mode = _semantic_route_mode(route)
             requested_locale = getattr(route, "requested_language", None)
             if requested_locale:
                 resolved_locale = LocaleManager.parse_locale_name(requested_locale)
                 if resolved_locale is None:
-                    logger.info("gate_locale_switch_fastpath_invalid", requested_locale=requested_locale)
+                    logger.info("gate_semantic_router_locale_switch_invalid", requested_locale=requested_locale)
                 else:
                     if redis_client:
                         resolved = await LocaleManager.set_locale(
@@ -1087,15 +724,17 @@ async def session_gate_fastpath(state: OrchestratorState, config: RunnableConfig
                         next_locale = resolved.value
                     else:
                         next_locale = resolved_locale.value
-                    logger.info("gate_locale_switch_fastpath", locale=next_locale)
+                    logger.info("gate_semantic_router_locale_switch", locale=next_locale)
                     return {
-                        "fast_path_triggered": True,
+                        "direct_path_triggered": True,
                         "final_response": render_locale_switched(next_locale),
                         **_locale_update(state, next_locale),
+                        **_route_observability_updates(
+                            owner="semantic_router",
+                            decision=canonical_decision or "direct_reply",
+                            mode=canonical_mode,
+                        ),
                     }
-
-            if state.pending_interrupt:
-                route = None
 
             expected_executors = [
                 str(item)
@@ -1106,69 +745,41 @@ async def session_gate_fastpath(state: OrchestratorState, config: RunnableConfig
             if expected_executors:
                 updates["preplanner_expected_transaction_executors"] = expected_executors
 
-            if _should_ignore_query_session_direct_response(
-                message_text=message_text,
-                route=route,
-                query_session_snapshot=query_session_snapshot,
-            ):
-                logger.info(
-                    "gate_turn_router_query_session_direct_response_ignored",
-                    response_key=getattr(route, "response_key", None),
-                )
+            if state.pending_interrupt:
                 route = None
+                canonical_decision = None
+                canonical_mode = None
 
-            if route is not None and _should_block_direct_router_surface_response(
-                message_text=message_text,
-                route=route,
-                loaded_context=state.loaded_context,
-                query_session_snapshot=query_session_snapshot,
-            ):
-                logger.info(
-                    "gate_turn_router_surface_response_blocked",
-                    decision=getattr(route, "decision", None),
-                    response_key=getattr(route, "response_key", None),
-                )
-                route = None
-
-            if route is not None and _should_ignore_turn_router_direct_clarify_for_unexpected_question(
-                message_text=message_text,
-                route=route,
-            ):
-                logger.info(
-                    "unexpected_turn_route_breadcrumb",
-                    user_turn_kind="unexpected_question",
-                    active_session_present=bool(state.session_stack),
-                    selected_route="planner",
-                    route_reason="turn_router_direct_clarify_demoted",
-                    policy_blocked=False,
-                    fallback_path="turn_router_demoted_to_planner",
-                )
-                route = None
-
-            if route is not None and route.decision in {"respond_directly", "direct_context_answer"}:
+            if route is not None and canonical_decision == "cancel":
                 locale = LocaleManager.normalize((state.loaded_context or {}).get("language")).value
                 if route.detected_language:
                     locale = LocaleManager.from_detection(route.detected_language).value
                     updates.update(_locale_update(state, locale))
-                account_fastpath_override = None
-                if route.decision == "respond_directly":
-                    account_fastpath_override = synthesize_account_fastpath_response(
-                        state,
-                        "account_linked_bank_existence_check",
-                        message_text,
-                        locale,
-                    )
-                if account_fastpath_override:
-                    text = account_fastpath_override
-                    logger.info(
-                        "gate_turn_router_meta_override_with_account_fastpath",
-                        response_key=route.response_key,
-                        locale=locale,
-                    )
+                if has_cancelable_state(state):
+                    text = cancelled_message(state, locale)
+                    updates.update(await build_cancellation_reset_updates(state, redis_client))
+                else:
+                    text = clarify_message(state, locale)
+                return {
+                    **summary_updates,
+                    "direct_path_triggered": True,
+                    "final_response": text,
+                    "semantic_path_shape": "semantic_router_direct",
+                    **_route_observability_updates(
+                        owner="semantic_router",
+                        decision=canonical_decision,
+                        mode=canonical_mode,
+                    ),
+                    **updates,
+                }
+
+            if route is not None and canonical_decision in {"direct_reply", "direct_context_answer"}:
+                locale = LocaleManager.normalize((state.loaded_context or {}).get("language")).value
+                if route.detected_language:
+                    locale = LocaleManager.from_detection(route.detected_language).value
+                    updates.update(_locale_update(state, locale))
                 if route.response_key:
-                    if account_fastpath_override:
-                        pass
-                    elif route.response_key == "conversational.out_of_scope":
+                    if route.response_key == "conversational.out_of_scope":
                         text = format_out_of_scope_reply(locale, route.response)
                     elif route.response_key == "planner.cancelled":
                         if has_cancelable_state(state):
@@ -1200,55 +811,93 @@ async def session_gate_fastpath(state: OrchestratorState, config: RunnableConfig
                         had_pending_clarification=had_pending_query_clarification,
                     )
                 logger.info(
-                    "gate_turn_router_direct_response",
-                    decision=route.decision,
+                    "gate_semantic_router_direct_response",
+                    decision=canonical_decision,
                     response_key=route.response_key,
                     locale=locale,
                 )
                 return {
                     **summary_updates,
-                    "fast_path_triggered": True,
+                    "direct_path_triggered": True,
                     "final_response": text,
-                    "semantic_path_shape": "turn_router_only",
+                    "semantic_path_shape": "semantic_router_direct",
+                    **_route_observability_updates(
+                        owner="semantic_router",
+                        decision=canonical_decision,
+                        mode=canonical_mode,
+                    ),
                     **updates,
                 }
 
-            if route is not None and route.decision == "query_continuation":
-                if _is_account_balance_request(message_text):
-                    logger.info("gate_turn_router_query_continuation_blocked_account_request", message=message_text)
-                    if updates:
-                        logger.info("gate_turn_router_expected_executors", executors=expected_executors)
-                        return updates
-                    logger.info("gate_fallback_to_planner", reason="query_continuation_blocked_account_request")
-                    return {}
-                task_id = _next_fast_query_task_id(state.tasks)
-                spec = TaskSpec(
-                    id=task_id,
-                    type="query",
-                    stage=TaskStage.DRAFT,
-                    payload={
-                        "message": state.last_message_text,
-                        "is_fast_path": True,
-                    },
+            route_to_domain: dict[
+                str,
+                Literal["query", "account", "support", "beneficiary", "transfer", "airtime", "data"],
+            ] = {
+                "domain_query": "query",
+                "domain_account": "account",
+                "domain_support": "support",
+                "domain_beneficiary": "beneficiary",
+                "domain_transfer": "transfer",
+                "domain_airtime": "airtime",
+                "domain_data": "data",
+            }
+            if route is not None and canonical_decision in route_to_domain:
+                domain = route_to_domain[canonical_decision]
+                if (
+                    domain != "query"
+                    and isinstance(query_session_snapshot, dict)
+                    and query_session_snapshot.get("session_active")
+                ):
+                    await clear_query_session(redis_client, state.phone_number)
+                    updates.update(
+                        _build_query_session_exit_updates(
+                            state,
+                            query_session_snapshot=query_session_snapshot,
+                        )
+                    )
+                task_id, spec = _build_direct_domain_task(
+                    state=state,
+                    domain=domain,
+                    mode=canonical_mode,
                 )
-                logger.info("gate_turn_router_query_continuation", task_id=task_id)
+                logger.info(
+                    "gate_semantic_router_domain_dispatch",
+                    decision=canonical_decision,
+                    domain=domain,
+                    mode=canonical_mode,
+                    task_id=task_id,
+                )
                 return {
                     **summary_updates,
                     "tasks": {task_id: spec},
                     "waves": [[task_id]],
                     "current_wave_index": 0,
                     "planner_output": None,
-                    "fast_path_triggered": True,
-                    "semantic_path_shape": "turn_router_only",
+                    "direct_path_triggered": True,
+                    "semantic_path_shape": "semantic_router_domain",
+                    **_route_observability_updates(
+                        owner="semantic_router",
+                        decision=canonical_decision,
+                        target_domain=domain,
+                        mode=canonical_mode,
+                    ),
                     **updates,
                 }
 
             if updates:
-                logger.info("gate_turn_router_expected_executors", executors=expected_executors)
+                logger.info("gate_semantic_router_expected_executors", executors=expected_executors)
                 return {
                     **summary_updates,
+                    **_route_observability_updates(
+                        owner="planner",
+                        decision=canonical_decision or "planner_handoff",
+                        mode=canonical_mode,
+                    ),
                     **updates,
                 }
 
-    logger.info("gate_fallback_to_planner", reason="no_fast_path_match")
-    return summary_updates  # Fallback to planner logic
+    logger.info("gate_dispatch_to_planner", reason="planner_owned_or_unresolved_route")
+    return {
+        **summary_updates,
+        **_route_observability_updates(owner="planner", decision="planner_handoff"),
+    }
