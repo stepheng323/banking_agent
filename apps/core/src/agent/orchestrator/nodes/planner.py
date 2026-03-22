@@ -163,6 +163,9 @@ async def plan_tasks(state: OrchestratorState, config: RunnableConfig) -> dict[s
     planner_output = execution_result.planner_output
     current_locale = execution_result.current_locale
     context_read_updates = execution_result.context_read_updates
+    
+    locale_updates = _build_locale_update(state, current_locale)
+    
     recovered_task = _recover_unexpected_question_task(planner_output, text)
     if recovered_task is not None:
         planner_output.tasks = [recovered_task]
