@@ -170,3 +170,71 @@ def test_singular_smallest_transaction_overrides_provided_limit() -> None:
     assert normalized.aggregation is not None
     assert normalized.aggregation.type == "smallest"
     assert normalized.aggregation.limit == 1
+
+
+def test_named_current_month_defaults_to_current_year_to_date() -> None:
+    parser = QueryParser(_DummyLLM())
+    today = date(2026, 3, 21)
+    extraction = QueryExtractionResult(
+        intent=ExtractionIntent.TRANSACTION_LIST,
+        time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="march"),
+        raw_query="show all march transactions",
+    )
+
+    normalized = parser.convert_to_normalized(extraction, today=today)
+
+    assert normalized.time_range is not None
+    assert normalized.time_range.start == date(2026, 3, 1)
+    assert normalized.time_range.end == today
+
+
+def test_named_future_month_defaults_to_previous_year() -> None:
+    parser = QueryParser(_DummyLLM())
+    today = date(2026, 3, 21)
+    extraction = QueryExtractionResult(
+        intent=ExtractionIntent.TRANSACTION_LIST,
+        time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="december"),
+        raw_query="show all december transactions",
+    )
+
+    normalized = parser.convert_to_normalized(extraction, today=today)
+
+    assert normalized.time_range is not None
+    assert normalized.time_range.start == date(2025, 12, 1)
+    assert normalized.time_range.end == date(2025, 12, 31)
+
+
+def test_named_month_last_year_defaults_to_previous_year_month() -> None:
+    parser = QueryParser(_DummyLLM())
+    today = date(2026, 3, 21)
+    extraction = QueryExtractionResult(
+        intent=ExtractionIntent.TRANSACTION_LIST,
+        time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="march_last_year"),
+        raw_query="show all march last year transactions",
+    )
+
+    normalized = parser.convert_to_normalized(extraction, today=today)
+
+    assert normalized.time_range is not None
+    assert normalized.time_range.start == date(2025, 3, 1)
+    assert normalized.time_range.end == date(2025, 3, 31)
+
+
+def test_income_vs_spending_breakdown_keeps_unfiltered_transaction_type() -> None:
+    parser = QueryParser(_DummyLLM())
+    today = date(2026, 3, 21)
+    extraction = QueryExtractionResult(
+        intent=ExtractionIntent.CATEGORY_BREAKDOWN,
+        aggregation=QueryAggregation(type="breakdown", group_by="transaction_type"),
+        time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="this_month"),
+        raw_query="compare income vs spending this month",
+    )
+
+    normalized = parser.convert_to_normalized(extraction, today=today)
+
+    assert normalized.intent == QueryIntent.ANALYTICS_SUMMARY
+    assert normalized.aggregation is not None
+    assert normalized.aggregation.type == "breakdown"
+    assert normalized.aggregation.group_by == "transaction_type"
+    assert normalized.filters is not None
+    assert normalized.filters.transaction_type is None

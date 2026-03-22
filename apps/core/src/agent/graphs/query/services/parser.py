@@ -12,7 +12,6 @@ from apps.core.src.agent.graphs.query.capabilities import (
 )
 from apps.core.src.agent.graphs.query.models import (
     Aggregation,
-    AmbiguityCode,
     ComparisonDirective,
     ExtractionIntent,
     Filters,
@@ -22,12 +21,14 @@ from apps.core.src.agent.graphs.query.models import (
     QueryExtractionResult,
     QueryIntent,
     QueryIR,
+    QueryOperation,
     QueryParseResult,
     QueryTimeRange,
     ResolverOutcome,
     TimeRange,
     TimeReference,
 )
+from apps.core.src.agent.graphs.query.models.extraction import AmbiguityCode
 from apps.core.src.agent.graphs.query.prompts import QUERY_PARSER_PROMPT
 from apps.core.src.agent.graphs.query.services.resolver import Decision, Prompt, resolve
 from apps.core.src.agent.graphs.query.utils.timezone import lagos_today
@@ -36,6 +37,34 @@ from shared.i18n.message_keys import MessageKey
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
+_MONTH_NAME_TO_NUMBER = {
+    "jan": 1,
+    "january": 1,
+    "feb": 2,
+    "february": 2,
+    "mar": 3,
+    "march": 3,
+    "apr": 4,
+    "april": 4,
+    "may": 5,
+    "jun": 6,
+    "june": 6,
+    "jul": 7,
+    "july": 7,
+    "aug": 8,
+    "august": 8,
+    "sep": 9,
+    "sept": 9,
+    "september": 9,
+    "oct": 10,
+    "october": 10,
+    "nov": 11,
+    "november": 11,
+    "dec": 12,
+    "december": 12,
+}
+_THIS_YEAR_TOKENS = {"this_year", "current_year", "thisyear", "currentyear"}
+_LAST_YEAR_TOKENS = {"last_year", "previous_year", "lastyear", "previousyear"}
 
 
 class QueryParser:
@@ -43,68 +72,6 @@ class QueryParser:
 
     def __init__(self, llm: Runnable):
         self.llm = llm
-
-    @staticmethod
-    def _normalize_query_text(value: str | None) -> str:
-        return " ".join((value or "").lower().strip().split())
-
-    def _should_treat_last_as_latest(self, extraction: "QueryExtractionResult") -> bool:
-        time_vague = any(ambiguity.code == AmbiguityCode.TIME_VAGUE for ambiguity in extraction.ambiguities)
-        if not time_vague:
-            return False
-
-        normalized = self._normalize_query_text(extraction.raw_query)
-        if not normalized:
-            return False
-
-        has_last_cue = any(cue in normalized for cue in (" last ", " latest", "most recent", " recent "))
-        if not has_last_cue:
-            prefixed = f" {normalized} "
-            has_last_cue = " last " in prefixed or " recent " in prefixed
-        if not has_last_cue:
-            return False
-
-        has_entity_filter = any(
-            (
-                extraction.filters.recipient,
-                extraction.filters.bank,
-                extraction.filters.narration_keyword,
-            )
-        )
-        if not has_entity_filter:
-            return False
-
-        singular_cues = (
-            extraction.intent == ExtractionIntent.SINGLE_TRANSACTION
-            or extraction.result_limit == 1
-            or extraction.result_reference == "latest"
-            or "transaction" in normalized
-            or "transfer" in normalized
-            or "payment" in normalized
-            or "status" in normalized
-            or "ref" in normalized
-            or "reference" in normalized
-        )
-        amount_to_entity_latest = (
-            extraction.intent == ExtractionIntent.SPENDING_TOTAL
-            and "how much" in normalized
-            and has_entity_filter
-        )
-        return singular_cues or amount_to_entity_latest
-
-    def _apply_intent_shape_disambiguation(self, extraction: "QueryExtractionResult") -> "QueryExtractionResult":
-        if not self._should_treat_last_as_latest(extraction):
-            return extraction
-
-        extraction.intent = ExtractionIntent.SINGLE_TRANSACTION
-        extraction.result_limit = 1
-        extraction.result_reference = extraction.result_reference or "latest"
-        extraction.ambiguities = [a for a in extraction.ambiguities if a.code != AmbiguityCode.TIME_VAGUE]
-        if extraction.time_range.reference_type == TimeReference.VAGUE:
-            extraction.time_range.reference_type = TimeReference.UNSPECIFIED
-            extraction.time_range.period = None
-            extraction.time_range.days_back = None
-        return extraction
 
     def _build_pending_clarification(
         self,
@@ -131,7 +98,7 @@ class QueryParser:
         language: str,
     ) -> QueryParseResult:
         extraction = extraction.model_copy(deep=True)
-        extraction = self._apply_intent_shape_disambiguation(extraction)
+        extraction = self._normalize_month_name_without_year(extraction)
 
         # Deterministic capability validation
         self._validate_capabilities(extraction)
@@ -208,6 +175,66 @@ class QueryParser:
         )
 
     @staticmethod
+    def _month_token(period: str | None) -> int | None:
+        if not period:
+            return None
+        token = period.strip().lower().replace("-", "_").replace(" ", "_")
+        return _MONTH_NAME_TO_NUMBER.get(token)
+
+    @staticmethod
+    def _resolve_month_period_with_year_hint(period: str, *, today: date) -> TimeRange | None:
+        normalized = period.strip().lower().replace("-", "_").replace(" ", "_")
+        parts = [part for part in normalized.split("_") if part]
+        if not parts:
+            return None
+
+        month_number: int | None = None
+        for part in parts:
+            month_number = _MONTH_NAME_TO_NUMBER.get(part)
+            if month_number is not None:
+                break
+        if month_number is None:
+            return None
+
+        if any(token in normalized for token in _THIS_YEAR_TOKENS):
+            year = today.year
+        elif any(token in normalized for token in _LAST_YEAR_TOKENS):
+            year = today.year - 1
+        else:
+            year = today.year if month_number <= today.month else today.year - 1
+
+        month_start = date(year, month_number, 1)
+        month_end = date(year, month_number, monthrange(year, month_number)[1])
+        if year == today.year and month_number == today.month:
+            month_end = today
+        return TimeRange(start=month_start, end=month_end, granularity="month")
+
+    def _normalize_month_name_without_year(self, extraction: QueryExtractionResult) -> QueryExtractionResult:
+        month_number = self._month_token(extraction.time_range.period)
+        if month_number is None:
+            return extraction
+
+        extraction.time_range.reference_type = TimeReference.EXPLICIT
+        extraction.time_range.days_back = None
+        month_names = {
+            period
+            for period, number in _MONTH_NAME_TO_NUMBER.items()
+            if number == month_number
+        }
+        extraction.ambiguities = [
+            ambiguity
+            for ambiguity in extraction.ambiguities
+            if not (
+                ambiguity.code == AmbiguityCode.TIME_VAGUE
+                and (
+                    "no year specified" in (ambiguity.context or "").lower()
+                    or any(name in (ambiguity.context or "").lower() for name in month_names)
+                )
+            )
+        ]
+        return extraction
+
+    @staticmethod
     def parse_clarification_time_range(
         message: str,
         *,
@@ -265,7 +292,7 @@ class QueryParser:
         language: str = "en",
     ) -> "QueryParseResult":
         """
-        Parse query using extraction with resolver integration.
+        Fallback LLM extraction path for queries whose meaning is not already usable.
 
         Args:
             question: User's natural language query
@@ -289,10 +316,10 @@ class QueryParser:
         except Exception as e:
             logger.error("parse_error", error=str(e))
 
-            return QueryParseResult(
-                outcome=ResolverOutcome.OK,  # Fallback to try best effort
-                extraction=QueryExtractionResult(raw_query=question),
-            )
+        return QueryParseResult(
+            outcome=ResolverOutcome.OK,  # Fallback to try best effort
+            extraction=QueryExtractionResult(raw_query=question),
+        )
 
     def resolve_existing_extraction(
         self,
@@ -303,6 +330,16 @@ class QueryParser:
     ) -> QueryParseResult:
         """Resolve a pre-extracted query after semantic clarification patching."""
         return self._finalize_extraction(extraction, today=today, language=language)
+
+    def compile_extraction(
+        self,
+        extraction: QueryExtractionResult,
+        *,
+        today: date,
+        language: str,
+    ) -> QueryParseResult:
+        """Compile already-interpreted query meaning through deterministic validation and resolver stages."""
+        return self.resolve_existing_extraction(extraction, today=today, language=language)
 
     def _validate_capabilities(self, extraction: "QueryExtractionResult") -> None:
         """Enforce capability dependencies deterministically."""
@@ -341,56 +378,9 @@ class QueryParser:
             if RequestedCapability.TIME_ALL in extraction.requested_capabilities:
                 extraction.requested_capabilities.remove(RequestedCapability.TIME_ALL)
 
-    @staticmethod
-    def _has_targeted_aggregate_spend_or_receive_cue(raw_query: str) -> bool:
-        query_lower = raw_query.lower()
-        has_aggregate_cue = any(term in query_lower for term in ("how much", "total", "sum"))
-        if not has_aggregate_cue:
-            return False
-
-        spend_cue = any(
-            term in query_lower
-            for term in ("spend", "spent", "spending", "paid", "pay", "send", "sent", "transfer", "transferred", "expense", "cost")
-        )
-        receive_cue = any(
-            term in query_lower for term in ("receive", "received", "credited", "credit", "income", "salary", "earned")
-        )
-        return spend_cue or receive_cue
-
-    @staticmethod
-    def _has_targeted_comparison_cue(raw_query: str) -> bool:
-        query_lower = raw_query.lower()
-        comparison_terms = (" vs ", " versus ", " compared to ", " compare ", " comparison ", " difference ")
-        return any(term in f" {query_lower} " for term in comparison_terms)
-
-    @staticmethod
-    def _has_targeted_beneficiary_summary_cue(raw_query: str) -> bool:
-        query_lower = " ".join(raw_query.lower().split())
-        has_ranking_cue = any(
-            term in query_lower
-            for term in (
-                "who did i send money to the most",
-                "who did i transfer to the most",
-                "top recipient",
-                "top recipients",
-                "most frequent recipient",
-                "most frequent transfer",
-            )
-        )
-        has_send_cue = any(term in query_lower for term in ("send money", "sent money", "transfer to", "sent to"))
-        return has_ranking_cue or (has_send_cue and "most" in query_lower and "who" in query_lower)
-
-    @staticmethod
-    def _infer_beneficiary_sort_by(raw_query: str | None) -> Literal["amount", "count"]:
-        raw_lower = (raw_query or "").lower()
-        if any(term in raw_lower for term in ("highest amount", "largest amount", "most money", "by amount", "total")):
-            return "amount"
-        return "count"
-
     def _requires_time_comparison_period(self, extraction: "QueryExtractionResult") -> bool:
         """Ensure time-comparison requests include an explicit comparison window."""
-        effective_intent = self._resolve_effective_intent(extraction)
-        if effective_intent != ExtractionIntent.TIME_COMPARISON:
+        if extraction.intent != ExtractionIntent.TIME_COMPARISON:
             return False
         return extraction.time_range.reference_type == TimeReference.UNSPECIFIED
 
@@ -418,6 +408,7 @@ class QueryParser:
 
         return QueryIR(
             intent=normalized.intent,
+            query_operation=normalized.query_operation,
             raw_query=extraction.raw_query,
             language=language,
             timezone="Africa/Lagos",
@@ -488,6 +479,17 @@ class QueryParser:
         if token in {"last_year", "previous_year"}:
             year = today.year - 1
             return TimeRange(start=date(year, 1, 1), end=date(year, 12, 31), granularity="month")
+        hinted_month_range = QueryParser._resolve_month_period_with_year_hint(period, today=today)
+        if hinted_month_range is not None:
+            return hinted_month_range
+        month_number = QueryParser._month_token(token)
+        if month_number is not None:
+            year = today.year if month_number <= today.month else today.year - 1
+            month_start = date(year, month_number, 1)
+            month_end = date(year, month_number, monthrange(year, month_number)[1])
+            if year == today.year and month_number == today.month:
+                month_end = today
+            return TimeRange(start=month_start, end=month_end, granularity="month")
         return None
 
     def _build_comparison_directive(
@@ -527,32 +529,100 @@ class QueryParser:
         return QueryExecutionContract.from_query_ir(query_ir)
 
     def _resolve_effective_intent(self, extraction: "QueryExtractionResult") -> ExtractionIntent:
-        raw_query = extraction.raw_query or ""
-        if extraction.intent == ExtractionIntent.BENEFICIARY_SUMMARY:
-            return extraction.intent
-
-        if (
-            extraction.intent == ExtractionIntent.TRANSACTION_LIST
-            and raw_query
-            and self._has_targeted_aggregate_spend_or_receive_cue(raw_query)
-        ):
+        raw_lower = (extraction.raw_query or "").strip().lower()
+        if extraction.intent == ExtractionIntent.TRANSACTION_LIST and self._is_aggregate_total_query(raw_lower):
+            logger.info(
+                "query_parser_intent_recovered_from_list_misclassification",
+                original_intent=extraction.intent.value,
+                recovered_intent=ExtractionIntent.SPENDING_TOTAL.value,
+            )
             return ExtractionIntent.SPENDING_TOTAL
-
-        if (
-            extraction.intent == ExtractionIntent.TRANSACTION_LIST
-            and raw_query
-            and self._has_targeted_beneficiary_summary_cue(raw_query)
-        ):
-            return ExtractionIntent.BENEFICIARY_SUMMARY
-
-        if (
-            extraction.intent != ExtractionIntent.TIME_COMPARISON
-            and raw_query
-            and self._has_targeted_comparison_cue(raw_query)
-        ):
-            return ExtractionIntent.TIME_COMPARISON
-
         return extraction.intent
+
+    @staticmethod
+    def _intent_from_query_operation(query_operation: QueryOperation) -> QueryIntent:
+        if query_operation == QueryOperation.LIST_TRANSACTIONS:
+            return QueryIntent.TRANSACTION_LIST
+        if query_operation == QueryOperation.SEARCH_SINGLE_TRANSACTION:
+            return QueryIntent.TRANSACTION_SEARCH
+        if query_operation in {
+            QueryOperation.SUM_TRANSACTIONS,
+            QueryOperation.COUNT_TRANSACTIONS,
+            QueryOperation.AVERAGE_TRANSACTIONS,
+            QueryOperation.RANK_LARGEST_TRANSACTION,
+            QueryOperation.RANK_SMALLEST_TRANSACTION,
+            QueryOperation.BREAKDOWN_TRANSACTIONS,
+        }:
+            return QueryIntent.ANALYTICS_SUMMARY
+        if query_operation == QueryOperation.COMPARE_PERIODS:
+            return QueryIntent.TIME_COMPARISON
+        if query_operation == QueryOperation.SUMMARIZE_BENEFICIARIES:
+            return QueryIntent.BENEFICIARY_SUMMARY
+        return QueryIntent.AFFORDABILITY
+
+    def _infer_query_operation(
+        self,
+        extraction: "QueryExtractionResult",
+        *,
+        effective_intent: ExtractionIntent,
+    ) -> QueryOperation:
+        if extraction.query_operation is not None:
+            return extraction.query_operation
+
+        aggregation_type = extraction.aggregation.type if extraction.aggregation is not None else None
+        if aggregation_type == "count":
+            return QueryOperation.COUNT_TRANSACTIONS
+        if aggregation_type == "average":
+            return QueryOperation.AVERAGE_TRANSACTIONS
+        if aggregation_type == "largest":
+            return QueryOperation.RANK_LARGEST_TRANSACTION
+        if aggregation_type == "smallest":
+            return QueryOperation.RANK_SMALLEST_TRANSACTION
+        if aggregation_type == "breakdown":
+            return QueryOperation.BREAKDOWN_TRANSACTIONS
+
+        if effective_intent == ExtractionIntent.SINGLE_TRANSACTION:
+            return QueryOperation.SEARCH_SINGLE_TRANSACTION
+        if effective_intent == ExtractionIntent.SPENDING_TOTAL:
+            return QueryOperation.SUM_TRANSACTIONS
+        if effective_intent == ExtractionIntent.CATEGORY_BREAKDOWN:
+            return QueryOperation.BREAKDOWN_TRANSACTIONS
+        if effective_intent == ExtractionIntent.BENEFICIARY_SUMMARY:
+            return QueryOperation.SUMMARIZE_BENEFICIARIES
+        if effective_intent == ExtractionIntent.TIME_COMPARISON:
+            return QueryOperation.COMPARE_PERIODS
+        if effective_intent == ExtractionIntent.AFFORDABILITY:
+            return QueryOperation.CHECK_AFFORDABILITY
+        return QueryOperation.LIST_TRANSACTIONS
+
+    @staticmethod
+    def _is_aggregate_total_query(raw_query: str) -> bool:
+        if not raw_query:
+            return False
+        if not any(cue in raw_query for cue in ("how much", "total", "sum")):
+            return False
+        return any(
+            cue in raw_query
+            for cue in (
+                "spend",
+                "spent",
+                "spending",
+                "expense",
+                "expenses",
+                "pay",
+                "paid",
+                "send",
+                "sent",
+                "transfer",
+                "transferred",
+                "receive",
+                "received",
+                "credit",
+                "credited",
+                "income",
+                "inflow",
+            )
+        )
 
     @staticmethod
     def _resolve_result_limit(raw_limit: int | None, *, effective_intent: ExtractionIntent) -> int | None:
@@ -633,15 +703,24 @@ class QueryParser:
             return cast(Literal["credit", "debit"], transaction_type)
         return None
 
-    def _build_filters(self, extraction: "QueryExtractionResult", *, effective_intent: ExtractionIntent) -> Filters | None:
+    def _build_filters(
+        self,
+        extraction: "QueryExtractionResult",
+        *,
+        effective_intent: ExtractionIntent,
+        query_operation: QueryOperation,
+    ) -> Filters | None:
         if not extraction.filters:
             return None
 
-        transaction_type = self._infer_transaction_type(
-            extracted_transaction_type=extraction.filters.transaction_type,
-            raw_query=extraction.raw_query,
-            effective_intent=effective_intent,
-        )
+        group_by = (extraction.aggregation.group_by or "").strip().lower() if extraction.aggregation else ""
+        transaction_type = None
+        if group_by not in {"transaction_type", "type"} and query_operation != QueryOperation.BREAKDOWN_TRANSACTIONS:
+            transaction_type = self._infer_transaction_type(
+                extracted_transaction_type=extraction.filters.transaction_type,
+                raw_query=extraction.raw_query,
+                effective_intent=effective_intent,
+            )
 
         return Filters(
             merchant=[extraction.filters.recipient] if extraction.filters.recipient else None,
@@ -653,19 +732,6 @@ class QueryParser:
         )
 
     @staticmethod
-    def _is_singular_superlative_query(raw_query: str | None, *, include_spending: bool) -> bool:
-        raw_lower = (raw_query or "").lower()
-        if not raw_lower:
-            return False
-
-        singular_plural_pairs = [("expense", "expenses"), ("transaction", "transactions")]
-        if include_spending:
-            singular_plural_pairs.append(("spending", "spendings"))
-
-        is_singular = any(singular in raw_lower and plural not in raw_lower for singular, plural in singular_plural_pairs)
-        return is_singular or " one" in raw_lower
-
-    @staticmethod
     def _coerce_aggregation_type(agg_type: str) -> Literal["sum", "average", "count", "largest", "smallest", "breakdown"]:
         return cast(
             Literal["sum", "average", "count", "largest", "smallest", "breakdown"],
@@ -673,9 +739,18 @@ class QueryParser:
         )
 
     @staticmethod
-    def _coerce_group_by(group_by: str | None) -> Literal["category", "merchant", "day", "account"] | None:
-        if group_by in {"category", "merchant", "day", "account"}:
-            return cast(Literal["category", "merchant", "day", "account"], group_by)
+    def _coerce_group_by(group_by: str | None) -> Literal["category", "merchant", "day", "account", "transaction_type"] | None:
+        normalized = (group_by or "").strip().lower()
+        if normalized == "type":
+            normalized = "transaction_type"
+        if normalized in {"category", "merchant", "day", "account", "transaction_type"}:
+            return cast(Literal["category", "merchant", "day", "account", "transaction_type"], normalized)
+        return None
+
+    @staticmethod
+    def _coerce_sort_by(sort_by: str | None) -> Literal["amount", "count"] | None:
+        if sort_by in {"amount", "count"}:
+            return cast(Literal["amount", "count"], sort_by)
         return None
 
     def _build_aggregation_from_extracted(
@@ -691,24 +766,16 @@ class QueryParser:
         if effective_intent == ExtractionIntent.CATEGORY_BREAKDOWN and agg_type == "sum":
             agg_type = "breakdown"
 
-        limit = extraction.aggregation.limit
-        if agg_type in ("largest", "smallest") and self._is_singular_superlative_query(
-            extraction.raw_query, include_spending=True
-        ):
-            limit = 1
-
         aggregation = Aggregation(
             type=self._coerce_aggregation_type(agg_type),
             group_by=self._coerce_group_by(extraction.aggregation.group_by),
-            limit=limit or 5,
-            sort_by=(
-                self._infer_beneficiary_sort_by(extraction.raw_query)
-                if effective_intent == ExtractionIntent.BENEFICIARY_SUMMARY
-                else None
-            ),
+            limit=extraction.aggregation.limit or 5,
+            sort_by=self._coerce_sort_by(extraction.aggregation.sort_by),
         )
         if agg_type == "breakdown" and not aggregation.group_by:
             aggregation.group_by = "category"
+        if effective_intent == ExtractionIntent.BENEFICIARY_SUMMARY and aggregation.sort_by is None:
+            aggregation.sort_by = "count"
         return aggregation
 
     def _build_default_aggregation(
@@ -716,26 +783,33 @@ class QueryParser:
         extraction: "QueryExtractionResult",
         *,
         effective_intent: ExtractionIntent,
+        query_operation: QueryOperation,
     ) -> Aggregation | None:
+        raw_lower = (extraction.raw_query or "").strip().lower()
+        if query_operation == QueryOperation.RANK_LARGEST_TRANSACTION or any(
+            cue in raw_lower for cue in ("largest", "highest", "biggest", "max", "maximum")
+        ):
+            return Aggregation(type="largest", limit=1)
+        if query_operation == QueryOperation.RANK_SMALLEST_TRANSACTION or any(
+            cue in raw_lower for cue in ("smallest", "lowest", "least", "minimum", "min")
+        ):
+            return Aggregation(type="smallest", limit=1)
+        if query_operation == QueryOperation.COUNT_TRANSACTIONS:
+            return Aggregation(type="count", limit=5)
+        if query_operation == QueryOperation.AVERAGE_TRANSACTIONS:
+            return Aggregation(type="average", limit=5)
+        if query_operation == QueryOperation.BREAKDOWN_TRANSACTIONS:
+            group_by = self._coerce_group_by(extraction.aggregation.group_by) if extraction.aggregation is not None else None
+            return Aggregation(type="breakdown", group_by=group_by or "category", limit=5)
+
         if effective_intent == ExtractionIntent.SPENDING_TOTAL:
-            agg_type = "sum"
-            limit = 5
-            raw_lower = (extraction.raw_query or "").lower()
-            if any(x in raw_lower for x in ("largest", "biggest", "highest", "top")):
-                agg_type = "largest"
-            elif any(x in raw_lower for x in ("smallest", "least", "lowest")):
-                agg_type = "smallest"
-
-            if self._is_singular_superlative_query(extraction.raw_query, include_spending=False):
-                limit = 1
-
-            return Aggregation(type=self._coerce_aggregation_type(agg_type), limit=limit)
+            return Aggregation(type="sum", limit=5)
 
         if effective_intent == ExtractionIntent.CATEGORY_BREAKDOWN:
             return Aggregation(type="breakdown", group_by="category")
 
         if effective_intent == ExtractionIntent.BENEFICIARY_SUMMARY:
-            return Aggregation(type="sum", limit=5, sort_by=self._infer_beneficiary_sort_by(extraction.raw_query))
+            return Aggregation(type="sum", limit=5, sort_by="count")
 
         return None
 
@@ -744,11 +818,72 @@ class QueryParser:
         extraction: "QueryExtractionResult",
         *,
         effective_intent: ExtractionIntent,
+        query_operation: QueryOperation,
     ) -> Aggregation | None:
         extracted_aggregation = self._build_aggregation_from_extracted(extraction, effective_intent=effective_intent)
         if extracted_aggregation is not None:
-            return extracted_aggregation
-        return self._build_default_aggregation(extraction, effective_intent=effective_intent)
+            return self._normalize_operation_aggregation(
+                self._normalize_extrema_aggregation(extracted_aggregation, raw_query=extraction.raw_query),
+                query_operation=query_operation,
+            )
+        return self._build_default_aggregation(
+            extraction,
+            effective_intent=effective_intent,
+            query_operation=query_operation,
+        )
+
+    @staticmethod
+    def _normalize_operation_aggregation(
+        aggregation: Aggregation | None,
+        *,
+        query_operation: QueryOperation,
+    ) -> Aggregation | None:
+        if aggregation is None:
+            return None
+
+        operation_to_type = {
+            QueryOperation.SUM_TRANSACTIONS: "sum",
+            QueryOperation.COUNT_TRANSACTIONS: "count",
+            QueryOperation.AVERAGE_TRANSACTIONS: "average",
+            QueryOperation.RANK_LARGEST_TRANSACTION: "largest",
+            QueryOperation.RANK_SMALLEST_TRANSACTION: "smallest",
+            QueryOperation.BREAKDOWN_TRANSACTIONS: "breakdown",
+        }
+        target_type = operation_to_type.get(query_operation)
+        if target_type is None:
+            return aggregation
+
+        aggregation.type = cast(
+            Literal["sum", "average", "count", "largest", "smallest", "breakdown"],
+            target_type,
+        )
+        if query_operation == QueryOperation.BREAKDOWN_TRANSACTIONS and aggregation.group_by is None:
+            aggregation.group_by = "category"
+        if query_operation in {
+            QueryOperation.RANK_LARGEST_TRANSACTION,
+            QueryOperation.RANK_SMALLEST_TRANSACTION,
+        }:
+            aggregation.limit = 1
+        return aggregation
+
+    @staticmethod
+    def _normalize_extrema_aggregation(aggregation: Aggregation | None, *, raw_query: str | None) -> Aggregation | None:
+        if aggregation is None:
+            return None
+
+        raw_lower = (raw_query or "").strip().lower()
+        singular_extrema = (
+            ("largest", ("largest", "highest", "biggest", "max", "maximum")),
+            ("smallest", ("smallest", "lowest", "least", "minimum", "min")),
+        )
+        for agg_type, cues in singular_extrema:
+            if any(cue in raw_lower for cue in cues):
+                aggregation.type = cast(Literal["sum", "average", "count", "largest", "smallest", "breakdown"], agg_type)
+                aggregation.limit = 1
+                return aggregation
+        if aggregation.type in {"largest", "smallest"}:
+            aggregation.limit = 1
+        return aggregation
 
     def convert_to_normalized(
         self,
@@ -759,28 +894,32 @@ class QueryParser:
 
         today = today or lagos_today()
         effective_intent = self._resolve_effective_intent(extraction)
+        query_operation = self._infer_query_operation(extraction, effective_intent=effective_intent)
         result_limit = self._resolve_result_limit(extraction.result_limit, effective_intent=effective_intent)
 
-        intent_map = {
-            ExtractionIntent.TRANSACTION_LIST: QueryIntent.TRANSACTION_LIST,
-            ExtractionIntent.SPENDING_TOTAL: QueryIntent.ANALYTICS_SUMMARY,
-            ExtractionIntent.CATEGORY_BREAKDOWN: QueryIntent.ANALYTICS_SUMMARY,
-            ExtractionIntent.BENEFICIARY_SUMMARY: QueryIntent.BENEFICIARY_SUMMARY,
-            ExtractionIntent.TIME_COMPARISON: QueryIntent.TIME_COMPARISON,
-            ExtractionIntent.SINGLE_TRANSACTION: QueryIntent.TRANSACTION_SEARCH,
-            ExtractionIntent.AFFORDABILITY: QueryIntent.AFFORDABILITY,
-        }
-
         time_range = self._build_time_range(extraction, today=today)
-        filters = self._build_filters(extraction, effective_intent=effective_intent)
-        aggregation = self._build_aggregation(extraction, effective_intent=effective_intent)
+        filters = self._build_filters(
+            extraction,
+            effective_intent=effective_intent,
+            query_operation=query_operation,
+        )
+        aggregation = self._build_aggregation(
+            extraction,
+            effective_intent=effective_intent,
+            query_operation=query_operation,
+        )
+
+        result_reference = extraction.result_reference
+        if aggregation is not None and aggregation.type in {"largest", "smallest"}:
+            result_reference = None
 
         return NormalizedQuery(
-            intent=intent_map.get(effective_intent, QueryIntent.TRANSACTION_LIST),
+            intent=self._intent_from_query_operation(query_operation),
+            query_operation=query_operation,
             time_range=time_range or TimeRange(start=today - timedelta(days=30), end=today, granularity="day"),
             filters=filters,
             aggregation=aggregation,
             accounts_scope="all",
             result_limit=result_limit,
-            result_reference=extraction.result_reference,
+            result_reference=result_reference,
         )

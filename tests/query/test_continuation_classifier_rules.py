@@ -42,6 +42,19 @@ def test_end_session_phrase_with_emoji_still_hits_guardrail() -> None:
     assert data["reason"] == "deterministic_end_session"
 
 
+def test_dismissive_turn_does_not_hit_deterministic_guardrail() -> None:
+    classifier = _classifier()
+
+    guarded = classifier._guardrail_classify(
+        message="get out",
+        items=None,
+        surface=None,
+        language="en",
+    )
+
+    assert guarded is None
+
+
 def test_beneficiary_summary_name_reply_maps_to_recipient_drilldown() -> None:
     classifier = _classifier()
     surface = ResultSurface(type=SurfaceType.SUMMARY, items=[], context={"view": "beneficiary_summary"})

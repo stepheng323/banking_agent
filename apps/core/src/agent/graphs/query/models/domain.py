@@ -19,6 +19,22 @@ class QueryIntent(str, Enum):
     AFFORDABILITY = "affordability"
 
 
+class QueryOperation(str, Enum):
+    """Bounded internal query operations above handler-level intents."""
+
+    LIST_TRANSACTIONS = "list_transactions"
+    SEARCH_SINGLE_TRANSACTION = "search_single_transaction"
+    SUM_TRANSACTIONS = "sum_transactions"
+    COUNT_TRANSACTIONS = "count_transactions"
+    AVERAGE_TRANSACTIONS = "average_transactions"
+    RANK_LARGEST_TRANSACTION = "rank_largest_transaction"
+    RANK_SMALLEST_TRANSACTION = "rank_smallest_transaction"
+    BREAKDOWN_TRANSACTIONS = "breakdown_transactions"
+    COMPARE_PERIODS = "compare_periods"
+    SUMMARIZE_BENEFICIARIES = "summarize_beneficiaries"
+    CHECK_AFFORDABILITY = "check_affordability"
+
+
 class TimeRange(BaseModel):
     """Time range for queries with optional granularity."""
 
@@ -43,7 +59,7 @@ class Aggregation(BaseModel):
     """Aggregation options for analytics queries."""
 
     type: Literal["sum", "average", "count", "largest", "smallest", "breakdown"] = Field(default="sum")
-    group_by: Literal["category", "merchant", "day", "account"] | None = None
+    group_by: Literal["category", "merchant", "day", "account", "transaction_type"] | None = None
     limit: int | None = Field(default=5, ge=1, le=100)
     sort_by: Literal["amount", "count"] | None = Field(
         default="amount", description="Sort by total amount or transaction count"
@@ -58,6 +74,7 @@ class NormalizedQuery(BaseModel):
     """
 
     intent: QueryIntent
+    query_operation: QueryOperation | None = None
     time_range: TimeRange | None = None
     filters: Filters | None = None
     aggregation: Aggregation | None = None
@@ -87,6 +104,7 @@ class QueryIR(BaseModel):
     """LLM-facing interpretation model before runtime contract compilation."""
 
     intent: QueryIntent
+    query_operation: QueryOperation | None = None
     raw_query: str | None = None
     language: str = "en"
     timezone: str = "Africa/Lagos"
@@ -108,6 +126,7 @@ class QueryIR(BaseModel):
         """Build legacy-compatible NormalizedQuery view from IR."""
         return NormalizedQuery(
             intent=self.intent,
+            query_operation=self.query_operation,
             time_range=self.time_range,
             filters=self.filters,
             aggregation=self.aggregation,
@@ -125,6 +144,7 @@ class QueryExecutionContract(BaseModel):
     """Runtime-facing contract consumed by query handlers."""
 
     intent: QueryIntent
+    query_operation: QueryOperation | None = None
     time_start: date
     time_end: date
     timezone: str = "Africa/Lagos"
@@ -148,6 +168,7 @@ class QueryExecutionContract(BaseModel):
         normalized = ir.to_normalized_query()
         return cls(
             intent=ir.intent,
+            query_operation=ir.query_operation,
             time_start=ir.time_range.start,
             time_end=ir.time_range.end,
             timezone=ir.timezone,
@@ -183,6 +204,7 @@ class QueryExecutionContract(BaseModel):
 
         ir = QueryIR(
             intent=query.intent,
+            query_operation=query.query_operation,
             timezone=timezone,
             time_range=time_range,
             filters=query.filters,

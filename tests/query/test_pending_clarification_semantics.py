@@ -181,7 +181,7 @@ async def test_reasoner_fresh_query_without_raw_query_injects_message_for_debit_
     step = ExtractionStep(_DummyLLM())
     today = date(2026, 3, 19)
 
-    updates = step._parse_reasoner_extraction_to_updates(
+    updates = await step._parse_reasoner_extraction_to_updates(
         QuerySemanticDecision(
             decision="fresh_query",
             extraction=QueryExtractionResult(

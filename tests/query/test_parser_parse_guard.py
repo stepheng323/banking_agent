@@ -37,7 +37,7 @@ class _DummyLLM:
 
 @pytest.mark.asyncio
 async def test_time_comparison_without_explicit_time_returns_needs_input() -> None:
-    extraction = QueryExtractionResult(intent=ExtractionIntent.TRANSACTION_LIST)
+    extraction = QueryExtractionResult(intent=ExtractionIntent.TIME_COMPARISON)
     parser = QueryParser(_DummyLLM(extraction))
 
     result = await parser.parse(
@@ -90,7 +90,7 @@ async def test_time_vague_clarify_renders_full_message_not_raw_context() -> None
 
 
 @pytest.mark.asyncio
-async def test_latest_matching_transaction_shape_does_not_clarify_time() -> None:
+async def test_time_vague_matching_transaction_shape_clarifies_without_llm_latest_item_shape() -> None:
     extraction = QueryExtractionResult(
         intent=ExtractionIntent.SPENDING_TOTAL,
         filters=QueryFilters(recipient="Mum"),
@@ -105,12 +105,11 @@ async def test_latest_matching_transaction_shape_does_not_clarify_time() -> None
         language="en",
     )
 
-    assert result.outcome == ResolverOutcome.OK
-    assert result.resolver_message is None
+    assert result.outcome == ResolverOutcome.NEEDS_INPUT
+    assert result.resolver_message == "What time period did you mean by 'last'? You can say something like 'last 30 days'."
     assert result.query_contract is not None
-    assert result.query_contract["intent"] == "transaction_search"
-    assert result.query_contract["result_limit"] == 1
-    assert result.query_contract["result_reference"] == "latest"
+    assert result.query_contract["intent"] == "analytics_summary"
+    assert result.query_contract["result_reference"] is None
 
 
 @pytest.mark.asyncio
@@ -134,3 +133,46 @@ async def test_latest_transaction_query_drops_spurious_narration_negotiation_wit
     assert result.query_contract is not None
     assert result.query_contract["result_limit"] == 1
     assert result.query_contract["result_reference"] == "latest"
+
+
+@pytest.mark.asyncio
+async def test_named_month_without_year_defaults_instead_of_clarifying() -> None:
+    extraction = QueryExtractionResult(
+        intent=ExtractionIntent.TRANSACTION_LIST,
+        ambiguities=[Ambiguity(code=AmbiguityCode.TIME_VAGUE, context="March (no year specified)")],
+        time_range=QueryTimeRange(reference_type=TimeReference.VAGUE, period="march"),
+    )
+    parser = QueryParser(_DummyLLM(extraction))
+
+    result = await parser.parse(
+        "Show all March transactions",
+        today=date(2026, 3, 21),
+        language="en",
+    )
+
+    assert result.outcome == ResolverOutcome.OK
+    assert result.resolver_message is None
+    assert result.query_contract is not None
+    assert result.query_contract["time_start"] == date(2026, 3, 1)
+    assert result.query_contract["time_end"] == date(2026, 3, 21)
+
+
+@pytest.mark.asyncio
+async def test_named_month_last_year_defaults_without_clarifying() -> None:
+    extraction = QueryExtractionResult(
+        intent=ExtractionIntent.TRANSACTION_LIST,
+        time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="march_last_year"),
+    )
+    parser = QueryParser(_DummyLLM(extraction))
+
+    result = await parser.parse(
+        "Show all March last year transactions",
+        today=date(2026, 3, 21),
+        language="en",
+    )
+
+    assert result.outcome == ResolverOutcome.OK
+    assert result.resolver_message is None
+    assert result.query_contract is not None
+    assert result.query_contract["time_start"] == date(2025, 3, 1)
+    assert result.query_contract["time_end"] == date(2025, 3, 31)

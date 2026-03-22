@@ -4,6 +4,7 @@ from typing import Any
 import pytest
 
 from apps.core.src.agent.graphs.query.models import (
+    Aggregation,
     ExtractionIntent,
     Filters,
     NormalizedQuery,
@@ -835,6 +836,52 @@ async def test_income_repair_followup_after_credit_list_preserves_active_credit_
 
 
 @pytest.mark.asyncio
+async def test_income_vs_spending_followup_compiles_transaction_type_breakdown() -> None:
+    step = ExtractionStep(_DummyLLM())
+    today = date(2026, 3, 20)
+    session_query = NormalizedQuery(
+        intent=QueryIntent.TRANSACTION_LIST,
+        time_range=TimeRange(start=date(2026, 3, 1), end=today, granularity="month"),
+        result_limit=5,
+        result_reference="latest",
+    )
+    session_contract = QueryExecutionContract.from_normalized_query(session_query)
+
+    async def _fake_reason(_: object) -> QuerySemanticDecision:
+        return QuerySemanticDecision(
+            decision="continuation",
+            continuation_type="aggregate",
+            followup_intent="refine_existing",
+            confidence=0.94,
+            reason="llm_income_vs_spending_followup",
+        )
+
+    step.reasoner.reason = _fake_reason  # type: ignore[method-assign]
+
+    updates = await step._handle_continuation(
+        {"message": "Compare the income vs spending", "today": today, "language": "en"},
+        {
+            "session_active": True,
+            "query_contract": session_contract.model_dump(),
+            "query_result": {"items": []},
+            "current_page": 1,
+        },
+    )
+
+    query = updates["query_contract"].normalized_query
+    assert query.intent == QueryIntent.ANALYTICS_SUMMARY
+    assert query.time_range is not None
+    assert query.time_range.start == date(2026, 3, 1)
+    assert query.time_range.end == today
+    assert query.filters is None or query.filters.transaction_type is None
+    assert query.aggregation is not None
+    assert query.aggregation.type == "breakdown"
+    assert query.aggregation.group_by == "transaction_type"
+    assert updates["current_page"] == 0
+    assert updates["show_expanded"] is False
+
+
+@pytest.mark.asyncio
 async def test_low_confidence_unclear_income_followup_recovers_via_parser() -> None:
     step = ExtractionStep(_DummyLLM())
     today = date(2026, 3, 20)
@@ -894,7 +941,7 @@ async def test_low_confidence_unclear_income_followup_recovers_via_parser() -> N
 
 
 @pytest.mark.asyncio
-async def test_unclear_income_repair_followup_recovers_via_parser() -> None:
+async def test_unclear_income_repair_followup_uses_reasoner_compiler_without_parser_parse() -> None:
     step = ExtractionStep(_DummyLLM())
     today = date(2026, 3, 20)
     session_query = NormalizedQuery(
@@ -921,15 +968,26 @@ async def test_unclear_income_repair_followup_recovers_via_parser() -> None:
             followup_intent="none",
             confidence=0.76,
             reason="repair_phrase_not_grounded",
+            extraction=extraction,
         )
 
-    async def _fake_parse(question: str, *, today: date, language: str) -> QueryParseResult:
+    def _fail_parse(*args: object, **kwargs: object) -> object:
+        del args, kwargs
+        raise AssertionError("compiler-safe reasoner extraction should not call parser.parse")
+
+    def _fake_compile(
+        parsed_extraction: QueryExtractionResult,
+        *,
+        today: date,
+        language: str,
+    ) -> QueryParseResult:
         del today, language
-        assert question == "I mean my income this month"
-        return _ok_result(extraction, parsed_query)
+        assert parsed_extraction.raw_query == "I mean my income this month"
+        return _ok_result(parsed_extraction, parsed_query)
 
     step.reasoner.reason = _fake_reason  # type: ignore[method-assign]
-    step.parser.parse = _fake_parse  # type: ignore[method-assign]
+    step.parser.parse = _fail_parse  # type: ignore[method-assign]
+    step.parser.compile_extraction = _fake_compile  # type: ignore[method-assign]
 
     updates = await step._handle_continuation(
         {"message": "I mean my income this month", "today": today, "language": "en"},
@@ -950,6 +1008,213 @@ async def test_unclear_income_repair_followup_recovers_via_parser() -> None:
     assert query.filters.transaction_type == "credit"
     assert updates["current_page"] == 0
     assert updates["_query_session_transition"] == "replace_session_new_query"
+
+
+@pytest.mark.asyncio
+async def test_unclear_highest_single_transfer_repair_clarifies_without_explicit_scope() -> None:
+    step = ExtractionStep(_DummyLLM())
+    today = date(2026, 3, 21)
+    session_query = NormalizedQuery(
+        intent=QueryIntent.TRANSACTION_LIST,
+        time_range=TimeRange(start=date(2026, 3, 1), end=today, granularity="month"),
+        filters=Filters(transaction_type="debit"),
+        result_limit=1,
+        result_reference="latest",
+    )
+    session_contract = QueryExecutionContract.from_normalized_query(session_query)
+    extraction = QueryExtractionResult(
+        intent=ExtractionIntent.SPENDING_TOTAL,
+        time_range=QueryTimeRange(reference_type=TimeReference.UNSPECIFIED),
+        raw_query="I mean my highest single transfer",
+    )
+    parsed_query = NormalizedQuery(
+        intent=QueryIntent.ANALYTICS_SUMMARY,
+        time_range=TimeRange(start=today - timedelta(days=30), end=today, granularity="day"),
+        filters=Filters(transaction_type="debit"),
+        aggregation=Aggregation(type="largest", limit=1),
+    )
+
+    async def _fake_reason(_: object) -> QuerySemanticDecision:
+        return QuerySemanticDecision(
+            decision="continuation",
+            continuation_type="unclear",
+            followup_intent="none",
+            confidence=0.31,
+            reason="repair_phrase_not_grounded",
+        )
+
+    async def _fake_parse(question: str, *, today: date, language: str) -> QueryParseResult:
+        del today, language
+        assert question == "I mean my highest single transfer"
+        return _ok_result(extraction, parsed_query)
+
+    step.reasoner.reason = _fake_reason  # type: ignore[method-assign]
+    step.parser.parse = _fake_parse  # type: ignore[method-assign]
+
+    updates = await step._handle_continuation(
+        {"message": "I mean my highest single transfer", "today": today, "language": "en"},
+        {
+            "session_active": True,
+            "query_contract": session_contract.model_dump(),
+            "query_result": {"items": []},
+            "current_page": 0,
+        },
+    )
+
+    assert updates["transaction_outcome"] == TransactionOutcome.NEEDS_INPUT
+    assert updates["response"] == render_message("query.clarify.unsure_rephrase", "en")
+    assert updates["flow_state"] == "parsing"
+    assert updates["session_active"] is True
+
+
+@pytest.mark.asyncio
+async def test_unclear_credit_pivot_followup_clarifies_without_grounded_reasoner_resolution() -> None:
+    step = ExtractionStep(_DummyLLM())
+    today = date(2026, 3, 21)
+    session_query = NormalizedQuery(
+        intent=QueryIntent.TRANSACTION_LIST,
+        time_range=TimeRange(start=today, end=today, granularity="day"),
+        filters=Filters(transaction_type="debit"),
+        result_limit=5,
+        result_reference="latest",
+    )
+    session_contract = QueryExecutionContract.from_normalized_query(session_query)
+    extraction = QueryExtractionResult(
+        intent=ExtractionIntent.TRANSACTION_LIST,
+        raw_query="What about credit",
+    )
+    parsed_query = NormalizedQuery(
+        intent=QueryIntent.TRANSACTION_LIST,
+        time_range=TimeRange(start=today - timedelta(days=30), end=today, granularity="day"),
+        filters=Filters(transaction_type="credit"),
+    )
+
+    async def _fake_reason(_: object) -> QuerySemanticDecision:
+        return QuerySemanticDecision(
+            decision="continuation",
+            continuation_type="unclear",
+            followup_intent="none",
+            confidence=0.32,
+            reason="credit_pivot_not_grounded",
+        )
+
+    async def _fake_parse(question: str, *, today: date, language: str) -> QueryParseResult:
+        del today, language
+        assert question == "What about credit"
+        return _ok_result(extraction, parsed_query)
+
+    step.reasoner.reason = _fake_reason  # type: ignore[method-assign]
+    step.parser.parse = _fake_parse  # type: ignore[method-assign]
+
+    updates = await step._handle_continuation(
+        {"message": "What about credit", "today": today, "language": "en"},
+        {
+            "session_active": True,
+            "query_contract": session_contract.model_dump(),
+            "query_result": {"items": []},
+            "current_page": 1,
+            "show_expanded": True,
+        },
+    )
+
+    assert updates["transaction_outcome"] == TransactionOutcome.NEEDS_INPUT
+    assert updates["response"] == render_message("query.clarify.unsure_rephrase", "en")
+    assert updates["flow_state"] == "parsing"
+    assert updates["session_active"] is True
+
+
+@pytest.mark.asyncio
+async def test_dismissive_end_session_uses_localized_de_escalation_reply() -> None:
+    step = ExtractionStep(_DummyLLM())
+    today = date(2026, 3, 21)
+    session_query = NormalizedQuery(
+        intent=QueryIntent.TRANSACTION_LIST,
+        time_range=TimeRange(start=today, end=today, granularity="day"),
+        filters=Filters(transaction_type="credit"),
+    )
+    session_contract = QueryExecutionContract.from_normalized_query(session_query)
+
+    async def _fake_reason(_: object) -> QuerySemanticDecision:
+        return QuerySemanticDecision(
+            decision="end_session",
+            confidence=0.97,
+            reason="dismissive_stop_helping_turn",
+            end_session_kind="dismissive",
+        )
+
+    step.reasoner.reason = _fake_reason  # type: ignore[method-assign]
+
+    updates = await step._handle_continuation(
+        {"message": "get out", "today": today, "language": "en"},
+        {
+            "session_active": True,
+            "query_contract": session_contract.model_dump(),
+            "query_result": {"items": []},
+        },
+    )
+
+    assert updates["transaction_outcome"] == TransactionOutcome.OK
+    assert updates["response"] == render_message("query.session.dismissive_goodbye", "en")
+    assert updates["session_active"] is False
+    assert updates["flow_state"] == "complete"
+
+
+@pytest.mark.asyncio
+async def test_plain_recipient_summary_followup_reparses_as_new_beneficiary_summary_query() -> None:
+    step = ExtractionStep(_DummyLLM())
+    today = date(2026, 3, 21)
+    session_query = NormalizedQuery(
+        intent=QueryIntent.TRANSACTION_LIST,
+        time_range=TimeRange(start=date(2026, 3, 1), end=today, granularity="month"),
+        filters=Filters(transaction_type="credit"),
+    )
+    session_contract = QueryExecutionContract.from_normalized_query(session_query)
+
+    extraction = QueryExtractionResult(
+        intent=ExtractionIntent.TRANSACTION_LIST,
+        time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="this_month"),
+        raw_query="Who did I send money to this month",
+    )
+
+    def _fake_resolve_existing(
+        parsed_extraction: QueryExtractionResult,
+        *,
+        today: date,
+        language: str,
+    ) -> QueryParseResult:
+        del today, language
+        query = NormalizedQuery(
+            intent=QueryIntent.BENEFICIARY_SUMMARY,
+            time_range=TimeRange(start=date(2026, 3, 1), end=date(2026, 3, 21), granularity="month"),
+            filters=Filters(transaction_type="debit"),
+        )
+        return _ok_result(parsed_extraction, query)
+
+    async def _fake_reason(_: object) -> QuerySemanticDecision:
+        return QuerySemanticDecision(
+            decision="new_query",
+            confidence=0.95,
+            reason="recipient_summary_followup",
+            extraction=extraction,
+        )
+
+    step.reasoner.reason = _fake_reason  # type: ignore[method-assign]
+    step.parser.resolve_existing_extraction = _fake_resolve_existing  # type: ignore[method-assign]
+
+    updates = await step._handle_continuation(
+        {"message": "Who did I send money to this month", "today": today, "language": "en"},
+        {
+            "session_active": True,
+            "query_contract": session_contract.model_dump(),
+            "query_result": {"items": []},
+        },
+    )
+
+    query_contract = updates["query_contract"]
+    assert query_contract.intent == QueryIntent.BENEFICIARY_SUMMARY
+    assert query_contract.normalized_query.intent == QueryIntent.BENEFICIARY_SUMMARY
+    assert query_contract.normalized_query.filters is not None
+    assert query_contract.normalized_query.filters.transaction_type == "debit"
 
 
 @pytest.mark.asyncio

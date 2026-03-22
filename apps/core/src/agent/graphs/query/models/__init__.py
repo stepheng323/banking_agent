@@ -8,6 +8,7 @@ from .domain import (
     QueryFrameFacts,
     QueryIntent,
     QueryIR,
+    QueryOperation,
     QueryResult,
     QueryResultItem,
     ResultSurface,

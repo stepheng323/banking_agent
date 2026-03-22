@@ -59,6 +59,33 @@ def _analytics_frame(
     )
 
 
+def _transaction_list_frame(
+    *,
+    frame_id: str,
+    turn_index: int,
+    start: date,
+    end: date,
+) -> QueryFrame:
+    return QueryFrame(
+        frame_id=frame_id,
+        turn_index=turn_index,
+        query_contract=QueryExecutionContract.from_normalized_query(
+            NormalizedQuery(
+                intent=QueryIntent.TRANSACTION_LIST,
+                time_range=TimeRange(start=start, end=end, granularity="month"),
+                filters=Filters(transaction_type="debit"),
+                result_limit=5,
+                result_reference="latest",
+            )
+        ),
+        summary_text="Transactions — Mar 01–Mar 19",
+        interpretation={"intent": "transaction_list"},
+        surface_type=SurfaceType.LIST,
+        surface_context={"type": "transactions"},
+        facts=QueryFrameFacts(metric_kind="transactions", count=5, direction="debit"),
+    )
+
+
 @pytest.mark.asyncio
 async def test_grounded_compare_both_compiles_time_comparison_contract() -> None:
     step = ExtractionStep(_DummyLLM())
@@ -256,6 +283,49 @@ async def test_grounded_show_transactions_for_that_one_compiles_transaction_list
     assert query_contract.time_start == date(2026, 3, 16)
     assert query_contract.normalized_query.filters is not None
     assert query_contract.normalized_query.filters.merchant == ["mum"]
+
+
+@pytest.mark.asyncio
+async def test_grounded_reuse_frame_is_ignored_for_aggregate_over_active_transaction_list() -> None:
+    step = ExtractionStep(_DummyLLM())
+    active_list = _transaction_list_frame(
+        frame_id="qf_1",
+        turn_index=1,
+        start=date(2026, 3, 1),
+        end=date(2026, 3, 19),
+    )
+
+    async def _fake_reason(_: object) -> QuerySemanticDecision:
+        return QuerySemanticDecision(
+            decision="continuation",
+            continuation_type="aggregate",
+            followup_intent="refine_existing",
+            answer_mode="grounded_query",
+            grounded_operation="reuse_frame",
+            referenced_frame_ids=["qf_1"],
+            confidence=0.93,
+            reason="ground_reuse_frame_should_not_block_aggregate",
+        )
+
+    step.reasoner.reason = _fake_reason  # type: ignore[method-assign]
+
+    updates = await step._handle_continuation(
+        {"message": "How much debit in total?", "today": date(2026, 3, 19), "language": "en"},
+        {
+            "session_active": True,
+            "query_contract": active_list.query_contract.model_dump(),
+            "query_result": {"items": []},
+            "query_frames": [active_list.model_dump()],
+        },
+    )
+
+    query_contract = updates["query_contract"]
+    assert query_contract.intent == QueryIntent.ANALYTICS_SUMMARY
+    assert query_contract.normalized_query.intent == QueryIntent.ANALYTICS_SUMMARY
+    assert query_contract.normalized_query.filters is not None
+    assert query_contract.normalized_query.filters.transaction_type == "debit"
+    assert query_contract.normalized_query.aggregation is not None
+    assert query_contract.normalized_query.aggregation.type == "sum"
 
 
 @pytest.mark.asyncio

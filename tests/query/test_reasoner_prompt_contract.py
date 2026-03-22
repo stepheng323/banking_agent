@@ -59,6 +59,20 @@ def test_query_reasoner_prompt_requires_followup_intent_for_continuations() -> N
     )
 
 
+def test_query_reasoner_prompt_mentions_bounded_query_operations() -> None:
+    assert "When the executable shape is clear, also set `query_operation`" in QUERY_SEMANTIC_REASONER_PROMPT
+    assert "- sum_transactions" in QUERY_SEMANTIC_REASONER_PROMPT
+    assert "- breakdown_transactions" in QUERY_SEMANTIC_REASONER_PROMPT
+    assert "- summarize_beneficiaries" in QUERY_SEMANTIC_REASONER_PROMPT
+
+
+def test_query_parser_prompt_mentions_bounded_query_operations() -> None:
+    assert "QUERY OPERATION" in QUERY_PARSER_PROMPT
+    assert "- list_transactions" in QUERY_PARSER_PROMPT
+    assert "- search_single_transaction" in QUERY_PARSER_PROMPT
+    assert "- compare_periods" in QUERY_PARSER_PROMPT
+
+
 def test_query_reasoner_prompt_defines_legal_followup_intent_combinations() -> None:
     assert 'continuation_type="show_more"' in QUERY_SEMANTIC_REASONER_PROMPT
     assert 'followup_intent="continue_pagination"' in QUERY_SEMANTIC_REASONER_PROMPT
@@ -108,6 +122,9 @@ def test_query_reasoner_prompt_covers_weekly_scope_replacement_transcript() -> N
     assert '"I mean my income this month" or "total income then" after that credit transaction list -> continuation_type="aggregate" and followup_intent="refine_existing"; keep the active credit scope and recover from the repair phrasing' in (
         QUERY_SEMANTIC_REASONER_PROMPT
     )
+    assert '"I mean my highest single transfer" after that last debit transaction for this month -> continuation_type="aggregate" and followup_intent="refine_existing"; preserve the active debit/month scope and compute the largest single transfer by amount' in (
+        QUERY_SEMANTIC_REASONER_PROMPT
+    )
     assert 'explicit salary-only asks like "salary this month" are narrower than generic income and should only narrow when the user clearly says salary/earnings/paycheck' in (
         QUERY_SEMANTIC_REASONER_PROMPT
     )
@@ -117,6 +134,38 @@ def test_query_reasoner_prompt_covers_weekly_scope_replacement_transcript() -> N
     assert '"Show my debit transactions this month" after a credit summary -> decision="new_query" with a fresh debit/list extraction' in (
         QUERY_SEMANTIC_REASONER_PROMPT
     )
+    assert '"What about credit" after that debit summary/list -> continuation_type="filter_delta" and followup_intent="refine_existing"; preserve the active time scope and switch transaction_type to credit' in (
+        QUERY_SEMANTIC_REASONER_PROMPT
+    )
+    assert '"What about debit" after that credit summary/list -> continuation_type="filter_delta" and followup_intent="refine_existing"; preserve the active time scope and switch transaction_type to debit' in (
+        QUERY_SEMANTIC_REASONER_PROMPT
+    )
+    assert '"Who did I send money to in March", "Who did I send money to this month", or "Who did I transfer to in March" during an active query session -> decision="new_query" with a fresh beneficiary-summary extraction, not continuation_type="unclear"' in (
+        QUERY_SEMANTIC_REASONER_PROMPT
+    )
+    assert '"Who did I send money to the most this month" during an active query session -> decision="new_query" with a fresh beneficiary-summary extraction that preserves the ranking meaning' in (
+        QUERY_SEMANTIC_REASONER_PROMPT
+    )
+
+
+def test_query_reasoner_prompt_covers_dismissive_end_session_semantics() -> None:
+    assert 'Dismissive turns that mean "stop helping me" such as "get out", "fuck off", "leave me alone", or "go away"' in (
+        QUERY_SEMANTIC_REASONER_PROMPT
+    )
+    assert 'should use decision="end_session" with end_session_kind="dismissive", not continuation_type="unclear".' in (
+        QUERY_SEMANTIC_REASONER_PROMPT
+    )
+
+
+def test_query_parser_prompt_covers_plain_recipient_summary_phrases() -> None:
+    assert 'grouped recipient summary ("who did I send money to in March", "who did I send money to this month")' in (
+        QUERY_PARSER_PROMPT
+    )
+    assert '"highest single transfer", "biggest single payment", or "largest debit this month" → aggregation.type = largest, limit = 1' in (
+        QUERY_PARSER_PROMPT
+    )
+    assert 'set aggregation.sort_by="count" for grouped recipient summary or frequency ranking' in QUERY_PARSER_PROMPT
+    assert 'set aggregation.sort_by="amount" for amount ranking ("most money", "largest amount to")' in QUERY_PARSER_PROMPT
 
 
 def test_query_parser_prompt_covers_weekly_aggregate_and_possessive_period_phrasing() -> None:
@@ -132,6 +181,10 @@ def test_query_parser_prompt_covers_weekly_aggregate_and_possessive_period_phras
     assert '"this month\'s transactions" → explicit period this_month' in QUERY_PARSER_PROMPT
     assert '"only this month" → explicit period this_month' in QUERY_PARSER_PROMPT
     assert '"How much did I spend last month" → explicit period last_month' in QUERY_PARSER_PROMPT
+    assert '"Show all March transactions" → explicit period march' in QUERY_PARSER_PROMPT
+    assert '"Show all March last year transactions" or "show all last year March transactions" → explicit period march_last_year' in QUERY_PARSER_PROMPT
+    assert '"Show all March this year transactions" or "show all this year March transactions" → explicit period march_this_year' in QUERY_PARSER_PROMPT
+    assert '"income vs spending" or "credit vs debit" → group_by=transaction_type' in QUERY_PARSER_PROMPT
 
 
 def test_query_reasoner_prompt_covers_generic_timeframe_scope_replacement() -> None:
@@ -145,6 +198,9 @@ def test_query_reasoner_prompt_covers_generic_timeframe_scope_replacement() -> N
         QUERY_SEMANTIC_REASONER_PROMPT
     )
     assert '"What about last week", "what about yesterday", or "and last month?" after that summary/list -> continuation_type="time_delta" and followup_intent="replace_scope"; runtime resolves the new time window from the user message' in (
+        QUERY_SEMANTIC_REASONER_PROMPT
+    )
+    assert '"Compare the income vs spending" or "income vs spending" after that all-transactions list -> continuation_type="aggregate" and followup_intent="refine_existing"; preserve the active time scope and set extraction.aggregation.type="breakdown", extraction.aggregation.group_by="transaction_type"' in (
         QUERY_SEMANTIC_REASONER_PROMPT
     )
 

@@ -2,10 +2,12 @@ from datetime import date
 
 from apps.core.src.agent.graphs.query.models import (
     ExtractionIntent,
+    QueryAggregation,
     QueryComparison,
     QueryExecutionContract,
     QueryExtractionResult,
     QueryIntent,
+    QueryOperation,
     QueryTimeRange,
     TimeReference,
 )
@@ -36,11 +38,11 @@ def test_build_query_contract_from_extraction_preserves_lagos_today_window() -> 
     assert contract.normalized_query.intent == QueryIntent.ANALYTICS_SUMMARY
 
 
-def test_targeted_comparison_cue_upgrades_misclassified_list_to_time_comparison() -> None:
+def test_explicit_time_comparison_extraction_compiles_to_time_comparison() -> None:
     parser = QueryParser(_DummyLLM())
     today = date(2026, 3, 6)
     extraction = QueryExtractionResult(
-        intent=ExtractionIntent.TRANSACTION_LIST,
+        intent=ExtractionIntent.TIME_COMPARISON,
         time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="this_month", days_back=30),
         raw_query="compare my spending this month vs last month",
     )
@@ -52,12 +54,13 @@ def test_targeted_comparison_cue_upgrades_misclassified_list_to_time_comparison(
     assert contract.intent == QueryIntent.TIME_COMPARISON
 
 
-def test_targeted_recipient_ranking_cue_upgrades_to_beneficiary_summary() -> None:
+def test_explicit_beneficiary_summary_extraction_compiles_count_ranking() -> None:
     parser = QueryParser(_DummyLLM())
     today = date(2026, 3, 7)
     extraction = QueryExtractionResult(
-        intent=ExtractionIntent.TRANSACTION_LIST,
+        intent=ExtractionIntent.BENEFICIARY_SUMMARY,
         time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="this_week", days_back=5),
+        aggregation=QueryAggregation(type="sum", sort_by="count"),
         raw_query="Who did I send money to the most this week",
     )
 
@@ -72,6 +75,166 @@ def test_targeted_recipient_ranking_cue_upgrades_to_beneficiary_summary() -> Non
     assert contract.aggregation.sort_by == "count"
     assert query_ir.time_range.start == date(2026, 3, 2)
     assert query_ir.time_range.end == today
+
+
+def test_query_operation_sum_hint_compiles_to_analytics_summary() -> None:
+    parser = QueryParser(_DummyLLM())
+    today = date(2026, 3, 6)
+    extraction = QueryExtractionResult(
+        intent=ExtractionIntent.TRANSACTION_LIST,
+        query_operation=QueryOperation.SUM_TRANSACTIONS,
+        time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="today", days_back=0),
+        raw_query="how much did I spend today",
+    )
+
+    query_ir = parser.build_query_ir_from_extraction(extraction, today=today, language="en")
+    contract = parser.build_execution_contract_from_ir(query_ir)
+
+    assert query_ir.query_operation == QueryOperation.SUM_TRANSACTIONS
+    assert query_ir.intent == QueryIntent.ANALYTICS_SUMMARY
+    assert contract.query_operation == QueryOperation.SUM_TRANSACTIONS
+    assert contract.intent == QueryIntent.ANALYTICS_SUMMARY
+    assert contract.aggregation is not None
+    assert contract.aggregation.type == "sum"
+
+
+def test_query_operation_beneficiary_hint_compiles_to_beneficiary_summary() -> None:
+    parser = QueryParser(_DummyLLM())
+    today = date(2026, 3, 21)
+    extraction = QueryExtractionResult(
+        intent=ExtractionIntent.TRANSACTION_LIST,
+        query_operation=QueryOperation.SUMMARIZE_BENEFICIARIES,
+        time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="this_month"),
+        raw_query="who did I send money to this month",
+    )
+
+    query_ir = parser.build_query_ir_from_extraction(extraction, today=today, language="en")
+    contract = parser.build_execution_contract_from_ir(query_ir)
+
+    assert query_ir.query_operation == QueryOperation.SUMMARIZE_BENEFICIARIES
+    assert query_ir.intent == QueryIntent.BENEFICIARY_SUMMARY
+    assert contract.query_operation == QueryOperation.SUMMARIZE_BENEFICIARIES
+    assert contract.intent == QueryIntent.BENEFICIARY_SUMMARY
+
+
+def test_query_operation_breakdown_hint_preserves_transaction_type_grouping() -> None:
+    parser = QueryParser(_DummyLLM())
+    today = date(2026, 3, 21)
+    extraction = QueryExtractionResult(
+        intent=ExtractionIntent.TRANSACTION_LIST,
+        query_operation=QueryOperation.BREAKDOWN_TRANSACTIONS,
+        aggregation=QueryAggregation(type="breakdown", group_by="transaction_type"),
+        time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="this_month"),
+        raw_query="compare the income vs spending",
+    )
+
+    query_ir = parser.build_query_ir_from_extraction(extraction, today=today, language="en")
+    contract = parser.build_execution_contract_from_ir(query_ir)
+
+    assert query_ir.query_operation == QueryOperation.BREAKDOWN_TRANSACTIONS
+    assert query_ir.intent == QueryIntent.ANALYTICS_SUMMARY
+    assert query_ir.aggregation is not None
+    assert query_ir.aggregation.type == "breakdown"
+    assert query_ir.aggregation.group_by == "transaction_type"
+    assert contract.aggregation is not None
+    assert contract.aggregation.group_by == "transaction_type"
+
+
+def test_explicit_amount_ranked_beneficiary_summary_compiles_amount_sort() -> None:
+    parser = QueryParser(_DummyLLM())
+    today = date(2026, 3, 21)
+    extraction = QueryExtractionResult(
+        intent=ExtractionIntent.BENEFICIARY_SUMMARY,
+        time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="this_month"),
+        aggregation=QueryAggregation(type="sum", sort_by="amount"),
+        raw_query="Who got the most money this month",
+    )
+
+    query_ir = parser.build_query_ir_from_extraction(extraction, today=today, language="en")
+    contract = parser.build_execution_contract_from_ir(query_ir)
+
+    assert query_ir.intent == QueryIntent.BENEFICIARY_SUMMARY
+    assert contract.intent == QueryIntent.BENEFICIARY_SUMMARY
+    assert query_ir.aggregation is not None
+    assert query_ir.aggregation.sort_by == "amount"
+    assert contract.aggregation is not None
+    assert contract.aggregation.sort_by == "amount"
+
+
+def test_parser_does_not_lexically_upgrade_plain_recipient_summary_text() -> None:
+    parser = QueryParser(_DummyLLM())
+    today = date(2026, 3, 21)
+    extraction = QueryExtractionResult(
+        intent=ExtractionIntent.TRANSACTION_LIST,
+        time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="this_month"),
+        raw_query="Who did I send money to this month",
+    )
+
+    query_ir = parser.build_query_ir_from_extraction(extraction, today=today, language="en")
+    contract = parser.build_execution_contract_from_ir(query_ir)
+
+    assert query_ir.intent == QueryIntent.TRANSACTION_LIST
+    assert contract.intent == QueryIntent.TRANSACTION_LIST
+
+
+def test_parser_does_not_lexically_upgrade_comparison_text() -> None:
+    parser = QueryParser(_DummyLLM())
+    today = date(2026, 3, 21)
+    extraction = QueryExtractionResult(
+        intent=ExtractionIntent.TRANSACTION_LIST,
+        time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="this_month"),
+        raw_query="compare my spending this month vs last month",
+    )
+
+    query_ir = parser.build_query_ir_from_extraction(extraction, today=today, language="en")
+    contract = parser.build_execution_contract_from_ir(query_ir)
+
+    assert query_ir.intent == QueryIntent.TRANSACTION_LIST
+    assert contract.intent == QueryIntent.TRANSACTION_LIST
+
+
+def test_explicit_largest_transfer_extraction_compiles_to_largest_analytics_query() -> None:
+    parser = QueryParser(_DummyLLM())
+    today = date(2026, 3, 21)
+    extraction = QueryExtractionResult(
+        intent=ExtractionIntent.SPENDING_TOTAL,
+        time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="this_month"),
+        aggregation=QueryAggregation(type="largest", limit=1),
+        result_reference="latest",
+        raw_query="Whats my highest single transfer this month",
+    )
+
+    query_ir = parser.build_query_ir_from_extraction(extraction, today=today, language="en")
+    contract = parser.build_execution_contract_from_ir(query_ir)
+
+    assert query_ir.intent == QueryIntent.ANALYTICS_SUMMARY
+    assert contract.intent == QueryIntent.ANALYTICS_SUMMARY
+    assert query_ir.filters is not None
+    assert query_ir.filters.transaction_type == "debit"
+    assert query_ir.aggregation is not None
+    assert query_ir.aggregation.type == "largest"
+    assert query_ir.aggregation.limit == 1
+    assert query_ir.result_reference is None
+    assert contract.normalized_query.result_reference is None
+
+
+def test_parser_does_not_lexically_upgrade_highest_single_transfer_text() -> None:
+    parser = QueryParser(_DummyLLM())
+    today = date(2026, 3, 21)
+    extraction = QueryExtractionResult(
+        intent=ExtractionIntent.TRANSACTION_LIST,
+        time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="this_month"),
+        result_reference="latest",
+        raw_query="Whats my most single transfer this month",
+    )
+
+    query_ir = parser.build_query_ir_from_extraction(extraction, today=today, language="en")
+    contract = parser.build_execution_contract_from_ir(query_ir)
+
+    assert query_ir.intent == QueryIntent.TRANSACTION_LIST
+    assert contract.intent == QueryIntent.TRANSACTION_LIST
+    assert query_ir.result_reference == "latest"
+    assert contract.normalized_query.result_reference == "latest"
 
 
 def test_explicit_this_week_without_days_back_compiles_to_calendar_week_to_date() -> None:

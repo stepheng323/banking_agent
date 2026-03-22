@@ -81,3 +81,35 @@ async def test_analytics_sum_no_spending_today_is_humanized(monkeypatch: pytest.
     )
 
     assert result.summary_text == "You didn't spend anything today."
+
+
+@pytest.mark.asyncio
+async def test_analytics_transaction_type_breakdown_uses_human_label(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def _fake_fetch_and_filter(*args: Any, **kwargs: Any) -> list[dict[str, Any]]:
+        del args, kwargs
+        return [
+            {"id": "tx_1", "amount": 32000, "narration": "Transfer to Mum", "date": "2026-03-05", "type": "debit"},
+            {"id": "tx_2", "amount": 950000, "narration": "Salary", "date": "2026-03-05", "type": "credit"},
+        ]
+
+    monkeypatch.setattr(
+        "apps.core.src.agent.graphs.query.handlers.analytics.fetch_and_filter",
+        _fake_fetch_and_filter,
+    )
+
+    result = await handle_analytics(
+        _Provider(),  # type: ignore[arg-type]
+        QueryExecutionContract.from_normalized_query(
+            NormalizedQuery(
+                intent=QueryIntent.ANALYTICS_SUMMARY,
+                aggregation=Aggregation(type="breakdown", group_by="transaction_type"),
+                time_range=TimeRange(start=date(2026, 3, 1), end=date(2026, 3, 6)),
+            )
+        ),
+        account_id="acc_1",
+        account_ids=["acc_1"],
+        language="en",
+    )
+
+    assert result.summary_text == "Breakdown by transaction type"
+    assert [item.description for item in result.items] == ["credit", "debit"]

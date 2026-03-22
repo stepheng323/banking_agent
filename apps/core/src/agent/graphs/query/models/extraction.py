@@ -5,6 +5,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
+from apps.core.src.agent.graphs.query.models.domain import QueryOperation
+
 # Schema version for future-proofing
 SCHEMA_VERSION = 1
 
@@ -91,6 +93,10 @@ class QueryAggregation(BaseModel):
     type: str | None = Field(default=None, description="sum, count, average, largest, smallest")
     group_by: str | None = Field(default=None, description="category, bank, recipient")
     limit: int | None = Field(default=None, description="Max items (1 for singular, N for plural)")
+    sort_by: Literal["amount", "count"] | None = Field(
+        default=None,
+        description="Ranking basis for grouped results, especially beneficiary summaries",
+    )
 
 
 class QueryComparison(BaseModel):
@@ -105,6 +111,7 @@ class QueryExtractionResult(BaseModel):
 
     schema_version: int = Field(default=SCHEMA_VERSION)
     intent: ExtractionIntent = Field(default=ExtractionIntent.TRANSACTION_LIST)
+    query_operation: QueryOperation | None = Field(default=None)
     intent_confidence: float = Field(default=1.0, ge=0.0, le=1.0)
 
     filters: QueryFilters = Field(default_factory=QueryFilters)

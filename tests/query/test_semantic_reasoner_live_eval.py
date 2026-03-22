@@ -168,3 +168,24 @@ async def test_query_reasoner_live_eval_fresh_restatement_becomes_new_query() ->
     assert isinstance(result, QuerySemanticDecision)
     assert result.decision == "new_query"
     assert result.extraction is not None
+
+
+@pytest.mark.asyncio
+async def test_query_reasoner_live_eval_recipient_summary_followup_becomes_new_query() -> None:
+    reasoner = QuerySemanticReasoner(_live_chat_model())
+
+    result = await reasoner.reason(_active_summary_context("Who did I send money to this month"))
+
+    assert isinstance(result, QuerySemanticDecision)
+    assert result.decision == "new_query"
+    assert result.extraction is not None
+
+
+@pytest.mark.asyncio
+async def test_query_reasoner_live_eval_dismissive_turn_ends_session() -> None:
+    reasoner = QuerySemanticReasoner(_live_chat_model())
+
+    result = await reasoner.reason(_active_summary_context("get out"))
+
+    assert isinstance(result, QuerySemanticDecision)
+    assert result.decision == "end_session"

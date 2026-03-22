@@ -12,8 +12,11 @@ from apps.core.src.agent.graphs.query.models import (
     QueryFilters,
     QueryFrame,
     QueryIntent,
+    QueryOperation,
+    QueryParseResult,
     QueryResultItem,
     QueryTimeRange,
+    ResolverOutcome,
     ResultSurface,
     SurfaceType,
     TimeRange,
@@ -296,6 +299,7 @@ async def test_reasoner_logs_deterministic_surface_action_without_llm(
             "reasoner_context_mode": "active_result",
             "reasoner_llm_used": False,
             "continuation_type": "drill_down",
+            "query_operation": None,
             "confidence": 1.0,
             "reason": "deterministic_receipt",
         },
@@ -362,6 +366,7 @@ async def test_reasoner_logs_llm_fact_answer_decision(
             "reasoner_context_mode": "active_result",
             "reasoner_llm_used": True,
             "continuation_type": "drill_down",
+            "query_operation": None,
             "confidence": 0.91,
             "reason": "llm_fact_recipient",
         },
@@ -409,10 +414,37 @@ async def test_reasoner_logs_llm_backed_fresh_query_decision(monkeypatch: pytest
             "reasoner_context_mode": "none",
             "reasoner_llm_used": True,
             "continuation_type": None,
+            "query_operation": None,
             "confidence": 0.93,
             "reason": "llm_fresh_query",
         },
     ) in events
+
+
+@pytest.mark.asyncio
+async def test_reasoner_copies_top_level_query_operation_into_extraction() -> None:
+    llm = _TrackingLLM(
+        QuerySemanticDecision(
+            decision="fresh_query",
+            confidence=0.93,
+            reason="llm_fresh_sum_query",
+            query_operation=QueryOperation.SUM_TRANSACTIONS,
+            extraction=QueryExtractionResult(raw_query="how much did I spend today"),
+        )
+    )
+    reasoner = QuerySemanticReasoner(llm)
+
+    decision = await reasoner.reason(
+        SemanticReasonerContext(
+            message="how much did I spend today",
+            today=date(2026, 3, 13),
+            language="en",
+        )
+    )
+
+    assert decision.query_operation == QueryOperation.SUM_TRANSACTIONS
+    assert decision.extraction is not None
+    assert decision.extraction.query_operation == QueryOperation.SUM_TRANSACTIONS
 
 
 @pytest.mark.asyncio
@@ -861,6 +893,7 @@ async def test_reasoner_uses_llm_for_pending_clarification_time_reply(
             "reasoner_context_mode": "pending_clarification",
             "reasoner_llm_used": True,
             "continuation_type": None,
+            "query_operation": None,
             "confidence": 0.9,
             "reason": "llm_pending_time_reply",
         },
@@ -1005,6 +1038,54 @@ async def test_extraction_step_fresh_query_uses_reasoner_extraction_without_pars
 
     step.reasoner.reason = _fake_reason  # type: ignore[method-assign]
     step.parser.parse = _fail_parse  # type: ignore[method-assign]
+
+    result = await step.run(
+        {
+            "message": "show my last transaction",
+            "language": "en",
+            "today": date(2026, 3, 13),
+        }
+    )
+
+    assert result.outcome == TransactionOutcome.OK
+    assert result.patch["flow_state"] == "executing"
+
+
+@pytest.mark.asyncio
+async def test_extraction_step_fresh_query_missing_extraction_falls_back_to_parser_parse() -> None:
+    step = ExtractionStep(_FailingLLM())
+    parsed_extraction = QueryExtractionResult(
+        raw_query="show my last transaction",
+        result_limit=1,
+        result_reference="latest",
+    )
+    parsed_query = NormalizedQuery(
+        intent=QueryIntent.TRANSACTION_LIST,
+        time_range=TimeRange(start=date(2026, 2, 11), end=date(2026, 3, 13)),
+        result_limit=1,
+        result_reference="latest",
+    )
+
+    async def _fake_reason(context: object) -> QuerySemanticDecision:
+        del context
+        return QuerySemanticDecision(
+            decision="fresh_query",
+            confidence=0.92,
+            reason="missing_reasoner_extraction",
+            extraction=None,
+        )
+
+    async def _fake_parse(question: str, *, today: date, language: str) -> QueryParseResult:
+        del today, language
+        assert question == "show my last transaction"
+        return QueryParseResult(
+            outcome=ResolverOutcome.OK,
+            extraction=parsed_extraction,
+            query_contract=QueryExecutionContract.from_normalized_query(parsed_query).model_dump(mode="json"),
+        )
+
+    step.reasoner.reason = _fake_reason  # type: ignore[method-assign]
+    step.parser.parse = _fake_parse  # type: ignore[method-assign]
 
     result = await step.run(
         {

@@ -331,6 +331,8 @@ async def _aggregate_breakdown(transactions: list[dict], query: NormalizedQuery,
             key = detect_category(t.get("narration", "")) or "other"
         elif group_by == "merchant":
             key = extract_counterparty(t.get("narration", ""), locale=language)
+        elif group_by == "transaction_type":
+            key = t.get("type", "other")
         else:
             key = t.get("date", "")[:10]
 
@@ -391,7 +393,18 @@ async def _aggregate_breakdown(transactions: list[dict], query: NormalizedQuery,
     )
 
     return QueryResult(
-        summary_text=render_message("query.analytics.breakdown_by", language, {"group_by": group_by}),
+        summary_text=render_message(
+            "query.analytics.breakdown_by",
+            language,
+            {"group_by": _breakdown_group_label(group_by, language)},
+        ),
         items=items,
         surface=surface,
     )
+
+
+def _breakdown_group_label(group_by: str | None, language: str) -> str:
+    """Render a human-friendly group-by label for summary text."""
+    if group_by == "transaction_type":
+        return render_message("query.analytics.group_by_transaction_type", language)
+    return group_by or "day"

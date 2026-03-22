@@ -17,6 +17,7 @@ from apps.core.src.agent.graphs.query.models import (
     QueryExecutionContract,
     QueryExtractionResult,
     QueryFrame,
+    QueryOperation,
     QueryResultItem,
     ResultSurface,
     SurfaceType,
@@ -49,6 +50,7 @@ class QuerySemanticDecision(BaseModel):
     reason: str | None = Field(default=None)
 
     extraction: QueryExtractionResult | None = Field(default=None)
+    query_operation: QueryOperation | None = Field(default=None)
     time_period: str | None = Field(default=None)
 
     continuation_type: Literal[
@@ -81,6 +83,7 @@ class QuerySemanticDecision(BaseModel):
     )
     recipient_name: str | None = Field(default=None)
     end_session_response: str | None = Field(default=None)
+    end_session_kind: Literal["courtesy", "dismissive", "generic"] | None = Field(default=None)
     fact_field: Literal["status", "amount", "recipient", "bank", "date"] | None = Field(default=None)
     response_text: str | None = Field(default=None)
     contextual_hint: str | None = Field(default=None)
@@ -133,6 +136,7 @@ class QuerySemanticReasoner:
             reasoner_context_mode=context_mode,
             reasoner_llm_used=llm_used,
             continuation_type=decision.continuation_type,
+            query_operation=decision.query_operation.value if decision.query_operation is not None else None,
             confidence=decision.confidence,
             reason=decision.reason,
         )
@@ -160,6 +164,7 @@ class QuerySemanticReasoner:
             llm_used=llm_used,
             semantic_decision=decision.decision if decision is not None else None,
             continuation_type=decision.continuation_type if decision is not None else None,
+            query_operation=decision.query_operation.value if decision is not None and decision.query_operation is not None else None,
             prompt_item_count=prompt_item_count,
             prompt_frame_count=prompt_frame_count,
             prompt_surface_type=prompt_surface_type,
@@ -479,6 +484,10 @@ class QuerySemanticReasoner:
             decision = await self._invoke_llm(context)
             if decision.extraction is not None:
                 decision.extraction.raw_query = decision.extraction.raw_query or context.message
+                if decision.extraction.query_operation is None and decision.query_operation is not None:
+                    decision.extraction.query_operation = decision.query_operation
+            if decision.query_operation is None and decision.extraction is not None:
+                decision.query_operation = decision.extraction.query_operation
             decision = await self._return_annotated_decision(
                 context=context,
                 decision=decision,

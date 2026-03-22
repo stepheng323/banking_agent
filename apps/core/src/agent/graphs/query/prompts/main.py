@@ -79,6 +79,10 @@ RULES
 
 6) end_session
 - Use for thanks/closing/cancel/abort/stop/nevermind.
+- Include `end_session_kind` as one of:
+  - courtesy
+  - dismissive
+  - generic
 - Include `end_session_response` only if helpful.
 
 QUERY SHAPE RULES
@@ -121,6 +125,7 @@ CONTINUATION RULES
   - when possible, include `extraction` for the derived analytical query so runtime can reuse the active scope cleanly
   - if the active result is still the reference point but the follow-up intent is unclear,
     use continuation_type="unclear" and followup_intent="none" so the system can clarify
+  - prefer continuation_type="unclear" over guessing when a short repair or pivot could plausibly mean multiple things
   - unrelated full query -> decision="new_query"
   - explicit fresh restatements that introduce a new query shape, direction, or result surface should be new_query,
     not time_delta, even if they mention a time period
@@ -139,6 +144,8 @@ CONTINUATION RULES
     - "wetin be total", "nawa be total", or "lapapo meloo" after that transaction list/summary -> continuation_type="aggregate" and followup_intent="refine_existing"
     - "What my income this month" or "what's my income this month" after that credit transaction list -> continuation_type="aggregate" and followup_intent="refine_existing"; treat income as total credit inflows for the active month scope
     - "I mean my income this month" or "total income then" after that credit transaction list -> continuation_type="aggregate" and followup_intent="refine_existing"; keep the active credit scope and recover from the repair phrasing
+    - "I mean my highest single transfer" after that last debit transaction for this month -> continuation_type="aggregate" and followup_intent="refine_existing"; preserve the active debit/month scope and compute the largest single transfer by amount
+    - "Compare the income vs spending" or "income vs spending" after that all-transactions list -> continuation_type="aggregate" and followup_intent="refine_existing"; preserve the active time scope and set extraction.aggregation.type="breakdown", extraction.aggregation.group_by="transaction_type"
     - explicit salary-only asks like "salary this month" are narrower than generic income and should only narrow when the user clearly says salary/earnings/paycheck
     - "Show them" or "show me" after that summary -> continuation_type="show_more" and followup_intent="refine_existing"
     - "Only today", "Only this week's", or "for last month only" after that summary/list -> continuation_type="time_delta" and followup_intent="replace_scope"; runtime resolves the new time window from the user message
@@ -147,6 +154,10 @@ CONTINUATION RULES
     - "more" or "next page" on that list -> continuation_type="show_more" and followup_intent="continue_pagination"
     - "Show my credit transactions this month" after a spending summary -> decision="new_query" with a fresh credit/list extraction, not continuation_type="time_delta"
     - "Show my debit transactions this month" after a credit summary -> decision="new_query" with a fresh debit/list extraction
+    - "What about credit" after that debit summary/list -> continuation_type="filter_delta" and followup_intent="refine_existing"; preserve the active time scope and switch transaction_type to credit
+    - "What about debit" after that credit summary/list -> continuation_type="filter_delta" and followup_intent="refine_existing"; preserve the active time scope and switch transaction_type to debit
+    - "Who did I send money to in March", "Who did I send money to this month", or "Who did I transfer to in March" during an active query session -> decision="new_query" with a fresh beneficiary-summary extraction, not continuation_type="unclear"
+    - "Who did I send money to the most this month" during an active query session -> decision="new_query" with a fresh beneficiary-summary extraction that preserves the ranking meaning
     - If the user refers to multiple recent result frames and asks to compare them, keep decision="continuation" and use `grounded_operation="compare_frames"`
       with `answer_mode="memory_answer"` when the referenced frames already contain enough deterministic facts for the answer,
       otherwise use `answer_mode="grounded_query"`.
@@ -192,9 +203,12 @@ CONVERSATIONAL REACTION RULES
 - Preserve the current session and surface.
 - Do not trigger pagination, expand, drill-down, or any other mutation for conversational reactions.
 - If helpful, include exactly one short `contextual_hint` grounded in the current surface.
+- Dismissive turns that mean "stop helping me" such as "get out", "fuck off", "leave me alone", or "go away"
+  should use decision="end_session" with end_session_kind="dismissive", not continuation_type="unclear".
 
 EXTRACTION RULES
 - For `fresh_query`, `reinterpret_query`, and `new_query`, populate `extraction` using the same semantics as the query parser:
+  - query_operation
   - intent
   - filters
   - time_range
@@ -206,6 +220,20 @@ EXTRACTION RULES
   - ambiguities
 - If user asks for most recent/latest/last item, set result_reference="latest".
 - If user asks for oldest/earliest/first item, set result_reference="oldest".
+- If the user asks for a superlative by amount ("highest single transfer", "largest debit", "biggest expense"),
+  prefer aggregation.type=largest/smallest over result_reference.
+- When the executable shape is clear, also set `query_operation` to one of:
+  - list_transactions
+  - search_single_transaction
+  - sum_transactions
+  - count_transactions
+  - average_transactions
+  - rank_largest_transaction
+  - rank_smallest_transaction
+  - breakdown_transactions
+  - compare_periods
+  - summarize_beneficiaries
+  - check_affordability
 
 MULTILINGUAL
 - Support English, Nigerian Pidgin, Yoruba, Igbo, Hausa, French, and mixed phrasing.
@@ -228,8 +256,23 @@ Choose the best intent:
 - spending_total → totals/sums ("how much did I spend/pay")
 - category_breakdown → breakdown/split/categorize ("break down my spending", "split by merchant", "how did I spend")
 - beneficiary_summary → recipient ranking ("who did I send money to the most", "top recipients")
+  and grouped recipient summary ("who did I send money to in March", "who did I send money to this month")
 - time_comparison → compare periods ("this month vs last month")
 - affordability → "can I afford", "do I have enough"
+
+QUERY OPERATION
+When the executable shape is clear, also set `query_operation` to one of:
+- list_transactions
+- search_single_transaction
+- sum_transactions
+- count_transactions
+- average_transactions
+- rank_largest_transaction
+- rank_smallest_transaction
+- breakdown_transactions
+- compare_periods
+- summarize_beneficiaries
+- check_affordability
 
 FILTER INFERENCE
 - recipient: merchant or person name ("Uber", "Mum")
@@ -243,7 +286,7 @@ FILTER INFERENCE
 
 TIME NORMALIZATION
 - all time / ever → reference_type=all_time
-- explicit periods ("today", "yesterday", "last week", "this month", "January") → reference_type=explicit, set period
+- explicit periods ("today", "yesterday", "last week", "this month", "January", "March last year", "last year March") → reference_type=explicit, set period
   - "today" → days_back=0
   - "yesterday" → days_back=1
 - natural and possessive variants still count as explicit periods:
@@ -259,6 +302,9 @@ TIME NORMALIZATION
   - "this month's transactions" → explicit period this_month
   - "only this month" → explicit period this_month
   - "How much did I spend last month" → explicit period last_month
+  - "Show all March transactions" → explicit period march
+  - "Show all March last year transactions" or "show all last year March transactions" → explicit period march_last_year
+  - "Show all March this year transactions" or "show all this year March transactions" → explicit period march_this_year
 - vague ("recently", "sometime ago") → reference_type=vague, estimate days_back
 - no time mentioned → reference_type=unspecified
 - for time_comparison intent, the primary period must be explicit; if missing, keep reference_type=unspecified
@@ -266,14 +312,16 @@ TIME NORMALIZATION
 AGGREGATION RULES
 - spending_total → aggregation.type = sum
     - "largest transaction", "highest expense" (singular) → aggregation.type = largest, limit = 1
+    - "highest single transfer", "biggest single payment", or "largest debit this month" → aggregation.type = largest, limit = 1
     - "largest expenses", "top 3 spending" (plural/numbered) → aggregation.type = largest, limit = N (default 5)
     - "smallest transaction", "least expense", "lowest" → aggregation.type = smallest
 - category_breakdown → aggregation.type = breakdown (default group_by=category)
     - "breakdown by merchant" → group_by=merchant
     - "spending by bank" → group_by=account
+    - "income vs spending" or "credit vs debit" → group_by=transaction_type
 - beneficiary_summary → aggregation.type = sum, group by recipient/merchant for ranking
-    - default sort intent is frequency/count ("who did I send money to the most")
-    - amount cues ("most money", "largest amount to") imply amount ranking
+    - set aggregation.sort_by="count" for grouped recipient summary or frequency ranking
+    - set aggregation.sort_by="amount" for amount ranking ("most money", "largest amount to")
 - time_comparison → aggregation.type = sum unless user implies otherwise
 - transaction_list / single_transaction → no aggregation
 
@@ -323,4 +371,10 @@ User: "show my transactions"
 → intent=transaction_list, time_range.reference_type=unspecified
 User: "what was my last transaction status"
 → intent=transaction_list, result_limit=1, result_reference="latest"
+User: "who did I send money to this month"
+→ intent=beneficiary_summary, aggregation.type=sum, aggregation.sort_by="count",
+  filters.transaction_type="debit", time_range.reference_type=explicit, time_range.period="this_month"
+User: "what's my highest single transfer this month"
+→ intent=spending_total, aggregation.type=largest, aggregation.limit=1,
+  filters.transaction_type="debit", time_range.reference_type=explicit, time_range.period="this_month"
 """
