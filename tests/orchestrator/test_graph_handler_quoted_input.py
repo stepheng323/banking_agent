@@ -480,7 +480,11 @@ async def test_progress_update_finishes_when_progress_task_is_cancelled(monkeypa
         delivery_events.append("finished")
         return DeliveryAttemptResult(status="delivered")
 
+    async def _mock_typing(*args, **kwargs) -> DeliveryAttemptResult:
+        return DeliveryAttemptResult(status="delivered")
+
     monkeypatch.setattr("apps.core.src.agent.orchestrator.graph.handler.enqueue_outbox_say", _enqueue_outbox_say)
+    monkeypatch.setattr("apps.core.src.agent.orchestrator.graph.handler.enqueue_outbox_typing", _mock_typing)
 
     handler = OrchestratorGraphHandler(
         task_planner=SimpleNamespace(),
@@ -550,7 +554,11 @@ async def test_progress_task_waits_through_non_visible_stage_until_visible_stage
         delivery_events.append("sent")
         return DeliveryAttemptResult(status="delivered")
 
+    async def _mock_typing(*args, **kwargs) -> DeliveryAttemptResult:
+        return DeliveryAttemptResult(status="delivered")
+
     monkeypatch.setattr("apps.core.src.agent.orchestrator.graph.handler.enqueue_outbox_say", _enqueue_outbox_say)
+    monkeypatch.setattr("apps.core.src.agent.orchestrator.graph.handler.enqueue_outbox_typing", _mock_typing)
 
     handler = OrchestratorGraphHandler(
         task_planner=SimpleNamespace(),
@@ -665,7 +673,11 @@ async def test_progress_dedupe_keys_are_turn_scoped_by_inbound_message_id(
         dedupe_keys.append(str(metadata["dedupe_key"]))
         return DeliveryAttemptResult(status="delivered")
 
+    async def _mock_typing(*args, **kwargs) -> DeliveryAttemptResult:
+        return DeliveryAttemptResult(status="delivered")
+
     monkeypatch.setattr("apps.core.src.agent.orchestrator.graph.handler.enqueue_outbox_say", _enqueue_outbox_say)
+    monkeypatch.setattr("apps.core.src.agent.orchestrator.graph.handler.enqueue_outbox_typing", _mock_typing)
 
     handler = OrchestratorGraphHandler(
         task_planner=SimpleNamespace(),
@@ -776,7 +788,11 @@ async def test_deduped_progress_attempt_does_not_advance_progress_or_attach_deli
         del args, kwargs
         return DeliveryAttemptResult(status="deduped_completed")
 
+    async def _mock_typing(*args, **kwargs) -> DeliveryAttemptResult:
+        return DeliveryAttemptResult(status="delivered")
+
     monkeypatch.setattr("apps.core.src.agent.orchestrator.graph.handler.enqueue_outbox_say", _enqueue_outbox_say)
+    monkeypatch.setattr("apps.core.src.agent.orchestrator.graph.handler.enqueue_outbox_typing", _mock_typing)
 
     handler = OrchestratorGraphHandler(
         task_planner=SimpleNamespace(),

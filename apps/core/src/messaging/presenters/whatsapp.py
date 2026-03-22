@@ -9,6 +9,7 @@ from apps.core.src.agent.orchestrator.models.intents import (
     ShowFlow,
     ShowOptions,
     ShowReceipt,
+    SendTyping,
     UiIntent,
 )
 from apps.core.src.messaging.presenters.base import PresentationContext, PresentationResult, Presenter
@@ -27,7 +28,7 @@ class WhatsAppPresenter(Presenter):
 
     @staticmethod
     def _suppress_typing(context: PresentationContext) -> bool:
-        return bool(context.metadata.get("suppress_typing_indicator", False))
+        return True
 
     @staticmethod
     def _message_kind(intent: UiIntent) -> str:
@@ -43,6 +44,8 @@ class WhatsAppPresenter(Presenter):
             return "show_flow"
         if isinstance(intent, ShowOptions):
             return "show_options"
+        if isinstance(intent, SendTyping):
+            return "typing"
         return type(intent).__name__.lower()
 
     @classmethod
@@ -80,6 +83,8 @@ class WhatsAppPresenter(Presenter):
                     msg_id = await self._present_flow(intent, context)
                 elif isinstance(intent, ShowOptions):
                     msg_id = await self._present_options(intent, context)
+                elif isinstance(intent, SendTyping):
+                    await self._present_typing(intent, context)
                 else:
                     logger.warning("unsupported_intent", type=type(intent).__name__)
 
@@ -91,6 +96,10 @@ class WhatsAppPresenter(Presenter):
                 result.success = False
 
         return result
+
+    async def _present_typing(self, intent: SendTyping, context: PresentationContext) -> None:
+        msg_id = context.metadata.get("inbound_message_id")
+        await self.client.send_typing_indicator(msg_id)
 
     async def _present_say(self, intent: Say, context: PresentationContext) -> str | None:
         resp = await self.client.send_text(

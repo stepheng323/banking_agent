@@ -217,7 +217,7 @@ async def test_finalize_does_not_repeat_resume_prompt_with_live_resume_frame() -
 
 
 @pytest.mark.asyncio
-async def test_finalize_mixed_transaction_batch_emits_processing_notice_before_summary() -> None:
+async def test_finalize_mixed_transaction_batch_emits_summary_only() -> None:
     state = OrchestratorState(
         user_id="u_resume_9",
         phone_number="2348000000019",
@@ -256,10 +256,8 @@ async def test_finalize_mixed_transaction_batch_emits_processing_notice_before_s
     updates = await finalize(state, _config())
 
     say_entries = [entry for entry in updates["outbox"] if entry.get("type") == "say"]
-    assert len(say_entries) == 2
-    assert "Transfer of ₦20,000.00 to Mercy Johnson is being processed." in say_entries[0]["text"]
-    assert "Queued" in say_entries[0]["text"]
-    assert "Transaction Summary" in say_entries[1]["text"]
+    assert len(say_entries) == 1
+    assert "Transaction Summary" in say_entries[0]["text"]
 
 
 @pytest.mark.asyncio

@@ -28,7 +28,7 @@ from apps.core.src.agent.orchestrator.progress import (
     seconds_until_progress_eligible,
     should_emit_progress,
 )
-from apps.core.src.messaging.outbox import enqueue_outbox_say
+from apps.core.src.messaging.outbox import enqueue_outbox_say, enqueue_outbox_typing
 from shared.clients.abstractions.banking import BankDataProvider
 from shared.config.settings import settings
 from shared.i18n import LocaleManager
@@ -320,6 +320,17 @@ class OrchestratorGraphHandler:
         turn_id: str,
     ) -> None:
         deduped_progress_keys: set[str] = set()
+        
+        try:
+            await enqueue_outbox_typing(
+                self.publisher,
+                phone_number,
+                channel,
+                metadata={"inbound_message_id": inbound_message_id, "dedupe_key": f"{thread_id}:{turn_id}:typing:0"},
+            )
+        except Exception as exc:
+            logger.warning("initial_typing_indicator_failed", error=str(exc))
+
         try:
             while True:
                 snapshot = await tracker.snapshot()

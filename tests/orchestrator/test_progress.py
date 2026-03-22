@@ -11,17 +11,17 @@ def test_progress_waits_for_stage_age_even_after_global_threshold() -> None:
     snapshot = TurnProgressSnapshot(
         stage_key="query.fetching_transactions",
         started_at=0.0,
-        stage_started_at=3.0,
+        stage_started_at=4.5,
         last_progress_sent_at=None,
         progress_count=0,
         stage_metadata=None,
         locale="en",
     )
 
-    wait_seconds = seconds_until_progress_eligible(snapshot, now=3.6)
+    wait_seconds = seconds_until_progress_eligible(snapshot, now=5.1)
     assert wait_seconds is not None
     assert wait_seconds > 0.0
-    assert should_emit_progress(snapshot, now=3.6) is False
+    assert should_emit_progress(snapshot, now=5.1) is False
 
 
 def test_progress_waits_until_earlier_first_threshold() -> None:
@@ -35,10 +35,10 @@ def test_progress_waits_until_earlier_first_threshold() -> None:
         locale="en",
     )
 
-    wait_seconds = seconds_until_progress_eligible(snapshot, now=1.4)
+    wait_seconds = seconds_until_progress_eligible(snapshot, now=2.0)
     assert wait_seconds is not None
     assert wait_seconds > 0.0
-    assert should_emit_progress(snapshot, now=1.4) is False
+    assert should_emit_progress(snapshot, now=2.0) is False
 
 
 def test_progress_emits_once_execution_stage_has_been_active_long_enough() -> None:
@@ -52,8 +52,8 @@ def test_progress_emits_once_execution_stage_has_been_active_long_enough() -> No
         locale="en",
     )
 
-    assert seconds_until_progress_eligible(snapshot, now=4.1) == 0.0
-    assert should_emit_progress(snapshot, now=4.1) is True
+    assert seconds_until_progress_eligible(snapshot, now=5.1) == 0.0
+    assert should_emit_progress(snapshot, now=5.1) is True
 
 
 def test_progress_non_visible_stage_never_emits_visible_progress() -> None:

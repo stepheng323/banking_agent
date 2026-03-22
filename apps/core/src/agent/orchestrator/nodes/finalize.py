@@ -114,7 +114,6 @@ async def finalize(state: OrchestratorState, config: RunnableConfig) -> dict[str
             message = task.payload.get("error") or render_generic_capability_blocked(locale)
             outbox.append({"type": "say", "text": message})
         elif task.payload.get("is_pending_mandate"):
-            # Pending mandate messages are contextual and include clear instructions — no "Failed:" prefix
             error_text = task.payload.get("error") or render_message("orchestrator.finalize.failed_unknown", locale)
             outbox.append({"type": "say", "text": error_text})
         else:
@@ -129,7 +128,6 @@ async def finalize(state: OrchestratorState, config: RunnableConfig) -> dict[str
     if cancelled_tasks:
         outbox.append({"type": "say", "text": render_cancelled_prompt(locale)})
 
-    # Check for stashed sessions and prompt
     context_updates = {}
     has_completed_non_transaction = any(task.type not in TRANSACTION_TASK_TYPES for task in completed_tasks)
     now_ts = int(time.time())
@@ -151,13 +149,11 @@ async def finalize(state: OrchestratorState, config: RunnableConfig) -> dict[str
         intent = last_session.get("intent", render_message("orchestrator.session.default_intent", locale))
         resume_prompt = render_message("orchestrator.finalize.resume_prompt", locale, {"intent": intent})
 
-        # Add prompt to outbox
         if outbox and outbox[-1].get("type") == "say":
             outbox[-1]["text"] += f"\n\n{resume_prompt}"
         else:
             outbox.append({"type": "say", "text": resume_prompt})
 
-        # Add Context Frame to signal active prompt
         frame = ContextFrame(
             frame_id=str(uuid.uuid4()),
             frame_type=ContextFrameType.GENERIC,
@@ -178,13 +174,13 @@ async def finalize(state: OrchestratorState, config: RunnableConfig) -> dict[str
 
     return {
         "outbox": outbox,
-        "tasks": {},  # Wipe tasks so the next turn is fresh
-        "waves": [],  # Clear waves so next turn triggers Planner
+        "tasks": {},  
+        "waves": [],  
         "current_wave_index": 0,
         "pending_interrupt": None,
         "last_interrupt": None,
-        "pin_verified": False,  # Security: Reset PIN verification status
-        "last_callback": None,  # Security: Clear stale callback data
+        "pin_verified": False,  
+        "last_callback": None,  
         "session_stack": [],
         "active_domain": None,
         **context_updates,
@@ -225,7 +221,6 @@ async def _handle_completed_tasks(
     read_only_task_types = {"account", "query", "faq", "support", "beneficiary"}
     all_read_only = all(task.type in read_only_task_types for task in visible_tasks)
 
-    # Check for single async transaction (Airtime/Data)
     is_async_transaction = len(visible_tasks) == 1 and visible_tasks[0].type in ("airtime", "data")
 
     if is_single_transfer:
@@ -247,7 +242,6 @@ async def _handle_completed_tasks(
             beneficiary_suggestion_message=beneficiary_suggestion_message,
         )
 
-        # Immediate success feedback (receipt follows asynchronously)
         display_name = (
             task.payload.get("recipient_resolved_name")
             or task.payload.get("recipient_name")
@@ -273,7 +267,6 @@ async def _handle_completed_tasks(
 
         logger.info("generating_async_receipt", task_type=task.type, status=status, message=message)
 
-        # Simple text confirmation for async tasks
         outbox.append(
             {
                 "type": "say",
@@ -288,64 +281,12 @@ async def _handle_completed_tasks(
     elif all_read_only:
         pass
     else:
-        processing_notice = _build_transaction_processing_notice(transaction_visible_tasks, locale=locale)
-        if processing_notice:
-            outbox.append({"type": "say", "text": processing_notice})
-
-        # For mixed read-only + transaction completions, keep explicit read-only outputs
-        # already emitted by workers and summarize only transaction outcomes.
         summary_source = transaction_visible_tasks or visible_tasks
         summary_text = format_multi_action_summary(summary_source, locale=locale)
         outbox.append({"type": "say", "text": summary_text})
 
 
-def _build_transaction_processing_notice(completed_tasks: list[TaskSpec], *, locale: str) -> str | None:
-    """Build interim queued/processing text before the final multi-action summary."""
-    if len(completed_tasks) <= 1:
-        return None
 
-    lines: list[str] = []
-
-    for task in completed_tasks:
-        if task.type == "transfer":
-            display_name = (
-                task.payload.get("recipient_resolved_name")
-                or task.payload.get("recipient_name")
-                or render_message("orchestrator.finalize.recipient_fallback", locale)
-            )
-            amount = float(task.payload.get("amount", 0) or 0)
-            lines.append(
-                render_message(
-                    "orchestrator.finalize.transfer_processing",
-                    locale,
-                    {"amount": f"{amount:,.2f}", "display_name": display_name},
-                )
-            )
-            continue
-
-        if task.type in {"airtime", "data"}:
-            receipt = task.payload.get("receipt", {})
-            status = str(receipt.get("status", "")).title() or "Queued"
-            message = receipt.get("message", render_message("orchestrator.finalize.transaction_completed", locale))
-            lines.append(
-                render_message(
-                    "orchestrator.finalize.async_status_message",
-                    locale,
-                    {"status": status, "message": message},
-                )
-            )
-
-    if not lines:
-        return None
-
-    if len(lines) == 1:
-        return lines[0]
-
-    def _format_as_bullet(line: str) -> str:
-        stripped = line.strip()
-        return stripped if stripped.startswith("•") else f"• {stripped}"
-
-    return "\n\n".join(_format_as_bullet(line) for line in lines)
 
 
 async def _queue_single_transfer_receipt(

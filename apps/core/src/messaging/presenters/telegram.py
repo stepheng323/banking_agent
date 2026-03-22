@@ -12,6 +12,7 @@ from apps.core.src.agent.orchestrator.models.intents import (
     ShowFlow,
     ShowOptions,
     ShowReceipt,
+    SendTyping,
     UiIntent,
 )
 from apps.core.src.messaging.presenters.base import PresentationContext, PresentationResult, Presenter
@@ -32,7 +33,9 @@ class TelegramPresenter(Presenter):
 
     @staticmethod
     def _suppress_typing(context: PresentationContext) -> bool:
-        return bool(context.metadata.get("suppress_typing_indicator", False))
+        # Typing is now handled via explicit 0.0s SendTyping intents from the Orchestrator.
+        # Unconditionally suppress the legacy inline pre-send sleep behaviors.
+        return True
 
     @staticmethod
     def _message_kind(intent: UiIntent) -> str:
@@ -48,6 +51,8 @@ class TelegramPresenter(Presenter):
             return "show_flow"
         if isinstance(intent, ShowOptions):
             return "show_options"
+        if isinstance(intent, SendTyping):
+            return "typing"
         return type(intent).__name__.lower()
 
     async def _send_typing_before_intent(self, intent: UiIntent, context: PresentationContext) -> None:
@@ -95,6 +100,8 @@ class TelegramPresenter(Presenter):
                     msg_id = await self._present_flow(intent, context)
                 elif isinstance(intent, ShowOptions):
                     msg_id = await self._present_options(intent, context)
+                elif isinstance(intent, SendTyping):
+                    await self._present_typing(intent, context)
                 else:
                     logger.warning("unsupported_intent", type=type(intent).__name__)
 
@@ -106,6 +113,9 @@ class TelegramPresenter(Presenter):
                 result.success = False
 
         return result
+
+    async def _present_typing(self, intent: SendTyping, context: PresentationContext) -> None:
+        await self.client.send_typing_indicator(context.phone_number)
 
     async def _present_say(self, intent: Say, context: PresentationContext) -> str | None:
         if context.metadata.get("request_contact"):

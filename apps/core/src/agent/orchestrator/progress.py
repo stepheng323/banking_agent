@@ -7,8 +7,8 @@ from typing import Any
 
 from shared.i18n import render_message
 
-FIRST_PROGRESS_DELAY_SECONDS = 1.5
-SECOND_PROGRESS_DELAY_SECONDS = 7.5
+FIRST_PROGRESS_DELAY_SECONDS = 5.0
+SECOND_PROGRESS_DELAY_SECONDS = 15.0
 MIN_PROGRESS_STAGE_AGE_SECONDS = 1.0
 PROGRESS_POLL_INTERVAL_SECONDS = 0.25
 MAX_PROGRESS_MESSAGES = 2
@@ -22,7 +22,7 @@ class ProgressStagePolicy:
     min_stage_age_seconds: float = MIN_PROGRESS_STAGE_AGE_SECONDS
 
 
-_DEFAULT_PROGRESS_STAGE_POLICY = ProgressStagePolicy(visible_to_user=True)
+_DEFAULT_PROGRESS_STAGE_POLICY = ProgressStagePolicy(visible_to_user=False)
 
 _PROGRESS_STAGE_POLICIES: dict[str, ProgressStagePolicy] = {
     "query.resolving_followup": ProgressStagePolicy(visible_to_user=False),

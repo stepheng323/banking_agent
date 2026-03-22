@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from apps.core.src.agent.orchestrator.models.intents import Say, UiIntent
+from apps.core.src.agent.orchestrator.models.intents import Say, SendTyping, UiIntent
 from shared.queue.adapter import QueuePublisher
 from shared.services.delivery_service import DeliveryAttemptResult, DeliveryService
 
@@ -57,3 +57,13 @@ async def enqueue_outbox_say(
     if not text:
         return DeliveryAttemptResult(status="delivered")
     return await enqueue_outbox_intents(publisher, phone_number, channel, [Say(text=text)], metadata=metadata)
+
+
+async def enqueue_outbox_typing(
+    publisher: QueuePublisher | None,
+    phone_number: str,
+    channel: str,
+    metadata: dict[str, Any] | None = None,
+) -> DeliveryAttemptResult:
+    """Deliver a pure typing indicator directly."""
+    return await enqueue_outbox_intents(publisher, phone_number, channel, [SendTyping()], metadata=metadata)

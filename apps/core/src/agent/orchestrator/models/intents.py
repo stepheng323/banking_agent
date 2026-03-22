@@ -66,6 +66,17 @@ class ShowOptions(UiIntent):
 
 
 @dataclass
+class SendTyping(UiIntent):
+    """Request a typing indicator to be shown on the channel."""
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "type": "typing",
+            "actionable_payload": self.actionable_payload,
+        }
+
+
+@dataclass
 class RequestConfirmation(UiIntent):
     """Request confirmation for a set of tasks."""
 
@@ -148,6 +159,11 @@ def reconstruct_intent(data: dict[str, Any]) -> UiIntent | None:
 
     if msg_type == "say":
         intent: UiIntent = Say(text=data["text"])
+        intent.actionable_payload = data.get("actionable_payload")
+        return intent
+
+    elif msg_type == "typing":
+        intent = SendTyping()
         intent.actionable_payload = data.get("actionable_payload")
         return intent
 
