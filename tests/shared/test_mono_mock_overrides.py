@@ -37,6 +37,22 @@ def test_settings_force_real_mono_in_development(monkeypatch) -> None:
     assert cfg.use_mono_mock is False
 
 
+def test_settings_uses_dedicated_query_model_when_configured(monkeypatch) -> None:
+    monkeypatch.setenv("QUERY_MODEL", "gpt-4.1-mini")
+
+    cfg = Settings()
+
+    assert cfg.query_model == "gpt-4.1-mini"
+
+
+def test_settings_query_model_defaults_to_gpt5_mini_until_explicitly_configured(monkeypatch) -> None:
+    monkeypatch.delenv("QUERY_MODEL", raising=False)
+
+    cfg = Settings()
+
+    assert cfg.query_model == "gpt-5-mini"
+
+
 def test_settings_mono_use_mock_override_takes_precedence(monkeypatch) -> None:
     _set_minimum_production_env(monkeypatch)
     monkeypatch.setenv("APP_ENV", "production")

@@ -162,6 +162,7 @@
     },
     "session": {
       "completed": "Query completed.",
+      "dismissive_goodbye": "Okay. I'll step back now.",
       "goodbye": "Goodbye!",
       "you_are_welcome": "You're welcome! 😊"
     },
@@ -294,6 +295,7 @@
       "ranked_top": "Top {limit} {adj_title} {label}",
       "aggregation_completed": "Aggregation completed.",
       "breakdown_by": "Breakdown by {group_by}",
+      "group_by_transaction_type": "transaction type",
       "timeframe_default": " in the last 30 days",
       "timeframe_today": " today",
       "timeframe_yesterday": " yesterday",

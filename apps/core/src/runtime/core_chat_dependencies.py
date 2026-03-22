@@ -1,7 +1,6 @@
 """Dependency loader for the ECS core chat runtime."""
 
 from langchain_openai import ChatOpenAI
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.core.src.agent.graphs.__shared__.beneficiary.suggestion_service import BeneficiarySuggestionService
 from apps.core.src.agent.graphs.account import AccountWorker
@@ -35,15 +34,19 @@ from shared.policy.validation import validate_policy_coverage
 from shared.queue.contracts import get_contract_by_topic
 from shared.queue.factory import QueuePublisherFactory
 from shared.queue.redis_stream_consumer import RedisStreamConsumer
-from shared.repositories.account_repository import AccountRepository
-from shared.repositories.actionable_message_repository import ActionableMessageRepository
-from shared.repositories.beneficiary_repository import BeneficiaryRepository
-from shared.repositories.transaction_repository import TransactionRepository
+from shared.repositories.session_scoped import (
+    SessionScopedAccountRepository,
+    SessionScopedActionableMessageRepository,
+    SessionScopedBeneficiaryRepository,
+    SessionScopedTransactionRepository,
+    SessionScopedUserRepository,
+)
 from shared.repositories.user_repository import UserRepository
 from shared.services.conversation_responder import ConversationResponder
 from shared.services.onboarding import session_manager as onboarding_session_manager
 from shared.services.task_planner import refresh_planner_system_prompt
 from shared.services.task_queue.service import TaskQueueService
+from shared.services.ticket_service import TicketService
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -54,16 +57,18 @@ def _build_orchestrator_runtime_bundle(
     messaging_clients,
     shared_redis,
     llm,
+    query_llm,
     interrupt_llm: ChatOpenAI | None = None,
-) -> tuple[AsyncSession, UserRepository, OnboardingExecutor, OrchestratorAgent]:
-    """Build one isolated runtime bundle."""
-    db_session = get_db_session()
+) -> tuple[UserRepository, OnboardingExecutor, OrchestratorAgent]:
+    """Build one isolated runtime bundle without a shared DB session."""
+    session_factory = get_db_session
+    logger.info("core_chat_runtime_db_access_mode", mode="session_scoped")
 
-    user_repository = UserRepository(db=db_session)
-    beneficiary_repository = BeneficiaryRepository(db=db_session)
-    account_repository = AccountRepository(db=db_session)
-    actionable_message_repository = ActionableMessageRepository(db=db_session)
-    transaction_repository = TransactionRepository(db=db_session)
+    user_repository = SessionScopedUserRepository(session_factory)
+    beneficiary_repository = SessionScopedBeneficiaryRepository(session_factory)
+    account_repository = SessionScopedAccountRepository(session_factory)
+    actionable_message_repository = SessionScopedActionableMessageRepository(session_factory)
+    transaction_repository = SessionScopedTransactionRepository(session_factory)
 
     user_data_cache = UserDataCache(redis_client=shared_redis)
     onboarding_service = OnboardingService(queue_publisher)
@@ -102,12 +107,12 @@ def _build_orchestrator_runtime_bundle(
         transaction_repo=transaction_repository,
         actionable_message_repo=actionable_message_repository,
         redis_client=shared_redis,
-        db_session=db_session,
+        ticket_service=TicketService(session_factory=session_factory),
     )
 
     query_session_manager = QuerySessionManager(shared_redis)
     query_worker = AgentQueryWorker(
-        llm=llm,
+        llm=query_llm,
         banking_provider=bank_data_provider,
         session_manager=query_session_manager,
     )
@@ -165,7 +170,31 @@ def _build_orchestrator_runtime_bundle(
         banking_provider=bank_data_provider,
     )
 
-    return db_session, user_repository, onboarding_executor, OrchestratorAgent(orchestrator_deps)
+    return user_repository, onboarding_executor, OrchestratorAgent(orchestrator_deps)
+
+
+def _build_runtime_bundle_factory(
+    *,
+    queue_publisher,
+    messaging_clients,
+    shared_redis,
+    llm,
+    query_llm,
+    interrupt_llm: ChatOpenAI | None = None,
+):
+    """Build a factory that returns runtime dependencies with short-lived DB access."""
+
+    def _factory() -> tuple[UserRepository, OnboardingExecutor, OrchestratorAgent]:
+        return _build_orchestrator_runtime_bundle(
+            queue_publisher=queue_publisher,
+            messaging_clients=messaging_clients,
+            shared_redis=shared_redis,
+            llm=llm,
+            query_llm=query_llm,
+            interrupt_llm=interrupt_llm,
+        )
+
+    return _factory
 
 
 def setup_core_consumers() -> tuple[MessageConsumer, RedisStreamConsumer]:
@@ -179,6 +208,21 @@ def setup_core_consumers() -> tuple[MessageConsumer, RedisStreamConsumer]:
     messaging_clients = build_messaging_clients()
     shared_redis = RedisClient.get_client()
     llm = ChatOpenAI(model=settings.planner_model, temperature=0)
+    query_model = settings.query_model.strip()
+    if not query_model:
+        query_model = settings.planner_model
+        logger.warning(
+            "query_model_missing_fallback",
+            app_env=settings.app_env,
+            fallback_model=query_model,
+        )
+    if query_model == settings.planner_model:
+        logger.warning(
+            "query_model_same_as_planner",
+            app_env=settings.app_env,
+            model=query_model,
+        )
+    query_llm = ChatOpenAI(model=query_model, temperature=0)
     interrupt_router_model = settings.interrupt_router_model.strip()
     if not interrupt_router_model:
         interrupt_router_model = settings.planner_model
@@ -196,19 +240,21 @@ def setup_core_consumers() -> tuple[MessageConsumer, RedisStreamConsumer]:
 
     interrupt_llm = ChatOpenAI(model=interrupt_router_model, temperature=0)
 
-    _, message_user_repo, onboarding_executor, message_orchestrator = _build_orchestrator_runtime_bundle(
+    runtime_bundle_factory = _build_runtime_bundle_factory(
         queue_publisher=queue_publisher,
         messaging_clients=messaging_clients,
         shared_redis=shared_redis,
         llm=llm,
+        query_llm=query_llm,
         interrupt_llm=interrupt_llm,
     )
 
     message_consumer = MessageConsumer(
         publisher=queue_publisher,
-        user_repository=message_user_repo,
-        onboarding_executor=onboarding_executor,
-        orchestrator=message_orchestrator,
+        user_repository=None,
+        onboarding_executor=None,
+        orchestrator=None,
+        runtime_bundle_factory=runtime_bundle_factory,
     )
 
     stream_names = [
