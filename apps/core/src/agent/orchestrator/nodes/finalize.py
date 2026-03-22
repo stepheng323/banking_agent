@@ -174,13 +174,13 @@ async def finalize(state: OrchestratorState, config: RunnableConfig) -> dict[str
 
     return {
         "outbox": outbox,
-        "tasks": {},  
-        "waves": [],  
+        "tasks": {},
+        "waves": [],
         "current_wave_index": 0,
         "pending_interrupt": None,
         "last_interrupt": None,
-        "pin_verified": False,  
-        "last_callback": None,  
+        "pin_verified": False,
+        "last_callback": None,
         "session_stack": [],
         "active_domain": None,
         **context_updates,

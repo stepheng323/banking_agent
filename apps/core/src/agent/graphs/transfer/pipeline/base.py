@@ -93,8 +93,10 @@ class TransferPipeline:
                 if stage_key:
                     if step_name == "ExecutionStep" and data:
                         def _format_amt(val: float | None) -> str:
-                            if not val: return "0"
-                            if float(val).is_integer(): return f"{int(val):,}"
+                            if not val:
+                                return "0"
+                            if float(val).is_integer():
+                                return f"{int(val):,}"
                             return f"{val:,.2f}"
 
                         await progress_tracker.set_stage(

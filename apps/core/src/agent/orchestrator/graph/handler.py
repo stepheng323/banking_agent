@@ -320,7 +320,7 @@ class OrchestratorGraphHandler:
         turn_id: str,
     ) -> None:
         deduped_progress_keys: set[str] = set()
-        
+
         try:
             await enqueue_outbox_typing(
                 self.publisher,

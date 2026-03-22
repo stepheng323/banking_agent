@@ -6,10 +6,10 @@ from apps.core.src.agent.orchestrator.models.intents import (
     RequestAuth,
     RequestConfirmation,
     Say,
+    SendTyping,
     ShowFlow,
     ShowOptions,
     ShowReceipt,
-    SendTyping,
     UiIntent,
 )
 from apps.core.src.messaging.presenters.base import PresentationContext, PresentationResult, Presenter
