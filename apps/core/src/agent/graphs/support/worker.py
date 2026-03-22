@@ -34,7 +34,6 @@ from apps.core.src.agent.graphs.support.models import (
 from apps.core.src.agent.graphs.support.resolver import TransactionResolver
 from apps.core.src.agent.orchestrator.models.domain import SupportOutcome, SupportResult
 from shared.i18n import LocaleManager, render_message
-from shared.repositories.support_ticket_repository import SupportTicketRepository
 from shared.services.ticket_service import TicketService
 from shared.utils.logging import get_logger
 
@@ -50,17 +49,13 @@ class SupportWorker:
         transaction_repo: Any,
         actionable_message_repo: Any,
         redis_client: Any,
-        db_session: Any = None,
+        ticket_service: TicketService | None = None,
     ) -> None:
         self.llm = llm
         self.classifier = SupportClassifier(llm)
         self.resolver = TransactionResolver(transaction_repo, actionable_message_repo)
         self.context_manager = SupportContextManager(redis_client)
-
-        self._ticket_service = None
-        if db_session:
-            ticket_repo = SupportTicketRepository(db_session)
-            self._ticket_service = TicketService(ticket_repo)
+        self._ticket_service = ticket_service
 
     async def run(
         self,

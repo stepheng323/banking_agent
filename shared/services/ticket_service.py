@@ -1,7 +1,11 @@
 """Service for creating and managing support tickets."""
 
-from datetime import datetime
+from collections.abc import Callable
+from contextlib import asynccontextmanager
+from datetime import UTC, datetime
 from typing import Any
+
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.database.enums import (
     SupportTicketPriorityEnum,
@@ -33,8 +37,35 @@ INTENT_PRIORITY: dict[str, SupportTicketPriorityEnum] = {
 class TicketService:
     """Service for support ticket operations."""
 
-    def __init__(self, ticket_repo: SupportTicketRepository):
+    def __init__(
+        self,
+        ticket_repo: SupportTicketRepository | None = None,
+        *,
+        session_factory: Callable[[], AsyncSession] | None = None,
+    ) -> None:
+        if ticket_repo is None and session_factory is None:
+            raise ValueError("ticket_service_requires_repo_or_session_factory")
         self.repo = ticket_repo
+        self.session_factory = session_factory
+
+    @asynccontextmanager
+    async def _repo_scope(self):
+        """Yield a ticket repo backed by a short-lived session when configured."""
+        if self.repo is not None:
+            yield self.repo, False
+            return
+        if self.session_factory is None:
+            raise RuntimeError("ticket_service_repo_scope_unconfigured")
+        db_session = self.session_factory()
+        repo = SupportTicketRepository(db_session)
+        try:
+            yield repo, True
+            await db_session.commit()
+        except Exception:
+            await db_session.rollback()
+            raise
+        finally:
+            await db_session.close()
 
     async def create_ticket(
         self,
@@ -59,21 +90,22 @@ class TicketService:
         Returns:
             Created SupportTicket
         """
-        ticket_code = await self.repo.generate_ticket_code()
+        async with self._repo_scope() as (repo, _commit_on_exit):
+            ticket_code = await repo.generate_ticket_code()
 
-        priority = INTENT_PRIORITY.get(intent, SupportTicketPriorityEnum.MEDIUM)
+            priority = INTENT_PRIORITY.get(intent, SupportTicketPriorityEnum.MEDIUM)
 
-        ticket = await self.repo.create(
-            ticket_code=ticket_code,
-            user_id=user_id,
-            channel=channel,
-            intent=intent,
-            status=SupportTicketStatusEnum.OPEN.value,
-            priority=priority.value,
-            transaction_ref=transaction_ref,
-            summary=summary,
-            details=details or {},
-        )
+            ticket = await repo.create(
+                ticket_code=ticket_code,
+                user_id=user_id,
+                channel=channel,
+                intent=intent,
+                status=SupportTicketStatusEnum.OPEN.value,
+                priority=priority.value,
+                transaction_ref=transaction_ref,
+                summary=summary,
+                details=details or {},
+            )
 
         logger.info(
             "support_ticket_created",
@@ -88,15 +120,18 @@ class TicketService:
 
     async def get_ticket(self, ticket_code: str) -> SupportTicket | None:
         """Get a ticket by its code."""
-        return await self.repo.get_by_ticket_code(ticket_code)
+        async with self._repo_scope() as (repo, _commit_on_exit):
+            return await repo.get_by_ticket_code(ticket_code)
 
     async def get_user_open_tickets(self, user_id: str) -> list[SupportTicket]:
         """Get all open tickets for a user."""
-        return await self.repo.get_open_tickets(user_id)
+        async with self._repo_scope() as (repo, _commit_on_exit):
+            return await repo.get_open_tickets(user_id)
 
     async def get_latest_ticket(self, user_id: str) -> SupportTicket | None:
         """Get the most recent open ticket for a user."""
-        return await self.repo.get_latest_open(user_id)
+        async with self._repo_scope() as (repo, _commit_on_exit):
+            return await repo.get_latest_open(user_id)
 
     async def update_status(
         self,
@@ -104,14 +139,15 @@ class TicketService:
         status: SupportTicketStatusEnum,
     ) -> SupportTicket | None:
         """Update ticket status."""
-        ticket = await self.repo.get_by_ticket_code(ticket_code)
-        if not ticket:
-            return None
+        async with self._repo_scope() as (repo, _commit_on_exit):
+            ticket = await repo.get_by_ticket_code(ticket_code)
+            if not ticket:
+                return None
 
-        ticket = await self.repo.update(ticket, status=status.value)
+            ticket = await repo.update(ticket, status=status.value)
 
-        if status == SupportTicketStatusEnum.RESOLVED:
-            ticket = await self.repo.update(ticket, resolved_at=datetime.utcnow())
+            if status == SupportTicketStatusEnum.RESOLVED:
+                ticket = await repo.update(ticket, resolved_at=datetime.now(UTC))
 
         logger.info(
             "support_ticket_status_updated",

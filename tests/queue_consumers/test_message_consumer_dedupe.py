@@ -21,8 +21,8 @@ class _RateLimiterAllow:
 
 
 class _UserRepoStub:
-    def __init__(self) -> None:
-        self.db = SimpleNamespace(rollback=asyncio.sleep, commit=asyncio.sleep)
+    def __init__(self, db: Any | None = None) -> None:
+        self.db = db or SimpleNamespace(rollback=asyncio.sleep, commit=asyncio.sleep, close=asyncio.sleep)
 
     async def get_by_channel_identity(self, channel: str, identity: str) -> Any:
         del channel, identity
@@ -37,6 +37,34 @@ class _OnboardingStub:
     async def handle_onboarding(self, message: ChannelMessage) -> dict[str, Any]:
         del message
         return {"status": "onboarding"}
+
+
+class _SessionStub:
+    def __init__(self, *, pending_writes: bool = False, commit_error: Exception | None = None) -> None:
+        self.rollback_calls = 0
+        self.commit_calls = 0
+        self.close_calls = 0
+        self._commit_error = commit_error
+        sync_session = SimpleNamespace(
+            new=[object()] if pending_writes else [],
+            dirty=[],
+            deleted=[],
+        )
+        self.sync_session = sync_session
+
+    async def rollback(self, *args: Any, **kwargs: Any) -> None:
+        del args, kwargs
+        self.rollback_calls += 1
+
+    async def commit(self, *args: Any, **kwargs: Any) -> None:
+        del args, kwargs
+        self.commit_calls += 1
+        if self._commit_error is not None:
+            raise self._commit_error
+
+    async def close(self, *args: Any, **kwargs: Any) -> None:
+        del args, kwargs
+        self.close_calls += 1
 
 
 class _ContextManagerStub:
@@ -300,3 +328,77 @@ async def test_message_consumer_passes_delivery_metadata_to_outbox(monkeypatch: 
             }
         }
     ]
+
+
+@pytest.mark.asyncio
+async def test_process_message_uses_runtime_bundle_without_outer_db_session(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = _SessionStub()
+    context_manager = _ContextManagerStub(should_claim=True)
+    orchestrator = _OrchestratorStub(context_manager)
+    user_repo = _UserRepoStub(db=session)
+
+    consumer = MessageConsumer(
+        user_repository=None,
+        onboarding_executor=None,
+        orchestrator=None,
+        runtime_bundle_factory=lambda: (user_repo, _OnboardingStub(), orchestrator),
+    )
+
+    enqueue_calls: list[list[Any]] = []
+
+    async def _enqueue_outbox_intents(*args: Any, **kwargs: Any) -> None:
+        del kwargs
+        enqueue_calls.append(list(args))
+
+    monkeypatch.setattr("apps.core.src.queue_consumers.message_consumer.message_rate_limiter", _RateLimiterAllow())
+    monkeypatch.setattr(
+        "apps.core.src.queue_consumers.message_consumer.enqueue_outbox_intents",
+        _enqueue_outbox_intents,
+    )
+
+    await consumer.process_message(_message("wamid-fresh").model_dump(mode="json"))
+
+    assert orchestrator.invoke_calls == 1
+    assert session.rollback_calls == 0
+    assert session.commit_calls == 0
+    assert session.close_calls == 0
+    assert len(enqueue_calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_process_message_does_not_use_outer_db_session_even_when_present(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = _SessionStub(commit_error=RuntimeError("commit should be skipped"))
+    context_manager = _ContextManagerStub(should_claim=True)
+    orchestrator = _OrchestratorStub(context_manager)
+    user_repo = _UserRepoStub(db=session)
+
+    consumer = MessageConsumer(
+        user_repository=None,
+        onboarding_executor=None,
+        orchestrator=None,
+        runtime_bundle_factory=lambda: (user_repo, _OnboardingStub(), orchestrator),
+    )
+
+    enqueue_calls: list[list[Any]] = []
+
+    async def _enqueue_outbox_intents(*args: Any, **kwargs: Any) -> None:
+        del kwargs
+        enqueue_calls.append(list(args))
+
+    monkeypatch.setattr("apps.core.src.queue_consumers.message_consumer.message_rate_limiter", _RateLimiterAllow())
+    monkeypatch.setattr(
+        "apps.core.src.queue_consumers.message_consumer.enqueue_outbox_intents",
+        _enqueue_outbox_intents,
+    )
+
+    await consumer.process_message(_message("wamid-no-commit").model_dump(mode="json"))
+
+    assert orchestrator.invoke_calls == 1
+    assert session.rollback_calls == 0
+    assert session.commit_calls == 0
+    assert session.close_calls == 0
+    assert len(enqueue_calls) == 1

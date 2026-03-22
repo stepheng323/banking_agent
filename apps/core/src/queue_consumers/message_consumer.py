@@ -1,6 +1,7 @@
 """Unified core consumer for chat messages and flow events."""
 
 import time
+from collections.abc import Callable
 from typing import Any, cast
 
 from apps.core.src.agent.graphs.onboarding.executor import OnboardingExecutor
@@ -26,6 +27,10 @@ from shared.utils.sanitize import is_suspicious_input, sanitize_message
 
 logger = get_logger(__name__)
 _TRANSACTION_PIN_FLOWS = {"transfer", "airtime", "data"}
+RuntimeBundleFactory = Callable[
+    [],
+    tuple[UserRepository, OnboardingExecutor, OrchestratorAgent],
+]
 
 
 class _NoopPublisher:
@@ -38,15 +43,26 @@ class MessageConsumer:
 
     def __init__(
         self,
-        user_repository: UserRepository,
-        onboarding_executor: OnboardingExecutor,
-        orchestrator: OrchestratorAgent,
+        user_repository: UserRepository | None,
+        onboarding_executor: OnboardingExecutor | None,
+        orchestrator: OrchestratorAgent | None,
         publisher: QueuePublisher | None = None,
+        runtime_bundle_factory: RuntimeBundleFactory | None = None,
     ) -> None:
         self.publisher = publisher or _NoopPublisher()
         self.user_repository = user_repository
         self.onboarding_executor = onboarding_executor
         self.orchestrator = orchestrator
+        self.runtime_bundle_factory = runtime_bundle_factory
+
+    def _runtime_bundle(self) -> tuple[UserRepository, OnboardingExecutor, OrchestratorAgent]:
+        """Resolve runtime dependencies without a long-lived DB session."""
+        if self.runtime_bundle_factory is None:
+            if self.user_repository is None or self.onboarding_executor is None or self.orchestrator is None:
+                raise RuntimeError("message_consumer_runtime_bundle_missing")
+            return self.user_repository, self.onboarding_executor, self.orchestrator
+
+        return self.runtime_bundle_factory()
 
     async def process_record(self, topic: str, payload: dict[str, Any]) -> None:
         """Route one transport payload by logical topic."""
@@ -60,20 +76,23 @@ class MessageConsumer:
 
     async def process_message(self, message_data: dict[str, Any]) -> None:
         """Process one inbound chat message payload."""
-        await self.user_repository.db.rollback()
         try:
             msg = ChannelMessage(**message_data)
-            await self._handle_message(msg)
-            await self.user_repository.db.commit()
+            user_repository, onboarding_executor, orchestrator = self._runtime_bundle()
+            await self._handle_message(
+                msg,
+                user_repository=user_repository,
+                onboarding_executor=onboarding_executor,
+                orchestrator=orchestrator,
+            )
         except Exception as exc:
-            await self.user_repository.db.rollback()
             logger.error("message_processing_failed", error=str(exc), exc_info=True)
             raise
 
     async def process_flow_event(self, event_data: dict[str, Any]) -> None:
         """Process one flow event payload."""
-        await self.user_repository.db.rollback()
         try:
+            _user_repository, _onboarding_executor, orchestrator = self._runtime_bundle()
             event_type = str(event_data.get("event_type", ""))
             flow_type = str(event_data.get("flow_type", ""))
             phone_number = str(event_data.get("phone_number", ""))
@@ -98,15 +117,13 @@ class MessageConsumer:
                     success=success,
                     channel=channel,
                     extra_data=extra_data,
+                    orchestrator=orchestrator,
                 )
             elif event_type == FlowEventType.PIN_FAILED.value:
                 logger.info("pin_verification_failed", phone=phone_number, flow_type=flow_type)
             else:
                 logger.warning("unknown_flow_event", event_type=event_type, event_data=event_data)
-
-            await self.user_repository.db.commit()
         except Exception as exc:
-            await self.user_repository.db.rollback()
             logger.error("flow_event_processing_failed", error=str(exc), event_data=event_data, exc_info=True)
             raise
 
@@ -117,8 +134,10 @@ class MessageConsumer:
         success: bool,
         channel: str,
         extra_data: dict[str, Any] | None = None,
+        orchestrator: OrchestratorAgent | None = None,
     ) -> None:
         """Resume a paused transaction after a successful PIN flow."""
+        runtime_orchestrator = orchestrator or self.orchestrator
         if not success:
             logger.warning("pin_verified_but_not_success", phone=phone_number, flow_type=flow_type)
             return
@@ -129,7 +148,7 @@ class MessageConsumer:
             return
 
         logger.info("resuming_via_orchestrator", phone=phone_number, flow=flow_type, channel=channel)
-        response = await self.orchestrator.resume_transaction(
+        response = await runtime_orchestrator.resume_transaction(
             phone_number=phone_number,
             flow_type=normalized_flow_type,
             pin_verified=True,
@@ -166,10 +185,20 @@ class MessageConsumer:
         )
         logger.info("pin_response_enqueued_outbox", outbox_phone=outbox_phone, mapped_from=phone_number)
 
-    async def _handle_message(self, message: ChannelMessage) -> dict[str, Any] | None:
+    async def _handle_message(
+        self,
+        message: ChannelMessage,
+        *,
+        user_repository: UserRepository | None = None,
+        onboarding_executor: OnboardingExecutor | None = None,
+        orchestrator: OrchestratorAgent | None = None,
+    ) -> dict[str, Any] | None:
         """Handle one channel message event."""
         start_time = time.perf_counter()
         channel_user_id = message.channel_user_id
+        runtime_user_repository = user_repository or self.user_repository
+        runtime_onboarding_executor = onboarding_executor or self.onboarding_executor
+        runtime_orchestrator = orchestrator or self.orchestrator
 
         rate_result = await message_rate_limiter.check(channel_user_id)
         if not rate_result.allowed:
@@ -200,15 +229,15 @@ class MessageConsumer:
         if message.message_type.value == "flow":
             return {"status": "skipped", "reason": "flow_messages_handled_by_flow_ingress"}
 
-        user = await self.user_repository.get_by_channel_identity(message.channel, channel_user_id)
+        user = await runtime_user_repository.get_by_channel_identity(message.channel, channel_user_id)
         logger.info("channel_identity_lookup", user=user, channel=message.channel, channel_user_id=channel_user_id)
 
         if user is None or getattr(user, "onboarding_status", None) != UserOnboardingStatusEnum.ONBOARDING_COMPLETED:
-            return cast(dict[str, Any] | None, await self.onboarding_executor.handle_onboarding(message))
+            return cast(dict[str, Any] | None, await runtime_onboarding_executor.handle_onboarding(message))
 
         phone_number = str(user.phone_number)
 
-        claimed_message = await self.orchestrator.context_manager.claim_inbound_message(
+        claimed_message = await runtime_orchestrator.context_manager.claim_inbound_message(
             phone_number,
             str(message.message_id),
         )
@@ -218,9 +247,9 @@ class MessageConsumer:
 
         response_text: str | None = None
         try:
-            await self.orchestrator.context_manager.save_message_id(phone_number, str(message.message_id))
+            await runtime_orchestrator.context_manager.save_message_id(phone_number, str(message.message_id))
 
-            orchestrator_output = await self.orchestrator.invoke(
+            orchestrator_output = await runtime_orchestrator.invoke(
                 phone_number,
                 sanitized_text,
                 str(message.message_id),
@@ -255,7 +284,9 @@ class MessageConsumer:
                 )
                 logger.info("message_consumer_enqueued_outbox", count=len(intents))
         except Exception:
-            await self.orchestrator.context_manager.release_inbound_message_claim(phone_number, str(message.message_id))
+            await runtime_orchestrator.context_manager.release_inbound_message_claim(
+                phone_number, str(message.message_id)
+            )
             raise
 
         duration = (time.perf_counter() - start_time) * 1000
