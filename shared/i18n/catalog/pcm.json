@@ -423,7 +423,7 @@
       "need_account_details_for": "I need account details for {focused_name}.",
       "found_many_need_details": "I found {found_names}. I need account details for {focused_name}.",
       "found_names": "I found {found_names}.",
-      "queued_next_notice": "Queued next after this step:\n{queued_intents}",
+      "queued_next_notice": "I go still do:\n{queued_intents}",
       "need_some_details": "I need some details.",
       "auth_reason_transfer": "Transfer Authorization",
       "auth_reason_airtime": "Airtime Purchase",

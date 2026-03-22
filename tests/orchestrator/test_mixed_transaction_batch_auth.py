@@ -546,7 +546,7 @@ async def test_mixed_input_prompt_includes_queued_next_notice_for_sibling_transa
 
     say_entry = updates["outbox"][0]
     assert say_entry["type"] == "say"
-    assert "Queued next after this step" in say_entry["text"]
+    assert "Will also process" in say_entry["text"]
     assert "airtime" in say_entry["text"].lower()
     assert say_entry["queue"]["queued_task_ids"] == ["t_airtime"]
 
@@ -588,7 +588,7 @@ async def test_mixed_auth_is_deferred_until_sibling_slots_are_collected() -> Non
     assert "auth_request" not in {entry.get("type") for entry in updates.get("outbox", [])}
     say_entry = updates["outbox"][0]
     assert say_entry["type"] == "say"
-    assert "Queued next after this step" in say_entry["text"]
+    assert "Will also process" in say_entry["text"]
     assert say_entry["queue"]["queued_task_ids"] == ["t_transfer"]
 
 
