@@ -64,8 +64,9 @@ When user corrects mid-flow ("I meant 50k"):
 - If `RequiredFields` contains `recipient_bank_name` and user replies with only a bank, map it to `bank_name`.
 - If `RequiredFields` contains `recipient_account` and user reply contains account digits with separators
   (spaces, hyphens, commas, periods), strip non-digits; if result is exactly 10 digits, map to `recipient_account`.
-- If reply contains both a valid account number and a bank token (e.g. "816 251 1023 opay"),
-  extract BOTH `recipient_account` and `bank_name` in the same turn.
+- If reply contains both a valid account number and a bank token separated by any delimiter
+  (space, comma, dash, etc.), extract BOTH `recipient_account` and `bank_name` in the same turn.
+  Examples: "816 251 1023 opay", "9162512056, opay", "9162512056 - opay".
 - If reply is numeric-looking, do NOT put it in `recipient_name`.
 - Do not infer unrelated fields when reply is a direct slot-fill response.
 
@@ -82,6 +83,8 @@ When user corrects mid-flow ("I meant 50k"):
 | "GTB → Access 5k" | amount=5000, source_bank_name="GTBank", bank_name="Access Bank" |
 | "Send 25k to 0760505261 Access Bank" | amount=25000, recipient_account="0760505261", bank_name="Access Bank" |
 | "816 251 1023 opay" (when awaiting account+bank) | recipient_account="8162511023", bank_name="Opay" |
+| "9162512056, opay" (when awaiting account+bank) | recipient_account="9162512056", bank_name="Opay" |
+| "9162512056 - opay" (when awaiting account+bank) | recipient_account="9162512056", bank_name="Opay" |
 | "816-251-1023" (when awaiting account) | recipient_account="8162511023" |
 | "send 5 to john" | recipient_name="john", ambiguities=[AMOUNT_UNCLEAR: [5,5000]] |
 | "send 50k to mum tomorrow" | amount=50000, recipient_name="mum", requested_features=["SCHEDULED"] |
