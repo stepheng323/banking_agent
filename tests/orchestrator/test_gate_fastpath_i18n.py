@@ -26,6 +26,37 @@ async def test_gate_handles_greeting_meta_deterministically() -> None:
     assert updates["routing_decision"] == "meta_direct"
 
 
+async def test_gate_handles_capitalized_greeting_meta_before_query_routing() -> None:
+    planner = _RouteTurnPlanner(
+        SemanticRouteDecision(
+            decision="domain_query",
+            mode="new",
+            target_intent="query",
+            confidence=0.95,
+            detected_language="English",
+            response_key=None,
+            response=None,
+            expected_transaction_executors=[],
+            reason="should not be used for plain greeting",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_gate_1b",
+        phone_number="2348777777778",
+        channel="whatsapp",
+        last_message_text="Hi",
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert planner.route_calls == 0
+    assert updates["direct_path_triggered"] is True
+    assert updates["semantic_path_shape"] == "meta_direct"
+    assert updates["final_response"] == render_message("conversational.greeting", "en")
+    assert "tasks" not in updates or "direct_query" not in updates["tasks"]
+
+
 async def test_gate_explicit_cancel_during_pending_interrupt_resets_immediately() -> None:
     state = OrchestratorState(
         user_id="u_gate_2",
@@ -52,7 +83,7 @@ async def test_gate_explicit_cancel_during_pending_interrupt_resets_immediately(
     assert updates["current_wave_index"] == 0
 
 
-async def test_gate_query_followup_routes_via_semantic_router_without_pending_interrupt() -> None:
+async def test_gate_query_shortcut_followup_bypasses_semantic_router_without_pending_interrupt() -> None:
     planner = _RouteTurnPlanner(
         SemanticRouteDecision(
             decision="domain_query",
@@ -78,15 +109,16 @@ async def test_gate_query_followup_routes_via_semantic_router_without_pending_in
                 interrupt_policy="ALLOW",
             )
         ],
+        stashed_query_session={"session_active": True, "query_result": {"summary_text": "Showing 1-5 of 8"}},
     )
     config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
 
     updates = await session_gate_direct_path(state, config)
     assert updates.get("direct_path_triggered") is True
-    assert planner.route_calls == 1
-    assert updates["semantic_path_shape"] == "semantic_router_domain"
-    assert updates["routing_owner"] == "semantic_router"
-    assert updates["routing_decision"] == "domain_query"
+    assert planner.route_calls == 0
+    assert updates["semantic_path_shape"] == "query_followup_bypass"
+    assert updates["routing_owner"] == "query_session"
+    assert updates["routing_decision"] == "query_followup_bypass"
     assert updates["routing_target_domain"] == "query"
     assert updates["routing_mode"] == "continuation"
     assert updates.get("waves") == [["direct_query"]]
@@ -1554,9 +1586,9 @@ async def test_gate_exits_active_query_session_on_greeting_direct_reply() -> Non
 
     updates = await session_gate_direct_path(state, config)
 
-    assert planner.route_calls == 1
+    assert planner.route_calls == 0
     assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "semantic_router_direct"
+    assert updates["semantic_path_shape"] == "meta_direct"
     assert updates["final_response"] == render_message("conversational.greeting", "en")
     assert updates["stashed_query_session"] is None
     assert updates["session_stack"] == []
@@ -1643,7 +1675,7 @@ async def test_gate_explicit_cancel_during_pending_query_clarification_uses_quer
     assert redis_client.deleted_keys == ["query:session:2348000000019"]
 
 
-async def test_gate_pending_query_clarification_time_reply_routes_via_semantic_router() -> None:
+async def test_gate_pending_query_clarification_time_reply_bypasses_semantic_router() -> None:
     redis_client = _TrackingRedisWithSession(
         '{"session_active": true, "pending_clarification": {"kind": "pending_clarification", "original_query": "How much did I spend last", "current_intent": "spending_total", "original_extraction": {"intent": "spending_total", "filters": {}, "time_range": {"reference_type": "vague", "days_back": 30}, "requested_capabilities": [], "ambiguities": [{"code": "TIME_VAGUE", "context": "last"}], "raw_query": "How much did I spend last"}, "ambiguities": [{"code": "TIME_VAGUE", "context": "last"}], "resolver_message": "What time period did you mean by last?", "language": "en"}}'
     )
@@ -1674,13 +1706,57 @@ async def test_gate_pending_query_clarification_time_reply_routes_via_semantic_r
 
     updates = await session_gate_direct_path(state, config)
 
-    assert planner.route_calls == 1
+    assert planner.route_calls == 0
     assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "semantic_router_domain"
+    assert updates["semantic_path_shape"] == "query_followup_bypass"
     task = updates["tasks"]["direct_query"]
     assert task.type == "query"
     assert task.payload["message"] == "last 3 days"
     assert "force_new_query" not in task.payload
+
+
+async def test_gate_stale_query_interrupt_is_cleared_before_fresh_query_routing() -> None:
+    planner = _RouteTurnPlanner(
+        SemanticRouteDecision(
+            decision="domain_query",
+            mode="new",
+            target_intent="query",
+            confidence=0.94,
+            detected_language="English",
+            response_key=None,
+            response=None,
+            expected_transaction_executors=[],
+            reason="fresh income analytics query",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_gate_query_interrupt_cleanup_1",
+        phone_number="2348000000021",
+        channel="whatsapp",
+        last_message_text="What's my income this month",
+        loaded_context={"language": "en"},
+        pending_interrupt=PendingInterrupt(kind="input", task_ids=["t1"], fields_by_task={"t1": ["time_period"]}),
+        tasks={
+            "t1": TaskSpec(
+                id="t1",
+                type="query",
+                stage=TaskStage.EXTRACTED,
+                payload={"message": "Show me my credit transactions"},
+            )
+        },
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert planner.route_calls == 1
+    assert updates["pending_interrupt"] is None
+    assert updates["direct_path_triggered"] is True
+    assert updates["semantic_path_shape"] == "semantic_router_domain"
+    task = updates["tasks"]["direct_query"]
+    assert task.type == "query"
+    assert task.payload["message"] == "What's my income this month"
+    assert task.payload["force_new_query"] is True
 
 
 async def test_gate_direct_path_cancel_and_balance_cleans_query_and_runs_balance() -> None:

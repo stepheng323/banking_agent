@@ -365,6 +365,50 @@ async def _route_interrupt(
         return _route_fallback("router_failed")
 
 
+async def _route_interrupt_semantic_turn(
+    *,
+    task_planner: Any,
+    state: OrchestratorState,
+    text: str,
+) -> SemanticRouteDecision | None:
+    if not task_planner or not hasattr(task_planner, "route_semantic_turn"):
+        return None
+
+    stashed_query_session = state.stashed_query_session if isinstance(state.stashed_query_session, dict) else None
+    summary, _ = get_or_build_turn_context_summary(
+        state,
+        query_session_snapshot=stashed_query_session,
+        query_session_source="stashed" if stashed_query_session is not None else None,
+        path_label="interrupt_path",
+    )
+    semantic_context = build_router_context_from_summary(
+        summary,
+        expected_executors=state.preplanner_expected_transaction_executors,
+    )
+    try:
+        return cast(
+            SemanticRouteDecision,
+            await task_planner.route_semantic_turn(
+                state.phone_number,
+                text,
+                context=semantic_context,
+                path_label="interrupt_path",
+            ),
+        )
+    except TypeError:
+        return cast(
+            SemanticRouteDecision,
+            await task_planner.route_semantic_turn(
+                state.phone_number,
+                text,
+                context=semantic_context,
+            ),
+        )
+    except Exception as exc:
+        logger.warning("interrupt_semantic_router_failed", error=str(exc))
+        return None
+
+
 def _clear_current_domain_sessions(state: OrchestratorState, domains: set[str]) -> tuple[list[Any], str | None]:
     if not domains:
         stack = list(state.session_stack)
@@ -1325,13 +1369,18 @@ def _build_status_query_response(
     return " ".join(lines)
 
 
-def _status_query_updates(
+async def _status_query_updates(
     *,
     state: OrchestratorState,
     interrupt: Any,
     route: InterruptRouteDecision,
     current_task_types: set[str],
     semantic_path_shape: str,
+    task_planner: Any,
+    text: str,
+    active_type: str,
+    services: dict[str, Any],
+    redis_client: Any | None,
 ) -> dict[str, Any]:
     if not current_task_types or not current_task_types.issubset(TRANSACTION_INTENTS):
         logger.info(
@@ -1340,6 +1389,100 @@ def _status_query_updates(
             status_query_type=route.status_query_type,
             active_types=sorted(current_task_types),
         )
+        semantic_route = await _route_interrupt_semantic_turn(
+            task_planner=task_planner,
+            state=state,
+            text=text,
+        )
+        semantic_decision = str(getattr(semantic_route, "decision", "") or "")
+        expected_executors = [
+            str(item)
+            for item in (getattr(semantic_route, "expected_transaction_executors", None) or [])
+            if str(item) in TRANSACTION_INTENTS
+        ]
+        logger.info(
+            "interrupt_status_query_semantic_recovery",
+            decision=semantic_decision or None,
+            mode=getattr(semantic_route, "mode", None),
+            target_intent=getattr(semantic_route, "target_intent", None),
+            expected_executors=expected_executors,
+        )
+
+        if semantic_decision == "cancel":
+            return await _cancel_updates(state, interrupt, current_task_types, redis_client)
+
+        if semantic_decision in {"planner_mixed", "planner_ambiguous"}:
+            return _build_planner_switch_updates(
+                state=state,
+                interrupt=interrupt,
+                active_type=active_type,
+                current_task_types=current_task_types,
+                text=text,
+                expected_executors=expected_executors,
+            )
+
+        direct_non_transaction_domains = {
+            "domain_query": "query",
+            "domain_account": "account",
+            "domain_support": "support",
+            "domain_beneficiary": "beneficiary",
+        }
+        target_intent = direct_non_transaction_domains.get(semantic_decision)
+        if target_intent is not None:
+            recovered_route = InterruptRouteDecision(
+                decision="switch_intent",
+                confidence=getattr(semantic_route, "confidence", 0.0) or 0.0,
+                detected_language=getattr(semantic_route, "detected_language", None),
+                target_intent=target_intent,
+                target_mode="continuation" if getattr(semantic_route, "mode", None) == "continuation" else "new",
+                reason="status_query_no_active_flow_semantic_recovery",
+            )
+            new_tasks, waves, new_task_types = _build_direct_non_transaction_switch_tasks(
+                state=state,
+                text=text,
+                target_intent=target_intent,
+                route=recovered_route,
+            )
+            return _switch_updates(
+                state=state,
+                interrupt=interrupt,
+                active_type=active_type,
+                current_task_types=current_task_types,
+                new_tasks=new_tasks,
+                waves=waves,
+                new_task_types=new_task_types,
+                text=text,
+                planner_output=None,
+                primary_intent=target_intent,
+            )
+
+        direct_transaction_domains = {
+            "domain_transfer": "transfer",
+            "domain_airtime": "airtime",
+            "domain_data": "data",
+        }
+        target_intent = direct_transaction_domains.get(semantic_decision)
+        if target_intent is not None:
+            new_tasks, waves, new_task_types = await _build_enriched_transaction_switch_tasks(
+                state=state,
+                text=text,
+                target_intent=target_intent,
+                interrupt=interrupt,
+                services=services,
+            )
+            return _switch_updates(
+                state=state,
+                interrupt=interrupt,
+                active_type=active_type,
+                current_task_types=current_task_types,
+                new_tasks=new_tasks,
+                waves=waves,
+                new_task_types=new_task_types,
+                text=text,
+                planner_output=None,
+                primary_intent=target_intent,
+            )
+
         return _reprompt_updates(state, interrupt)
 
     response = _build_status_query_response(
@@ -1634,36 +1777,11 @@ async def _handle_switch_intent_route(
             route=route,
         )
     else:
-        semantic_route: SemanticRouteDecision | None = None
-        try:
-            stashed_query_session = (
-                state.stashed_query_session if isinstance(state.stashed_query_session, dict) else None
-            )
-            summary, _ = get_or_build_turn_context_summary(
-                state,
-                query_session_snapshot=stashed_query_session,
-                query_session_source="stashed" if stashed_query_session is not None else None,
-                path_label="interrupt_path",
-            )
-            semantic_context = build_router_context_from_summary(
-                summary,
-                expected_executors=state.preplanner_expected_transaction_executors,
-            )
-            semantic_route = await task_planner.route_semantic_turn(
-                state.phone_number,
-                text,
-                context=semantic_context,
-                path_label="interrupt_path",
-            )
-        except TypeError:
-            semantic_route = await task_planner.route_semantic_turn(
-                state.phone_number,
-                text,
-                context=semantic_context,
-            )
-        except Exception as exc:
-            logger.warning("interrupt_semantic_router_failed", error=str(exc), target_intent=target_intent)
-            semantic_route = None
+        semantic_route = await _route_interrupt_semantic_turn(
+            task_planner=task_planner,
+            state=state,
+            text=text,
+        )
 
         semantic_decision = str(getattr(semantic_route, "decision", "") or "")
         expected_executors = [
@@ -1746,12 +1864,17 @@ async def handle_pending_interrupt(state: OrchestratorState, config: RunnableCon
         text=text,
     )
     if status_shortcut_route is not None:
-        return _status_query_updates(
+        return await _status_query_updates(
             state=state,
             interrupt=interrupt,
             route=status_shortcut_route,
             current_task_types=current_task_types,
             semantic_path_shape="interrupt_deterministic",
+            task_planner=task_planner,
+            text=text,
+            active_type=active_type,
+            services=services,
+            redis_client=redis_client,
         )
 
     if interrupt.kind == "auth":
@@ -1861,12 +1984,17 @@ async def handle_pending_interrupt(state: OrchestratorState, config: RunnableCon
         )
 
     if route.decision == "status_query":
-        return _status_query_updates(
+        return await _status_query_updates(
             state=state,
             interrupt=interrupt,
             route=route,
             current_task_types=current_task_types,
             semantic_path_shape="interrupt_router_only",
+            task_planner=task_planner,
+            text=text,
+            active_type=active_type,
+            services=services,
+            redis_client=redis_client,
         )
 
     if route.decision == "cancel":

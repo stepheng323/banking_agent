@@ -1,5 +1,6 @@
 """Account management worker (stateless)."""
 
+import asyncio
 import time
 from typing import Any
 
@@ -17,10 +18,12 @@ from apps.core.src.agent.orchestrator.models.domain import (
     AccountOutcome,
     AccountResult,
 )
+from shared.cache.user_data import UserDataCache
 from shared.clients.abstractions.banking import BankDataProvider
 from shared.clients.abstractions.direct_debit import DirectDebitProvider
 from shared.i18n import LocaleManager, render_message
 from shared.repositories.account_repository import AccountRepository
+from shared.repositories.unit_of_work import UnitOfWork
 from shared.repositories.user_repository import UserRepository
 from shared.services.onboarding import SessionManager
 from shared.utils.logging import get_logger
@@ -318,17 +321,12 @@ class AccountWorker:
             )
 
         try:
-            from shared.cache.user_data import UserDataCache
-            from shared.repositories.unit_of_work import UnitOfWork
-
             async with UnitOfWork() as uow:
                 await uow.accounts.set_default_account(user_id, str(selected_account.account_id))
                 await uow.commit()
 
             user = await self.user_repo.get_by_id(user_id)
             if user:
-                import asyncio
-
                 asyncio.create_task(UserDataCache().invalidate_accounts(user.phone_number))
 
             masked = f"***{selected_account.account_number[-4:]}"
@@ -374,18 +372,15 @@ class AccountWorker:
                 except Exception:
                     pass
 
-            success = await self.account_repo.delete_account(str(selected_account.account_id), user_id)
+            async with UnitOfWork() as uow:
+                success = await uow.accounts.delete_account(str(selected_account.account_id), user_id)
+                await uow.commit()
             if success:
-                from shared.cache.user_data import UserDataCache
-                from shared.repositories.unit_of_work import UnitOfWork
-
                 try:
                     async with UnitOfWork() as uow:
                         if uow.users:
                             user = await uow.users.get_by_id(user_id)
                             if user:
-                                import asyncio
-
                                 asyncio.create_task(UserDataCache().invalidate_accounts(user.phone_number))
                 except Exception:
                     pass

@@ -2,8 +2,12 @@
 
 import json
 import time
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, is_dataclass
+from datetime import date, datetime
+from enum import Enum
 from typing import Any
+
+from pydantic import BaseModel
 
 from apps.core.src.agent.graphs.query.session import is_query_session_stale
 from apps.core.src.agent.orchestrator.context.models import ContextFrameType
@@ -78,6 +82,18 @@ def _clip_text(value: str, max_chars: int) -> str:
 
 
 def _compact_prompt_value(value: Any, depth: int = 0) -> Any:
+    if isinstance(value, BaseModel):
+        return _compact_prompt_value(value.model_dump(mode="json"), depth)
+
+    if is_dataclass(value) and not isinstance(value, type):
+        return _compact_prompt_value(asdict(value), depth)
+
+    if isinstance(value, Enum):
+        return value.value
+
+    if isinstance(value, (datetime, date)):
+        return value.isoformat()
+
     if isinstance(value, str):
         return _clip_text(value, PLANNER_ACTIVE_TASK_STRING_MAX_CHARS)
 

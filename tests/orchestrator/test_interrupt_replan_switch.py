@@ -1370,6 +1370,60 @@ async def test_status_query_multilingual_route_keeps_interrupt_active() -> None:
 
 
 @pytest.mark.asyncio
+async def test_status_query_without_transaction_flow_recovers_to_fresh_query_route() -> None:
+    state = OrchestratorState(
+        user_id="u_interrupt_status_query_recover_1",
+        phone_number="23480101010935",
+        channel="whatsapp",
+        last_message_text="What's my income this month",
+        pending_interrupt=PendingInterrupt(
+            kind="input",
+            task_ids=["t1"],
+            fields_by_task={"t1": ["time_period"]},
+        ),
+        tasks={
+            "t1": TaskSpec(
+                id="t1",
+                type="query",
+                stage=TaskStage.EXTRACTED,
+                payload={"message": "Show me my credit transactions"},
+            )
+        },
+    )
+    planner = _RouteOnlyPlanner(
+        InterruptRouteDecision(
+            decision="status_query",
+            status_query_type="recap",
+            confidence=0.88,
+            detected_language="English",
+            target_intent=None,
+            target_mode=None,
+            reason="misclassified fresh analytics ask",
+        ),
+        semantic_route=SemanticRouteDecision(
+            decision="domain_query",
+            confidence=0.94,
+            detected_language="English",
+            mode="new",
+            target_intent="query",
+            reason="fresh income analytics query",
+        ),
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await handle_pending_interrupt(state, config)
+
+    assert updates["pending_interrupt"] is None
+    assert updates["last_interrupt"].task_ids == ["t1"]
+    assert set(updates["tasks"].keys()) == {"interrupt_query_1"}
+    task = updates["tasks"]["interrupt_query_1"]
+    assert task.type == "query"
+    assert task.payload["message"] == "What's my income this month"
+    assert task.payload["force_new_query"] is True
+    assert updates["waves"] == [["interrupt_query_1"]]
+
+
+@pytest.mark.asyncio
 async def test_transfer_input_unclear_reprompt_uses_short_account_bank_reminder() -> None:
     state = OrchestratorState(
         user_id="u_interrupt_reprompt_1",

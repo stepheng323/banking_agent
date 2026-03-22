@@ -5,6 +5,13 @@ from time import time
 
 import pytest
 
+from apps.core.src.agent.graphs.query.models import (
+    Ambiguity,
+    AmbiguityCode,
+    ExtractionIntent,
+    PendingClarificationState,
+    QueryExtractionResult,
+)
 from apps.core.src.agent.orchestrator.context.models import ContextEntity, ContextFrame, ContextFrameType, EntityType
 from apps.core.src.agent.orchestrator.models.domain import ActiveSession, PendingInterrupt, TaskSpec, TaskStage
 from apps.core.src.agent.orchestrator.models.state import OrchestratorState
@@ -357,3 +364,42 @@ def test_get_or_build_turn_context_summary_reuses_cached_state_payload(monkeypat
 
     assert updates is None
     assert summary.history_lines == ["agent: cached"]
+
+
+def test_turn_context_summary_compacts_pydantic_payload_objects() -> None:
+    pending = PendingClarificationState(
+        original_query="How much did I spend last",
+        current_intent=ExtractionIntent.SPENDING_TOTAL,
+        original_extraction=QueryExtractionResult(
+            intent=ExtractionIntent.SPENDING_TOTAL,
+            ambiguities=[Ambiguity(code=AmbiguityCode.TIME_VAGUE, context="last")],
+            raw_query="How much did I spend last",
+        ),
+        ambiguities=[Ambiguity(code=AmbiguityCode.TIME_VAGUE, context="last")],
+        resolver_message="What time period did you mean by last?",
+        language="en",
+    )
+
+    state = OrchestratorState(
+        user_id="u_ctx_serialize_1",
+        phone_number="2348000000315",
+        channel="whatsapp",
+        session_stack=[ActiveSession(domain="query", state="RUNNING", interrupt_policy="ALLOW")],
+        pending_interrupt=PendingInterrupt(kind="input", task_ids=["q1"], fields_by_task={"q1": ["time_range"]}),
+        tasks={
+            "q1": TaskSpec(
+                id="q1",
+                type="query",
+                stage=TaskStage.EXTRACTED,
+                payload={"pending_clarification": pending},
+            )
+        },
+        waves=[["q1"]],
+        current_wave_index=0,
+    )
+
+    summary = build_turn_context_summary(state)
+
+    assert summary.active_flow_summary is not None
+    assert "pending_clarification" in summary.active_flow_summary
+    assert "How much did I spend last" in summary.active_flow_summary

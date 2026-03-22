@@ -10,6 +10,9 @@ from typing import Any, Literal
 
 from langchain_core.runnables import RunnableConfig
 
+from apps.core.src.agent.graphs.query.services.parser import QueryParser
+from apps.core.src.agent.graphs.query.services.query_shortcuts import resolve_query_shortcut_with_reason
+from apps.core.src.agent.graphs.query.utils.timezone import lagos_today
 from apps.core.src.agent.orchestrator.conversational_style import format_out_of_scope_reply
 from apps.core.src.agent.orchestrator.models.domain import TaskSpec, TaskStage
 from apps.core.src.agent.orchestrator.models.state import OrchestratorState
@@ -312,7 +315,9 @@ def _build_query_session_exit_updates(
     *,
     query_session_snapshot: dict[str, Any] | None,
 ) -> dict[str, Any]:
-    if not isinstance(query_session_snapshot, dict) or not query_session_snapshot.get("session_active"):
+    has_query_snapshot = isinstance(query_session_snapshot, dict) and bool(query_session_snapshot.get("session_active"))
+    has_query_session_stack = any(session.domain == "query" for session in state.session_stack)
+    if not has_query_snapshot and not has_query_session_stack and state.active_domain != "query":
         return {}
     remaining_sessions = [session for session in state.session_stack if session.domain != "query"]
     return {
@@ -466,6 +471,58 @@ def _route_observability_updates(
     }
 
 
+def _pending_interrupt_task_types(state: OrchestratorState) -> set[str]:
+    interrupt = state.pending_interrupt
+    if interrupt is None or not isinstance(getattr(interrupt, "task_ids", None), list):
+        return set()
+    return {
+        state.tasks[task_id].type
+        for task_id in interrupt.task_ids
+        if isinstance(task_id, str) and task_id in state.tasks
+    }
+
+
+def _has_live_pending_interrupt(state: OrchestratorState) -> bool:
+    interrupt = state.pending_interrupt
+    if interrupt is None:
+        return False
+
+    task_types = _pending_interrupt_task_types(state)
+    if not task_types:
+        return False
+
+    interrupt_kind = getattr(interrupt, "kind", None)
+    if interrupt_kind in {"confirmation", "auth"}:
+        return True
+    if interrupt_kind != "input":
+        return True
+
+    # Active query sessions own their own follow-up semantics and should not pay interrupt-router cost.
+    return any(task_type != "query" for task_type in task_types)
+
+
+def _query_followup_bypass_reason(
+    *,
+    message_text: str,
+    locale: str,
+    query_session_snapshot: dict[str, Any] | None,
+) -> tuple[str | None, str | None]:
+    if not isinstance(query_session_snapshot, dict) or not query_session_snapshot.get("session_active"):
+        return None, None
+
+    shortcut, miss_reason = resolve_query_shortcut_with_reason(message_text, locale)
+    if shortcut is not None:
+        return "query_shortcut", shortcut.action
+
+    if query_session_snapshot.get("pending_clarification"):
+        parsed_time_range = QueryParser.parse_clarification_time_range(message_text, today=lagos_today())
+        if parsed_time_range is not None:
+            return "pending_clarification", parsed_time_range.period or "days_back"
+        return None, miss_reason
+
+    return None, miss_reason
+
+
 async def session_gate_direct_path(state: OrchestratorState, config: RunnableConfig) -> dict[str, Any]:
     """
     Direct-path gate.
@@ -483,6 +540,16 @@ async def session_gate_direct_path(state: OrchestratorState, config: RunnableCon
     )
 
     message_text = (state.last_message_text or "").strip()
+    gate_updates: dict[str, Any] = {}
+    live_pending_interrupt = _has_live_pending_interrupt(state)
+    if state.pending_interrupt is not None and not live_pending_interrupt:
+        logger.info(
+            "interrupt_router_skipped_no_live_flow",
+            kind=getattr(state.pending_interrupt, "kind", None),
+            task_ids=getattr(state.pending_interrupt, "task_ids", None),
+            current_task_types=sorted(_pending_interrupt_task_types(state)),
+        )
+        gate_updates["pending_interrupt"] = None
 
     if is_explicit_cancel_message(message_text):
         query_session_snapshot, _ = await _load_query_session_snapshot(state, redis_client)
@@ -495,6 +562,7 @@ async def session_gate_direct_path(state: OrchestratorState, config: RunnableCon
             await clear_query_session(redis_client, state.phone_number)
             locale = LocaleManager.normalize((state.loaded_context or {}).get("language")).value
             return {
+                **gate_updates,
                 "direct_path_triggered": True,
                 "final_response": render_message("query.session.goodbye", locale),
                 **_route_observability_updates(owner="guardrail", decision="cancel"),
@@ -502,18 +570,20 @@ async def session_gate_direct_path(state: OrchestratorState, config: RunnableCon
         if has_cancelable_state(state):
             cleanup_updates = await build_cancellation_reset_updates(state, redis_client)
             return {
+                **gate_updates,
                 **cleanup_updates,
                 "direct_path_triggered": True,
                 "final_response": cancelled_message(state),
                 **_route_observability_updates(owner="guardrail", decision="cancel"),
             }
         return {
+            **gate_updates,
             "direct_path_triggered": True,
             "final_response": clarify_message(state),
             **_route_observability_updates(owner="guardrail", decision="cancel"),
         }
 
-    if not state.pending_interrupt and redis_client:
+    if not live_pending_interrupt and redis_client:
         import json
 
         suggestion_key = f"user:{state.phone_number}:beneficiary_suggestion"
@@ -560,6 +630,7 @@ async def session_gate_direct_path(state: OrchestratorState, config: RunnableCon
                     payload=task_payload,
                 )
                 return {
+                    **gate_updates,
                     "tasks": {task_id: spec},
                     "waves": [[task_id]],
                     "current_wave_index": 0,
@@ -581,7 +652,7 @@ async def session_gate_direct_path(state: OrchestratorState, config: RunnableCon
             else:
                 logger.info("beneficiary_suggestion_dismissed", reason=decision.reason)
 
-    if not state.pending_interrupt and _is_account_balance_request(message_text):
+    if not live_pending_interrupt and _is_account_balance_request(message_text):
         cleanup_updates: dict[str, Any] = {}
         if _has_explicit_cancel(message_text):
             cleanup_updates = await build_cancellation_reset_updates(state, redis_client)
@@ -599,6 +670,7 @@ async def session_gate_direct_path(state: OrchestratorState, config: RunnableCon
         )
         logger.info("gate_direct_account_balance", task_id=task_id, with_cleanup=bool(cleanup_updates))
         return {
+            **gate_updates,
             **cleanup_updates,
             "tasks": {task_id: spec},
             "waves": [[task_id]],
@@ -615,10 +687,11 @@ async def session_gate_direct_path(state: OrchestratorState, config: RunnableCon
         }
 
     # --- PIN callback with no active session (checkpoint was cleaned) ---
-    if state.pin_verified and not state.pending_interrupt:
+    if state.pin_verified and not live_pending_interrupt:
         locale = LocaleManager.normalize((state.loaded_context or {}).get("language")).value
         logger.warning("gate_pin_verified_no_session", reason="checkpoint_cleaned")
         return {
+            **gate_updates,
             "direct_path_triggered": True,
             "final_response": render_message(
                 "orchestrator.session.expired_pin",
@@ -628,9 +701,35 @@ async def session_gate_direct_path(state: OrchestratorState, config: RunnableCon
             **_route_observability_updates(owner="guardrail", decision="expired_pin_session"),
         }
 
+    if not live_pending_interrupt and not state.has_quote:
+        response_key = _deterministic_meta_response_key(message_text)
+        if response_key:
+            locale = LocaleManager.normalize((state.loaded_context or {}).get("language")).value
+            query_session_snapshot, _ = await _load_query_session_snapshot(state, redis_client)
+            exit_updates = _build_query_session_exit_updates(
+                state,
+                query_session_snapshot=query_session_snapshot,
+            )
+            if (
+                redis_client
+                and isinstance(query_session_snapshot, dict)
+                and query_session_snapshot.get("session_active")
+            ):
+                await clear_query_session(redis_client, state.phone_number)
+            if exit_updates:
+                logger.info("gate_query_session_exited_on_direct_reply", had_pending_clarification=False)
+            return {
+                **gate_updates,
+                **exit_updates,
+                "direct_path_triggered": True,
+                "final_response": render_message(response_key, locale),
+                "semantic_path_shape": "meta_direct",
+                **_route_observability_updates(owner="guardrail", decision="meta_direct"),
+            }
+
     summary_path_label = (
         "interrupt_path"
-        if state.pending_interrupt
+        if live_pending_interrupt
         else (
             "direct_path"
             if (
@@ -661,25 +760,45 @@ async def session_gate_direct_path(state: OrchestratorState, config: RunnableCon
         query_session_stack=has_query_session_stack,
     )
 
-    if not state.pending_interrupt and not state.has_quote and not has_active_query_session:
-        response_key = _deterministic_meta_response_key(message_text)
-        if response_key:
-            locale = LocaleManager.normalize((state.loaded_context or {}).get("language")).value
+    if not live_pending_interrupt and not state.has_quote:
+        locale = LocaleManager.normalize((state.loaded_context or {}).get("language")).value
+        bypass_reason, bypass_detail = _query_followup_bypass_reason(
+            message_text=message_text,
+            locale=locale,
+            query_session_snapshot=query_session_snapshot if isinstance(query_session_snapshot, dict) else None,
+        )
+        if bypass_reason is not None:
+            logger.info(
+                "query_followup_bypass_hit",
+                reason=bypass_reason,
+                detail=bypass_detail,
+                query_session_source=query_session_source,
+            )
+            task_id, spec = _build_direct_domain_task(state=state, domain="query")
             return {
+                **gate_updates,
                 **summary_updates,
+                "tasks": {task_id: spec},
+                "waves": [[task_id]],
+                "current_wave_index": 0,
+                "planner_output": None,
                 "direct_path_triggered": True,
-                "final_response": render_message(response_key, locale),
-                "semantic_path_shape": "meta_direct",
-                **_route_observability_updates(owner="guardrail", decision="meta_direct"),
+                "semantic_path_shape": "query_followup_bypass",
+                **_route_observability_updates(
+                    owner="query_session",
+                    decision="query_followup_bypass",
+                    target_domain="query",
+                    mode="continuation",
+                ),
             }
 
     if (
         not state.has_quote
         and callable(getattr(task_planner, "route_semantic_turn", None))
         and (
-            state.pending_interrupt is not None
+            live_pending_interrupt
             or (
-                not state.pending_interrupt
+                not live_pending_interrupt
                 and _should_invoke_semantic_router(message_text)
             )
         )
@@ -745,7 +864,7 @@ async def session_gate_direct_path(state: OrchestratorState, config: RunnableCon
             if expected_executors:
                 updates["preplanner_expected_transaction_executors"] = expected_executors
 
-            if state.pending_interrupt:
+            if live_pending_interrupt:
                 route = None
                 canonical_decision = None
                 canonical_mode = None
@@ -761,6 +880,7 @@ async def session_gate_direct_path(state: OrchestratorState, config: RunnableCon
                 else:
                     text = clarify_message(state, locale)
                 return {
+                    **gate_updates,
                     **summary_updates,
                     "direct_path_triggered": True,
                     "final_response": text,
@@ -817,6 +937,7 @@ async def session_gate_direct_path(state: OrchestratorState, config: RunnableCon
                     locale=locale,
                 )
                 return {
+                    **gate_updates,
                     **summary_updates,
                     "direct_path_triggered": True,
                     "final_response": text,
@@ -868,6 +989,7 @@ async def session_gate_direct_path(state: OrchestratorState, config: RunnableCon
                     task_id=task_id,
                 )
                 return {
+                    **gate_updates,
                     **summary_updates,
                     "tasks": {task_id: spec},
                     "waves": [[task_id]],
@@ -887,6 +1009,7 @@ async def session_gate_direct_path(state: OrchestratorState, config: RunnableCon
             if updates:
                 logger.info("gate_semantic_router_expected_executors", executors=expected_executors)
                 return {
+                    **gate_updates,
                     **summary_updates,
                     **_route_observability_updates(
                         owner="planner",
@@ -898,6 +1021,7 @@ async def session_gate_direct_path(state: OrchestratorState, config: RunnableCon
 
     logger.info("gate_dispatch_to_planner", reason="planner_owned_or_unresolved_route")
     return {
+        **gate_updates,
         **summary_updates,
         **_route_observability_updates(owner="planner", decision="planner_handoff"),
     }
