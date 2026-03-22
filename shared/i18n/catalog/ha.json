@@ -825,7 +825,9 @@
       },
       "processing_transfer": {
         "first_generic": "Processing your transfer now.",
-        "followup_generic": "Still processing your transfer."
+        "followup_generic": "Still processing your transfer.",
+        "first_scoped": "Muna sarrafa tura kudin ₦{amount} zuwa ga {recipient_display} yanzu.",
+        "followup_scoped": "Har yanzu muna ci gaba da sarrafa tura ₦{amount} zuwa ga {recipient_display}."
       }
     },
     "scope": {

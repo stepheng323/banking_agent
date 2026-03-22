@@ -825,7 +825,9 @@
       },
       "processing_transfer": {
         "first_generic": "Processing your transfer now.",
-        "followup_generic": "Still processing your transfer."
+        "followup_generic": "Still processing your transfer.",
+        "first_scoped": "A ń ṣiṣẹ lori gbigbe ₦{amount} rẹ si {recipient_display} bayi.",
+        "followup_scoped": "A ṣì ń ṣiṣẹ lori gbigbe ₦{amount} rẹ si {recipient_display}."
       }
     },
     "scope": {

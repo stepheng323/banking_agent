@@ -232,6 +232,10 @@ def render_progress_message(
             "first": "progress.query.comparing_periods.first_scoped",
             "followup": "progress.query.comparing_periods.followup_scoped",
         },
+        "transfer.processing_transfer": {
+            "first": "progress.transfer.processing_transfer.first_scoped",
+            "followup": "progress.transfer.processing_transfer.followup_scoped",
+        },
     }
     generic_key_by_stage = {
         "query.resolving_followup": {
@@ -265,8 +269,11 @@ def render_progress_message(
     }
 
     scoped_key = scoped_key_by_stage.get(stage_key, {}).get(variant)
-    if scope_label and scoped_key:
-        return render_message(scoped_key, locale, {"scope_label": scope_label})
+    if scoped_key:
+        if stage_key.startswith("transfer.") and stage_metadata and "amount" in stage_metadata:
+            return render_message(scoped_key, locale, stage_metadata)
+        if scope_label:
+            return render_message(scoped_key, locale, {"scope_label": scope_label})
 
     generic_key = generic_key_by_stage.get(stage_key, {}).get(variant)
     if generic_key:
