@@ -70,5 +70,9 @@
   {
     "id": "mixed_cross_domain_executor_boundary",
     "prompt_line": "\"send 10k to mum and show my last 3 credits\" -> [\"transfer\"]"
+  },
+  {
+    "id": "airtime_multi_phone_batch",
+    "prompt_line": "\"Buy 200 airtime for 08031234567, 08067892221, 08033038674\" -> planner_mixed"
   }
 ]

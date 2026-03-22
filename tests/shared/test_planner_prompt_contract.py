@@ -142,6 +142,7 @@ def test_money_move_one_shot_multilingual_examples_present() -> None:
     assert "Jowo ra data 1gb fun 08031234567 mtn" in runtime_prompt
     assert "Don Allah tura 5k zuwa 0760505261 First Bank" in runtime_prompt
     assert "Biko buy 3k airtime for my line mtn" in runtime_prompt
+    assert "Buy 200 airtime for 08031234567, 08067892221, 08033038674" in runtime_prompt
     assert "Envoie 5k a 0760505261 First Bank" in runtime_prompt
 
 
@@ -197,6 +198,7 @@ def test_semantic_router_expected_executor_coverage_rules_present() -> None:
     assert '"Send 10k to Mum and 5k to Gaines" -> planner_mixed' in SEMANTIC_ROUTER_SYSTEM_PROMPT
     assert '"Split 20k between Mum and Dad" -> planner_mixed' in SEMANTIC_ROUTER_SYSTEM_PROMPT
     assert '"Buy airtime and tell me my balance" -> planner_mixed' in SEMANTIC_ROUTER_SYSTEM_PROMPT
+    assert '"Buy 200 airtime for 08031234567, 08067892221, 08033038674" -> planner_mixed' in SEMANTIC_ROUTER_SYSTEM_PROMPT
     assert '"More" while viewing transactions -> domain_query with mode=continuation' in SEMANTIC_ROUTER_SYSTEM_PROMPT
     assert '"send 10k to mum and show my last 3 credits" -> planner_mixed' in SEMANTIC_ROUTER_SYSTEM_PROMPT
 

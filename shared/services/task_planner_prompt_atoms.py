@@ -51,7 +51,10 @@ PLANNER_RULE_ATOMS: dict[str, str] = {
         "future|repeat|list|cancel->schedule_transfer|recurring_transfer|"
         "list_scheduled_transfers|cancel_scheduled_transfer"
     ),
-    "R22_MIXED_MONEY_MOVE": "explicit transfer+airtime+data mix->emit all tasks in order",
+    "R22_MIXED_MONEY_MOVE": (
+        "explicit transfer+airtime+data mix->emit all tasks in order;"
+        " multiple phones/recipients in same executor->one task per recipient"
+    ),
     "R23_MULTILINGUAL_SAFETY": "rules_apply_semantically_across_supported_languages",
     "R24_BENEFICIARY_ROUTE": "mixed asks may use beneficiary_list or recipient_ranking hints when helpful",
     "R25_ACCOUNT_ACTION_HINT": "mixed account asks may set account_action_hint when helpful",
@@ -143,6 +146,8 @@ PLANNER_RUNTIME_MONEY_MOVE_EXAMPLES = """## TARGETED EXAMPLES (MONEY_MOVE)
 - Don Allah tura 5k zuwa 0760505261 First Bank ->
   send_money amount=5000, recipient_account=0760505261, bank_name=First Bank.
 - Biko buy 3k airtime for my line mtn -> buy_airtime amount=3000, is_self=true, network=MTN.
+- Buy 200 airtime for 08031234567, 08067892221, 08033038674 ->
+  3 x buy_airtime: each amount=200, recipient_phone per number.
 - Envoie 5k a 0760505261 First Bank -> send_money amount=5000, recipient_account=0760505261, bank_name=First Bank."""
 
 PLANNER_RUNTIME_CONTEXT_EXAMPLES = """## TARGETED EXAMPLES (CONTEXT)

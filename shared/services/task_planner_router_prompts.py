@@ -130,6 +130,7 @@ Rules:
    - "Send 10k to Mum and 5k to Gaines" -> planner_mixed
    - "Split 20k between Mum and Dad" -> planner_mixed
    - "Buy airtime and tell me my balance" -> planner_mixed
+   - "Buy 200 airtime for 08031234567, 08067892221, 08033038674" -> planner_mixed
 7) Use decision=direct_context_answer for short read-only questions that can be answered
    completely from the provided context/history. Requirements:
    - response must be grounded only in provided context/history

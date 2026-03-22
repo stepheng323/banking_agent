@@ -34,6 +34,7 @@ def test_semantic_router_replay_case_set_covers_query_first_and_guardrails() -> 
     assert "mixed_transfer_batch" in case_ids
     assert "mixed_cross_domain" in case_ids
     assert "mixed_cross_domain_executor_boundary" in case_ids
+    assert "airtime_multi_phone_batch" in case_ids
 
 
 def test_semantic_router_prompt_covers_replay_case_lines() -> None:
