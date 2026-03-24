@@ -184,9 +184,9 @@ async def test_gate_bypasses_planner_for_pure_query_analytics_turn() -> None:
 
     updates = await session_gate_direct_path(state, config)
 
-    assert planner.route_calls == 1
+    assert planner.route_calls == 0
     assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "semantic_router_domain"
+    assert updates["semantic_path_shape"] == "deterministic_query_domain"
     task = updates["tasks"]["direct_query"]
     assert task.type == "query"
     assert task.payload["force_new_query"] is True
@@ -217,9 +217,9 @@ async def test_gate_bypasses_planner_for_pure_query_sent_analytics_turn() -> Non
 
     updates = await session_gate_direct_path(state, config)
 
-    assert planner.route_calls == 1
+    assert planner.route_calls == 0
     assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "semantic_router_domain"
+    assert updates["semantic_path_shape"] == "deterministic_query_domain"
     task = updates["tasks"]["direct_query"]
     assert task.type == "query"
     assert task.payload["force_new_query"] is True
@@ -283,9 +283,9 @@ async def test_gate_bypasses_planner_for_pure_query_beneficiary_ranking_turn() -
 
     updates = await session_gate_direct_path(state, config)
 
-    assert planner.route_calls == 1
+    assert planner.route_calls == 0
     assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "semantic_router_domain"
+    assert updates["semantic_path_shape"] == "deterministic_query_domain"
     task = updates["tasks"]["direct_query"]
     assert task.type == "query"
     assert task.payload["force_new_query"] is True
@@ -412,10 +412,10 @@ async def test_gate_semantic_router_routes_income_query_clarification_bypass_to_
 
     updates = await session_gate_direct_path(state, config)
 
-    assert planner.route_calls == 1
+    assert planner.route_calls == 0
     assert planner.plan_calls == 0
     assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "semantic_router_domain"
+    assert updates["semantic_path_shape"] == "deterministic_query_domain"
     task = updates["tasks"]["direct_query"]
     assert task.type == "query"
     assert task.payload["message"] == "What's my income this month"
@@ -1749,10 +1749,10 @@ async def test_gate_stale_query_interrupt_is_cleared_before_fresh_query_routing(
 
     updates = await session_gate_direct_path(state, config)
 
-    assert planner.route_calls == 1
+    assert planner.route_calls == 0
     assert updates["pending_interrupt"] is None
     assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "semantic_router_domain"
+    assert updates["semantic_path_shape"] == "deterministic_query_domain"
     task = updates["tasks"]["direct_query"]
     assert task.type == "query"
     assert task.payload["message"] == "What's my income this month"

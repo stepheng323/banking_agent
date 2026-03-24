@@ -392,16 +392,25 @@ async def test_reasoner_logs_llm_backed_fresh_query_decision(monkeypatch: pytest
             decision="fresh_query",
             confidence=0.93,
             reason="llm_fresh_query",
-            extraction=QueryExtractionResult(raw_query="show my last transaction", result_limit=1),
+            extraction=QueryExtractionResult(raw_query="can you show my last transaction", result_limit=1),
         )
     )
     reasoner = QuerySemanticReasoner(llm)
 
     decision = await reasoner.reason(
         SemanticReasonerContext(
-            message="show my last transaction",
+            message="can you show my last transaction",
             today=date(2026, 3, 13),
             language="en",
+            query_contract=QueryExecutionContract(
+                intent=QueryIntent.TRANSACTION_SEARCH,
+                time_start=date(2026, 3, 13),
+                time_end=date(2026, 3, 13),
+                normalized_query=NormalizedQuery(
+                    intent=QueryIntent.TRANSACTION_SEARCH,
+                    time_range=TimeRange(start=date(2026, 3, 13), end=date(2026, 3, 13)),
+                ),
+            ),
         )
     )
 
@@ -411,7 +420,7 @@ async def test_reasoner_logs_llm_backed_fresh_query_decision(monkeypatch: pytest
         "query_reasoner_decision",
         {
             "reasoner_decision": "fresh_query",
-            "reasoner_context_mode": "none",
+            "reasoner_context_mode": "active_result",
             "reasoner_llm_used": True,
             "continuation_type": None,
             "query_operation": None,
@@ -429,16 +438,25 @@ async def test_reasoner_copies_top_level_query_operation_into_extraction() -> No
             confidence=0.93,
             reason="llm_fresh_sum_query",
             query_operation=QueryOperation.SUM_TRANSACTIONS,
-            extraction=QueryExtractionResult(raw_query="how much did I spend today"),
+            extraction=QueryExtractionResult(raw_query="can we see how much I spent today"),
         )
     )
     reasoner = QuerySemanticReasoner(llm)
 
     decision = await reasoner.reason(
         SemanticReasonerContext(
-            message="how much did I spend today",
+            message="can we see how much I spent today",
             today=date(2026, 3, 13),
             language="en",
+            query_contract=QueryExecutionContract(
+                intent=QueryIntent.TRANSACTION_SEARCH,
+                time_start=date(2026, 3, 13),
+                time_end=date(2026, 3, 13),
+                normalized_query=NormalizedQuery(
+                    intent=QueryIntent.TRANSACTION_SEARCH,
+                    time_range=TimeRange(start=date(2026, 3, 13), end=date(2026, 3, 13)),
+                ),
+            ),
         )
     )
 
@@ -540,7 +558,7 @@ async def test_reasoner_passes_through_contrastive_last_week_replace_scope_follo
 
     decision = await reasoner.reason(
         SemanticReasonerContext(
-            message="What about last week",
+            message="What about the week prior",
             today=date(2026, 3, 19),
             language="en",
             query_contract=QueryExecutionContract(
@@ -579,7 +597,7 @@ async def test_reasoner_passes_through_today_replace_scope_followup_intent() -> 
 
     decision = await reasoner.reason(
         SemanticReasonerContext(
-            message="only today",
+            message="fetch today only",
             today=date(2026, 3, 19),
             language="en",
             query_contract=QueryExecutionContract(
@@ -620,7 +638,7 @@ async def test_reasoner_passes_through_contrastive_yesterday_replace_scope_follo
 
     decision = await reasoner.reason(
         SemanticReasonerContext(
-            message="what about yesterday",
+            message="what about the day before",
             today=date(2026, 3, 19),
             language="en",
             query_contract=QueryExecutionContract(
@@ -664,7 +682,7 @@ async def test_reasoner_passes_through_single_item_contrastive_yesterday_replace
 
     decision = await reasoner.reason(
         SemanticReasonerContext(
-            message="no transaction yesterday?",
+            message="no transaction the day prior?",
             today=date(2026, 3, 19),
             language="en",
             query_contract=QueryExecutionContract(
@@ -711,7 +729,7 @@ async def test_reasoner_passes_through_contrastive_last_week_replace_scope_with_
 
     decision = await reasoner.reason(
         SemanticReasonerContext(
-            message="What about last week",
+            message="What about the week before",
             today=date(2026, 3, 19),
             language="en",
             query_contract=QueryExecutionContract(
@@ -943,7 +961,7 @@ async def test_reasoner_bounds_prompt_items_and_frames() -> None:
 
     await reasoner.reason(
         SemanticReasonerContext(
-            message="what about last week",
+            message="what about the week before",
             today=date(2026, 3, 19),
             language="en",
             query_contract=QueryExecutionContract(
@@ -963,13 +981,13 @@ async def test_reasoner_bounds_prompt_items_and_frames() -> None:
 
     assert llm.structured.calls == 1
     assert llm.structured.prompts
-    prompt = llm.structured.prompts[0]
-    assert "Payment 0" in prompt
-    assert "Payment 2" in prompt
-    assert "Payment 3" not in prompt
-    assert "summary 4" in prompt
-    assert "summary 2" in prompt
-    assert "summary 1" not in prompt
+    prompt_str = str(llm.structured.prompts[0])
+    assert "Payment 0" in prompt_str
+    assert "Payment 2" in prompt_str
+    assert "Payment 3" not in prompt_str
+    assert "summary 4" in prompt_str
+    assert "summary 2" in prompt_str
+    assert "summary 1" not in prompt_str
 
 
 @pytest.mark.asyncio

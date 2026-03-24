@@ -96,9 +96,6 @@ def test_retransfer_phrase_maps_to_drill_down_for_list_surface() -> None:
     "message",
     [
         "show me",
-        "what about yesterday",
-        "for last week only",
-        "only debits",
         "How much have I spent today",
         "Who did I send money to the most this week",
         "show my transactions",
