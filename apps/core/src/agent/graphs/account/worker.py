@@ -95,20 +95,32 @@ class AccountWorker:
 
         action = payload.get("action")
         identifier = payload.get("identifier")
+        identifiers = payload.get("identifiers")
 
         if not action:
             parsed = await self.parser.parse(text)
             action = parsed.action
             identifier = identifier or parsed.identifier
+            identifiers = parsed.identifiers
             patch["action"] = action
             if identifier:
                 patch["identifier"] = identifier
+            if identifiers:
+                patch["identifiers"] = identifiers
             if parsed.language:
                 patch["language"] = parsed.language
         elif action in ("unlink", "set_default") and not identifier and text:
             parsed = await self.parser.parse(text)
             identifier = parsed.identifier or text
             patch["identifier"] = identifier
+        elif action in ("check_balance", "balance", "show_balance", "overall_balance") and not identifier and not identifiers and text:
+            parsed = await self.parser.parse(text)
+            identifier = parsed.identifier
+            identifiers = parsed.identifiers
+            if identifier:
+                patch["identifier"] = identifier
+            if identifiers:
+                patch["identifiers"] = identifiers
         elif action in ("list", "list_accounts") and text:
             # Let parser refine list-like intents into nuanced account intents (e.g. count).
             parsed = await self.parser.parse(text)
@@ -192,7 +204,8 @@ class AccountWorker:
             elif action == "unlink":
                 response = await self._unlink_account(user_id, str(identifier), locale=locale)
             elif action in ("check_balance", "balance", "show_balance", "overall_balance"):
-                response = await self._check_balance(user_id, str(identifier) if identifier else None, locale=locale)
+                account_identifiers = identifiers or ([str(identifier)] if identifier else None)
+                response = await self._check_balance(user_id, account_identifiers, locale=locale)
             else:
                 accounts = user_ctx.get("accounts")
                 if accounts:
@@ -214,39 +227,41 @@ class AccountWorker:
                 patch=patch,
             )
 
-    async def _check_balance(self, user_id: str, account_identifier: str | None, *, locale: str = "en") -> str:
-        """Check balance for one or all accounts."""
+    async def _check_balance(
+        self, user_id: str, account_identifiers: list[str] | None, *, locale: str = "en"
+    ) -> str:
+        """Check balance for specific account(s) or all accounts."""
         accounts = await self.account_repo.get_by_user(user_id)
         if not accounts:
             return render_message("account.no_linked_accounts", locale)
 
         target_accounts = []
-        if account_identifier:
-            # Find specific account
-            try:
-                idx = int(account_identifier)
-                if 1 <= idx <= len(accounts):
-                    target_accounts = [accounts[idx - 1]]
-            except ValueError:
-                found = self._find_account_by_bank_name(accounts, account_identifier)
-                if found:
-                    target_accounts = [found]
+        if account_identifiers:
+            for ident in account_identifiers:
+                try:
+                    idx = int(ident)
+                    if 1 <= idx <= len(accounts):
+                        target_accounts.append(accounts[idx - 1])
+                except ValueError:
+                    found = self._find_account_by_bank_name(accounts, ident)
+                    if found:
+                        target_accounts.append(found)
+
+            if not target_accounts:
+                label = ", ".join(account_identifiers)
+                return render_message(
+                    "account.account_not_found",
+                    locale,
+                    {"identifier": label},
+                )
         else:
             target_accounts = accounts
-
-        if not target_accounts:
-            return render_message(
-                "account.account_not_found",
-                locale,
-                {"identifier": account_identifier or ""},
-            )
 
         balances = []
         total_balance = 0.0
 
         for account in target_accounts:
             try:
-                # Use provider to get real-time balance
                 bal_data = await self.banking_provider.get_balance(account.account_id)
                 if bal_data:
                     balances.append(

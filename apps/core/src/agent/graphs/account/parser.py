@@ -20,7 +20,15 @@ class AccountIntent(BaseModel):
     )
     identifier: str | None = Field(
         default=None,
-        description="The account identifier (bank name, number, or index) if applicable",
+        description="The primary account identifier (bank name, number, or index) if applicable",
+    )
+    identifiers: list[str] | None = Field(
+        default=None,
+        description=(
+            "Multiple account identifiers when the user mentions more than one account. "
+            "E.g. 'Access and Zenith' -> ['Access', 'Zenith']. "
+            "Only used for check_balance when multiple specific accounts are mentioned."
+        ),
     )
     language: str | None = Field(default="english", description="Detected language of the user")
 
@@ -59,11 +67,16 @@ class AccountParser:
             "5. 'link': User wants to add/connect a new bank account.\n"
             "   - Examples: 'Link a new account', 'Add another bank', 'Ina so in kara asusu'\n\n"
             "6. 'unknown': Intent is unclear or unrelated to account management.\n\n"
-            "**IDENTIFIER:**\n"
-            "Extract the bank name, alias, or list index (number) mentioned.\n"
+            "**IDENTIFIER / IDENTIFIERS:**\n"
+            "Extract the bank name(s), alias(es), or list index (number) mentioned.\n"
             "- 'Set GTBank as default' -> identifier: 'GTBank'\n"
             "- 'Remove number 2' -> identifier: '2'\n"
-            "- 'Make my Opay default' -> identifier: 'Opay'"
+            "- 'Make my Opay default' -> identifier: 'Opay'\n"
+            "- 'What's my Access balance' -> identifier: 'Access'\n"
+            "- 'How much is in my Access and Zenith' -> identifiers: ['Access', 'Zenith']\n"
+            "- 'Balance for GTB and UBA' -> identifiers: ['GTB', 'UBA']\n"
+            "Use 'identifiers' (list) only for check_balance when MULTIPLE banks are named. "
+            "For a single bank, use 'identifier' (string)."
         )
 
         try:

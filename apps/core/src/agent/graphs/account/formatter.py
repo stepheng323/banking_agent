@@ -45,28 +45,45 @@ class AccountFormatter:
         return "\n".join(lines)
 
     @staticmethod
+    def _mask_account(account_number: str | None) -> str:
+        """Build markdown-safe masked account suffix."""
+        last4 = account_number[-4:] if account_number else "????"
+        return f"···{last4}"
+
+    @staticmethod
     def format_balance_response(balances: list[dict], total_balance: float | None, locale: str = "en") -> str:
-        """Format balance check response."""
+        """Format balance check response as natural language."""
         if not balances:
             return render_message("account.balance.none_available", locale)
 
-        header = (
-            render_message("account.balance.header_single", locale)
-            if len(balances) == 1
-            else render_message("account.balance.header_multi", locale)
-        )
-        lines = [header, ""]
+        if len(balances) == 1:
+            bal = balances[0]
+            masked = AccountFormatter._mask_account(bal.get("account_number"))
+            return render_message(
+                "account.balance.natural_single",
+                locale,
+                {
+                    "bank_name": bal["bank_name"],
+                    "masked": masked,
+                    "amount": f"{bal['amount']:,.2f}",
+                },
+            )
 
-        for index, bal in enumerate(balances, 1):
-            amount = bal["amount"]
-            currency = bal.get("currency", "NGN")
-            symbol = "₦" if currency == "NGN" else currency
-            account_number = bal.get("account_number") or ""
-            last4 = account_number[-4:] if account_number else "????"
-            # Use a markdown-safe mask so the account line does not turn into bold text.
-            masked = f"···{last4}"
+        lines = [render_message("account.balance.natural_multi_intro", locale), ""]
 
-            lines.append(f"{index}. {bal['bank_name']} ({masked}): **{symbol}{amount:,.2f}**")
+        for bal in balances:
+            masked = AccountFormatter._mask_account(bal.get("account_number"))
+            lines.append(
+                render_message(
+                    "account.balance.natural_multi_item",
+                    locale,
+                    {
+                        "bank_name": bal["bank_name"],
+                        "masked": masked,
+                        "amount": f"{bal['amount']:,.2f}",
+                    },
+                )
+            )
 
         if total_balance is not None:
             lines.append("")
