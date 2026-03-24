@@ -61,6 +61,14 @@ BALANCE_DIRECT_CANCEL_PREFIX_RE = re.compile(
     r"^(?:cancel|abort|stop|nevermind|never\s+mind)(?:\s+(?:and|then))?\s+",
     re.IGNORECASE,
 )
+_QUERY_DOMAIN_PATTERNS = (
+    r"^(?:(?:show|list|view|get)\s+)?(?:my\s+)?(?:transactions?|transaction\s+history|history|statement)",
+    r"^(?:(?:show|list|view|get)\s+)?(?:my\s+)?last\s+\d+\s+transactions?",
+    r"^how\s+much\s+(?:(?:total|in\s+total)\s+)?(?:did|have)\s+i\s+(?:spend|spent|send|sent|pay|paid|receive|received)",
+    r"^(?:what(?:'s| is|'s)|how\s+much\s+is)\s+my\s+(?:spending|expenses?|income|inflow)",
+    r"^who\s+did\s+i\s+(?:send|transfer|pay)\s+(?:money\s+)?to",
+    r"^(?:top|my)\s+(?:recipients?|beneficiar)",
+)
 EXPLICIT_CANCEL_PATTERNS = (
     r"\bcancel\b",
     r"\babort\b",
@@ -301,6 +309,13 @@ def _is_account_balance_request(message_text: str) -> bool:
     if any(re.search(pattern, candidate) for pattern in BALANCE_DIRECT_TRANSACTION_HINT_PATTERNS):
         return False
     return any(re.search(pattern, candidate) for pattern in ACCOUNT_BALANCE_REQUEST_PATTERNS)
+
+
+def _is_query_domain_request(message_text: str) -> bool:
+    normalized = re.sub(r"\s+", " ", message_text.strip().lower()).rstrip("?.!,")
+    if not normalized:
+        return False
+    return any(re.search(pattern, normalized) for pattern in _QUERY_DOMAIN_PATTERNS)
 
 
 def _has_explicit_cancel(message_text: str) -> bool:
@@ -791,6 +806,31 @@ async def session_gate_direct_path(state: OrchestratorState, config: RunnableCon
                     mode="continuation",
                 ),
             }
+
+    if (
+        not live_pending_interrupt
+        and not state.has_quote
+        and not has_active_query_session
+        and _is_query_domain_request(message_text)
+    ):
+        task_id, spec = _build_direct_domain_task(state=state, domain="query", mode="new")
+        logger.info("gate_deterministic_query_domain", task_id=task_id)
+        return {
+            **gate_updates,
+            **summary_updates,
+            "tasks": {task_id: spec},
+            "waves": [[task_id]],
+            "current_wave_index": 0,
+            "planner_output": None,
+            "direct_path_triggered": True,
+            "semantic_path_shape": "deterministic_query_domain",
+            **_route_observability_updates(
+                owner="guardrail",
+                decision="deterministic_query_domain",
+                target_domain="query",
+                mode="new",
+            ),
+        }
 
     if (
         not state.has_quote
