@@ -359,8 +359,11 @@
       "none_available": "No balance information available.",
       "header_single": "💰 *Your Balance*",
       "header_multi": "💰 *Your Balances*",
-      "total": "*Total (all linked):* **₦{total_balance}**",
-      "unavailable": "I couldn't retrieve your balance at the moment."
+      "total": "Nchikota ego gị bụ **₦{total_balance}**.",
+      "unavailable": "I couldn't retrieve your balance at the moment.",
+      "natural_single": "Akaụntụ {bank_name} gị ({masked}) nwere ego **₦{amount}**.",
+      "natural_multi_intro": "Lee ego dị n'akaụntụ gị niile:",
+      "natural_multi_item": "• {bank_name} ({masked}): **₦{amount}**"
     },
     "prompt": {
       "unlink_identifier": "Which account would you like to unlink? Say 'unlink [bank name]' or 'unlink [number]'.",
@@ -703,7 +706,7 @@
       "bank_fallback": "Bank",
       "account_fallback": "N/A",
       "phone_fallback": "N/A",
-      "airtime_line": "\u2713 *Airtime:* {amount} for {phone} ({network})",
+      "airtime_line": "✓ *Airtime:* {amount} for {phone} ({network})",
       "data_plan_fallback": "data",
       "data_line": "*Data:* {plan} - {amount} for {phone}",
       "other_completed_line": "* {task_type}:* Completed",
@@ -908,4 +911,3 @@
     }
   }
 }
-
