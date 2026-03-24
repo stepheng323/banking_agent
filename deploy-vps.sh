@@ -19,7 +19,8 @@ REMOTE="$VPS_SSH_USER@$VPS_HOST"
 echo "▶ Syncing repo to $REMOTE:$VPS_APP_DIR ..."
 rsync -az \
   --exclude '.git/' \
-  --exclude '.venv/' \
+  --exclude '.venv*/' \
+  --exclude 'infrastructure/' \
   --exclude '.mypy_cache/' \
   --exclude '.pytest_cache/' \
   --exclude '.ruff_cache/' \

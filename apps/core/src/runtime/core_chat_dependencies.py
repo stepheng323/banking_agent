@@ -207,7 +207,7 @@ def setup_core_consumers() -> tuple[MessageConsumer, RedisStreamConsumer]:
     queue_publisher = QueuePublisherFactory.get_async_publisher()
     messaging_clients = build_messaging_clients()
     shared_redis = RedisClient.get_client()
-    llm = ChatOpenAI(model=settings.planner_model, temperature=0)
+    llm = ChatOpenAI(model=settings.planner_model, temperature=0, timeout=30.0, max_retries=1)
     query_model = settings.query_model.strip()
     if not query_model:
         query_model = settings.planner_model
@@ -222,7 +222,7 @@ def setup_core_consumers() -> tuple[MessageConsumer, RedisStreamConsumer]:
             app_env=settings.app_env,
             model=query_model,
         )
-    query_llm = ChatOpenAI(model=query_model, temperature=0)
+    query_llm = ChatOpenAI(model=query_model, temperature=0, timeout=30.0, max_retries=1)
     interrupt_router_model = settings.interrupt_router_model.strip()
     if not interrupt_router_model:
         interrupt_router_model = settings.planner_model
@@ -238,7 +238,7 @@ def setup_core_consumers() -> tuple[MessageConsumer, RedisStreamConsumer]:
             model=interrupt_router_model,
         )
 
-    interrupt_llm = ChatOpenAI(model=interrupt_router_model, temperature=0)
+    interrupt_llm = ChatOpenAI(model=interrupt_router_model, temperature=0, timeout=15.0, max_retries=1)
 
     runtime_bundle_factory = _build_runtime_bundle_factory(
         queue_publisher=queue_publisher,
