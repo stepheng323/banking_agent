@@ -45,12 +45,13 @@ def test_settings_uses_dedicated_query_model_when_configured(monkeypatch) -> Non
     assert cfg.query_model == "gpt-4.1-mini"
 
 
-def test_settings_query_model_defaults_to_gpt5_mini_until_explicitly_configured(monkeypatch) -> None:
+def test_settings_query_model_defaults_to_planner_model_until_explicitly_configured(monkeypatch) -> None:
     monkeypatch.delenv("QUERY_MODEL", raising=False)
+    monkeypatch.setenv("PLANNER_MODEL", "gpt-4o-mini-test")
 
     cfg = Settings()
 
-    assert cfg.query_model == "gpt-5-mini"
+    assert cfg.query_model == "gpt-4o-mini-test"
 
 
 def test_settings_mono_use_mock_override_takes_precedence(monkeypatch) -> None:
