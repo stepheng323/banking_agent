@@ -47,7 +47,6 @@ class QueryWorker:
         self.banking_provider = banking_provider
         self.session_manager = session_manager
 
-        # Initialize pipeline steps once
         self.extractor = ExtractionStep(llm)
         self.executor = ExecutionStep()
         self._default_pipeline = QueryPipeline([self.extractor, self.executor])

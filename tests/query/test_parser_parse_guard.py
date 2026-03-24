@@ -6,6 +6,8 @@ from apps.core.src.agent.graphs.query.models import (
     Ambiguity,
     AmbiguityCode,
     ExtractionIntent,
+    ParserQueryExtraction,
+    QueryAggregation,
     QueryExtractionResult,
     QueryFilters,
     QueryTimeRange,
@@ -33,6 +35,25 @@ class _DummyLLM:
     def with_structured_output(self, schema: object) -> _DummyStructured:
         del schema
         return _DummyStructured(self._extraction)
+
+
+class _TrackingStructured:
+    def __init__(self, extraction: object) -> None:
+        self._extraction = extraction
+
+    async def ainvoke(self, prompt: str) -> object:
+        del prompt
+        return self._extraction
+
+
+class _TrackingLLM:
+    def __init__(self, extraction: object) -> None:
+        self._extraction = extraction
+        self.schema: object | None = None
+
+    def with_structured_output(self, schema: object) -> _TrackingStructured:
+        self.schema = schema
+        return _TrackingStructured(self._extraction)
 
 
 @pytest.mark.asyncio
@@ -176,3 +197,54 @@ async def test_named_month_last_year_defaults_without_clarifying() -> None:
     assert result.query_contract is not None
     assert result.query_contract["time_start"] == date(2025, 3, 1)
     assert result.query_contract["time_end"] == date(2025, 3, 31)
+
+
+@pytest.mark.asyncio
+async def test_parser_binds_minimal_schema_and_inflates_downstream_fields() -> None:
+    llm = _TrackingLLM(
+        ParserQueryExtraction(
+            intent=ExtractionIntent.SPENDING_TOTAL,
+            time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="today", days_back=0),
+            aggregation=QueryAggregation(type="sum"),
+        )
+    )
+    parser = QueryParser(llm)
+
+    result = await parser.parse(
+        "How much did I spend today",
+        today=date(2026, 3, 21),
+        language="en",
+    )
+
+    assert llm.schema is ParserQueryExtraction
+    assert result.outcome == ResolverOutcome.OK
+    assert result.extraction is not None
+    assert result.extraction.raw_query == "How much did I spend today"
+    assert result.extraction.query_operation is not None
+    assert RequestedCapability.AGGREGATE_SUM in result.extraction.requested_capabilities
+    assert RequestedCapability.FILTER_TX_TYPE in result.extraction.requested_capabilities
+    assert RequestedCapability.TIME_RELATIVE in result.extraction.requested_capabilities
+    assert result.query_contract is not None
+
+
+@pytest.mark.asyncio
+async def test_vague_time_from_minimal_parser_output_derives_ambiguity_locally() -> None:
+    llm = _TrackingLLM(
+        ParserQueryExtraction(
+            intent=ExtractionIntent.SPENDING_TOTAL,
+            time_range=QueryTimeRange(reference_type=TimeReference.VAGUE, days_back=30),
+        )
+    )
+    parser = QueryParser(llm)
+
+    result = await parser.parse(
+        "How much did I spend recently",
+        today=date(2026, 3, 21),
+        language="en",
+    )
+
+    assert result.outcome == ResolverOutcome.NEEDS_INPUT
+    assert result.extraction is not None
+    assert result.extraction.ambiguities
+    assert result.extraction.ambiguities[0].code == AmbiguityCode.TIME_VAGUE
+    assert result.pending_clarification is not None

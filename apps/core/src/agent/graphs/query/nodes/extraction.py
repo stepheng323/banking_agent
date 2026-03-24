@@ -72,6 +72,9 @@ class ExtractionStep(QueryStep):
             "_query_semantic_context_mode": getattr(decision, "semantic_context_mode", None),
             "_query_semantic_llm_used": getattr(decision, "semantic_llm_used", None),
             "_query_deterministic_surface_action": getattr(decision, "deterministic_surface_action", None),
+            "_query_llm_calls_used": getattr(decision, "llm_calls_used", None),
+            "_query_single_llm_invariant": getattr(decision, "single_llm_invariant", None),
+            "_query_reasoner_schema": getattr(decision, "semantic_reasoner_schema", None),
         }
 
     @staticmethod
@@ -199,27 +202,24 @@ class ExtractionStep(QueryStep):
             confidence=reasoner_confidence,
             original_query=original_query,
         )
-        resolution_source = "parser_parse"
-        if compiler_safe_extraction is not None:
-            if not compiler_safe_extraction.raw_query:
-                compiler_safe_extraction = compiler_safe_extraction.model_copy(
-                    update={"raw_query": state.get("message", "")}
-                )
-            parsed_result = self.parser.compile_extraction(
-                compiler_safe_extraction,
-                today=today,
-                language=language,
-            )
-            resolution_source = "reasoner_extraction_compile"
-        else:
-            parsed_result = await self.parser.parse(state.get("message", ""), today=today, language=language)
+        if compiler_safe_extraction is None:
             logger.info(
                 "query_continuation_resolution",
                 path="fallback_parse_supported_query",
                 recovered=False,
                 skip_reason=compiler_safe_reason,
-                resolution_source=resolution_source,
+                resolution_source="reasoner_extraction_compile",
             )
+            return None
+
+        if not compiler_safe_extraction.raw_query:
+            compiler_safe_extraction = compiler_safe_extraction.model_copy(update={"raw_query": state.get("message", "")})
+        parsed_result = self.parser.compile_extraction(
+            compiler_safe_extraction,
+            today=today,
+            language=language,
+        )
+        resolution_source = "reasoner_extraction_compile"
         if parsed_result.outcome != ResolverOutcome.OK or parsed_result.extraction is None:
             logger.info(
                 "query_continuation_resolution",
@@ -460,6 +460,9 @@ class ExtractionStep(QueryStep):
         resolution_source: str | None = None,
         semantic_decision: str | None = None,
         continuation_type: str | None = None,
+        llm_calls_used: int | None = None,
+        single_llm_invariant: bool | None = None,
+        reasoner_schema: str | None = None,
     ) -> None:
         logger.info(
             "query_trace",
@@ -472,6 +475,9 @@ class ExtractionStep(QueryStep):
             semantic_decision=semantic_decision,
             continuation_type=continuation_type,
             resolution_source=resolution_source,
+            llm_calls_used=llm_calls_used,
+            single_llm_invariant=single_llm_invariant,
+            reasoner_schema=reasoner_schema,
         )
 
     @staticmethod
@@ -497,6 +503,21 @@ class ExtractionStep(QueryStep):
             skip_reason=skip_reason,
         )
 
+    @staticmethod
+    def _is_direct_time_rescope_message(message: str, *, today: date) -> bool:
+        normalized = " ".join(message.strip().split()).lower().rstrip("?.!,")
+        if not normalized:
+            return False
+        if QueryParser.parse_clarification_time_range(normalized, today=today) is not None:
+            return True
+        for prefix in ("what about ", "how about ", "for ", "only ", "just ", "and "):
+            if not normalized.startswith(prefix):
+                continue
+            candidate = normalized[len(prefix) :].strip()
+            if QueryParser.parse_clarification_time_range(candidate, today=today) is not None:
+                return True
+        return False
+
     async def _maybe_recover_time_rescope_continuation(
         self,
         *,
@@ -516,6 +537,23 @@ class ExtractionStep(QueryStep):
                 recovered=False,
                 session_has_query_contract=False,
                 skip_reason="missing_query_contract",
+            )
+            return None
+
+        if (
+            trigger_reason in {"low_confidence_unclear", "unclear_continuation"}
+            and
+            getattr(decision, "continuation_type", None) != "time_delta"
+            and getattr(decision, "time_range", None) is None
+            and not getattr(decision, "time_period", None)
+            and getattr(decision, "extraction", None) is None
+            and not self._is_direct_time_rescope_message(message, today=today)
+        ):
+            self._log_time_rescope_recovery(
+                trigger_reason=trigger_reason,
+                recovered=False,
+                session_has_query_contract=True,
+                skip_reason="message_not_time_only",
             )
             return None
 
@@ -696,61 +734,8 @@ class ExtractionStep(QueryStep):
                     resolution_source="decision_time_period",
                     semantic_decision=semantic_decision,
                     continuation_type=continuation_type,
-                )
+            )
             return query_ir.time_range, None
-
-        parsed_result = await self.parser.parse(message, today=today, language=language)
-        if parsed_result.outcome == ResolverOutcome.NEEDS_INPUT:
-            if state is not None:
-                self._log_query_trace(
-                    state=state,
-                    phase="time_resolution",
-                    latency_ms=(perf_counter() - started_at) * 1000.0,
-                    outcome="clarify",
-                    resolution_source="parser_parse",
-                    semantic_decision=semantic_decision,
-                    continuation_type=continuation_type,
-                )
-            return None, parsed_result.resolver_message or render_message("query.clarify.default", language)
-
-        parsed_extraction = getattr(parsed_result, "extraction", None)
-        parsed_reference_type = (
-            parsed_extraction.time_range.reference_type if parsed_extraction and parsed_extraction.time_range else None
-        )
-        if parsed_reference_type in {TimeReference.EXPLICIT, TimeReference.ALL_TIME}:
-            query_contract = None
-            if isinstance(parsed_result.query_contract, dict):
-                try:
-                    query_contract = QueryExecutionContract.model_validate(parsed_result.query_contract)
-                except Exception:
-                    query_contract = None
-
-            if query_contract and query_contract.normalized_query.time_range is not None:
-                if state is not None:
-                    self._log_query_trace(
-                        state=state,
-                        phase="time_resolution",
-                        latency_ms=(perf_counter() - started_at) * 1000.0,
-                        outcome="resolved",
-                        resolution_source="parser_contract",
-                        semantic_decision=semantic_decision,
-                        continuation_type=continuation_type,
-                    )
-                return query_contract.normalized_query.time_range, None
-
-            if parsed_extraction is not None and parsed_extraction.time_range is not None:
-                query_ir = self.parser.build_query_ir_from_extraction(parsed_extraction, today=today, language=language)
-                if state is not None:
-                    self._log_query_trace(
-                        state=state,
-                        phase="time_resolution",
-                        latency_ms=(perf_counter() - started_at) * 1000.0,
-                        outcome="resolved",
-                        resolution_source="parser_ir",
-                        semantic_decision=semantic_decision,
-                        continuation_type=continuation_type,
-                    )
-                return query_ir.time_range, None
 
         if state is not None:
             self._log_query_trace(
@@ -1141,15 +1126,15 @@ class ExtractionStep(QueryStep):
             self._log_single_item_followup(
                 surface=surface,
                 continuation_type=cont_type,
-                followup_outcome="fallback_parse_new_query",
+                followup_outcome="clarify",
                 decision=decision.decision,
             )
             logger.info(
                 "query_continuation_resolution",
-                path="fallback_parse_new_query",
+                path="fallback_clarify_active_session",
                 semantic_decision=decision.decision,
             )
-            return await self._parse_new_query(state)
+            return self._ambiguous_followup_updates(locale=locale, session=session)
 
         grounded_updates = self._resolve_grounded_followup(
             decision=decision,
@@ -1506,7 +1491,7 @@ class ExtractionStep(QueryStep):
             )
             if aggregate_updates is not None:
                 return aggregate_updates
-            return await self._parse_new_query(state)
+            return self._ambiguous_followup_updates(locale=locale, session=session)
 
         return updates
 
@@ -1517,22 +1502,34 @@ class ExtractionStep(QueryStep):
         today = today_state if isinstance(today_state, date) else lagos_today()
         language = LocaleManager.normalize(state.get("language")).value
 
-        decision = await self.reasoner.reason(
-            SemanticReasonerContext(
-                message=message,
-                today=today,
-                language=language,
-                turn_id=state.get("turn_id"),
-                inbound_message_id=state.get("inbound_message_id"),
+        started_at = perf_counter()
+        deterministic_result = self.parser.parse_deterministic(message, today=today, language=language)
+        if deterministic_result is not None:
+            self._log_query_trace(
+                state=state,
+                phase="parser_compile",
+                latency_ms=(perf_counter() - started_at) * 1000.0,
+                outcome=self._resolver_outcome_trace(getattr(deterministic_result, "outcome", None)),
+                resolution_source="parser_deterministic",
+                llm_calls_used=0,
+                single_llm_invariant=True,
             )
-        )
-        updates = await self._parse_reasoner_extraction_to_updates(
-            decision,
+            updates = self._parse_result_to_updates(deterministic_result, state=state, today=today, language=language)
+            updates.update({"_query_llm_calls_used": 0, "_query_single_llm_invariant": True})
+            return updates
+
+        result = await self.parser.parse(message, today=today, language=language)
+        self._log_query_trace(
             state=state,
-            today=today,
-            language=language,
+            phase="parser_compile",
+            latency_ms=(perf_counter() - started_at) * 1000.0,
+            outcome=self._resolver_outcome_trace(getattr(result, "outcome", None)),
+            resolution_source="parser_parse",
+            llm_calls_used=1,
+            single_llm_invariant=True,
         )
-        updates.update(self._semantic_trace_updates(decision))
+        updates = self._parse_result_to_updates(result, state=state, today=today, language=language)
+        updates.update({"_query_llm_calls_used": 1, "_query_single_llm_invariant": True})
         return updates
 
     async def _parse_reasoner_extraction_to_updates(
@@ -1570,7 +1567,7 @@ class ExtractionStep(QueryStep):
                     confidence=confidence,
                     path="compile_extraction_despite_ambiguity",
                 )
-            result = self.parser.compile_extraction(compile_target, today=today, language=language)
+            result = self.parser.compile_reasoner_extraction(compile_target, today=today, language=language)
             self._log_query_trace(
                 state=state,
                 phase="semantic_compile",
@@ -1579,6 +1576,9 @@ class ExtractionStep(QueryStep):
                 resolution_source=resolution_source,
                 semantic_decision=getattr(decision, "decision", None),
                 continuation_type=getattr(decision, "continuation_type", None),
+                llm_calls_used=1 if getattr(decision, "semantic_llm_used", False) else 0,
+                single_llm_invariant=True,
+                reasoner_schema=getattr(decision, "semantic_reasoner_schema", None),
             )
             return self._parse_result_to_updates(result, state=state, today=today, language=language)
 
@@ -1589,32 +1589,27 @@ class ExtractionStep(QueryStep):
             continuation_type=getattr(decision, "continuation_type", None),
             confidence=confidence,
         )
-
-        query_text = state.get("message", "")
-        deterministic_result = self.parser.parse_deterministic(query_text, today=today, language=language)
-        if deterministic_result:
-            self._log_query_trace(
-                state=state,
-                phase="semantic_compile",
-                latency_ms=(perf_counter() - started_at) * 1000.0,
-                outcome=self._resolver_outcome_trace(getattr(deterministic_result, "outcome", None)),
-                resolution_source="parser_deterministic",
-                semantic_decision=getattr(decision, "decision", None),
-                continuation_type=getattr(decision, "continuation_type", None),
-            )
-            return self._parse_result_to_updates(deterministic_result, state=state, today=today, language=language)
-
-        result = await self.parser.parse(query_text, today=today, language=language)
         self._log_query_trace(
             state=state,
             phase="semantic_compile",
             latency_ms=(perf_counter() - started_at) * 1000.0,
-            outcome=self._resolver_outcome_trace(getattr(result, "outcome", None)),
-            resolution_source="parser_parse",
+            outcome="clarify",
+            resolution_source="missing_reasoner_extraction",
             semantic_decision=getattr(decision, "decision", None),
             continuation_type=getattr(decision, "continuation_type", None),
+            llm_calls_used=1 if getattr(decision, "semantic_llm_used", False) else 0,
+            single_llm_invariant=True,
+            reasoner_schema=getattr(decision, "semantic_reasoner_schema", None),
         )
-        return self._parse_result_to_updates(result, state=state, today=today, language=language)
+        return {
+            "transaction_outcome": TransactionOutcome.NEEDS_INPUT,
+            "response": render_message("query.clarify.unsure_rephrase", language),
+            "flow_state": "parsing",
+            "session_active": True,
+            "pending_clarification": None,
+            "show_expanded": False,
+            "current_page": 0,
+        }
 
     def _parse_result_to_updates(
         self,

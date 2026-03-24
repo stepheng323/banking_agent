@@ -65,7 +65,7 @@ QUERY SHAPE RULES
 - "How much did I spend today/this week" → fresh_query with explicit period, not continuation.
 
 EXTRACTION RULES (for fresh_query, reinterpret_query, new_query)
-Populate: query_operation, intent, filters, time_range, comparison, aggregation, result_limit, result_reference, requested_capabilities, ambiguities.
+Populate: intent, filters, time_range, comparison, aggregation, result_limit, result_reference.
 - result_reference: "latest" for most recent, "oldest" for earliest.
 - Superlatives by amount ("highest transfer") → aggregation.type=largest/smallest over result_reference.
 - query_operation values: list_transactions, search_single_transaction, sum_transactions, count_transactions,
@@ -77,11 +77,6 @@ MULTILINGUAL: Support English, Nigerian Pidgin, Yoruba, Igbo, Hausa, French, and
 Return STRICT JSON only."""
 
 QUERY_SEMANTIC_REASONER_CONTEXT = """\
-TODAY: {today}
-LANGUAGE: {language}
-SESSION MODE: {session_mode}
-USER MESSAGE: {message}
-
 CURRENT QUERY SNAPSHOT
 {current_query}
 
@@ -95,13 +90,18 @@ ACTIVE RESULT SURFACE
 {items_section}
 
 RECENT QUERY FRAMES
-{query_frames_section}"""
+{query_frames_section}
+
+SESSION METADATA
+- mode: {session_mode}
+- language: {language}
+- today: {today}
+
+USER MESSAGE
+{message}"""
 
 QUERY_PARSER_PROMPT = """\
 Extract structured parameters for a banking transaction query. Return schema-conformant JSON only.
-
-TODAY: {today}
-USER MESSAGE: {question}
 
 INTENTS
 - transaction_list: show/list/history/statement ("last N transactions")
@@ -113,7 +113,9 @@ INTENTS
 - affordability: "can I afford", "do I have enough"
 
 QUERY OPERATION
-Set `query_operation` to: list_transactions | search_single_transaction | sum_transactions | count_transactions |
+The runtime derives `query_operation` from the semantic fields you extract.
+Use these semantic targets internally while extracting intent/aggregation:
+list_transactions | search_single_transaction | sum_transactions | count_transactions |
 average_transactions | rank_largest_transaction | rank_smallest_transaction | breakdown_transactions |
 compare_periods | summarize_beneficiaries | check_affordability
 
@@ -150,11 +152,11 @@ RESULT LIMIT & REFERENCE
 - "last/latest N transactions" → result_limit=N; singular → result_limit=1
 - result_reference: "latest" for most recent, "oldest" for earliest
 
-REQUESTED CAPABILITIES
-List every capability required by the extracted intent and fields. Derive from user intent, not guesses.
-
-AMBIGUITIES
-If unclear, add ambiguity entry and leave field null. Examples: "recently" → TIME_VAGUE, "that mechanic" → RECIPIENT_VAGUE
+OUTPUT CONTRACT
+Return only these fields: intent, filters, time_range, comparison, aggregation, result_limit, result_reference.
+If the user is vague, express that through the semantic fields:
+- vague time → reference_type=vague and estimate days_back when possible
+- missing/unclear fields → leave the field null instead of fabricating values
 
 MULTILINGUAL: Support English, Nigerian Pidgin, Yoruba, Igbo, Hausa, French, and mixed phrasing.
 
@@ -166,4 +168,7 @@ EXAMPLES
 "what was my last transaction status" → transaction_list, result_limit=1, result_reference=latest
 "who did I send money to this month" → beneficiary_summary, sum, sort_by=count, debit, explicit this_month
 "what's my highest single transfer this month" → spending_total, largest, limit=1, debit, explicit this_month
+
+TODAY: {today}
+USER MESSAGE: {question}
 """

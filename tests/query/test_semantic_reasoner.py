@@ -868,6 +868,54 @@ async def test_reasoner_passes_through_last_month_replace_scope_followup_intent(
 
 
 @pytest.mark.asyncio
+async def test_reasoner_logs_single_llm_trace_metadata(monkeypatch: pytest.MonkeyPatch) -> None:
+    events: list[tuple[str, dict]] = []
+
+    def _capture(event: str, **kwargs: object) -> None:
+        events.append((event, dict(kwargs)))
+
+    monkeypatch.setattr("apps.core.src.agent.graphs.query.services.reasoner.logger.info", _capture)
+
+    llm = _TrackingLLM(
+        QuerySemanticDecision(
+            decision="continuation",
+            confidence=0.91,
+            reason="llm_replace_scope",
+            continuation_type="time_delta",
+            followup_intent="replace_scope",
+            time_period="last week",
+        )
+    )
+    reasoner = QuerySemanticReasoner(llm)
+
+    await reasoner.reason(
+        SemanticReasonerContext(
+            message="can we compare that against last week",
+            today=date(2026, 3, 14),
+            language="en",
+            query_contract=QueryExecutionContract(
+                intent=QueryIntent.TRANSACTION_LIST,
+                time_start=date(2026, 3, 1),
+                time_end=date(2026, 3, 14),
+                normalized_query=NormalizedQuery(
+                    intent=QueryIntent.TRANSACTION_LIST,
+                    time_range=TimeRange(start=date(2026, 3, 1), end=date(2026, 3, 14)),
+                ),
+            ),
+            surface=ResultSurface(type=SurfaceType.LIST, items=[], context={"type": "transaction_list"}),
+        )
+    )
+
+    query_trace_events = [payload for event, payload in events if event == "query_trace"]
+    assert query_trace_events
+    assert query_trace_events[0]["reasoner_schema"] == "active_continuation"
+    assert query_trace_events[0]["llm_calls_used"] == 1
+    assert query_trace_events[0]["single_llm_invariant"] is True
+    assert isinstance(query_trace_events[0]["context_bytes"], int)
+    assert query_trace_events[0]["context_bytes"] > 0
+
+
+@pytest.mark.asyncio
 async def test_reasoner_uses_llm_for_pending_clarification_time_reply(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1036,25 +1084,30 @@ async def test_extraction_step_preserves_session_for_conversational_reaction() -
 
 
 @pytest.mark.asyncio
-async def test_extraction_step_fresh_query_uses_reasoner_extraction_without_parser_parse() -> None:
+async def test_extraction_step_fresh_query_uses_deterministic_parser_without_parser_parse() -> None:
     step = ExtractionStep(_FailingLLM())
-
-    async def _fake_reason(context: object) -> QuerySemanticDecision:
-        del context
-        return QuerySemanticDecision(
-            decision="fresh_query",
-            extraction=QueryExtractionResult(
-                raw_query="show my last transaction",
+    parsed_result = QueryParseResult(
+        outcome=ResolverOutcome.OK,
+        extraction=QueryExtractionResult(
+            raw_query="show my last transaction",
+            result_limit=1,
+            result_reference="latest",
+        ),
+        query_contract=QueryExecutionContract.from_normalized_query(
+            NormalizedQuery(
+                intent=QueryIntent.TRANSACTION_LIST,
+                time_range=TimeRange(start=date(2026, 2, 11), end=date(2026, 3, 13)),
                 result_limit=1,
                 result_reference="latest",
-            ),
-        )
+            )
+        ).model_dump(mode="json"),
+    )
 
     def _fail_parse(*args: object, **kwargs: object) -> object:
         del args, kwargs
         raise AssertionError("fresh query should not call parser.parse")
 
-    step.reasoner.reason = _fake_reason  # type: ignore[method-assign]
+    step.parser.parse_deterministic = lambda *args, **kwargs: parsed_result  # type: ignore[method-assign]
     step.parser.parse = _fail_parse  # type: ignore[method-assign]
 
     result = await step.run(
@@ -1070,7 +1123,7 @@ async def test_extraction_step_fresh_query_uses_reasoner_extraction_without_pars
 
 
 @pytest.mark.asyncio
-async def test_extraction_step_fresh_query_missing_extraction_falls_back_to_parser_parse() -> None:
+async def test_extraction_step_fresh_query_falls_back_to_parser_parse_when_not_deterministic() -> None:
     step = ExtractionStep(_FailingLLM())
     parsed_extraction = QueryExtractionResult(
         raw_query="show my last transaction",
@@ -1084,15 +1137,6 @@ async def test_extraction_step_fresh_query_missing_extraction_falls_back_to_pars
         result_reference="latest",
     )
 
-    async def _fake_reason(context: object) -> QuerySemanticDecision:
-        del context
-        return QuerySemanticDecision(
-            decision="fresh_query",
-            confidence=0.92,
-            reason="missing_reasoner_extraction",
-            extraction=None,
-        )
-
     async def _fake_parse(question: str, *, today: date, language: str) -> QueryParseResult:
         del today, language
         assert question == "show my last transaction"
@@ -1102,7 +1146,7 @@ async def test_extraction_step_fresh_query_missing_extraction_falls_back_to_pars
             query_contract=QueryExecutionContract.from_normalized_query(parsed_query).model_dump(mode="json"),
         )
 
-    step.reasoner.reason = _fake_reason  # type: ignore[method-assign]
+    step.parser.parse_deterministic = lambda *args, **kwargs: None  # type: ignore[method-assign]
     step.parser.parse = _fake_parse  # type: ignore[method-assign]
 
     result = await step.run(
@@ -1160,6 +1204,55 @@ async def test_extraction_step_active_result_aggregate_can_reuse_reasoner_extrac
                 "query_contract": session_contract,
                 "query_result": {"items": [QueryResultItem(description="Txn", amount=1000, date=date(2026, 3, 13)).model_dump()]},
                 "surface": ResultSurface(type=SurfaceType.LIST, items=[], context={}),
+            },
+        }
+    )
+
+    assert result.outcome == TransactionOutcome.OK
+    assert result.patch["flow_state"] == "executing"
+
+
+@pytest.mark.asyncio
+async def test_extraction_step_active_result_new_query_compiles_without_parser_parse() -> None:
+    step = ExtractionStep(_FailingLLM())
+    session_contract = QueryExecutionContract(
+        intent=QueryIntent.ANALYTICS_SUMMARY,
+        time_start=date(2026, 3, 1),
+        time_end=date(2026, 3, 13),
+        normalized_query=NormalizedQuery(
+            intent=QueryIntent.ANALYTICS_SUMMARY,
+            time_range=TimeRange(start=date(2026, 3, 1), end=date(2026, 3, 13)),
+        ),
+    )
+
+    async def _fake_reason(context: object) -> QuerySemanticDecision:
+        del context
+        return QuerySemanticDecision(
+            decision="new_query",
+            extraction=QueryExtractionResult(
+                intent=ExtractionIntent.SPENDING_TOTAL,
+                time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="this_week"),
+                raw_query="How much did I spend this week",
+            ),
+        )
+
+    def _fail_parse(*args: object, **kwargs: object) -> object:
+        del args, kwargs
+        raise AssertionError("active-session new_query should not call parser.parse")
+
+    step.reasoner.reason = _fake_reason  # type: ignore[method-assign]
+    step.parser.parse = _fail_parse  # type: ignore[method-assign]
+
+    result = await step.run(
+        {
+            "message": "How much did I spend this week",
+            "language": "en",
+            "today": date(2026, 3, 13),
+            "query_session": {
+                "session_active": True,
+                "query_contract": session_contract,
+                "query_result": {"items": []},
+                "surface": ResultSurface(type=SurfaceType.SUMMARY, items=[], context={"type": "spending_total"}),
             },
         }
     )

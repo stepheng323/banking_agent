@@ -20,6 +20,7 @@ from apps.core.src.agent.graphs.query.models import (
     QueryFrame,
     QueryOperation,
     QueryResultItem,
+    ReasonerQueryExtraction,
     ResultSurface,
     SurfaceType,
     TimeRange,
@@ -39,17 +40,53 @@ _SURFACE_CONTEXT_KEYS = ("type", "view", "count", "total_results", "has_more", "
 _ITEM_METADATA_KEYS = ("status", "bank_name", "recipient_name", "recipient_bank_name", "type", "transaction_type")
 
 
+# Type Aliases for Semantic Reasoner
+DecisionType = Literal[
+    "fresh_query",
+    "clarification_answer",
+    "reinterpret_query",
+    "continuation",
+    "new_query",
+    "end_session",
+]
+
+ContinuationType = Literal[
+    "show_more",
+    "time_delta",
+    "filter_delta",
+    "expand",
+    "conversational",
+    "drill_down",
+    "recipient_drill_down",
+    "aggregate",
+    "unclear",
+]
+
+FollowupIntentType = Literal["refine_existing", "replace_scope", "continue_pagination", "none"]
+
+AnswerModeType = Literal["memory_answer", "grounded_query", "ask_clarify"]
+
+GroundedOperationType = Literal["compare_frames", "select_frame", "show_transactions", "reuse_frame"]
+
+DeltaType = Literal["filter", "time", "limit", "reference", "none"]
+
+ResultReferenceType = Literal["latest", "oldest"]
+
+DrillDownActionType = Literal["view_details", "get_receipt", "report_issue", "re_transfer", "answer_fact"]
+
+EndSessionKindType = Literal["courtesy", "dismissive", "generic"]
+
+FactFieldType = Literal["status", "amount", "recipient", "bank", "date"]
+
+SemanticContextModeType = Literal["none", "pending_clarification", "active_result"]
+
+ReasonerSchemaType = Literal["active_continuation", "pending_clarification"]
+
+
 class QuerySemanticDecision(BaseModel):
     """Unified semantic reasoner output for query turns."""
 
-    decision: Literal[
-        "fresh_query",
-        "clarification_answer",
-        "reinterpret_query",
-        "continuation",
-        "new_query",
-        "end_session",
-    ]
+    decision: DecisionType
     confidence: float | None = Field(default=None)
     reason: str | None = Field(default=None)
 
@@ -57,46 +94,124 @@ class QuerySemanticDecision(BaseModel):
     query_operation: QueryOperation | None = Field(default=None)
     time_period: str | None = Field(default=None)
 
-    continuation_type: (
-        Literal[
-            "show_more",
-            "time_delta",
-            "filter_delta",
-            "expand",
-            "conversational",
-            "drill_down",
-            "recipient_drill_down",
-            "aggregate",
-            "unclear",
-        ]
-        | None
-    ) = Field(default=None)
-    followup_intent: Literal["refine_existing", "replace_scope", "continue_pagination", "none"] | None = Field(
-        default=None
-    )
-    answer_mode: Literal["memory_answer", "grounded_query", "ask_clarify"] | None = Field(default=None)
+    continuation_type: ContinuationType | None = Field(default=None)
+    followup_intent: FollowupIntentType | None = Field(default=None)
+    answer_mode: AnswerModeType | None = Field(default=None)
     referenced_frame_ids: list[str] | None = Field(default=None)
-    grounded_operation: Literal["compare_frames", "select_frame", "show_transactions", "reuse_frame"] | None = Field(
-        default=None
-    )
-    delta_type: Literal["filter", "time", "limit", "reference", "none"] | None = Field(default=None)
+    grounded_operation: GroundedOperationType | None = Field(default=None)
+    delta_type: DeltaType | None = Field(default=None)
     time_range: TimeRange | None = Field(default=None)
     filters: Filters | None = Field(default=None)
     result_limit: int | None = Field(default=None)
-    result_reference: Literal["latest", "oldest"] | None = Field(default=None)
+    result_reference: ResultReferenceType | None = Field(default=None)
     drill_down_index: int | None = Field(default=None)
-    drill_down_action: Literal["view_details", "get_receipt", "report_issue", "re_transfer", "answer_fact"] | None = (
-        Field(default=None)
-    )
+    drill_down_action: DrillDownActionType | None = Field(default=None)
     recipient_name: str | None = Field(default=None)
     end_session_response: str | None = Field(default=None)
-    end_session_kind: Literal["courtesy", "dismissive", "generic"] | None = Field(default=None)
-    fact_field: Literal["status", "amount", "recipient", "bank", "date"] | None = Field(default=None)
+    end_session_kind: EndSessionKindType | None = Field(default=None)
+    fact_field: FactFieldType | None = Field(default=None)
     response_text: str | None = Field(default=None)
     contextual_hint: str | None = Field(default=None)
-    semantic_context_mode: Literal["none", "pending_clarification", "active_result"] | None = Field(default=None)
+    semantic_context_mode: SemanticContextModeType | None = Field(default=None)
     semantic_llm_used: bool | None = Field(default=None)
     deterministic_surface_action: str | None = Field(default=None)
+    semantic_reasoner_schema: ReasonerSchemaType | None = Field(default=None)
+    llm_calls_used: int | None = Field(default=None)
+    single_llm_invariant: bool | None = Field(default=None)
+
+
+class ActiveContinuationDecision(BaseModel):
+    """Structured output for active-result turns."""
+
+    decision: Literal["continuation", "fresh_query", "reinterpret_query", "new_query", "end_session"]
+    confidence: float | None = Field(default=None)
+    reason: str | None = Field(default=None)
+    extraction: ReasonerQueryExtraction | None = Field(default=None)
+    query_operation: QueryOperation | None = Field(default=None)
+    time_period: str | None = Field(default=None)
+    continuation_type: ContinuationType | None = Field(default=None)
+    followup_intent: FollowupIntentType | None = Field(default=None)
+    answer_mode: AnswerModeType | None = Field(default=None)
+    referenced_frame_ids: list[str] | None = Field(default=None)
+    grounded_operation: GroundedOperationType | None = Field(default=None)
+    delta_type: DeltaType | None = Field(default=None)
+    time_range: TimeRange | None = Field(default=None)
+    filters: Filters | None = Field(default=None)
+    result_limit: int | None = Field(default=None)
+    result_reference: ResultReferenceType | None = Field(default=None)
+    drill_down_index: int | None = Field(default=None)
+    drill_down_action: DrillDownActionType | None = Field(default=None)
+    recipient_name: str | None = Field(default=None)
+    end_session_response: str | None = Field(default=None)
+    end_session_kind: EndSessionKindType | None = Field(default=None)
+    fact_field: FactFieldType | None = Field(default=None)
+    response_text: str | None = Field(default=None)
+    contextual_hint: str | None = Field(default=None)
+
+    def to_public_decision(self) -> QuerySemanticDecision:
+        extraction = self.extraction.to_query_extraction_result() if self.extraction is not None else None
+        return QuerySemanticDecision(
+            decision=self.decision,
+            confidence=self.confidence,
+            reason=self.reason,
+            extraction=extraction,
+            query_operation=self.query_operation,
+            time_period=self.time_period,
+            continuation_type=self.continuation_type,
+            followup_intent=self.followup_intent,
+            answer_mode=self.answer_mode,
+            referenced_frame_ids=self.referenced_frame_ids,
+            grounded_operation=self.grounded_operation,
+            delta_type=self.delta_type,
+            time_range=self.time_range,
+            filters=self.filters,
+            result_limit=self.result_limit,
+            result_reference=self.result_reference,
+            drill_down_index=self.drill_down_index,
+            drill_down_action=self.drill_down_action,
+            recipient_name=self.recipient_name,
+            end_session_response=self.end_session_response,
+            end_session_kind=self.end_session_kind,
+            fact_field=self.fact_field,
+            response_text=self.response_text,
+            contextual_hint=self.contextual_hint,
+        )
+
+
+class PendingClarificationDecision(BaseModel):
+    """Structured output for pending-clarification turns."""
+
+    decision: Literal["clarification_answer", "fresh_query", "reinterpret_query", "new_query", "end_session"]
+    confidence: float | None = Field(default=None)
+    reason: str | None = Field(default=None)
+    extraction: ReasonerQueryExtraction | None = Field(default=None)
+    query_operation: QueryOperation | None = Field(default=None)
+    time_period: str | None = Field(default=None)
+    answer_mode: AnswerModeType | None = Field(default=None)
+    referenced_frame_ids: list[str] | None = Field(default=None)
+    grounded_operation: GroundedOperationType | None = Field(default=None)
+    end_session_response: str | None = Field(default=None)
+    end_session_kind: EndSessionKindType | None = Field(default=None)
+    response_text: str | None = Field(default=None)
+    contextual_hint: str | None = Field(default=None)
+
+    def to_public_decision(self) -> QuerySemanticDecision:
+        extraction = self.extraction.to_query_extraction_result() if self.extraction is not None else None
+        return QuerySemanticDecision(
+            decision=self.decision,
+            confidence=self.confidence,
+            reason=self.reason,
+            extraction=extraction,
+            query_operation=self.query_operation,
+            time_period=self.time_period,
+            answer_mode=self.answer_mode,
+            referenced_frame_ids=self.referenced_frame_ids,
+            grounded_operation=self.grounded_operation,
+            end_session_response=self.end_session_response,
+            end_session_kind=self.end_session_kind,
+            response_text=self.response_text,
+            contextual_hint=self.contextual_hint,
+        )
 
 
 @dataclass
@@ -115,7 +230,7 @@ class SemanticReasonerContext:
     inbound_message_id: str | None = None
 
     @property
-    def session_mode(self) -> Literal["none", "pending_clarification", "active_result"]:
+    def session_mode(self) -> SemanticContextModeType:
         if self.pending_clarification is not None:
             return "pending_clarification"
         if self.query_contract is not None:
@@ -127,13 +242,15 @@ class QuerySemanticReasoner:
     """Single semantic reasoner for fresh query, clarification, and continuation."""
 
     def __init__(self, llm: Runnable):
-        self.structured_llm = cast(Any, llm).with_structured_output(QuerySemanticDecision)
+        typed_llm = cast(Any, llm)
+        self._active_structured_llm = typed_llm.with_structured_output(ActiveContinuationDecision)
+        self._pending_structured_llm = typed_llm.with_structured_output(PendingClarificationDecision)
         self._continuation_classifier = ContinuationClassifier()
 
     @staticmethod
     def _log_reasoner_decision(
         *,
-        context_mode: Literal["none", "pending_clarification", "active_result"],
+        context_mode: SemanticContextModeType,
         decision: QuerySemanticDecision,
         llm_used: bool,
     ) -> None:
@@ -160,6 +277,10 @@ class QuerySemanticReasoner:
         prompt_frame_count: int = 0,
         prompt_surface_type: str | None = None,
         outcome: str = "ok",
+        reasoner_schema: str | None = None,
+        context_bytes: int | None = None,
+        llm_calls_used: int | None = None,
+        single_llm_invariant: bool | None = None,
     ) -> None:
         logger.info(
             "query_trace",
@@ -177,20 +298,28 @@ class QuerySemanticReasoner:
             prompt_item_count=prompt_item_count,
             prompt_frame_count=prompt_frame_count,
             prompt_surface_type=prompt_surface_type,
+            reasoner_schema=reasoner_schema,
+            context_bytes=context_bytes,
+            llm_calls_used=llm_calls_used,
+            single_llm_invariant=single_llm_invariant,
             outcome=outcome,
         )
 
     @staticmethod
     def _annotate_decision(
         *,
-        context_mode: Literal["none", "pending_clarification", "active_result"],
+        context_mode: SemanticContextModeType,
         decision: QuerySemanticDecision,
         llm_used: bool,
         deterministic_surface_action: str | None = None,
+        reasoner_schema: ReasonerSchemaType | None = None,
     ) -> QuerySemanticDecision:
         decision.semantic_context_mode = context_mode
         decision.semantic_llm_used = llm_used
         decision.deterministic_surface_action = deterministic_surface_action
+        decision.semantic_reasoner_schema = reasoner_schema
+        decision.llm_calls_used = 1 if llm_used else 0
+        decision.single_llm_invariant = True
         return decision
 
     @staticmethod
@@ -224,6 +353,23 @@ class QuerySemanticReasoner:
         payload = {key: surface.context.get(key) for key in _SURFACE_CONTEXT_KEYS if key in surface.context}
         return QuerySemanticReasoner._serialize(payload or None)
 
+    @classmethod
+    def _serialize_query_anchor(cls, query_contract: QueryExecutionContract | None) -> str:
+        if query_contract is None:
+            return "none"
+        normalized = query_contract.normalized_query
+        payload = {
+            "intent": normalized.intent.value,
+            "query_operation": normalized.query_operation.value if normalized.query_operation is not None else None,
+            "time_start": query_contract.time_start.isoformat(),
+            "time_end": query_contract.time_end.isoformat(),
+            "filters": normalized.filters.model_dump(exclude_none=True) if normalized.filters is not None else None,
+            "aggregation": normalized.aggregation.model_dump(exclude_none=True) if normalized.aggregation is not None else None,
+            "result_limit": normalized.result_limit,
+            "result_reference": normalized.result_reference,
+        }
+        return cls._serialize(payload)
+
     @staticmethod
     def _serialize_items(items: list[QueryResultItem] | None) -> tuple[str, int]:
         if not items:
@@ -256,30 +402,8 @@ class QuerySemanticReasoner:
                 "frame_id": frame.frame_id,
                 "turn_index": frame.turn_index,
                 "summary_text": frame.summary_text,
-                "query_contract": {
-                    "intent": frame.query_contract.intent.value,
-                    "time_start": frame.query_contract.time_start.isoformat(),
-                    "time_end": frame.query_contract.time_end.isoformat(),
-                    "filters": (
-                        frame.query_contract.filters.model_dump(exclude_none=True)
-                        if frame.query_contract.filters
-                        else None
-                    ),
-                    "aggregation": (
-                        frame.query_contract.aggregation.model_dump(exclude_none=True)
-                        if frame.query_contract.aggregation
-                        else None
-                    ),
-                    "comparison": (
-                        frame.query_contract.comparison.model_dump(exclude_none=True)
-                        if frame.query_contract.comparison
-                        else None
-                    ),
-                },
                 "surface_type": frame.surface_type.value if frame.surface_type else None,
-                "surface_context": frame.surface_context,
                 "facts": frame.facts.model_dump(exclude_none=True),
-                "interpretation": frame.interpretation,
             }
             for frame in bounded_frames
         ]
@@ -336,7 +460,10 @@ class QuerySemanticReasoner:
             end_session_response=data.get("end_session_response"),
         )
 
-    async def _invoke_llm(self, context: SemanticReasonerContext) -> QuerySemanticDecision:
+    async def _invoke_llm(
+        self,
+        context: SemanticReasonerContext,
+    ) -> QuerySemanticDecision:
         items_section, prompt_item_count = self._serialize_items(context.items)
         query_frames_section, prompt_frame_count = self._serialize_query_frames(context.query_frames)
         prompt_surface_type = context.surface.type.value if context.surface is not None else "none"
@@ -345,9 +472,7 @@ class QuerySemanticReasoner:
             language=context.language,
             session_mode=context.session_mode,
             message=context.message,
-            current_query=self._serialize(
-                context.query_contract.normalized_query if context.query_contract is not None else None
-            ),
+            current_query=self._serialize_query_anchor(context.query_contract),
             pending_clarification=self._serialize(context.pending_clarification),
             surface_type=prompt_surface_type,
             surface_context=self._serialize_surface_context(context.surface),
@@ -358,9 +483,16 @@ class QuerySemanticReasoner:
             SystemMessage(content=QUERY_SEMANTIC_REASONER_SYSTEM),
             HumanMessage(content=dynamic_context),
         ]
+        prompt_context_bytes = len(dynamic_context.encode("utf-8"))
+        if context.session_mode == "pending_clarification":
+            structured_llm = self._pending_structured_llm
+            reasoner_schema = "pending_clarification"
+        else:
+            structured_llm = self._active_structured_llm
+            reasoner_schema = "active_continuation"
         started_at = perf_counter()
         try:
-            decision = await self.structured_llm.ainvoke(messages)
+            raw_decision = await structured_llm.ainvoke(messages)
         except Exception:
             self._log_query_trace(
                 context=context,
@@ -372,8 +504,13 @@ class QuerySemanticReasoner:
                 prompt_frame_count=prompt_frame_count,
                 prompt_surface_type=prompt_surface_type,
                 outcome="failed",
+                reasoner_schema=reasoner_schema,
+                context_bytes=prompt_context_bytes,
+                llm_calls_used=1,
+                single_llm_invariant=True,
             )
             raise
+        decision = raw_decision.to_public_decision() if hasattr(raw_decision, "to_public_decision") else raw_decision
         self._log_query_trace(
             context=context,
             phase="semantic_reasoner",
@@ -383,6 +520,10 @@ class QuerySemanticReasoner:
             prompt_item_count=prompt_item_count,
             prompt_frame_count=prompt_frame_count,
             prompt_surface_type=prompt_surface_type,
+            reasoner_schema=reasoner_schema,
+            context_bytes=prompt_context_bytes,
+            llm_calls_used=1,
+            single_llm_invariant=True,
         )
         return decision
 
@@ -395,12 +536,14 @@ class QuerySemanticReasoner:
         deterministic_surface_action: str | None = None,
         latency_ms: float = 0.0,
         phase: str = "semantic_reasoner",
+        reasoner_schema: Literal["active_continuation", "pending_clarification"] | None = None,
     ) -> QuerySemanticDecision:
         annotated = self._annotate_decision(
             context_mode=context.session_mode,
             decision=decision,
             llm_used=llm_used,
             deterministic_surface_action=deterministic_surface_action,
+            reasoner_schema=reasoner_schema,
         )
         self._log_reasoner_decision(context_mode=context.session_mode, decision=annotated, llm_used=llm_used)
         if not llm_used:
@@ -411,6 +554,10 @@ class QuerySemanticReasoner:
                 llm_used=False,
                 decision=annotated,
                 prompt_surface_type=context.surface.type.value if context.surface is not None else "none",
+                reasoner_schema=reasoner_schema,
+                context_bytes=0,
+                llm_calls_used=0,
+                single_llm_invariant=True,
             )
         return annotated
 
@@ -435,10 +582,11 @@ class QuerySemanticReasoner:
                 return await self._return_annotated_decision(
                     context=context,
                     decision=guardrail_end,
-                    llm_used=False,
-                    latency_ms=(perf_counter() - started_at) * 1000.0,
-                    phase="pending_clarification_guardrail",
-                )
+                llm_used=False,
+                latency_ms=(perf_counter() - started_at) * 1000.0,
+                phase="pending_clarification_guardrail",
+                reasoner_schema="pending_clarification",
+            )
         elif context.session_mode == "active_result":
             started_at = perf_counter()
             deterministic_surface = self._deterministic_surface_action(
@@ -454,6 +602,7 @@ class QuerySemanticReasoner:
                     deterministic_surface_action=deterministic_surface.drill_down_action,
                     latency_ms=(perf_counter() - started_at) * 1000.0,
                     phase="active_result_shortcut",
+                    reasoner_schema="active_continuation",
                 )
                 logger.info(
                     "query_surface_action_deterministic",
@@ -530,6 +679,7 @@ class QuerySemanticReasoner:
                     llm_used=False,
                     latency_ms=(perf_counter() - started_at) * 1000.0,
                     phase="active_result_guardrail",
+                    reasoner_schema="active_continuation",
                 )
 
         try:
@@ -544,6 +694,9 @@ class QuerySemanticReasoner:
                 context=context,
                 decision=decision,
                 llm_used=True,
+                reasoner_schema="pending_clarification"
+                if context.session_mode == "pending_clarification"
+                else "active_continuation",
             )
             return decision
         except Exception as exc:
@@ -558,6 +711,9 @@ class QuerySemanticReasoner:
                         extraction=QueryExtractionResult(raw_query=context.message),
                     ),
                     llm_used=False,
+                    reasoner_schema="pending_clarification"
+                    if context.session_mode == "pending_clarification"
+                    else "active_continuation",
                 )
             return await self._return_annotated_decision(
                 context=context,
@@ -568,4 +724,7 @@ class QuerySemanticReasoner:
                     extraction=QueryExtractionResult(raw_query=context.message),
                 ),
                 llm_used=False,
+                reasoner_schema="pending_clarification"
+                if context.session_mode == "pending_clarification"
+                else "active_continuation",
             )

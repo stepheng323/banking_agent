@@ -1,4 +1,8 @@
-from apps.core.src.agent.graphs.query.prompts.main import QUERY_PARSER_PROMPT, QUERY_SEMANTIC_REASONER_SYSTEM
+from apps.core.src.agent.graphs.query.prompts.main import (
+    QUERY_PARSER_PROMPT,
+    QUERY_SEMANTIC_REASONER_CONTEXT,
+    QUERY_SEMANTIC_REASONER_SYSTEM,
+)
 
 
 def test_query_reasoner_prompt_includes_unified_decisions() -> None:
@@ -106,3 +110,18 @@ def test_query_parser_prompt_covers_aggregation_rules() -> None:
 def test_query_parser_prompt_covers_multilingual() -> None:
     assert "Nigerian Pidgin" in QUERY_PARSER_PROMPT
     assert "Yoruba" in QUERY_PARSER_PROMPT
+
+
+def test_query_parser_prompt_uses_positive_output_contract() -> None:
+    assert "OUTPUT CONTRACT" in QUERY_PARSER_PROMPT
+    assert "Return only these fields" in QUERY_PARSER_PROMPT
+    assert "The runtime derives `query_operation`" in QUERY_PARSER_PROMPT
+    assert "REQUESTED CAPABILITIES" not in QUERY_PARSER_PROMPT
+    assert "AMBIGUITIES" not in QUERY_PARSER_PROMPT
+
+
+def test_query_prompts_put_dynamic_message_late_for_cache_reuse() -> None:
+    assert QUERY_PARSER_PROMPT.index("USER MESSAGE") > QUERY_PARSER_PROMPT.index("OUTPUT CONTRACT")
+    assert QUERY_SEMANTIC_REASONER_CONTEXT.index("USER MESSAGE") > QUERY_SEMANTIC_REASONER_CONTEXT.index(
+        "CURRENT QUERY SNAPSHOT"
+    )

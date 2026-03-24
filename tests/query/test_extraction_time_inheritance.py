@@ -882,7 +882,7 @@ async def test_income_vs_spending_followup_compiles_transaction_type_breakdown()
 
 
 @pytest.mark.asyncio
-async def test_low_confidence_unclear_income_followup_recovers_via_parser() -> None:
+async def test_low_confidence_unclear_income_followup_clarifies_without_parser_reparse() -> None:
     step = ExtractionStep(_DummyLLM())
     today = date(2026, 3, 20)
     session_query = NormalizedQuery(
@@ -891,17 +891,6 @@ async def test_low_confidence_unclear_income_followup_recovers_via_parser() -> N
         filters=Filters(transaction_type="credit"),
     )
     session_contract = QueryExecutionContract.from_normalized_query(session_query)
-    extraction = QueryExtractionResult(
-        intent=ExtractionIntent.SPENDING_TOTAL,
-        time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="this_month"),
-        raw_query="What's my income this month",
-    )
-    parsed_query = NormalizedQuery(
-        intent=QueryIntent.ANALYTICS_SUMMARY,
-        time_range=TimeRange(start=date(2026, 3, 1), end=today, granularity="month"),
-        filters=Filters(transaction_type="credit"),
-    )
-
     async def _fake_reason(_: object) -> QuerySemanticDecision:
         return QuerySemanticDecision(
             decision="continuation",
@@ -911,13 +900,12 @@ async def test_low_confidence_unclear_income_followup_recovers_via_parser() -> N
             reason="ambiguous_income_followup",
         )
 
-    async def _fake_parse(question: str, *, today: date, language: str) -> QueryParseResult:
-        del today, language
-        assert question == "What's my income this month"
-        return _ok_result(extraction, parsed_query)
+    def _fail_parse(*args: object, **kwargs: object) -> object:
+        del args, kwargs
+        raise AssertionError("low-confidence unclear follow-up should not call parser.parse")
 
     step.reasoner.reason = _fake_reason  # type: ignore[method-assign]
-    step.parser.parse = _fake_parse  # type: ignore[method-assign]
+    step.parser.parse = _fail_parse  # type: ignore[method-assign]
 
     updates = await step._handle_continuation(
         {"message": "What's my income this month", "today": today, "language": "en"},
@@ -929,15 +917,8 @@ async def test_low_confidence_unclear_income_followup_recovers_via_parser() -> N
         },
     )
 
-    query = updates["query_contract"].normalized_query
-    assert query.intent == QueryIntent.ANALYTICS_SUMMARY
-    assert query.time_range is not None
-    assert query.time_range.start == date(2026, 3, 1)
-    assert query.time_range.end == today
-    assert query.filters is not None
-    assert query.filters.transaction_type == "credit"
-    assert updates["current_page"] == 0
-    assert updates["_query_session_transition"] == "replace_session_new_query"
+    assert updates["transaction_outcome"] == TransactionOutcome.NEEDS_INPUT
+    assert updates["flow_state"] == "parsing"
 
 
 @pytest.mark.asyncio

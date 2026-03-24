@@ -1,4 +1,4 @@
-"""Query extraction models. Pure extraction with requested_capabilities."""
+"""Query extraction models for parser and reasoner outputs."""
 
 from enum import Enum
 from typing import Any, Literal
@@ -106,6 +106,21 @@ class QueryComparison(BaseModel):
     period: str | None = Field(default=None, description="Explicit comparison period when mode=explicit_period")
 
 
+class ParserQueryExtraction(BaseModel):
+    """Minimal parser-only extraction returned by the fresh-query LLM path."""
+
+    intent: ExtractionIntent = Field(default=ExtractionIntent.TRANSACTION_LIST)
+    filters: QueryFilters = Field(default_factory=QueryFilters)
+    time_range: QueryTimeRange = Field(default_factory=QueryTimeRange)
+    comparison: QueryComparison | None = Field(default=None)
+    aggregation: QueryAggregation | None = Field(default=None)
+    result_limit: int | None = Field(default=None, ge=1, le=100, description="Max results to return")
+    result_reference: Literal["latest", "oldest"] | None = Field(
+        default=None,
+        description="Relative positioning for results when user asks for most recent/oldest",
+    )
+
+
 class QueryExtractionResult(BaseModel):
     """Pure query extraction with requested_capabilities."""
 
@@ -135,6 +150,34 @@ class QueryExtractionResult(BaseModel):
     )
 
     raw_query: str | None = Field(default=None, description="Original user query")
+
+
+class ReasonerQueryExtraction(BaseModel):
+    """Minimal extraction returned by the semantic reasoner on follow-up turns."""
+
+    intent: ExtractionIntent = Field(default=ExtractionIntent.TRANSACTION_LIST)
+    query_operation: QueryOperation | None = Field(default=None)
+    filters: QueryFilters = Field(default_factory=QueryFilters)
+    time_range: QueryTimeRange = Field(default_factory=QueryTimeRange)
+    comparison: QueryComparison | None = Field(default=None)
+    aggregation: QueryAggregation | None = Field(default=None)
+    result_limit: int | None = Field(default=None, ge=1, le=100)
+    result_reference: Literal["latest", "oldest"] | None = Field(default=None)
+    raw_query: str | None = Field(default=None)
+
+    def to_query_extraction_result(self) -> "QueryExtractionResult":
+        """Expand minimal reasoner extraction into the parser/compiler shape."""
+        return QueryExtractionResult(
+            intent=self.intent,
+            query_operation=self.query_operation,
+            filters=self.filters.model_copy(deep=True),
+            time_range=self.time_range.model_copy(deep=True),
+            comparison=self.comparison.model_copy(deep=True) if self.comparison is not None else None,
+            aggregation=self.aggregation.model_copy(deep=True) if self.aggregation is not None else None,
+            result_limit=self.result_limit,
+            result_reference=self.result_reference,
+            raw_query=self.raw_query,
+        )
 
 
 class ResolverOutcome(str, Enum):

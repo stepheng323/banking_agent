@@ -55,31 +55,18 @@ async def test_parse_new_query_needs_input_persists_pending_clarification_state(
     step = ExtractionStep(_DummyLLM())
     pending = _pending_state()
 
-    async def _fake_reason(context: object) -> QuerySemanticDecision:
-        del context
-        return QuerySemanticDecision(
-            decision="fresh_query",
-            extraction=pending.original_extraction,
-        )
-
-    def _fake_resolve_existing(
-        extraction: QueryExtractionResult,
-        *,
-        today: date,
-        language: str,
-    ) -> QueryParseResult:
+    async def _fake_parse(question: str, *, today: date, language: str) -> QueryParseResult:
         del today, language
-        assert extraction.raw_query == "How much did I spend last"
+        assert question == "How much did I spend last"
         return QueryParseResult(
             outcome=ResolverOutcome.NEEDS_INPUT,
-            extraction=extraction,
+            extraction=pending.original_extraction,
             resolver_message=pending.resolver_message,
             pending_clarification=pending.model_dump(),
             patch={},
         )
 
-    step.reasoner.reason = _fake_reason  # type: ignore[method-assign]
-    step.parser.resolve_existing_extraction = _fake_resolve_existing  # type: ignore[method-assign]
+    step.parser.parse = _fake_parse  # type: ignore[method-assign]
 
     result = await step.run({"message": "How much did I spend last", "language": "en", "today": date(2026, 3, 13)})
 
@@ -201,3 +188,42 @@ async def test_reasoner_fresh_query_without_raw_query_injects_message_for_debit_
     assert query.time_range is not None
     assert query.time_range.start == date(2026, 3, 16)
     assert query.time_range.end == today
+
+
+@pytest.mark.asyncio
+async def test_pending_clarification_new_query_compiles_without_parser_parse() -> None:
+    step = ExtractionStep(_DummyLLM())
+    pending = _pending_state()
+
+    async def _fake_reason(context: object) -> QuerySemanticDecision:
+        del context
+        return QuerySemanticDecision(
+            decision="new_query",
+            extraction=QueryExtractionResult(
+                intent=ExtractionIntent.SPENDING_TOTAL,
+                time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="this_week"),
+                raw_query="How much did I spend this week",
+            ),
+        )
+
+    def _fail_parse(*args: object, **kwargs: object) -> object:
+        del args, kwargs
+        raise AssertionError("pending clarification follow-up should not call parser.parse")
+
+    step.reasoner.reason = _fake_reason  # type: ignore[method-assign]
+    step.parser.parse = _fail_parse  # type: ignore[method-assign]
+
+    result = await step.run(
+        {
+            "message": "How much did I spend this week",
+            "language": "en",
+            "today": date(2026, 3, 13),
+            "query_session": {
+                "session_active": True,
+                "pending_clarification": pending,
+            },
+        }
+    )
+
+    assert result.outcome == TransactionOutcome.OK
+    assert result.patch["flow_state"] == "executing"

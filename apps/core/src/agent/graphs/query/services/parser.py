@@ -12,10 +12,12 @@ from apps.core.src.agent.graphs.query.capabilities import (
 )
 from apps.core.src.agent.graphs.query.models import (
     Aggregation,
+    Ambiguity,
     ComparisonDirective,
     ExtractionIntent,
     Filters,
     NormalizedQuery,
+    ParserQueryExtraction,
     PendingClarificationState,
     QueryAggregation,
     QueryExecutionContract,
@@ -26,6 +28,8 @@ from apps.core.src.agent.graphs.query.models import (
     QueryOperation,
     QueryParseResult,
     QueryTimeRange,
+    ReasonerQueryExtraction,
+    RequestedCapability,
     ResolverOutcome,
     TimeRange,
     TimeReference,
@@ -177,6 +181,121 @@ class QueryParser:
         )
 
     @staticmethod
+    def _looks_like_vague_time_phrase(raw_query: str) -> str | None:
+        normalized = " ".join((raw_query or "").strip().lower().split())
+        if not normalized:
+            return None
+        for phrase in (
+            "recently",
+            "sometime ago",
+            "a while back",
+            "some time ago",
+            "lately",
+            "these days",
+            "last",
+        ):
+            if re.search(rf"\b{re.escape(phrase)}\b", normalized):
+                return phrase
+        return None
+
+    def _derive_ambiguities(
+        self,
+        extraction: QueryExtractionResult,
+    ) -> list[Ambiguity]:
+
+        ambiguities: list[Ambiguity] = []
+        if extraction.time_range.reference_type == TimeReference.VAGUE:
+            context = extraction.time_range.period or self._looks_like_vague_time_phrase(extraction.raw_query or "") or "that time"
+            ambiguities.append(Ambiguity(code=AmbiguityCode.TIME_VAGUE, context=context))
+        return ambiguities
+
+    def _derive_requested_capabilities(
+        self,
+        extraction: QueryExtractionResult,
+        *,
+        effective_intent: ExtractionIntent,
+    ) -> list[RequestedCapability]:
+
+        requested_capabilities: list[RequestedCapability] = []
+
+        def _add(capability: RequestedCapability) -> None:
+            if capability not in requested_capabilities:
+                requested_capabilities.append(capability)
+
+        query_operation = self._infer_query_operation(extraction, effective_intent=effective_intent)
+        inferred_transaction_type = self._infer_transaction_type(
+            extracted_transaction_type=extraction.filters.transaction_type,
+            raw_query=extraction.raw_query,
+            effective_intent=effective_intent,
+        )
+
+        if extraction.filters.recipient:
+            _add(RequestedCapability.FILTER_RECIPIENT)
+        if extraction.filters.min_amount is not None or extraction.filters.max_amount is not None:
+            _add(RequestedCapability.FILTER_AMOUNT)
+        if extraction.filters.category:
+            _add(RequestedCapability.FILTER_CATEGORY)
+        if extraction.filters.bank:
+            _add(RequestedCapability.FILTER_BANK)
+        if extraction.filters.narration_keyword:
+            _add(RequestedCapability.SEARCH_NARRATION_KEYWORD)
+        if inferred_transaction_type is not None:
+            _add(RequestedCapability.FILTER_TX_TYPE)
+
+        if extraction.time_range.reference_type == TimeReference.ALL_TIME:
+            _add(RequestedCapability.TIME_ALL)
+        elif extraction.time_range.reference_type in {TimeReference.EXPLICIT, TimeReference.VAGUE}:
+            _add(RequestedCapability.TIME_RELATIVE)
+
+        if effective_intent == ExtractionIntent.TIME_COMPARISON or query_operation == QueryOperation.COMPARE_PERIODS:
+            _add(RequestedCapability.TIME_COMPARISON)
+
+        if query_operation in {
+            QueryOperation.SUM_TRANSACTIONS,
+            QueryOperation.COUNT_TRANSACTIONS,
+            QueryOperation.AVERAGE_TRANSACTIONS,
+            QueryOperation.RANK_LARGEST_TRANSACTION,
+            QueryOperation.RANK_SMALLEST_TRANSACTION,
+        }:
+            _add(RequestedCapability.AGGREGATE_SUM)
+
+        if query_operation == QueryOperation.BREAKDOWN_TRANSACTIONS or effective_intent == ExtractionIntent.BENEFICIARY_SUMMARY:
+            _add(RequestedCapability.AGGREGATE_GROUP)
+
+        return requested_capabilities
+
+    def _inflate_parser_extraction(
+        self,
+        extraction: QueryExtractionResult | ParserQueryExtraction,
+        *,
+        question: str,
+    ) -> QueryExtractionResult:
+        if isinstance(extraction, QueryExtractionResult):
+            inflated = extraction.model_copy(deep=True)
+        else:
+            inflated = QueryExtractionResult(
+                intent=extraction.intent,
+                filters=extraction.filters.model_copy(deep=True),
+                time_range=extraction.time_range.model_copy(deep=True),
+                comparison=extraction.comparison.model_copy(deep=True) if extraction.comparison is not None else None,
+                aggregation=extraction.aggregation.model_copy(deep=True) if extraction.aggregation is not None else None,
+                result_limit=extraction.result_limit,
+                result_reference=extraction.result_reference,
+            )
+
+        inflated.raw_query = question
+        effective_intent = self._resolve_effective_intent(inflated)
+        inflated.query_operation = self._infer_query_operation(inflated, effective_intent=effective_intent)
+        if not inflated.requested_capabilities:
+            inflated.requested_capabilities = self._derive_requested_capabilities(
+                inflated,
+                effective_intent=effective_intent,
+            )
+        if not inflated.ambiguities:
+            inflated.ambiguities = self._derive_ambiguities(inflated)
+        return inflated
+
+    @staticmethod
     def _month_token(period: str | None) -> int | None:
         if not period:
             return None
@@ -252,9 +371,17 @@ class QueryParser:
             "last month": QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="last_month"),
             "this year": QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="this_year"),
             "last year": QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="last_year"),
+            "all time": QueryTimeRange(reference_type=TimeReference.ALL_TIME),
+            "ever": QueryTimeRange(reference_type=TimeReference.ALL_TIME),
         }
         if normalized in mapping:
             return mapping[normalized]
+
+        if QueryParser._month_token(normalized) is not None or QueryParser._resolve_month_period_with_year_hint(
+            normalized,
+            today=today,
+        ) is not None:
+            return QueryTimeRange(reference_type=TimeReference.EXPLICIT, period=normalized.replace(" ", "_"))
 
         match = re.fullmatch(r"(last|past)\s+(\d{1,3})\s+(day|days|week|weeks|month|months)", normalized)
         if not match:
@@ -371,11 +498,11 @@ class QueryParser:
             question=question,
         )
 
-        structured_llm = cast(Any, self.llm).with_structured_output(QueryExtractionResult)
+        structured_llm = cast(Any, self.llm).with_structured_output(ParserQueryExtraction)
 
         try:
-            extraction: QueryExtractionResult = await structured_llm.ainvoke(prompt)
-            extraction.raw_query = question
+            raw_extraction = await structured_llm.ainvoke(prompt)
+            extraction = self._inflate_parser_extraction(raw_extraction, question=question)
             return self._finalize_extraction(extraction, today=today, language=language)
 
         except Exception as e:
@@ -405,6 +532,21 @@ class QueryParser:
     ) -> QueryParseResult:
         """Compile already-interpreted query meaning through deterministic validation and resolver stages."""
         return self.resolve_existing_extraction(extraction, today=today, language=language)
+
+    def compile_reasoner_extraction(
+        self,
+        extraction: QueryExtractionResult | ReasonerQueryExtraction,
+        *,
+        today: date,
+        language: str,
+    ) -> QueryParseResult:
+        """Compile a minimal reasoner extraction without requiring a second LLM call."""
+        full_extraction = (
+            extraction.to_query_extraction_result()
+            if isinstance(extraction, ReasonerQueryExtraction)
+            else extraction.model_copy(deep=True)
+        )
+        return self.compile_extraction(full_extraction, today=today, language=language)
 
     def _validate_capabilities(self, extraction: "QueryExtractionResult") -> None:
         """Enforce capability dependencies deterministically."""
