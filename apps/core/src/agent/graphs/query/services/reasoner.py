@@ -8,6 +8,7 @@ from datetime import date
 from time import perf_counter
 from typing import Any, Literal, cast
 
+from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.runnables import Runnable
 from pydantic import BaseModel, Field
 
@@ -23,7 +24,10 @@ from apps.core.src.agent.graphs.query.models import (
     SurfaceType,
     TimeRange,
 )
-from apps.core.src.agent.graphs.query.prompts.main import QUERY_SEMANTIC_REASONER_PROMPT
+from apps.core.src.agent.graphs.query.prompts.main import (
+    QUERY_SEMANTIC_REASONER_CONTEXT,
+    QUERY_SEMANTIC_REASONER_SYSTEM,
+)
 from apps.core.src.agent.graphs.query.services.continuity import ContinuationClassifier
 from apps.core.src.agent.graphs.query.services.query_shortcuts import resolve_query_shortcut
 from shared.utils.logging import get_logger
@@ -53,17 +57,20 @@ class QuerySemanticDecision(BaseModel):
     query_operation: QueryOperation | None = Field(default=None)
     time_period: str | None = Field(default=None)
 
-    continuation_type: Literal[
-        "show_more",
-        "time_delta",
-        "filter_delta",
-        "expand",
-        "conversational",
-        "drill_down",
-        "recipient_drill_down",
-        "aggregate",
-        "unclear",
-    ] | None = Field(default=None)
+    continuation_type: (
+        Literal[
+            "show_more",
+            "time_delta",
+            "filter_delta",
+            "expand",
+            "conversational",
+            "drill_down",
+            "recipient_drill_down",
+            "aggregate",
+            "unclear",
+        ]
+        | None
+    ) = Field(default=None)
     followup_intent: Literal["refine_existing", "replace_scope", "continue_pagination", "none"] | None = Field(
         default=None
     )
@@ -78,8 +85,8 @@ class QuerySemanticDecision(BaseModel):
     result_limit: int | None = Field(default=None)
     result_reference: Literal["latest", "oldest"] | None = Field(default=None)
     drill_down_index: int | None = Field(default=None)
-    drill_down_action: Literal["view_details", "get_receipt", "report_issue", "re_transfer", "answer_fact"] | None = Field(
-        default=None
+    drill_down_action: Literal["view_details", "get_receipt", "report_issue", "re_transfer", "answer_fact"] | None = (
+        Field(default=None)
     )
     recipient_name: str | None = Field(default=None)
     end_session_response: str | None = Field(default=None)
@@ -164,7 +171,9 @@ class QuerySemanticReasoner:
             llm_used=llm_used,
             semantic_decision=decision.decision if decision is not None else None,
             continuation_type=decision.continuation_type if decision is not None else None,
-            query_operation=decision.query_operation.value if decision is not None and decision.query_operation is not None else None,
+            query_operation=decision.query_operation.value
+            if decision is not None and decision.query_operation is not None
+            else None,
             prompt_item_count=prompt_item_count,
             prompt_frame_count=prompt_frame_count,
             prompt_surface_type=prompt_surface_type,
@@ -331,7 +340,7 @@ class QuerySemanticReasoner:
         items_section, prompt_item_count = self._serialize_items(context.items)
         query_frames_section, prompt_frame_count = self._serialize_query_frames(context.query_frames)
         prompt_surface_type = context.surface.type.value if context.surface is not None else "none"
-        prompt = QUERY_SEMANTIC_REASONER_PROMPT.format(
+        dynamic_context = QUERY_SEMANTIC_REASONER_CONTEXT.format(
             today=context.today.isoformat(),
             language=context.language,
             session_mode=context.session_mode,
@@ -345,9 +354,13 @@ class QuerySemanticReasoner:
             items_section=items_section,
             query_frames_section=query_frames_section,
         )
+        messages = [
+            SystemMessage(content=QUERY_SEMANTIC_REASONER_SYSTEM),
+            HumanMessage(content=dynamic_context),
+        ]
         started_at = perf_counter()
         try:
-            decision = await self.structured_llm.ainvoke(prompt)
+            decision = await self.structured_llm.ainvoke(messages)
         except Exception:
             self._log_query_trace(
                 context=context,
@@ -402,6 +415,19 @@ class QuerySemanticReasoner:
         return annotated
 
     async def reason(self, context: SemanticReasonerContext) -> QuerySemanticDecision:
+        if context.session_mode == "none":
+            return await self._return_annotated_decision(
+                context=context,
+                decision=QuerySemanticDecision(
+                    decision="fresh_query",
+                    confidence=1.0,
+                    reason="no_active_session_fast_path",
+                ),
+                llm_used=False,
+                latency_ms=0.0,
+                phase="fresh_query_fast_path",
+            )
+
         if context.session_mode == "pending_clarification":
             started_at = perf_counter()
             guardrail_end = self._guardrail_end_session(message=context.message, language=context.language)
@@ -461,6 +487,32 @@ class QuerySemanticReasoner:
                         followup_intent="none",
                         delta_type=cast(Any, data.get("delta_type")),
                         recipient_name=data.get("recipient_name"),
+                    )
+                elif continuation_type == "time_delta":
+                    guardrail_decision = QuerySemanticDecision(
+                        decision="continuation",
+                        confidence=data.get("confidence"),
+                        reason=data.get("reason"),
+                        continuation_type="time_delta",
+                        followup_intent="replace_scope",
+                        time_period=data.get("time_period"),
+                    )
+                elif continuation_type == "aggregate":
+                    guardrail_decision = QuerySemanticDecision(
+                        decision="continuation",
+                        confidence=data.get("confidence"),
+                        reason=data.get("reason"),
+                        continuation_type="aggregate",
+                        followup_intent="refine_existing",
+                    )
+                elif continuation_type == "filter_delta":
+                    guardrail_decision = QuerySemanticDecision(
+                        decision="continuation",
+                        confidence=data.get("confidence"),
+                        reason=data.get("reason"),
+                        continuation_type="filter_delta",
+                        followup_intent="refine_existing",
+                        delta_type=cast(Any, "filter"),
                     )
                 else:
                     guardrail_decision = QuerySemanticDecision(

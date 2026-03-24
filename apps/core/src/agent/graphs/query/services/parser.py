@@ -17,8 +17,10 @@ from apps.core.src.agent.graphs.query.models import (
     Filters,
     NormalizedQuery,
     PendingClarificationState,
+    QueryAggregation,
     QueryExecutionContract,
     QueryExtractionResult,
+    QueryFilters,
     QueryIntent,
     QueryIR,
     QueryOperation,
@@ -284,6 +286,69 @@ class QueryParser:
             prompt.vars,
             fallback_en=str(prompt.vars.get("context") or render_message("query.clarify.default", language)),
         )
+
+    def parse_deterministic(
+        self,
+        question: str,
+        *,
+        today: date,
+        language: str = "en",
+    ) -> "QueryParseResult | None":
+        """
+        Fast-path extraction for very common query shapes to avoid LLM latency.
+        Returns a QueryParseResult if a match is found, else None.
+        """
+        normalized = re.sub(r"\s+", " ", question.strip().lower()).rstrip("?.!,")
+        if not normalized:
+            return None
+
+        if re.fullmatch(r"(?:(?:show|list|view|get)\s+)?(?:my\s+)?(?:transactions?|transaction\s+history|history|statement)", normalized):
+            extraction = QueryExtractionResult(
+                intent=ExtractionIntent.TRANSACTION_LIST,
+                query_operation=QueryOperation.LIST_TRANSACTIONS,
+                raw_query=question,
+                time_range=QueryTimeRange(reference_type=TimeReference.UNSPECIFIED),
+            )
+            return self._finalize_extraction(extraction, today=today, language=language)
+
+        match = re.fullmatch(r"(?:(?:show|list|view|get)\s+)?(?:my\s+)?last\s+(\d+)\s+transactions?", normalized)
+        if match:
+            limit = int(match.group(1))
+            extraction = QueryExtractionResult(
+                intent=ExtractionIntent.TRANSACTION_LIST,
+                query_operation=QueryOperation.LIST_TRANSACTIONS,
+                raw_query=question,
+                time_range=QueryTimeRange(reference_type=TimeReference.UNSPECIFIED),
+                result_limit=limit,
+                result_reference="latest",
+            )
+            return self._finalize_extraction(extraction, today=today, language=language)
+
+        match = re.fullmatch(r"how\s+much\s+(?:did|have)\s+i\s+(spend|spent|send|sent|pay|paid|receive|received)\s+(today|this week|this month|last week|last month|yesterday)", normalized)
+        if match:
+            action, period_phrase = match.groups()
+            tx_type = "credit" if action in ("receive", "received") else "debit"
+
+            period_map = {
+                "today": QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="today", days_back=0),
+                "yesterday": QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="yesterday", days_back=1),
+                "this week": QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="this_week"),
+                "this month": QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="this_month"),
+                "last week": QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="last_week"),
+                "last month": QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="last_month"),
+            }
+            time_range = period_map[period_phrase]
+            extraction = QueryExtractionResult(
+                intent=ExtractionIntent.SPENDING_TOTAL,
+                query_operation=QueryOperation.SUM_TRANSACTIONS,
+                raw_query=question,
+                time_range=time_range,
+                filters=QueryFilters(transaction_type=tx_type),
+                aggregation=QueryAggregation(type="sum"),
+            )
+            return self._finalize_extraction(extraction, today=today, language=language)
+
+        return None
 
     async def parse(
         self,

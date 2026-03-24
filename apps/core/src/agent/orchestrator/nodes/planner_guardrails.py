@@ -123,10 +123,7 @@ def _routing_contract_context(
     has_beneficiary_suggestion: bool,
 ) -> dict[str, Any]:
     tasks = list(getattr(planner_output, "tasks", None) or [])
-    task_shapes = [
-        f"{getattr(task, 'executor', None)}.{getattr(task, 'action', None)}"
-        for task in tasks
-    ]
+    task_shapes = [f"{getattr(task, 'executor', None)}.{getattr(task, 'action', None)}" for task in tasks]
     message_hash = hashlib.sha256((user_text or "").encode("utf-8")).hexdigest()[:12]
     return {
         "message_id": message_id,
@@ -164,11 +161,9 @@ def _beneficiary_contract_violations(planner_output: Any, *, has_beneficiary_sug
     if route_hint == "recipient_ranking" and (beneficiary_tasks or management_tasks):
         violations.append("beneficiary_route_contract_violation")
 
-    # Strict first-pass contract: beneficiary route must align with beneficiary-oriented tasks.
     if route_hint == "none" and (ranking_tasks or management_tasks):
         violations.append("beneficiary_route_contract_violation")
 
-    # Save-beneficiary flow is gate-owned; planner cannot emit save tasks.
     if save_tasks and route_hint != "none":
         violations.append("beneficiary_route_contract_violation")
 

@@ -80,7 +80,9 @@ class ExtractionStep(QueryStep):
         return updates
 
     @staticmethod
-    def _validated_query_contract(raw_contract: QueryExecutionContract | dict[str, Any] | None) -> QueryExecutionContract | None:
+    def _validated_query_contract(
+        raw_contract: QueryExecutionContract | dict[str, Any] | None,
+    ) -> QueryExecutionContract | None:
         if isinstance(raw_contract, QueryExecutionContract):
             return raw_contract
         if isinstance(raw_contract, dict):
@@ -224,7 +226,9 @@ class ExtractionStep(QueryStep):
                 path="fallback_parse_supported_query",
                 recovered=False,
                 skip_reason="parser_not_ok" if resolution_source == "parser_parse" else "compiler_not_ok",
-                parser_outcome=parsed_result.outcome.value if hasattr(parsed_result.outcome, "value") else str(parsed_result.outcome),
+                parser_outcome=parsed_result.outcome.value
+                if hasattr(parsed_result.outcome, "value")
+                else str(parsed_result.outcome),
                 resolution_source=resolution_source,
             )
             return None
@@ -258,10 +262,7 @@ class ExtractionStep(QueryStep):
 
         extraction = parsed_result.extraction
         parsed_query = query_contract.normalized_query
-        if (
-            original_query is not None
-            and extraction.time_range.reference_type == TimeReference.UNSPECIFIED
-        ):
+        if original_query is not None and extraction.time_range.reference_type == TimeReference.UNSPECIFIED:
             logger.info(
                 "query_continuation_resolution",
                 path="fallback_parse_supported_query",
@@ -298,7 +299,9 @@ class ExtractionStep(QueryStep):
         if original_query is None:
             if extraction is None:
                 return None
-            patched_decision = decision.model_copy(update={"extraction": extraction}) if hasattr(decision, "model_copy") else decision
+            patched_decision = (
+                decision.model_copy(update={"extraction": extraction}) if hasattr(decision, "model_copy") else decision
+            )
             return await self._parse_reasoner_extraction_to_updates(
                 patched_decision,
                 state=state,
@@ -315,7 +318,9 @@ class ExtractionStep(QueryStep):
                 QueryIntent.AFFORDABILITY,
             }:
                 patched_decision = (
-                    decision.model_copy(update={"extraction": extraction}) if hasattr(decision, "model_copy") else decision
+                    decision.model_copy(update={"extraction": extraction})
+                    if hasattr(decision, "model_copy")
+                    else decision
                 )
                 return await self._parse_reasoner_extraction_to_updates(
                     patched_decision,
@@ -380,7 +385,9 @@ class ExtractionStep(QueryStep):
         if not has_compare:
             return False
 
-        has_income = any(token in normalized for token in (" income ", " credit ", " credits ", " inflow ", " inflows "))
+        has_income = any(
+            token in normalized for token in (" income ", " credit ", " credits ", " inflow ", " inflows ")
+        )
         has_spending = any(
             token in normalized
             for token in (" spending ", " spend ", " spent ", " debit ", " debits ", " outflow ", " outflows ")
@@ -964,14 +971,17 @@ class ExtractionStep(QueryStep):
         )
 
         if decision.decision == "end_session":
-            return self._append_query_session_transition({
-                "transaction_outcome": TransactionOutcome.OK,
-                "response": self._resolve_end_session_response(decision, locale=locale),
-                "session_active": False,
-                "pending_clarification": None,
-                "flow_state": "complete",
-                **self._semantic_trace_updates(decision),
-            }, "end_query_session")
+            return self._append_query_session_transition(
+                {
+                    "transaction_outcome": TransactionOutcome.OK,
+                    "response": self._resolve_end_session_response(decision, locale=locale),
+                    "session_active": False,
+                    "pending_clarification": None,
+                    "flow_state": "complete",
+                    **self._semantic_trace_updates(decision),
+                },
+                "end_query_session",
+            )
 
         if decision.decision == "new_query":
             return await self._parse_reasoner_extraction_to_updates(
@@ -1094,13 +1104,16 @@ class ExtractionStep(QueryStep):
                 followup_outcome="end_session",
                 decision=decision.decision,
             )
-            return self._append_query_session_transition({
-                "transaction_outcome": TransactionOutcome.OK,
-                "response": self._resolve_end_session_response(decision, locale=locale),
-                "session_active": False,
-                "flow_state": "complete",
-                **self._semantic_trace_updates(decision),
-            }, "end_query_session")
+            return self._append_query_session_transition(
+                {
+                    "transaction_outcome": TransactionOutcome.OK,
+                    "response": self._resolve_end_session_response(decision, locale=locale),
+                    "session_active": False,
+                    "flow_state": "complete",
+                    **self._semantic_trace_updates(decision),
+                },
+                "end_query_session",
+            )
 
         if decision.decision in {"fresh_query", "new_query", "reinterpret_query"}:
             self._log_single_item_followup(
@@ -1543,7 +1556,11 @@ class ExtractionStep(QueryStep):
             compile_target = extraction
             if not compile_target.raw_query:
                 compile_target = compile_target.model_copy(update={"raw_query": state.get("message", "")})
-            resolution_source = "reasoner_extraction_compile" if compiler_safe_extraction is not None else "reasoner_extraction_compile_with_ambiguity"
+            resolution_source = (
+                "reasoner_extraction_compile"
+                if compiler_safe_extraction is not None
+                else "reasoner_extraction_compile_with_ambiguity"
+            )
             if compiler_safe_extraction is None:
                 logger.info(
                     "query_reasoner_parser_fallback",
@@ -1572,7 +1589,22 @@ class ExtractionStep(QueryStep):
             continuation_type=getattr(decision, "continuation_type", None),
             confidence=confidence,
         )
-        result = await self.parser.parse(state.get("message", ""), today=today, language=language)
+
+        query_text = state.get("message", "")
+        deterministic_result = self.parser.parse_deterministic(query_text, today=today, language=language)
+        if deterministic_result:
+            self._log_query_trace(
+                state=state,
+                phase="semantic_compile",
+                latency_ms=(perf_counter() - started_at) * 1000.0,
+                outcome=self._resolver_outcome_trace(getattr(deterministic_result, "outcome", None)),
+                resolution_source="parser_deterministic",
+                semantic_decision=getattr(decision, "decision", None),
+                continuation_type=getattr(decision, "continuation_type", None),
+            )
+            return self._parse_result_to_updates(deterministic_result, state=state, today=today, language=language)
+
+        result = await self.parser.parse(query_text, today=today, language=language)
         self._log_query_trace(
             state=state,
             phase="semantic_compile",

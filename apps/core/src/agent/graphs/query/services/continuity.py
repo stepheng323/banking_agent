@@ -23,6 +23,31 @@ _END_SESSION_PATTERNS = (
 )
 _RETRANSFER_PHRASES = ("resend", "repeat", "send again", "do it again")
 
+_TIME_DELTA_RE = re.compile(
+    r"^(?:what about|how about|and|show me?|for|only)\s+"
+    r"(today|yesterday|last week|this week|last month|this month|"
+    r"last year|this year|january|february|march|april|may|june|"
+    r"july|august|september|october|november|december)"
+    r"(?:\?|!|\.)?$",
+    re.IGNORECASE,
+)
+_AGGREGATE_PATTERNS = (
+    "total",
+    "how much total",
+    "what's the total",
+    "whats the total",
+    "sum it up",
+    "sum",
+    "how much in total",
+    "wetin be total",
+    "nawa be total",
+    "lapapo meloo",
+)
+_FILTER_DELTA_RE = re.compile(
+    r"^(?:what about|how about|show me?|and)\s+(credit|debit)s?(?:\?|!|\.)?$",
+    re.IGNORECASE,
+)
+
 
 class ContinuationClassifier:
     """Deterministic continuation helpers used by the query reasoner."""
@@ -111,6 +136,28 @@ class ContinuationClassifier:
                 "reason": "deterministic_retransfer",
                 "drill_down_index": 0,
                 "drill_down_action": "re_transfer",
+            }
+
+        time_match = _TIME_DELTA_RE.match(normalized)
+        if time_match and surface is not None:
+            return "time_delta", {
+                "confidence": 0.95,
+                "reason": "deterministic_time_delta",
+                "time_period": time_match.group(1).lower(),
+            }
+
+        if normalized in _AGGREGATE_PATTERNS and surface is not None:
+            return "aggregate", {
+                "confidence": 0.95,
+                "reason": "deterministic_aggregate",
+            }
+
+        filter_match = _FILTER_DELTA_RE.match(normalized)
+        if filter_match and surface is not None:
+            return "filter_delta", {
+                "confidence": 0.95,
+                "reason": "deterministic_filter_delta",
+                "transaction_type": filter_match.group(1).lower(),
             }
 
         return None

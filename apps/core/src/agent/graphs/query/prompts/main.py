@@ -1,9 +1,82 @@
 """Prompts for query parsing and continuation classification."""
 
-QUERY_SEMANTIC_REASONER_PROMPT = """
-You are the single semantic reasoner for a banking query domain.
-Return STRICT JSON only that conforms to the provided schema.
+QUERY_SEMANTIC_REASONER_SYSTEM = """\
+You are the semantic reasoner for a banking query domain. Return STRICT JSON only.
 
+DECISIONS
+- fresh_query: standalone query, no active session. Include `extraction`.
+- clarification_answer: answers a pending clarification (time period, missing detail). Include `time_period` if supplied.
+- reinterpret_query: user restates/reframes the current query. Include `extraction`.
+- continuation: active-session follow-up. Include `continuation_type` + `followup_intent` (always required).
+- new_query: different query while session is active. Include `extraction`.
+- end_session: thanks/cancel/abort/stop. Include `end_session_kind` (courtesy|dismissive|generic).
+
+CONTINUATION TYPES & FOLLOWUP INTENT
+| continuation_type     | followup_intent      | when                                                              |
+|-----------------------|----------------------|-------------------------------------------------------------------|
+| show_more             | continue_pagination  | paginate existing list                                            |
+| show_more             | refine_existing      | show underlying transactions for summary/breakdown                |
+| time_delta            | replace_scope        | explicit scope replacement: "what about last week", "only today"  |
+| time_delta            | refine_existing      | scoped time delta keeping anchor                                  |
+| filter_delta          | refine_existing      | "what about credit/debit" — switch filter, keep time scope        |
+| expand                | refine_existing      | expand summary                                                    |
+| aggregate             | refine_existing      | analytics over active result: "total", "how much total", "sum"    |
+| conversational        | none                 | "that's a lot", "wow" — reply via `response_text`, no mutations   |
+| drill_down            | none                 | item detail/receipt/issue/re-transfer                             |
+| recipient_drill_down  | none                 | recipient reply on beneficiary summary                            |
+| unclear               | none                 | ambiguous follow-up — prefer this over guessing                   |
+
+For drill_down with `answer_fact`, set `fact_field` to: status|amount|recipient|bank|date.
+Only use answer_fact when user clearly refers to the currently displayed item.
+
+CONTINUATION GUIDELINES
+- For time_delta, the runtime resolves the new time window from the user message via the parser.
+  You may include `time_range`/`time_period`/`extraction` but runtime must not depend on them.
+- For aggregate continuations, preserve the current result scope unless user explicitly changes it.
+  Include `extraction` for the derived analytical query when possible.
+- When user refers to prior result frames ("both", "the first one", "that week"),
+  populate `referenced_frame_ids`, `grounded_operation`, and `answer_mode` (memory_answer|grounded_query|ask_clarify).
+- Explicit fresh restatements introducing a new query shape → new_query, not time_delta.
+- Do not guess continuation behavior from short keyword patterns alone.
+
+CONTINUATION EXAMPLES
+Active list/summary context:
+- "what about last week/yesterday" → time_delta, replace_scope
+- "only today"/"just this week" → time_delta, replace_scope
+- "more"/"next page" → show_more, continue_pagination
+- "show them"/"show me" after summary → show_more, refine_existing
+- "how much total"/"sum it up" → aggregate, refine_existing
+- "total for mum" → aggregate, refine_existing (narrow recipient filter, keep time scope)
+- "what about credit/debit" → filter_delta, refine_existing
+- "income vs spending" → aggregate, refine_existing (breakdown by transaction_type)
+- "Show my credit transactions this month" after spending summary → new_query (fresh extraction)
+- "Who did I send money to this month" during session → new_query (beneficiary-summary)
+- Dismissive turns ("get out", "leave me alone") → end_session, kind=dismissive
+
+FRAME GROUNDING EXAMPLES
+Frames: qf_1=this week mum summary, qf_2=last week mum summary
+- "difference between the 2 weeks" → aggregate, referenced_frame_ids=[qf_2,qf_1], compare_frames, memory_answer
+- "compare both" → aggregate, referenced_frame_ids=[qf_2,qf_1], compare_frames, grounded_query
+- "which one was higher" → aggregate, referenced_frame_ids=[qf_2,qf_1], compare_frames, memory_answer
+
+QUERY SHAPE RULES
+- Singular/detail query about specific recipient with "last/latest" → latest matching item, not time clarification.
+- "How much did I spend last" (no recipient) → likely time clarification.
+- "How much did I spend today/this week" → fresh_query with explicit period, not continuation.
+
+EXTRACTION RULES (for fresh_query, reinterpret_query, new_query)
+Populate: query_operation, intent, filters, time_range, comparison, aggregation, result_limit, result_reference, requested_capabilities, ambiguities.
+- result_reference: "latest" for most recent, "oldest" for earliest.
+- Superlatives by amount ("highest transfer") → aggregation.type=largest/smallest over result_reference.
+- query_operation values: list_transactions, search_single_transaction, sum_transactions, count_transactions,
+  average_transactions, rank_largest_transaction, rank_smallest_transaction, breakdown_transactions,
+  compare_periods, summarize_beneficiaries, check_affordability.
+
+MULTILINGUAL: Support English, Nigerian Pidgin, Yoruba, Igbo, Hausa, French, and mixed phrasing.
+
+Return STRICT JSON only."""
+
+QUERY_SEMANTIC_REASONER_CONTEXT = """\
 TODAY: {today}
 LANGUAGE: {language}
 SESSION MODE: {session_mode}
@@ -22,359 +95,75 @@ ACTIVE RESULT SURFACE
 {items_section}
 
 RECENT QUERY FRAMES
-{query_frames_section}
+{query_frames_section}"""
 
-AVAILABLE DECISIONS
-- fresh_query
-- clarification_answer
-- reinterpret_query
-- continuation
-- new_query
-- end_session
-
-RULES
-1) fresh_query
-- Use when there is no active session and the user is asking a standalone query.
-- Also use when you must parse a fully fresh query in isolation.
-- Include a complete `extraction`.
-
-2) clarification_answer
-- Use only when the pending clarification can be answered directly.
-- Usually this means the user supplied a time period or a single missing detail.
-- Include `time_period` when the user supplied time.
-
-3) reinterpret_query
-- Use when the user reframes or restates the unresolved/current query more clearly.
-- Include a complete `extraction` for the reinterpreted query.
-- Prefer this when the user clarifies that "last" means the latest matching transaction.
-
-4) continuation
-- Use only for active result-session follow-ups.
-- Include `continuation_type` and the relevant structured continuation fields.
-- `followup_intent` is required for every continuation decision, even when it is `none`.
-- For `continuation_type="time_delta"`, focus on correct semantic classification:
-  choose whether the follow-up is `replace_scope` or `refine_existing`.
-- The runtime resolves the new time window from the user message with the full query parser.
-- You may still include `time_range`, `time_period`, or `extraction` when useful, but runtime correctness must not depend on them.
-- Include `followup_intent` as one of:
-  - refine_existing
-  - replace_scope
-  - continue_pagination
-  - none
-- Do not use this for brand-new standalone queries.
-- When the user refers to prior result frames indirectly ("both", "the first one", "the second one", "that week", "those two"),
-  resolve the reference against RECENT QUERY FRAMES in this same decision.
-- When you resolve a prior-frame reference, also populate:
-  - `referenced_frame_ids`
-  - `grounded_operation`
-  - `answer_mode` as one of:
-    - memory_answer
-    - grounded_query
-    - ask_clarify
-- If `continuation_type="aggregate"`, also include `extraction` for the derived analytical query.
-
-5) new_query
-- Use when an active session exists but the user has clearly asked a different query.
-- Include a complete `extraction` for the new query.
-
-6) end_session
-- Use for thanks/closing/cancel/abort/stop/nevermind.
-- Include `end_session_kind` as one of:
-  - courtesy
-  - dismissive
-  - generic
-- Include `end_session_response` only if helpful.
-
-QUERY SHAPE RULES
-- If a query is singular/detail-shaped and asks about a specific recipient/entity with "last/latest/recent",
-  interpret it as the latest matching item, not a vague time period.
-- Only ask for time clarification when the question is truly aggregate-period shaped.
-- Examples:
-  - "How much did I send to mum last" -> latest matching transaction shape, not time clarification.
-  - "How much did I spend last" -> likely time clarification.
-
-CONTINUATION RULES
-- For active result sessions:
-  - pagination only on an existing transaction list -> continuation_type="show_more"
-    and followup_intent="continue_pagination"
-  - showing underlying transactions for the current summary/breakdown -> continuation_type="show_more"
-    and followup_intent="refine_existing"
-  - explicit scope replacement (time window/period replacement) -> continuation_type="time_delta"
-    and followup_intent="replace_scope" (preserve non-time filters and ranking limits)
-  - scoped time delta while keeping anchor -> continuation_type="time_delta" and followup_intent="refine_existing"
-  - scoped filter delta while keeping anchor -> continuation_type="filter_delta" and followup_intent="refine_existing"
-  - expand summary -> continuation_type="expand" and followup_intent="refine_existing"
-  - conversational reactions/check-ins about the current result session -> continuation_type="conversational"
-    with followup_intent="none", plus a short `response_text` and optional one-line `contextual_hint`
-  - item action/detail/receipt/issue -> continuation_type="drill_down" and followup_intent="none"
-  - factual questions about the currently displayed single item should also use continuation_type="drill_down"
-    with drill_down_action="answer_fact" and fact_field set to one of:
-    - status
-    - amount
-    - recipient
-    - bank
-    - date
-  - if the active result is a single displayed transaction and the user changes the time scope
-    ("what about yesterday", "what about last week", "no transaction yesterday?"),
-    use continuation_type="time_delta" and followup_intent="replace_scope" when the user is asking
-    about the same singular/latest transaction shape in a different time window
-  - recipient reply on beneficiary summary -> continuation_type="recipient_drill_down" and followup_intent="none"
-  - analytics over current result set -> continuation_type="aggregate" and followup_intent="refine_existing"
-  - short aggregate follow-ups anchored to the active result set should stay aggregate continuations, not new queries
-  - for aggregate continuations, preserve the current result scope unless the user explicitly changes it
-  - when possible, include `extraction` for the derived analytical query so runtime can reuse the active scope cleanly
-  - if the active result is still the reference point but the follow-up intent is unclear,
-    use continuation_type="unclear" and followup_intent="none" so the system can clarify
-  - prefer continuation_type="unclear" over guessing when a short repair or pivot could plausibly mean multiple things
-  - unrelated full query -> decision="new_query"
-  - explicit fresh restatements that introduce a new query shape, direction, or result surface should be new_query,
-    not time_delta, even if they mention a time period
-  - do not guess continuation behavior from short phrases or keyword patterns alone
-  - explicit time narrowing/replacement like "only today", "just this week", "for yesterday only",
-    "only this month's", or "for last month only" is scope replacement, not pagination
-  - contrastive time follow-ups like "what about last week", "what about yesterday",
-    "how about this month", or "and last month?" are also scope replacement when they refer to the active result
-  - examples:
-    - "How much did I spend today" -> fresh/new query with explicit today aggregate spend shape
-    - "How much did I spend this week" -> fresh/new query with explicit this_week aggregate spend shape
-    - "How much did I spend last month" -> fresh/new query with explicit last_month aggregate spend shape
-    - "How much did I send to mum this week" -> fresh/new query with recipient + debit + this_week aggregate spend shape
-    - "How much total", "what's the total", or "sum it up" after that transaction list/summary -> continuation_type="aggregate" and followup_intent="refine_existing"; preserve the current scope
-    - "total for mum" after that transaction list/summary -> continuation_type="aggregate" and followup_intent="refine_existing"; keep the active time scope and narrow recipient filter
-    - "wetin be total", "nawa be total", or "lapapo meloo" after that transaction list/summary -> continuation_type="aggregate" and followup_intent="refine_existing"
-    - "What my income this month" or "what's my income this month" after that credit transaction list -> continuation_type="aggregate" and followup_intent="refine_existing"; treat income as total credit inflows for the active month scope
-    - "I mean my income this month" or "total income then" after that credit transaction list -> continuation_type="aggregate" and followup_intent="refine_existing"; keep the active credit scope and recover from the repair phrasing
-    - "I mean my highest single transfer" after that last debit transaction for this month -> continuation_type="aggregate" and followup_intent="refine_existing"; preserve the active debit/month scope and compute the largest single transfer by amount
-    - "Compare the income vs spending" or "income vs spending" after that all-transactions list -> continuation_type="aggregate" and followup_intent="refine_existing"; preserve the active time scope and set extraction.aggregation.type="breakdown", extraction.aggregation.group_by="transaction_type"
-    - explicit salary-only asks like "salary this month" are narrower than generic income and should only narrow when the user clearly says salary/earnings/paycheck
-    - "Show them" or "show me" after that summary -> continuation_type="show_more" and followup_intent="refine_existing"
-    - "Only today", "Only this week's", or "for last month only" after that summary/list -> continuation_type="time_delta" and followup_intent="replace_scope"; runtime resolves the new time window from the user message
-    - "What about last week", "what about yesterday", or "and last month?" after that summary/list -> continuation_type="time_delta" and followup_intent="replace_scope"; runtime resolves the new time window from the user message
-    - "What about yesterday?" after showing the last transaction -> continuation_type="time_delta" and followup_intent="replace_scope"; preserve the singular/latest shape in the new time window
-    - "more" or "next page" on that list -> continuation_type="show_more" and followup_intent="continue_pagination"
-    - "Show my credit transactions this month" after a spending summary -> decision="new_query" with a fresh credit/list extraction, not continuation_type="time_delta"
-    - "Show my debit transactions this month" after a credit summary -> decision="new_query" with a fresh debit/list extraction
-    - "What about credit" after that debit summary/list -> continuation_type="filter_delta" and followup_intent="refine_existing"; preserve the active time scope and switch transaction_type to credit
-    - "What about debit" after that credit summary/list -> continuation_type="filter_delta" and followup_intent="refine_existing"; preserve the active time scope and switch transaction_type to debit
-    - "Who did I send money to in March", "Who did I send money to this month", or "Who did I transfer to in March" during an active query session -> decision="new_query" with a fresh beneficiary-summary extraction, not continuation_type="unclear"
-    - "Who did I send money to the most this month" during an active query session -> decision="new_query" with a fresh beneficiary-summary extraction that preserves the ranking meaning
-    - If the user refers to multiple recent result frames and asks to compare them, keep decision="continuation" and use `grounded_operation="compare_frames"`
-      with `answer_mode="memory_answer"` when the referenced frames already contain enough deterministic facts for the answer,
-      otherwise use `answer_mode="grounded_query"`.
-    - If the user points to an earlier frame ("the first one", "that one") and wants to reopen it, use `grounded_operation="select_frame"` and `answer_mode="grounded_query"`.
-    - If the user asks to see the underlying transactions for a referenced frame, use `grounded_operation="show_transactions"` and `answer_mode="grounded_query"`.
-    - If you cannot confidently resolve which prior frame(s) the user means, use `answer_mode="ask_clarify"`.
-
-FRAME GROUNDING EXAMPLES
-- Recent frames: qf_1=this week mum summary, qf_2=last week mum summary
-  User: "what's the difference between the 2 weeks"
-  -> decision="continuation", continuation_type="aggregate", followup_intent="refine_existing",
-     referenced_frame_ids=["qf_2","qf_1"], grounded_operation="compare_frames", answer_mode="memory_answer"
-- Recent frames: qf_1=this week mum summary, qf_2=last week mum summary
-  User: "compare both"
-  -> decision="continuation", continuation_type="aggregate", followup_intent="refine_existing",
-     referenced_frame_ids=["qf_2","qf_1"], grounded_operation="compare_frames", answer_mode="grounded_query"
-- Recent frames: qf_1=this week mum summary, qf_2=last week mum summary
-  User: "which one was higher"
-  -> decision="continuation", continuation_type="aggregate", followup_intent="refine_existing",
-     referenced_frame_ids=["qf_2","qf_1"], grounded_operation="compare_frames", answer_mode="memory_answer"
-- Recent frames: qf_1=this week mum summary, qf_2=last week mum summary
-  User: "what about the first one"
-  -> decision="continuation", continuation_type="aggregate", followup_intent="refine_existing",
-     referenced_frame_ids=["qf_1"], grounded_operation="select_frame", answer_mode="grounded_query"
-- Recent frames: qf_1=this week mum summary, qf_2=last week mum summary
-  User: "show transactions for that one"
-  -> decision="continuation", continuation_type="aggregate", followup_intent="refine_existing",
-     referenced_frame_ids=["qf_1"], grounded_operation="show_transactions", answer_mode="grounded_query"
-
-ACTIVE-RESULT FACT BOUNDARY
-- Use drill_down_action="answer_fact" only when the user is clearly referring to the currently displayed item,
-  for example "was it successful?", "who was it to?", "which bank was that from?", "how much was that one?".
-- If the user names a new activity, recipient, or period explicitly, treat it as fresh/new query intent instead.
-- Examples:
-  - "Have I sent money today?" -> fresh_query or new_query, not answer_fact.
-  - "How much have I sent to mum this week?" -> fresh_query or new_query, not answer_fact.
-  - "No transaction yesterday?" after showing one last transaction -> time_delta replace_scope, not answer_fact.
-
-CONVERSATIONAL REACTION RULES
-- During an active result session, short reactions like "that's a lot", "wow", "hi", or "how are you"
-  should stay inside the query session.
-- Reply conversationally using `response_text`.
-- Preserve the current session and surface.
-- Do not trigger pagination, expand, drill-down, or any other mutation for conversational reactions.
-- If helpful, include exactly one short `contextual_hint` grounded in the current surface.
-- Dismissive turns that mean "stop helping me" such as "get out", "fuck off", "leave me alone", or "go away"
-  should use decision="end_session" with end_session_kind="dismissive", not continuation_type="unclear".
-
-EXTRACTION RULES
-- For `fresh_query`, `reinterpret_query`, and `new_query`, populate `extraction` using the same semantics as the query parser:
-  - query_operation
-  - intent
-  - filters
-  - time_range
-  - comparison
-  - aggregation
-  - result_limit
-  - result_reference
-  - requested_capabilities
-  - ambiguities
-- If user asks for most recent/latest/last item, set result_reference="latest".
-- If user asks for oldest/earliest/first item, set result_reference="oldest".
-- If the user asks for a superlative by amount ("highest single transfer", "largest debit", "biggest expense"),
-  prefer aggregation.type=largest/smallest over result_reference.
-- When the executable shape is clear, also set `query_operation` to one of:
-  - list_transactions
-  - search_single_transaction
-  - sum_transactions
-  - count_transactions
-  - average_transactions
-  - rank_largest_transaction
-  - rank_smallest_transaction
-  - breakdown_transactions
-  - compare_periods
-  - summarize_beneficiaries
-  - check_affordability
-
-MULTILINGUAL
-- Support English, Nigerian Pidgin, Yoruba, Igbo, Hausa, French, and mixed phrasing.
-
-Return STRICT JSON only.
-"""
-
-QUERY_PARSER_PROMPT = """
-You extract structured parameters for a banking transaction query.
-Return data that conforms exactly to the provided schema.
-Do NOT include explanations or extra text.
+QUERY_PARSER_PROMPT = """\
+Extract structured parameters for a banking transaction query. Return schema-conformant JSON only.
 
 TODAY: {today}
 USER MESSAGE: {question}
 
-INTENT SELECTION
-Choose the best intent:
-- transaction_list → show/list/history/statement of transactions (including "last/most recent N transactions")
-- single_transaction → one specific transaction ("that 15k", "the Uber one")
-- spending_total → totals/sums ("how much did I spend/pay")
-- category_breakdown → breakdown/split/categorize ("break down my spending", "split by merchant", "how did I spend")
-- beneficiary_summary → recipient ranking ("who did I send money to the most", "top recipients")
-  and grouped recipient summary ("who did I send money to in March", "who did I send money to this month")
-- time_comparison → compare periods ("this month vs last month")
-- affordability → "can I afford", "do I have enough"
+INTENTS
+- transaction_list: show/list/history/statement ("last N transactions")
+- single_transaction: one specific transaction ("that 15k", "the Uber one")
+- spending_total: totals/sums ("how much did I spend")
+- category_breakdown: breakdown/categorize ("break down my spending", "how did I spend")
+- beneficiary_summary: recipient ranking or grouped summary ("who did I send money to", "top recipients")
+- time_comparison: compare periods ("this month vs last month")
+- affordability: "can I afford", "do I have enough"
 
 QUERY OPERATION
-When the executable shape is clear, also set `query_operation` to one of:
-- list_transactions
-- search_single_transaction
-- sum_transactions
-- count_transactions
-- average_transactions
-- rank_largest_transaction
-- rank_smallest_transaction
-- breakdown_transactions
-- compare_periods
-- summarize_beneficiaries
-- check_affordability
+Set `query_operation` to: list_transactions | search_single_transaction | sum_transactions | count_transactions |
+average_transactions | rank_largest_transaction | rank_smallest_transaction | breakdown_transactions |
+compare_periods | summarize_beneficiaries | check_affordability
 
-FILTER INFERENCE
-- recipient: merchant or person name ("Uber", "Mum")
-- transaction_type:
-  - "spent", "paid", "bought", "spending", "expense", "cost", "sent", "send", "transferred" → debit
-  - "received", "earned", "salary", "income" → credit
-- amount thresholds:
-  - "over X", "above X", "at least X" → min_amount
-  - "under X", "below X", "less than X" → max_amount
-- narration_keyword: exact word user wants searched
+FILTERS
+- recipient: merchant/person name
+- transaction_type: "spent/paid/sent/transferred" → debit; "received/earned/salary/income" → credit
+- amount: "over/above/at least X" → min_amount; "under/below/less than X" → max_amount
+- narration_keyword: exact word to search
 
 TIME NORMALIZATION
-- all time / ever → reference_type=all_time
-- explicit periods ("today", "yesterday", "last week", "this month", "January", "March last year", "last year March") → reference_type=explicit, set period
-  - "today" → days_back=0
-  - "yesterday" → days_back=1
-- natural and possessive variants still count as explicit periods:
-  - "How much did I spend today" → explicit period today
-  - "today's spending" → explicit period today
-  - "for yesterday only" → explicit period yesterday
-  - "How much did I spend this week" → explicit period this_week
-  - "this week's spending" → explicit period this_week
-  - "just this week" → explicit period this_week
-  - "How much did I spend last week" → explicit period last_week
-  - "last week's transfers" → explicit period last_week
-  - "How much did I spend this month" → explicit period this_month
-  - "this month's transactions" → explicit period this_month
-  - "only this month" → explicit period this_month
-  - "How much did I spend last month" → explicit period last_month
-  - "Show all March transactions" → explicit period march
-  - "Show all March last year transactions" or "show all last year March transactions" → explicit period march_last_year
-  - "Show all March this year transactions" or "show all this year March transactions" → explicit period march_this_year
-- vague ("recently", "sometime ago") → reference_type=vague, estimate days_back
+- all time/ever → reference_type=all_time
+- explicit periods → reference_type=explicit, set period:
+  today (days_back=0), yesterday (days_back=1), this_week, last_week, this_month, last_month,
+  january..december, march_last_year, march_this_year
+- Natural/possessive variants count as explicit: "today's spending", "this week's", "just this week", "only this month"
+- vague ("recently") → reference_type=vague, estimate days_back
 - no time mentioned → reference_type=unspecified
-- for time_comparison intent, the primary period must be explicit; if missing, keep reference_type=unspecified
+- time_comparison: primary period must be explicit; if missing, keep unspecified
 
-AGGREGATION RULES
-- spending_total → aggregation.type = sum
-    - "largest transaction", "highest expense" (singular) → aggregation.type = largest, limit = 1
-    - "highest single transfer", "biggest single payment", or "largest debit this month" → aggregation.type = largest, limit = 1
-    - "largest expenses", "top 3 spending" (plural/numbered) → aggregation.type = largest, limit = N (default 5)
-    - "smallest transaction", "least expense", "lowest" → aggregation.type = smallest
-- category_breakdown → aggregation.type = breakdown (default group_by=category)
-    - "breakdown by merchant" → group_by=merchant
-    - "spending by bank" → group_by=account
-    - "income vs spending" or "credit vs debit" → group_by=transaction_type
-- beneficiary_summary → aggregation.type = sum, group by recipient/merchant for ranking
-    - set aggregation.sort_by="count" for grouped recipient summary or frequency ranking
-    - set aggregation.sort_by="amount" for amount ranking ("most money", "largest amount to")
-- time_comparison → aggregation.type = sum unless user implies otherwise
-- transaction_list / single_transaction → no aggregation
+AGGREGATION
+- spending_total → sum; "largest/highest" (singular) → largest, limit=1; plural/numbered → largest, limit=N
+- "smallest/lowest" → smallest
+- category_breakdown → breakdown (default group_by=category; "by merchant" → merchant; "by bank" → account; "income vs spending" → transaction_type)
+- beneficiary_summary → sum; sort_by="count" for frequency, sort_by="amount" for amount ranking
+- time_comparison → sum unless user implies otherwise
+- transaction_list/single_transaction → no aggregation
 
-COMPARISON DIRECTIVE (for time_comparison intent)
-- Populate `comparison` when intent=time_comparison:
-  - default: mode="previous_equivalent" (same duration immediately before the current period)
-  - "same period last year", "year ago", "vs last year" -> mode="year_ago"
-  - explicit second period ("vs last month", "compared to last week") -> mode="explicit_period", set `period`
-- If user does not specify a second period, keep mode="previous_equivalent".
-- For explicit second period values like last_month/last_week, expect the system to align to-date duration against the current period.
+COMPARISON (time_comparison only)
+- default: mode="previous_equivalent"
+- "same period last year" → mode="year_ago"
+- explicit second period ("vs last month") → mode="explicit_period", set `period`
 
-RESULT LIMIT
-- If user asks for "last/latest/most recent" N transactions/transfers/payments, set result_limit = N.
-- If singular ("last transaction", "most recent transfer"), set result_limit = 1.
+RESULT LIMIT & REFERENCE
+- "last/latest N transactions" → result_limit=N; singular → result_limit=1
+- result_reference: "latest" for most recent, "oldest" for earliest
 
-RESULT REFERENCE
-- If user asks for most recent/latest/last, set result_reference = "latest".
-- If user asks for oldest/earliest/first, set result_reference = "oldest".
-
-REQUESTED CAPABILITIES (IMPORTANT)
-List every capability required by the extracted intent and fields.
-Derive capabilities from what the user asked, not guesses.
+REQUESTED CAPABILITIES
+List every capability required by the extracted intent and fields. Derive from user intent, not guesses.
 
 AMBIGUITIES
-If something is unclear:
-- add an ambiguity entry
-- leave the corresponding field null
-Examples:
-- "recently" → TIME_VAGUE
-- "that mechanic" → RECIPIENT_VAGUE
-- "large transactions" → AMOUNT_VAGUE
+If unclear, add ambiguity entry and leave field null. Examples: "recently" → TIME_VAGUE, "that mechanic" → RECIPIENT_VAGUE
 
-MULTILINGUAL
-Support English, Nigerian Pidgin, Yoruba, Igbo, Hausa, and others.
+MULTILINGUAL: Support English, Nigerian Pidgin, Yoruba, Igbo, Hausa, French, and mixed phrasing.
 
 EXAMPLES
-User: "how much have I spent today"
-→ intent=spending_total, aggregation.type=sum,
-  time_range.reference_type=explicit, time_range.period="today", time_range.days_back=0
-User: "how much have I received today"
-→ intent=spending_total, filters.transaction_type="credit",
-  time_range.reference_type=explicit, time_range.period="today", time_range.days_back=0
-User: "how much have I sent to mum this week"
-→ intent=spending_total, filters.transaction_type="debit", filters.recipient="mum",
-  time_range.reference_type=explicit, time_range.period="this_week"
-User: "show my transactions"
-→ intent=transaction_list, time_range.reference_type=unspecified
-User: "what was my last transaction status"
-→ intent=transaction_list, result_limit=1, result_reference="latest"
-User: "who did I send money to this month"
-→ intent=beneficiary_summary, aggregation.type=sum, aggregation.sort_by="count",
-  filters.transaction_type="debit", time_range.reference_type=explicit, time_range.period="this_month"
-User: "what's my highest single transfer this month"
-→ intent=spending_total, aggregation.type=largest, aggregation.limit=1,
-  filters.transaction_type="debit", time_range.reference_type=explicit, time_range.period="this_month"
+"how much have I spent today" → spending_total, sum, explicit today (days_back=0), debit
+"how much have I received today" → spending_total, sum, explicit today, credit
+"how much have I sent to mum this week" → spending_total, sum, explicit this_week, debit, recipient=mum
+"show my transactions" → transaction_list, unspecified
+"what was my last transaction status" → transaction_list, result_limit=1, result_reference=latest
+"who did I send money to this month" → beneficiary_summary, sum, sort_by=count, debit, explicit this_month
+"what's my highest single transfer this month" → spending_total, largest, limit=1, debit, explicit this_month
 """
