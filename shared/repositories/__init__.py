@@ -2,6 +2,8 @@
 
 from shared.repositories.account_repository import AccountRepository
 from shared.repositories.beneficiary_repository import BeneficiaryRepository
+from shared.repositories.bank_transaction_coverage_repository import BankTransactionCoverageRepository
+from shared.repositories.bank_transaction_repository import BankTransactionRepository
 from shared.repositories.faq_repository import FAQRepository
 from shared.repositories.scheduled_instruction_repository import ScheduledInstructionRepository
 from shared.repositories.scheduled_run_repository import ScheduledRunRepository
@@ -16,6 +18,8 @@ __all__ = [
     "UnitOfWork",
     "BeneficiaryRepository",
     "TransactionRepository",
+    "BankTransactionRepository",
+    "BankTransactionCoverageRepository",
     "ScheduledInstructionRepository",
     "ScheduledRunRepository",
     "FAQRepository",

@@ -44,6 +44,16 @@ class TransactionData:
 
 
 @dataclass
+class TransactionPageData:
+    """A page of transactions from the provider."""
+
+    transactions: list[TransactionData]
+    page: int
+    has_more: bool
+    next_page: int | None = None
+
+
+@dataclass
 class BvnLookupResult:
     """Result of BVN lookup initiation."""
 
@@ -119,6 +129,8 @@ class BankDataProvider(ABC):
         end_date: str | None = None,
         transaction_type: str | None = None,
         limit: int = 50,
+        user_id: str | None = None,
+        mock_account_slot: int | None = None,
     ) -> list[TransactionData]:
         """
         Get account transactions.
@@ -129,11 +141,44 @@ class BankDataProvider(ABC):
             end_date: End date (YYYY-MM-DD)
             transaction_type: Filter by "credit" or "debit"
             limit: Max transactions to return
+            user_id: Optional user context for mock/dev providers
+            mock_account_slot: Optional linked-account slot for mock/dev providers
 
         Returns:
             List of TransactionData
         """
         pass
+
+    async def get_transactions_page(
+        self,
+        account_id: str,
+        start_date: str | None = None,
+        end_date: str | None = None,
+        limit: int = 50,
+        page: int = 1,
+        user_id: str | None = None,
+        mock_account_slot: int | None = None,
+    ) -> TransactionPageData:
+        """Get one page of account transactions.
+
+        Providers without first-class pagination support may override this
+        method. The default fallback wraps `get_transactions()` as a single page.
+        """
+        transactions = await self.get_transactions(
+            account_id=account_id,
+            start_date=start_date,
+            end_date=end_date,
+            limit=limit,
+            user_id=user_id,
+            mock_account_slot=mock_account_slot,
+        )
+        has_more = len(transactions) >= limit
+        return TransactionPageData(
+            transactions=transactions,
+            page=page,
+            has_more=has_more,
+            next_page=page + 1 if has_more else None,
+        )
 
     @abstractmethod
     async def initiate_bvn_lookup(self, bvn: str) -> BvnLookupResult:

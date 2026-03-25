@@ -1,5 +1,6 @@
 """Pydantic models for query service."""
 
+import re
 from datetime import date
 from enum import Enum
 from typing import Any, Literal
@@ -325,12 +326,57 @@ CATEGORY_KEYWORDS: dict[str, list[str]] = {
     "savings": ["piggyvest", "cowrywise", "savings", "investment"],
 }
 
+CATEGORY_ALIASES: dict[str, str] = {
+    "bank_charge": "bank_charges",
+    "bank_charges": "bank_charges",
+    "bank_fees": "bank_charges",
+    "bills": "utilities",
+    "bills_utilities": "utilities",
+    "cash_withdrawal": "cash_withdrawal",
+    "data": "airtime",
+    "entertainment": "entertainment",
+    "fees": "bank_charges",
+    "food": "food",
+    "food_and_drink": "food",
+    "food_drink": "food",
+    "income": "income",
+    "investment": "savings",
+    "investments": "savings",
+    "mobile": "airtime",
+    "mobile_data": "airtime",
+    "salary": "income",
+    "saving": "savings",
+    "savings": "savings",
+    "shopping": "shopping",
+    "subscriptions": "entertainment",
+    "telecom": "airtime",
+    "top_up": "airtime",
+    "transfer": "transfers",
+    "transfers": "transfers",
+    "transport": "transport",
+    "transportation": "transport",
+    "utilities": "utilities",
+}
+
+
+def normalize_category(category: str | None) -> str | None:
+    """Normalize provider and user category labels to stable internal values."""
+    if not category:
+        return None
+
+    normalized = re.sub(r"[^a-z0-9]+", "_", category.lower()).strip("_")
+    if not normalized:
+        return None
+    if normalized in CATEGORY_KEYWORDS:
+        return normalized
+    return CATEGORY_ALIASES.get(normalized, normalized)
+
 
 def match_category(narration: str, categories: list[str]) -> bool:
     """Check if narration matches any of the specified categories."""
     narration_lower = narration.lower()
     for cat in categories:
-        cat_key = cat.lower().strip()
+        cat_key = normalize_category(cat) or cat.lower().strip()
         if cat_key in CATEGORY_KEYWORDS:
             for keyword in CATEGORY_KEYWORDS[cat_key]:
                 if keyword in narration_lower:
@@ -348,3 +394,49 @@ def detect_category(narration: str) -> str | None:
             if keyword in narration_lower:
                 return category
     return None
+
+
+def resolve_transaction_category(category: str | None, narration: str) -> tuple[str | None, str | None]:
+    """Resolve the best available category and where it came from."""
+    provider_category = normalize_category(category)
+    if provider_category:
+        return provider_category, "provider"
+
+    local_category = detect_category(narration)
+    if local_category:
+        return local_category, "local_rule"
+
+    return None, None
+
+
+def get_transaction_category(transaction: dict[str, Any]) -> str | None:
+    """Return a transaction category, preferring resolved stored values."""
+    resolved = normalize_category(transaction.get("resolved_category"))
+    if resolved:
+        return resolved
+
+    category, _source = resolve_transaction_category(
+        transaction.get("category"),
+        transaction.get("narration", ""),
+    )
+    return category
+
+
+def match_transaction_category(transaction: dict[str, Any], categories: list[str]) -> bool:
+    """Check whether a transaction matches any requested category."""
+    transaction_category = get_transaction_category(transaction)
+    normalized_targets = {normalize_category(category) for category in categories}
+    normalized_targets.discard(None)
+
+    if transaction_category and transaction_category in normalized_targets:
+        return True
+
+    raw_category = str(transaction.get("category") or "").lower()
+    for category in categories:
+        normalized = normalize_category(category)
+        if normalized and normalized == normalize_category(raw_category):
+            return True
+        if category.lower().strip() in raw_category:
+            return True
+
+    return match_category(transaction.get("narration", ""), categories)

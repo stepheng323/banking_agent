@@ -1,10 +1,11 @@
 """SQLAlchemy database models."""
 
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 
 from sqlalchemy import (
     ARRAY,
+    Date,
     JSON,
     Boolean,
     Column,
@@ -212,6 +213,81 @@ class Transaction(Base):
 
     def __repr__(self):
         return f"<Transaction(id={self.id}, status={self.status}, amount={self.amount}, tx_id={self.transaction_id})>"
+
+
+class BankTransaction(Base):
+    """Mirrored bank-feed transaction data fetched from providers like Mono."""
+
+    __tablename__ = "bank_transactions"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    user_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", name="fk_bank_transactions_user_id"),
+        nullable=False,
+        index=True,
+    )
+    linked_account_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("accounts.id", name="fk_bank_transactions_linked_account_id"),
+        nullable=False,
+        index=True,
+    )
+    provider = Column(String, nullable=False, index=True)
+    provider_transaction_id = Column(String, nullable=False)
+    posted_at = Column(DateTime, nullable=False, index=True)
+    posted_date = Column(Date, nullable=False, index=True)
+    amount = Column(Float, nullable=False)
+    currency = Column(String, default="NGN", nullable=False)
+    transaction_type = Column(String, nullable=False, index=True)
+    narration = Column(Text, nullable=True)
+    category = Column(String, nullable=True)
+    resolved_category = Column(String, nullable=True, index=True)
+    category_source = Column(String, nullable=True)
+    bank_name = Column(String, nullable=True)
+    raw_payload = Column(JSON, nullable=True)
+    first_seen_at = Column(DateTime, server_default=text("now()"), nullable=False)
+    last_seen_at = Column(DateTime, server_default=text("now()"), nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "linked_account_id",
+            "provider",
+            "provider_transaction_id",
+            name="uq_bank_transactions_provider_txn",
+        ),
+    )
+
+    def __repr__(self):
+        return (
+            f"<BankTransaction(account={self.linked_account_id}, provider={self.provider}, "
+            f"provider_tx_id={self.provider_transaction_id})>"
+        )
+
+
+class BankTransactionCoverage(Base):
+    """Coverage windows indicating which bank-transaction date ranges are fully mirrored."""
+
+    __tablename__ = "bank_transaction_coverage"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    linked_account_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("accounts.id", name="fk_bank_transaction_coverage_linked_account_id"),
+        nullable=False,
+        index=True,
+    )
+    provider = Column(String, nullable=False, index=True)
+    window_start = Column(Date, nullable=False)
+    window_end = Column(Date, nullable=False)
+    coverage_type = Column(String, nullable=False, default="full")
+    created_at = Column(DateTime, server_default=text("now()"), nullable=False)
+
+    def __repr__(self):
+        return (
+            f"<BankTransactionCoverage(account={self.linked_account_id}, provider={self.provider}, "
+            f"window={self.window_start}..{self.window_end})>"
+        )
 
 
 class FundedTransfer(Base):

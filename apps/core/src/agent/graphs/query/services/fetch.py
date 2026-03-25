@@ -8,8 +8,18 @@ from datetime import date, datetime
 from time import perf_counter
 from typing import Any, cast
 
-from apps.core.src.agent.graphs.query.models import Filters, NormalizedQuery, match_category
-from apps.core.src.agent.graphs.query.utils.timezone import lagos_today, to_lagos_date
+from apps.core.src.agent.graphs.query.models import (
+    Filters,
+    NormalizedQuery,
+    match_transaction_category,
+    resolve_transaction_category,
+)
+from apps.core.src.agent.graphs.query.services.bank_transaction_mirror import (
+    build_mirrored_account_contexts,
+    ensure_mirror_coverage,
+    load_mirrored_transactions,
+)
+from apps.core.src.agent.graphs.query.utils.timezone import lagos_today
 from shared.clients.abstractions.banking import BankDataProvider
 from shared.i18n import render_message
 from shared.utils.logging import get_logger
@@ -99,7 +109,7 @@ def apply_filters(transactions: list[dict[str, Any]], filters: Filters) -> list[
         result = [t for t in result if t.get("type") == filters.transaction_type]
 
     if filters.category:
-        result = [t for t in result if match_category(t.get("narration", ""), filters.category)]
+        result = [t for t in result if match_transaction_category(t, filters.category)]
 
     if filters.merchant:
         result = [t for t in result if any(m.lower() in t.get("narration", "").lower() for m in filters.merchant)]
@@ -230,6 +240,8 @@ async def fetch_transactions_base(
     """Fetch transaction base set for the query time/account envelope (no query.filters applied)."""
     started_at = perf_counter()
     start, end = resolve_query_date_bounds(query)
+    start_bound = date.fromisoformat(start)
+    end_bound = date.fromisoformat(end)
 
     bank_map: dict[str, str] = {}
     if accounts_info:
@@ -241,110 +253,98 @@ async def fetch_transactions_base(
 
     def to_dict(t: Any) -> dict[str, Any]:
         if hasattr(t, "model_dump"):
-            return cast(dict[str, Any], t.model_dump())
+            d = cast(dict[str, Any], t.model_dump())
+            resolved_category, category_source = resolve_transaction_category(d.get("category"), d.get("narration", ""))
+            d.setdefault("resolved_category", resolved_category)
+            d.setdefault("category_source", category_source)
+            return d
         elif is_dataclass(t) and not isinstance(t, type):
             d = asdict(t)
             if "transaction_id" in d:
                 d["id"] = d.pop("transaction_id")
             if "transaction_type" in d:
                 d["type"] = d.pop("transaction_type")
+            resolved_category, category_source = resolve_transaction_category(d.get("category"), d.get("narration", ""))
+            d.setdefault("resolved_category", resolved_category)
+            d.setdefault("category_source", category_source)
             return cast(dict[str, Any], d)
         elif isinstance(t, dict):
-            return cast(dict[str, Any], t)
+            d = cast(dict[str, Any], t)
+            resolved_category, category_source = resolve_transaction_category(d.get("category"), d.get("narration", ""))
+            d.setdefault("resolved_category", resolved_category)
+            d.setdefault("category_source", category_source)
+            return d
         return {"raw": str(t)}
 
-    fetch_account_count = 1
+    fetch_account_count = len(account_ids) if query.accounts_scope == "all" and account_ids else 1
     used_parallel_fetch = False
-    if query.accounts_scope == "all" and len(account_ids) > 1:
-        all_txns: list[dict[str, Any]] = []
-        fetch_account_count = len(account_ids)
-        used_parallel_fetch = True
-        semaphore = asyncio.Semaphore(min(_MULTI_ACCOUNT_FETCH_CONCURRENCY, len(account_ids)))
+    transactions: list[dict[str, Any]]
 
-        async def _fetch_account_transactions(acc_id: str) -> list[dict[str, Any]]:
-            async with semaphore:
-                txns = await provider.get_transactions(acc_id, start_date=start, end_date=end, limit=100)
-            account_transactions: list[dict[str, Any]] = []
-            for t in txns:
-                td = to_dict(t)
-                td["bank_name"] = bank_map.get(acc_id, "")
-                account_transactions.append(td)
-            return account_transactions
+    mirrored_accounts = build_mirrored_account_contexts(
+        account_ids=account_ids,
+        accounts_info=accounts_info,
+        user_id=user_id,
+    )
+    use_mirror = bool(mirrored_accounts)
 
-        per_account_transactions = await asyncio.gather(*(_fetch_account_transactions(acc_id) for acc_id in account_ids))
-        for account_transactions in per_account_transactions:
-            all_txns.extend(account_transactions)
-        transactions = sorted(all_txns, key=lambda t: (t.get("date", ""), t.get("id", "")), reverse=True)
-    else:
-        fetch_account_count = len(account_ids) if query.accounts_scope == "all" and account_ids else 1
-        txns = await provider.get_transactions(account_id, start_date=start, end_date=end, limit=100)
-        transactions = [to_dict(t) for t in txns]
-
-    start_bound = date.fromisoformat(start)
-    end_bound = date.fromisoformat(end)
-
-    # --- MERGE LOCAL TRANSACTIONS ---
-    if user_id:
+    if use_mirror:
         try:
-            from shared.repositories.unit_of_work import UnitOfWork
-
-            async with UnitOfWork() as uow:
-                if uow.transactions:
-                    local_txns = await uow.transactions.get_by_user(user_id, limit=20)
-                    for l_txn in local_txns:
-                        raw_date = l_txn.created_at
-                        if not isinstance(raw_date, datetime):
-                            continue
-                        lagos_date = to_lagos_date(raw_date)
-                        if lagos_date < start_bound or lagos_date > end_bound:
-                            continue
-
-                        recipient_name = l_txn.recipient_name or render_message("query.common.transaction", language)
-                        txn_dict = {
-                            "id": str(l_txn.id),
-                            "type": "debit"
-                            if l_txn.transaction_type in ("transfer", "airtime", "data", "bill")
-                            else "credit",
-                            "transaction_type": l_txn.transaction_type,
-                            "amount": l_txn.amount,
-                            "narration": l_txn.narration
-                            or render_message(
-                                "query.fetch.local.transfer_to",
-                                language,
-                                {"recipient": recipient_name},
-                            ),
-                            "date": lagos_date.isoformat(),
-                            "currency": l_txn.currency,
-                            "status": l_txn.status,
-                            "transaction_id": l_txn.transaction_id,
-                            "recipient_name": l_txn.recipient_name,
-                            "recipient_account": l_txn.recipient_account_number,
-                            "recipient_account_number": l_txn.recipient_account_number,
-                            "recipient_bank_name": l_txn.recipient_bank_name,
-                            "recipient_bank_code": l_txn.recipient_bank_code,
-                            "bank_name": l_txn.source_bank_name or render_message("query.fetch.local.wallet", language),
-                        }
-
-                        is_duplicate = False
-                        l_prov_id = l_txn.transaction_id
-                        for existing in transactions:
-                            if l_prov_id and l_prov_id == existing.get("id"):
-                                is_duplicate = True
-                                break
-                            if getattr(l_txn, "amount", 0) == existing.get(
-                                "amount"
-                            ) and l_txn.narration == existing.get("narration"):
-                                is_duplicate = True
-                                break
-
-                        if not is_duplicate:
-                            transactions.append(txn_dict)
-
-                    transactions = sorted(
-                        transactions, key=lambda t: (t.get("date", ""), t.get("id", "")), reverse=True
-                    )
+            for mirrored_account in mirrored_accounts:
+                await ensure_mirror_coverage(
+                    provider,
+                    account=mirrored_account,
+                    start_date=start_bound,
+                    end_date=end_bound,
+                )
+            transactions = await load_mirrored_transactions(
+                account_contexts=mirrored_accounts,
+                start_date=start_bound,
+                end_date=end_bound,
+            )
         except Exception as e:
-            logger.warning("failed_to_merge_local_transactions", error=str(e))
+            logger.warning("bank_transaction_mirror_fallback", error=str(e))
+            use_mirror = False
+
+    if not use_mirror:
+        if query.accounts_scope == "all" and len(account_ids) > 1:
+            all_txns: list[dict[str, Any]] = []
+            used_parallel_fetch = True
+            semaphore = asyncio.Semaphore(min(_MULTI_ACCOUNT_FETCH_CONCURRENCY, len(account_ids)))
+
+            async def _fetch_account_transactions(acc_id: str, slot: int) -> list[dict[str, Any]]:
+                async with semaphore:
+                    txns = await provider.get_transactions(
+                        acc_id,
+                        start_date=start,
+                        end_date=end,
+                        limit=100,
+                        user_id=user_id,
+                        mock_account_slot=slot,
+                    )
+                account_transactions: list[dict[str, Any]] = []
+                for t in txns:
+                    td = to_dict(t)
+                    td["bank_name"] = bank_map.get(acc_id, "")
+                    account_transactions.append(td)
+                return account_transactions
+
+            per_account_transactions = await asyncio.gather(
+                *(_fetch_account_transactions(acc_id, slot) for slot, acc_id in enumerate(account_ids))
+            )
+            for account_transactions in per_account_transactions:
+                all_txns.extend(account_transactions)
+            transactions = sorted(all_txns, key=lambda t: (t.get("date", ""), t.get("id", "")), reverse=True)
+        else:
+            slot = account_ids.index(account_id) if account_id in account_ids else 0
+            txns = await provider.get_transactions(
+                account_id,
+                start_date=start,
+                end_date=end,
+                limit=100,
+                user_id=user_id,
+                mock_account_slot=slot,
+            )
+            transactions = [to_dict(t) for t in txns]
 
     transactions = sorted(transactions, key=lambda t: (t.get("date", ""), t.get("id", "")), reverse=True)
 

@@ -21,8 +21,16 @@ class _Provider:
         self.transactions = transactions
         self.calls = 0
 
-    async def get_transactions(self, account_id: str, start_date: str, end_date: str, limit: int = 100) -> list[dict[str, Any]]:
-        del account_id, start_date, end_date, limit
+    async def get_transactions(
+        self,
+        account_id: str,
+        start_date: str,
+        end_date: str,
+        limit: int = 100,
+        user_id: str | None = None,
+        mock_account_slot: int | None = None,
+    ) -> list[dict[str, Any]]:
+        del account_id, start_date, end_date, limit, user_id, mock_account_slot
         self.calls += 1
         return list(self.transactions)
 
@@ -33,8 +41,16 @@ class _ConcurrentProvider:
         self.in_flight = 0
         self.max_in_flight = 0
 
-    async def get_transactions(self, account_id: str, start_date: str, end_date: str, limit: int = 100) -> list[dict[str, Any]]:
-        del account_id, start_date, end_date, limit
+    async def get_transactions(
+        self,
+        account_id: str,
+        start_date: str,
+        end_date: str,
+        limit: int = 100,
+        user_id: str | None = None,
+        mock_account_slot: int | None = None,
+    ) -> list[dict[str, Any]]:
+        del account_id, start_date, end_date, limit, user_id, mock_account_slot
         self.calls += 1
         self.in_flight += 1
         self.max_in_flight = max(self.max_in_flight, self.in_flight)

@@ -7,6 +7,7 @@ from shared.clients.abstractions.banking import (
     BvnLookupResult,
     BvnVerificationResult,
     TransactionData,
+    TransactionPageData,
 )
 from shared.clients.providers.mono.client import MonoClient
 from shared.clients.providers.mono.models import MonoApiError
@@ -65,6 +66,8 @@ class MonoBankingProvider(BankDataProvider):
         end_date: str | None = None,
         transaction_type: str | None = None,
         limit: int = 50,
+        user_id: str | None = None,
+        mock_account_slot: int | None = None,
     ) -> list[TransactionData]:
         try:
             txns = await self._client.get_transactions(
@@ -73,6 +76,8 @@ class MonoBankingProvider(BankDataProvider):
                 end=end_date,
                 transaction_type=transaction_type,
                 limit=limit,
+                user_id=user_id,
+                mock_account_slot=mock_account_slot,
             )
             return [
                 TransactionData(
@@ -88,6 +93,47 @@ class MonoBankingProvider(BankDataProvider):
         except MonoApiError as e:
             logger.error("get_transactions_failed", account_id=account_id, error=str(e))
             return []
+
+    async def get_transactions_page(
+        self,
+        account_id: str,
+        start_date: str | None = None,
+        end_date: str | None = None,
+        limit: int = 100,
+        page: int = 1,
+        user_id: str | None = None,
+        mock_account_slot: int | None = None,
+    ) -> TransactionPageData:
+        """Fetch one paginated page of transactions."""
+        try:
+            txns, has_more, next_page = await self._client.get_transactions_page(
+                account_id=account_id,
+                start=start_date,
+                end=end_date,
+                limit=limit,
+                page=page,
+                user_id=user_id,
+                mock_account_slot=mock_account_slot,
+            )
+            return TransactionPageData(
+                transactions=[
+                    TransactionData(
+                        transaction_id=t.id,
+                        date=t.date,
+                        narration=t.narration,
+                        amount=t.amount / 100 if t.type == "credit" else -t.amount / 100,
+                        transaction_type=t.type,
+                        category=t.category,
+                    )
+                    for t in txns
+                ],
+                page=page,
+                has_more=has_more,
+                next_page=next_page,
+            )
+        except MonoApiError as e:
+            logger.error("get_transactions_page_failed", account_id=account_id, error=str(e))
+            return TransactionPageData(transactions=[], page=page, has_more=False, next_page=None)
 
     async def initiate_bvn_lookup(self, bvn: str) -> BvnLookupResult:
         try:

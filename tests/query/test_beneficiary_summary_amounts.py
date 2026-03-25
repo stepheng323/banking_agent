@@ -21,8 +21,10 @@ class _ProviderStub:
         start_date: str,
         end_date: str,
         limit: int = 100,
+        user_id: str | None = None,
+        mock_account_slot: int | None = None,
     ) -> list[dict[str, Any]]:
-        del account_id, start_date, end_date, limit
+        del account_id, start_date, end_date, limit, user_id, mock_account_slot
         return [
             {
                 "id": "tx-1",
@@ -72,8 +74,10 @@ class _RecipientVariantProviderStub:
         start_date: str,
         end_date: str,
         limit: int = 100,
+        user_id: str | None = None,
+        mock_account_slot: int | None = None,
     ) -> list[dict[str, Any]]:
-        del account_id, start_date, end_date, limit
+        del account_id, start_date, end_date, limit, user_id, mock_account_slot
         return [
             {
                 "id": "tx-1",

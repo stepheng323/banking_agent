@@ -11,6 +11,7 @@ from apps.core.src.agent.graphs.query.models import (
     QueryResultItem,
     ResultSurface,
     SurfaceType,
+    get_transaction_category,
 )
 from apps.core.src.agent.graphs.query.services.fetch import (
     extract_counterparty,
@@ -326,9 +327,7 @@ async def _aggregate_breakdown(transactions: list[dict], query: NormalizedQuery,
         if group_by == "day":
             key = t.get("date", "")[:10]
         elif group_by == "category":
-            from apps.core.src.agent.graphs.query.models import detect_category
-
-            key = detect_category(t.get("narration", "")) or "other"
+            key = get_transaction_category(t) or "other"
         elif group_by == "merchant":
             key = extract_counterparty(t.get("narration", ""), locale=language)
         elif group_by == "transaction_type":

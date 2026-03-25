@@ -5,6 +5,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from shared.database.connection import get_db_session
 from shared.repositories.account_repository import AccountRepository
 from shared.repositories.actionable_message_repository import ActionableMessageRepository
+from shared.repositories.bank_transaction_coverage_repository import BankTransactionCoverageRepository
+from shared.repositories.bank_transaction_repository import BankTransactionRepository
 from shared.repositories.beneficiary_repository import BeneficiaryRepository
 from shared.repositories.funded_transfer_repository import FundedTransferRepository
 from shared.repositories.funding_step_repository import FundingStepRepository
@@ -28,6 +30,8 @@ class UnitOfWork:
         self.scheduled_instructions: ScheduledInstructionRepository | None = None
         self.scheduled_runs: ScheduledRunRepository | None = None
         self.actionable_messages: ActionableMessageRepository | None = None
+        self.bank_transactions: BankTransactionRepository | None = None
+        self.bank_transaction_coverages: BankTransactionCoverageRepository | None = None
         self._rolled_back = False
 
     async def __aenter__(self):
@@ -42,6 +46,8 @@ class UnitOfWork:
         self.scheduled_instructions = ScheduledInstructionRepository(self.db)
         self.scheduled_runs = ScheduledRunRepository(self.db)
         self.actionable_messages = ActionableMessageRepository(self.db)
+        self.bank_transactions = BankTransactionRepository(self.db)
+        self.bank_transaction_coverages = BankTransactionCoverageRepository(self.db)
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb) -> bool:

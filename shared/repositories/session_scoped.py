@@ -9,6 +9,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.repositories.account_repository import AccountRepository
 from shared.repositories.actionable_message_repository import ActionableMessageRepository
+from shared.repositories.bank_transaction_coverage_repository import BankTransactionCoverageRepository
+from shared.repositories.bank_transaction_repository import BankTransactionRepository
 from shared.repositories.beneficiary_repository import BeneficiaryRepository
 from shared.repositories.support_ticket_repository import SupportTicketRepository
 from shared.repositories.transaction_repository import TransactionRepository
@@ -209,6 +211,92 @@ class SessionScopedTransactionRepository(_SessionScopedRepositoryMixin, Transact
             transaction_id,
             status,
             error_message,
+        )
+
+
+class SessionScopedBankTransactionRepository(_SessionScopedRepositoryMixin, BankTransactionRepository):
+    """Mirrored bank transaction repository with per-call DB sessions."""
+
+    def __init__(self, session_factory: SessionFactory) -> None:
+        self._init_session_scoped(session_factory)
+
+    async def bulk_upsert(self, rows: list[dict]):
+        return await self._call_with_session(BankTransactionRepository, "bulk_upsert", rows)
+
+    async def list_by_account_window(self, linked_account_id: str, *, start_date, end_date, provider: str = "mono"):
+        return await self._call_with_session(
+            BankTransactionRepository,
+            "list_by_account_window",
+            linked_account_id,
+            start_date=start_date,
+            end_date=end_date,
+            provider=provider,
+        )
+
+    async def list_by_accounts_window(self, linked_account_ids: list[str], *, start_date, end_date, provider: str = "mono"):
+        return await self._call_with_session(
+            BankTransactionRepository,
+            "list_by_accounts_window",
+            linked_account_ids,
+            start_date=start_date,
+            end_date=end_date,
+            provider=provider,
+        )
+
+    async def get_latest_posted_at(self, linked_account_id: str, *, provider: str = "mono"):
+        return await self._call_with_session(
+            BankTransactionRepository,
+            "get_latest_posted_at",
+            linked_account_id,
+            provider=provider,
+        )
+
+
+class SessionScopedBankTransactionCoverageRepository(_SessionScopedRepositoryMixin, BankTransactionCoverageRepository):
+    """Coverage repository with per-call DB sessions."""
+
+    def __init__(self, session_factory: SessionFactory) -> None:
+        self._init_session_scoped(session_factory)
+
+    async def list_for_account(self, linked_account_id: str, *, provider: str = "mono", coverage_type: str = "full"):
+        return await self._call_with_session(
+            BankTransactionCoverageRepository,
+            "list_for_account",
+            linked_account_id,
+            provider=provider,
+            coverage_type=coverage_type,
+        )
+
+    async def find_missing_gaps(self, linked_account_id: str, *, start_date, end_date, provider: str = "mono", coverage_type: str = "full"):
+        return await self._call_with_session(
+            BankTransactionCoverageRepository,
+            "find_missing_gaps",
+            linked_account_id,
+            start_date=start_date,
+            end_date=end_date,
+            provider=provider,
+            coverage_type=coverage_type,
+        )
+
+    async def is_window_covered(self, linked_account_id: str, *, start_date, end_date, provider: str = "mono", coverage_type: str = "full"):
+        return await self._call_with_session(
+            BankTransactionCoverageRepository,
+            "is_window_covered",
+            linked_account_id,
+            start_date=start_date,
+            end_date=end_date,
+            provider=provider,
+            coverage_type=coverage_type,
+        )
+
+    async def add_full_coverage(self, linked_account_id: str, *, start_date, end_date, provider: str = "mono"):
+        return await self._call_with_session(
+            BankTransactionCoverageRepository,
+            "add_full_coverage",
+            linked_account_id,
+            start_date=start_date,
+            end_date=end_date,
+            provider=provider,
         )
 
 

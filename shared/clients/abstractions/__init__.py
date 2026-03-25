@@ -7,6 +7,7 @@ from shared.clients.abstractions.banking import (
     BvnLookupResult,
     BvnVerificationResult,
     TransactionData,
+    TransactionPageData,
 )
 from shared.clients.abstractions.bill import BillPaymentProvider
 from shared.clients.abstractions.direct_debit import (
@@ -31,6 +32,7 @@ __all__ = [
     "AccountData",
     "BalanceData",
     "TransactionData",
+    "TransactionPageData",
     "BvnLookupResult",
     "BvnVerificationResult",
     "DirectDebitProvider",

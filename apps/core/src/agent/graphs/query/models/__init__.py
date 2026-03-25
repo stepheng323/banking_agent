@@ -15,7 +15,11 @@ from .domain import (
     SurfaceType,
     TimeRange,
     detect_category,
+    get_transaction_category,
     match_category,
+    match_transaction_category,
+    normalize_category,
+    resolve_transaction_category,
 )
 from .extraction import (
     Ambiguity,

@@ -86,6 +86,7 @@ class MonoClient:
         body: dict | None = None,
         session_id: str | None = None,
         real_time: bool = False,
+        unwrap_data: bool = True,
     ) -> dict:
         """Make API request. Raises MonoApiError on failure."""
         url = f"{self.BASE_URL}{endpoint}"
@@ -105,7 +106,7 @@ class MonoClient:
 
                 if 200 <= resp.status < 300:
                     if isinstance(data, dict):
-                        return data.get("data", data)
+                        return data.get("data", data) if unwrap_data else data
                     return data
 
                 error_message = data.get("message", "Request failed")
@@ -180,10 +181,21 @@ class MonoClient:
         limit: int = 50,
         paginate: bool = True,
         real_time: bool = False,
+        user_id: str | None = None,
+        mock_account_slot: int | None = None,
     ) -> list[Transaction]:
         """Fetch transactions for an account."""
         if self.use_mock:
-            return mock_data.get_mock_transactions(account_id, transaction_type, narration, limit)
+            return mock_data.get_mock_transactions(
+                account_id=account_id,
+                start=start,
+                end=end,
+                transaction_type=transaction_type,
+                narration=narration,
+                limit=limit,
+                user_id=user_id,
+                mock_account_slot=mock_account_slot,
+            )
 
         params = {}
         if start:
@@ -206,6 +218,53 @@ class MonoClient:
         transactions = [Transaction(**t) for t in raw_txns]
 
         return transactions[:limit]
+
+    async def get_transactions_page(
+        self,
+        account_id: str,
+        start: str | None = None,
+        end: str | None = None,
+        limit: int = 100,
+        page: int = 1,
+        real_time: bool = False,
+        user_id: str | None = None,
+        mock_account_slot: int | None = None,
+    ) -> tuple[list[Transaction], bool, int | None]:
+        """Fetch one paginated transaction page for an account."""
+        if self.use_mock:
+            return mock_data.get_mock_transactions_page(
+                account_id=account_id,
+                start=start,
+                end=end,
+                limit=limit,
+                page=page,
+                user_id=user_id,
+                mock_account_slot=mock_account_slot,
+            )
+
+        params: dict[str, str] = {"paginate": "true", "limit": str(limit), "page": str(page)}
+        if start:
+            params["start"] = start
+        if end:
+            params["end"] = end
+
+        envelope = await self._request(
+            "GET",
+            f"/v2/accounts/{account_id}/transactions",
+            params=params,
+            real_time=real_time,
+            unwrap_data=False,
+        )
+        raw_data = envelope.get("data", [])
+        if isinstance(raw_data, dict):
+            raw_txns = raw_data.get("transactions", raw_data.get("data", []))
+        else:
+            raw_txns = raw_data
+        meta = envelope.get("meta", {}) if isinstance(envelope, dict) else {}
+        transactions = [Transaction(**t) for t in raw_txns]
+        has_more = bool(meta.get("next"))
+        next_page = page + 1 if has_more else None
+        return transactions, has_more, next_page
 
     async def create_customer(
         self,
