@@ -3,7 +3,7 @@
 import asyncio
 import hashlib
 import json
-from dataclasses import asdict, is_dataclass
+from dataclasses import asdict, dataclass, is_dataclass
 from datetime import date, datetime
 from time import perf_counter
 from typing import Any, cast
@@ -12,13 +12,13 @@ from apps.core.src.agent.graphs.query.models import (
     Filters,
     NormalizedQuery,
     match_transaction_category,
-    resolve_transaction_category,
 )
 from apps.core.src.agent.graphs.query.services.bank_transaction_mirror import (
     build_mirrored_account_contexts,
     ensure_mirror_coverage,
     load_mirrored_transactions,
 )
+from apps.core.src.agent.graphs.query.services.narration import analyze_transaction_narration
 from apps.core.src.agent.graphs.query.utils.timezone import lagos_today
 from shared.clients.abstractions.banking import BankDataProvider
 from shared.i18n import render_message
@@ -26,6 +26,57 @@ from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
 _MULTI_ACCOUNT_FETCH_CONCURRENCY = 4
+
+
+@dataclass(frozen=True)
+class TransactionCacheReuseDecision:
+    """Cache reuse decision for transaction-list follow-ups.
+
+    Semantics:
+    - `exact` reuse applies to filter refinements over the same full fetch envelope.
+    - `time_subset` reuse applies to narrower time windows within the same scope.
+    - wider windows or stale/mismatched cache snapshots must refetch.
+    """
+
+    can_reuse: bool
+    strategy: str
+
+
+def _account_display_label(account: dict[str, Any]) -> str:
+    """Return the best available user-facing label for a source account."""
+    bank_name = str(account.get("bank_name") or "").strip()
+    if bank_name:
+        return bank_name
+
+    account_number = str(account.get("account_number") or "").strip()
+    if account_number:
+        return account_number
+
+    account_id = str(account.get("account_id") or account.get("mono_account_id") or "").strip()
+    if account_id:
+        return account_id
+
+    return "unknown account"
+
+
+def _attach_source_account_metadata(
+    transaction: dict[str, Any],
+    *,
+    account_id: str | None,
+    account_label: str | None,
+) -> dict[str, Any]:
+    """Attach source-account metadata while preserving any existing fields."""
+    resolved_account_id = str(account_id or transaction.get("source_account_id") or "").strip()
+    resolved_label = str(account_label or transaction.get("source_account_label") or "").strip()
+
+    if resolved_account_id:
+        transaction["source_account_id"] = resolved_account_id
+    if resolved_label:
+        transaction["source_account_label"] = resolved_label
+    if resolved_label and not transaction.get("bank_name"):
+        transaction["bank_name"] = resolved_label
+
+    return transaction
 
 
 def parse_date(date_str: str) -> date:
@@ -40,59 +91,35 @@ def parse_date(date_str: str) -> date:
 
 def extract_counterparty(narration: str, locale: str = "en") -> str:
     """Extract counterparty name from narration."""
-    if not narration:
-        return render_message("query.fetch.counterparty.unknown", locale)
-
-    narration = narration.strip().upper()
-
-    # NIP Transfer pattern: "0000132312091322123456789012345 NIP TRANSFER TO ADEBAYO JAMES"
-    if "NIP TRANSFER" in narration or narration.startswith("0000"):
-        for direction in ("TO ", "FROM "):
-            if direction in narration:
-                idx = narration.index(direction) + len(direction)
-                name = narration[idx:].strip()
-                return name.title()[:25] if name else render_message("query.fetch.counterparty.bank_transfer", locale)
-        return render_message("query.fetch.counterparty.bank_transfer", locale)
-
-    for prefix in ("TRANSFER TO ", "TRANSFER FROM ", "PAYMENT TO ", "FROM ", "TO "):
-        if narration.startswith(prefix):
-            name = narration[len(prefix) :].strip()
-            parts = name.split(" - ")
-            return parts[0].title()[:25] if parts[0] else render_message("query.fetch.counterparty.transfer", locale)
-
-    if narration.startswith("POS PURCHASE"):
-        merchant = narration[14:].strip(" -")
-        return merchant.title()[:25] if merchant else render_message("query.fetch.counterparty.pos_purchase", locale)
-
-    known = {
-        "UBER": "Uber",
-        "BOLT": "Bolt",
-        "TAXIFY": "Bolt",
-        "NETFLIX": "Netflix",
-        "SPOTIFY": "Spotify",
-        "MTN": "MTN",
-        "GLO": "Glo",
-        "AIRTEL": "Airtel",
-        "9MOBILE": "9mobile",
-    }
-    for key, name in known.items():
-        if key in narration:
-            return name
-
-    if any(x in narration for x in ("CHARGE", "FEE", "STAMP DUTY", "VAT", "SMS ALERT")):
+    analysis = analyze_transaction_narration(narration=narration, transaction_type=None)
+    if analysis.counterparty:
+        return analysis.counterparty
+    if analysis.counterparty_role == "bank":
         return render_message("query.fetch.counterparty.bank_charges", locale)
+    return render_message("query.fetch.counterparty.unknown", locale)
 
-    if "AIRTIME" in narration:
-        return render_message("query.fetch.counterparty.airtime", locale)
 
-    if "ATM" in narration:
-        return render_message("query.fetch.counterparty.atm_withdrawal", locale)
-
-    parts = narration.split(" - ")
-    result = parts[0].strip().title()
-    if len(result) > 25:
-        result = result[:22] + "..."
-    return result if result else render_message("query.fetch.counterparty.unknown", locale)
+def _apply_transaction_analysis(transaction: dict[str, Any]) -> dict[str, Any]:
+    """Attach narration-derived transaction understanding fields in-place."""
+    analysis = analyze_transaction_narration(
+        narration=transaction.get("narration", ""),
+        transaction_type=transaction.get("type") or transaction.get("transaction_type"),
+        provider_category=transaction.get("category"),
+        provider_counterparty=transaction.get("counterparty"),
+    )
+    if not transaction.get("counterparty") and analysis.counterparty is not None:
+        transaction["counterparty"] = analysis.counterparty
+    if not transaction.get("counterparty_role") and analysis.counterparty_role:
+        transaction["counterparty_role"] = analysis.counterparty_role
+    if not transaction.get("counterparty_source") and analysis.counterparty_source is not None:
+        transaction["counterparty_source"] = analysis.counterparty_source
+    if not transaction.get("resolved_category") and analysis.resolved_category is not None:
+        transaction["resolved_category"] = analysis.resolved_category
+    if not transaction.get("category_source") and analysis.category_source is not None:
+        transaction["category_source"] = analysis.category_source
+    if not transaction.get("parser_rule") and analysis.parser_rule:
+        transaction["parser_rule"] = analysis.parser_rule
+    return transaction
 
 
 def apply_filters(transactions: list[dict[str, Any]], filters: Filters) -> list[dict[str, Any]]:
@@ -111,6 +138,17 @@ def apply_filters(transactions: list[dict[str, Any]], filters: Filters) -> list[
     if filters.category:
         result = [t for t in result if match_transaction_category(t, filters.category)]
 
+    if filters.counterparty:
+        lowered_terms = [term.lower() for term in filters.counterparty if isinstance(term, str) and term.strip()]
+        result = [
+            t
+            for t in result
+            if any(
+                term in ((t.get("counterparty") or "").lower() or (t.get("narration") or "").lower())
+                for term in lowered_terms
+            )
+        ]
+
     if filters.merchant:
         result = [t for t in result if any(m.lower() in t.get("narration", "").lower() for m in filters.merchant)]
 
@@ -122,6 +160,77 @@ def apply_filters(transactions: list[dict[str, Any]], filters: Filters) -> list[
         result = [t for t in result if filter_term in t.get("bank_name", "").lower()]
 
     return result
+
+
+def apply_time_window(
+    transactions: list[dict[str, Any]],
+    *,
+    window_start: date | str | None,
+    window_end: date | str | None,
+) -> list[dict[str, Any]]:
+    """Restrict transactions to an inclusive query window."""
+    if window_start is None or window_end is None:
+        return list(transactions)
+
+    start = window_start if isinstance(window_start, date) else parse_date(window_start)
+    end = window_end if isinstance(window_end, date) else parse_date(window_end)
+
+    return [
+        transaction
+        for transaction in transactions
+        if start <= parse_date(str(transaction.get("date", ""))) <= end
+    ]
+
+
+def decide_transaction_cache_reuse(
+    *,
+    continuation_type: str | None,
+    continuation_delta_type: str | None,
+    cached_transactions: list[dict[str, Any]] | None,
+    cache_age_seconds: float | None,
+    max_cache_age_seconds: float,
+    cached_fingerprint: str | None,
+    current_fingerprint: str | None,
+    cached_scope_fingerprint: str | None,
+    current_scope_fingerprint: str | None,
+    cache_window_start: str | None,
+    cache_window_end: str | None,
+    current_window_start: str | None,
+    current_window_end: str | None,
+) -> TransactionCacheReuseDecision:
+    """Decide whether a transaction cache snapshot is safe to reuse.
+
+    Exact reuse is for same-envelope filter refinements.
+    Time-subset reuse is for narrower windows within the same account/query scope.
+    """
+    if cached_transactions is None or cache_age_seconds is None or cache_age_seconds > max_cache_age_seconds:
+        return TransactionCacheReuseDecision(can_reuse=False, strategy="none")
+
+    exact_reuse = (
+        continuation_type == "filter_delta"
+        and continuation_delta_type != "time"
+        and cached_fingerprint is not None
+        and cached_fingerprint == current_fingerprint
+    )
+    if exact_reuse:
+        return TransactionCacheReuseDecision(can_reuse=True, strategy="exact")
+
+    time_subset_reuse = (
+        continuation_type == "time_delta"
+        and continuation_delta_type == "time"
+        and cached_scope_fingerprint is not None
+        and cached_scope_fingerprint == current_scope_fingerprint
+        and cache_window_start is not None
+        and cache_window_end is not None
+        and current_window_start is not None
+        and current_window_end is not None
+        and cache_window_start <= current_window_start
+        and current_window_end <= cache_window_end
+    )
+    if time_subset_reuse:
+        return TransactionCacheReuseDecision(can_reuse=True, strategy="time_subset")
+
+    return TransactionCacheReuseDecision(can_reuse=False, strategy="none")
 
 
 def resolve_query_date_bounds(query: NormalizedQuery) -> tuple[str, str]:
@@ -220,6 +329,12 @@ async def fetch_and_filter(
         language=language,
         trace_context=trace_context,
     )
+    if query.time_range:
+        transactions = apply_time_window(
+            transactions,
+            window_start=query.time_range.start,
+            window_end=query.time_range.end,
+        )
 
     if query.filters:
         transactions = apply_filters(transactions, query.filters)
@@ -244,36 +359,29 @@ async def fetch_transactions_base(
     end_bound = date.fromisoformat(end)
 
     bank_map: dict[str, str] = {}
+    account_label_map: dict[str, str] = {}
     if accounts_info:
         for acc in accounts_info:
             acc_id = acc.get("account_id") or acc.get("mono_account_id", "")
-            bank_name = acc.get("bank_name", "")
-            if acc_id and bank_name:
-                bank_map[acc_id] = bank_name
+            label = _account_display_label(acc)
+            if acc_id and label:
+                bank_map[acc_id] = str(acc.get("bank_name") or label)
+                account_label_map[acc_id] = label
 
     def to_dict(t: Any) -> dict[str, Any]:
         if hasattr(t, "model_dump"):
             d = cast(dict[str, Any], t.model_dump())
-            resolved_category, category_source = resolve_transaction_category(d.get("category"), d.get("narration", ""))
-            d.setdefault("resolved_category", resolved_category)
-            d.setdefault("category_source", category_source)
-            return d
+            return _apply_transaction_analysis(d)
         elif is_dataclass(t) and not isinstance(t, type):
             d = asdict(t)
             if "transaction_id" in d:
                 d["id"] = d.pop("transaction_id")
             if "transaction_type" in d:
                 d["type"] = d.pop("transaction_type")
-            resolved_category, category_source = resolve_transaction_category(d.get("category"), d.get("narration", ""))
-            d.setdefault("resolved_category", resolved_category)
-            d.setdefault("category_source", category_source)
-            return cast(dict[str, Any], d)
+            return cast(dict[str, Any], _apply_transaction_analysis(d))
         elif isinstance(t, dict):
             d = cast(dict[str, Any], t)
-            resolved_category, category_source = resolve_transaction_category(d.get("category"), d.get("narration", ""))
-            d.setdefault("resolved_category", resolved_category)
-            d.setdefault("category_source", category_source)
-            return d
+            return _apply_transaction_analysis(d)
         return {"raw": str(t)}
 
     fetch_account_count = len(account_ids) if query.accounts_scope == "all" and account_ids else 1
@@ -301,6 +409,14 @@ async def fetch_transactions_base(
                 start_date=start_bound,
                 end_date=end_bound,
             )
+            for transaction in transactions:
+                source_account_id = str(transaction.get("source_account_id") or "").strip()
+                source_account_label = str(transaction.get("source_account_label") or "").strip()
+                _attach_source_account_metadata(
+                    transaction,
+                    account_id=source_account_id or None,
+                    account_label=source_account_label or transaction.get("bank_name") or None,
+                )
         except Exception as e:
             logger.warning("bank_transaction_mirror_fallback", error=str(e))
             use_mirror = False
@@ -324,7 +440,11 @@ async def fetch_transactions_base(
                 account_transactions: list[dict[str, Any]] = []
                 for t in txns:
                     td = to_dict(t)
-                    td["bank_name"] = bank_map.get(acc_id, "")
+                    _attach_source_account_metadata(
+                        td,
+                        account_id=acc_id,
+                        account_label=account_label_map.get(acc_id) or bank_map.get(acc_id) or None,
+                    )
                     account_transactions.append(td)
                 return account_transactions
 
@@ -344,7 +464,14 @@ async def fetch_transactions_base(
                 user_id=user_id,
                 mock_account_slot=slot,
             )
-            transactions = [to_dict(t) for t in txns]
+            transactions = [
+                _attach_source_account_metadata(
+                    to_dict(t),
+                    account_id=account_id,
+                    account_label=account_label_map.get(account_id) or bank_map.get(account_id) or None,
+                )
+                for t in txns
+            ]
 
     transactions = sorted(transactions, key=lambda t: (t.get("date", ""), t.get("id", "")), reverse=True)
 

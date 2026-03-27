@@ -192,7 +192,7 @@ def _calculate_stats(transactions: list[dict]) -> dict[str, Any]:
     count = 0
 
     for t in transactions:
-        amount = t.get("amount", 0) / 100  # Convert from kobo
+        amount = float(t.get("amount", 0) or 0)
         tx_type = t.get("type", "")
         count += 1
 

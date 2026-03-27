@@ -12,9 +12,11 @@ from apps.core.src.agent.graphs.query.models import (
     SurfaceType,
 )
 from apps.core.src.agent.graphs.query.services.fetch import (
+    apply_time_window,
     apply_filters,
     build_cache_fingerprint,
     build_cache_scope_fingerprint,
+    decide_transaction_cache_reuse,
     fetch_transactions_base,
     parse_date,
 )
@@ -24,6 +26,10 @@ from shared.utils.logging import get_logger
 
 TRANSACTION_CACHE_MAX_AGE_SECONDS = 90.0
 logger = get_logger(__name__)
+
+
+def _transaction_sort_key(transaction: dict[str, Any]) -> tuple[str, str]:
+    return (str(transaction.get("date", "")), str(transaction.get("id", "")))
 
 
 def _coerce_session_cache(
@@ -106,29 +112,23 @@ async def handle_transaction_list(
     cache_age_seconds = (time.time() - cache_fetched_at) if cache_fetched_at is not None else None
     current_window_start = query.time_range.start.isoformat() if query.time_range is not None else None
     current_window_end = query.time_range.end.isoformat() if query.time_range is not None else None
-    can_reuse_time_subset_cache = (
-        continuation_type == "time_delta"
-        and continuation_delta_type == "time"
-        and cached_transactions is not None
-        and cache_age_seconds is not None
-        and cache_age_seconds <= TRANSACTION_CACHE_MAX_AGE_SECONDS
-        and cached_scope_fingerprint == cache_scope_fingerprint
-        and cache_window_start is not None
-        and cache_window_end is not None
-        and current_window_start is not None
-        and current_window_end is not None
-        and cache_window_start <= current_window_start
-        and current_window_end <= cache_window_end
+    cache_reuse = decide_transaction_cache_reuse(
+        continuation_type=continuation_type,
+        continuation_delta_type=continuation_delta_type,
+        cached_transactions=cached_transactions,
+        cache_age_seconds=cache_age_seconds,
+        max_cache_age_seconds=TRANSACTION_CACHE_MAX_AGE_SECONDS,
+        cached_fingerprint=cached_fingerprint,
+        current_fingerprint=cache_fingerprint,
+        cached_scope_fingerprint=cached_scope_fingerprint,
+        current_scope_fingerprint=cache_scope_fingerprint,
+        cache_window_start=cache_window_start,
+        cache_window_end=cache_window_end,
+        current_window_start=current_window_start,
+        current_window_end=current_window_end,
     )
-    can_reuse_cache = (
-        continuation_type == "filter_delta"
-        and continuation_delta_type != "time"
-        and cached_transactions is not None
-        and cache_age_seconds is not None
-        and cache_age_seconds <= TRANSACTION_CACHE_MAX_AGE_SECONDS
-        and cached_fingerprint == cache_fingerprint
-    ) or can_reuse_time_subset_cache
-    cache_strategy = "exact" if can_reuse_cache and not can_reuse_time_subset_cache else "time_subset" if can_reuse_time_subset_cache else "none"
+    can_reuse_cache = cache_reuse.can_reuse
+    cache_strategy = cache_reuse.strategy
     fetch_account_count = len(account_ids) if query.accounts_scope == "all" and account_ids else 1
 
     if can_reuse_cache and cached_transactions is not None:
@@ -145,7 +145,15 @@ async def handle_transaction_list(
             trace_context=trace_context,
         )
     cache_fetched_at_value = cache_fetched_at if can_reuse_cache and cache_fetched_at is not None else time.time()
-    transactions = apply_filters(base_transactions, query.filters) if query.filters else list(base_transactions)
+    scoped_transactions = apply_time_window(
+        base_transactions,
+        window_start=current_window_start,
+        window_end=current_window_end,
+    )
+    transactions = apply_filters(scoped_transactions, query.filters) if query.filters else list(scoped_transactions)
+
+    reverse_sort = query.result_reference != "oldest"
+    transactions = sorted(transactions, key=_transaction_sort_key, reverse=reverse_sort)
 
     # Apply result_limit if specified (e.g., "last transaction" → 1)
     if query.result_limit:
@@ -166,11 +174,15 @@ async def handle_transaction_list(
                 "transaction_type": t.get("transaction_type"),
                 "status": t.get("status", ""),
                 "transaction_id": t.get("transaction_id") or t.get("id"),
-                "recipient_name": t.get("recipient_name"),
+                "counterparty": t.get("counterparty"),
+                "counterparty_role": t.get("counterparty_role"),
+                "recipient_name": t.get("recipient_name") or t.get("counterparty"),
                 "recipient_account": t.get("recipient_account"),
                 "recipient_account_number": t.get("recipient_account_number"),
                 "recipient_bank_name": t.get("recipient_bank_name"),
                 "recipient_bank_code": t.get("recipient_bank_code"),
+                "source_account_id": t.get("source_account_id"),
+                "source_account_label": t.get("source_account_label"),
             },
         )
         for i, t in enumerate(paginated)

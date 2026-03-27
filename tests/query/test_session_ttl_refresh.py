@@ -192,3 +192,26 @@ async def test_query_frames_round_trip_through_session_storage() -> None:
     assert len(restored_frames) == 1
     assert isinstance(restored_frames[0], QueryFrame)
     assert restored_frames[0].facts.amount == 60000.0
+
+
+@pytest.mark.asyncio
+async def test_cache_scope_metadata_round_trips_through_session_storage() -> None:
+    redis = _RedisStoreStub()
+    manager = QuerySessionManager(redis)  # type: ignore[arg-type]
+    key = "query:session:2348000000006"
+
+    await manager.save(
+        key,
+        {
+            "session_active": True,
+            "cache_scope_fingerprint": "scope-123",
+            "cache_window_start": "2026-03-01",
+            "cache_window_end": "2026-03-31",
+        },
+    )
+    loaded = await manager.load(key)
+
+    assert isinstance(loaded, dict)
+    assert loaded["cache_scope_fingerprint"] == "scope-123"
+    assert loaded["cache_window_start"] == "2026-03-01"
+    assert loaded["cache_window_end"] == "2026-03-31"

@@ -17,6 +17,7 @@ from apps.core.src.agent.graphs.query.models import (
     TimeRange,
     TimeReference,
 )
+from apps.core.src.agent.graphs.query.session import QuerySessionManager
 from apps.core.src.agent.graphs.query.services.reasoner import QuerySemanticDecision
 from apps.core.src.agent.graphs.query.worker import QueryWorker
 from apps.core.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
@@ -38,6 +39,41 @@ class _DummyProvider:
     async def get_transactions(self, *args: Any, **kwargs: Any) -> list[dict[str, Any]]:
         del args, kwargs
         return []
+
+
+class _RecordingProvider:
+    def __init__(self, transactions: list[dict[str, Any]]) -> None:
+        self.transactions = transactions
+        self.calls = 0
+
+    async def get_transactions(self, *args: Any, **kwargs: Any) -> list[dict[str, Any]]:
+        del args, kwargs
+        self.calls += 1
+        return list(self.transactions)
+
+
+class _WindowedProvider:
+    def __init__(self, transactions_by_account: dict[str, list[dict[str, Any]]]) -> None:
+        self.transactions_by_account = transactions_by_account
+        self.calls = 0
+
+    async def get_transactions(
+        self,
+        account_id: str,
+        start_date: str,
+        end_date: str,
+        *args: Any,
+        **kwargs: Any,
+    ) -> list[dict[str, Any]]:
+        del args, kwargs
+        self.calls += 1
+        start = date.fromisoformat(start_date)
+        end = date.fromisoformat(end_date)
+        return [
+            transaction
+            for transaction in self.transactions_by_account.get(account_id, [])
+            if start <= date.fromisoformat(str(transaction["date"])) <= end
+        ]
 
 
 class _SessionManager:
@@ -76,6 +112,28 @@ class _ProgressTracker:
 
     async def set_stage(self, stage_key: str, *, stage_metadata: dict[str, Any] | None = None) -> None:
         self.stage_calls.append((stage_key, stage_metadata))
+
+
+class _RedisStoreStub:
+    def __init__(self) -> None:
+        self.saved: dict[str, str] = {}
+        self.expire_calls: list[tuple[str, int]] = []
+
+    async def get(self, key: str) -> str | None:
+        return self.saved.get(key)
+
+    async def set(self, key: str, value: str, ex: int | None = None) -> bool:
+        del ex
+        self.saved[key] = value
+        return True
+
+    async def delete(self, key: str) -> int:
+        self.saved.pop(key, None)
+        return 1
+
+    async def expire(self, key: str, ttl: int) -> bool:
+        self.expire_calls.append((key, ttl))
+        return True
 
 
 @pytest.mark.asyncio
@@ -788,3 +846,388 @@ async def test_worker_reuses_active_query_scope_for_how_much_total_followup() ->
     assert query_contract.normalized_query.filters.merchant == ["mum"]
     assert query_contract.normalized_query.aggregation is not None
     assert query_contract.normalized_query.aggregation.type == "sum"
+
+
+@pytest.mark.asyncio
+async def test_worker_reuses_persisted_cached_transactions_for_time_delta_followup() -> None:
+    redis = _RedisStoreStub()
+    session_manager = QuerySessionManager(redis)  # type: ignore[arg-type]
+    provider = _RecordingProvider(
+        transactions=[
+            {
+                "id": "tx-old",
+                "narration": "Salary payment",
+                "amount": 100000,
+                "date": "2026-03-01",
+                "type": "credit",
+            },
+            {
+                "id": "tx-recent",
+                "narration": "Refund",
+                "amount": 5000,
+                "date": "2026-03-04",
+                "type": "credit",
+            },
+            {
+                "id": "tx-debit",
+                "narration": "Card payment",
+                "amount": 2500,
+                "date": "2026-03-04",
+                "type": "debit",
+            },
+        ]
+    )
+    initial_worker = QueryWorker(_DummyLLM(), provider, session_manager)  # type: ignore[arg-type]
+    initial_contract = QueryExecutionContract.from_normalized_query(
+        NormalizedQuery(
+            intent=QueryIntent.TRANSACTION_LIST,
+            time_range=TimeRange(start=date(2026, 3, 1), end=date(2026, 3, 4), granularity="day"),
+            filters=Filters(transaction_type="credit"),
+            result_limit=5,
+            result_reference="latest",
+        )
+    )
+
+    async def _initial_extract(state: dict[str, Any], worker_context: Any) -> TransactionResult:
+        del state, worker_context
+        return TransactionResult(
+            outcome=TransactionOutcome.OK,
+            patch={
+                "flow_state": "executing",
+                "query_contract": initial_contract,
+            },
+        )
+
+    initial_worker.extractor.run = _initial_extract  # type: ignore[method-assign]
+
+    first_result = await initial_worker.run(
+        payload={"message": "Show my incoming transactions"},
+        context={
+            "phone_number": "2348000000314",
+            "user_id": "u-worker-cache",
+            "accounts": [{"account_id": "acc_1", "bank_name": "First Bank"}],
+            "language": "en",
+            "today": date(2026, 3, 4),
+        },
+    )
+
+    assert first_result.outcome == TransactionOutcome.OK
+    assert provider.calls == 1
+
+    followup_worker = QueryWorker(_DummyLLM(), provider, session_manager)  # type: ignore[arg-type]
+
+    async def _followup_reason(_: object) -> QuerySemanticDecision:
+        return QuerySemanticDecision(
+            decision="continuation",
+            continuation_type="time_delta",
+            followup_intent="replace_scope",
+            time_range=TimeRange(start=date(2026, 3, 4), end=date(2026, 3, 4), granularity="day"),
+            delta_type="time",
+            confidence=0.98,
+            reason="llm_same_scope_narrower_window",
+        )
+
+    followup_worker.extractor.reasoner.reason = _followup_reason  # type: ignore[method-assign]
+
+    second_result = await followup_worker.run(
+        payload={"message": "What about today?"},
+        context={
+            "phone_number": "2348000000314",
+            "user_id": "u-worker-cache",
+            "accounts": [{"account_id": "acc_1", "bank_name": "First Bank"}],
+            "language": "en",
+            "today": date(2026, 3, 4),
+        },
+    )
+
+    assert second_result.outcome == TransactionOutcome.OK
+    assert provider.calls == 1
+    assert second_result.patch is not None
+    query_result = second_result.patch["query_result"]
+    assert isinstance(query_result, QueryResult)
+    assert query_result.cache_reused is True
+    assert [item.description for item in query_result.items or []] == ["Refund"]
+
+
+@pytest.mark.asyncio
+async def test_worker_reuses_persisted_cached_transactions_for_filter_delta_followup() -> None:
+    redis = _RedisStoreStub()
+    session_manager = QuerySessionManager(redis)  # type: ignore[arg-type]
+    provider = _RecordingProvider(
+        transactions=[
+            {
+                "id": "tx-credit",
+                "narration": "Salary payment",
+                "amount": 100000,
+                "date": "2026-03-04",
+                "type": "credit",
+            },
+            {
+                "id": "tx-debit",
+                "narration": "Card payment",
+                "amount": 2500,
+                "date": "2026-03-04",
+                "type": "debit",
+            },
+        ]
+    )
+    initial_worker = QueryWorker(_DummyLLM(), provider, session_manager)  # type: ignore[arg-type]
+    initial_contract = QueryExecutionContract.from_normalized_query(
+        NormalizedQuery(
+            intent=QueryIntent.TRANSACTION_LIST,
+            time_range=TimeRange(start=date(2026, 3, 1), end=date(2026, 3, 4), granularity="day"),
+            result_limit=5,
+            result_reference="latest",
+        )
+    )
+
+    async def _initial_extract(state: dict[str, Any], worker_context: Any) -> TransactionResult:
+        del state, worker_context
+        return TransactionResult(
+            outcome=TransactionOutcome.OK,
+            patch={
+                "flow_state": "executing",
+                "query_contract": initial_contract,
+            },
+        )
+
+    initial_worker.extractor.run = _initial_extract  # type: ignore[method-assign]
+
+    first_result = await initial_worker.run(
+        payload={"message": "Show my transactions"},
+        context={
+            "phone_number": "2348000000317",
+            "user_id": "u-worker-filter-cache",
+            "accounts": [{"account_id": "acc_1", "bank_name": "First Bank"}],
+            "language": "en",
+            "today": date(2026, 3, 4),
+        },
+    )
+
+    assert first_result.outcome == TransactionOutcome.OK
+    assert provider.calls == 1
+
+    followup_worker = QueryWorker(_DummyLLM(), provider, session_manager)  # type: ignore[arg-type]
+
+    async def _followup_reason(_: object) -> QuerySemanticDecision:
+        return QuerySemanticDecision(
+            decision="continuation",
+            continuation_type="filter_delta",
+            followup_intent="refine_existing",
+            delta_type="filter",
+            filters=Filters(transaction_type="credit"),
+            confidence=0.98,
+            reason="llm_credit_filter_followup",
+        )
+
+    followup_worker.extractor.reasoner.reason = _followup_reason  # type: ignore[method-assign]
+
+    second_result = await followup_worker.run(
+        payload={"message": "Only credits"},
+        context={
+            "phone_number": "2348000000317",
+            "user_id": "u-worker-filter-cache",
+            "accounts": [{"account_id": "acc_1", "bank_name": "First Bank"}],
+            "language": "en",
+            "today": date(2026, 3, 4),
+        },
+    )
+
+    assert second_result.outcome == TransactionOutcome.OK
+    assert provider.calls == 1
+    assert second_result.patch is not None
+    query_result = second_result.patch["query_result"]
+    assert isinstance(query_result, QueryResult)
+    assert query_result.cache_reused is True
+    assert [item.description for item in query_result.items or []] == ["Salary payment"]
+
+
+@pytest.mark.asyncio
+async def test_worker_restores_persisted_analytics_followup_for_time_delta(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("apps.core.src.agent.graphs.query.handlers.analytics.lagos_today", lambda: date(2026, 3, 19))
+
+    redis = _RedisStoreStub()
+    session_manager = QuerySessionManager(redis)  # type: ignore[arg-type]
+    provider = _WindowedProvider(
+        {
+            "acc_1": [
+                {"id": "tx-1", "narration": "Card purchase", "amount": 5000, "date": "2026-03-19", "type": "debit"},
+                {"id": "tx-2", "narration": "Fuel", "amount": 7000, "date": "2026-03-18", "type": "debit"},
+                {"id": "tx-3", "narration": "Salary", "amount": 95000, "date": "2026-03-17", "type": "credit"},
+            ]
+        }
+    )
+    initial_worker = QueryWorker(_DummyLLM(), provider, session_manager)  # type: ignore[arg-type]
+    initial_contract = QueryExecutionContract.from_normalized_query(
+        NormalizedQuery(
+            intent=QueryIntent.ANALYTICS_SUMMARY,
+            time_range=TimeRange(start=date(2026, 3, 1), end=date(2026, 3, 19), granularity="month"),
+            filters=Filters(transaction_type="debit"),
+            aggregation=Aggregation(type="sum"),
+        )
+    )
+
+    async def _initial_extract(state: dict[str, Any], worker_context: Any) -> TransactionResult:
+        del state, worker_context
+        return TransactionResult(
+            outcome=TransactionOutcome.OK,
+            patch={
+                "flow_state": "executing",
+                "query_contract": initial_contract,
+            },
+        )
+
+    initial_worker.extractor.run = _initial_extract  # type: ignore[method-assign]
+
+    first_result = await initial_worker.run(
+        payload={"message": "How much did I spend this month?"},
+        context={
+            "phone_number": "2348000000315",
+            "user_id": "u-worker-analytics",
+            "accounts": [{"account_id": "acc_1", "bank_name": "First Bank"}],
+            "language": "en",
+            "today": date(2026, 3, 19),
+        },
+    )
+
+    assert first_result.outcome == TransactionOutcome.OK
+    assert provider.calls == 1
+
+    followup_worker = QueryWorker(_DummyLLM(), provider, session_manager)  # type: ignore[arg-type]
+
+    async def _followup_reason(_: object) -> QuerySemanticDecision:
+        return QuerySemanticDecision(
+            decision="continuation",
+            continuation_type="time_delta",
+            followup_intent="replace_scope",
+            time_range=TimeRange(start=date(2026, 3, 19), end=date(2026, 3, 19), granularity="day"),
+            delta_type="time",
+            confidence=0.98,
+            reason="llm_today_followup",
+        )
+
+    followup_worker.extractor.reasoner.reason = _followup_reason  # type: ignore[method-assign]
+
+    second_result = await followup_worker.run(
+        payload={"message": "What about today?"},
+        context={
+            "phone_number": "2348000000315",
+            "user_id": "u-worker-analytics",
+            "accounts": [{"account_id": "acc_1", "bank_name": "First Bank"}],
+            "language": "en",
+            "today": date(2026, 3, 19),
+        },
+    )
+
+    assert second_result.outcome == TransactionOutcome.OK
+    assert provider.calls == 2
+    assert second_result.patch is not None
+    query_contract = second_result.patch["query_contract"]
+    assert isinstance(query_contract, QueryExecutionContract)
+    assert query_contract.intent == QueryIntent.ANALYTICS_SUMMARY
+    assert query_contract.time_start == date(2026, 3, 19)
+    assert query_contract.time_end == date(2026, 3, 19)
+
+    query_result = second_result.patch["query_result"]
+    assert isinstance(query_result, QueryResult)
+    assert query_result.summary_text == "You spent *₦5,000* today, across 1 transaction."
+    assert [item.description for item in query_result.items or []] == ["Card purchase"]
+
+
+@pytest.mark.asyncio
+async def test_worker_restores_persisted_time_comparison_followup_for_time_delta() -> None:
+    redis = _RedisStoreStub()
+    session_manager = QuerySessionManager(redis)  # type: ignore[arg-type]
+    provider = _WindowedProvider(
+        {
+            "acc_1": [
+                {"id": "cmp-1", "narration": "Groceries", "amount": 2000, "date": "2026-03-03", "type": "debit"},
+                {"id": "cmp-2", "narration": "Fuel", "amount": 3000, "date": "2026-03-05", "type": "debit"},
+                {"id": "cur-1", "narration": "Travel", "amount": 6000, "date": "2026-03-10", "type": "debit"},
+                {"id": "cur-2", "narration": "Food", "amount": 2000, "date": "2026-03-12", "type": "debit"},
+                {"id": "init-cmp", "narration": "Bills", "amount": 1000, "date": "2026-03-13", "type": "debit"},
+                {"id": "init-cur", "narration": "Transfer", "amount": 4000, "date": "2026-03-17", "type": "debit"},
+            ]
+        }
+    )
+    initial_worker = QueryWorker(_DummyLLM(), provider, session_manager)  # type: ignore[arg-type]
+    initial_contract = QueryExecutionContract.from_normalized_query(
+        NormalizedQuery(
+            intent=QueryIntent.TIME_COMPARISON,
+            time_range=TimeRange(start=date(2026, 3, 16), end=date(2026, 3, 19), granularity="week"),
+            filters=Filters(transaction_type="debit"),
+        )
+    )
+
+    async def _initial_extract(state: dict[str, Any], worker_context: Any) -> TransactionResult:
+        del state, worker_context
+        return TransactionResult(
+            outcome=TransactionOutcome.OK,
+            patch={
+                "flow_state": "executing",
+                "query_contract": initial_contract,
+            },
+        )
+
+    initial_worker.extractor.run = _initial_extract  # type: ignore[method-assign]
+
+    first_result = await initial_worker.run(
+        payload={"message": "Compare this week to the previous period"},
+        context={
+            "phone_number": "2348000000316",
+            "user_id": "u-worker-comparison",
+            "accounts": [{"account_id": "acc_1", "bank_name": "First Bank"}],
+            "language": "en",
+            "today": date(2026, 3, 19),
+        },
+    )
+
+    assert first_result.outcome == TransactionOutcome.OK
+    assert provider.calls == 2
+
+    followup_worker = QueryWorker(_DummyLLM(), provider, session_manager)  # type: ignore[arg-type]
+
+    async def _followup_reason(_: object) -> QuerySemanticDecision:
+        return QuerySemanticDecision(
+            decision="continuation",
+            continuation_type="time_delta",
+            followup_intent="replace_scope",
+            time_range=TimeRange(start=date(2026, 3, 9), end=date(2026, 3, 15), granularity="week"),
+            delta_type="time",
+            confidence=0.98,
+            reason="llm_last_week_comparison_followup",
+        )
+
+    followup_worker.extractor.reasoner.reason = _followup_reason  # type: ignore[method-assign]
+
+    second_result = await followup_worker.run(
+        payload={"message": "What about last week?"},
+        context={
+            "phone_number": "2348000000316",
+            "user_id": "u-worker-comparison",
+            "accounts": [{"account_id": "acc_1", "bank_name": "First Bank"}],
+            "language": "en",
+            "today": date(2026, 3, 19),
+        },
+    )
+
+    assert second_result.outcome == TransactionOutcome.OK
+    assert provider.calls == 4
+    assert second_result.patch is not None
+    query_contract = second_result.patch["query_contract"]
+    assert isinstance(query_contract, QueryExecutionContract)
+    assert query_contract.intent == QueryIntent.TIME_COMPARISON
+    assert query_contract.time_start == date(2026, 3, 9)
+    assert query_contract.time_end == date(2026, 3, 15)
+
+    query_result = second_result.patch["query_result"]
+    assert isinstance(query_result, QueryResult)
+    spending_item = next(item for item in query_result.items or [] if item.id == "spending")
+    assert spending_item.metadata == {
+        "current": 9000.0,
+        "comparison": 5000.0,
+        "change": 4000.0,
+        "pct_change": 80.0,
+    }

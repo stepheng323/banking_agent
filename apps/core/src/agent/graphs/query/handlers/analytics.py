@@ -201,7 +201,7 @@ async def handle_analytics(
                 metadata={
                     "bank_name": t.get("bank_name", ""),
                     "type": t.get("type", ""),
-                    "counterparty": extract_counterparty(t.get("narration", ""), locale=language),
+                    "counterparty": t.get("counterparty") or extract_counterparty(t.get("narration", ""), locale=language),
                     "rank": start_idx + i + 1,  # Strict ranking
                 },
             )
@@ -329,7 +329,14 @@ async def _aggregate_breakdown(transactions: list[dict], query: NormalizedQuery,
         elif group_by == "category":
             key = get_transaction_category(t) or "other"
         elif group_by == "merchant":
-            key = extract_counterparty(t.get("narration", ""), locale=language)
+            key = t.get("counterparty") or extract_counterparty(t.get("narration", ""), locale=language)
+        elif group_by == "account":
+            key = (
+                t.get("source_account_label")
+                or t.get("bank_name")
+                or t.get("source_account_id")
+                or "unknown account"
+            )
         elif group_by == "transaction_type":
             key = t.get("type", "other")
         else:
