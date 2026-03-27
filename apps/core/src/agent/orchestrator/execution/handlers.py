@@ -98,16 +98,47 @@ def _clear_resume_prompt_frames(frames: list[ContextFrame]) -> list[ContextFrame
     return [frame for frame in frames if not _is_resume_prompt_frame(frame)]
 
 
-def _has_recent_beneficiary_context(frames: list[ContextFrame]) -> bool:
-    """True when a non-expired beneficiary-list frame exists with entries."""
-    now = int(time.time())
-    for frame in reversed(frames):
-        if frame.frame_type != ContextFrameType.BENEFICIARY_LIST:
-            continue
-        if (frame.created_at_ts + frame.ttl_seconds) <= now:
-            continue
-        return bool(frame.items)
-    return False
+def _push_query_followup_referent_frame(
+    ctx: ExecutionContext,
+    referent: dict[str, Any],
+) -> None:
+    label = str(referent.get("label") or referent.get("recipient_name") or "").strip()
+    if not label:
+        return
+
+    entity_id = str(referent.get("entity_id") or "").strip() or None
+    recipient_name = str(referent.get("recipient_name") or label).strip()
+    account_number = str(referent.get("recipient_account") or "").strip() or None
+    bank_name = str(referent.get("recipient_bank_name") or "").strip() or None
+    bank_code = str(referent.get("recipient_bank_code") or "").strip() or None
+    resolved_name = str(referent.get("recipient_resolved_name") or recipient_name).strip()
+
+    entity = ContextEntity(
+        entity_type=EntityType.BENEFICIARY,
+        entity_id=entity_id,
+        label=label,
+        data={
+            "id": entity_id,
+            "alias": recipient_name,
+            "account_name": resolved_name,
+            "account_number": account_number,
+            "bank_name": bank_name,
+            "bank_code": bank_code,
+            "beneficiary_type": "transfer",
+            "bank": bank_name,
+            "account": account_number,
+        },
+    )
+    frame = ContextFrame(
+        frame_id=f"query_beneficiary_{int(time.time())}",
+        frame_type=ContextFrameType.BENEFICIARY_LIST,
+        items=[entity],
+        focus_index=0,
+        created_at_ts=int(time.time()),
+        source_message_id=ctx.state.last_message_id,
+    )
+    OrchestratorContextManager().push_frame(ctx.state, frame)
+    ctx.agg.updates["context_frames"] = ctx.state.context_frames
 
 
 def _maybe_user_message(task: Any, state: OrchestratorState) -> str | None:
@@ -283,6 +314,8 @@ async def handle_transfer_task(task: Any, task_id: str, ctx: ExecutionContext) -
                 error=str(e),
             )
 
+    ctx_manager = OrchestratorContextManager()
+    previous_beneficiary_entity = ctx_manager.latest_beneficiary_entity(ctx.state)
     context_data = {
         "phone_number": ctx.state.phone_number,
         "channel": ctx.state.channel,
@@ -291,7 +324,8 @@ async def handle_transfer_task(task: Any, task_id: str, ctx: ExecutionContext) -
         "accounts": ctx.state.loaded_context.get("transaction_accounts", ctx.state.loaded_context.get("accounts", [])),
         "all_accounts": ctx.state.loaded_context.get("accounts", []),
         "beneficiaries": beneficiaries,
-        "recent_beneficiary_context": _has_recent_beneficiary_context(ctx.state.context_frames),
+        "recent_beneficiary_context": ctx_manager.has_recent_beneficiary_context(ctx.state),
+        "previous_beneficiary": previous_beneficiary_entity.data if previous_beneficiary_entity is not None else None,
         "language": _state_locale(ctx.state),
         "required_fields": required_fields,
         "previous_response": previous_response,
@@ -424,7 +458,6 @@ async def handle_beneficiary_task(task: Any, task_id: str, ctx: ExecutionContext
 
     if is_management:
         from apps.core.src.agent.graphs.beneficiary.worker import BeneficiaryWorker
-        from apps.core.src.agent.orchestrator.execution.handlers import _apply_result_patch
 
         if not task.payload.get("intent") and action:
             task.payload["intent"] = action
@@ -449,12 +482,9 @@ async def handle_beneficiary_task(task: Any, task_id: str, ctx: ExecutionContext
         if result.outcome == TransactionOutcome.OK:
             task.stage = TaskStage.COMPLETED
 
-            # [NEW] Context Push (Pattern A)
             if result.details and "viewed_beneficiaries" in result.details:
                 viewed = result.details["viewed_beneficiaries"]
                 if viewed:
-                    import time
-
                     ctx_manager = OrchestratorContextManager()
 
                     entities = []
@@ -473,11 +503,8 @@ async def handle_beneficiary_task(task: Any, task_id: str, ctx: ExecutionContext
                         source_message_id=ctx.state.last_message_id,
                     )
 
-                    # Update State via Manager
                     ctx_manager.push_frame(ctx.state, frame)
-
                     ctx.agg.updates["context_frames"] = ctx.state.context_frames
-
                     logger.info("context_frame_pushed", type="beneficiary_list", count=len(entities))
 
             if result.response:
@@ -630,16 +657,26 @@ async def handle_query_task(task: Any, task_id: str, ctx: ExecutionContext) -> N
     if ctx.state.stashed_query_session is not None:
         ctx.agg.updates["stashed_query_session"] = None
     handoff_payload = None
+    followup_referent = None
     if result.patch and isinstance(result.patch, dict):
         candidate = result.patch.get("query_transfer_handoff")
         if isinstance(candidate, dict):
             handoff_payload = candidate
+        query_result = result.patch.get("query_result")
+        referent_candidate = getattr(query_result, "followup_referent", None)
+        if hasattr(referent_candidate, "model_dump"):
+            followup_referent = referent_candidate.model_dump()
+        elif isinstance(referent_candidate, dict):
+            followup_referent = referent_candidate
 
     if result.outcome == TransactionOutcome.OK:
         task.stage = TaskStage.COMPLETED
         if result.response:
             task.payload["result"] = result.response
             ctx.agg.say(result.response)
+
+        if followup_referent and not handoff_payload:
+            _push_query_followup_referent_frame(ctx, followup_referent)
 
         if handoff_payload:
             transfer_payload = dict(handoff_payload)

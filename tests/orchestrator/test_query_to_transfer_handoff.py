@@ -3,6 +3,8 @@ from typing import Any
 import pytest
 from langchain_core.runnables import RunnableConfig
 
+from apps.core.src.agent.graphs.query.models import QueryFollowupReferent, QueryResult
+from apps.core.src.agent.orchestrator.context.models import ContextFrameType
 from apps.core.src.agent.orchestrator.execution.handlers import (
     ExecutionAggregation,
     ExecutionContext,
@@ -27,6 +29,28 @@ class _DummyQueryWorker:
                     "recipient_bank_code": "999992",
                     "skip_extraction": True,
                 },
+            },
+        )
+
+
+class _DummyQueryReferentWorker:
+    async def run(self, payload: dict[str, Any], context: dict[str, Any]) -> TransactionResult:
+        del payload, context
+        return TransactionResult(
+            outcome=TransactionOutcome.OK,
+            response="You last paid Mum on March 24, 2026.",
+            patch={
+                "query_result": QueryResult(
+                    summary_text="accounts:1|showing:1-1|total:1",
+                    followup_referent=QueryFollowupReferent(
+                        label="Mum",
+                        recipient_name="Mum",
+                        recipient_account="8162511023",
+                        recipient_bank_name="Opay",
+                        recipient_bank_code="999992",
+                        recipient_resolved_name="Mercy Johnson",
+                    ),
+                )
             },
         )
 
@@ -73,3 +97,42 @@ async def test_query_handoff_injects_transfer_task_and_wave() -> None:
 
     waves = agg.updates["waves"]
     assert waves == [["t1"], ["query_handoff_transfer_1"]]
+
+
+@pytest.mark.asyncio
+async def test_query_direct_answer_pushes_focused_beneficiary_context_frame() -> None:
+    query_task = TaskSpec(
+        id="t1",
+        type="query",
+        stage=TaskStage.DRAFT,
+        payload={"action": "transaction_search", "message": "when last did I pay mum"},
+    )
+    state = OrchestratorState(
+        user_id="u_handoff_2",
+        phone_number="2348000000002",
+        channel="telegram",
+        last_message_text="when last did I pay mum",
+        loaded_context={"language": "en", "user_id": "u_handoff_2", "accounts": []},
+        tasks={"t1": query_task},
+        waves=[["t1"]],
+        current_wave_index=0,
+    )
+    config: RunnableConfig = {"configurable": {}, "recursion_limit": 50}
+    agg = ExecutionAggregation(state.tasks)
+    ctx = ExecutionContext(
+        state=state,
+        config=config,
+        services={"query": _DummyQueryReferentWorker()},
+        current_wave_len=1,
+        agg=agg,
+    )
+
+    await handle_query_task(query_task, "t1", ctx)
+
+    assert query_task.stage == TaskStage.COMPLETED
+    assert "context_frames" in agg.updates
+    pushed_frame = agg.updates["context_frames"][-1]
+    assert pushed_frame.frame_type == ContextFrameType.BENEFICIARY_LIST
+    assert len(pushed_frame.items) == 1
+    assert pushed_frame.items[0].label == "Mum"
+    assert pushed_frame.items[0].data["account_number"] == "8162511023"

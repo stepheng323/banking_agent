@@ -6,6 +6,7 @@ from apps.core.src.agent.graphs.query.actions import handle_drill_down
 from apps.core.src.agent.graphs.query.executor import QueryExecutor
 from apps.core.src.agent.graphs.query.models import QueryExecutionContract
 from apps.core.src.agent.graphs.query.pipeline import QueryStep
+from apps.core.src.agent.graphs.query.services.answer_strategy import select_answer_strategy
 from apps.core.src.agent.graphs.query.services.formatter import QueryFormatter
 from apps.core.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
 from shared.i18n import LocaleManager, render_message
@@ -143,6 +144,7 @@ class ExecutionStep(QueryStep):
             continuation_type=state.get("continuation_type"),
             continuation_delta_type=state.get("continuation_delta_type"),
         )
+        result = select_answer_strategy(result, locale=locale)
 
         formatted_response = QueryFormatter.format(
             result,

@@ -568,6 +568,70 @@ async def test_pronoun_without_recent_beneficiary_context_does_not_autoresolve()
     assert result.required_fields == ["recipient_account", "recipient_bank_name"]
 
 
+async def test_pronoun_uses_previous_query_beneficiary_when_available() -> None:
+    payload = TransferPayload(amount=10000, recipient_name="her")
+    ctx = TransferContext(
+        phone_number="2348000000000",
+        language="en",
+        recent_beneficiary_context=True,
+        previous_beneficiary={
+            "alias": "Mum",
+            "account_name": "Mercy Johnson",
+            "account_number": "2010000002",
+            "bank_name": "Opay",
+            "bank_code": "100004",
+        },
+        beneficiaries=[
+            {
+                "id": "bene-1",
+                "beneficiary_type": "transfer",
+                "alias": "Dad",
+                "account_name": "Papa Nkechi",
+                "account_number": "2010000003",
+                "bank_name": "GTBank",
+                "bank_code": "058",
+            }
+        ],
+        accounts=[],
+    )
+
+    result = await resolve_beneficiary(payload, ctx, resolver_provider=None, bank_cache=None)
+
+    assert result.outcome.value == "ok"
+    assert result.patch["recipient_bank_name"] == "Opay"
+    assert result.patch["recipient_account"] == "2010000002"
+
+
+async def test_reference_previous_does_not_guess_from_recent_beneficiary_list_without_explicit_previous() -> None:
+    payload = TransferPayload(
+        amount=10000,
+        recipient_name="the previous one",
+        recipient_reference={"selector": "previous"},
+    )
+    ctx = TransferContext(
+        phone_number="2348000000000",
+        language="en",
+        recent_beneficiary_context=True,
+        beneficiaries=[
+            {
+                "id": "bene-1",
+                "beneficiary_type": "transfer",
+                "alias": "Mum",
+                "account_name": "Mama Nkechi",
+                "account_number": "2010000002",
+                "bank_name": "Opay",
+                "bank_code": "100004",
+            }
+        ],
+        accounts=[],
+    )
+
+    result = await resolve_beneficiary(payload, ctx, resolver_provider=None, bank_cache=None)
+
+    assert result.outcome.value == "needs_input"
+    assert result.required_fields == ["recipient_account", "recipient_bank_name"]
+
+
 async def test_reference_index_resolves_transfer_beneficiary() -> None:
     payload = TransferPayload(
         amount=10000,

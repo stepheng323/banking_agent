@@ -43,6 +43,41 @@ class OrchestratorContextManager:
         logger.info("context_frame_pushed", type=frame.frame_type, frame_id=frame.frame_id)
         return state
 
+    @staticmethod
+    def _is_active_frame(frame: ContextFrame, now: int) -> bool:
+        return (frame.created_at_ts + frame.ttl_seconds) > now
+
+    def _latest_active_frame(
+        self,
+        state: OrchestratorState,
+        *,
+        frame_type: ContextFrameType | None = None,
+    ) -> ContextFrame | None:
+        now = int(time.time())
+        for frame in reversed(state.context_frames):
+            if frame_type is not None and frame.frame_type != frame_type:
+                continue
+            if not self._is_active_frame(frame, now):
+                continue
+            if frame.items:
+                return frame
+        return None
+
+    def has_recent_beneficiary_context(self, state: OrchestratorState) -> bool:
+        """Return whether a recent beneficiary-list frame with entries exists."""
+        return self._latest_active_frame(state, frame_type=ContextFrameType.BENEFICIARY_LIST) is not None
+
+    def latest_beneficiary_entity(self, state: OrchestratorState) -> ContextEntity | None:
+        """Return the focused beneficiary entity from the latest active beneficiary frame."""
+        frame = self._latest_active_frame(state, frame_type=ContextFrameType.BENEFICIARY_LIST)
+        if frame is None:
+            return None
+        if len(frame.items) == 1:
+            return frame.items[0]
+        if 0 <= frame.focus_index < len(frame.items):
+            return frame.items[frame.focus_index]
+        return None
+
     def build_llm_summary(self, state: OrchestratorState) -> str:
         """Generate compact summary of active context for LLM."""
         if not state.context_frames:
@@ -112,12 +147,7 @@ class OrchestratorContextManager:
 
         selector = ref.get("selector")
 
-        # Get last valid list frame for index lookups
-        last_list_frame = None
-        for f in reversed(state.context_frames):
-            if f.items and len(f.items) > 0:
-                last_list_frame = f
-                break
+        last_list_frame = self._latest_active_frame(state)
 
         if selector == "index" and last_list_frame:
             try:
@@ -128,8 +158,9 @@ class OrchestratorContextManager:
                 pass
 
         elif selector == "previous":
-            # Just return the very last entity shown
             if last_list_frame and last_list_frame.items:
-                return last_list_frame.items[-1]  # or focus index if tracked
+                if 0 <= last_list_frame.focus_index < len(last_list_frame.items):
+                    return last_list_frame.items[last_list_frame.focus_index]
+                return last_list_frame.items[-1]
 
         return None

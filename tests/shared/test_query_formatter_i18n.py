@@ -5,6 +5,8 @@ from datetime import date, timedelta
 from apps.core.src.agent.graphs.query.models import (
     Filters,
     NormalizedQuery,
+    QueryAnswerContext,
+    QueryAnswerStrategy,
     QueryIntent,
     QueryResult,
     QueryResultItem,
@@ -240,6 +242,55 @@ def test_formatter_heading_uses_category_spending_for_debit() -> None:
     assert response.splitlines()[0] == "*Food Spending*"
 
 
+def test_formatter_direct_answer_uses_answer_strategy_without_transaction_card() -> None:
+    result = QueryResult(
+        summary_text="accounts:1|showing:1-1|total:1",
+        items=[
+            QueryResultItem(
+                id="tx1",
+                description="Transfer to Mum",
+                amount=50000,
+                date=date(2026, 3, 24),
+                metadata={"type": "debit", "bank_name": "Zenith Bank", "recipient_name": "Mum"},
+            )
+        ],
+        query_snapshot=NormalizedQuery(
+            intent=QueryIntent.TRANSACTION_SEARCH,
+            filters=Filters(transaction_type="debit", counterparty=["Mum"]),
+            time_range=TimeRange(start=date(2026, 3, 1), end=date(2026, 3, 27)),
+            answer_fact_field="date",
+        ),
+        answer_strategy=QueryAnswerStrategy.DIRECT_ANSWER,
+        answer_context=QueryAnswerContext(
+            primary_text="You last paid Mum on March 24, 2026.",
+            secondary_text="₦50,000 • Zenith Bank",
+        ),
+    )
+
+    response = QueryFormatter.format(result, locale="en")
+
+    assert response == "You last paid Mum on March 24, 2026.\n\n₦50,000 • Zenith Bank"
+    assert "Transaction Details" not in response
+
+
+def test_formatter_fact_no_results_prefers_natural_copy_under_direct_answer() -> None:
+    result = QueryResult(
+        summary_text="",
+        items=[],
+        query_snapshot=NormalizedQuery(
+            intent=QueryIntent.TRANSACTION_SEARCH,
+            filters=Filters(transaction_type="debit", counterparty=["Mum"]),
+            time_range=TimeRange(start=date(2026, 3, 1), end=date(2026, 3, 27)),
+            answer_fact_field="date",
+        ),
+        answer_strategy=QueryAnswerStrategy.DIRECT_ANSWER,
+    )
+
+    response = QueryFormatter.format(result, locale="en")
+
+    assert response == "I couldn't find any payment to Mum in that period."
+
+
 def test_formatter_heading_appends_account_and_today_suffix() -> None:
     today = lagos_today()
     result = _sample_list_result(
@@ -301,7 +352,7 @@ def test_formatter_single_item_fact_query_leads_with_requested_date() -> None:
     response = QueryFormatter.format(result, locale="en")
     lines = response.splitlines()
 
-    assert lines[0] == "*Date:* March 21, 2026"
+    assert lines[0] == "You last paid Netflix on March 21, 2026."
     assert "Your last debit transaction was:" in response
 
 
@@ -332,7 +383,7 @@ def test_formatter_single_item_fact_query_leads_with_counterparty() -> None:
 
     response = QueryFormatter.format(result, locale="en")
 
-    assert response.splitlines()[0] == "*Counterparty:* Johnson Mary"
+    assert response.splitlines()[0] == "You received ₦35,000 from Johnson Mary on March 21, 2026."
 
 
 def test_formatter_account_breakdown_preserves_account_labels_and_generic_total() -> None:

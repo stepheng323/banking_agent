@@ -297,6 +297,7 @@ class QueryParser:
             )
 
         inflated.raw_query = question
+        inflated = self._recover_known_fragile_query_shapes(inflated)
         effective_intent = self._resolve_effective_intent(inflated)
         inflated.query_operation = self._infer_query_operation(inflated, effective_intent=effective_intent)
         if not inflated.requested_capabilities:
@@ -366,6 +367,98 @@ class QueryParser:
                 )
             )
         ]
+        return extraction
+
+    @staticmethod
+    def _extract_beneficiary_query_amount(raw_query: str) -> float | None:
+        normalized = " ".join(raw_query.lower().strip().split())
+        match = re.search(
+            r"\b(?:sent|pay|paid|transfer(?:red)?)\s+(?:money\s+)?(?:of\s+)?(?:about\s+)?(?:for\s+)?"
+            r"(?:₦|ngn)?\s*(\d[\d,]*(?:\.\d+)?)\s*([kKhH]?)\s+to\b",
+            normalized,
+        )
+        if not match:
+            return None
+
+        try:
+            amount = float(match.group(1).replace(",", ""))
+        except ValueError:
+            return None
+
+        suffix = match.group(2).lower()
+        if suffix == "k":
+            amount *= 1000
+        elif suffix == "h":
+            amount *= 100
+        return amount if amount > 0 else None
+
+    @staticmethod
+    def _extract_relative_time_range_from_query(raw_query: str) -> QueryTimeRange | None:
+        normalized = " ".join(raw_query.lower().strip().split())
+        explicit_tokens = (
+            "today",
+            "yesterday",
+            "this week",
+            "last week",
+            "this month",
+            "last month",
+            "this year",
+            "last year",
+        )
+        for token in explicit_tokens:
+            if re.search(rf"\b{re.escape(token)}\b", normalized):
+                return QueryTimeRange(reference_type=TimeReference.EXPLICIT, period=token.replace(" ", "_"))
+
+        match = re.search(r"\b(last|past)\s+(\d{1,3})\s+(day|days|week|weeks|month|months)\b", normalized)
+        if not match:
+            return None
+
+        amount = max(1, int(match.group(2)))
+        unit = match.group(3)
+        if unit.startswith("week"):
+            amount *= 7
+        elif unit.startswith("month"):
+            amount *= 30
+        # Keep this recovery on a true inclusive rolling window.
+        return QueryTimeRange(reference_type=TimeReference.EXPLICIT, days_back=max(amount - 1, 0))
+
+    def _recover_known_fragile_query_shapes(self, extraction: QueryExtractionResult) -> QueryExtractionResult:
+        raw_query = " ".join((extraction.raw_query or "").strip().lower().split())
+        if not raw_query:
+            return extraction
+
+        people_query = any(
+            cue in raw_query
+            for cue in (
+                "show people i sent",
+                "show people i paid",
+                "who did i send",
+                "who have i sent",
+                "who i sent",
+            )
+        )
+        if not people_query:
+            return extraction
+
+        amount = self._extract_beneficiary_query_amount(raw_query)
+        if amount is None and extraction.filters.min_amount is None and extraction.filters.max_amount is None:
+            return extraction
+
+        extraction.intent = ExtractionIntent.BENEFICIARY_SUMMARY
+        extraction.filters.transaction_type = "debit"
+        if amount is not None:
+            extraction.filters.min_amount = amount
+            extraction.filters.max_amount = amount
+        if extraction.aggregation is None:
+            extraction.aggregation = QueryAggregation(type="sum", sort_by="count", limit=5)
+        else:
+            extraction.aggregation.type = extraction.aggregation.type or "sum"
+            extraction.aggregation.sort_by = extraction.aggregation.sort_by or "count"
+            extraction.aggregation.limit = extraction.aggregation.limit or 5
+        if extraction.time_range.reference_type == TimeReference.UNSPECIFIED:
+            recovered_time = self._extract_relative_time_range_from_query(raw_query)
+            if recovered_time is not None:
+                extraction.time_range = recovered_time
         return extraction
 
     @staticmethod
@@ -1177,6 +1270,7 @@ class QueryParser:
         """Convert QueryExtractionResult to NormalizedQuery for handlers."""
 
         today = today or lagos_today()
+        extraction = self._recover_known_fragile_query_shapes(extraction.model_copy(deep=True))
         effective_intent = self._resolve_effective_intent(extraction)
         query_operation = self._infer_query_operation(extraction, effective_intent=effective_intent)
         result_limit = self._resolve_result_limit(extraction.result_limit, effective_intent=effective_intent)

@@ -266,6 +266,37 @@ class SurfaceType(str, Enum):
     SINGLE_ITEM = "single_item"
 
 
+class QueryAnswerStrategy(str, Enum):
+    """Explicit rendering strategy chosen after execution."""
+
+    DIRECT_ANSWER = "direct_answer"
+    SUMMARY_LIST = "summary_list"
+    TRANSACTION_LIST = "transaction_list"
+    CLARIFY = "clarify"
+
+
+class QueryAnswerContext(BaseModel):
+    """Structured answer payload for direct-answer and clarify views."""
+
+    primary_text: str
+    secondary_text: str | None = None
+    hint_text: str | None = None
+
+
+class QueryFollowupReferent(BaseModel):
+    """Focused referent extracted from a query answer for later turns."""
+
+    entity_type: Literal["beneficiary"] = "beneficiary"
+    entity_id: str | None = None
+    label: str
+    recipient_name: str | None = None
+    recipient_account: str | None = None
+    recipient_bank_name: str | None = None
+    recipient_bank_code: str | None = None
+    recipient_resolved_name: str | None = None
+    source: Literal["query"] = "query"
+
+
 class ResultSurface(BaseModel):
     """
     Describes the current 'view' or 'surface' the user is looking at.
@@ -315,6 +346,9 @@ class QueryResult(BaseModel):
     query_contract: QueryExecutionContract | None = None
     interpretation: dict[str, Any] | None = None
     surface: ResultSurface | None = None  # UI/Interaction surface state
+    answer_strategy: QueryAnswerStrategy | None = None
+    answer_context: QueryAnswerContext | None = None
+    followup_referent: QueryFollowupReferent | None = None
     cached_transactions: list[dict[str, Any]] | None = None
     cache_fetched_at: float | None = None
     cache_fingerprint: str | None = None

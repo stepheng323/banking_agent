@@ -5,11 +5,16 @@ from typing import cast
 
 from apps.core.src.agent.graphs.query.models import (
     NormalizedQuery,
+    QueryAnswerStrategy,
     QueryIntent,
     QueryResult,
     QueryResultItem,
     SurfaceType,
     TimeRange,
+)
+from apps.core.src.agent.graphs.query.services.answer_strategy import (
+    build_direct_fact_answer,
+    build_fact_no_results_text,
 )
 from apps.core.src.agent.graphs.query.utils.timezone import lagos_today
 from shared.i18n import render_message
@@ -191,38 +196,6 @@ class QueryFormatter:
         return f"₦{amount:.0f}"
 
     @staticmethod
-    def _build_single_item_fact_lead(result: QueryResult, item: QueryResultItem, locale: str) -> str | None:
-        """Return a leading direct-answer line for fact-focused single-item queries."""
-        query_snapshot = result.query_snapshot
-        if query_snapshot is None or query_snapshot.answer_fact_field is None:
-            return None
-
-        fact_field = query_snapshot.answer_fact_field
-        metadata = item.metadata or {}
-        if fact_field == "date":
-            return render_message(
-                "query.format.field_date",
-                locale,
-                {
-                    "date": item.date.strftime("%B %d, %Y")
-                    if item.date
-                    else render_message("query.format.unknown", locale),
-                },
-            )
-        if fact_field == "amount":
-            return render_message("query.format.field_amount", locale, {"amount": f"₦{item.amount:,.2f}"})
-        if fact_field == "bank":
-            bank_name = str(metadata.get("bank_name") or "").strip()
-            if bank_name:
-                return render_message("query.format.field_bank", locale, {"bank_name": bank_name})
-            return None
-        if fact_field == "counterparty":
-            counterparty = str(metadata.get("counterparty") or metadata.get("recipient_name") or "").strip()
-            if counterparty:
-                return render_message("query.format.field_counterparty", locale, {"counterparty": counterparty})
-        return None
-
-    @staticmethod
     def _format_no_results(result: QueryResult, locale: str) -> str:
         """Format no-results output using available query context."""
         query_snapshot = result.query_snapshot
@@ -353,6 +326,26 @@ class QueryFormatter:
         """Format QueryResult to response string."""
         summary_parts = QueryFormatter._parse_summary_parts(result.summary_text)
         surface_type = result.surface.type if result.surface is not None else None
+        answer_strategy = result.answer_strategy
+
+        if answer_strategy == QueryAnswerStrategy.DIRECT_ANSWER:
+            if result.answer_context is not None:
+                lines = [result.answer_context.primary_text]
+                if result.answer_context.secondary_text:
+                    lines.extend(["", result.answer_context.secondary_text])
+                if result.answer_context.hint_text:
+                    lines.extend(["", result.answer_context.hint_text])
+                return "\n".join(lines)
+            if not result.items:
+                fact_no_results = build_fact_no_results_text(result.query_snapshot)
+                if fact_no_results:
+                    return fact_no_results
+                if result.summary_text:
+                    return result.summary_text
+                return QueryFormatter._format_no_results(result, locale)
+
+        if answer_strategy == QueryAnswerStrategy.CLARIFY and result.answer_context is not None:
+            return result.answer_context.primary_text
 
         if not show_expanded and result.summary_text and not summary_parts:
             if not result.items:
@@ -511,9 +504,15 @@ class QueryFormatter:
                     )
 
             lines = []
-            fact_lead = QueryFormatter._build_single_item_fact_lead(result, item, locale)
-            if fact_lead:
-                lines.extend([fact_lead, ""])
+            query_snapshot = result.query_snapshot
+            if query_snapshot is not None and query_snapshot.answer_fact_field is not None:
+                answer_context = build_direct_fact_answer(
+                    item,
+                    query=query_snapshot,
+                    fact_field=query_snapshot.answer_fact_field,
+                    locale=locale,
+                )
+                lines.extend([answer_context.primary_text, ""])
 
             lines.extend([f"*{title}*", ""])
 

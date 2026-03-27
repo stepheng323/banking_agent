@@ -104,6 +104,7 @@ class TransferWorker:
             accounts=context.get("accounts", []),
             all_accounts=context.get("all_accounts", []),
             recent_beneficiary_context=bool(context.get("recent_beneficiary_context")),
+            previous_beneficiary=context.get("previous_beneficiary"),
             channel=str(context.get("channel") or "whatsapp"),
             channel_identity=str(context.get("channel_identity")) if context.get("channel_identity") else None,
         )

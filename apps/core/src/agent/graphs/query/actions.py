@@ -2,7 +2,8 @@
 
 from typing import Any
 
-from apps.core.src.agent.graphs.query.models import QueryResult
+from apps.core.src.agent.graphs.query.models import NormalizedQuery, QueryResult
+from apps.core.src.agent.graphs.query.services.answer_strategy import build_direct_fact_answer
 from apps.core.src.agent.graphs.query.services.formatter import QueryFormatter
 from apps.core.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
 from shared.i18n import LocaleManager, render_message
@@ -42,15 +43,31 @@ def _build_query_transfer_handoff(item: Any) -> dict[str, Any]:
     return {k: v for k, v in payload.items() if v is not None and v != ""}
 
 
+def _query_snapshot_from_state(state: dict[str, Any]) -> NormalizedQuery | None:
+    query_contract = state.get("query_contract")
+    if hasattr(query_contract, "normalized_query"):
+        normalized = getattr(query_contract, "normalized_query", None)
+        if isinstance(normalized, NormalizedQuery):
+            return normalized
+
+    query_result = state.get("query_result")
+    if isinstance(query_result, QueryResult) and query_result.query_snapshot is not None:
+        return query_result.query_snapshot
+    if isinstance(query_result, dict):
+        try:
+            validated = QueryResult.model_validate(query_result)
+            return validated.query_snapshot
+        except Exception:
+            return None
+    return None
+
+
 async def handle_drill_down(state: dict[str, Any]) -> TransactionResult:
     """Handle drill-down using index and action from classifier."""
     locale = LocaleManager.normalize(state.get("language")).value
 
-    # Note: State here is the working state (with session merged)
     query_result = state.get("query_result")
 
-    # Check if we have items
-    # In V3 pipeline, query_result might be in the session part of state
     if isinstance(query_result, dict):
         query_result = QueryResult.model_validate(query_result)
 
@@ -71,8 +88,18 @@ async def handle_drill_down(state: dict[str, Any]) -> TransactionResult:
         metadata = item.metadata if isinstance(getattr(item, "metadata", None), dict) else {}
         response = None
 
-        if fact_field == "amount":
-            response = render_message("query.format.field_amount", locale, {"amount": f"₦{item.amount:,.2f}"})
+        if fact_field in {"amount", "bank", "date", "recipient"}:
+            query_snapshot = _query_snapshot_from_state(state)
+            answer_context = build_direct_fact_answer(
+                item,
+                query=query_snapshot,
+                fact_field="counterparty" if fact_field == "recipient" else fact_field,
+                locale=locale,
+            )
+            lines = [answer_context.primary_text]
+            if answer_context.secondary_text:
+                lines.extend(["", answer_context.secondary_text])
+            response = "\n".join(lines)
         elif fact_field == "status":
             status = str(metadata.get("status") or "")
             if status:
@@ -82,29 +109,6 @@ async def handle_drill_down(state: dict[str, Any]) -> TransactionResult:
                     else render_message("query.format.status_pending_generic", locale, {"status": status.title()})
                 )
                 response = render_message("query.format.field_status", locale, {"status": status_display})
-        elif fact_field == "bank":
-            bank_name = str(metadata.get("bank_name") or "")
-            if bank_name:
-                response = render_message("query.format.field_bank", locale, {"bank_name": bank_name})
-        elif fact_field == "date":
-            response = render_message(
-                "query.format.field_date",
-                locale,
-                {
-                    "date": item.date.strftime("%B %d, %Y")
-                    if item.date
-                    else render_message("query.format.unknown", locale),
-                },
-            )
-        elif fact_field == "recipient":
-            recipient = str(metadata.get("recipient_name") or metadata.get("counterparty") or item.description or "").strip()
-            if recipient:
-                response = render_message(
-                    "transfer.format.multi_source_summary.field_to",
-                    locale,
-                    {"recipient_name": recipient},
-                )
-
         if response:
             return TransactionResult(
                 outcome=TransactionOutcome.OK,

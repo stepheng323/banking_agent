@@ -197,8 +197,6 @@ def _is_transfer_beneficiary_record(record: dict[str, Any]) -> bool:
 def _resolve_beneficiary_from_reference(
     payload: TransferPayload,
     candidates: list[Beneficiary],
-    *,
-    recent_beneficiary_context: bool,
 ) -> Beneficiary | None:
     reference = payload.recipient_reference if isinstance(payload.recipient_reference, dict) else None
     if not reference:
@@ -213,11 +211,6 @@ def _resolve_beneficiary_from_reference(
         if 1 <= index <= len(candidates):
             return candidates[index - 1]
         return None
-
-    if selector == "previous":
-        if not recent_beneficiary_context or not candidates:
-            return None
-        return candidates[-1]
 
     return None
 
@@ -237,6 +230,29 @@ def _build_single_beneficiary_patch(single: Beneficiary, recipient_name: str | N
         "recipient_resolved_name": resolved_name,
         "beneficiary_id": str(single.id),
         "resolved_from_saved_beneficiary": True,
+        "name_mismatch": False,
+        "name_match_score": None,
+        "name_mismatch_warning": None,
+        "beneficiary_candidates": [],
+    }
+
+
+def _build_single_beneficiary_patch_from_record(record: dict[str, Any], recipient_name: str | None) -> dict[str, Any]:
+    requested_alias = str(recipient_name or "").strip()
+    beneficiary_alias = str(record.get("alias") or "").strip()
+    account_name = str(record.get("account_name") or "").strip()
+    resolved_name = account_name or beneficiary_alias or requested_alias or None
+    alias_name = requested_alias or beneficiary_alias or account_name or None
+    beneficiary_id = str(record.get("id") or "").strip() or None
+
+    return {
+        "recipient_account": str(record.get("account_number") or "").strip() or None,
+        "recipient_bank_code": str(record.get("bank_code") or "").strip() or None,
+        "recipient_bank_name": record.get("bank_name"),
+        "recipient_name": alias_name,
+        "recipient_resolved_name": resolved_name,
+        "beneficiary_id": beneficiary_id,
+        "resolved_from_saved_beneficiary": beneficiary_id is not None,
         "name_mismatch": False,
         "name_match_score": None,
         "name_mismatch_warning": None,
@@ -424,13 +440,26 @@ async def resolve_beneficiary(
     beneficiary_from_reference = _resolve_beneficiary_from_reference(
         payload,
         beneficiaries,
-        recent_beneficiary_context=ctx.recent_beneficiary_context,
     )
     if beneficiary_from_reference:
         return TransactionResult(
             outcome=TransactionOutcome.OK,
             patch=_build_single_beneficiary_patch(beneficiary_from_reference, recipient_name_for_match),
         )
+
+    previous_beneficiary = ctx.previous_beneficiary if isinstance(ctx.previous_beneficiary, dict) else None
+    previous_reference = payload.recipient_reference if isinstance(payload.recipient_reference, dict) else None
+    if previous_beneficiary:
+        if previous_reference and str(previous_reference.get("selector") or "").strip().lower() == "previous":
+            return TransactionResult(
+                outcome=TransactionOutcome.OK,
+                patch=_build_single_beneficiary_patch_from_record(previous_beneficiary, recipient_name_for_match),
+            )
+        if _is_pronoun_recipient(raw_recipient_name):
+            return TransactionResult(
+                outcome=TransactionOutcome.OK,
+                patch=_build_single_beneficiary_patch_from_record(previous_beneficiary, recipient_name_for_match),
+            )
 
     if _is_pronoun_recipient(raw_recipient_name):
         if not ctx.recent_beneficiary_context:

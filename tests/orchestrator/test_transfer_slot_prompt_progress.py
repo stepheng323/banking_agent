@@ -531,6 +531,62 @@ async def test_transfer_handler_passes_recent_beneficiary_context_to_worker() ->
     assert worker.last_context.get("recent_beneficiary_context") is True
 
 
+async def test_transfer_handler_passes_focused_previous_beneficiary_to_worker() -> None:
+    worker = _MockTransferNeedsInputWorker(["recipient_account", "recipient_bank_name"])
+    state = _build_state()
+    now = int(time.time())
+    state.context_frames = [
+        ContextFrame(
+            frame_id="frame_bene_focused",
+            frame_type=ContextFrameType.BENEFICIARY_LIST,
+            items=[
+                ContextEntity(
+                    entity_type=EntityType.BENEFICIARY,
+                    entity_id="bene-1",
+                    label="Mum",
+                    data={
+                        "id": "bene-1",
+                        "alias": "Mum",
+                        "account_name": "Mercy Johnson",
+                        "account_number": "8162511023",
+                        "bank_name": "Opay",
+                        "bank_code": "100004",
+                    },
+                ),
+                ContextEntity(
+                    entity_type=EntityType.BENEFICIARY,
+                    entity_id="bene-2",
+                    label="Dad",
+                    data={
+                        "id": "bene-2",
+                        "alias": "Dad",
+                        "account_name": "Papa Johnson",
+                        "account_number": "2010000003",
+                        "bank_name": "GTBank",
+                        "bank_code": "058",
+                    },
+                ),
+            ],
+            focus_index=0,
+            created_at_ts=now,
+            ttl_seconds=600,
+        )
+    ]
+    config: RunnableConfig = {"configurable": {"services": {"transfer": worker}}, "recursion_limit": 50}
+
+    await advance_wave(state, config)
+
+    assert worker.last_context is not None
+    assert worker.last_context.get("previous_beneficiary") == {
+        "id": "bene-1",
+        "alias": "Mum",
+        "account_name": "Mercy Johnson",
+        "account_number": "8162511023",
+        "bank_name": "Opay",
+        "bank_code": "100004",
+    }
+
+
 async def test_non_transfer_task_uses_worker_prompt_not_transfer_formatter() -> None:
     """Airtime/data tasks with non-transfer missing fields should use the worker's own prompt."""
     airtime_prompt = "What phone number should I send airtime to?"
