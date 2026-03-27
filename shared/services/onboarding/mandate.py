@@ -1,13 +1,14 @@
 """Mandate management service for onboarding."""
 
 import uuid as uuid_module
-from datetime import datetime, timedelta
+from datetime import timedelta
 from typing import TYPE_CHECKING
 
 from shared.cache.user_data import UserDataCache
 from shared.clients.providers.mono import MonoApiError, mono_client
 from shared.repositories.unit_of_work import UnitOfWork
 from shared.services.onboarding.mandate_messages import format_mandate_auth_message
+from shared.utils.datetime import utc_now_naive
 from shared.utils.logging import get_logger
 
 if TYPE_CHECKING:
@@ -87,8 +88,8 @@ class MandateService:
     ) -> dict:
         """Create a new mandate for an account."""
         mandate_reference = f"FP-{uuid_module.uuid4().hex[:12].upper()}"
-        start_date = datetime.utcnow().strftime("%Y-%m-%d")
-        end_date = (datetime.utcnow() + timedelta(days=365)).strftime("%Y-%m-%d")
+        start_date = utc_now_naive().strftime("%Y-%m-%d")
+        end_date = (utc_now_naive() + timedelta(days=365)).strftime("%Y-%m-%d")
 
         try:
             mandate = await mono_client.create_mandate(
@@ -112,7 +113,7 @@ class MandateService:
                         existing_extra = db_account.extra_data or {}
                         db_account.extra_data = {
                             **existing_extra,
-                            "mandate_created_at": datetime.utcnow().isoformat(),
+                            "mandate_created_at": utc_now_naive().isoformat(),
                             "transfer_destinations": [
                                 {"bank_name": dest.bank_name, "account_number": dest.account_number}
                                 for dest in transfer_destinations
@@ -162,8 +163,8 @@ class MandateService:
                 }
 
             mandate_reference = f"FP-{uuid_module.uuid4().hex[:12].upper()}"
-            start_date = datetime.utcnow().strftime("%Y-%m-%d")
-            end_date = (datetime.utcnow() + timedelta(days=365)).strftime("%Y-%m-%d")
+            start_date = utc_now_naive().strftime("%Y-%m-%d")
+            end_date = (utc_now_naive() + timedelta(days=365)).strftime("%Y-%m-%d")
 
             mandate = await mono_client.create_mandate(
                 customer_id=mono_customer_id,
@@ -192,7 +193,7 @@ class MandateService:
                         existing_extra = db_account.extra_data or {}
                         db_account.extra_data = {
                             **existing_extra,
-                            "mandate_created_at": datetime.utcnow().isoformat(),
+                            "mandate_created_at": utc_now_naive().isoformat(),
                             "transfer_destinations": [
                                 {"bank_name": dest.bank_name, "account_number": dest.account_number}
                                 for dest in transfer_destinations

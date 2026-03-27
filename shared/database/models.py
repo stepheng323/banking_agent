@@ -35,6 +35,7 @@ from shared.database.enums import (
     TransactionTypeEnum,
     UserOnboardingStatusEnum,
 )
+from shared.utils.datetime import utc_now_naive
 
 
 class Base(DeclarativeBase):
@@ -58,11 +59,11 @@ class User(Base):
         default=UserOnboardingStatusEnum.ONBOARDING_STARTED.value,
         nullable=True,
     )
-    last_active = Column(DateTime, default=datetime.utcnow)
+    last_active = Column(DateTime, default=utc_now_naive)
     extra_data = Column(JSON, default={})
     transaction_pin = Column(String, nullable=True)
     created_at = Column(DateTime, server_default=text("now()"), nullable=False)
-    updated_at = Column(DateTime, server_default=text("now()"), onupdate=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, server_default=text("now()"), onupdate=utc_now_naive, nullable=False)
 
     accounts = relationship("Account", back_populates="user")
     beneficiaries = relationship("Beneficiary", back_populates="user")
@@ -122,7 +123,7 @@ class Account(Base):
     mandate_status = Column(String, default=MandateStatusEnum.PENDING.value, nullable=False)
     extra_data = Column(JSON, default={})
     created_at = Column(DateTime, server_default=text("now()"), nullable=False)
-    updated_at = Column(DateTime, server_default=text("now()"), onupdate=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, server_default=text("now()"), onupdate=utc_now_naive, nullable=False)
 
     user = relationship("User", back_populates="accounts")
 
@@ -154,7 +155,7 @@ class Beneficiary(Base):
     bank_code = Column(String, nullable=True)
     bank_name = Column(String, nullable=True)
     created_at = Column(DateTime, server_default=text("now()"), nullable=False)
-    updated_at = Column(DateTime, server_default=text("now()"), onupdate=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, server_default=text("now()"), onupdate=utc_now_naive, nullable=False)
 
     user = relationship("User", back_populates="beneficiaries")
 
@@ -206,7 +207,7 @@ class Transaction(Base):
     receipt_sent = Column(Boolean, default=False, nullable=False)
     beneficiary_suggested = Column(Boolean, default=False, nullable=False)
     created_at = Column(DateTime, server_default=text("now()"), nullable=False, index=True)
-    updated_at = Column(DateTime, server_default=text("now()"), onupdate=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, server_default=text("now()"), onupdate=utc_now_naive, nullable=False)
     completed_at = Column(DateTime, nullable=True)
 
     user = relationship("User", back_populates="transactions")
@@ -334,7 +335,7 @@ class FundedTransfer(Base):
     error_message = Column(String, nullable=True)
 
     created_at = Column(DateTime, server_default=text("now()"), nullable=False, index=True)
-    updated_at = Column(DateTime, server_default=text("now()"), onupdate=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, server_default=text("now()"), onupdate=utc_now_naive, nullable=False)
     funding_completed_at = Column(DateTime, nullable=True)
     payout_initiated_at = Column(DateTime, nullable=True)
     completed_at = Column(DateTime, nullable=True)
@@ -444,7 +445,7 @@ class ScheduledInstruction(Base):
     channel = Column(String, nullable=False, default="whatsapp")
     channel_identity = Column(String, nullable=True)
     created_at = Column(DateTime, server_default=text("now()"), nullable=False, index=True)
-    updated_at = Column(DateTime, server_default=text("now()"), onupdate=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, server_default=text("now()"), onupdate=utc_now_naive, nullable=False)
 
     user = relationship("User", back_populates="scheduled_instructions")
     runs = relationship("ScheduledRun", back_populates="schedule", order_by="ScheduledRun.due_at_utc")
@@ -475,7 +476,7 @@ class ScheduledRun(Base):
     idempotency_key = Column(String, nullable=False, unique=True, index=True)
     error_message = Column(String, nullable=True)
     created_at = Column(DateTime, server_default=text("now()"), nullable=False, index=True)
-    updated_at = Column(DateTime, server_default=text("now()"), onupdate=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, server_default=text("now()"), onupdate=utc_now_naive, nullable=False)
     completed_at = Column(DateTime, nullable=True)
 
     schedule = relationship("ScheduledInstruction", back_populates="runs")
@@ -507,7 +508,7 @@ class FAQEntry(Base):
     embedding: Mapped[list[float] | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=text("now()"), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, server_default=text("now()"), onupdate=datetime.utcnow, nullable=False
+        DateTime, server_default=text("now()"), onupdate=utc_now_naive, nullable=False
     )
 
     def __repr__(self):
@@ -545,7 +546,7 @@ class SupportTicket(Base):
     details = Column(JSON, default={}, nullable=False)
 
     created_at = Column(DateTime, server_default=text("now()"), nullable=False, index=True)
-    updated_at = Column(DateTime, server_default=text("now()"), onupdate=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, server_default=text("now()"), onupdate=utc_now_naive, nullable=False)
     resolved_at = Column(DateTime, nullable=True)
 
     user = relationship("User")

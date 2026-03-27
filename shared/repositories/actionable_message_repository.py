@@ -1,6 +1,5 @@
 """Repository for ActionableMessage operations."""
 
-from datetime import datetime
 from typing import Any, cast
 from uuid import UUID
 
@@ -10,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.database.models import ActionableMessage
 from shared.repositories.base import BaseRepository
+from shared.utils.datetime import utc_now_naive
 
 
 class ActionableMessageRepository(BaseRepository[ActionableMessage]):
@@ -32,7 +32,7 @@ class ActionableMessageRepository(BaseRepository[ActionableMessage]):
         result = await self.db.execute(
             select(ActionableMessage).filter(
                 ActionableMessage.user_id == lookup_user_id,
-                ActionableMessage.expires_at > datetime.utcnow(),
+                ActionableMessage.expires_at > utc_now_naive(),
             )
         )
         return list(result.scalars().all())
@@ -50,7 +50,7 @@ class ActionableMessageRepository(BaseRepository[ActionableMessage]):
             select(ActionableMessage).filter(
                 ActionableMessage.channel_message_id == channel_message_id,
                 ActionableMessage.user_id == lookup_user_id,
-                ActionableMessage.expires_at > datetime.utcnow(),
+                ActionableMessage.expires_at > utc_now_naive(),
             )
         )
         return result.scalars().first()
@@ -59,7 +59,7 @@ class ActionableMessageRepository(BaseRepository[ActionableMessage]):
         """Delete expired messages. Returns count deleted."""
 
         result = await self.db.execute(
-            delete(ActionableMessage).where(ActionableMessage.expires_at <= datetime.utcnow())
+            delete(ActionableMessage).where(ActionableMessage.expires_at <= utc_now_naive())
         )
         await self.db.commit()
 

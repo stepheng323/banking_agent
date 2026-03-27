@@ -2,13 +2,13 @@
 
 import json
 from collections.abc import Awaitable, Callable
-from datetime import datetime
 
 import redis.asyncio as redis
 
 from shared.cache.redis_client import RedisClient
 from shared.clients.abstractions.resolution import BankListResult
 from shared.utils.bank_aliases import get_bank_search_terms
+from shared.utils.datetime import utc_now_naive
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -86,7 +86,7 @@ class BankCacheService:
             serialized = json.dumps(banks)
             await self.redis.setex(self.CACHE_KEY, ttl, serialized)
 
-            timestamp = datetime.utcnow().isoformat()
+            timestamp = utc_now_naive().isoformat()
             await self.redis.setex(self.TIMESTAMP_KEY, ttl, timestamp)
 
             # Update in-memory index

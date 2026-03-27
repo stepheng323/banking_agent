@@ -4,12 +4,12 @@ This is the terminal handler for support issues that can't be resolved automatic
 Every escalation creates a ticket for accountability.
 """
 
-from datetime import datetime
 from typing import Any
 
 from apps.core.src.agent.graphs.support.models import EscalationResult, SupportResponse
 from shared.i18n import render_message
 from shared.services.ticket_service import TicketService
+from shared.utils.datetime import utc_now_naive
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -63,7 +63,7 @@ async def handle_escalation(
     # Build details context
     details = {
         "reason": reason,
-        "escalated_at": datetime.utcnow().isoformat(),
+        "escalated_at": utc_now_naive().isoformat(),
         "notify_human": notify_human,
     }
     if transaction:

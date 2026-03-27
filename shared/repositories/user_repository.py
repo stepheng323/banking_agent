@@ -1,13 +1,12 @@
 """Repository for User model."""
 
-from datetime import datetime
-
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.database.models import User, UserChannelIdentity
 from shared.models.user import UserCreate, UserUpdate
 from shared.repositories.base import BaseRepository
+from shared.utils.datetime import utc_now_naive
 
 
 class UserRepository(BaseRepository[User]):
@@ -104,7 +103,7 @@ class UserRepository(BaseRepository[User]):
         """Update user's last active timestamp (doesn't commit)."""
         user = await self.get_by_id(user_id)
         if user is not None:
-            user.last_active = datetime.utcnow()
+            user.last_active = utc_now_naive()
 
     async def get_registered_count(self) -> int:
         """Get count of registered users."""

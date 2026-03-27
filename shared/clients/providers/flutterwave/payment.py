@@ -79,9 +79,9 @@ class FlutterwavePaymentProvider(PayoutProvider):
         This is a placeholder implementation that returns a mock success response.
         """
         # Generate professional transaction ID: FP-YYYYMMDD-XXXX
-        from datetime import datetime
+        from shared.utils.datetime import utc_now_naive
 
-        date_part = datetime.utcnow().strftime("%Y%m%d")
+        date_part = utc_now_naive().strftime("%Y%m%d")
         random_part = uuid.uuid4().hex[:8].upper()
         transaction_id = f"FP-{date_part}-{random_part}"
 

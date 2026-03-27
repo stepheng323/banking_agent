@@ -1,13 +1,12 @@
 """WhatsApp webhook service - business logic for handling WhatsApp messages."""
 
-from datetime import datetime
-
 from apps.gateway.adapters.meta_whatsapp import ParsedMessage, parse_payload
 from apps.gateway.adapters.sender import send_text
 from apps.gateway.core.config import settings
 from shared.clients.whatsapp.client import WhatsAppClient
 from shared.models.messages import ChannelMessage, MessagePriority, MessageType
 from shared.queue.adapter import QueuePublisher
+from shared.utils.datetime import utc_now_naive
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -95,7 +94,7 @@ class WhatsAppWebhookService:
             media_id=msg.media_id,
             mime_type=msg.mime_type,
             quoted_message_id=msg.quoted.message_id if msg.quoted else None,
-            timestamp=datetime.utcnow(),
+            timestamp=utc_now_naive(),
             priority=priority,
         )
 

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from types import SimpleNamespace
 from typing import Any
 from uuid import uuid4
@@ -13,6 +13,10 @@ from apps.core.src.agent.orchestrator.nodes.planner import plan_tasks
 from shared.database.enums import ActionableMessageTypeEnum
 from shared.database.models import ActionableMessage
 from shared.types.quoted_replay import QuotedReplayInterpretation
+
+
+def _utc_now_naive() -> datetime:
+    return datetime.now(UTC).replace(tzinfo=None)
 
 
 class _InMemoryActionableRepo:
@@ -32,7 +36,7 @@ class _InMemoryActionableRepo:
             if (
                 row.channel_message_id == channel_message_id
                 and str(row.user_id) == str(user_id)
-                and row.expires_at > datetime.utcnow()
+                and row.expires_at > _utc_now_naive()
             ):
                 return row
         return None
@@ -76,7 +80,7 @@ async def test_quoted_lookup_isolation_prevents_cross_user_hydration() -> None:
             channel_message_id=quoted_message_id,
             message_type=ActionableMessageTypeEnum.TRANSFER_RECEIPT.value,
             message_data={"transaction_id": str(uuid4())},
-            expires_at=datetime.utcnow().replace(year=2099),
+            expires_at=_utc_now_naive().replace(year=2099),
         )
     ]
 
@@ -106,7 +110,7 @@ async def test_non_uuid_transaction_reference_falls_back_to_idempotency_key() ->
             channel_message_id=quoted_message_id,
             message_type=ActionableMessageTypeEnum.TRANSFER_RECEIPT.value,
             message_data={"transaction_id": non_uuid_ref},
-            expires_at=datetime.utcnow().replace(year=2099),
+            expires_at=_utc_now_naive().replace(year=2099),
         )
     ]
     tx_repo = _InMemoryTransactionRepo(
@@ -169,7 +173,7 @@ async def test_quoted_replay_single_executes_as_direct_transfer_task() -> None:
                 "source_bank_name": "Access Bank",
                 "narration": "Replay test",
             },
-            expires_at=datetime.utcnow().replace(year=2099),
+            expires_at=_utc_now_naive().replace(year=2099),
         )
     ]
     planner = _ReplayPlannerStub(
@@ -246,7 +250,7 @@ async def test_quoted_replay_multi_executes_as_direct_domain_tasks() -> None:
                 "source_bank_name": "Access Bank",
                 "narration": "Replay test",
             },
-            expires_at=datetime.utcnow().replace(year=2099),
+            expires_at=_utc_now_naive().replace(year=2099),
         )
     ]
     planner = _ReplayPlannerStub(

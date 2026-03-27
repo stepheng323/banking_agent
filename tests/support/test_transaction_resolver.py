@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import UTC, datetime
 from types import SimpleNamespace
 from uuid import uuid4
 
@@ -6,6 +6,10 @@ import pytest
 
 from apps.core.src.agent.graphs.support.models import TransactionReference
 from apps.core.src.agent.graphs.support.resolver import TransactionResolver
+
+
+def _utc_now_naive() -> datetime:
+    return datetime.now(UTC).replace(tzinfo=None)
 
 
 class _ActionableRepoStub:
@@ -69,7 +73,7 @@ async def test_resolver_uses_quoted_actionable_message_transaction_id() -> None:
         id=uuid4(),
         amount=5000.0,
         recipient_name="Tolu",
-        created_at=datetime.utcnow(),
+        created_at=_utc_now_naive(),
     )
     resolver = TransactionResolver(
         transaction_repo=_TransactionRepoStub(by_id=tx),
@@ -90,7 +94,7 @@ async def test_resolver_falls_back_to_idempotency_key_when_transaction_id_is_not
         id=uuid4(),
         amount=5000.0,
         recipient_name="Tolu",
-        created_at=datetime.utcnow(),
+        created_at=_utc_now_naive(),
     )
     tx_repo = _TransactionRepoStub(by_id=None, by_idempotency_key=tx)
     resolver = TransactionResolver(
@@ -114,7 +118,7 @@ async def test_resolver_uses_idempotency_key_from_actionable_payload() -> None:
         id=uuid4(),
         amount=5000.0,
         recipient_name="Tolu",
-        created_at=datetime.utcnow(),
+        created_at=_utc_now_naive(),
     )
     tx_repo = _TransactionRepoStub(by_id=None, by_idempotency_key=tx)
     resolver = TransactionResolver(
@@ -138,7 +142,7 @@ async def test_resolver_explicit_path_uses_async_get_by_user() -> None:
         id=uuid4(),
         amount=7500.0,
         recipient_name="Mercy Johnson",
-        created_at=datetime.utcnow(),
+        created_at=_utc_now_naive(),
     )
     tx_repo = _TransactionRepoStub(by_user=[tx])
     resolver = TransactionResolver(
@@ -163,7 +167,7 @@ async def test_resolver_recent_path_uses_async_status_lookups() -> None:
         id=uuid4(),
         amount=9000.0,
         recipient_name="Ada",
-        created_at=datetime.utcnow(),
+        created_at=_utc_now_naive(),
     )
     tx_repo = _TransactionRepoStub(pending=[tx])
     resolver = TransactionResolver(

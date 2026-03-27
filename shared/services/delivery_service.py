@@ -6,7 +6,7 @@ import hashlib
 import json
 from collections.abc import Awaitable, Sequence
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import timedelta
 from inspect import isawaitable
 from typing import Any, Literal, TypeVar, cast
 
@@ -24,6 +24,7 @@ from shared.config.settings import settings
 from shared.database.enums import ActionableMessageTypeEnum
 from shared.database.models import ActionableMessage
 from shared.repositories.unit_of_work import UnitOfWork
+from shared.utils.datetime import utc_now_naive
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -335,7 +336,7 @@ class DeliveryService:
                         channel_message_id=message_id,
                         message_type=msg_type.value,
                         message_data=actionable_payload,
-                        expires_at=datetime.utcnow() + timedelta(days=7),
+                        expires_at=utc_now_naive() + timedelta(days=7),
                     )
                 )
 

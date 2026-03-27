@@ -7,6 +7,7 @@ import aioboto3
 from botocore.exceptions import ClientError
 
 from shared.config.settings import settings
+from shared.utils.datetime import utc_now_naive
 
 
 class S3Client:
@@ -33,7 +34,7 @@ class S3Client:
             S3 URL of uploaded image
         """
         if timestamp is None:
-            timestamp = datetime.utcnow()
+            timestamp = utc_now_naive()
 
         # Generate S3 key: receipts/{transaction_id}/{timestamp}.png
         timestamp_str = timestamp.strftime("%Y%m%d_%H%M%S")

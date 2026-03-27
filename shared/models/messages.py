@@ -6,6 +6,8 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from shared.utils.datetime import utc_now_naive
+
 
 class MessageType(str, Enum):
     """Type of message received."""
@@ -40,7 +42,7 @@ class ChannelMessage(BaseModel):
     media_id: str | None = Field(None, description="Media ID for download")
     mime_type: str | None = Field(None, description="MIME type of media")
     quoted_message_id: str | None = Field(None, description="ID of quoted/replied message")
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=utc_now_naive)
 
     channel_metadata: dict[str, Any] = Field(
         default_factory=dict,
@@ -63,7 +65,7 @@ class ProcessedMessage(BaseModel):
     entities: dict[str, Any] = Field(default_factory=dict)
     response: str | None = None
     actions: list[str] = Field(default_factory=list)
-    processed_at: datetime = Field(default_factory=datetime.utcnow)
+    processed_at: datetime = Field(default_factory=utc_now_naive)
     success: bool = True
     error: str | None = None
 
