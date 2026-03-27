@@ -27,7 +27,7 @@ class _FakeLocalTransactionsRepo:
 
 
 class _FakeAccountsRepo:
-    def __init__(self, state: "_MirrorState") -> None:
+    def __init__(self, state: _MirrorState) -> None:
         self._state = state
 
     async def get_by_account_id(self, account_id: str) -> Any | None:
@@ -35,7 +35,7 @@ class _FakeAccountsRepo:
 
 
 class _FakeBankTransactionsRepo:
-    def __init__(self, state: "_MirrorState") -> None:
+    def __init__(self, state: _MirrorState) -> None:
         self._state = state
 
     async def bulk_upsert(self, rows: list[dict]) -> int:
@@ -78,7 +78,7 @@ class _FakeBankTransactionsRepo:
 
 
 class _FakeCoverageRepo:
-    def __init__(self, state: "_MirrorState") -> None:
+    def __init__(self, state: _MirrorState) -> None:
         self._state = state
 
     async def find_missing_gaps(
@@ -171,7 +171,7 @@ class _FakeUnitOfWork:
         self.accounts = _FakeAccountsRepo(state)
         self.transactions = _FakeLocalTransactionsRepo()
 
-    async def __aenter__(self) -> "_FakeUnitOfWork":
+    async def __aenter__(self) -> _FakeUnitOfWork:
         return self
 
     async def __aexit__(self, exc_type: Any, exc: Any, tb: Any) -> None:

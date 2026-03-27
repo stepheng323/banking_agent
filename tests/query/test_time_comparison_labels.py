@@ -2,8 +2,7 @@ from datetime import date
 
 import pytest
 
-from apps.core.src.agent.graphs.query.handlers.time_comparison import handle_time_comparison
-from apps.core.src.agent.graphs.query.handlers.time_comparison import _format_period_label
+from apps.core.src.agent.graphs.query.handlers.time_comparison import _format_period_label, handle_time_comparison
 from apps.core.src.agent.graphs.query.models import NormalizedQuery, QueryExecutionContract, QueryIntent, TimeRange
 
 

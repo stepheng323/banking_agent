@@ -1,5 +1,11 @@
 """Mock data for Mono API (development environment)."""
 
+from .mock_transactions import (
+    account_a_transactions,
+    account_b_transactions,
+    filter_transactions,
+    paginate_transactions,
+)
 from .models import (
     AccountData,
     AccountLookupData,
@@ -13,7 +19,6 @@ from .models import (
     Transaction,
     TransferDestination,
 )
-from .mock_transactions import account_a_transactions, account_b_transactions, filter_transactions, paginate_transactions
 
 
 def get_mock_bvn_lookup(bvn: str) -> BvnLookupData:

@@ -256,10 +256,7 @@ class MonoClient:
             unwrap_data=False,
         )
         raw_data = envelope.get("data", [])
-        if isinstance(raw_data, dict):
-            raw_txns = raw_data.get("transactions", raw_data.get("data", []))
-        else:
-            raw_txns = raw_data
+        raw_txns = raw_data.get("transactions", raw_data.get("data", [])) if isinstance(raw_data, dict) else raw_data
         meta = envelope.get("meta", {}) if isinstance(envelope, dict) else {}
         transactions = [Transaction(**t) for t in raw_txns]
         has_more = bool(meta.get("next"))

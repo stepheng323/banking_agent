@@ -12,8 +12,8 @@ from apps.core.src.agent.graphs.query.models import (
     SurfaceType,
 )
 from apps.core.src.agent.graphs.query.services.fetch import (
-    apply_time_window,
     apply_filters,
+    apply_time_window,
     build_cache_fingerprint,
     build_cache_scope_fingerprint,
     decide_transaction_cache_reuse,

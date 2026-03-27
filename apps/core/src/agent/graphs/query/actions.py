@@ -3,11 +3,10 @@
 from typing import Any
 
 from apps.core.src.agent.graphs.query.models import QueryResult
+from apps.core.src.agent.graphs.query.services.formatter import QueryFormatter
 from apps.core.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
 from shared.i18n import LocaleManager, render_message
 from shared.queue.factory import QueuePublisherFactory
-from apps.core.src.agent.graphs.query.services.formatter import QueryFormatter
-
 
 
 def _resolve_transaction_type(item: Any, locale: str) -> tuple[str, str]:

@@ -1,14 +1,14 @@
 """SQLAlchemy database models."""
 
 import uuid
-from datetime import date, datetime
+from datetime import datetime
 
 from sqlalchemy import (
     ARRAY,
-    Date,
     JSON,
     Boolean,
     Column,
+    Date,
     DateTime,
     Float,
     ForeignKey,

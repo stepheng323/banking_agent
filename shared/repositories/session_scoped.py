@@ -233,7 +233,14 @@ class SessionScopedBankTransactionRepository(_SessionScopedRepositoryMixin, Bank
             provider=provider,
         )
 
-    async def list_by_accounts_window(self, linked_account_ids: list[str], *, start_date, end_date, provider: str = "mono"):
+    async def list_by_accounts_window(
+        self,
+        linked_account_ids: list[str],
+        *,
+        start_date,
+        end_date,
+        provider: str = "mono",
+    ):
         return await self._call_with_session(
             BankTransactionRepository,
             "list_by_accounts_window",
@@ -258,7 +265,13 @@ class SessionScopedBankTransactionCoverageRepository(_SessionScopedRepositoryMix
     def __init__(self, session_factory: SessionFactory) -> None:
         self._init_session_scoped(session_factory)
 
-    async def list_for_account(self, linked_account_id: str, *, provider: str = "mono", coverage_type: str = "full"):
+    async def list_for_account(
+        self,
+        linked_account_id: str,
+        *,
+        provider: str = "mono",
+        coverage_type: str = "full",
+    ):
         return await self._call_with_session(
             BankTransactionCoverageRepository,
             "list_for_account",
@@ -267,7 +280,15 @@ class SessionScopedBankTransactionCoverageRepository(_SessionScopedRepositoryMix
             coverage_type=coverage_type,
         )
 
-    async def find_missing_gaps(self, linked_account_id: str, *, start_date, end_date, provider: str = "mono", coverage_type: str = "full"):
+    async def find_missing_gaps(
+        self,
+        linked_account_id: str,
+        *,
+        start_date,
+        end_date,
+        provider: str = "mono",
+        coverage_type: str = "full",
+    ):
         return await self._call_with_session(
             BankTransactionCoverageRepository,
             "find_missing_gaps",
@@ -278,7 +299,15 @@ class SessionScopedBankTransactionCoverageRepository(_SessionScopedRepositoryMix
             coverage_type=coverage_type,
         )
 
-    async def is_window_covered(self, linked_account_id: str, *, start_date, end_date, provider: str = "mono", coverage_type: str = "full"):
+    async def is_window_covered(
+        self,
+        linked_account_id: str,
+        *,
+        start_date,
+        end_date,
+        provider: str = "mono",
+        coverage_type: str = "full",
+    ):
         return await self._call_with_session(
             BankTransactionCoverageRepository,
             "is_window_covered",
