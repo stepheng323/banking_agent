@@ -471,3 +471,39 @@ def test_who_sent_me_query_sets_counterparty_answer_fact() -> None:
     assert query_ir.filters is not None
     assert query_ir.filters.transaction_type == "credit"
     assert query_ir.answer_fact_field == "counterparty"
+
+
+def test_counterparty_placeholder_is_ignored_for_sender_fact_queries() -> None:
+    parser = QueryParser(_DummyLLM())
+    today = date(2026, 3, 21)
+    extraction = QueryExtractionResult(
+        intent=ExtractionIntent.SINGLE_TRANSACTION,
+        filters=QueryFilters(recipient="unknown", min_amount=500000, max_amount=500000),
+        time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="last_week"),
+        raw_query="who sent me 500k last week",
+    )
+
+    query_ir = parser.build_query_ir_from_extraction(extraction, today=today, language="en")
+
+    assert query_ir.filters is not None
+    assert query_ir.filters.counterparty is None
+    assert query_ir.filters.transaction_type == "credit"
+    assert query_ir.answer_fact_field == "counterparty"
+
+
+def test_spending_by_account_compiles_to_account_breakdown_with_debit_filter() -> None:
+    parser = QueryParser(_DummyLLM())
+    today = date(2026, 3, 21)
+    extraction = QueryExtractionResult(
+        intent=ExtractionIntent.CATEGORY_BREAKDOWN,
+        time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="this_month"),
+        raw_query="break down my spending by account",
+    )
+
+    query_ir = parser.build_query_ir_from_extraction(extraction, today=today, language="en")
+
+    assert query_ir.aggregation is not None
+    assert query_ir.aggregation.type == "breakdown"
+    assert query_ir.aggregation.group_by == "account"
+    assert query_ir.filters is not None
+    assert query_ir.filters.transaction_type == "debit"

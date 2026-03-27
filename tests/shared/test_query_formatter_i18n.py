@@ -333,3 +333,40 @@ def test_formatter_single_item_fact_query_leads_with_counterparty() -> None:
     response = QueryFormatter.format(result, locale="en")
 
     assert response.splitlines()[0] == "*Counterparty:* Johnson Mary"
+
+
+def test_formatter_account_breakdown_preserves_account_labels_and_generic_total() -> None:
+    result = QueryResult(
+        summary_text="Breakdown by account",
+        items=[
+            QueryResultItem(
+                id="1",
+                description="Zenith Bank",
+                amount=-120000,
+                date=date(2026, 3, 21),
+                metadata={"count": 2},
+            ),
+            QueryResultItem(
+                id="2",
+                description="First Bank",
+                amount=-80000,
+                date=date(2026, 3, 21),
+                metadata={"count": 1},
+            ),
+        ],
+        surface=ResultSurface(
+            type=SurfaceType.BREAKDOWN,
+            items=[
+                {"id": "1", "key": "Zenith Bank", "amount": -120000, "count": 2},
+                {"id": "2", "key": "First Bank", "amount": -80000, "count": 1},
+            ],
+            context={"group_by": "account"},
+        ),
+    )
+
+    response = QueryFormatter.format(result, locale="en")
+
+    assert "Zenith Bank" in response
+    assert "First Bank" in response
+    assert "*Total: ₦200,000*" in response
+    assert "Total spent this month" not in response

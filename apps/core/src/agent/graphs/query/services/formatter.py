@@ -23,6 +23,13 @@ class QueryFormatter:
     """Formatter for query execution results."""
 
     @staticmethod
+    def _breakdown_group_by(result: QueryResult) -> str | None:
+        surface = result.surface
+        if surface is None or surface.context is None:
+            return None
+        return cast(str | None, surface.context.get("group_by"))
+
+    @staticmethod
     def _has_search_shaped_no_results_context(query_snapshot: NormalizedQuery | None) -> bool:
         """Return whether no-results wording should stay generic/search-oriented."""
         if not query_snapshot:
@@ -389,13 +396,14 @@ class QueryFormatter:
 
         if result.summary_text and result.surface and result.surface.type == SurfaceType.BREAKDOWN:
             lines = [render_message("query.format.breakdown_heading", locale, {"summary": result.summary_text}), ""]
+            breakdown_group_by = QueryFormatter._breakdown_group_by(result)
 
             total_abs = 0.0
             if result.items:
                 total_abs = float(sum((abs(item.amount) for item in result.items), 0.0))
 
                 for item in result.items:
-                    name = item.description.replace("_", " ").title()
+                    name = item.description if breakdown_group_by == "account" else item.description.replace("_", " ").title()
                     amount = QueryFormatter._format_amount(item.amount)
                     count = item.metadata.get("count", 0) if item.metadata else 0
 
@@ -418,7 +426,7 @@ class QueryFormatter:
                     )
 
             lines.append("")
-            lines.append(render_message("query.format.total_spent_month", locale, {"amount": f"{total_abs:,.0f}"}))
+            lines.append(render_message("query.format.total_line", locale, {"total": f"₦{total_abs:,.0f}"}))
             return "\n".join(lines)
 
         # Trigger ranked list view via structured surface or explicit rank metadata.

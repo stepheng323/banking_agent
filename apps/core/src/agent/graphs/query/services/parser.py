@@ -76,6 +76,18 @@ _LAST_YEAR_TOKENS = {"last_year", "previous_year", "lastyear", "previousyear"}
 class QueryParser:
     """Parse natural language financial questions into QueryExecutionContract."""
 
+    _COUNTERPARTY_PLACEHOLDERS = frozenset(
+        {
+            "unknown",
+            "someone",
+            "somebody",
+            "person",
+            "recipient",
+            "sender",
+            "merchant",
+        }
+    )
+
     def __init__(self, llm: Runnable):
         self.llm = llm
 
@@ -925,8 +937,9 @@ class QueryParser:
             return None
 
         group_by = (extraction.aggregation.group_by or "").strip().lower() if extraction.aggregation else ""
+        counterparty = self._normalize_counterparty_filter(extraction.filters.recipient)
         transaction_type = None
-        if group_by not in {"transaction_type", "type"} and query_operation != QueryOperation.BREAKDOWN_TRANSACTIONS:
+        if group_by not in {"transaction_type", "type"}:
             transaction_type = self._infer_transaction_type(
                 extracted_transaction_type=extraction.filters.transaction_type,
                 raw_query=extraction.raw_query,
@@ -935,13 +948,25 @@ class QueryParser:
 
         return Filters(
             merchant=[extraction.filters.narration_keyword] if extraction.filters.narration_keyword else None,
-            counterparty=[extraction.filters.recipient] if extraction.filters.recipient else None,
+            counterparty=[counterparty] if counterparty else None,
             category=[extraction.filters.category] if extraction.filters.category else None,
             min_amount=extraction.filters.min_amount,
             max_amount=extraction.filters.max_amount,
             transaction_type=transaction_type,
             account_filter=extraction.filters.bank,
         )
+
+    @classmethod
+    def _normalize_counterparty_filter(cls, recipient: str | None) -> str | None:
+        normalized = " ".join((recipient or "").strip().split())
+        if not normalized:
+            return None
+
+        lowered = normalized.casefold()
+        if lowered in cls._COUNTERPARTY_PLACEHOLDERS or lowered.startswith("unknown "):
+            return None
+
+        return normalized
 
     @staticmethod
     def _infer_answer_fact_field(
@@ -992,6 +1017,18 @@ class QueryParser:
             normalized = "transaction_type"
         if normalized in {"category", "merchant", "day", "account", "transaction_type"}:
             return cast(Literal["category", "merchant", "day", "account", "transaction_type"], normalized)
+        return None
+
+    def _infer_breakdown_group_by(
+        self, extraction: "QueryExtractionResult"
+    ) -> Literal["category", "merchant", "day", "account", "transaction_type"] | None:
+        extracted_group_by = self._coerce_group_by(extraction.aggregation.group_by) if extraction.aggregation is not None else None
+        if extracted_group_by is not None:
+            return extracted_group_by
+
+        raw_lower = f" {(extraction.raw_query or '').strip().lower()} "
+        if any(hint in raw_lower for hint in (" by account ", " per account ", " by bank ", " per bank ", " across accounts ")):
+            return "account"
         return None
 
     @staticmethod
@@ -1046,14 +1083,14 @@ class QueryParser:
         if query_operation == QueryOperation.AVERAGE_TRANSACTIONS:
             return Aggregation(type="average", limit=5)
         if query_operation == QueryOperation.BREAKDOWN_TRANSACTIONS:
-            group_by = self._coerce_group_by(extraction.aggregation.group_by) if extraction.aggregation is not None else None
+            group_by = self._infer_breakdown_group_by(extraction)
             return Aggregation(type="breakdown", group_by=group_by or "category", limit=5)
 
         if effective_intent == ExtractionIntent.SPENDING_TOTAL:
             return Aggregation(type="sum", limit=5)
 
         if effective_intent == ExtractionIntent.CATEGORY_BREAKDOWN:
-            return Aggregation(type="breakdown", group_by="category")
+            return Aggregation(type="breakdown", group_by=self._infer_breakdown_group_by(extraction) or "category")
 
         if effective_intent == ExtractionIntent.BENEFICIARY_SUMMARY:
             return Aggregation(type="sum", limit=5, sort_by="count")
