@@ -87,6 +87,7 @@ class MonoBankingProvider(BankDataProvider):
                     amount=t.amount / 100 if t.type == "credit" else -t.amount / 100,
                     transaction_type=t.type,
                     category=t.category,
+                    counterparty=t.counterparty,
                 )
                 for t in txns
             ]
@@ -124,6 +125,7 @@ class MonoBankingProvider(BankDataProvider):
                         amount=t.amount / 100 if t.type == "credit" else -t.amount / 100,
                         transaction_type=t.type,
                         category=t.category,
+                        counterparty=t.counterparty,
                     )
                     for t in txns
                 ],

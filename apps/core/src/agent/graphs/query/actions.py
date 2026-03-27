@@ -6,6 +6,8 @@ from apps.core.src.agent.graphs.query.models import QueryResult
 from apps.core.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
 from shared.i18n import LocaleManager, render_message
 from shared.queue.factory import QueuePublisherFactory
+from apps.core.src.agent.graphs.query.services.formatter import QueryFormatter
+
 
 
 def _resolve_transaction_type(item: Any, locale: str) -> tuple[str, str]:
@@ -96,7 +98,7 @@ async def handle_drill_down(state: dict[str, Any]) -> TransactionResult:
                 },
             )
         elif fact_field == "recipient":
-            recipient = str(metadata.get("recipient_name") or item.description or "").strip()
+            recipient = str(metadata.get("recipient_name") or metadata.get("counterparty") or item.description or "").strip()
             if recipient:
                 response = render_message(
                     "transfer.format.multi_source_summary.field_to",
@@ -211,10 +213,7 @@ async def handle_drill_down(state: dict[str, Any]) -> TransactionResult:
             },
         )
 
-    # VIEW DETAILS (Default)
-    from apps.core.src.agent.graphs.query.services.formatter import QueryFormatter
 
-    # Create single-item result for formatter to pick up "Detailed View" logic
     detail_result = QueryResult(summary_text="", items=[item], context_key=query_result.context_key)
     formatted = QueryFormatter.format(detail_result, show_expanded=True, locale=locale)
 

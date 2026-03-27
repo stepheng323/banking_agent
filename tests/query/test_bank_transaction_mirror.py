@@ -238,6 +238,8 @@ def _mirrored_row(
     transaction_type: str,
     narration: str,
     category: str | None = None,
+    counterparty: str | None = None,
+    counterparty_role: str | None = None,
 ) -> Any:
     return SimpleNamespace(
         linked_account_id=linked_account_id,
@@ -249,8 +251,12 @@ def _mirrored_row(
         transaction_type=transaction_type,
         narration=narration,
         category=category,
+        counterparty=counterparty,
+        counterparty_role=counterparty_role,
+        counterparty_source="narration" if counterparty else None,
         resolved_category=category,
         category_source="provider" if category else None,
+        parser_rule="test_fixture",
         bank_name="First Bank",
         first_seen_at=posted_at,
         last_seen_at=posted_at,
@@ -288,6 +294,8 @@ async def test_fully_covered_historical_query_reads_from_mirror_without_provider
 
     assert provider.calls == []
     assert [item["id"] for item in result] == ["txn_1"]
+    assert result[0]["source_account_id"] == "acc_1"
+    assert result[0]["source_account_label"] == "First Bank"
 
 
 @pytest.mark.asyncio
@@ -452,6 +460,46 @@ async def test_local_filters_apply_on_mirrored_transactions_without_provider_cal
 
 
 @pytest.mark.asyncio
+async def test_counterparty_filter_uses_parsed_mirror_values(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    state = _MirrorState()
+    historical_day = date(2026, 1, 10)
+    state.coverage["linked-1"] = [(historical_day, historical_day)]
+    state.accounts["acc_1"] = SimpleNamespace(account_id="acc_1", extra_data={})
+    state.bank_transactions[("linked-1", "txn_1")] = _mirrored_row(
+        linked_account_id="linked-1",
+        provider_transaction_id="txn_1",
+        posted_at=datetime(2026, 1, 10, 10, 0),
+        amount=950000,
+        transaction_type="credit",
+        narration="Transfer from JOHNSON MARY - Refund",
+        category="transfer",
+        counterparty="Johnson Mary",
+        counterparty_role="sender",
+    )
+    monkeypatch.setattr("shared.repositories.unit_of_work.UnitOfWork", lambda: _FakeUnitOfWork(state))
+    provider = _PagedProvider({})
+
+    result = await fetch_and_filter(
+        provider,  # type: ignore[arg-type]
+        _query(
+            start_date=historical_day,
+            end_date=historical_day,
+            filters=Filters(transaction_type="credit", counterparty=["johnson"]),
+        ),
+        account_id="acc_1",
+        account_ids=["acc_1"],
+        accounts_info=_accounts_info(),
+        user_id="user-1",
+        language="en",
+    )
+
+    assert provider.calls == []
+    assert [item["id"] for item in result] == ["txn_1"]
+
+
+@pytest.mark.asyncio
 async def test_category_filter_uses_provider_category_from_mirror(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -514,3 +562,48 @@ async def test_category_breakdown_uses_provider_or_resolved_category() -> None:
 
     assert result.items is not None
     assert result.items[0].description == "food"
+
+
+@pytest.mark.asyncio
+async def test_gap_fill_persists_parsed_counterparty_fields(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    state = _MirrorState()
+    state.accounts["acc_1"] = SimpleNamespace(account_id="acc_1", extra_data={})
+    query_day = date(2026, 1, 10)
+    provider = _PagedProvider(
+        {
+            (
+                "acc_1",
+                query_day.isoformat(),
+                query_day.isoformat(),
+                1,
+            ): [
+                TransactionData(
+                    transaction_id="txn_1",
+                    date="2026-01-10T12:00:00.000Z",
+                    narration="Transfer from JOHNSON MARY - Refund",
+                    amount=950000,
+                    transaction_type="credit",
+                    category="transfer",
+                )
+            ]
+        }
+    )
+    monkeypatch.setattr("shared.repositories.unit_of_work.UnitOfWork", lambda: _FakeUnitOfWork(state))
+
+    result = await fetch_transactions_base(
+        provider,  # type: ignore[arg-type]
+        _query(start_date=query_day, end_date=query_day),
+        account_id="acc_1",
+        account_ids=["acc_1"],
+        accounts_info=_accounts_info(),
+        user_id="user-1",
+        language="en",
+    )
+
+    assert result[0]["counterparty"] == "Johnson Mary"
+    stored_row = state.bank_transactions[("linked-1", "txn_1")]
+    assert stored_row.counterparty == "Johnson Mary"
+    assert stored_row.counterparty_role == "sender"
+    assert stored_row.parser_rule == "transfer:transfer_from"

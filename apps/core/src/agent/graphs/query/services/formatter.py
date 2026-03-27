@@ -38,6 +38,7 @@ class QueryFormatter:
             (
                 bool(filters.category),
                 bool(filters.merchant),
+                bool(filters.counterparty),
                 filters.min_amount is not None,
                 filters.max_amount is not None,
                 bool(filters.exclude),
@@ -181,6 +182,38 @@ class QueryFormatter:
         if amount >= 1000:
             return f"₦{amount:,.0f}"
         return f"₦{amount:.0f}"
+
+    @staticmethod
+    def _build_single_item_fact_lead(result: QueryResult, item: QueryResultItem, locale: str) -> str | None:
+        """Return a leading direct-answer line for fact-focused single-item queries."""
+        query_snapshot = result.query_snapshot
+        if query_snapshot is None or query_snapshot.answer_fact_field is None:
+            return None
+
+        fact_field = query_snapshot.answer_fact_field
+        metadata = item.metadata or {}
+        if fact_field == "date":
+            return render_message(
+                "query.format.field_date",
+                locale,
+                {
+                    "date": item.date.strftime("%B %d, %Y")
+                    if item.date
+                    else render_message("query.format.unknown", locale),
+                },
+            )
+        if fact_field == "amount":
+            return render_message("query.format.field_amount", locale, {"amount": f"₦{item.amount:,.2f}"})
+        if fact_field == "bank":
+            bank_name = str(metadata.get("bank_name") or "").strip()
+            if bank_name:
+                return render_message("query.format.field_bank", locale, {"bank_name": bank_name})
+            return None
+        if fact_field == "counterparty":
+            counterparty = str(metadata.get("counterparty") or metadata.get("recipient_name") or "").strip()
+            if counterparty:
+                return render_message("query.format.field_counterparty", locale, {"counterparty": counterparty})
+        return None
 
     @staticmethod
     def _format_no_results(result: QueryResult, locale: str) -> str:
@@ -469,7 +502,12 @@ class QueryFormatter:
                         {"transaction_type": tx_filters.transaction_type},
                     )
 
-            lines = [f"*{title}*", ""]
+            lines = []
+            fact_lead = QueryFormatter._build_single_item_fact_lead(result, item, locale)
+            if fact_lead:
+                lines.extend([fact_lead, ""])
+
+            lines.extend([f"*{title}*", ""])
 
             amount_str = f"₦{item.amount:,.2f}"
             lines.append(render_message("query.format.field_amount", locale, {"amount": amount_str}))

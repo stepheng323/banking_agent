@@ -1444,7 +1444,7 @@ class ExtractionStep(QueryStep):
             if recipient_name and original_query:
                 from apps.core.src.agent.graphs.query.models import Filters
 
-                new_filters = Filters(merchant=[recipient_name])
+                new_filters = Filters(counterparty=[recipient_name])
                 new_query = apply_filter_delta(original_query, new_filters)
                 updates["query_contract"] = QueryExecutionContract.from_normalized_query(
                     new_query,

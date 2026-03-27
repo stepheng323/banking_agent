@@ -269,3 +269,67 @@ def test_formatter_heading_single_day_past_range_is_not_labeled_today() -> None:
     past_label = past_day.strftime("%b %d").replace(" 0", " ")
     assert heading == f"*Transactions* — {past_label}–{past_label}"
     assert "Today" not in heading
+
+
+def test_formatter_single_item_fact_query_leads_with_requested_date() -> None:
+    result = QueryResult(
+        summary_text="accounts:1|showing:1-1|total:1",
+        items=[
+            QueryResultItem(
+                id="txn_b01",
+                description="Netflix Monthly Subscription",
+                amount=6500,
+                date=date(2026, 3, 21),
+                metadata={"type": "debit", "bank_name": "First Bank", "counterparty": "Netflix"},
+            )
+        ],
+        query_snapshot=NormalizedQuery(
+            intent=QueryIntent.TRANSACTION_SEARCH,
+            filters=Filters(transaction_type="debit", merchant=["netflix"]),
+            time_range=TimeRange(start=date(2026, 3, 1), end=date(2026, 3, 21)),
+            result_limit=1,
+            result_reference="latest",
+            answer_fact_field="date",
+        ),
+        surface=ResultSurface(
+            type=SurfaceType.SINGLE_ITEM,
+            items=[{"id": "txn_b01", "key": "Netflix Monthly Subscription", "amount": 6500, "count": 1}],
+            context={"type": "single_transaction"},
+        ),
+    )
+
+    response = QueryFormatter.format(result, locale="en")
+    lines = response.splitlines()
+
+    assert lines[0] == "*Date:* March 21, 2026"
+    assert "Your last debit transaction was:" in response
+
+
+def test_formatter_single_item_fact_query_leads_with_counterparty() -> None:
+    result = QueryResult(
+        summary_text="accounts:1|showing:1-1|total:1",
+        items=[
+            QueryResultItem(
+                id="txn_c01",
+                description="Transfer from JOHNSON MARY - Refund",
+                amount=35000,
+                date=date(2026, 3, 21),
+                metadata={"type": "credit", "bank_name": "Zenith Bank", "counterparty": "Johnson Mary"},
+            )
+        ],
+        query_snapshot=NormalizedQuery(
+            intent=QueryIntent.TRANSACTION_SEARCH,
+            filters=Filters(transaction_type="credit"),
+            time_range=TimeRange(start=date(2026, 3, 15), end=date(2026, 3, 21)),
+            answer_fact_field="counterparty",
+        ),
+        surface=ResultSurface(
+            type=SurfaceType.SINGLE_ITEM,
+            items=[{"id": "txn_c01", "key": "Transfer from JOHNSON MARY - Refund", "amount": 35000, "count": 1}],
+            context={"type": "single_transaction"},
+        ),
+    )
+
+    response = QueryFormatter.format(result, locale="en")
+
+    assert response.splitlines()[0] == "*Counterparty:* Johnson Mary"

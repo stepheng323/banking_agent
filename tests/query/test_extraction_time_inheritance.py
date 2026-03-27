@@ -283,7 +283,7 @@ async def test_invalid_time_delta_and_continue_pagination_combo_requests_clarifi
 
 
 @pytest.mark.asyncio
-async def test_recipient_drilldown_follow_up_applies_merchant_filter() -> None:
+async def test_recipient_drilldown_follow_up_applies_counterparty_filter() -> None:
     step = ExtractionStep(_DummyLLM())
     today = date(2026, 3, 10)
     session_query = NormalizedQuery(
@@ -318,7 +318,7 @@ async def test_recipient_drilldown_follow_up_applies_merchant_filter() -> None:
     assert updates["flow_state"] == "executing"
     assert updates["continuation_type"] == "recipient_drill_down"
     assert updates["query_contract"].normalized_query.filters is not None
-    assert updates["query_contract"].normalized_query.filters.merchant == ["Gaines"]
+    assert updates["query_contract"].normalized_query.filters.counterparty == ["Gaines"]
 
 
 @pytest.mark.asyncio

@@ -49,6 +49,7 @@ class Filters(BaseModel):
 
     category: list[str] | None = Field(default=None, description="Category keywords: food, transport, etc.")
     merchant: list[str] | None = Field(default=None, description="Merchant/narration keywords")
+    counterparty: list[str] | None = Field(default=None, description="Parsed sender/recipient/merchant match")
     min_amount: float | None = Field(default=None, description="Minimum amount in naira")
     max_amount: float | None = Field(default=None, description="Maximum amount in naira")
     transaction_type: Literal["credit", "debit"] | None = Field(default=None, description="Filter by type")
@@ -92,6 +93,10 @@ class NormalizedQuery(BaseModel):
     result_reference: Literal["latest", "oldest"] | None = Field(
         default=None, description="Relative positioning for results when user asks for most recent/oldest"
     )
+    answer_fact_field: Literal["date", "counterparty", "amount", "bank"] | None = Field(
+        default=None,
+        description="Fact to answer directly when a single matching transaction is found",
+    )
 
 
 class ComparisonDirective(BaseModel):
@@ -119,6 +124,7 @@ class QueryIR(BaseModel):
     analysis_type: Literal["immediate", "relative", "simulated", "remainder"] = "immediate"
     result_limit: int | None = Field(default=None, ge=1, le=100)
     result_reference: Literal["latest", "oldest"] | None = None
+    answer_fact_field: Literal["date", "counterparty", "amount", "bank"] | None = None
     comparison: ComparisonDirective | None = None
     continuation_type: str | None = None
     continuation_delta_type: str | None = None
@@ -138,6 +144,7 @@ class QueryIR(BaseModel):
             analysis_type=self.analysis_type,
             result_limit=self.result_limit,
             result_reference=self.result_reference,
+            answer_fact_field=self.answer_fact_field,
         )
 
 
@@ -158,6 +165,7 @@ class QueryExecutionContract(BaseModel):
     analysis_type: Literal["immediate", "relative", "simulated", "remainder"] = "immediate"
     result_limit: int | None = Field(default=None, ge=1, le=100)
     result_reference: Literal["latest", "oldest"] | None = None
+    answer_fact_field: Literal["date", "counterparty", "amount", "bank"] | None = None
     comparison: ComparisonDirective | None = None
     continuation_type: str | None = None
     continuation_delta_type: str | None = None
@@ -182,6 +190,7 @@ class QueryExecutionContract(BaseModel):
             analysis_type=ir.analysis_type,
             result_limit=ir.result_limit,
             result_reference=ir.result_reference,
+            answer_fact_field=ir.answer_fact_field,
             comparison=ir.comparison,
             continuation_type=ir.continuation_type,
             continuation_delta_type=ir.continuation_delta_type,
@@ -217,6 +226,7 @@ class QueryExecutionContract(BaseModel):
             analysis_type=query.analysis_type,
             result_limit=query.result_limit,
             result_reference=query.result_reference,
+            answer_fact_field=query.answer_fact_field,
             comparison=comparison,
             continuation_type=continuation_type,
             continuation_delta_type=continuation_delta_type,
@@ -334,16 +344,27 @@ CATEGORY_ALIASES: dict[str, str] = {
     "bills_utilities": "utilities",
     "cash_withdrawal": "cash_withdrawal",
     "data": "airtime",
+    "electronics": "shopping",
     "entertainment": "entertainment",
     "fees": "bank_charges",
     "food": "food",
     "food_and_drink": "food",
     "food_drink": "food",
+    "groceries": "food",
     "income": "income",
+    "interest": "income",
+    "interest_received": "income",
     "investment": "savings",
+    "investment_deposit": "savings",
+    "investment_payout": "income",
     "investments": "savings",
     "mobile": "airtime",
     "mobile_data": "airtime",
+    "online_payments": "shopping",
+    "other_incoming_payments": "income",
+    "other_incoming_payments_from_employer": "income",
+    "other_outgoing_payments": "shopping",
+    "personal_transfer": "transfers",
     "salary": "income",
     "saving": "savings",
     "savings": "savings",
@@ -356,6 +377,7 @@ CATEGORY_ALIASES: dict[str, str] = {
     "transport": "transport",
     "transportation": "transport",
     "utilities": "utilities",
+    "utility_services": "utilities",
 }
 
 
@@ -388,25 +410,21 @@ def match_category(narration: str, categories: list[str]) -> bool:
 
 def detect_category(narration: str) -> str | None:
     """Detect category from narration."""
-    narration_lower = narration.lower()
-    for category, keywords in CATEGORY_KEYWORDS.items():
-        for keyword in keywords:
-            if keyword in narration_lower:
-                return category
-    return None
+    from apps.core.src.agent.graphs.query.services.narration import analyze_transaction_narration
+
+    return analyze_transaction_narration(narration=narration, transaction_type=None).resolved_category
 
 
 def resolve_transaction_category(category: str | None, narration: str) -> tuple[str | None, str | None]:
     """Resolve the best available category and where it came from."""
-    provider_category = normalize_category(category)
-    if provider_category:
-        return provider_category, "provider"
+    from apps.core.src.agent.graphs.query.services.narration import analyze_transaction_narration
 
-    local_category = detect_category(narration)
-    if local_category:
-        return local_category, "local_rule"
-
-    return None, None
+    analysis = analyze_transaction_narration(
+        narration=narration,
+        transaction_type=None,
+        provider_category=category,
+    )
+    return analysis.resolved_category, analysis.category_source
 
 
 def get_transaction_category(transaction: dict[str, Any]) -> str | None:

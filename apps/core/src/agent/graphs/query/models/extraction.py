@@ -119,6 +119,7 @@ class ParserQueryExtraction(BaseModel):
         default=None,
         description="Relative positioning for results when user asks for most recent/oldest",
     )
+    answer_fact_field: Literal["date", "counterparty", "amount", "bank"] | None = Field(default=None)
 
 
 class QueryExtractionResult(BaseModel):
@@ -138,6 +139,7 @@ class QueryExtractionResult(BaseModel):
         default=None,
         description="Relative positioning for results when user asks for most recent/oldest",
     )
+    answer_fact_field: Literal["date", "counterparty", "amount", "bank"] | None = Field(default=None)
 
     requested_capabilities: list[RequestedCapability] = Field(
         default_factory=list,
@@ -163,6 +165,7 @@ class ReasonerQueryExtraction(BaseModel):
     aggregation: QueryAggregation | None = Field(default=None)
     result_limit: int | None = Field(default=None, ge=1, le=100)
     result_reference: Literal["latest", "oldest"] | None = Field(default=None)
+    answer_fact_field: Literal["date", "counterparty", "amount", "bank"] | None = Field(default=None)
     raw_query: str | None = Field(default=None)
 
     def to_query_extraction_result(self) -> "QueryExtractionResult":
@@ -176,6 +179,7 @@ class ReasonerQueryExtraction(BaseModel):
             aggregation=self.aggregation.model_copy(deep=True) if self.aggregation is not None else None,
             result_limit=self.result_limit,
             result_reference=self.result_reference,
+            answer_fact_field=self.answer_fact_field,
             raw_query=self.raw_query,
         )
 

@@ -281,6 +281,7 @@ class QueryParser:
                 aggregation=extraction.aggregation.model_copy(deep=True) if extraction.aggregation is not None else None,
                 result_limit=extraction.result_limit,
                 result_reference=extraction.result_reference,
+                answer_fact_field=extraction.answer_fact_field,
             )
 
         inflated.raw_query = question
@@ -629,6 +630,7 @@ class QueryParser:
             analysis_type=normalized.analysis_type,
             result_limit=normalized.result_limit,
             result_reference=normalized.result_reference,
+            answer_fact_field=normalized.answer_fact_field,
             comparison=comparison,
             continuation_type=continuation_type,
             continuation_delta_type=continuation_delta_type,
@@ -889,7 +891,9 @@ class QueryParser:
         transaction_type = (extracted_transaction_type or "").strip().lower() or None
         if not transaction_type:
             raw_lower = (raw_query or "").lower()
-            has_explicit_credit_intent = any(k in raw_lower for k in ("received", "credited", "income", "salary"))
+            has_explicit_credit_intent = any(
+                k in raw_lower for k in ("received", "credited", "income", "salary", "sent me", "from ")
+            )
             if has_explicit_credit_intent:
                 transaction_type = "credit"
 
@@ -899,7 +903,7 @@ class QueryParser:
                 ExtractionIntent.BENEFICIARY_SUMMARY,
             )
 
-            if not is_expense_query and raw_lower:
+            if not has_explicit_credit_intent and not is_expense_query and raw_lower:
                 if any(k in raw_lower for k in ("spending", "expense", "spent", "cost", "paid", "send", "sent", "transfer", "transferred")):
                     is_expense_query = True
 
@@ -930,13 +934,49 @@ class QueryParser:
             )
 
         return Filters(
-            merchant=[extraction.filters.recipient] if extraction.filters.recipient else None,
+            merchant=[extraction.filters.narration_keyword] if extraction.filters.narration_keyword else None,
+            counterparty=[extraction.filters.recipient] if extraction.filters.recipient else None,
             category=[extraction.filters.category] if extraction.filters.category else None,
             min_amount=extraction.filters.min_amount,
             max_amount=extraction.filters.max_amount,
             transaction_type=transaction_type,
             account_filter=extraction.filters.bank,
         )
+
+    @staticmethod
+    def _infer_answer_fact_field(
+        extraction: "QueryExtractionResult",
+        *,
+        effective_intent: ExtractionIntent,
+        query_operation: QueryOperation,
+    ) -> Literal["date", "counterparty", "amount", "bank"] | None:
+        if extraction.answer_fact_field in {"date", "counterparty", "amount", "bank"}:
+            return cast(Literal["date", "counterparty", "amount", "bank"], extraction.answer_fact_field)
+
+        if effective_intent in {
+            ExtractionIntent.SPENDING_TOTAL,
+            ExtractionIntent.CATEGORY_BREAKDOWN,
+            ExtractionIntent.BENEFICIARY_SUMMARY,
+            ExtractionIntent.TIME_COMPARISON,
+            ExtractionIntent.AFFORDABILITY,
+        }:
+            return None
+
+        if query_operation not in {QueryOperation.LIST_TRANSACTIONS, QueryOperation.SEARCH_SINGLE_TRANSACTION}:
+            return None
+
+        raw_query = f" {(extraction.raw_query or '').strip().lower()} "
+        if raw_query == "  ":
+            return None
+        if raw_query.startswith(" when ") or " when did " in raw_query:
+            return "date"
+        if raw_query.startswith(" who ") or " who sent " in raw_query or " who paid " in raw_query:
+            return "counterparty"
+        if raw_query.startswith(" which bank ") or raw_query.startswith(" what bank "):
+            return "bank"
+        if raw_query.startswith(" how much was ") or raw_query.startswith(" how much did i pay for "):
+            return "amount"
+        return None
 
     @staticmethod
     def _coerce_aggregation_type(agg_type: str) -> Literal["sum", "average", "count", "largest", "smallest", "breakdown"]:
@@ -1115,6 +1155,11 @@ class QueryParser:
             effective_intent=effective_intent,
             query_operation=query_operation,
         )
+        answer_fact_field = self._infer_answer_fact_field(
+            extraction,
+            effective_intent=effective_intent,
+            query_operation=query_operation,
+        )
 
         result_reference = extraction.result_reference
         if aggregation is not None and aggregation.type in {"largest", "smallest"}:
@@ -1129,4 +1174,5 @@ class QueryParser:
             accounts_scope="all",
             result_limit=result_limit,
             result_reference=result_reference,
+            answer_fact_field=answer_fact_field,
         )

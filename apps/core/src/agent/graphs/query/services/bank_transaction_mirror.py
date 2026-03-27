@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
-from apps.core.src.agent.graphs.query.models import resolve_transaction_category
+from apps.core.src.agent.graphs.query.services.narration import analyze_transaction_narration
 from apps.core.src.agent.graphs.query.utils.timezone import lagos_today
 from shared.clients.abstractions.banking import BankDataProvider, TransactionData, TransactionPageData
 from shared.utils.logging import get_logger
@@ -211,7 +211,12 @@ def _mirror_row_from_transaction(
 ) -> dict[str, Any]:
     """Normalize provider transaction data into a bank-transaction mirror row."""
     posted_at = _normalize_provider_timestamp(transaction.date)
-    resolved_category, category_source = resolve_transaction_category(transaction.category, transaction.narration)
+    analysis = analyze_transaction_narration(
+        narration=transaction.narration,
+        transaction_type=transaction.transaction_type,
+        provider_category=transaction.category,
+        provider_counterparty=transaction.counterparty,
+    )
     provider_transaction_id = str(transaction.transaction_id or "").strip() or (
         f"{posted_at.isoformat()}:{transaction.narration}:{transaction.amount}"
     )
@@ -227,8 +232,12 @@ def _mirror_row_from_transaction(
         "transaction_type": transaction.transaction_type,
         "narration": transaction.narration,
         "category": transaction.category,
-        "resolved_category": resolved_category,
-        "category_source": category_source,
+        "counterparty": analysis.counterparty,
+        "counterparty_role": analysis.counterparty_role,
+        "counterparty_source": analysis.counterparty_source,
+        "resolved_category": analysis.resolved_category,
+        "category_source": analysis.category_source,
+        "parser_rule": analysis.parser_rule,
         "bank_name": account.bank_name,
         "raw_payload": {
             "transaction_id": transaction.transaction_id,
@@ -237,8 +246,12 @@ def _mirror_row_from_transaction(
             "amount": transaction.amount,
             "transaction_type": transaction.transaction_type,
             "category": transaction.category,
-            "resolved_category": resolved_category,
-            "category_source": category_source,
+            "counterparty": analysis.counterparty,
+            "counterparty_role": analysis.counterparty_role,
+            "counterparty_source": analysis.counterparty_source,
+            "resolved_category": analysis.resolved_category,
+            "category_source": analysis.category_source,
+            "parser_rule": analysis.parser_rule,
         },
     }
 
@@ -347,6 +360,11 @@ async def load_mirrored_transactions(
             provider=_MIRROR_PROVIDER,
         )
 
+    linked_to_external = {
+        account.linked_account_id: account.external_account_id
+        for account in account_contexts
+    }
+
     return [
         {
             "id": row.provider_transaction_id,
@@ -356,10 +374,16 @@ async def load_mirrored_transactions(
             "narration": row.narration or "",
             "date": row.posted_at.isoformat(),
             "category": row.category,
+            "counterparty": getattr(row, "counterparty", None),
+            "counterparty_role": getattr(row, "counterparty_role", None),
+            "counterparty_source": getattr(row, "counterparty_source", None),
             "resolved_category": row.resolved_category,
             "category_source": row.category_source,
+            "parser_rule": getattr(row, "parser_rule", None),
             "bank_name": row.bank_name or "",
             "currency": row.currency,
+            "source_account_id": linked_to_external.get(str(row.linked_account_id)),
+            "source_account_label": row.bank_name or "",
         }
         for row in rows
     ]

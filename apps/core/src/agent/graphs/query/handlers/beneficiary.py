@@ -64,7 +64,7 @@ async def handle_beneficiary_summary(
         lambda: {"display_name": "", "total": 0, "count": 0, "transactions": []}
     )
     for t in debits:
-        recipient_name = str(t.get("recipient_name") or "").strip()
+        recipient_name = str(t.get("recipient_name") or t.get("counterparty") or "").strip()
         raw_name = recipient_name or extract_counterparty(t.get("narration", ""), locale=language)
         display_name = _clean_recipient_display_name(raw_name)
         key = _normalize_recipient_key(display_name)

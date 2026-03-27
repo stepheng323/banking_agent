@@ -35,8 +35,12 @@ def upgrade() -> None:
         sa.Column("transaction_type", sa.String(), nullable=False),
         sa.Column("narration", sa.Text(), nullable=True),
         sa.Column("category", sa.String(), nullable=True),
+        sa.Column("counterparty", sa.String(), nullable=True),
+        sa.Column("counterparty_role", sa.String(), nullable=True),
+        sa.Column("counterparty_source", sa.String(), nullable=True),
         sa.Column("resolved_category", sa.String(), nullable=True),
         sa.Column("category_source", sa.String(), nullable=True),
+        sa.Column("parser_rule", sa.String(), nullable=True),
         sa.Column("bank_name", sa.String(), nullable=True),
         sa.Column("raw_payload", sa.JSON(), nullable=True),
         sa.Column("first_seen_at", sa.DateTime(), server_default=sa.text("now()"), nullable=False),
@@ -62,6 +66,7 @@ def upgrade() -> None:
     op.create_index(op.f("ix_bank_transactions_provider"), "bank_transactions", ["provider"], unique=False)
     op.create_index(op.f("ix_bank_transactions_posted_at"), "bank_transactions", ["posted_at"], unique=False)
     op.create_index(op.f("ix_bank_transactions_posted_date"), "bank_transactions", ["posted_date"], unique=False)
+    op.create_index(op.f("ix_bank_transactions_counterparty"), "bank_transactions", ["counterparty"], unique=False)
     op.create_index(
         op.f("ix_bank_transactions_resolved_category"),
         "bank_transactions",

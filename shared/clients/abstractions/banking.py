@@ -41,6 +41,7 @@ class TransactionData:
     amount: float
     transaction_type: str
     category: str | None = None
+    counterparty: str | None = None
 
 
 @dataclass

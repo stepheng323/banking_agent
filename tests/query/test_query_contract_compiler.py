@@ -6,6 +6,7 @@ from apps.core.src.agent.graphs.query.models import (
     QueryComparison,
     QueryExecutionContract,
     QueryExtractionResult,
+    QueryFilters,
     QueryIntent,
     QueryOperation,
     QueryTimeRange,
@@ -432,3 +433,41 @@ def test_structured_comparison_invalid_explicit_period_falls_back_to_previous_eq
     assert query_ir.comparison.explicit_range is None
     assert contract.comparison is not None
     assert contract.comparison.mode == "previous_equivalent"
+
+
+def test_recipient_queries_compile_to_counterparty_filter() -> None:
+    parser = QueryParser(_DummyLLM())
+    today = date(2026, 3, 21)
+    extraction = QueryExtractionResult(
+        intent=ExtractionIntent.SINGLE_TRANSACTION,
+        filters=QueryFilters(recipient="Mum", transaction_type="debit"),
+        time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="this_month"),
+        raw_query="when did I last pay Mum this month",
+        result_limit=1,
+        result_reference="latest",
+    )
+
+    query_ir = parser.build_query_ir_from_extraction(extraction, today=today, language="en")
+    contract = parser.build_execution_contract_from_ir(query_ir)
+
+    assert query_ir.filters is not None
+    assert query_ir.filters.counterparty == ["Mum"]
+    assert query_ir.filters.merchant is None
+    assert contract.normalized_query.answer_fact_field == "date"
+
+
+def test_who_sent_me_query_sets_counterparty_answer_fact() -> None:
+    parser = QueryParser(_DummyLLM())
+    today = date(2026, 3, 21)
+    extraction = QueryExtractionResult(
+        intent=ExtractionIntent.SINGLE_TRANSACTION,
+        filters=QueryFilters(min_amount=500000, max_amount=500000),
+        time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="last_week"),
+        raw_query="who sent me 500k last week",
+    )
+
+    query_ir = parser.build_query_ir_from_extraction(extraction, today=today, language="en")
+
+    assert query_ir.filters is not None
+    assert query_ir.filters.transaction_type == "credit"
+    assert query_ir.answer_fact_field == "counterparty"

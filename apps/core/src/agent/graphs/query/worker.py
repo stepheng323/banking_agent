@@ -172,9 +172,12 @@ class QueryWorker:
         locale: str,
         include_time: bool,
     ) -> str | None:
+        counterparty_values = filters.counterparty if filters and filters.counterparty else []
         merchant_values = filters.merchant if filters and filters.merchant else []
         category_values = filters.category if filters and filters.category else []
-        merchant = next((item.strip() for item in merchant_values if isinstance(item, str) and item.strip()), None)
+        merchant = next((item.strip() for item in counterparty_values if isinstance(item, str) and item.strip()), None)
+        if merchant is None:
+            merchant = next((item.strip() for item in merchant_values if isinstance(item, str) and item.strip()), None)
         category = next((item.strip().title() for item in category_values if isinstance(item, str) and item.strip()), None)
         tx_type = filters.transaction_type if filters else None
 
@@ -234,9 +237,12 @@ class QueryWorker:
 
         query = query_contract.normalized_query
         filters = query.filters
+        counterparty_values = filters.counterparty if filters and filters.counterparty else []
         merchant_values = filters.merchant if filters and filters.merchant else []
         category_values = filters.category if filters and filters.category else []
-        merchant = next((item.strip() for item in merchant_values if isinstance(item, str) and item.strip()), None)
+        merchant = next((item.strip() for item in counterparty_values if isinstance(item, str) and item.strip()), None)
+        if merchant is None:
+            merchant = next((item.strip() for item in merchant_values if isinstance(item, str) and item.strip()), None)
         category = next((item.strip().title() for item in category_values if isinstance(item, str) and item.strip()), None)
         tx_type = filters.transaction_type if filters else None
         time_phrase = cls._build_time_phrase(query.time_range, locale) if include_time else None

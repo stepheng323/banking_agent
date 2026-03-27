@@ -65,8 +65,10 @@ QUERY SHAPE RULES
 - "How much did I spend today/this week" → fresh_query with explicit period, not continuation.
 
 EXTRACTION RULES (for fresh_query, reinterpret_query, new_query)
-Populate: intent, filters, time_range, comparison, aggregation, result_limit, result_reference.
+Populate: intent, filters, time_range, comparison, aggregation, result_limit, result_reference, answer_fact_field.
 - result_reference: "latest" for most recent, "oldest" for earliest.
+- answer_fact_field: use date|counterparty|amount|bank for singular fact-seeking transaction questions such as
+  "when did I last...", "who sent me...", "how much was...", "which bank was..."
 - Superlatives by amount ("highest transfer") → aggregation.type=largest/smallest over result_reference.
 - query_operation values: list_transactions, search_single_transaction, sum_transactions, count_transactions,
   average_transactions, rank_largest_transaction, rank_smallest_transaction, breakdown_transactions,
@@ -120,7 +122,7 @@ average_transactions | rank_largest_transaction | rank_smallest_transaction | br
 compare_periods | summarize_beneficiaries | check_affordability
 
 FILTERS
-- recipient: merchant/person name
+- recipient: merchant/person name when user refers to a sender, payee, or merchant
 - transaction_type: "spent/paid/sent/transferred" → debit; "received/earned/salary/income" → credit
 - amount: "over/above/at least X" → min_amount; "under/below/less than X" → max_amount
 - narration_keyword: exact word to search
@@ -153,7 +155,7 @@ RESULT LIMIT & REFERENCE
 - result_reference: "latest" for most recent, "oldest" for earliest
 
 OUTPUT CONTRACT
-Return only these fields: intent, filters, time_range, comparison, aggregation, result_limit, result_reference.
+Return only these fields: intent, filters, time_range, comparison, aggregation, result_limit, result_reference, answer_fact_field.
 If the user is vague, express that through the semantic fields:
 - vague time → reference_type=vague and estimate days_back when possible
 - missing/unclear fields → leave the field null instead of fabricating values

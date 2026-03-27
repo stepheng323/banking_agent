@@ -226,6 +226,7 @@
       "last_transaction_type_title": "Your last {transaction_type} transaction was:",
       "field_amount": "*Amount:* {amount}",
       "field_description": "*Description:* {description}",
+      "field_counterparty": "*Counterparty:* {counterparty}",
       "field_date": "*Date:* {date}",
       "field_type": "*Type:* {type}",
       "field_bank": "*Bank:* {bank_name}",
