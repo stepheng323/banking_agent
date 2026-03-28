@@ -636,6 +636,7 @@ class QuerySemanticReasoner:
                         followup_intent="none",
                         delta_type=cast(Any, data.get("delta_type")),
                         recipient_name=data.get("recipient_name"),
+                        fact_field=cast(Any, data.get("fact_field")),
                     )
                 elif continuation_type == "time_delta":
                     guardrail_decision = QuerySemanticDecision(

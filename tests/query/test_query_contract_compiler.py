@@ -509,6 +509,25 @@ def test_spending_by_account_compiles_to_account_breakdown_with_debit_filter() -
     assert query_ir.filters.transaction_type == "debit"
 
 
+def test_spending_by_account_overrides_wrong_extracted_category_grouping() -> None:
+    parser = QueryParser(_DummyLLM())
+    today = date(2026, 3, 21)
+    extraction = QueryExtractionResult(
+        intent=ExtractionIntent.CATEGORY_BREAKDOWN,
+        aggregation=QueryAggregation(type="breakdown", group_by="category"),
+        time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="this_month"),
+        raw_query="break down my spending by account",
+    )
+
+    query_ir = parser.build_query_ir_from_extraction(extraction, today=today, language="en")
+
+    assert query_ir.aggregation is not None
+    assert query_ir.aggregation.type == "breakdown"
+    assert query_ir.aggregation.group_by == "account"
+    assert query_ir.filters is not None
+    assert query_ir.filters.transaction_type == "debit"
+
+
 def test_amount_filtered_people_query_compiles_to_beneficiary_summary_with_rolling_window() -> None:
     parser = QueryParser(_DummyLLM())
     today = date(2026, 3, 27)
@@ -527,5 +546,25 @@ def test_amount_filtered_people_query_compiles_to_beneficiary_summary_with_rolli
     assert query_ir.filters.transaction_type == "debit"
     assert query_ir.filters.min_amount == 20000
     assert query_ir.filters.max_amount == 20000
+    assert query_ir.time_range.start == date(2026, 3, 14)
+    assert query_ir.time_range.end == today
+
+
+def test_greater_than_amount_people_query_compiles_to_beneficiary_summary_with_min_filter() -> None:
+    parser = QueryParser(_DummyLLM())
+    today = date(2026, 3, 27)
+    extraction = QueryExtractionResult(
+        intent=ExtractionIntent.TRANSACTION_LIST,
+        time_range=QueryTimeRange(reference_type=TimeReference.UNSPECIFIED),
+        raw_query="show people I sent greater than 20k to in the last 2 weeks",
+    )
+
+    query_ir = parser.build_query_ir_from_extraction(extraction, today=today, language="en")
+
+    assert query_ir.intent == QueryIntent.BENEFICIARY_SUMMARY
+    assert query_ir.filters is not None
+    assert query_ir.filters.transaction_type == "debit"
+    assert query_ir.filters.min_amount == 20000
+    assert query_ir.filters.max_amount is None
     assert query_ir.time_range.start == date(2026, 3, 14)
     assert query_ir.time_range.end == today

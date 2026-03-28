@@ -157,7 +157,13 @@ def apply_filters(transactions: list[dict[str, Any]], filters: Filters) -> list[
 
     if filters.account_filter:
         filter_term = filters.account_filter.lower()
-        result = [t for t in result if filter_term in t.get("bank_name", "").lower()]
+        result = [
+            t
+            for t in result
+            if filter_term in (t.get("bank_name", "").lower())
+            or filter_term in (t.get("source_account_label", "").lower())
+            or filter_term in (str(t.get("source_account_id", "")).lower())
+        ]
 
     return result
 

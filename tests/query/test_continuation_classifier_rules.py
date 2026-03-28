@@ -74,6 +74,26 @@ def test_beneficiary_summary_name_reply_maps_to_recipient_drilldown() -> None:
     assert data["recipient_name"] == "Gaines"
 
 
+def test_beneficiary_summary_fact_followup_maps_to_recipient_drilldown_with_fact_field() -> None:
+    classifier = _classifier()
+    surface = ResultSurface(type=SurfaceType.SUMMARY, items=[], context={"view": "beneficiary_summary"})
+    items = [QueryResultItem(description="Adesanya Kunle", amount=50000, date=date(2026, 3, 27))]
+
+    guarded = classifier._guardrail_classify(
+        message="When was Kunle's transaction?",
+        items=items,
+        surface=surface,
+        language="en",
+    )
+
+    assert guarded is not None
+    continuation_type, data = guarded
+    assert continuation_type == "recipient_drill_down"
+    assert data["reason"] == "deterministic_recipient_fact_drill_down"
+    assert data["recipient_name"] == "Adesanya Kunle"
+    assert data["fact_field"] == "date"
+
+
 def test_retransfer_phrase_maps_to_drill_down_for_list_surface() -> None:
     classifier = _classifier()
     surface = ResultSurface(type=SurfaceType.LIST, items=[], context={"type": "transaction_list"})

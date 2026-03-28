@@ -47,6 +47,11 @@ _FILTER_DELTA_RE = re.compile(
     r"^(?:what about|how about|show me?|and)\s+(credit|debit)s?(?:\?|!|\.)?$",
     re.IGNORECASE,
 )
+_BENEFICIARY_FACT_PATTERNS: tuple[tuple[str, str], ...] = (
+    (r"\bwhen\b|\bwhat date\b", "date"),
+    (r"\bwhich bank\b|\bwhat bank\b", "bank"),
+    (r"\bhow much\b|\bwhat(?:'s| is)? the amount\b|\bamount\b", "amount"),
+)
 
 
 class ContinuationClassifier:
@@ -64,6 +69,18 @@ class ContinuationClassifier:
     def _normalize_recipient_name(value: str) -> str:
         cleaned = " ".join(value.strip().split()).rstrip(".,;:!?").strip()
         return cleaned.casefold()
+
+    @staticmethod
+    def _tokenize_recipient_name(value: str) -> list[str]:
+        normalized = re.sub(r"'s\b", "", value.casefold())
+        return [token for token in re.findall(r"[a-z0-9]+", normalized) if len(token) >= 3]
+
+    def _resolve_beneficiary_summary_fact_field(self, message: str) -> str | None:
+        normalized = self._normalize_message(message)
+        for pattern, fact_field in _BENEFICIARY_FACT_PATTERNS:
+            if re.search(pattern, normalized):
+                return fact_field
+        return None
 
     def _resolve_beneficiary_summary_recipient_reply(
         self,
@@ -85,12 +102,24 @@ class ContinuationClassifier:
         if not normalized_candidate:
             return None
 
+        token_matches: list[tuple[int, str]] = []
         for item in items or []:
             item_name = str(item.description or "").strip()
             if not item_name:
                 continue
             if self._normalize_recipient_name(item_name) == normalized_candidate:
                 return item_name
+            item_tokens = self._tokenize_recipient_name(item_name)
+            overlap = [token for token in item_tokens if re.search(rf"\b{re.escape(token)}\b", normalized_candidate)]
+            if overlap:
+                token_matches.append((len(max(overlap, key=len)), item_name))
+
+        if len(token_matches) == 1:
+            return token_matches[0][1]
+        if token_matches:
+            token_matches.sort(key=lambda entry: entry[0], reverse=True)
+            if token_matches[0][0] > token_matches[1][0]:
+                return token_matches[0][1]
 
         return None
 
@@ -115,11 +144,17 @@ class ContinuationClassifier:
 
         recipient_name = self._resolve_beneficiary_summary_recipient_reply(message, items=items, surface=surface)
         if recipient_name:
+            fact_field = self._resolve_beneficiary_summary_fact_field(message)
             return "recipient_drill_down", {
                 "confidence": 0.99,
-                "reason": "deterministic_recipient_drill_down",
+                "reason": (
+                    "deterministic_recipient_fact_drill_down"
+                    if fact_field is not None
+                    else "deterministic_recipient_drill_down"
+                ),
                 "delta_type": "filter",
                 "recipient_name": recipient_name,
+                "fact_field": fact_field,
             }
 
         if (

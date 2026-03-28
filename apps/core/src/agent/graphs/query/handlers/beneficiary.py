@@ -12,6 +12,7 @@ from apps.core.src.agent.graphs.query.models import (
     SurfaceType,
 )
 from apps.core.src.agent.graphs.query.services.fetch import extract_counterparty, fetch_and_filter
+from apps.core.src.agent.graphs.query.services.presentation_scope import build_beneficiary_summary_header
 from shared.clients.abstractions.banking import BankDataProvider
 from shared.i18n import render_message
 
@@ -110,10 +111,11 @@ async def handle_beneficiary_summary(
 
     # Build response
     lines = [
-        render_message(
-            "query.beneficiary.summary_header",
-            language,
-            {"heading_type": heading_type, "timeframe": timeframe},
+        build_beneficiary_summary_header(
+            query,
+            timeframe=timeframe,
+            ranking_heading=heading_type,
+            locale=language,
         ),
         "",
     ]
