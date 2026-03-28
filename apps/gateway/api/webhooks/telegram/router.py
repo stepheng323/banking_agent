@@ -58,7 +58,15 @@ async def telegram_webhook(
         return Response(status_code=200)
     except Exception as e:
         await db.rollback()
-        logger.error("telegram_webhook_error", error=str(e), exc_info=True)
+        logger.error(
+            "telegram_webhook_error_acknowledged",
+            error=str(e),
+            error_type=type(e).__name__,
+            retry_suppressed=True,
+            acknowledged=True,
+            delivery_policy="drop_on_failure_no_retry",
+            exc_info=True,
+        )
         return Response(status_code=200)
 
 
