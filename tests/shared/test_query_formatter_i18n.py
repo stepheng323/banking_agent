@@ -16,13 +16,12 @@ from apps.core.src.agent.graphs.query.models import (
 from apps.core.src.agent.graphs.query.services.formatter import QueryFormatter
 from apps.core.src.agent.graphs.query.utils.timezone import lagos_today
 from apps.core.src.agent.shared.query_contracts import (
-    PresentationMode,
-    PresentationPlan,
     SelectionPayload,
     SurfaceItemView,
     SurfaceView,
     SurfaceViewMode,
 )
+from shared.i18n import render_message
 
 
 def test_formatter_returns_summary_for_summary_surface() -> None:
@@ -92,10 +91,6 @@ def test_formatter_renders_beneficiary_summary_from_presentation_plan() -> None:
             ],
             context={"surface_type": "summary", "view": "beneficiary_summary"},
         ),
-        presentation_plan=PresentationPlan(
-            mode=PresentationMode.SUMMARY_LIST,
-            heading="*Recipients I sent over ₦20,000 to* — Mar 14 – Mar 27",
-        ),
     )
 
     response = QueryFormatter.format(result, locale="en")
@@ -109,6 +104,78 @@ def test_formatter_returns_summary_when_no_items() -> None:
     result = QueryResult(summary_text="Ko si transaction to baamu.")
 
     assert QueryFormatter.format(result, locale="yo") == "Ko si transaction to baamu."
+
+
+def test_formatter_uses_summary_list_plan_for_summary_only_results() -> None:
+    result = QueryResult(
+        summary_text="You can afford ₦20,000 right now.",
+        answer_strategy=QueryAnswerStrategy.SUMMARY_LIST,
+        query_snapshot=NormalizedQuery(intent=QueryIntent.AFFORDABILITY),
+    )
+
+    assert QueryFormatter.format(result, locale="en") == "You can afford ₦20,000 right now."
+
+
+def test_formatter_uses_summary_list_plan_for_account_summary_results() -> None:
+    result = QueryResult(
+        summary_text="accounts:2|total:₦200,000",
+        items=[
+            QueryResultItem(
+                id="1",
+                description="Zenith Bank",
+                amount=120000,
+                date=date(2026, 3, 28),
+            ),
+            QueryResultItem(
+                id="2",
+                description="First Bank",
+                amount=80000,
+                date=date(2026, 3, 28),
+            ),
+        ],
+        answer_strategy=QueryAnswerStrategy.SUMMARY_LIST,
+        surface_view=SurfaceView(
+            mode=SurfaceViewMode.GROUPED_SUMMARY,
+            items=[
+                SurfaceItemView(
+                    id="1",
+                    label="Zenith Bank",
+                    amount=120000,
+                    payload=SelectionPayload(
+                        selection_kind="account",
+                        entity_type="account",
+                        entity_id="1",
+                        label="Zenith Bank",
+                    ),
+                ),
+                SurfaceItemView(
+                    id="2",
+                    label="First Bank",
+                    amount=80000,
+                    payload=SelectionPayload(
+                        selection_kind="account",
+                        entity_type="account",
+                        entity_id="2",
+                        label="First Bank",
+                    ),
+                ),
+            ],
+            context={"surface_type": "summary", "view": "accounts"},
+        ),
+    )
+
+    response = QueryFormatter.format(result, locale="en")
+
+    assert response == "\n".join(
+        [
+            "💰 *Your Accounts*",
+            "",
+            "₦120,000 — Zenith Bank",
+            "₦80,000 — First Bank",
+            "",
+            "*Total: ₦200,000*",
+        ]
+    )
 
 
 def test_formatter_uses_typed_breakdown_heading_from_query_scope() -> None:
@@ -179,6 +246,64 @@ def test_formatter_uses_rank_metadata_without_english_summary() -> None:
     response = QueryFormatter.format(result, locale="yo")
     assert "🏆" in response
     assert "1." in response
+
+
+def test_formatter_uses_shared_plan_for_ranked_results() -> None:
+    result = QueryResult(
+        summary_text="Top 2 Largest expenses",
+        items=[
+            QueryResultItem(
+                id="r1",
+                description="Rent",
+                amount=250000,
+                date=date(2026, 3, 21),
+                metadata={"rank": 1, "type": "debit", "bank_name": "Zenith Bank"},
+            ),
+            QueryResultItem(
+                id="r2",
+                description="School Fees",
+                amount=180000,
+                date=date(2026, 3, 19),
+                metadata={"rank": 2, "type": "debit"},
+            ),
+        ],
+        surface_view=SurfaceView(
+            mode=SurfaceViewMode.TRANSACTION_LIST,
+            items=[
+                SurfaceItemView(
+                    id="r1",
+                    label="Rent",
+                    amount=250000,
+                    payload=SelectionPayload(
+                        selection_kind="transaction",
+                        entity_type="transaction",
+                        entity_id="r1",
+                        label="Rent",
+                    ),
+                    metadata={"rank": 1, "bank_name": "Zenith Bank"},
+                ),
+                SurfaceItemView(
+                    id="r2",
+                    label="School Fees",
+                    amount=180000,
+                    payload=SelectionPayload(
+                        selection_kind="transaction",
+                        entity_type="transaction",
+                        entity_id="r2",
+                        label="School Fees",
+                    ),
+                    metadata={"rank": 2},
+                ),
+            ],
+            context={"type": "largest"},
+        ),
+    )
+
+    response = QueryFormatter.format(result, locale="en")
+
+    assert response.splitlines()[0] == "🏆 *Top 2 Largest expenses*"
+    assert "1. *₦250,000* — Rent Mar 21 _(Zenith Bank)_" in response
+    assert "2. *₦180,000* — School Fees Mar 19" in response
 
 
 def test_formatter_no_results_with_type_for_today() -> None:
@@ -486,6 +611,57 @@ def test_formatter_single_item_fact_query_leads_with_counterparty() -> None:
     response = QueryFormatter.format(result, locale="en")
 
     assert response.splitlines()[0] == "You received ₦35,000 from Johnson Mary on March 21, 2026."
+
+
+def test_formatter_uses_shared_plan_for_single_transfer_detail_surface() -> None:
+    result = QueryResult(
+        summary_text="accounts:1|showing:1-1|total:1",
+        items=[
+            QueryResultItem(
+                id="txn_t01",
+                description="Transfer to Ada",
+                amount=20000,
+                date=date(2026, 3, 21),
+                metadata={
+                    "type": "debit",
+                    "bank_name": "Zenith Bank",
+                    "transaction_type": "transfer",
+                    "status": "success",
+                },
+            )
+        ],
+        query_snapshot=NormalizedQuery(
+            intent=QueryIntent.TRANSACTION_SEARCH,
+            filters=Filters(transaction_type="debit"),
+            time_range=TimeRange(start=date(2026, 3, 1), end=date(2026, 3, 21)),
+            result_reference="latest",
+        ),
+        surface_view=SurfaceView(
+            mode=SurfaceViewMode.DIRECT_ANSWER,
+            items=[
+                SurfaceItemView(
+                    id="txn_t01",
+                    label="Transfer to Ada",
+                    amount=20000,
+                    payload=SelectionPayload(
+                        selection_kind="transaction",
+                        entity_type="transaction",
+                        entity_id="txn_t01",
+                        label="Transfer to Ada",
+                    ),
+                    metadata={"type": "debit", "transaction_type": "transfer"},
+                )
+            ],
+            context={"type": "single_transaction"},
+        ),
+    )
+
+    response = QueryFormatter.format(result, locale="en")
+
+    assert "*Your last debit transaction was:*" in response
+    assert "*Amount:* ₦20,000.00" in response
+    assert "*Bank:* Zenith Bank" in response
+    assert render_message("query.format.transfer_reply_hint", "en") in response
 
 
 def test_formatter_account_breakdown_preserves_account_labels_and_generic_total() -> None:
