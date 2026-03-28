@@ -702,6 +702,12 @@ class QuerySemanticReasoner:
                         followup_intent="refine_existing",
                         delta_type=cast(Any, "filter"),
                     )
+                elif continuation_type == "fresh_query_reset":
+                    guardrail_decision = QuerySemanticDecision(
+                        decision="new_query",
+                        confidence=data.get("confidence"),
+                        reason=data.get("reason"),
+                    )
                 else:
                     guardrail_decision = QuerySemanticDecision(
                         decision="continuation",

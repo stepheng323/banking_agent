@@ -92,10 +92,38 @@ def build_surface_view(result: QueryResult) -> SurfaceView | None:
         return result.surface_view
 
     if result.answer_strategy == QueryAnswerStrategy.DIRECT_ANSWER and result.answer_context is not None:
+        direct_items: list[SurfaceItemView] = []
+        context: dict[str, Any] = {"hint_text": result.answer_context.hint_text}
+        result_items = result.items or []
+        if len(result_items) == 1:
+            item = result_items[0]
+            payload = _build_selection_payload(
+                result,
+                item,
+                mode=SurfaceViewMode.DIRECT_ANSWER,
+                context={"type": "single_transaction"},
+            )
+            direct_items = [
+                SurfaceItemView(
+                    id=item.id,
+                    label=item.description,
+                    amount=item.amount,
+                    payload=payload,
+                    metadata=item.metadata or {},
+                )
+            ]
+            context.update(
+                {
+                    "type": "single_transaction",
+                    "selected_payload": payload.model_dump(mode="json"),
+                    "selected_item_id": item.id,
+                }
+            )
         return SurfaceView(
             mode=SurfaceViewMode.DIRECT_ANSWER,
+            items=direct_items,
             lead_text=result.answer_context.primary_text,
-            context={"hint_text": result.answer_context.hint_text},
+            context=context,
         )
     if result.answer_strategy == QueryAnswerStrategy.CLARIFY and result.answer_context is not None:
         return SurfaceView(

@@ -1168,6 +1168,8 @@ async def parse_reasoner_extraction_to_updates(
     """Translate semantic reasoner output into compiler-first query updates."""
     extraction = getattr(decision, "extraction", None)
     confidence = getattr(decision, "confidence", None)
+    if extraction is None and getattr(decision, "decision", None) in {"fresh_query", "new_query", "reinterpret_query"}:
+        return await parse_new_query(step, state)
     compiler_safe_extraction, compiler_safe_reason = step._compiler_safe_extraction_decision(
         extraction=extraction,
         confidence=confidence,

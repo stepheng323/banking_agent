@@ -7,7 +7,7 @@ from apps.core.src.agent.graphs.query.services.answer_strategy import build_dire
 from apps.core.src.agent.graphs.query.services.contracts import build_query_transfer_handoff_payload
 from apps.core.src.agent.graphs.query.services.formatter import QueryFormatter
 from apps.core.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
-from apps.core.src.agent.shared.query_contracts import SelectionPayload
+from apps.core.src.agent.shared.query_contracts import SelectionPayload, SurfaceItemView, SurfaceView, SurfaceViewMode
 from shared.i18n import LocaleManager, render_message
 from shared.queue.factory import QueuePublisherFactory
 
@@ -86,6 +86,24 @@ def _resolve_selected_item(query_result: QueryResult, state: dict[str, Any]) -> 
     drill_down_index = state.get("selected_item_index", 0)
     index = max(0, min(drill_down_index, len(items) - 1))
     return items[index]
+
+
+def _resolve_selected_payload(query_result: QueryResult, state: dict[str, Any], item: Any) -> SelectionPayload | None:
+    selection_payload = _coerce_selection_payload(state.get("selected_payload"))
+    if selection_payload is not None:
+        return selection_payload
+
+    surface_view = query_result.surface_view
+    if surface_view is not None:
+        selected_item_id = None
+        if isinstance(surface_view.context, dict):
+            selected_item_id = surface_view.context.get("selected_item_id")
+        for surface_item in surface_view.items:
+            if selected_item_id and surface_item.id == selected_item_id:
+                return surface_item.payload
+            if surface_item.id == getattr(item, "id", None):
+                return surface_item.payload
+    return None
 
 
 async def handle_drill_down(state: dict[str, Any]) -> TransactionResult:
@@ -243,7 +261,44 @@ async def handle_drill_down(state: dict[str, Any]) -> TransactionResult:
         )
 
 
-    detail_result = QueryResult(summary_text="", items=[item], context_key=query_result.context_key)
+    selected_payload = _resolve_selected_payload(query_result, state, item)
+    query_contract = _query_contract_from_state(state)
+    if query_contract is not None:
+        query_contract = query_contract.model_copy(
+            update={
+                "answer_fact_field": None,
+                "result_reference": None,
+            }
+        )
+
+    detail_result = QueryResult(
+        summary_text="",
+        items=[item],
+        context_key=query_result.context_key,
+        query_contract=query_contract,
+        surface_view=SurfaceView(
+            mode=SurfaceViewMode.DIRECT_ANSWER,
+            items=[
+                SurfaceItemView(
+                    id=item.id,
+                    label=item.description,
+                    amount=item.amount,
+                    payload=selected_payload
+                    or SelectionPayload(
+                        selection_kind="transaction",
+                        entity_type="transaction",
+                        entity_id=item.id,
+                        label=item.description,
+                    ),
+                    metadata=item.metadata or {},
+                )
+            ],
+            context={
+                "type": "single_transaction",
+                "selected_item_id": item.id,
+            },
+        ),
+    )
     formatted = QueryFormatter.format(detail_result, show_expanded=True, locale=locale)
 
     return TransactionResult(

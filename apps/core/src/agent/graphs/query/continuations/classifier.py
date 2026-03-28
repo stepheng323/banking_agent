@@ -43,6 +43,20 @@ _FILTER_DELTA_RE = re.compile(
     r"^(?:what about|how about|show me?|and)\s+(credit|debit)s?(?:\?|!|\.)?$",
     re.IGNORECASE,
 )
+_FRESH_LIST_RESET_PATTERNS = (
+    re.compile(
+        r"^(?:show|list|check|display|see)\s+(?:my\s+)?recent\s+(?:transactions?|debits?|credits?|payments?)(?:\?|!|\.)?$",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"^(?:show|list|check|display|see)\s+all\s+my\s+(?:transactions?|debits?|credits?|payments?)(?:\?|!|\.)?$",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"^(?:show|list|check|display|see)\s+(?:all|latest|recent)\s+(?:transactions?|debits?|credits?|payments?)(?:\?|!|\.)?$",
+        re.IGNORECASE,
+    ),
+)
 _BENEFICIARY_FACT_PATTERNS: tuple[tuple[str, str], ...] = (
     (r"\bwhen\b|\bwhat date\b", "date"),
     (r"\bwhich bank\b|\bwhat bank\b", "bank"),
@@ -104,6 +118,10 @@ class ContinuationClassifier:
             if re.search(pattern, normalized):
                 return fact_field
         return None
+
+    def _is_fresh_list_reset_request(self, message: str) -> bool:
+        normalized = self._normalize_message(message)
+        return any(pattern.match(normalized) for pattern in _FRESH_LIST_RESET_PATTERNS)
 
     def _resolve_beneficiary_summary_recipient_reply(
         self,
@@ -217,6 +235,12 @@ class ContinuationClassifier:
                 "confidence": 0.95,
                 "reason": "deterministic_filter_delta",
                 "transaction_type": filter_match.group(1).lower(),
+            }
+
+        if surface_view is not None and self._is_fresh_list_reset_request(message):
+            return "fresh_query_reset", {
+                "confidence": 0.97,
+                "reason": "deterministic_fresh_list_reset",
             }
 
         return None

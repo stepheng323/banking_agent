@@ -113,6 +113,23 @@ def test_retransfer_phrase_maps_to_drill_down_for_list_surface() -> None:
     assert data["drill_down_action"] == "re_transfer"
 
 
+def test_fresh_recent_transaction_request_maps_to_new_query_reset() -> None:
+    classifier = _classifier()
+    surface_view = SurfaceView(mode=SurfaceViewMode.DIRECT_ANSWER, context={"type": "single_transaction"})
+
+    guarded = classifier._guardrail_classify(
+        message="show my recent transactions",
+        items=None,
+        surface_view=surface_view,
+        language="en",
+    )
+
+    assert guarded is not None
+    continuation_type, data = guarded
+    assert continuation_type == "fresh_query_reset"
+    assert data["reason"] == "deterministic_fresh_list_reset"
+
+
 @pytest.mark.parametrize(
     "message",
     [

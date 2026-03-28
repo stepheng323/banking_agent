@@ -3,6 +3,7 @@ from typing import Any
 
 import pytest
 
+from apps.core.src.agent.graphs.query.actions import handle_drill_down
 from apps.core.src.agent.graphs.query.models import (
     Aggregation,
     ExtractionIntent,
@@ -23,7 +24,12 @@ from apps.core.src.agent.graphs.query.models import (
 from apps.core.src.agent.graphs.query.nodes.extraction import ExtractionStep
 from apps.core.src.agent.graphs.query.services.reasoner import QuerySemanticDecision
 from apps.core.src.agent.orchestrator.models.domain import TransactionOutcome
-from apps.core.src.agent.shared.query_contracts import SelectionPayload, SurfaceItemView, SurfaceView, SurfaceViewMode
+from apps.core.src.agent.shared.query_contracts import (
+    SelectionPayload,
+    SurfaceItemView,
+    SurfaceView,
+    SurfaceViewMode,
+)
 from shared.i18n import render_message
 
 
@@ -191,6 +197,160 @@ async def test_recipient_ranking_followup_reparses_as_new_beneficiary_summary_qu
     assert query_contract.intent == QueryIntent.BENEFICIARY_SUMMARY
     assert query_contract.time_start == date(2026, 3, 2)
     assert query_contract.time_end == today
+
+
+@pytest.mark.asyncio
+async def test_direct_answer_show_more_details_stays_anchored_to_selected_transaction() -> None:
+    step = ExtractionStep(_DummyLLM())
+    today = date(2026, 3, 28)
+    session_query = _query_ir(
+        intent=QueryIntent.TRANSACTION_SEARCH,
+        time_range=TimeRange(start=date(2026, 3, 1), end=today),
+        filters=Filters(counterparty=["Mum"], transaction_type="debit"),
+        answer_fact_field="date",
+    )
+    session_contract = _contract(session_query)
+
+    older_item = QueryResultItem(
+        id="txn-older",
+        description="Mum",
+        amount=50000,
+        date=date(2026, 3, 25),
+        metadata={"type": "debit", "bank_name": "Zenith Bank", "recipient_name": "Mum"},
+    )
+    selected_item = QueryResultItem(
+        id="txn-selected",
+        description="Mum",
+        amount=50000,
+        date=date(2026, 3, 28),
+        metadata={"type": "debit", "bank_name": "Zenith Bank", "recipient_name": "Mum"},
+    )
+    selected_payload = SelectionPayload(
+        selection_kind="transaction",
+        entity_type="transaction",
+        entity_id="txn-selected",
+        label="Mum",
+        fact_capabilities=["date", "amount", "bank", "counterparty"],
+    )
+    query_result = QueryResult(
+        summary_text="That transaction was on March 28, 2026.",
+        items=[older_item, selected_item],
+        query_contract=session_contract,
+        surface_view=SurfaceView(
+            mode=SurfaceViewMode.DIRECT_ANSWER,
+            items=[
+                SurfaceItemView(
+                    id="txn-selected",
+                    label="Mum",
+                    amount=50000,
+                    payload=selected_payload,
+                    metadata=selected_item.metadata or {},
+                )
+            ],
+            context={"type": "single_transaction", "selected_item_id": "txn-selected"},
+        ),
+    )
+
+    async def _fake_reason(context: object) -> QuerySemanticDecision:
+        del context
+        return QuerySemanticDecision(
+            decision="continuation",
+            confidence=0.99,
+            reason="deterministic_view_details",
+            continuation_type="drill_down",
+            drill_down_index=0,
+            drill_down_action="view_details",
+        )
+
+    step.reasoner.reason = _fake_reason  # type: ignore[method-assign]
+
+    updates = await step._handle_continuation(
+        {"message": "show more details", "today": today, "language": "en"},
+        {
+            "session_active": True,
+            "query_contract": session_contract.model_dump(),
+            "query_result": query_result.model_dump(mode="json"),
+        },
+    )
+
+    assert updates["drill_down_action"] == "view_details"
+    selected_payload = updates["selected_payload"]
+    assert selected_payload.entity_id == "txn-selected"
+
+    result = await handle_drill_down(
+        {
+            "language": "en",
+            "query_result": query_result,
+            **updates,
+        }
+    )
+
+    assert result.outcome == TransactionOutcome.OK
+    assert "March 28, 2026" in (result.response or "")
+    assert "March 25, 2026" not in (result.response or "")
+
+
+@pytest.mark.asyncio
+async def test_fresh_recent_transactions_followup_replaces_scope_instead_of_inheriting_counterparty() -> None:
+    step = ExtractionStep(_DummyLLM())
+    today = date(2026, 3, 28)
+    session_query = _query_ir(
+        intent=QueryIntent.TRANSACTION_SEARCH,
+        time_range=TimeRange(start=date(2026, 3, 1), end=today),
+        filters=Filters(counterparty=["Mum"], transaction_type="debit"),
+        answer_fact_field="date",
+    )
+    session_contract = _contract(session_query)
+
+    async def _fake_reason(context: object) -> QuerySemanticDecision:
+        del context
+        return QuerySemanticDecision(
+            decision="new_query",
+            confidence=0.97,
+            reason="deterministic_fresh_list_reset",
+        )
+
+    def _fake_parse_deterministic(
+        question: str,
+        *,
+        today: date,
+        language: str = "en",
+    ) -> QueryParseResult:
+        del language
+        assert question == "show my recent transactions"
+        parsed_query = _query_ir(
+            intent=QueryIntent.TRANSACTION_LIST,
+            time_range=TimeRange(start=today - timedelta(days=30), end=today),
+        )
+        return _ok_result(
+            QueryExtractionResult(
+                intent=ExtractionIntent.TRANSACTION_LIST,
+                raw_query=question,
+            ),
+            parsed_query,
+        )
+
+    step.reasoner.reason = _fake_reason  # type: ignore[method-assign]
+    step.parser.parse_deterministic = _fake_parse_deterministic  # type: ignore[method-assign]
+
+    updates = await step._handle_continuation(
+        {"message": "show my recent transactions", "today": today, "language": "en"},
+        {
+            "session_active": True,
+            "query_contract": session_contract.model_dump(),
+            "query_result": QueryResult(
+                summary_text="That transaction was on March 28, 2026.",
+                items=[],
+                query_contract=session_contract,
+                surface_view=SurfaceView(mode=SurfaceViewMode.DIRECT_ANSWER, context={"type": "single_transaction"}),
+            ).model_dump(mode="json"),
+        },
+    )
+
+    query_contract = updates["query_contract"]
+    assert query_contract.intent == QueryIntent.TRANSACTION_LIST
+    assert query_contract.filters is None or query_contract.filters.counterparty is None
+    assert updates["_query_session_transition"] == "replace_session_new_query"
 
 
 @pytest.mark.asyncio

@@ -118,6 +118,55 @@ async def test_reasoner_uses_deterministic_receipt_action_without_llm() -> None:
 
 
 @pytest.mark.asyncio
+async def test_reasoner_uses_deterministic_show_more_details_without_llm() -> None:
+    reasoner = QuerySemanticReasoner(_FailingLLM())
+    surface_view = _direct_answer_surface_view(type="single_transaction")
+
+    decision = await reasoner.reason(
+        SemanticReasonerContext(
+            message="show more details",
+            today=date(2026, 3, 13),
+            language="en",
+            query_contract=_contract(
+                _query_ir(
+                    intent=QueryIntent.TRANSACTION_SEARCH,
+                    time_range=TimeRange(start=date(2026, 3, 13), end=date(2026, 3, 13)),
+                )
+            ),
+            surface_view=surface_view,
+        )
+    )
+
+    assert decision.decision == "continuation"
+    assert decision.continuation_type == "drill_down"
+    assert decision.drill_down_action == "view_details"
+
+
+@pytest.mark.asyncio
+async def test_reasoner_uses_deterministic_new_query_for_recent_transaction_reset() -> None:
+    reasoner = QuerySemanticReasoner(_FailingLLM())
+    surface_view = _direct_answer_surface_view(type="single_transaction")
+
+    decision = await reasoner.reason(
+        SemanticReasonerContext(
+            message="show my recent transactions",
+            today=date(2026, 3, 13),
+            language="en",
+            query_contract=_contract(
+                _query_ir(
+                    intent=QueryIntent.TRANSACTION_SEARCH,
+                    time_range=TimeRange(start=date(2026, 3, 13), end=date(2026, 3, 13)),
+                )
+            ),
+            surface_view=surface_view,
+        )
+    )
+
+    assert decision.decision == "new_query"
+    assert decision.reason == "deterministic_fresh_list_reset"
+
+
+@pytest.mark.asyncio
 async def test_reasoner_uses_surface_view_for_deterministic_receipt_action_without_surface_fallbacks() -> None:
     reasoner = QuerySemanticReasoner(_FailingLLM())
     surface_view = SurfaceView(
