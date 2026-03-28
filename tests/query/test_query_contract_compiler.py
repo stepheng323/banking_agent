@@ -4,7 +4,6 @@ from apps.core.src.agent.graphs.query.models import (
     ExtractionIntent,
     QueryAggregation,
     QueryComparison,
-    QueryExecutionContract,
     QueryExtractionResult,
     QueryFilters,
     QueryIntent,
@@ -36,7 +35,7 @@ def test_build_query_contract_from_extraction_preserves_lagos_today_window() -> 
     assert contract.time_start == today
     assert contract.time_end == today
     assert contract.intent == QueryIntent.ANALYTICS_SUMMARY
-    assert contract.normalized_query.intent == QueryIntent.ANALYTICS_SUMMARY
+    assert contract.intent == QueryIntent.ANALYTICS_SUMMARY
 
 
 def test_explicit_time_comparison_extraction_compiles_to_time_comparison() -> None:
@@ -216,7 +215,7 @@ def test_explicit_largest_transfer_extraction_compiles_to_largest_analytics_quer
     assert query_ir.aggregation.type == "largest"
     assert query_ir.aggregation.limit == 1
     assert query_ir.result_reference is None
-    assert contract.normalized_query.result_reference is None
+    assert contract.result_reference is None
 
 
 def test_parser_does_not_lexically_upgrade_highest_single_transfer_text() -> None:
@@ -235,7 +234,7 @@ def test_parser_does_not_lexically_upgrade_highest_single_transfer_text() -> Non
     assert query_ir.intent == QueryIntent.TRANSACTION_LIST
     assert contract.intent == QueryIntent.TRANSACTION_LIST
     assert query_ir.result_reference == "latest"
-    assert contract.normalized_query.result_reference == "latest"
+    assert contract.result_reference == "latest"
 
 
 def test_explicit_this_week_without_days_back_compiles_to_calendar_week_to_date() -> None:
@@ -274,23 +273,23 @@ def test_explicit_last_month_without_days_back_compiles_to_full_previous_month()
     assert contract.time_end == date(2026, 2, 28)
 
 
-def test_contract_compiles_from_legacy_normalized_query() -> None:
+def test_contract_compiles_from_query_ir() -> None:
     parser = QueryParser(_DummyLLM())
-    normalized = parser.convert_to_normalized(
+    query_ir = parser.build_query_ir_from_extraction(
         QueryExtractionResult(
             intent=ExtractionIntent.TRANSACTION_LIST,
             time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="yesterday"),
             raw_query="show my transactions yesterday",
         ),
         today=date(2026, 3, 6),
+        language="en",
     )
-
-    contract = QueryExecutionContract.from_normalized_query(normalized)
+    contract = parser.build_execution_contract_from_ir(query_ir)
 
     assert contract.time_start == date(2026, 3, 5)
     assert contract.time_end == date(2026, 3, 5)
-    assert contract.normalized_query.time_range is not None
-    assert contract.normalized_query.time_range.start == date(2026, 3, 5)
+    assert contract.time_range is not None
+    assert contract.time_range.start == date(2026, 3, 5)
 
 
 def test_structured_comparison_year_ago_compiles_to_contract() -> None:
@@ -453,7 +452,7 @@ def test_recipient_queries_compile_to_counterparty_filter() -> None:
     assert query_ir.filters is not None
     assert query_ir.filters.counterparty == ["Mum"]
     assert query_ir.filters.merchant is None
-    assert contract.normalized_query.answer_fact_field == "date"
+    assert contract.answer_fact_field == "date"
 
 
 def test_who_sent_me_query_sets_counterparty_answer_fact() -> None:

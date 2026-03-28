@@ -2,8 +2,16 @@ from datetime import date
 
 import pytest
 
-from apps.core.src.agent.graphs.query.handlers.time_comparison import _format_period_label, handle_time_comparison
-from apps.core.src.agent.graphs.query.models import NormalizedQuery, QueryExecutionContract, QueryIntent, TimeRange
+from apps.core.src.agent.graphs.query.handlers.time_comparison import (
+    _format_period_label,
+    handle_time_comparison,
+)
+from apps.core.src.agent.graphs.query.models import (
+    QueryExecutionContract,
+    QueryIntent,
+    QueryIR,
+    TimeRange,
+)
 
 
 class _Provider:
@@ -38,7 +46,7 @@ def test_format_period_label_uses_date_span_for_partial_week() -> None:
 async def test_time_comparison_uses_naira_amounts_without_kobo_division(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    current_query = NormalizedQuery(
+    current_query = QueryIR(
         intent=QueryIntent.TIME_COMPARISON,
         time_range=TimeRange(start=date(2026, 3, 8), end=date(2026, 3, 14), granularity="week"),
     )
@@ -59,7 +67,7 @@ async def test_time_comparison_uses_naira_amounts_without_kobo_division(
 
     result = await handle_time_comparison(
         _Provider(),  # type: ignore[arg-type]
-        QueryExecutionContract.from_normalized_query(current_query),
+        QueryExecutionContract.from_query_ir(current_query),
         account_id="acc_1",
         account_ids=["acc_1"],
         language="en",

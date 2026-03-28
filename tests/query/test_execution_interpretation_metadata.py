@@ -7,9 +7,9 @@ from apps.core.src.agent.graphs.query.models import (
     Aggregation,
     ComparisonDirective,
     Filters,
-    NormalizedQuery,
     QueryExecutionContract,
     QueryIntent,
+    QueryIR,
     QueryResult,
     TimeRange,
 )
@@ -20,21 +20,21 @@ from apps.core.src.agent.orchestrator.models.domain import TransactionOutcome
 
 @pytest.mark.asyncio
 async def test_execution_populates_interpretation_metadata(monkeypatch: pytest.MonkeyPatch) -> None:
-    query_contract = QueryExecutionContract.from_normalized_query(
-        NormalizedQuery(
+    query_contract = QueryExecutionContract.from_query_ir(
+        QueryIR(
             intent=QueryIntent.TIME_COMPARISON,
             time_range=TimeRange(start=date(2026, 3, 1), end=date(2026, 3, 7), granularity="day"),
             filters=Filters(transaction_type="debit", min_amount=1000),
             aggregation=Aggregation(type="sum"),
             result_limit=5,
             result_reference="latest",
+            comparison=ComparisonDirective(
+                mode="explicit_range",
+                explicit_range=TimeRange(start=date(2026, 2, 1), end=date(2026, 2, 7), granularity="day"),
+            ),
+            continuation_type="time_delta",
+            continuation_delta_type="time",
         ),
-        comparison=ComparisonDirective(
-            mode="explicit_range",
-            explicit_range=TimeRange(start=date(2026, 2, 1), end=date(2026, 2, 7), granularity="day"),
-        ),
-        continuation_type="time_delta",
-        continuation_delta_type="time",
     )
 
     async def _fake_execute(self, **kwargs):  # type: ignore[no-untyped-def]
@@ -85,14 +85,14 @@ async def test_execution_formats_time_scoped_single_transaction_no_results_as_di
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     yesterday = lagos_today() - timedelta(days=1)
-    query_contract = QueryExecutionContract.from_normalized_query(
-        NormalizedQuery(
+    query_contract = QueryExecutionContract.from_query_ir(
+        QueryIR(
             intent=QueryIntent.TRANSACTION_SEARCH,
             time_range=TimeRange(start=yesterday, end=yesterday),
             result_limit=1,
             result_reference="latest",
-        ),
-        continuation_type="time_delta",
+            continuation_type="time_delta",
+        )
     )
 
     async def _fake_execute(self, **kwargs):  # type: ignore[no-untyped-def]

@@ -8,9 +8,9 @@ import pytest
 from apps.core.src.agent.graphs.query.handlers.transactions import handle_transaction_list
 from apps.core.src.agent.graphs.query.models import (
     Filters,
-    NormalizedQuery,
     QueryExecutionContract,
     QueryIntent,
+    QueryIR,
     TimeRange,
 )
 from apps.core.src.agent.graphs.query.services.fetch import (
@@ -19,6 +19,16 @@ from apps.core.src.agent.graphs.query.services.fetch import (
     build_cache_scope_fingerprint,
     decide_transaction_cache_reuse,
 )
+
+
+def _query_ir(**kwargs: object) -> QueryIR:
+    fallback_day = date(2026, 3, 4)
+    defaults: dict[str, object] = {
+        "intent": QueryIntent.TRANSACTION_LIST,
+        "time_range": TimeRange(start=fallback_day, end=fallback_day),
+    }
+    defaults.update(kwargs)
+    return QueryIR(**defaults)
 
 
 class _Provider:
@@ -66,13 +76,17 @@ class _ConcurrentProvider:
             self.in_flight -= 1
 
 
-def _query(filters: Filters) -> NormalizedQuery:
+def _query(filters: Filters) -> QueryIR:
     today = date(2026, 3, 4)
-    return NormalizedQuery(
+    return _query_ir(
         intent=QueryIntent.TRANSACTION_LIST,
         time_range=TimeRange(start=today - timedelta(days=7), end=today),
         filters=filters,
     )
+
+
+def _contract(query: QueryIR) -> QueryExecutionContract:
+    return QueryExecutionContract.from_query_ir(query)
 
 
 @pytest.mark.asyncio
@@ -88,7 +102,7 @@ async def test_filter_delta_reuses_fresh_cached_transactions() -> None:
 
     result = await handle_transaction_list(
         provider,  # type: ignore[arg-type]
-        QueryExecutionContract.from_normalized_query(query),
+        _contract(query),
         "acc_1",
         ["acc_1"],
         continuation_type="filter_delta",
@@ -124,7 +138,7 @@ async def test_filter_delta_does_not_reuse_stale_cache() -> None:
 
     result = await handle_transaction_list(
         provider,  # type: ignore[arg-type]
-        QueryExecutionContract.from_normalized_query(query),
+        _contract(query),
         "acc_1",
         ["acc_1"],
         continuation_type="filter_delta",
@@ -146,7 +160,7 @@ async def test_filter_delta_does_not_reuse_stale_cache() -> None:
 @pytest.mark.asyncio
 async def test_time_delta_reuses_fresh_subset_cache() -> None:
     today = date(2026, 3, 4)
-    query = NormalizedQuery(
+    query = _query_ir(
         intent=QueryIntent.TRANSACTION_LIST,
         time_range=TimeRange(start=today - timedelta(days=1), end=today),
         filters=Filters(transaction_type="credit"),
@@ -161,7 +175,7 @@ async def test_time_delta_reuses_fresh_subset_cache() -> None:
 
     result = await handle_transaction_list(
         provider,  # type: ignore[arg-type]
-        QueryExecutionContract.from_normalized_query(query),
+        _contract(query),
         "acc_1",
         ["acc_1"],
         continuation_type="time_delta",
@@ -187,7 +201,7 @@ async def test_time_delta_does_not_reuse_cache_for_wider_window() -> None:
             {"id": "4", "narration": "Salary", "amount": 90000, "date": "2026-03-03", "type": "credit"}
         ]
     )
-    narrower_query = NormalizedQuery(
+    narrower_query = _query_ir(
         intent=QueryIntent.TRANSACTION_LIST,
         time_range=TimeRange(start=date(2026, 3, 3), end=date(2026, 3, 4)),
         filters=Filters(transaction_type="credit"),
@@ -196,7 +210,7 @@ async def test_time_delta_does_not_reuse_cache_for_wider_window() -> None:
 
     result = await handle_transaction_list(
         provider,  # type: ignore[arg-type]
-        QueryExecutionContract.from_normalized_query(query),
+        _contract(query),
         "acc_1",
         ["acc_1"],
         continuation_type="time_delta",
@@ -298,14 +312,14 @@ def test_decide_transaction_cache_reuse_rejects_wider_time_window() -> None:
 @pytest.mark.asyncio
 async def test_multi_account_fetch_runs_concurrently() -> None:
     provider = _ConcurrentProvider()
-    query = NormalizedQuery(
+    query = _query_ir(
         intent=QueryIntent.TRANSACTION_LIST,
         time_range=TimeRange(start=date(2026, 3, 1), end=date(2026, 3, 4)),
     )
 
     result = await handle_transaction_list(
         provider,  # type: ignore[arg-type]
-        QueryExecutionContract.from_normalized_query(query),
+        _contract(query),
         "acc_1",
         ["acc_1", "acc_2", "acc_3"],
         continuation_type=None,
@@ -326,7 +340,7 @@ async def test_oldest_result_reference_reorders_transaction_list_before_limiting
             {"id": "tx-1", "narration": "First", "amount": 1000, "date": "2026-03-01", "type": "debit"},
         ]
     )
-    query = NormalizedQuery(
+    query = _query_ir(
         intent=QueryIntent.TRANSACTION_LIST,
         time_range=TimeRange(start=date(2026, 3, 1), end=date(2026, 3, 3)),
         filters=Filters(transaction_type="debit"),
@@ -336,7 +350,7 @@ async def test_oldest_result_reference_reorders_transaction_list_before_limiting
 
     result = await handle_transaction_list(
         provider,  # type: ignore[arg-type]
-        QueryExecutionContract.from_normalized_query(query),
+        _contract(query),
         "acc_1",
         ["acc_1"],
     )
@@ -353,7 +367,7 @@ async def test_oldest_result_reference_applies_before_pagination() -> None:
             {"id": "tx-1", "narration": "First", "amount": 1000, "date": "2026-03-01", "type": "debit"},
         ]
     )
-    query = NormalizedQuery(
+    query = _query_ir(
         intent=QueryIntent.TRANSACTION_LIST,
         time_range=TimeRange(start=date(2026, 3, 1), end=date(2026, 3, 3)),
         filters=Filters(transaction_type="debit"),
@@ -362,7 +376,7 @@ async def test_oldest_result_reference_applies_before_pagination() -> None:
 
     result = await handle_transaction_list(
         provider,  # type: ignore[arg-type]
-        QueryExecutionContract.from_normalized_query(query),
+        _contract(query),
         "acc_1",
         ["acc_1"],
         current_page=1,

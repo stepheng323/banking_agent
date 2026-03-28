@@ -5,18 +5,18 @@ from datetime import date, timedelta
 from apps.core.src.agent.graphs.query.models import (
     Aggregation,
     Filters,
-    NormalizedQuery,
     QueryAnswerContext,
     QueryAnswerStrategy,
     QueryExecutionContract,
     QueryExecutionPlan,
     QueryIntent,
     QueryIntentSpec,
+    QueryIR,
     QueryResult,
     QueryResultItem,
     TimeRange,
-    build_query_execution_plan,
-    derive_query_intent_spec,
+    build_query_execution_plan_from_fields,
+    derive_query_intent_spec_from_fields,
 )
 from apps.core.src.agent.graphs.query.services.formatter import QueryFormatter
 from apps.core.src.agent.graphs.query.utils.timezone import lagos_today
@@ -29,12 +29,32 @@ from apps.core.src.agent.shared.query_contracts import (
 from shared.i18n import render_message
 
 
-def _query_contract(query: NormalizedQuery) -> QueryExecutionContract:
-    if query.time_range is not None:
-        return QueryExecutionContract.from_normalized_query(query)
+def _query_ir(**kwargs: object) -> QueryIR:
+    fallback_day = date(2026, 3, 28)
+    defaults: dict[str, object] = {
+        "intent": QueryIntent.TRANSACTION_LIST,
+        "time_range": TimeRange(start=fallback_day, end=fallback_day),
+    }
+    defaults.update(kwargs)
+    return QueryIR(**defaults)
 
-    intent_spec: QueryIntentSpec = query.intent_spec or derive_query_intent_spec(query)
-    execution_plan: QueryExecutionPlan = build_query_execution_plan(query)
+
+def _query_contract(query: QueryIR) -> QueryExecutionContract:
+    intent_spec: QueryIntentSpec = query.intent_spec or derive_query_intent_spec_from_fields(
+        intent=query.intent,
+        filters=query.filters,
+        aggregation=query.aggregation,
+        answer_fact_field=query.answer_fact_field,
+    )
+    fallback_day = date(2026, 3, 28)
+    execution_plan: QueryExecutionPlan = build_query_execution_plan_from_fields(
+        intent_spec=intent_spec,
+        time_range=query.time_range,
+        filters=query.filters,
+        aggregation=query.aggregation,
+        result_limit=query.result_limit,
+        result_reference=query.result_reference,
+    )
     fallback_day = date(2026, 3, 28)
     return QueryExecutionContract(
         intent=query.intent,
@@ -51,9 +71,24 @@ def _query_contract(query: NormalizedQuery) -> QueryExecutionContract:
         result_limit=query.result_limit,
         result_reference=query.result_reference,
         answer_fact_field=query.answer_fact_field,
-        normalized_query=query,
         intent_spec=intent_spec,
         execution_plan=execution_plan,
+    )
+
+
+def _contract_without_time(
+    *,
+    intent: QueryIntent,
+    filters: Filters | None = None,
+    aggregation: Aggregation | None = None,
+) -> QueryExecutionContract:
+    fallback_day = date(2026, 3, 28)
+    return QueryExecutionContract(
+        intent=intent,
+        time_start=fallback_day,
+        time_end=fallback_day,
+        filters=filters.model_copy(deep=True) if filters is not None else None,
+        aggregation=aggregation.model_copy(deep=True) if aggregation is not None else None,
     )
 
 
@@ -143,7 +178,7 @@ def test_formatter_uses_summary_list_plan_for_summary_only_results() -> None:
     result = QueryResult(
         summary_text="You can afford ₦20,000 right now.",
         answer_strategy=QueryAnswerStrategy.SUMMARY_LIST,
-        query_contract=_query_contract(NormalizedQuery(intent=QueryIntent.AFFORDABILITY)),
+        query_contract=_query_contract(_query_ir(intent=QueryIntent.AFFORDABILITY)),
     )
 
     assert QueryFormatter.format(result, locale="en") == "You can afford ₦20,000 right now."
@@ -223,11 +258,9 @@ def test_formatter_uses_typed_breakdown_heading_from_query_scope() -> None:
                 metadata={"count": 2},
             )
         ],
-        query_contract=_query_contract(
-            NormalizedQuery(
-                intent=QueryIntent.ANALYTICS_SUMMARY,
-                aggregation=Aggregation(type="breakdown", group_by="merchant"),
-            )
+        query_contract=_contract_without_time(
+            intent=QueryIntent.ANALYTICS_SUMMARY,
+            aggregation=Aggregation(type="breakdown", group_by="merchant"),
         ),
         surface_view=SurfaceView(
             mode=SurfaceViewMode.GROUPED_SUMMARY,
@@ -347,7 +380,7 @@ def test_formatter_no_results_with_type_for_today() -> None:
         summary_text="",
         items=[],
         query_contract=_query_contract(
-            NormalizedQuery(
+            _query_ir(
                 intent=QueryIntent.TRANSACTION_LIST,
                 filters=Filters(transaction_type="credit"),
                 time_range=TimeRange(start=today, end=today),
@@ -364,7 +397,7 @@ def test_formatter_no_results_with_type_for_period() -> None:
         summary_text="",
         items=[],
         query_contract=_query_contract(
-            NormalizedQuery(
+            _query_ir(
                 intent=QueryIntent.TRANSACTION_LIST,
                 filters=Filters(transaction_type="debit"),
                 time_range=TimeRange(start=today - timedelta(days=7), end=today - timedelta(days=1)),
@@ -381,7 +414,7 @@ def test_formatter_no_results_without_type_for_yesterday_uses_direct_fact() -> N
         summary_text="",
         items=[],
         query_contract=_query_contract(
-            NormalizedQuery(
+            _query_ir(
                 intent=QueryIntent.TRANSACTION_SEARCH,
                 time_range=TimeRange(start=yesterday, end=yesterday),
                 result_limit=1,
@@ -399,7 +432,7 @@ def test_formatter_search_shaped_no_results_for_yesterday_stays_generic() -> Non
         summary_text="",
         items=[],
         query_contract=_query_contract(
-            NormalizedQuery(
+            _query_ir(
                 intent=QueryIntent.TRANSACTION_SEARCH,
                 filters=Filters(merchant=["mum"]),
                 time_range=TimeRange(start=yesterday, end=yesterday),
@@ -414,13 +447,13 @@ def test_formatter_no_results_without_type_uses_generic_message() -> None:
     result = QueryResult(
         summary_text="",
         items=[],
-        query_contract=_query_contract(NormalizedQuery(intent=QueryIntent.TRANSACTION_LIST)),
+        query_contract=_contract_without_time(intent=QueryIntent.TRANSACTION_LIST),
     )
 
     assert QueryFormatter.format(result, locale="en") == "No matching transactions found for your search."
 
 
-def _sample_list_result(query_snapshot: NormalizedQuery) -> QueryResult:
+def _sample_list_result(query_snapshot: QueryIR) -> QueryResult:
     return QueryResult(
         summary_text="accounts:1|showing:1-2|total:2",
         items=[
@@ -445,10 +478,14 @@ def _sample_list_result(query_snapshot: NormalizedQuery) -> QueryResult:
 
 def test_formatter_heading_uses_credit_context() -> None:
     result = _sample_list_result(
-        NormalizedQuery(
+        _query_ir(
             intent=QueryIntent.TRANSACTION_LIST,
             filters=Filters(transaction_type="credit"),
         )
+    )
+    result.query_contract = _contract_without_time(
+        intent=QueryIntent.TRANSACTION_LIST,
+        filters=Filters(transaction_type="credit"),
     )
 
     response = QueryFormatter.format(result, locale="en")
@@ -469,7 +506,7 @@ def test_formatter_preserves_paginated_credit_list_shape_for_single_remaining_it
             )
         ],
         query_contract=_query_contract(
-            NormalizedQuery(
+            _query_ir(
                 intent=QueryIntent.TRANSACTION_LIST,
                 filters=Filters(transaction_type="credit"),
                 time_range=TimeRange(start=today.replace(day=1), end=today),
@@ -491,10 +528,14 @@ def test_formatter_preserves_paginated_credit_list_shape_for_single_remaining_it
 
 def test_formatter_heading_uses_category_spending_for_debit() -> None:
     result = _sample_list_result(
-        NormalizedQuery(
+        _query_ir(
             intent=QueryIntent.TRANSACTION_LIST,
             filters=Filters(transaction_type="debit", category=["food"]),
         )
+    )
+    result.query_contract = _contract_without_time(
+        intent=QueryIntent.TRANSACTION_LIST,
+        filters=Filters(transaction_type="debit", category=["food"]),
     )
 
     response = QueryFormatter.format(result, locale="en")
@@ -504,7 +545,7 @@ def test_formatter_heading_uses_category_spending_for_debit() -> None:
 def test_formatter_heading_includes_amount_scope_for_transaction_lists() -> None:
     today = lagos_today()
     result = _sample_list_result(
-        NormalizedQuery(
+        _query_ir(
             intent=QueryIntent.TRANSACTION_LIST,
             filters=Filters(transaction_type="debit", min_amount=20000),
             time_range=TimeRange(start=today.replace(day=1), end=today),
@@ -529,7 +570,7 @@ def test_formatter_direct_answer_uses_answer_strategy_without_transaction_card()
             )
         ],
         query_contract=_query_contract(
-            NormalizedQuery(
+            _query_ir(
                 intent=QueryIntent.TRANSACTION_SEARCH,
                 filters=Filters(transaction_type="debit", counterparty=["Mum"]),
                 time_range=TimeRange(start=date(2026, 3, 1), end=date(2026, 3, 27)),
@@ -554,7 +595,7 @@ def test_formatter_fact_no_results_prefers_natural_copy_under_direct_answer() ->
         summary_text="",
         items=[],
         query_contract=_query_contract(
-            NormalizedQuery(
+            _query_ir(
                 intent=QueryIntent.TRANSACTION_SEARCH,
                 filters=Filters(transaction_type="debit", counterparty=["Mum"]),
                 time_range=TimeRange(start=date(2026, 3, 1), end=date(2026, 3, 27)),
@@ -572,7 +613,7 @@ def test_formatter_fact_no_results_prefers_natural_copy_under_direct_answer() ->
 def test_formatter_heading_appends_account_and_today_suffix() -> None:
     today = lagos_today()
     result = _sample_list_result(
-        NormalizedQuery(
+        _query_ir(
             intent=QueryIntent.TRANSACTION_LIST,
             filters=Filters(account_filter="Zenith"),
             time_range=TimeRange(start=today, end=today),
@@ -587,7 +628,7 @@ def test_formatter_heading_single_day_past_range_is_not_labeled_today() -> None:
     today = date.today()
     past_day = today - timedelta(days=1)
     result = _sample_list_result(
-        NormalizedQuery(
+        _query_ir(
             intent=QueryIntent.TRANSACTION_LIST,
             time_range=TimeRange(start=past_day, end=past_day),
         )
@@ -613,7 +654,7 @@ def test_formatter_single_item_fact_query_leads_with_requested_date() -> None:
             )
         ],
         query_contract=_query_contract(
-            NormalizedQuery(
+            _query_ir(
                 intent=QueryIntent.TRANSACTION_SEARCH,
                 filters=Filters(transaction_type="debit", merchant=["netflix"]),
                 time_range=TimeRange(start=date(2026, 3, 1), end=date(2026, 3, 21)),
@@ -648,7 +689,7 @@ def test_formatter_single_item_fact_query_leads_with_counterparty() -> None:
             )
         ],
         query_contract=_query_contract(
-            NormalizedQuery(
+            _query_ir(
                 intent=QueryIntent.TRANSACTION_SEARCH,
                 filters=Filters(transaction_type="credit"),
                 time_range=TimeRange(start=date(2026, 3, 15), end=date(2026, 3, 21)),
@@ -684,7 +725,7 @@ def test_formatter_uses_shared_plan_for_single_transfer_detail_surface() -> None
             )
         ],
         query_contract=_query_contract(
-            NormalizedQuery(
+            _query_ir(
                 intent=QueryIntent.TRANSACTION_SEARCH,
                 filters=Filters(transaction_type="debit"),
                 time_range=TimeRange(start=date(2026, 3, 1), end=date(2026, 3, 21)),
@@ -739,7 +780,7 @@ def test_formatter_account_breakdown_preserves_account_labels_and_generic_total(
             ),
         ],
         query_contract=_query_contract(
-            NormalizedQuery(
+            _query_ir(
                 intent=QueryIntent.ANALYTICS_SUMMARY,
                 aggregation=Aggregation(type="breakdown", group_by="account"),
             )
@@ -804,7 +845,7 @@ def test_formatter_breakdown_heading_includes_amount_scope_and_period() -> None:
             )
         ],
         query_contract=_query_contract(
-            NormalizedQuery(
+            _query_ir(
                 intent=QueryIntent.ANALYTICS_SUMMARY,
                 filters=Filters(transaction_type="debit", min_amount=20000),
                 aggregation=Aggregation(type="breakdown", group_by="account"),

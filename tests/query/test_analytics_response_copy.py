@@ -7,9 +7,9 @@ from apps.core.src.agent.graphs.query.handlers.analytics import handle_analytics
 from apps.core.src.agent.graphs.query.models import (
     Aggregation,
     Filters,
-    NormalizedQuery,
     QueryExecutionContract,
     QueryIntent,
+    QueryIR,
     TimeRange,
 )
 
@@ -51,8 +51,8 @@ async def test_analytics_sum_response_is_compact_and_human(monkeypatch: pytest.M
 
     result = await handle_analytics(
         _Provider(),  # type: ignore[arg-type]
-        QueryExecutionContract.from_normalized_query(
-            NormalizedQuery(
+        QueryExecutionContract.from_query_ir(
+            QueryIR(
                 intent=QueryIntent.ANALYTICS_SUMMARY,
                 aggregation=Aggregation(type="sum"),
                 filters=Filters(transaction_type="debit"),
@@ -81,8 +81,8 @@ async def test_analytics_sum_no_spending_today_is_humanized(monkeypatch: pytest.
 
     result = await handle_analytics(
         _Provider(),  # type: ignore[arg-type]
-        QueryExecutionContract.from_normalized_query(
-            NormalizedQuery(
+        QueryExecutionContract.from_query_ir(
+            QueryIR(
                 intent=QueryIntent.ANALYTICS_SUMMARY,
                 aggregation=Aggregation(type="sum"),
                 filters=Filters(transaction_type="debit"),
@@ -113,8 +113,8 @@ async def test_analytics_transaction_type_breakdown_uses_human_label(monkeypatch
 
     result = await handle_analytics(
         _Provider(),  # type: ignore[arg-type]
-        QueryExecutionContract.from_normalized_query(
-            NormalizedQuery(
+        QueryExecutionContract.from_query_ir(
+            QueryIR(
                 intent=QueryIntent.ANALYTICS_SUMMARY,
                 aggregation=Aggregation(type="breakdown", group_by="transaction_type"),
                 time_range=TimeRange(start=date(2026, 3, 1), end=date(2026, 3, 6)),
@@ -144,8 +144,8 @@ async def test_analytics_account_breakdown_groups_by_source_account_label() -> N
 
     result = await handle_analytics(
         provider,  # type: ignore[arg-type]
-        QueryExecutionContract.from_normalized_query(
-            NormalizedQuery(
+        QueryExecutionContract.from_query_ir(
+            QueryIR(
                 intent=QueryIntent.ANALYTICS_SUMMARY,
                 aggregation=Aggregation(type="breakdown", group_by="account"),
                 time_range=TimeRange(start=date(2026, 3, 1), end=date(2026, 3, 6)),

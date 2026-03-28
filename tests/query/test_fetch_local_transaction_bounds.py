@@ -6,12 +6,22 @@ import pytest
 from apps.core.src.agent.graphs.query.handlers.transactions import handle_transaction_list
 from apps.core.src.agent.graphs.query.models import (
     Filters,
-    NormalizedQuery,
     QueryExecutionContract,
     QueryIntent,
+    QueryIR,
     TimeRange,
 )
 from apps.core.src.agent.graphs.query.services.formatter import QueryFormatter
+
+
+def _query_ir(**kwargs: object) -> QueryIR:
+    fallback_day = date(2026, 3, 6)
+    defaults: dict[str, object] = {
+        "intent": QueryIntent.TRANSACTION_LIST,
+        "time_range": TimeRange(start=fallback_day, end=fallback_day),
+    }
+    defaults.update(kwargs)
+    return QueryIR(**defaults)
 
 
 class _Provider:
@@ -28,12 +38,16 @@ class _Provider:
         return []
 
 
-def _query_for_today(today: date) -> NormalizedQuery:
-    return NormalizedQuery(
+def _query_for_today(today: date) -> QueryIR:
+    return _query_ir(
         intent=QueryIntent.TRANSACTION_LIST,
         time_range=TimeRange(start=today, end=today),
         filters=Filters(transaction_type="debit"),
     )
+
+
+def _contract(query: QueryIR) -> QueryExecutionContract:
+    return QueryExecutionContract.from_query_ir(query)
 
 
 @pytest.mark.asyncio
@@ -42,7 +56,7 @@ async def test_query_results_are_bank_feed_only_when_provider_returns_no_transac
 
     result = await handle_transaction_list(
         _Provider(),  # type: ignore[arg-type]
-        QueryExecutionContract.from_normalized_query(_query_for_today(query_day)),
+        _contract(_query_for_today(query_day)),
         account_id="acc_1",
         account_ids=["acc_1"],
         user_id="user_1",
@@ -62,12 +76,12 @@ async def test_today_query_with_no_bank_feed_rows_returns_no_results_copy(
     query = _query_for_today(query_day)
     result = await handle_transaction_list(
         _Provider(),  # type: ignore[arg-type]
-        QueryExecutionContract.from_normalized_query(query),
+        _contract(query),
         account_id="acc_1",
         account_ids=["acc_1"],
         user_id="user_1",
         language="en",
     )
-    result.query_contract = QueryExecutionContract.from_normalized_query(query)
+    result.query_contract = _contract(query)
 
     assert QueryFormatter.format(result, locale="en") == "You had no debit transactions today."

@@ -16,7 +16,6 @@ from apps.core.src.agent.graphs.query.models import (
     ComparisonDirective,
     ExtractionIntent,
     Filters,
-    NormalizedQuery,
     ParserQueryExtraction,
     PendingClarificationState,
     QueryAggregation,
@@ -33,7 +32,6 @@ from apps.core.src.agent.graphs.query.models import (
     ResolverOutcome,
     TimeRange,
     TimeReference,
-    build_normalized_query_snapshot,
     derive_query_intent_spec_from_fields,
 )
 from apps.core.src.agent.graphs.query.models.extraction import AmbiguityCode
@@ -1356,28 +1354,3 @@ class QueryParser:
         if aggregation.type in {"largest", "smallest"}:
             aggregation.limit = 1
         return aggregation
-
-    def convert_to_normalized(
-        self,
-        extraction: "QueryExtractionResult",
-        today: date | None = None,
-    ) -> NormalizedQuery:
-        """Convert QueryExtractionResult to NormalizedQuery for handlers."""
-        today = today or lagos_today()
-        compiled = self._compile_query_fields_from_extraction(extraction, today=today)
-        return build_normalized_query_snapshot(
-            intent=cast(QueryIntent, compiled["intent"]),
-            query_operation=cast(QueryOperation | None, compiled["query_operation"]),
-            time_range=cast(TimeRange | None, compiled["time_range"]),
-            filters=cast(Filters | None, compiled["filters"]),
-            aggregation=cast(Aggregation | None, compiled["aggregation"]),
-            accounts_scope=cast(Literal["single", "all"], compiled["accounts_scope"]),
-            account_name=cast(str | None, compiled["account_name"]),
-            amount_check=cast(float | None, compiled["amount_check"]),
-            item_name=cast(str | None, compiled["item_name"]),
-            analysis_type=cast(Literal["immediate", "relative", "simulated", "remainder"], compiled["analysis_type"]),
-            result_limit=cast(int | None, compiled["result_limit"]),
-            result_reference=cast(Literal["latest", "oldest"] | None, compiled["result_reference"]),
-            answer_fact_field=cast(Literal["date", "counterparty", "amount", "bank"] | None, compiled["answer_fact_field"]),
-            intent_spec=cast(Any, compiled["intent_spec"]),
-        )

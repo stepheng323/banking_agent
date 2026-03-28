@@ -46,10 +46,6 @@ async def handle_time_comparison(
         comparison_contract.execution_plan = comparison_contract.execution_plan.model_copy(
             update={"time_range": comparison_period}
         )
-    if comparison_contract.normalized_query.time_range is not None:
-        comparison_contract.normalized_query = comparison_contract.normalized_query.model_copy(
-            update={"time_range": comparison_period}
-        )
 
     # Fetch transactions for both periods
     current_txns = await fetch_and_filter(

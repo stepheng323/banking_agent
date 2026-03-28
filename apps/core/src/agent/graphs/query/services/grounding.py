@@ -14,6 +14,7 @@ from apps.core.src.agent.graphs.query.models import (
     QueryResult,
     TimeRange,
 )
+from apps.core.src.agent.graphs.query.services.continuity import rebuild_query_contract
 from apps.core.src.agent.shared.query_contracts import SurfaceView, SurfaceViewMode
 from shared.i18n import render_message
 from shared.i18n.message_keys import MessageKey
@@ -99,26 +100,26 @@ def build_grounded_query_contract(
         return frames[0].query_contract.model_copy(deep=True)
 
     if operation == "show_transactions":
-        selected_query = frames[0].query_contract.normalized_query.model_copy(deep=True)
-        selected_query.intent = QueryIntent.TRANSACTION_LIST
-        selected_query.aggregation = None
-        selected_query.result_limit = None
-        selected_query.result_reference = None
-        return QueryExecutionContract.from_normalized_query(selected_query)
+        return rebuild_query_contract(
+            frames[0].query_contract,
+            intent=QueryIntent.TRANSACTION_LIST,
+            aggregation=None,
+            result_limit=None,
+            result_reference=None,
+        )
 
     if operation == "compare_frames":
         if len(frames) < 2 or not _can_compare_frames(frames[0], frames[1]):
             return None
 
         current_frame, comparison_frame = frames[0], frames[1]
-        comparison_range = comparison_frame.query_contract.normalized_query.time_range
-        current_query = current_frame.query_contract.normalized_query.model_copy(deep=True)
-        if comparison_range is None or current_query.time_range is None:
+        comparison_range = comparison_frame.query_contract.time_range
+        if comparison_range is None or current_frame.query_contract.time_range is None:
             return None
 
-        current_query.intent = QueryIntent.TIME_COMPARISON
-        return QueryExecutionContract.from_normalized_query(
-            current_query,
+        return rebuild_query_contract(
+            current_frame.query_contract,
+            intent=QueryIntent.TIME_COMPARISON,
             comparison=ComparisonDirective(mode="explicit_range", explicit_range=comparison_range),
         )
 
@@ -151,8 +152,8 @@ def build_memory_answer(
     if current_facts.amount is None or comparison_facts.amount is None:
         return None
 
-    current_label = _format_period_label(current_frame.query_contract.normalized_query.time_range)
-    comparison_label = _format_period_label(comparison_frame.query_contract.normalized_query.time_range)
+    current_label = _format_period_label(current_frame.query_contract.time_range)
+    comparison_label = _format_period_label(comparison_frame.query_contract.time_range)
     if current_label is None or comparison_label is None:
         return None
 
@@ -189,8 +190,7 @@ def _derive_query_frame_facts(
         label=result.summary_text,
         direction=query_contract.filters.transaction_type if query_contract.filters else None,
     )
-    query = query_contract.normalized_query
-    aggregation_type = query.aggregation.type if query.aggregation else None
+    aggregation_type = query_contract.aggregation.type if query_contract.aggregation else None
 
     if query_contract.intent == QueryIntent.ANALYTICS_SUMMARY and aggregation_type == "sum":
         return facts.model_copy(
@@ -277,8 +277,8 @@ def _coerce_int(value: object) -> int | None:
 
 
 def _can_compare_frames(current_frame: QueryFrame, comparison_frame: QueryFrame) -> bool:
-    current_query = current_frame.query_contract.normalized_query
-    comparison_query = comparison_frame.query_contract.normalized_query
+    current_query = current_frame.query_contract
+    comparison_query = comparison_frame.query_contract
     if current_query.intent != QueryIntent.ANALYTICS_SUMMARY or comparison_query.intent != QueryIntent.ANALYTICS_SUMMARY:
         return False
 
@@ -291,7 +291,7 @@ def _can_compare_frames(current_frame: QueryFrame, comparison_frame: QueryFrame)
 
 
 def _frame_shape_signature(frame: QueryFrame) -> dict[str, Any]:
-    query = frame.query_contract.normalized_query
+    query = frame.query_contract
     filters = query.filters.model_dump(exclude_none=True) if query.filters else {}
     aggregation = query.aggregation.model_dump(exclude_none=True) if query.aggregation else {}
     return {

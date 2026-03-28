@@ -10,11 +10,11 @@ import pytest
 
 from apps.core.src.agent.graphs.query.models import (
     Filters,
-    NormalizedQuery,
     PendingClarificationState,
     QueryExecutionContract,
     QueryExtractionResult,
     QueryIntent,
+    QueryIR,
     QueryResultItem,
     TimeRange,
 )
@@ -24,6 +24,20 @@ from apps.core.src.agent.graphs.query.services.reasoner import (
     SemanticReasonerContext,
 )
 from apps.core.src.agent.shared.query_contracts import SurfaceView, SurfaceViewMode
+
+
+def _query_ir(**kwargs: object) -> QueryIR:
+    fallback_day = date(2026, 3, 20)
+    defaults: dict[str, object] = {
+        "intent": QueryIntent.TRANSACTION_LIST,
+        "time_range": TimeRange(start=fallback_day, end=fallback_day),
+    }
+    defaults.update(kwargs)
+    return QueryIR(**defaults)
+
+
+def _contract(query: QueryIR) -> QueryExecutionContract:
+    return QueryExecutionContract.from_query_ir(query)
 
 
 def _live_chat_model() -> Any:
@@ -42,15 +56,12 @@ def _active_transaction_list_context(message: str, *, language: str = "en") -> S
         message=message,
         today=date(2026, 3, 20),
         language=language,
-        query_contract=QueryExecutionContract(
-            intent=QueryIntent.TRANSACTION_LIST,
-            time_start=date(2026, 3, 1),
-            time_end=date(2026, 3, 20),
-            normalized_query=NormalizedQuery(
+        query_contract=_contract(
+            _query_ir(
                 intent=QueryIntent.TRANSACTION_LIST,
                 time_range=TimeRange(start=date(2026, 3, 1), end=date(2026, 3, 20), granularity="month"),
                 filters=Filters(transaction_type="debit", merchant=["mum"]),
-            ),
+            )
         ),
         items=[
             QueryResultItem(
@@ -80,15 +91,12 @@ def _active_summary_context(message: str) -> SemanticReasonerContext:
         message=message,
         today=date(2026, 3, 20),
         language="en",
-        query_contract=QueryExecutionContract(
-            intent=QueryIntent.ANALYTICS_SUMMARY,
-            time_start=date(2026, 3, 16),
-            time_end=date(2026, 3, 20),
-            normalized_query=NormalizedQuery(
+        query_contract=_contract(
+            _query_ir(
                 intent=QueryIntent.ANALYTICS_SUMMARY,
                 time_range=TimeRange(start=date(2026, 3, 16), end=date(2026, 3, 20), granularity="week"),
                 filters=Filters(transaction_type="debit", merchant=["mum"]),
-            ),
+            )
         ),
         surface_view=SurfaceView(mode=SurfaceViewMode.GROUPED_SUMMARY, context={"type": "spending_total"}),
     )

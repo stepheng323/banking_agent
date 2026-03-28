@@ -7,9 +7,19 @@ from typing import Any
 import pytest
 
 from apps.core.src.agent.graphs.query.handlers.analytics import _aggregate_breakdown
-from apps.core.src.agent.graphs.query.models import Aggregation, Filters, NormalizedQuery, QueryIntent, TimeRange
+from apps.core.src.agent.graphs.query.models import Aggregation, Filters, QueryIntent, QueryIR, TimeRange
 from apps.core.src.agent.graphs.query.services.fetch import fetch_and_filter, fetch_transactions_base
 from shared.clients.abstractions.banking import TransactionData, TransactionPageData
+
+
+def _query_ir(**kwargs: object) -> QueryIR:
+    fallback_day = date(2026, 3, 28)
+    defaults: dict[str, object] = {
+        "intent": QueryIntent.TRANSACTION_LIST,
+        "time_range": TimeRange(start=fallback_day, end=fallback_day),
+    }
+    defaults.update(kwargs)
+    return QueryIR(**defaults)
 
 
 class _FakeDbSession:
@@ -217,8 +227,8 @@ def _query(
     start_date: date,
     end_date: date,
     filters: Filters | None = None,
-) -> NormalizedQuery:
-    return NormalizedQuery(
+) -> QueryIR:
+    return _query_ir(
         intent=QueryIntent.TRANSACTION_LIST,
         time_range=TimeRange(start=start_date, end=end_date),
         filters=filters,
@@ -539,7 +549,7 @@ async def test_category_filter_uses_provider_category_from_mirror(
 
 @pytest.mark.asyncio
 async def test_category_breakdown_uses_provider_or_resolved_category() -> None:
-    query = NormalizedQuery(
+    query = _query_ir(
         intent=QueryIntent.ANALYTICS_SUMMARY,
         time_range=TimeRange(start=date(2026, 1, 10), end=date(2026, 1, 10)),
         aggregation=Aggregation(type="breakdown", group_by="category"),

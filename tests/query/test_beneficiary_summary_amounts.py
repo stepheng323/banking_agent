@@ -7,11 +7,21 @@ from apps.core.src.agent.graphs.query.handlers.beneficiary import handle_benefic
 from apps.core.src.agent.graphs.query.models import (
     Aggregation,
     Filters,
-    NormalizedQuery,
     QueryExecutionContract,
     QueryIntent,
+    QueryIR,
     TimeRange,
 )
+
+
+def _query_ir(**kwargs: object) -> QueryIR:
+    fallback_day = date(2026, 3, 28)
+    defaults: dict[str, object] = {
+        "intent": QueryIntent.BENEFICIARY_SUMMARY,
+        "time_range": TimeRange(start=fallback_day, end=fallback_day),
+    }
+    defaults.update(kwargs)
+    return QueryIR(**defaults)
 
 
 class _ProviderStub:
@@ -44,14 +54,18 @@ class _ProviderStub:
         ]
 
 
+def _contract(query: QueryIR) -> QueryExecutionContract:
+    return QueryExecutionContract.from_query_ir(query)
+
+
 @pytest.mark.asyncio
 async def test_beneficiary_summary_uses_full_currency_amount_without_dividing_by_100() -> None:
-    query = NormalizedQuery(
+    query = _query_ir(
         intent=QueryIntent.BENEFICIARY_SUMMARY,
         time_range=TimeRange(start=date(2026, 3, 8), end=date(2026, 3, 10), granularity="day"),
         aggregation=Aggregation(type="sum", sort_by="amount", limit=5),
     )
-    contract = QueryExecutionContract.from_normalized_query(query)
+    contract = _contract(query)
     provider = _ProviderStub()
 
     result = await handle_beneficiary_summary(
@@ -141,12 +155,12 @@ class _AmountScopedRecipientProviderStub:
 
 @pytest.mark.asyncio
 async def test_beneficiary_summary_merges_trivial_recipient_name_variants() -> None:
-    query = NormalizedQuery(
+    query = _query_ir(
         intent=QueryIntent.BENEFICIARY_SUMMARY,
         time_range=TimeRange(start=date(2026, 3, 7), end=date(2026, 3, 10), granularity="day"),
         aggregation=Aggregation(type="sum", sort_by="count", limit=5),
     )
-    contract = QueryExecutionContract.from_normalized_query(query)
+    contract = _contract(query)
     provider = _RecipientVariantProviderStub()
 
     result = await handle_beneficiary_summary(
@@ -166,13 +180,13 @@ async def test_beneficiary_summary_merges_trivial_recipient_name_variants() -> N
 
 @pytest.mark.asyncio
 async def test_beneficiary_summary_header_mentions_lower_bound_amount_scope() -> None:
-    query = NormalizedQuery(
+    query = _query_ir(
         intent=QueryIntent.BENEFICIARY_SUMMARY,
         time_range=TimeRange(start=date(2026, 3, 14), end=date(2026, 3, 27), granularity="day"),
         filters=Filters(transaction_type="debit", min_amount=20000),
         aggregation=Aggregation(type="sum", sort_by="count", limit=5),
     )
-    contract = QueryExecutionContract.from_normalized_query(query)
+    contract = _contract(query)
     provider = _AmountScopedRecipientProviderStub()
 
     result = await handle_beneficiary_summary(
@@ -188,13 +202,13 @@ async def test_beneficiary_summary_header_mentions_lower_bound_amount_scope() ->
 
 @pytest.mark.asyncio
 async def test_beneficiary_summary_header_mentions_exact_amount_scope() -> None:
-    query = NormalizedQuery(
+    query = _query_ir(
         intent=QueryIntent.BENEFICIARY_SUMMARY,
         time_range=TimeRange(start=date(2026, 3, 14), end=date(2026, 3, 27), granularity="day"),
         filters=Filters(transaction_type="debit", min_amount=20000, max_amount=20000),
         aggregation=Aggregation(type="sum", sort_by="count", limit=5),
     )
-    contract = QueryExecutionContract.from_normalized_query(query)
+    contract = _contract(query)
     provider = _AmountScopedRecipientProviderStub()
 
     result = await handle_beneficiary_summary(

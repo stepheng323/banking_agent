@@ -2,10 +2,10 @@ from datetime import date
 
 from apps.core.src.agent.graphs.query.models import (
     Filters,
-    NormalizedQuery,
     QueryAnswerStrategy,
     QueryExecutionContract,
     QueryIntent,
+    QueryIR,
     QueryResult,
     QueryResultItem,
     TimeRange,
@@ -13,8 +13,18 @@ from apps.core.src.agent.graphs.query.models import (
 from apps.core.src.agent.graphs.query.services.answer_strategy import select_answer_strategy
 
 
-def _query_contract(query: NormalizedQuery) -> QueryExecutionContract:
-    return QueryExecutionContract.from_normalized_query(query)
+def _query_ir(**kwargs: object) -> QueryIR:
+    fallback_day = date(2026, 3, 28)
+    defaults: dict[str, object] = {
+        "intent": QueryIntent.TRANSACTION_LIST,
+        "time_range": TimeRange(start=fallback_day, end=fallback_day),
+    }
+    defaults.update(kwargs)
+    return QueryIR(**defaults)
+
+
+def _query_contract(query: QueryIR) -> QueryExecutionContract:
+    return QueryExecutionContract.from_query_ir(query)
 
 
 def test_select_answer_strategy_uses_direct_answer_for_single_fact_match() -> None:
@@ -37,7 +47,7 @@ def test_select_answer_strategy_uses_direct_answer_for_single_fact_match() -> No
             )
         ],
         query_contract=_query_contract(
-            NormalizedQuery(
+            _query_ir(
                 intent=QueryIntent.TRANSACTION_SEARCH,
                 filters=Filters(transaction_type="debit", counterparty=["Mum"]),
                 time_range=TimeRange(start=date(2026, 3, 1), end=date(2026, 3, 27)),
@@ -63,7 +73,7 @@ def test_select_answer_strategy_uses_clarify_for_ambiguous_fact_match() -> None:
             QueryResultItem(id="tx2", description="Transfer to Mum", amount=20000, date=date(2026, 3, 20)),
         ],
         query_contract=_query_contract(
-            NormalizedQuery(
+            _query_ir(
                 intent=QueryIntent.TRANSACTION_SEARCH,
                 filters=Filters(transaction_type="debit", counterparty=["Mum"]),
                 time_range=TimeRange(start=date(2026, 3, 1), end=date(2026, 3, 27)),

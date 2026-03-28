@@ -132,38 +132,6 @@ class QueryExecutionPlan(BaseModel):
     drill_down_template: dict[str, Any] = Field(default_factory=dict)
 
 
-class NormalizedQuery(BaseModel):
-    """
-    Legacy-compatible normalized query snapshot used by formatters/session continuity.
-
-    QueryExecutionContract is the runtime source of truth for execution.
-    """
-
-    intent: QueryIntent
-    query_operation: QueryOperation | None = None
-    time_range: TimeRange | None = None
-    filters: Filters | None = None
-    aggregation: Aggregation | None = None
-    accounts_scope: Literal["single", "all"] = Field(default="all")
-    account_name: str | None = Field(default=None, description="Specific account name if user mentions one")
-    source_message_id: str | None = None
-
-    amount_check: float | None = Field(default=None, description="Amount for affordability check")
-    item_name: str | None = Field(default=None, description="Product name for price lookup")
-    analysis_type: Literal["immediate", "relative", "simulated", "remainder"] = "immediate"
-    result_limit: int | None = Field(
-        default=None, ge=1, le=100, description="Max results to return (e.g., 'last transaction' = 1)"
-    )
-    result_reference: Literal["latest", "oldest"] | None = Field(
-        default=None, description="Relative positioning for results when user asks for most recent/oldest"
-    )
-    answer_fact_field: Literal["date", "counterparty", "amount", "bank"] | None = Field(
-        default=None,
-        description="Fact to answer directly when a single matching transaction is found",
-    )
-    intent_spec: QueryIntentSpec | None = None
-
-
 class QueryIR(BaseModel):
     """LLM-facing interpretation model before runtime contract compilation."""
 
@@ -210,7 +178,6 @@ class QueryExecutionContract(BaseModel):
     comparison: ComparisonDirective | None = None
     continuation_type: str | None = None
     continuation_delta_type: str | None = None
-    normalized_query: NormalizedQuery
     intent_spec: QueryIntentSpec | None = None
     execution_plan: QueryExecutionPlan | None = None
 
@@ -220,6 +187,29 @@ class QueryExecutionContract(BaseModel):
         if self.execution_plan is None:
             return None
         return self.execution_plan.time_range
+
+    def to_query_ir(self) -> QueryIR:
+        """Project the runtime contract back into query IR for safe rebuilds."""
+        return QueryIR(
+            intent=self.intent,
+            query_operation=self.query_operation,
+            timezone=self.timezone,
+            time_range=self.time_range or TimeRange(start=self.time_start, end=self.time_end),
+            filters=self.filters.model_copy(deep=True) if self.filters is not None else None,
+            aggregation=self.aggregation.model_copy(deep=True) if self.aggregation is not None else None,
+            accounts_scope=self.accounts_scope,
+            account_name=self.account_name,
+            amount_check=self.amount_check,
+            item_name=self.item_name,
+            analysis_type=self.analysis_type,
+            result_limit=self.result_limit,
+            result_reference=self.result_reference,
+            answer_fact_field=self.answer_fact_field,
+            comparison=self.comparison.model_copy(deep=True) if self.comparison is not None else None,
+            continuation_type=self.continuation_type,
+            continuation_delta_type=self.continuation_delta_type,
+            intent_spec=self.intent_spec.model_copy(deep=True) if self.intent_spec is not None else None,
+        )
 
     @classmethod
     def from_query_ir(cls, ir: QueryIR) -> QueryExecutionContract:
@@ -241,22 +231,6 @@ class QueryExecutionContract(BaseModel):
             continuation_type=ir.continuation_type,
             continuation_delta_type=ir.continuation_delta_type,
         )
-        normalized = build_normalized_query_snapshot(
-            intent=ir.intent,
-            query_operation=ir.query_operation,
-            time_range=ir.time_range,
-            filters=ir.filters,
-            aggregation=ir.aggregation,
-            accounts_scope=ir.accounts_scope,
-            account_name=ir.account_name,
-            amount_check=ir.amount_check,
-            item_name=ir.item_name,
-            analysis_type=ir.analysis_type,
-            result_limit=ir.result_limit,
-            result_reference=ir.result_reference,
-            answer_fact_field=ir.answer_fact_field,
-            intent_spec=intent_spec,
-        )
         return cls(
             intent=ir.intent,
             query_operation=ir.query_operation,
@@ -276,57 +250,9 @@ class QueryExecutionContract(BaseModel):
             comparison=ir.comparison,
             continuation_type=ir.continuation_type,
             continuation_delta_type=ir.continuation_delta_type,
-            normalized_query=normalized,
             intent_spec=intent_spec,
             execution_plan=execution_plan,
         )
-
-    @classmethod
-    def from_normalized_query(
-        cls,
-        query: NormalizedQuery,
-        *,
-        timezone: str = "Africa/Lagos",
-        comparison: ComparisonDirective | None = None,
-        continuation_type: str | None = None,
-        continuation_delta_type: str | None = None,
-    ) -> QueryExecutionContract:
-        """Build runtime contract from legacy NormalizedQuery."""
-        time_range = query.time_range
-        if time_range is None:
-            raise ValueError("NormalizedQuery.time_range is required for QueryExecutionContract")
-
-        ir = QueryIR(
-            intent=query.intent,
-            query_operation=query.query_operation,
-            timezone=timezone,
-            time_range=time_range,
-            filters=query.filters,
-            aggregation=query.aggregation,
-            accounts_scope=query.accounts_scope,
-            account_name=query.account_name,
-            amount_check=query.amount_check,
-            item_name=query.item_name,
-            analysis_type=query.analysis_type,
-            result_limit=query.result_limit,
-            result_reference=query.result_reference,
-            answer_fact_field=query.answer_fact_field,
-            comparison=comparison,
-            continuation_type=continuation_type,
-            continuation_delta_type=continuation_delta_type,
-        )
-        contract = cls.from_query_ir(ir)
-        # Preserve the exact input query snapshot for formatter/session compatibility.
-        contract.normalized_query = query
-        contract.intent_spec = query.intent_spec or derive_query_intent_spec(query)
-        contract.execution_plan = build_query_execution_plan(
-            query,
-            comparison=comparison,
-            continuation_type=continuation_type,
-            continuation_delta_type=continuation_delta_type,
-        )
-        return contract
-
 
 class QueryFrameFacts(BaseModel):
     """Compact derived facts for conversational follow-ups over prior query results."""
@@ -413,24 +339,6 @@ class QueryResult(BaseModel):
     cache_window_end: str | None = None
     cache_reused: bool = False
 
-    @property
-    def normalized_query(self) -> NormalizedQuery | None:
-        """Expose the normalized query through the execution contract."""
-        if self.query_contract is None:
-            return None
-        return self.query_contract.normalized_query
-
-
-def derive_query_intent_spec(query: NormalizedQuery) -> QueryIntentSpec:
-    """Derive a semantic intent spec from the legacy normalized query."""
-    return derive_query_intent_spec_from_fields(
-        intent=query.intent,
-        filters=query.filters,
-        aggregation=query.aggregation,
-        answer_fact_field=query.answer_fact_field,
-    )
-
-
 def derive_query_intent_spec_from_fields(
     *,
     intent: QueryIntent,
@@ -486,28 +394,6 @@ def derive_query_intent_spec_from_fields(
         user_request_shape=user_request_shape,
     )
 
-
-def build_query_execution_plan(
-    query: NormalizedQuery,
-    *,
-    comparison: ComparisonDirective | None = None,
-    continuation_type: str | None = None,
-    continuation_delta_type: str | None = None,
-) -> QueryExecutionPlan:
-    """Build canonical execution plan from the normalized query."""
-    return build_query_execution_plan_from_fields(
-        intent_spec=query.intent_spec or derive_query_intent_spec(query),
-        time_range=query.time_range,
-        filters=query.filters,
-        aggregation=query.aggregation,
-        result_limit=query.result_limit,
-        result_reference=query.result_reference,
-        comparison=comparison,
-        continuation_type=continuation_type,
-        continuation_delta_type=continuation_delta_type,
-    )
-
-
 def build_query_execution_plan_from_fields(
     *,
     intent_spec: QueryIntentSpec,
@@ -535,42 +421,6 @@ def build_query_execution_plan_from_fields(
         result_reference=result_reference,
         comparison=comparison.model_copy(deep=True) if comparison is not None else None,
         drill_down_template=drill_down_template,
-    )
-
-
-def build_normalized_query_snapshot(
-    *,
-    intent: QueryIntent,
-    query_operation: QueryOperation | None,
-    time_range: TimeRange | None,
-    filters: Filters | None,
-    aggregation: Aggregation | None,
-    accounts_scope: Literal["single", "all"],
-    account_name: str | None,
-    amount_check: float | None,
-    item_name: str | None,
-    analysis_type: Literal["immediate", "relative", "simulated", "remainder"],
-    result_limit: int | None,
-    result_reference: Literal["latest", "oldest"] | None,
-    answer_fact_field: Literal["date", "counterparty", "amount", "bank"] | None,
-    intent_spec: QueryIntentSpec | None,
-) -> NormalizedQuery:
-    """Build the temporary compatibility snapshot from explicit query fields."""
-    return NormalizedQuery(
-        intent=intent,
-        query_operation=query_operation,
-        time_range=time_range.model_copy(deep=True) if time_range is not None else None,
-        filters=filters.model_copy(deep=True) if filters is not None else None,
-        aggregation=aggregation.model_copy(deep=True) if aggregation is not None else None,
-        accounts_scope=accounts_scope,
-        account_name=account_name,
-        amount_check=amount_check,
-        item_name=item_name,
-        analysis_type=analysis_type,
-        result_limit=result_limit,
-        result_reference=result_reference,
-        answer_fact_field=answer_fact_field,
-        intent_spec=intent_spec.model_copy(deep=True) if intent_spec is not None else None,
     )
 
 

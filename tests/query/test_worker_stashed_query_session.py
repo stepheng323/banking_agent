@@ -7,11 +7,11 @@ from apps.core.src.agent.graphs.query.models import (
     Aggregation,
     ExtractionIntent,
     Filters,
-    NormalizedQuery,
     PendingClarificationState,
     QueryExecutionContract,
     QueryExtractionResult,
     QueryIntent,
+    QueryIR,
     QueryResult,
     QueryResultItem,
     QueryTimeRange,
@@ -23,6 +23,16 @@ from apps.core.src.agent.graphs.query.session import QuerySessionManager, _sessi
 from apps.core.src.agent.graphs.query.worker import QueryWorker
 from apps.core.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
 from apps.core.src.agent.shared.query_contracts import SurfaceView, SurfaceViewMode
+
+
+def _query_ir(**kwargs: object) -> QueryIR:
+    fallback_day = date(2026, 3, 28)
+    defaults: dict[str, object] = {
+        "intent": QueryIntent.TRANSACTION_LIST,
+        "time_range": TimeRange(start=fallback_day, end=fallback_day),
+    }
+    defaults.update(kwargs)
+    return QueryIR(**defaults)
 
 
 class _DummyStructured:
@@ -138,20 +148,22 @@ class _RedisStoreStub:
         return True
 
 
+def _contract(query: QueryIR) -> QueryExecutionContract:
+    assert query.time_range is not None
+    return QueryExecutionContract.from_query_ir(query)
+
+
 @pytest.mark.asyncio
 async def test_worker_restores_from_stashed_query_session_and_marks_patch() -> None:
     session_manager = _SessionManager()
     worker = QueryWorker(_DummyLLM(), _DummyProvider(), session_manager)  # type: ignore[arg-type]
     stashed_query_session = {
         "session_active": True,
-        "query_contract": QueryExecutionContract(
-            intent=QueryIntent.TRANSACTION_LIST,
-            time_start=date(2026, 3, 1),
-            time_end=date(2026, 3, 6),
-            normalized_query=NormalizedQuery(
+        "query_contract": _contract(
+            _query_ir(
                 intent=QueryIntent.TRANSACTION_LIST,
                 time_range=TimeRange(start=date(2026, 3, 1), end=date(2026, 3, 6)),
-            ),
+            )
         ).model_dump(),
         "current_page": 0,
     }
@@ -187,14 +199,11 @@ async def test_worker_does_not_restore_stale_stashed_query_session() -> None:
     stashed_query_session = {
         "session_active": True,
         "timestamp": 0.0,
-        "query_contract": QueryExecutionContract(
-            intent=QueryIntent.TRANSACTION_LIST,
-            time_start=date(2026, 3, 1),
-            time_end=date(2026, 3, 6),
-            normalized_query=NormalizedQuery(
+        "query_contract": _contract(
+            _query_ir(
                 intent=QueryIntent.TRANSACTION_LIST,
                 time_range=TimeRange(start=date(2026, 3, 1), end=date(2026, 3, 6)),
-            ),
+            )
         ).model_dump(),
         "current_page": 0,
     }
@@ -270,8 +279,8 @@ async def test_worker_persists_pending_query_clarification_session() -> None:
 async def test_worker_appends_recent_query_frame_history_on_successful_query() -> None:
     session_manager = _SessionManager()
     worker = QueryWorker(_DummyLLM(), _DummyProvider(), session_manager)  # type: ignore[arg-type]
-    query_contract = QueryExecutionContract.from_normalized_query(
-        NormalizedQuery(
+    query_contract = _contract(
+        _query_ir(
             intent=QueryIntent.ANALYTICS_SUMMARY,
             time_range=TimeRange(start=date(2026, 3, 16), end=date(2026, 3, 19), granularity="week"),
             filters=Filters(transaction_type="debit"),
@@ -352,16 +361,12 @@ async def test_worker_sets_followup_progress_stage_before_pipeline_run() -> None
     tracker = _ProgressTracker()
     stashed_query_session = {
         "session_active": True,
-        "query_contract": QueryExecutionContract(
-            intent=QueryIntent.ANALYTICS_SUMMARY,
-            time_start=date(2026, 3, 16),
-            time_end=date(2026, 3, 19),
-            filters={"transaction_type": "debit", "merchant": ["mum"]},
-            normalized_query=NormalizedQuery(
+        "query_contract": _contract(
+            _query_ir(
                 intent=QueryIntent.ANALYTICS_SUMMARY,
                 time_range=TimeRange(start=date(2026, 3, 16), end=date(2026, 3, 19), granularity="week"),
-                filters={"transaction_type": "debit", "merchant": ["mum"]},
-            ),
+                filters=Filters(transaction_type="debit", merchant=["mum"]),
+            )
         ).model_dump(),
         "current_page": 0,
     }
@@ -507,14 +512,11 @@ async def test_worker_logs_query_turn_summary_for_active_result_fact_followup(
             "today": date(2026, 3, 13),
             "stashed_query_session": {
                 "session_active": True,
-                "query_contract": QueryExecutionContract(
-                    intent=QueryIntent.TRANSACTION_SEARCH,
-                    time_start=date(2026, 3, 13),
-                    time_end=date(2026, 3, 13),
-                    normalized_query=NormalizedQuery(
+                "query_contract": _contract(
+                    _query_ir(
                         intent=QueryIntent.TRANSACTION_SEARCH,
                         time_range=TimeRange(start=date(2026, 3, 13), end=date(2026, 3, 13)),
-                    ),
+                    )
                 ).model_dump(),
                 "query_result": {
                     "items": [
@@ -593,14 +595,11 @@ async def test_worker_logs_query_turn_summary_for_conversational_active_result_r
             "today": date(2026, 3, 13),
             "stashed_query_session": {
                 "session_active": True,
-                "query_contract": QueryExecutionContract(
-                    intent=QueryIntent.ANALYTICS_SUMMARY,
-                    time_start=date(2026, 3, 9),
-                    time_end=date(2026, 3, 13),
-                    normalized_query=NormalizedQuery(
+                "query_contract": _contract(
+                    _query_ir(
                         intent=QueryIntent.ANALYTICS_SUMMARY,
                         time_range=TimeRange(start=date(2026, 3, 9), end=date(2026, 3, 13)),
-                    ),
+                    )
                 ).model_dump(),
                 "query_result": {
                     "summary_text": "You spent ₦10,000 yesterday.",
@@ -707,8 +706,8 @@ async def test_worker_logs_restored_stashed_query_session_shape(monkeypatch: pyt
 
     stashed_query_session = {
         "session_active": True,
-        "query_contract": QueryExecutionContract.from_normalized_query(
-            NormalizedQuery(
+        "query_contract": _contract(
+            _query_ir(
                 intent=QueryIntent.ANALYTICS_SUMMARY,
                 time_range=TimeRange(start=date(2026, 3, 16), end=date(2026, 3, 19), granularity="week"),
             )
@@ -809,8 +808,8 @@ async def test_worker_recovers_ambiguous_last_week_followup_from_stashed_session
     worker = QueryWorker(_DummyLLM(), _DummyProvider(), session_manager)  # type: ignore[arg-type]
     stashed_query_session = {
         "session_active": True,
-        "query_contract": QueryExecutionContract.from_normalized_query(
-            NormalizedQuery(
+        "query_contract": _contract(
+            _query_ir(
                 intent=QueryIntent.ANALYTICS_SUMMARY,
                 time_range=TimeRange(start=date(2026, 3, 16), end=date(2026, 3, 19), granularity="week"),
                 filters=Filters(transaction_type="debit", merchant=["mum"]),
@@ -875,8 +874,8 @@ async def test_worker_reuses_active_query_scope_for_how_much_total_followup() ->
     worker = QueryWorker(_DummyLLM(), _DummyProvider(), session_manager)  # type: ignore[arg-type]
     stashed_query_session = {
         "session_active": True,
-        "query_contract": QueryExecutionContract.from_normalized_query(
-            NormalizedQuery(
+        "query_contract": _contract(
+            _query_ir(
                 intent=QueryIntent.TRANSACTION_LIST,
                 time_range=TimeRange(start=date(2026, 3, 1), end=date(2026, 3, 19), granularity="month"),
                 filters=Filters(transaction_type="debit", merchant=["mum"]),
@@ -938,11 +937,11 @@ async def test_worker_reuses_active_query_scope_for_how_much_total_followup() ->
     assert query_contract.intent == QueryIntent.ANALYTICS_SUMMARY
     assert query_contract.time_start == date(2026, 3, 1)
     assert query_contract.time_end == date(2026, 3, 19)
-    assert query_contract.normalized_query.filters is not None
-    assert query_contract.normalized_query.filters.transaction_type == "debit"
-    assert query_contract.normalized_query.filters.merchant == ["mum"]
-    assert query_contract.normalized_query.aggregation is not None
-    assert query_contract.normalized_query.aggregation.type == "sum"
+    assert query_contract.filters is not None
+    assert query_contract.filters.transaction_type == "debit"
+    assert query_contract.filters.merchant == ["mum"]
+    assert query_contract.aggregation is not None
+    assert query_contract.aggregation.type == "sum"
 
 
 @pytest.mark.asyncio
@@ -975,8 +974,8 @@ async def test_worker_reuses_persisted_cached_transactions_for_time_delta_follow
         ]
     )
     initial_worker = QueryWorker(_DummyLLM(), provider, session_manager)  # type: ignore[arg-type]
-    initial_contract = QueryExecutionContract.from_normalized_query(
-        NormalizedQuery(
+    initial_contract = _contract(
+        _query_ir(
             intent=QueryIntent.TRANSACTION_LIST,
             time_range=TimeRange(start=date(2026, 3, 1), end=date(2026, 3, 4), granularity="day"),
             filters=Filters(transaction_type="credit"),
@@ -1069,8 +1068,8 @@ async def test_worker_reuses_persisted_cached_transactions_for_filter_delta_foll
         ]
     )
     initial_worker = QueryWorker(_DummyLLM(), provider, session_manager)  # type: ignore[arg-type]
-    initial_contract = QueryExecutionContract.from_normalized_query(
-        NormalizedQuery(
+    initial_contract = _contract(
+        _query_ir(
             intent=QueryIntent.TRANSACTION_LIST,
             time_range=TimeRange(start=date(2026, 3, 1), end=date(2026, 3, 4), granularity="day"),
             result_limit=5,
@@ -1157,8 +1156,8 @@ async def test_worker_restores_persisted_analytics_followup_for_time_delta(
         }
     )
     initial_worker = QueryWorker(_DummyLLM(), provider, session_manager)  # type: ignore[arg-type]
-    initial_contract = QueryExecutionContract.from_normalized_query(
-        NormalizedQuery(
+    initial_contract = _contract(
+        _query_ir(
             intent=QueryIntent.ANALYTICS_SUMMARY,
             time_range=TimeRange(start=date(2026, 3, 1), end=date(2026, 3, 19), granularity="month"),
             filters=Filters(transaction_type="debit"),
@@ -1250,8 +1249,8 @@ async def test_worker_restores_persisted_time_comparison_followup_for_time_delta
         }
     )
     initial_worker = QueryWorker(_DummyLLM(), provider, session_manager)  # type: ignore[arg-type]
-    initial_contract = QueryExecutionContract.from_normalized_query(
-        NormalizedQuery(
+    initial_contract = _contract(
+        _query_ir(
             intent=QueryIntent.TIME_COMPARISON,
             time_range=TimeRange(start=date(2026, 3, 16), end=date(2026, 3, 19), granularity="week"),
             filters=Filters(transaction_type="debit"),

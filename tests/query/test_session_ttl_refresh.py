@@ -5,16 +5,26 @@ from time import time
 import pytest
 
 from apps.core.src.agent.graphs.query.models import (
-    NormalizedQuery,
     QueryExecutionContract,
     QueryFrame,
     QueryFrameFacts,
     QueryIntent,
+    QueryIR,
     QueryResult,
     QueryResultItem,
     TimeRange,
 )
 from apps.core.src.agent.graphs.query.session import SESSION_TTL, QuerySessionManager
+
+
+def _query_ir(**kwargs: object) -> QueryIR:
+    fallback_day = date(2026, 3, 28)
+    defaults: dict[str, object] = {
+        "intent": QueryIntent.TRANSACTION_LIST,
+        "time_range": TimeRange(start=fallback_day, end=fallback_day),
+    }
+    defaults.update(kwargs)
+    return QueryIR(**defaults)
 
 
 class _RedisStub:
@@ -55,6 +65,10 @@ class _RedisStoreStub(_RedisStub):
         return 1
 
 
+def _contract(query: QueryIR) -> QueryExecutionContract:
+    return QueryExecutionContract.from_query_ir(query)
+
+
 @pytest.mark.asyncio
 async def test_load_refreshes_ttl_on_success() -> None:
     key = "query:session:2348000000000"
@@ -93,11 +107,6 @@ async def test_load_disarms_stale_query_session_without_refresh() -> None:
                     "time_start": "2026-03-01",
                     "time_end": "2026-03-14",
                     "timezone": "Africa/Lagos",
-                    "normalized_query": {
-                        "intent": "transaction_list",
-                        "time_range": {"start": "2026-03-01", "end": "2026-03-14", "granularity": "day"},
-                        "accounts_scope": "all",
-                    },
                 },
             }
         )
@@ -166,8 +175,8 @@ async def test_query_frames_round_trip_through_session_storage() -> None:
     frame = QueryFrame(
         frame_id="qf_1",
         turn_index=1,
-        query_contract=QueryExecutionContract.from_normalized_query(
-            NormalizedQuery(
+        query_contract=_contract(
+            _query_ir(
                 intent=QueryIntent.ANALYTICS_SUMMARY,
                 time_range=TimeRange(start=date(2026, 3, 16), end=date(2026, 3, 19), granularity="week"),
             )

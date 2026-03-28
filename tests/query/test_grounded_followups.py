@@ -5,11 +5,11 @@ import pytest
 from apps.core.src.agent.graphs.query.models import (
     Aggregation,
     Filters,
-    NormalizedQuery,
     QueryExecutionContract,
     QueryFrame,
     QueryFrameFacts,
     QueryIntent,
+    QueryIR,
     TimeRange,
 )
 from apps.core.src.agent.graphs.query.nodes.extraction import ExtractionStep
@@ -17,6 +17,16 @@ from apps.core.src.agent.graphs.query.services.reasoner import QuerySemanticDeci
 from apps.core.src.agent.orchestrator.models.domain import TransactionOutcome
 from apps.core.src.agent.shared.query_contracts import SurfaceViewMode
 from shared.i18n import render_message
+
+
+def _query_ir(**kwargs: object) -> QueryIR:
+    fallback_day = date(2026, 3, 28)
+    defaults: dict[str, object] = {
+        "intent": QueryIntent.TRANSACTION_LIST,
+        "time_range": TimeRange(start=fallback_day, end=fallback_day),
+    }
+    defaults.update(kwargs)
+    return QueryIR(**defaults)
 
 
 class _DummyStructured:
@@ -31,6 +41,10 @@ class _DummyLLM:
         return _DummyStructured()
 
 
+def _contract(query: QueryIR) -> QueryExecutionContract:
+    return QueryExecutionContract.from_query_ir(query)
+
+
 def _analytics_frame(
     *,
     frame_id: str,
@@ -43,8 +57,8 @@ def _analytics_frame(
     return QueryFrame(
         frame_id=frame_id,
         turn_index=turn_index,
-        query_contract=QueryExecutionContract.from_normalized_query(
-            NormalizedQuery(
+        query_contract=_contract(
+            _query_ir(
                 intent=QueryIntent.ANALYTICS_SUMMARY,
                 time_range=TimeRange(start=start, end=end, granularity="week"),
                 filters=Filters(transaction_type="debit", merchant=["mum"]),
@@ -69,8 +83,8 @@ def _transaction_list_frame(
     return QueryFrame(
         frame_id=frame_id,
         turn_index=turn_index,
-        query_contract=QueryExecutionContract.from_normalized_query(
-            NormalizedQuery(
+        query_contract=_contract(
+            _query_ir(
                 intent=QueryIntent.TRANSACTION_LIST,
                 time_range=TimeRange(start=start, end=end, granularity="month"),
                 filters=Filters(transaction_type="debit"),
@@ -136,8 +150,8 @@ async def test_grounded_compare_both_compiles_time_comparison_contract() -> None
     assert query_contract.comparison.mode == "explicit_range"
     assert query_contract.comparison.explicit_range is not None
     assert query_contract.comparison.explicit_range.start == date(2026, 3, 9)
-    assert query_contract.normalized_query.filters is not None
-    assert query_contract.normalized_query.filters.merchant == ["mum"]
+    assert query_contract.filters is not None
+    assert query_contract.filters.merchant == ["mum"]
 
 
 @pytest.mark.asyncio
@@ -279,10 +293,10 @@ async def test_grounded_show_transactions_for_that_one_compiles_transaction_list
 
     query_contract = updates["query_contract"]
     assert query_contract.intent == QueryIntent.TRANSACTION_LIST
-    assert query_contract.normalized_query.aggregation is None
+    assert query_contract.aggregation is None
     assert query_contract.time_start == date(2026, 3, 16)
-    assert query_contract.normalized_query.filters is not None
-    assert query_contract.normalized_query.filters.merchant == ["mum"]
+    assert query_contract.filters is not None
+    assert query_contract.filters.merchant == ["mum"]
 
 
 @pytest.mark.asyncio
@@ -321,11 +335,11 @@ async def test_grounded_reuse_frame_is_ignored_for_aggregate_over_active_transac
 
     query_contract = updates["query_contract"]
     assert query_contract.intent == QueryIntent.ANALYTICS_SUMMARY
-    assert query_contract.normalized_query.intent == QueryIntent.ANALYTICS_SUMMARY
-    assert query_contract.normalized_query.filters is not None
-    assert query_contract.normalized_query.filters.transaction_type == "debit"
-    assert query_contract.normalized_query.aggregation is not None
-    assert query_contract.normalized_query.aggregation.type == "sum"
+    assert query_contract.intent == QueryIntent.ANALYTICS_SUMMARY
+    assert query_contract.filters is not None
+    assert query_contract.filters.transaction_type == "debit"
+    assert query_contract.aggregation is not None
+    assert query_contract.aggregation.type == "sum"
 
 
 @pytest.mark.asyncio
@@ -342,8 +356,8 @@ async def test_grounded_compare_with_incompatible_frames_requests_clarification(
     incompatible = QueryFrame(
         frame_id="qf_2",
         turn_index=2,
-        query_contract=QueryExecutionContract.from_normalized_query(
-            NormalizedQuery(
+        query_contract=_contract(
+            _query_ir(
                 intent=QueryIntent.ANALYTICS_SUMMARY,
                 time_range=TimeRange(start=date(2026, 3, 9), end=date(2026, 3, 15), granularity="week"),
                 filters=Filters(transaction_type="debit", merchant=["mum"]),

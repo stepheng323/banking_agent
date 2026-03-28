@@ -1,11 +1,11 @@
 """Grounded continuity helpers for query session exits and surface actions."""
 
 import re
-from typing import Any
+from typing import Any, cast
 
 from apps.core.src.agent.graphs.query.models import (
     Filters,
-    NormalizedQuery,
+    QueryExecutionContract,
     QueryResultItem,
     TimeRange,
 )
@@ -51,6 +51,7 @@ _BENEFICIARY_FACT_PATTERNS: tuple[tuple[str, str], ...] = (
     (r"\bwhich bank\b|\bwhat bank\b", "bank"),
     (r"\bhow much\b|\bwhat(?:'s| is)? the amount\b|\bamount\b", "amount"),
 )
+_UNCHANGED = object()
 
 
 class ContinuationClassifier:
@@ -209,52 +210,61 @@ class ContinuationClassifier:
 
         return None
 
+def rebuild_query_contract(
+    original_contract: QueryExecutionContract,
+    *,
+    filters: Filters | object = _UNCHANGED,
+    merge_filters: bool = False,
+    time_range: TimeRange | object = _UNCHANGED,
+    intent: Any = _UNCHANGED,
+    query_operation: Any = _UNCHANGED,
+    aggregation: Any = _UNCHANGED,
+    result_limit: int | None | object = _UNCHANGED,
+    result_reference: str | None | object = _UNCHANGED,
+    answer_fact_field: str | None | object = _UNCHANGED,
+    comparison: Any = _UNCHANGED,
+    continuation_type: str | None | object = _UNCHANGED,
+    continuation_delta_type: str | None | object = _UNCHANGED,
+) -> QueryExecutionContract:
+    """Rebuild a fresh runtime contract from a base contract plus explicit overrides."""
+    ir = original_contract.to_query_ir()
 
-def apply_filter_delta(
-    original_query: NormalizedQuery,
-    filters: Filters,
-) -> NormalizedQuery:
-    """
-    Apply a filter delta to an existing query.
-
-    Args:
-        original_query: The original normalized query
-        filters: Filter modifications to apply
-
-    Returns:
-        Modified NormalizedQuery
-    """
-    query_dict = original_query.model_dump()
-    existing_filters = query_dict.get("filters") or {}
-
-    new_filters = filters.model_dump(exclude_none=True)
-    for key, value in new_filters.items():
-        if key == "exclude" and existing_filters.get("exclude"):
-            existing_filters["exclude"] = existing_filters["exclude"] + value
+    if filters is not _UNCHANGED:
+        if merge_filters and isinstance(filters, Filters):
+            base_filters = ir.filters.model_copy(deep=True) if ir.filters is not None else Filters()
+            new_filters = filters.model_dump(exclude_none=True)
+            merged = base_filters.model_dump(exclude_none=True)
+            for key, value in new_filters.items():
+                if key == "exclude" and merged.get("exclude"):
+                    merged["exclude"] = merged["exclude"] + value
+                else:
+                    merged[key] = value
+            ir.filters = Filters.model_validate(merged)
         else:
-            existing_filters[key] = value
+            ir.filters = filters.model_copy(deep=True) if isinstance(filters, Filters) else None
 
-    query_dict["filters"] = existing_filters
-    return NormalizedQuery.model_validate(query_dict)
+    if time_range is not _UNCHANGED:
+        ir.time_range = time_range.model_copy(deep=True) if isinstance(time_range, TimeRange) else ir.time_range
+    if intent is not _UNCHANGED:
+        ir.intent = intent
+    if query_operation is not _UNCHANGED:
+        ir.query_operation = query_operation
+    if aggregation is not _UNCHANGED:
+        ir.aggregation = aggregation.model_copy(deep=True) if aggregation is not None else None
+    if result_limit is not _UNCHANGED:
+        ir.result_limit = cast(int | None, result_limit)
+    if result_reference is not _UNCHANGED:
+        ir.result_reference = cast(Any, result_reference)
+    if answer_fact_field is not _UNCHANGED:
+        ir.answer_fact_field = cast(Any, answer_fact_field)
+    if comparison is not _UNCHANGED:
+        ir.comparison = comparison.model_copy(deep=True) if comparison is not None else None
+    if continuation_type is not _UNCHANGED:
+        ir.continuation_type = cast(str | None, continuation_type)
+    if continuation_delta_type is not _UNCHANGED:
+        ir.continuation_delta_type = cast(str | None, continuation_delta_type)
 
-
-def apply_time_delta(
-    original_query: NormalizedQuery,
-    time_range: TimeRange,
-) -> NormalizedQuery:
-    """
-    Apply a time range change to an existing query.
-
-    Args:
-        original_query: The original normalized query
-        time_range: New time range
-
-    Returns:
-        Modified NormalizedQuery
-    """
-    query_dict = original_query.model_dump()
-    query_dict["time_range"] = time_range.model_dump()
-    return NormalizedQuery.model_validate(query_dict)
+    return QueryExecutionContract.from_query_ir(ir)
 
 
 def build_soft_clarification(items: list[QueryResultItem], context: str = "", locale: str = "en") -> str:

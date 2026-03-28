@@ -9,7 +9,6 @@ from langchain_core.runnables import Runnable
 from apps.core.src.agent.graphs.query.models import (
     Aggregation,
     AmbiguityCode,
-    NormalizedQuery,
     PendingClarificationState,
     QueryExecutionContract,
     QueryExtractionResult,
@@ -23,8 +22,7 @@ from apps.core.src.agent.graphs.query.models import (
 )
 from apps.core.src.agent.graphs.query.pipeline import QueryStep
 from apps.core.src.agent.graphs.query.services.continuity import (
-    apply_filter_delta,
-    apply_time_delta,
+    rebuild_query_contract,
 )
 from apps.core.src.agent.graphs.query.services.contracts import (
     apply_selection_payload_to_query,
@@ -100,11 +98,11 @@ class ExtractionStep(QueryStep):
         return None
 
     @staticmethod
-    def _has_supported_followup_query_signal(query: NormalizedQuery) -> bool:
-        if query.intent != QueryIntent.TRANSACTION_LIST:
+    def _has_supported_followup_query_signal(query_contract: QueryExecutionContract) -> bool:
+        if query_contract.intent != QueryIntent.TRANSACTION_LIST:
             return True
 
-        filters = query.filters
+        filters = query_contract.filters
         if filters is not None and any(
             (
                 bool(filters.transaction_type),
@@ -120,12 +118,12 @@ class ExtractionStep(QueryStep):
 
         return any(
             (
-                query.aggregation is not None,
-                query.result_limit is not None,
-                query.result_reference is not None,
-                bool(query.account_name),
-                query.amount_check is not None,
-                bool(query.item_name),
+                query_contract.aggregation is not None,
+                query_contract.result_limit is not None,
+                query_contract.result_reference is not None,
+                bool(query_contract.account_name),
+                query_contract.amount_check is not None,
+                bool(query_contract.item_name),
             )
         )
 
@@ -163,12 +161,12 @@ class ExtractionStep(QueryStep):
         *,
         extraction: QueryExtractionResult | None,
         confidence: float | None,
-        original_query: NormalizedQuery | None = None,
+        has_original_scope: bool = False,
     ) -> QueryExtractionResult | None:
         safe_extraction, _ = self._compiler_safe_extraction_decision(
             extraction=extraction,
             confidence=confidence,
-            original_query=original_query,
+            has_original_scope=has_original_scope,
         )
         return safe_extraction
 
@@ -177,7 +175,7 @@ class ExtractionStep(QueryStep):
         *,
         extraction: QueryExtractionResult | None,
         confidence: float | None,
-        original_query: NormalizedQuery | None = None,
+        has_original_scope: bool = False,
     ) -> tuple[QueryExtractionResult | None, str]:
         if extraction is None:
             return None, "missing_extraction"
@@ -187,7 +185,7 @@ class ExtractionStep(QueryStep):
             return None, "has_ambiguities"
         if not self._has_extraction_query_signal(extraction):
             return None, "weak_query_signal"
-        if original_query is not None and extraction.time_range.reference_type == TimeReference.UNSPECIFIED:
+        if has_original_scope and extraction.time_range.reference_type == TimeReference.UNSPECIFIED:
             return None, "followup_requires_explicit_scope"
         return extraction, "compiler_safe"
 
@@ -197,14 +195,14 @@ class ExtractionStep(QueryStep):
         state: dict[str, Any],
         today: date,
         language: str,
-        original_query: NormalizedQuery | None = None,
+        has_original_scope: bool = False,
         reasoner_extraction: QueryExtractionResult | None = None,
         reasoner_confidence: float | None = None,
     ) -> dict[str, Any] | None:
         compiler_safe_extraction, compiler_safe_reason = self._compiler_safe_extraction_decision(
             extraction=reasoner_extraction,
             confidence=reasoner_confidence,
-            original_query=original_query,
+            has_original_scope=has_original_scope,
         )
         if compiler_safe_extraction is None:
             logger.info(
@@ -253,26 +251,25 @@ class ExtractionStep(QueryStep):
             )
             return None
 
-        if not self._has_supported_followup_query_signal(query_contract.normalized_query):
+        if not self._has_supported_followup_query_signal(query_contract):
             logger.info(
                 "query_continuation_resolution",
                 path="fallback_parse_supported_query",
                 recovered=False,
                 skip_reason="time_only_or_weak_query_signal",
-                parsed_intent=query_contract.normalized_query.intent.value,
+                parsed_intent=query_contract.intent.value,
                 resolution_source=resolution_source,
             )
             return None
 
         extraction = parsed_result.extraction
-        parsed_query = query_contract.normalized_query
-        if original_query is not None and extraction.time_range.reference_type == TimeReference.UNSPECIFIED:
+        if has_original_scope and extraction.time_range.reference_type == TimeReference.UNSPECIFIED:
             logger.info(
                 "query_continuation_resolution",
                 path="fallback_parse_supported_query",
                 recovered=False,
                 skip_reason="followup_reparse_requires_explicit_scope",
-                parsed_intent=parsed_query.intent.value,
+                parsed_intent=query_contract.intent.value,
                 resolution_source=resolution_source,
             )
             return None
@@ -281,7 +278,7 @@ class ExtractionStep(QueryStep):
             "query_continuation_resolution",
             path="fallback_parse_supported_query",
             recovered=True,
-            parsed_intent=parsed_query.intent.value,
+            parsed_intent=query_contract.intent.value,
             resolution_source=resolution_source,
         )
         recovered_updates = self._parse_result_to_updates(parsed_result, state=state, today=today, language=language)
@@ -294,13 +291,13 @@ class ExtractionStep(QueryStep):
         state: dict[str, Any],
         today: date,
         language: str,
-        original_query: NormalizedQuery | None,
+        session_query_contract: QueryExecutionContract | None,
     ) -> dict[str, Any] | None:
         extraction = getattr(decision, "extraction", None)
         if extraction is not None and not extraction.raw_query:
             extraction = extraction.model_copy(update={"raw_query": state.get("message", "")})
 
-        if original_query is None:
+        if session_query_contract is None:
             if extraction is None:
                 return None
             patched_decision = (
@@ -313,10 +310,11 @@ class ExtractionStep(QueryStep):
                 language=language,
             )
 
-        extracted_query: NormalizedQuery | None = None
+        extracted_contract: QueryExecutionContract | None = None
         if extraction is not None:
-            extracted_query = self.parser.convert_to_normalized(extraction, today=today)
-            if extracted_query.intent in {
+            compiled = self.parser.compile_extraction(extraction, today=today, language=language)
+            extracted_contract = self._validated_query_contract(compiled.query_contract)
+            if extracted_contract is not None and extracted_contract.intent in {
                 QueryIntent.TIME_COMPARISON,
                 QueryIntent.BENEFICIARY_SUMMARY,
                 QueryIntent.AFFORDABILITY,
@@ -333,37 +331,39 @@ class ExtractionStep(QueryStep):
                     language=language,
                 )
 
-        aggregate_query = original_query.model_copy(deep=True)
-        if extracted_query is not None and extracted_query.filters is not None:
-            aggregate_query = apply_filter_delta(aggregate_query, extracted_query.filters)
-        aggregate_query.intent = QueryIntent.ANALYTICS_SUMMARY
-        if extracted_query is not None and extracted_query.aggregation is not None:
-            aggregate_query.aggregation = extracted_query.aggregation.model_copy(deep=True)
-        elif self._is_income_vs_spending_followup(message=state.get("message", ""), original_query=original_query):
-            aggregate_query.aggregation = Aggregation(type="breakdown", group_by="transaction_type")
+        updated_filters = extracted_contract.filters if extracted_contract is not None else None
+        aggregation = None
+        if extracted_contract is not None and extracted_contract.aggregation is not None:
+            aggregation = extracted_contract.aggregation.model_copy(deep=True)
+        elif self._is_income_vs_spending_followup(message=state.get("message", ""), query_contract=session_query_contract):
+            aggregation = Aggregation(type="breakdown", group_by="transaction_type")
             logger.info(
                 "query_continuation_resolution",
                 path="aggregate_income_vs_spending_fallback",
                 recovered=True,
-                original_intent=original_query.intent.value,
+                original_intent=session_query_contract.intent.value,
             )
         else:
-            aggregate_query.aggregation = Aggregation(type="sum")
-        aggregate_query.result_limit = extracted_query.result_limit if extracted_query is not None else None
-        aggregate_query.result_reference = extracted_query.result_reference if extracted_query is not None else None
+            aggregation = Aggregation(type="sum")
 
-        query_contract = QueryExecutionContract.from_normalized_query(
-            aggregate_query,
+        query_contract = rebuild_query_contract(
+            session_query_contract,
+            filters=updated_filters if updated_filters is not None else session_query_contract.filters,
+            merge_filters=updated_filters is not None,
+            intent=QueryIntent.ANALYTICS_SUMMARY,
+            aggregation=aggregation,
+            result_limit=extracted_contract.result_limit if extracted_contract is not None else None,
+            result_reference=extracted_contract.result_reference if extracted_contract is not None else None,
             continuation_type=getattr(decision, "continuation_type", None),
             continuation_delta_type=getattr(decision, "delta_type", None),
         )
         logger.info(
             "query_aggregate_continuation_compiled",
-            source="reasoner_extraction" if extracted_query is not None else "active_query_scope_default",
+            source="reasoner_extraction" if extracted_contract is not None else "active_query_scope_default",
             aggregation_type=query_contract.aggregation.type if query_contract.aggregation is not None else None,
             time_start=query_contract.time_start.isoformat(),
             time_end=query_contract.time_end.isoformat(),
-            has_filters=bool(query_contract.normalized_query.filters),
+            has_filters=bool(query_contract.filters),
         )
         return {
             "query_contract": query_contract,
@@ -376,11 +376,11 @@ class ExtractionStep(QueryStep):
         }
 
     @staticmethod
-    def _is_income_vs_spending_followup(*, message: str, original_query: NormalizedQuery | None) -> bool:
-        if original_query is None or original_query.intent != QueryIntent.TRANSACTION_LIST:
+    def _is_income_vs_spending_followup(*, message: str, query_contract: QueryExecutionContract | None) -> bool:
+        if query_contract is None or query_contract.intent != QueryIntent.TRANSACTION_LIST:
             return False
 
-        filters = original_query.filters
+        filters = query_contract.filters
         if filters is not None and filters.transaction_type is not None:
             return False
 
@@ -534,8 +534,7 @@ class ExtractionStep(QueryStep):
         today: date,
         language: str,
     ) -> dict[str, Any] | None:
-        original_query = session_query_contract.normalized_query if session_query_contract is not None else None
-        if original_query is None:
+        if session_query_contract is None:
             self._log_time_rescope_recovery(
                 trigger_reason=trigger_reason,
                 recovered=False,
@@ -577,32 +576,31 @@ class ExtractionStep(QueryStep):
             )
             return None
 
-        new_query = original_query.model_copy(deep=True)
-        new_query.time_range = resolved_time_range
-        if decision.result_limit is not None:
-            new_query.result_limit = decision.result_limit
-        if decision.result_reference is not None:
-            new_query.result_reference = decision.result_reference
-
-        preserved_query_shape = (
-            new_query.intent == original_query.intent
-            and new_query.filters == original_query.filters
-            and new_query.aggregation == original_query.aggregation
-        )
         self._log_time_rescope_recovery(
             trigger_reason=trigger_reason,
             recovered=True,
             session_has_query_contract=True,
             resolved_time_range=resolved_time_range,
-            preserved_query_shape=preserved_query_shape,
+            preserved_query_shape=True,
         )
         return {
             "flow_state": "executing",
             "continuation_type": "time_delta",
             "continuation_delta_type": decision.delta_type or "time",
             "resolver_message": None,
-            "query_contract": QueryExecutionContract.from_normalized_query(
-                new_query,
+            "query_contract": rebuild_query_contract(
+                session_query_contract,
+                time_range=resolved_time_range,
+                result_limit=(
+                    decision.result_limit
+                    if decision.result_limit is not None
+                    else session_query_contract.result_limit
+                ),
+                result_reference=(
+                    decision.result_reference
+                    if decision.result_reference is not None
+                    else session_query_contract.result_reference
+                ),
                 continuation_type="time_delta",
                 continuation_delta_type=decision.delta_type or "time",
             ),
@@ -680,7 +678,7 @@ class ExtractionStep(QueryStep):
                 except Exception:
                     query_contract = None
 
-            if query_contract and query_contract.normalized_query.time_range is not None:
+            if query_contract and query_contract.time_range is not None:
                 if state is not None:
                     self._log_query_trace(
                         state=state,
@@ -691,7 +689,7 @@ class ExtractionStep(QueryStep):
                         semantic_decision=semantic_decision,
                         continuation_type=continuation_type,
                     )
-                return query_contract.normalized_query.time_range, None
+                return query_contract.time_range, None
 
             if result.extraction is not None:
                 query_ir = self.parser.build_query_ir_from_extraction(result.extraction, today=today, language=language)
@@ -836,12 +834,12 @@ class ExtractionStep(QueryStep):
     def _should_ignore_grounded_query_for_aggregate(
         *,
         grounded_updates: dict[str, Any],
-        original_query: NormalizedQuery | None,
+        session_query_contract: QueryExecutionContract | None,
         continuation_type: str,
     ) -> bool:
-        if continuation_type != "aggregate" or original_query is None:
+        if continuation_type != "aggregate" or session_query_contract is None:
             return False
-        if original_query.intent != QueryIntent.TRANSACTION_LIST:
+        if session_query_contract.intent != QueryIntent.TRANSACTION_LIST:
             return False
 
         grounded_contract = grounded_updates.get("query_contract")
@@ -1025,7 +1023,6 @@ class ExtractionStep(QueryStep):
         today = today_state if isinstance(today_state, date) else lagos_today()
         session_query_contract = self._load_session_query_contract(session)
         locale = LocaleManager.normalize(state.get("language")).value
-        original_query = session_query_contract.normalized_query if session_query_contract else None
 
         # Reconstruct items and typed surface context if available.
         items: list[QueryResultItem] = []
@@ -1054,7 +1051,7 @@ class ExtractionStep(QueryStep):
         surface_view = restored_query_result.surface_view if restored_query_result is not None else None
         logger.info(
             "query_continuation_entry",
-            has_query_contract=original_query is not None,
+            has_query_contract=session_query_contract is not None,
             has_surface=bool(surface_view is not None),
             has_query_result=bool(session.get("query_result")),
             current_page=session.get("current_page", 0),
@@ -1156,14 +1153,14 @@ class ExtractionStep(QueryStep):
         )
         if grounded_updates is not None and self._should_ignore_grounded_query_for_aggregate(
             grounded_updates=grounded_updates,
-            original_query=original_query,
+            session_query_contract=session_query_contract,
             continuation_type=cont_type,
         ):
             logger.info(
                 "query_grounded_followup_ignored",
                 reason="aggregate_requires_new_query_shape",
                 grounded_intent=grounded_updates["query_contract"].intent.value,
-                original_intent=original_query.intent.value if original_query is not None else None,
+                original_intent=session_query_contract.intent.value if session_query_contract is not None else None,
             )
             grounded_updates = None
         if grounded_updates is not None:
@@ -1206,7 +1203,7 @@ class ExtractionStep(QueryStep):
                     state=state,
                     today=today,
                     language=locale,
-                    original_query=original_query,
+                    has_original_scope=session_query_contract is not None,
                     reasoner_extraction=getattr(decision, "extraction", None),
                     reasoner_confidence=decision.confidence,
                 )
@@ -1249,18 +1246,17 @@ class ExtractionStep(QueryStep):
         }
 
         if cont_type == "show_more":
-            if original_query is None:
+            if session_query_contract is None:
                 return self._ambiguous_followup_updates(locale=locale, session=session)
             if followup_intent == "continue_pagination":
-                if original_query.intent != QueryIntent.TRANSACTION_LIST:
+                if session_query_contract.intent != QueryIntent.TRANSACTION_LIST:
                     return self._ambiguous_followup_updates(locale=locale, session=session)
                 updates["current_page"] = session.get("current_page", 0) + 1
             elif followup_intent == "refine_existing":
-                list_query = original_query.model_copy(deep=True)
-                list_query.intent = QueryIntent.TRANSACTION_LIST
-                list_query.aggregation = None
-                updates["query_contract"] = QueryExecutionContract.from_normalized_query(
-                    list_query,
+                updates["query_contract"] = rebuild_query_contract(
+                    session_query_contract,
+                    intent=QueryIntent.TRANSACTION_LIST,
+                    aggregation=None,
                     continuation_type=cont_type,
                     continuation_delta_type=decision.delta_type,
                 )
@@ -1278,7 +1274,7 @@ class ExtractionStep(QueryStep):
                 state=state,
             )
 
-            if original_query is None or resolved_time_range is None:
+            if session_query_contract is None or resolved_time_range is None:
                 if clarification_message:
                     return {
                         "transaction_outcome": TransactionOutcome.NEEDS_INPUT,
@@ -1345,18 +1341,18 @@ class ExtractionStep(QueryStep):
                 )
                 return self._ambiguous_followup_updates(locale=locale, session=session)
 
-            if followup_intent == "replace_scope":
-                new_query = original_query.model_copy(deep=True)
-                new_query.time_range = resolved_time_range
-            else:
-                new_query = apply_time_delta(original_query, resolved_time_range)
+            if session_query_contract is None:
+                return self._ambiguous_followup_updates(locale=locale, session=session)
 
-            if decision.result_limit is not None:
-                new_query.result_limit = decision.result_limit
-            if decision.result_reference is not None:
-                new_query.result_reference = decision.result_reference
-            updates["query_contract"] = QueryExecutionContract.from_normalized_query(
-                new_query,
+            updates["query_contract"] = rebuild_query_contract(
+                session_query_contract,
+                time_range=resolved_time_range,
+                result_limit=decision.result_limit if decision.result_limit is not None else session_query_contract.result_limit,
+                result_reference=(
+                    decision.result_reference
+                    if decision.result_reference is not None
+                    else session_query_contract.result_reference
+                ),
                 continuation_type=cont_type,
                 continuation_delta_type=decision.delta_type,
             )
@@ -1370,21 +1366,27 @@ class ExtractionStep(QueryStep):
             )
 
         elif cont_type == "filter_delta":
-            if original_query is None or followup_intent != "refine_existing":
+            if followup_intent != "refine_existing" or session_query_contract is None:
                 return self._ambiguous_followup_updates(locale=locale, session=session)
 
             delta_type = decision.delta_type
             allow_limit = delta_type in (None, "limit", "reference")
             allow_reference = delta_type in (None, "reference", "limit")
 
-            new_query = apply_filter_delta(original_query, decision.filters) if decision.filters else original_query
-
-            if decision.result_limit is not None and allow_limit:
-                new_query.result_limit = decision.result_limit
-            if decision.result_reference is not None and allow_reference:
-                new_query.result_reference = decision.result_reference
-            updates["query_contract"] = QueryExecutionContract.from_normalized_query(
-                new_query,
+            updates["query_contract"] = rebuild_query_contract(
+                session_query_contract,
+                filters=decision.filters if decision.filters is not None else session_query_contract.filters,
+                merge_filters=decision.filters is not None,
+                result_limit=(
+                    decision.result_limit
+                    if decision.result_limit is not None and allow_limit
+                    else session_query_contract.result_limit
+                ),
+                result_reference=(
+                    decision.result_reference
+                    if decision.result_reference is not None and allow_reference
+                    else session_query_contract.result_reference
+                ),
                 continuation_type=cont_type,
                 continuation_delta_type=decision.delta_type,
             )
@@ -1450,7 +1452,7 @@ class ExtractionStep(QueryStep):
 
         elif cont_type == "recipient_drill_down":
             recipient_name = decision.recipient_name
-            if recipient_name and original_query:
+            if recipient_name and session_query_contract is not None:
                 recipient_answer_fact_field: Literal["date", "counterparty", "amount", "bank"] | None = None
                 if decision.fact_field in {"date", "amount", "bank"}:
                     recipient_answer_fact_field = cast(Literal["date", "amount", "bank"], decision.fact_field)
@@ -1467,14 +1469,17 @@ class ExtractionStep(QueryStep):
                     from apps.core.src.agent.graphs.query.models import Filters
 
                     new_filters = Filters(counterparty=[recipient_name])
-                    new_query = apply_filter_delta(original_query, new_filters)
-                    new_query.intent = QueryIntent.TRANSACTION_LIST
-                    new_query.aggregation = None
-                    new_query.result_limit = None
-                    new_query.result_reference = None
-                    new_query.answer_fact_field = recipient_answer_fact_field
-                    updates["query_contract"] = QueryExecutionContract.from_normalized_query(
-                        new_query,
+                    if session_query_contract is None:
+                        return self._ambiguous_followup_updates(locale=locale, session=session)
+                    updates["query_contract"] = rebuild_query_contract(
+                        session_query_contract,
+                        filters=new_filters,
+                        merge_filters=True,
+                        intent=QueryIntent.TRANSACTION_LIST,
+                        aggregation=None,
+                        result_limit=None,
+                        result_reference=None,
+                        answer_fact_field=recipient_answer_fact_field,
                         continuation_type=cont_type,
                         continuation_delta_type=decision.delta_type,
                     )
@@ -1486,7 +1491,7 @@ class ExtractionStep(QueryStep):
                 state=state,
                 today=today,
                 language=locale,
-                original_query=original_query,
+                has_original_scope=session_query_contract is not None,
                 reasoner_extraction=getattr(decision, "extraction", None),
                 reasoner_confidence=decision.confidence,
             )
@@ -1514,7 +1519,7 @@ class ExtractionStep(QueryStep):
                 state=state,
                 today=today,
                 language=locale,
-                original_query=original_query,
+                session_query_contract=session_query_contract,
             )
             if aggregate_updates is not None:
                 return aggregate_updates

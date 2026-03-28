@@ -6,11 +6,11 @@ from apps.core.src.agent.graphs.query.models import (
     Ambiguity,
     AmbiguityCode,
     ExtractionIntent,
-    NormalizedQuery,
     PendingClarificationState,
     QueryExecutionContract,
     QueryExtractionResult,
     QueryIntent,
+    QueryIR,
     QueryParseResult,
     QueryTimeRange,
     ResolverOutcome,
@@ -20,6 +20,16 @@ from apps.core.src.agent.graphs.query.models import (
 from apps.core.src.agent.graphs.query.nodes.extraction import ExtractionStep
 from apps.core.src.agent.graphs.query.services.reasoner import QuerySemanticDecision
 from apps.core.src.agent.orchestrator.models.domain import TransactionOutcome
+
+
+def _query_ir(**kwargs: object) -> QueryIR:
+    fallback_day = date(2026, 3, 28)
+    defaults: dict[str, object] = {
+        "intent": QueryIntent.TRANSACTION_LIST,
+        "time_range": TimeRange(start=fallback_day, end=fallback_day),
+    }
+    defaults.update(kwargs)
+    return QueryIR(**defaults)
 
 
 class _DummyStructured:
@@ -32,6 +42,10 @@ class _DummyLLM:
     def with_structured_output(self, schema: object) -> _DummyStructured:
         del schema
         return _DummyStructured()
+
+
+def _contract(query: QueryIR) -> QueryExecutionContract:
+    return QueryExecutionContract.from_query_ir(query)
 
 
 def _pending_state() -> PendingClarificationState:
@@ -98,15 +112,11 @@ async def test_pending_clarification_time_reply_patches_and_executes() -> None:
         del language
         assert extraction.time_range.days_back == 3
         assert all(ambiguity.code != AmbiguityCode.TIME_VAGUE for ambiguity in extraction.ambiguities)
-        contract = QueryExecutionContract(
-            intent=QueryIntent.ANALYTICS_SUMMARY,
-            time_start=today,
-            time_end=today,
-            filters=None,
-            normalized_query=NormalizedQuery(
+        contract = _contract(
+            _query_ir(
                 intent=QueryIntent.ANALYTICS_SUMMARY,
                 time_range=TimeRange(start=today, end=today),
-            ),
+            )
         )
         return QueryParseResult(
             outcome=ResolverOutcome.OK,
@@ -181,13 +191,12 @@ async def test_reasoner_fresh_query_without_raw_query_injects_message_for_debit_
         language="en",
     )
 
-    query = updates["query_contract"].normalized_query
-    assert query.intent == QueryIntent.ANALYTICS_SUMMARY
-    assert query.filters is not None
-    assert query.filters.transaction_type == "debit"
-    assert query.time_range is not None
-    assert query.time_range.start == date(2026, 3, 16)
-    assert query.time_range.end == today
+    query_contract = updates["query_contract"]
+    assert query_contract.intent == QueryIntent.ANALYTICS_SUMMARY
+    assert query_contract.filters is not None
+    assert query_contract.filters.transaction_type == "debit"
+    assert query_contract.time_start == date(2026, 3, 16)
+    assert query_contract.time_end == today
 
 
 @pytest.mark.asyncio
