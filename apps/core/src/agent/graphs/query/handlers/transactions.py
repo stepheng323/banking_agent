@@ -95,9 +95,8 @@ async def handle_transaction_list(
 ) -> QueryResult:
     """Handle transaction list queries."""
     started_at = time.perf_counter()
-    query = contract.normalized_query
-    cache_fingerprint = build_cache_fingerprint(query, account_id, account_ids, user_id=user_id)
-    cache_scope_fingerprint = build_cache_scope_fingerprint(query, account_id, account_ids, user_id=user_id)
+    cache_fingerprint = build_cache_fingerprint(contract, account_id, account_ids, user_id=user_id)
+    cache_scope_fingerprint = build_cache_scope_fingerprint(contract, account_id, account_ids, user_id=user_id)
     (
         cached_transactions,
         cache_fetched_at,
@@ -107,8 +106,8 @@ async def handle_transaction_list(
         cache_window_end,
     ) = _coerce_session_cache(session_cache)
     cache_age_seconds = (time.time() - cache_fetched_at) if cache_fetched_at is not None else None
-    current_window_start = query.time_range.start.isoformat() if query.time_range is not None else None
-    current_window_end = query.time_range.end.isoformat() if query.time_range is not None else None
+    current_window_start = contract.time_range.start.isoformat() if contract.time_range is not None else None
+    current_window_end = contract.time_range.end.isoformat() if contract.time_range is not None else None
     cache_reuse = decide_transaction_cache_reuse(
         continuation_type=continuation_type,
         continuation_delta_type=continuation_delta_type,
@@ -126,14 +125,14 @@ async def handle_transaction_list(
     )
     can_reuse_cache = cache_reuse.can_reuse
     cache_strategy = cache_reuse.strategy
-    fetch_account_count = len(account_ids) if query.accounts_scope == "all" and account_ids else 1
+    fetch_account_count = len(account_ids) if contract.accounts_scope == "all" and account_ids else 1
 
     if can_reuse_cache and cached_transactions is not None:
         base_transactions: list[dict[str, Any]] = cached_transactions
     else:
         base_transactions = await fetch_transactions_base(
             provider,
-            query,
+            contract,
             account_id,
             account_ids,
             accounts_info,
@@ -147,14 +146,14 @@ async def handle_transaction_list(
         window_start=current_window_start,
         window_end=current_window_end,
     )
-    transactions = apply_filters(scoped_transactions, query.filters) if query.filters else list(scoped_transactions)
+    transactions = apply_filters(scoped_transactions, contract.filters) if contract.filters else list(scoped_transactions)
 
-    reverse_sort = query.result_reference != "oldest"
+    reverse_sort = contract.result_reference != "oldest"
     transactions = sorted(transactions, key=_transaction_sort_key, reverse=reverse_sort)
 
     # Apply result_limit if specified (e.g., "last transaction" → 1)
-    if query.result_limit:
-        transactions = transactions[: query.result_limit]
+    if contract.result_limit:
+        transactions = transactions[: contract.result_limit]
 
     offset = current_page * page_size
     paginated = transactions[offset : offset + page_size]

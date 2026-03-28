@@ -39,10 +39,9 @@ async def handle_beneficiary_summary(
     language: str = "en",
 ) -> QueryResult:
     """Handle beneficiary summary queries."""
-    query = contract.normalized_query
     transactions = await fetch_and_filter(
         provider,
-        query,
+        contract,
         account_id,
         account_ids,
         accounts_info,
@@ -79,7 +78,7 @@ async def handle_beneficiary_summary(
         bucket["transactions"].append(t)
 
     # Sort by count (frequency) or amount (total) based on query
-    sort_key = query.aggregation.sort_by if query.aggregation and query.aggregation.sort_by else "amount"
+    sort_key = contract.aggregation.sort_by if contract.aggregation and contract.aggregation.sort_by else "amount"
     if sort_key == "count":
         sorted_cp = sorted(
             counterparties.values(),
@@ -93,12 +92,12 @@ async def handle_beneficiary_summary(
         )
         heading_type = render_message("query.beneficiary.heading_top", language)
 
-    limit = query.aggregation.limit if query.aggregation else 5
+    limit = contract.aggregation.limit if contract.aggregation else 5
 
     # Determine timeframe text
-    if query.time_range:
-        start_str = query.time_range.start.strftime("%b %d")
-        end_str = query.time_range.end.strftime("%b %d")
+    if contract.time_range:
+        start_str = contract.time_range.start.strftime("%b %d")
+        end_str = contract.time_range.end.strftime("%b %d")
         timeframe = render_message(
             "query.beneficiary.timeframe_range",
             language,
@@ -110,7 +109,7 @@ async def handle_beneficiary_summary(
     # Build response
     lines = [
         build_beneficiary_summary_header(
-            query,
+            contract,
             timeframe=timeframe,
             ranking_heading=heading_type,
             locale=language,
@@ -137,7 +136,7 @@ async def handle_beneficiary_summary(
                 id=str(i),
                 description=name,
                 amount=total,
-                date=query.time_range.end if query.time_range else date.today(),
+                date=contract.time_range.end if contract.time_range else date.today(),
                 metadata={"recipient_name": name, "count": count, "transactions": data["transactions"]},
             )
         )

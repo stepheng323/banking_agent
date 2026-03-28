@@ -1419,7 +1419,7 @@ class ExtractionStep(QueryStep):
 
             selection_payload = find_selection_payload(surface_view, index=drill_idx)
             if (
-                original_query
+                session_query_contract is not None
                 and selection_payload is not None
                 and (
                     selection_payload.selection_kind == "group_bucket"
@@ -1427,13 +1427,10 @@ class ExtractionStep(QueryStep):
                     or selection_payload.time_patch is not None
                 )
             ):
-                new_query = apply_selection_payload_to_query(
-                    original_query,
+                updates["query_contract"] = apply_selection_payload_to_query(
+                    session_query_contract,
                     selection_payload,
                     fact_field=answer_fact_field if decision.drill_down_action == "answer_fact" else None,
-                )
-                updates["query_contract"] = QueryExecutionContract.from_normalized_query(
-                    new_query,
                     continuation_type=cont_type,
                     continuation_delta_type=decision.delta_type,
                 )
@@ -1458,11 +1455,13 @@ class ExtractionStep(QueryStep):
                 if decision.fact_field in {"date", "amount", "bank"}:
                     recipient_answer_fact_field = cast(Literal["date", "amount", "bank"], decision.fact_field)
                 selection_payload = find_selection_payload(surface_view, label=recipient_name)
-                if selection_payload is not None:
-                    new_query = apply_selection_payload_to_query(
-                        original_query,
+                if selection_payload is not None and session_query_contract is not None:
+                    updates["query_contract"] = apply_selection_payload_to_query(
+                        session_query_contract,
                         selection_payload,
                         fact_field=recipient_answer_fact_field,
+                        continuation_type=cont_type,
+                        continuation_delta_type=decision.delta_type,
                     )
                 else:
                     from apps.core.src.agent.graphs.query.models import Filters
@@ -1474,11 +1473,11 @@ class ExtractionStep(QueryStep):
                     new_query.result_limit = None
                     new_query.result_reference = None
                     new_query.answer_fact_field = recipient_answer_fact_field
-                updates["query_contract"] = QueryExecutionContract.from_normalized_query(
-                    new_query,
-                    continuation_type=cont_type,
-                    continuation_delta_type=decision.delta_type,
-                )
+                    updates["query_contract"] = QueryExecutionContract.from_normalized_query(
+                        new_query,
+                        continuation_type=cont_type,
+                        continuation_delta_type=decision.delta_type,
+                    )
                 updates["current_page"] = 0
                 updates["show_expanded"] = False
 

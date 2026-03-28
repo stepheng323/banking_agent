@@ -9,9 +9,10 @@ from typing import Any, Literal, cast
 
 from apps.core.src.agent.graphs.query.models import (
     Filters,
-    NormalizedQuery,
     QueryAnswerStrategy,
+    QueryExecutionContract,
     QueryIntent,
+    QueryIR,
     QueryOperation,
     QueryResult,
     QueryResultItem,
@@ -63,11 +64,13 @@ def build_query_transfer_handoff_payload(item: QueryResultItem) -> dict[str, Any
     return {key: value for key, value in payload.items() if value is not None and value != ""}
 
 
-def build_focus_referent(item: QueryResultItem, *, query: NormalizedQuery | None) -> FocusedReferent | None:
+def build_focus_referent(item: QueryResultItem, *, query_contract: QueryExecutionContract | None) -> FocusedReferent | None:
     """Build a shared focused referent from a transaction answer."""
     metadata = item.metadata if isinstance(item.metadata, dict) else {}
     recipient_name = str(metadata.get("recipient_name") or metadata.get("counterparty") or "").strip() or None
-    label = recipient_name or _first_filter_value(query.filters.counterparty if query and query.filters else None)
+    label = recipient_name or _first_filter_value(
+        query_contract.filters.counterparty if query_contract and query_contract.filters else None
+    )
     if not label:
         return None
     handoff_payload = build_query_transfer_handoff_payload(item)
@@ -93,6 +96,11 @@ def build_focus_referent(item: QueryResultItem, *, query: NormalizedQuery | None
         recipient_bank_code=str(metadata.get("recipient_bank_code") or "").strip() or None,
         recipient_resolved_name=str(metadata.get("recipient_resolved_name") or recipient_name or label).strip() or None,
     )
+
+
+def _result_query_contract(result: QueryResult) -> QueryExecutionContract | None:
+    """Read the query execution contract from the runtime result."""
+    return result.query_contract
 
 
 def build_surface_view(result: QueryResult) -> SurfaceView | None:
@@ -257,7 +265,7 @@ def _build_direct_answer_presentation_plan(result: QueryResult, *, locale: str) 
     if not result.items:
         from apps.core.src.agent.graphs.query.services.answer_strategy import build_fact_no_results_text
 
-        fact_no_results = build_fact_no_results_text(result.query_snapshot)
+        fact_no_results = build_fact_no_results_text(_result_query_contract(result))
         if fact_no_results:
             return PresentationPlan(mode=PresentationMode.DIRECT_ANSWER, lead_text=fact_no_results)
         if result.summary_text:
@@ -269,7 +277,7 @@ def _build_direct_answer_presentation_plan(result: QueryResult, *, locale: str) 
 
 
 def _build_no_results_presentation_plan(result: QueryResult, *, locale: str) -> PresentationPlan | None:
-    if result.summary_text:
+    if result.summary_text and not _parse_summary_parts(result.summary_text):
         return PresentationPlan(mode=PresentationMode.DIRECT_ANSWER, lead_text=result.summary_text)
     no_results_text = _build_no_results_text(result, locale=locale)
     if no_results_text is None:
@@ -278,14 +286,14 @@ def _build_no_results_presentation_plan(result: QueryResult, *, locale: str) -> 
 
 
 def _build_no_results_text(result: QueryResult, *, locale: str) -> str | None:
-    query_snapshot = result.query_snapshot
-    time_range = query_snapshot.time_range if query_snapshot else None
-    tx_type = query_snapshot.filters.transaction_type if query_snapshot and query_snapshot.filters else None
+    query_contract = _result_query_contract(result)
+    time_range = query_contract.time_range if query_contract else None
+    tx_type = query_contract.filters.transaction_type if query_contract and query_contract.filters else None
     if (
-        query_snapshot
-        and query_snapshot.intent in {QueryIntent.TRANSACTION_LIST, QueryIntent.TRANSACTION_SEARCH}
+        query_contract
+        and query_contract.intent in {QueryIntent.TRANSACTION_LIST, QueryIntent.TRANSACTION_SEARCH}
         and time_range is not None
-        and not _has_search_shaped_no_results_context(query_snapshot)
+        and not _has_search_shaped_no_results_context(query_contract)
     ):
         return _format_factual_no_results(time_range, locale=locale, transaction_type=tx_type)
 
@@ -306,13 +314,13 @@ def _build_no_results_text(result: QueryResult, *, locale: str) -> str | None:
     )
 
 
-def _has_search_shaped_no_results_context(query_snapshot: NormalizedQuery | None) -> bool:
-    if not query_snapshot:
+def _has_search_shaped_no_results_context(query_contract: QueryExecutionContract | None) -> bool:
+    if not query_contract:
         return False
-    if query_snapshot.aggregation is not None:
+    if query_contract.aggregation is not None:
         return True
 
-    filters = query_snapshot.filters
+    filters = query_contract.filters
     if not filters:
         return False
 
@@ -325,7 +333,7 @@ def _has_search_shaped_no_results_context(query_snapshot: NormalizedQuery | None
             filters.max_amount is not None,
             bool(filters.exclude),
             filters.account_filter is not None,
-            query_snapshot.account_name is not None,
+            query_contract.account_name is not None,
         )
     )
 
@@ -390,30 +398,24 @@ def find_selection_payload(
 
 
 def apply_selection_payload_to_query(
-    query: NormalizedQuery,
+    query_contract: QueryExecutionContract,
     payload: SelectionPayload,
     *,
     fact_field: Literal["date", "counterparty", "amount", "bank"] | None = None,
-) -> NormalizedQuery:
-    """Compile a new transaction-list query from a typed selection payload."""
-    new_query = query.model_copy(deep=True)
-    new_query.intent = QueryIntent.TRANSACTION_LIST
-    new_query.query_operation = QueryOperation.LIST_TRANSACTIONS
-    new_query.aggregation = None
-    new_query.result_limit = None
-    new_query.result_reference = None
-    new_query.answer_fact_field = fact_field
-
-    filters = new_query.filters.model_copy(deep=True) if new_query.filters is not None else Filters()
+    continuation_type: str | None = None,
+    continuation_delta_type: str | None = None,
+) -> QueryExecutionContract:
+    """Compile a new transaction-list contract from a typed selection payload."""
+    filters = query_contract.filters.model_copy(deep=True) if query_contract.filters is not None else Filters()
     for key, value in payload.filters_patch.items():
         setattr(filters, key, value)
-    new_query.filters = filters
 
+    time_range = query_contract.time_range or TimeRange(start=query_contract.time_start, end=query_contract.time_end)
     if payload.time_patch:
         start_raw = payload.time_patch.get("start")
         end_raw = payload.time_patch.get("end")
         if isinstance(start_raw, str) and isinstance(end_raw, str):
-            new_query.time_range = TimeRange.model_validate(
+            time_range = TimeRange.model_validate(
                 {
                     "start": start_raw,
                     "end": end_raw,
@@ -421,7 +423,28 @@ def apply_selection_payload_to_query(
                 }
             )
 
-    return new_query
+    return QueryExecutionContract.from_query_ir(
+        QueryIR(
+            intent=QueryIntent.TRANSACTION_LIST,
+            query_operation=QueryOperation.LIST_TRANSACTIONS,
+            timezone=query_contract.timezone,
+            time_range=time_range,
+            filters=filters,
+            aggregation=None,
+            accounts_scope=query_contract.accounts_scope,
+            account_name=query_contract.account_name,
+            amount_check=query_contract.amount_check,
+            item_name=query_contract.item_name,
+            analysis_type=query_contract.analysis_type,
+            result_limit=None,
+            result_reference=None,
+            answer_fact_field=fact_field,
+            comparison=query_contract.comparison.model_copy(deep=True) if query_contract.comparison is not None else None,
+            continuation_type=continuation_type,
+            continuation_delta_type=continuation_delta_type,
+            intent_spec=query_contract.intent_spec.model_copy(deep=True) if query_contract.intent_spec is not None else None,
+        )
+    )
 
 
 def _build_selection_payload(
@@ -508,15 +531,15 @@ def _tokenize_label(value: str) -> list[str]:
 
 
 def _build_surface_view_context(*, result: QueryResult, mode: SurfaceViewMode) -> dict[str, Any]:
-    query = result.query_snapshot
+    query_contract = _result_query_contract(result)
     context: dict[str, Any] = {"mode": mode.value}
     if mode == SurfaceViewMode.GROUPED_SUMMARY:
-        if query and query.intent == QueryIntent.BENEFICIARY_SUMMARY:
+        if query_contract and query_contract.intent == QueryIntent.BENEFICIARY_SUMMARY:
             context["view"] = "beneficiary_summary"
-        elif query and query.aggregation and query.aggregation.group_by:
-            context["group_by"] = query.aggregation.group_by
+        elif query_contract and query_contract.aggregation and query_contract.aggregation.group_by:
+            context["group_by"] = query_contract.aggregation.group_by
             context["surface_type"] = "breakdown"
-        elif query and query.intent in {
+        elif query_contract and query_contract.intent in {
             QueryIntent.ANALYTICS_SUMMARY,
             QueryIntent.TIME_COMPARISON,
             QueryIntent.AFFORDABILITY,
@@ -583,7 +606,7 @@ def _build_grouped_summary_presentation_plan(
         return PresentationPlan(
             mode=PresentationMode.SUMMARY_LIST,
             heading=build_breakdown_heading(
-                result.query_snapshot,
+                _result_query_contract(result),
                 group_by=group_by or None,
                 locale=locale,
                 fallback_summary=result.summary_text,
@@ -656,24 +679,24 @@ def _build_single_item_detail_presentation_plan(result: QueryResult, *, locale: 
         return None
 
     item = result.items[0]
-    query_snapshot = result.query_snapshot
+    query_contract = _result_query_contract(result)
     primary_text: str | None = None
 
-    if query_snapshot is not None and query_snapshot.answer_fact_field is not None:
+    if query_contract is not None and query_contract.answer_fact_field is not None:
         from apps.core.src.agent.graphs.query.services.answer_strategy import build_direct_fact_answer
 
         answer_context = build_direct_fact_answer(
             item,
-            query=query_snapshot,
-            fact_field=query_snapshot.answer_fact_field,
+            query_contract=query_contract,
+            fact_field=query_contract.answer_fact_field,
             locale=locale,
         )
         primary_text = answer_context.primary_text
 
     title = render_message("query.format.transaction_details_title", locale)
-    if query_snapshot and query_snapshot.result_reference == "latest":
+    if query_contract and query_contract.result_reference == "latest":
         title = render_message("query.format.last_transaction_title", locale)
-        tx_filters = query_snapshot.filters
+        tx_filters = query_contract.filters
         if tx_filters and tx_filters.transaction_type in ("debit", "credit"):
             title = render_message(
                 "query.format.last_transaction_type_title",
@@ -786,7 +809,7 @@ def _build_transaction_list_heading(
     if result.summary_text and "—" in result.summary_text and result.summary_text.startswith("*"):
         return result.summary_text.split("\n", 1)[0], True
 
-    heading = build_transaction_heading(result.query_snapshot, locale=locale)
+    heading = build_transaction_heading(_result_query_contract(result), locale=locale)
     contextual_heading_applied = heading is not None
     if heading is None:
         heading = render_message("query.format.heading_transactions_default", locale)

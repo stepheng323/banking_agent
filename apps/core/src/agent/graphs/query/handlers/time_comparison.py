@@ -32,21 +32,29 @@ async def handle_time_comparison(
     language: str = "en",
 ) -> QueryResult:
     """Handle time comparison queries (this month vs last month, etc.)."""
-    query = contract.normalized_query
-    if not query.time_range:
+    if not contract.time_range:
         return QueryResult(summary_text=render_message("query.time_comparison.prompt_specify_period", language))
 
     # Get current period data
-    current_period = query.time_range
+    current_period = contract.time_range
     comparison_period = _get_comparison_period(current_period, directive=contract.comparison)
 
-    # Create a modified query for the comparison period
-    comparison_query = query.model_copy(update={"time_range": comparison_period})
+    comparison_contract = contract.model_copy(deep=True)
+    comparison_contract.time_start = comparison_period.start
+    comparison_contract.time_end = comparison_period.end
+    if comparison_contract.execution_plan is not None:
+        comparison_contract.execution_plan = comparison_contract.execution_plan.model_copy(
+            update={"time_range": comparison_period}
+        )
+    if comparison_contract.normalized_query.time_range is not None:
+        comparison_contract.normalized_query = comparison_contract.normalized_query.model_copy(
+            update={"time_range": comparison_period}
+        )
 
     # Fetch transactions for both periods
     current_txns = await fetch_and_filter(
         provider,
-        query,
+        contract,
         account_id,
         account_ids,
         accounts_info,
@@ -55,7 +63,7 @@ async def handle_time_comparison(
     )
     comparison_txns = await fetch_and_filter(
         provider,
-        comparison_query,
+        comparison_contract,
         account_id,
         account_ids,
         accounts_info,

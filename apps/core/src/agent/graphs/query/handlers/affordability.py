@@ -16,14 +16,13 @@ async def handle_affordability(
 ) -> QueryResult:
     """Handle affordability queries."""
     language = kwargs.get("language", "en")
-    query = contract.normalized_query
 
     # Get balance
     balance = await provider.get_balance(account_id, real_time=True)
     if not balance:
         return QueryResult(summary_text=render_message("query.affordability.balance_unavailable", language))
 
-    amount = query.amount_check or 0
+    amount = contract.amount_check or 0
     can_afford = balance.available_balance >= amount
     remaining = balance.available_balance - amount
 

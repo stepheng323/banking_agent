@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from apps.core.src.agent.graphs.query.models import NormalizedQuery, QueryResult
+from apps.core.src.agent.graphs.query.models import QueryExecutionContract, QueryResult
 from apps.core.src.agent.graphs.query.services.answer_strategy import build_direct_fact_answer
 from apps.core.src.agent.graphs.query.services.contracts import build_query_transfer_handoff_payload
 from apps.core.src.agent.graphs.query.services.formatter import QueryFormatter
@@ -22,20 +22,18 @@ def _resolve_transaction_type(item: Any, locale: str) -> tuple[str, str]:
     return transaction_type, transaction_type_display
 
 
-def _query_snapshot_from_state(state: dict[str, Any]) -> NormalizedQuery | None:
+def _query_contract_from_state(state: dict[str, Any]) -> QueryExecutionContract | None:
     query_contract = state.get("query_contract")
-    if hasattr(query_contract, "normalized_query"):
-        normalized = getattr(query_contract, "normalized_query", None)
-        if isinstance(normalized, NormalizedQuery):
-            return normalized
+    if isinstance(query_contract, QueryExecutionContract):
+        return query_contract
 
     query_result = state.get("query_result")
-    if isinstance(query_result, QueryResult) and query_result.query_snapshot is not None:
-        return query_result.query_snapshot
+    if isinstance(query_result, QueryResult):
+        return query_result.query_contract
     if isinstance(query_result, dict):
         try:
             validated = QueryResult.model_validate(query_result)
-            return validated.query_snapshot
+            return validated.query_contract
         except Exception:
             return None
     return None
@@ -117,10 +115,10 @@ async def handle_drill_down(state: dict[str, Any]) -> TransactionResult:
         response = None
 
         if fact_field in {"amount", "bank", "date", "recipient"}:
-            query_snapshot = _query_snapshot_from_state(state)
+            query_contract = _query_contract_from_state(state)
             answer_context = build_direct_fact_answer(
                 item,
-                query=query_snapshot,
+                query_contract=query_contract,
                 fact_field="counterparty" if fact_field == "recipient" else fact_field,
                 locale=locale,
             )

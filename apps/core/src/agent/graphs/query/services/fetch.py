@@ -10,7 +10,7 @@ from typing import Any, cast
 
 from apps.core.src.agent.graphs.query.models import (
     Filters,
-    NormalizedQuery,
+    QueryExecutionContract,
     match_transaction_category,
 )
 from apps.core.src.agent.graphs.query.services.bank_transaction_mirror import (
@@ -239,14 +239,14 @@ def decide_transaction_cache_reuse(
     return TransactionCacheReuseDecision(can_reuse=False, strategy="none")
 
 
-def resolve_query_date_bounds(query: NormalizedQuery) -> tuple[str, str]:
+def resolve_query_date_bounds(query_contract: QueryExecutionContract) -> tuple[str, str]:
     """Resolve start/end ISO dates for a query."""
-    if query.time_range:
-        return query.time_range.start.isoformat(), query.time_range.end.isoformat()
+    if query_contract.time_range:
+        return query_contract.time_range.start.isoformat(), query_contract.time_range.end.isoformat()
 
     from datetime import timedelta
 
-    days = 30 if query.intent == "analytics_summary" else 7
+    days = 30 if query_contract.intent == "analytics_summary" else 7
     today = lagos_today()
     end = today.isoformat()
     start = (today - timedelta(days=days)).isoformat()
@@ -254,16 +254,16 @@ def resolve_query_date_bounds(query: NormalizedQuery) -> tuple[str, str]:
 
 
 def build_cache_fingerprint(
-    query: NormalizedQuery,
+    query_contract: QueryExecutionContract,
     account_id: str,
     account_ids: list[str],
     user_id: str | None = None,
 ) -> str:
     """Build fingerprint for cache-safe transaction base reuse."""
-    start, end = resolve_query_date_bounds(query)
+    start, end = resolve_query_date_bounds(query_contract)
     payload = {
-        "intent": str(query.intent),
-        "accounts_scope": query.accounts_scope,
+        "intent": str(query_contract.intent),
+        "accounts_scope": query_contract.accounts_scope,
         "account_id": account_id,
         "account_ids": sorted(str(acc) for acc in account_ids),
         "start": start,
@@ -275,15 +275,15 @@ def build_cache_fingerprint(
 
 
 def build_cache_scope_fingerprint(
-    query: NormalizedQuery,
+    query_contract: QueryExecutionContract,
     account_id: str,
     account_ids: list[str],
     user_id: str | None = None,
 ) -> str:
     """Build fingerprint for cache reuse across narrower time windows."""
     payload = {
-        "intent": str(query.intent),
-        "accounts_scope": query.accounts_scope,
+        "intent": str(query_contract.intent),
+        "accounts_scope": query_contract.accounts_scope,
         "account_id": account_id,
         "account_ids": sorted(str(acc) for acc in account_ids),
         "user_id": str(user_id or ""),
@@ -316,7 +316,7 @@ def _log_query_trace(
 
 async def fetch_and_filter(
     provider: BankDataProvider,
-    query: NormalizedQuery,
+    query_contract: QueryExecutionContract,
     account_id: str,
     account_ids: list[str],
     accounts_info: list[dict] | None = None,
@@ -327,7 +327,7 @@ async def fetch_and_filter(
     """Fetch transactions and apply filters."""
     transactions = await fetch_transactions_base(
         provider,
-        query,
+        query_contract,
         account_id,
         account_ids,
         accounts_info,
@@ -335,22 +335,22 @@ async def fetch_and_filter(
         language=language,
         trace_context=trace_context,
     )
-    if query.time_range:
+    if query_contract.time_range:
         transactions = apply_time_window(
             transactions,
-            window_start=query.time_range.start,
-            window_end=query.time_range.end,
+            window_start=query_contract.time_range.start,
+            window_end=query_contract.time_range.end,
         )
 
-    if query.filters:
-        transactions = apply_filters(transactions, query.filters)
+    if query_contract.filters:
+        transactions = apply_filters(transactions, query_contract.filters)
 
     return transactions
 
 
 async def fetch_transactions_base(
     provider: BankDataProvider,
-    query: NormalizedQuery,
+    query_contract: QueryExecutionContract,
     account_id: str,
     account_ids: list[str],
     accounts_info: list[dict] | None = None,
@@ -360,7 +360,7 @@ async def fetch_transactions_base(
 ) -> list[dict]:
     """Fetch transaction base set for the query time/account envelope (no query.filters applied)."""
     started_at = perf_counter()
-    start, end = resolve_query_date_bounds(query)
+    start, end = resolve_query_date_bounds(query_contract)
     start_bound = date.fromisoformat(start)
     end_bound = date.fromisoformat(end)
 
@@ -390,7 +390,7 @@ async def fetch_transactions_base(
             return _apply_transaction_analysis(d)
         return {"raw": str(t)}
 
-    fetch_account_count = len(account_ids) if query.accounts_scope == "all" and account_ids else 1
+    fetch_account_count = len(account_ids) if query_contract.accounts_scope == "all" and account_ids else 1
     used_parallel_fetch = False
     transactions: list[dict[str, Any]]
 
@@ -428,7 +428,7 @@ async def fetch_transactions_base(
             use_mirror = False
 
     if not use_mirror:
-        if query.accounts_scope == "all" and len(account_ids) > 1:
+        if query_contract.accounts_scope == "all" and len(account_ids) > 1:
             all_txns: list[dict[str, Any]] = []
             used_parallel_fetch = True
             semaphore = asyncio.Semaphore(min(_MULTI_ACCOUNT_FETCH_CONCURRENCY, len(account_ids)))

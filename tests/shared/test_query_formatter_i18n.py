@@ -8,10 +8,15 @@ from apps.core.src.agent.graphs.query.models import (
     NormalizedQuery,
     QueryAnswerContext,
     QueryAnswerStrategy,
+    QueryExecutionContract,
+    QueryExecutionPlan,
     QueryIntent,
+    QueryIntentSpec,
     QueryResult,
     QueryResultItem,
     TimeRange,
+    build_query_execution_plan,
+    derive_query_intent_spec,
 )
 from apps.core.src.agent.graphs.query.services.formatter import QueryFormatter
 from apps.core.src.agent.graphs.query.utils.timezone import lagos_today
@@ -22,6 +27,34 @@ from apps.core.src.agent.shared.query_contracts import (
     SurfaceViewMode,
 )
 from shared.i18n import render_message
+
+
+def _query_contract(query: NormalizedQuery) -> QueryExecutionContract:
+    if query.time_range is not None:
+        return QueryExecutionContract.from_normalized_query(query)
+
+    intent_spec: QueryIntentSpec = query.intent_spec or derive_query_intent_spec(query)
+    execution_plan: QueryExecutionPlan = build_query_execution_plan(query)
+    fallback_day = date(2026, 3, 28)
+    return QueryExecutionContract(
+        intent=query.intent,
+        query_operation=query.query_operation,
+        time_start=fallback_day,
+        time_end=fallback_day,
+        filters=query.filters.model_copy(deep=True) if query.filters is not None else None,
+        aggregation=query.aggregation.model_copy(deep=True) if query.aggregation is not None else None,
+        accounts_scope=query.accounts_scope,
+        account_name=query.account_name,
+        amount_check=query.amount_check,
+        item_name=query.item_name,
+        analysis_type=query.analysis_type,
+        result_limit=query.result_limit,
+        result_reference=query.result_reference,
+        answer_fact_field=query.answer_fact_field,
+        normalized_query=query,
+        intent_spec=intent_spec,
+        execution_plan=execution_plan,
+    )
 
 
 def test_formatter_returns_summary_for_summary_surface() -> None:
@@ -110,7 +143,7 @@ def test_formatter_uses_summary_list_plan_for_summary_only_results() -> None:
     result = QueryResult(
         summary_text="You can afford ₦20,000 right now.",
         answer_strategy=QueryAnswerStrategy.SUMMARY_LIST,
-        query_snapshot=NormalizedQuery(intent=QueryIntent.AFFORDABILITY),
+        query_contract=_query_contract(NormalizedQuery(intent=QueryIntent.AFFORDABILITY)),
     )
 
     assert QueryFormatter.format(result, locale="en") == "You can afford ₦20,000 right now."
@@ -190,9 +223,11 @@ def test_formatter_uses_typed_breakdown_heading_from_query_scope() -> None:
                 metadata={"count": 2},
             )
         ],
-        query_snapshot=NormalizedQuery(
-            intent=QueryIntent.ANALYTICS_SUMMARY,
-            aggregation=Aggregation(type="breakdown", group_by="merchant"),
+        query_contract=_query_contract(
+            NormalizedQuery(
+                intent=QueryIntent.ANALYTICS_SUMMARY,
+                aggregation=Aggregation(type="breakdown", group_by="merchant"),
+            )
         ),
         surface_view=SurfaceView(
             mode=SurfaceViewMode.GROUPED_SUMMARY,
@@ -311,10 +346,12 @@ def test_formatter_no_results_with_type_for_today() -> None:
     result = QueryResult(
         summary_text="",
         items=[],
-        query_snapshot=NormalizedQuery(
-            intent=QueryIntent.TRANSACTION_LIST,
-            filters=Filters(transaction_type="credit"),
-            time_range=TimeRange(start=today, end=today),
+        query_contract=_query_contract(
+            NormalizedQuery(
+                intent=QueryIntent.TRANSACTION_LIST,
+                filters=Filters(transaction_type="credit"),
+                time_range=TimeRange(start=today, end=today),
+            )
         ),
     )
 
@@ -326,10 +363,12 @@ def test_formatter_no_results_with_type_for_period() -> None:
     result = QueryResult(
         summary_text="",
         items=[],
-        query_snapshot=NormalizedQuery(
-            intent=QueryIntent.TRANSACTION_LIST,
-            filters=Filters(transaction_type="debit"),
-            time_range=TimeRange(start=today - timedelta(days=7), end=today - timedelta(days=1)),
+        query_contract=_query_contract(
+            NormalizedQuery(
+                intent=QueryIntent.TRANSACTION_LIST,
+                filters=Filters(transaction_type="debit"),
+                time_range=TimeRange(start=today - timedelta(days=7), end=today - timedelta(days=1)),
+            )
         ),
     )
 
@@ -341,11 +380,13 @@ def test_formatter_no_results_without_type_for_yesterday_uses_direct_fact() -> N
     result = QueryResult(
         summary_text="",
         items=[],
-        query_snapshot=NormalizedQuery(
-            intent=QueryIntent.TRANSACTION_SEARCH,
-            time_range=TimeRange(start=yesterday, end=yesterday),
-            result_limit=1,
-            result_reference="latest",
+        query_contract=_query_contract(
+            NormalizedQuery(
+                intent=QueryIntent.TRANSACTION_SEARCH,
+                time_range=TimeRange(start=yesterday, end=yesterday),
+                result_limit=1,
+                result_reference="latest",
+            )
         ),
     )
 
@@ -357,10 +398,12 @@ def test_formatter_search_shaped_no_results_for_yesterday_stays_generic() -> Non
     result = QueryResult(
         summary_text="",
         items=[],
-        query_snapshot=NormalizedQuery(
-            intent=QueryIntent.TRANSACTION_SEARCH,
-            filters=Filters(merchant=["mum"]),
-            time_range=TimeRange(start=yesterday, end=yesterday),
+        query_contract=_query_contract(
+            NormalizedQuery(
+                intent=QueryIntent.TRANSACTION_SEARCH,
+                filters=Filters(merchant=["mum"]),
+                time_range=TimeRange(start=yesterday, end=yesterday),
+            )
         ),
     )
 
@@ -371,7 +414,7 @@ def test_formatter_no_results_without_type_uses_generic_message() -> None:
     result = QueryResult(
         summary_text="",
         items=[],
-        query_snapshot=NormalizedQuery(intent=QueryIntent.TRANSACTION_LIST),
+        query_contract=_query_contract(NormalizedQuery(intent=QueryIntent.TRANSACTION_LIST)),
     )
 
     assert QueryFormatter.format(result, locale="en") == "No matching transactions found for your search."
@@ -396,7 +439,7 @@ def _sample_list_result(query_snapshot: NormalizedQuery) -> QueryResult:
                 metadata={"type": "credit", "bank_name": "Zenith"},
             ),
         ],
-        query_snapshot=query_snapshot,
+        query_contract=_query_contract(query_snapshot),
     )
 
 
@@ -425,10 +468,12 @@ def test_formatter_preserves_paginated_credit_list_shape_for_single_remaining_it
                 metadata={"type": "credit", "bank_name": "Zenith Bank"},
             )
         ],
-        query_snapshot=NormalizedQuery(
-            intent=QueryIntent.TRANSACTION_LIST,
-            filters=Filters(transaction_type="credit"),
-            time_range=TimeRange(start=today.replace(day=1), end=today),
+        query_contract=_query_contract(
+            NormalizedQuery(
+                intent=QueryIntent.TRANSACTION_LIST,
+                filters=Filters(transaction_type="credit"),
+                time_range=TimeRange(start=today.replace(day=1), end=today),
+            )
         ),
         surface_view=SurfaceView(
             mode=SurfaceViewMode.TRANSACTION_LIST,
@@ -483,11 +528,13 @@ def test_formatter_direct_answer_uses_answer_strategy_without_transaction_card()
                 metadata={"type": "debit", "bank_name": "Zenith Bank", "recipient_name": "Mum"},
             )
         ],
-        query_snapshot=NormalizedQuery(
-            intent=QueryIntent.TRANSACTION_SEARCH,
-            filters=Filters(transaction_type="debit", counterparty=["Mum"]),
-            time_range=TimeRange(start=date(2026, 3, 1), end=date(2026, 3, 27)),
-            answer_fact_field="date",
+        query_contract=_query_contract(
+            NormalizedQuery(
+                intent=QueryIntent.TRANSACTION_SEARCH,
+                filters=Filters(transaction_type="debit", counterparty=["Mum"]),
+                time_range=TimeRange(start=date(2026, 3, 1), end=date(2026, 3, 27)),
+                answer_fact_field="date",
+            )
         ),
         answer_strategy=QueryAnswerStrategy.DIRECT_ANSWER,
         answer_context=QueryAnswerContext(
@@ -506,11 +553,13 @@ def test_formatter_fact_no_results_prefers_natural_copy_under_direct_answer() ->
     result = QueryResult(
         summary_text="",
         items=[],
-        query_snapshot=NormalizedQuery(
-            intent=QueryIntent.TRANSACTION_SEARCH,
-            filters=Filters(transaction_type="debit", counterparty=["Mum"]),
-            time_range=TimeRange(start=date(2026, 3, 1), end=date(2026, 3, 27)),
-            answer_fact_field="date",
+        query_contract=_query_contract(
+            NormalizedQuery(
+                intent=QueryIntent.TRANSACTION_SEARCH,
+                filters=Filters(transaction_type="debit", counterparty=["Mum"]),
+                time_range=TimeRange(start=date(2026, 3, 1), end=date(2026, 3, 27)),
+                answer_fact_field="date",
+            )
         ),
         answer_strategy=QueryAnswerStrategy.DIRECT_ANSWER,
     )
@@ -563,13 +612,15 @@ def test_formatter_single_item_fact_query_leads_with_requested_date() -> None:
                 metadata={"type": "debit", "bank_name": "First Bank", "counterparty": "Netflix"},
             )
         ],
-        query_snapshot=NormalizedQuery(
-            intent=QueryIntent.TRANSACTION_SEARCH,
-            filters=Filters(transaction_type="debit", merchant=["netflix"]),
-            time_range=TimeRange(start=date(2026, 3, 1), end=date(2026, 3, 21)),
-            result_limit=1,
-            result_reference="latest",
-            answer_fact_field="date",
+        query_contract=_query_contract(
+            NormalizedQuery(
+                intent=QueryIntent.TRANSACTION_SEARCH,
+                filters=Filters(transaction_type="debit", merchant=["netflix"]),
+                time_range=TimeRange(start=date(2026, 3, 1), end=date(2026, 3, 21)),
+                result_limit=1,
+                result_reference="latest",
+                answer_fact_field="date",
+            )
         ),
         surface_view=SurfaceView(
             mode=SurfaceViewMode.DIRECT_ANSWER,
@@ -596,11 +647,13 @@ def test_formatter_single_item_fact_query_leads_with_counterparty() -> None:
                 metadata={"type": "credit", "bank_name": "Zenith Bank", "counterparty": "Johnson Mary"},
             )
         ],
-        query_snapshot=NormalizedQuery(
-            intent=QueryIntent.TRANSACTION_SEARCH,
-            filters=Filters(transaction_type="credit"),
-            time_range=TimeRange(start=date(2026, 3, 15), end=date(2026, 3, 21)),
-            answer_fact_field="counterparty",
+        query_contract=_query_contract(
+            NormalizedQuery(
+                intent=QueryIntent.TRANSACTION_SEARCH,
+                filters=Filters(transaction_type="credit"),
+                time_range=TimeRange(start=date(2026, 3, 15), end=date(2026, 3, 21)),
+                answer_fact_field="counterparty",
+            )
         ),
         surface_view=SurfaceView(
             mode=SurfaceViewMode.DIRECT_ANSWER,
@@ -630,11 +683,13 @@ def test_formatter_uses_shared_plan_for_single_transfer_detail_surface() -> None
                 },
             )
         ],
-        query_snapshot=NormalizedQuery(
-            intent=QueryIntent.TRANSACTION_SEARCH,
-            filters=Filters(transaction_type="debit"),
-            time_range=TimeRange(start=date(2026, 3, 1), end=date(2026, 3, 21)),
-            result_reference="latest",
+        query_contract=_query_contract(
+            NormalizedQuery(
+                intent=QueryIntent.TRANSACTION_SEARCH,
+                filters=Filters(transaction_type="debit"),
+                time_range=TimeRange(start=date(2026, 3, 1), end=date(2026, 3, 21)),
+                result_reference="latest",
+            )
         ),
         surface_view=SurfaceView(
             mode=SurfaceViewMode.DIRECT_ANSWER,
@@ -683,9 +738,11 @@ def test_formatter_account_breakdown_preserves_account_labels_and_generic_total(
                 metadata={"count": 1},
             ),
         ],
-        query_snapshot=NormalizedQuery(
-            intent=QueryIntent.ANALYTICS_SUMMARY,
-            aggregation=Aggregation(type="breakdown", group_by="account"),
+        query_contract=_query_contract(
+            NormalizedQuery(
+                intent=QueryIntent.ANALYTICS_SUMMARY,
+                aggregation=Aggregation(type="breakdown", group_by="account"),
+            )
         ),
         surface_view=SurfaceView(
             mode=SurfaceViewMode.GROUPED_SUMMARY,
@@ -746,11 +803,13 @@ def test_formatter_breakdown_heading_includes_amount_scope_and_period() -> None:
                 metadata={"count": 2},
             )
         ],
-        query_snapshot=NormalizedQuery(
-            intent=QueryIntent.ANALYTICS_SUMMARY,
-            filters=Filters(transaction_type="debit", min_amount=20000),
-            aggregation=Aggregation(type="breakdown", group_by="account"),
-            time_range=TimeRange(start=today.replace(day=1), end=today),
+        query_contract=_query_contract(
+            NormalizedQuery(
+                intent=QueryIntent.ANALYTICS_SUMMARY,
+                filters=Filters(transaction_type="debit", min_amount=20000),
+                aggregation=Aggregation(type="breakdown", group_by="account"),
+                time_range=TimeRange(start=today.replace(day=1), end=today),
+            )
         ),
         surface_view=SurfaceView(
             mode=SurfaceViewMode.GROUPED_SUMMARY,

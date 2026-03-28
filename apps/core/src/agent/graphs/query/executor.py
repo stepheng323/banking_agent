@@ -110,7 +110,6 @@ class QueryExecutor:
                     user_id=user_id,  # Explicitly passing it
                     language=language,
                 )
-            result.query_snapshot = query.normalized_query
             result.query_contract = query
             logger.info(
                 "query_trace",

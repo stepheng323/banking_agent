@@ -4,12 +4,17 @@ from apps.core.src.agent.graphs.query.models import (
     Filters,
     NormalizedQuery,
     QueryAnswerStrategy,
+    QueryExecutionContract,
     QueryIntent,
     QueryResult,
     QueryResultItem,
     TimeRange,
 )
 from apps.core.src.agent.graphs.query.services.answer_strategy import select_answer_strategy
+
+
+def _query_contract(query: NormalizedQuery) -> QueryExecutionContract:
+    return QueryExecutionContract.from_normalized_query(query)
 
 
 def test_select_answer_strategy_uses_direct_answer_for_single_fact_match() -> None:
@@ -31,11 +36,13 @@ def test_select_answer_strategy_uses_direct_answer_for_single_fact_match() -> No
                 },
             )
         ],
-        query_snapshot=NormalizedQuery(
-            intent=QueryIntent.TRANSACTION_SEARCH,
-            filters=Filters(transaction_type="debit", counterparty=["Mum"]),
-            time_range=TimeRange(start=date(2026, 3, 1), end=date(2026, 3, 27)),
-            answer_fact_field="date",
+        query_contract=_query_contract(
+            NormalizedQuery(
+                intent=QueryIntent.TRANSACTION_SEARCH,
+                filters=Filters(transaction_type="debit", counterparty=["Mum"]),
+                time_range=TimeRange(start=date(2026, 3, 1), end=date(2026, 3, 27)),
+                answer_fact_field="date",
+            )
         ),
     )
 
@@ -55,11 +62,13 @@ def test_select_answer_strategy_uses_clarify_for_ambiguous_fact_match() -> None:
             QueryResultItem(id="tx1", description="Transfer to Mum", amount=50000, date=date(2026, 3, 24)),
             QueryResultItem(id="tx2", description="Transfer to Mum", amount=20000, date=date(2026, 3, 20)),
         ],
-        query_snapshot=NormalizedQuery(
-            intent=QueryIntent.TRANSACTION_SEARCH,
-            filters=Filters(transaction_type="debit", counterparty=["Mum"]),
-            time_range=TimeRange(start=date(2026, 3, 1), end=date(2026, 3, 27)),
-            answer_fact_field="date",
+        query_contract=_query_contract(
+            NormalizedQuery(
+                intent=QueryIntent.TRANSACTION_SEARCH,
+                filters=Filters(transaction_type="debit", counterparty=["Mum"]),
+                time_range=TimeRange(start=date(2026, 3, 1), end=date(2026, 3, 27)),
+                answer_fact_field="date",
+            )
         ),
     )
 

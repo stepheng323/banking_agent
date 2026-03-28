@@ -384,16 +384,19 @@ class QuerySemanticReasoner:
     def _serialize_query_anchor(cls, query_contract: QueryExecutionContract | None) -> str:
         if query_contract is None:
             return "none"
-        normalized = query_contract.normalized_query
         payload = {
-            "intent": normalized.intent.value,
-            "query_operation": normalized.query_operation.value if normalized.query_operation is not None else None,
+            "intent": query_contract.intent.value,
+            "query_operation": (
+                query_contract.query_operation.value if query_contract.query_operation is not None else None
+            ),
             "time_start": query_contract.time_start.isoformat(),
             "time_end": query_contract.time_end.isoformat(),
-            "filters": normalized.filters.model_dump(exclude_none=True) if normalized.filters is not None else None,
-            "aggregation": normalized.aggregation.model_dump(exclude_none=True) if normalized.aggregation is not None else None,
-            "result_limit": normalized.result_limit,
-            "result_reference": normalized.result_reference,
+            "filters": query_contract.filters.model_dump(exclude_none=True) if query_contract.filters is not None else None,
+            "aggregation": (
+                query_contract.aggregation.model_dump(exclude_none=True) if query_contract.aggregation is not None else None
+            ),
+            "result_limit": query_contract.result_limit,
+            "result_reference": query_contract.result_reference,
         }
         return cls._serialize(payload)
 

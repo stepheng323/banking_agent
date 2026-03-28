@@ -245,8 +245,7 @@ class QueryWorker:
         if not isinstance(query_contract, QueryExecutionContract):
             return None
 
-        query = query_contract.normalized_query
-        filters = query.filters
+        filters = query_contract.filters
         counterparty_values = filters.counterparty if filters and filters.counterparty else []
         merchant_values = filters.merchant if filters and filters.merchant else []
         category_values = filters.category if filters and filters.category else []
@@ -255,19 +254,19 @@ class QueryWorker:
             merchant = next((item.strip() for item in merchant_values if isinstance(item, str) and item.strip()), None)
         category = next((item.strip().title() for item in category_values if isinstance(item, str) and item.strip()), None)
         tx_type = filters.transaction_type if filters else None
-        time_phrase = cls._build_time_phrase(query.time_range, locale) if include_time else None
+        time_phrase = cls._build_time_phrase(query_contract.time_range, locale) if include_time else None
         scope_label = cls._build_scope_label(
-            intent=query.intent,
+            intent=query_contract.intent,
             filters=filters,
-            time_range=query.time_range,
+            time_range=query_contract.time_range,
             locale=locale,
             include_time=include_time,
         )
 
         direction = "all"
-        if query.intent == QueryIntent.ANALYTICS_SUMMARY and tx_type == "debit":
+        if query_contract.intent == QueryIntent.ANALYTICS_SUMMARY and tx_type == "debit":
             direction = "sent"
-        elif query.intent == QueryIntent.ANALYTICS_SUMMARY and tx_type == "credit":
+        elif query_contract.intent == QueryIntent.ANALYTICS_SUMMARY and tx_type == "credit":
             direction = "received"
         elif tx_type == "debit":
             direction = "outgoing"
@@ -275,7 +274,7 @@ class QueryWorker:
             direction = "incoming"
 
         metadata = {
-            "intent_family": query.intent.value,
+            "intent_family": query_contract.intent.value,
             "direction": direction,
         }
         if merchant:

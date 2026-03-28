@@ -5,7 +5,6 @@ from datetime import date, timedelta
 from typing import Any
 
 from apps.core.src.agent.graphs.query.models import (
-    NormalizedQuery,
     QueryExecutionContract,
     QueryResult,
     QueryResultItem,
@@ -33,10 +32,9 @@ async def handle_analytics(
     language: str = "en",
 ) -> QueryResult:
     """Handle analytics summary queries."""
-    query = contract.normalized_query
     transactions = await fetch_and_filter(
         provider,
-        query,
+        contract,
         account_id,
         account_ids,
         accounts_info,
@@ -44,16 +42,16 @@ async def handle_analytics(
         language=language,
     )
 
-    if not query.aggregation:
+    if not contract.aggregation:
         return QueryResult(summary_text=render_message("query.analytics.no_aggregation", language))
 
-    agg_type = query.aggregation.type
+    agg_type = contract.aggregation.type
 
     if agg_type == "sum":
         total = sum(abs(t.get("amount", 0)) for t in transactions)
         count = len(transactions)
         if count == 0:
-            tx_type = query.filters.transaction_type if query.filters else None
+            tx_type = contract.filters.transaction_type if contract.filters else None
             timeframe = _build_timeframe_suffix(contract, language)
             if tx_type == "credit":
                 return QueryResult(
@@ -64,7 +62,7 @@ async def handle_analytics(
                     summary_text=render_message("query.analytics.no_spending", language, {"timeframe": timeframe})
                 )
             return QueryResult(summary_text=render_message("query.format.no_matching_transactions", language))
-        merchant = query.filters.merchant[0] if query.filters and query.filters.merchant else None
+        merchant = contract.filters.merchant[0] if contract.filters and contract.filters.merchant else None
 
         target_description = (
             render_message("query.analytics.target_merchant", language, {"merchant": merchant}) if merchant else ""
@@ -150,7 +148,7 @@ async def handle_analytics(
         )
 
     elif agg_type in ("largest", "smallest"):
-        limit = query.aggregation.limit or 5
+        limit = contract.aggregation.limit or 5
         reverse_sort = agg_type == "largest"
 
         sorted_txns = sorted(transactions, key=lambda t: abs(t.get("amount", 0)), reverse=reverse_sort)
@@ -203,7 +201,7 @@ async def handle_analytics(
 
         label = render_message(
             "query.analytics.label_expenses"
-            if query.filters and query.filters.transaction_type == "debit"
+            if contract.filters and contract.filters.transaction_type == "debit"
             else "query.analytics.label_transactions",
             language,
         )
@@ -235,13 +233,13 @@ async def handle_analytics(
         return QueryResult(summary_text=summary_text, items=items, has_more=has_more)
 
     elif agg_type == "breakdown":
-        return await _aggregate_breakdown(transactions, query, language)
+        return await _aggregate_breakdown(transactions, contract, language)
 
     return QueryResult(summary_text=render_message("query.analytics.aggregation_completed", language))
 
 
 def _build_timeframe_suffix(query: QueryExecutionContract, locale: str) -> str:
-    time_range = query.normalized_query.time_range
+    time_range = query.time_range
     if time_range:
         today = lagos_today()
         if time_range.start == time_range.end == today:
@@ -272,9 +270,13 @@ def _transaction_label(count: int, locale: str) -> str:
     return render_message("query.analytics.transaction_plural", locale)
 
 
-async def _aggregate_breakdown(transactions: list[dict], query: NormalizedQuery, language: str = "en") -> QueryResult:
+async def _aggregate_breakdown(
+    transactions: list[dict],
+    contract: QueryExecutionContract,
+    language: str = "en",
+) -> QueryResult:
     """Aggregate transactions by day/category/merchant."""
-    group_by = query.aggregation.group_by if query.aggregation else "day"
+    group_by = contract.aggregation.group_by if contract.aggregation else "day"
     grouped: dict[str, dict[str, Any]] = defaultdict(lambda: {"debit": 0, "credit": 0, "count": 0})
 
     for t in transactions:
@@ -312,7 +314,7 @@ async def _aggregate_breakdown(transactions: list[dict], query: NormalizedQuery,
     sorted_items = sorted(grouped.items(), key=sort_key, reverse=True)
 
     # Apply limit if requested
-    limit = query.aggregation.limit if query.aggregation and query.aggregation.limit is not None else 10
+    limit = contract.aggregation.limit if contract.aggregation and contract.aggregation.limit is not None else 10
     sorted_items = sorted_items[:limit]
 
     items = [

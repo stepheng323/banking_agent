@@ -97,7 +97,7 @@ async def test_execution_formats_time_scoped_single_transaction_no_results_as_di
 
     async def _fake_execute(self, **kwargs):  # type: ignore[no-untyped-def]
         del self, kwargs
-        return QueryResult(summary_text="", items=[], query_snapshot=query_contract.normalized_query)
+        return QueryResult(summary_text="", items=[], query_contract=query_contract)
 
     monkeypatch.setattr("apps.core.src.agent.graphs.query.nodes.execution.QueryExecutor.execute", _fake_execute)
 

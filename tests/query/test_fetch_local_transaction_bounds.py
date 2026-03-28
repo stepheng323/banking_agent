@@ -57,7 +57,7 @@ async def test_today_query_with_no_bank_feed_rows_returns_no_results_copy(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     query_day = date(2026, 3, 6)
-    monkeypatch.setattr("apps.core.src.agent.graphs.query.services.formatter.lagos_today", lambda: query_day)
+    monkeypatch.setattr("apps.core.src.agent.graphs.query.services.contracts.lagos_today", lambda: query_day)
 
     query = _query_for_today(query_day)
     result = await handle_transaction_list(
@@ -68,6 +68,6 @@ async def test_today_query_with_no_bank_feed_rows_returns_no_results_copy(
         user_id="user_1",
         language="en",
     )
-    result.query_snapshot = query
+    result.query_contract = QueryExecutionContract.from_normalized_query(query)
 
     assert QueryFormatter.format(result, locale="en") == "You had no debit transactions today."

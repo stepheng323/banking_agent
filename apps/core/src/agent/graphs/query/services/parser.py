@@ -33,7 +33,8 @@ from apps.core.src.agent.graphs.query.models import (
     ResolverOutcome,
     TimeRange,
     TimeReference,
-    derive_query_intent_spec,
+    build_normalized_query_snapshot,
+    derive_query_intent_spec_from_fields,
 )
 from apps.core.src.agent.graphs.query.models.extraction import AmbiguityCode
 from apps.core.src.agent.graphs.query.prompts import QUERY_PARSER_PROMPT
@@ -737,38 +738,42 @@ class QueryParser:
         continuation_delta_type: str | None = None,
     ) -> QueryIR:
         """Compile LLM extraction into the intermediate query representation."""
-        normalized = self.convert_to_normalized(extraction, today=today)
         base_today = today or lagos_today()
-        if normalized.time_range is None:
-            normalized.time_range = TimeRange(start=base_today - timedelta(days=30), end=base_today, granularity="day")
+        compiled = self._compile_query_fields_from_extraction(extraction, today=base_today)
+        time_range = compiled["time_range"] or TimeRange(
+            start=base_today - timedelta(days=30),
+            end=base_today,
+            granularity="day",
+        )
 
         comparison = self._build_comparison_directive(
             extraction,
-            intent=normalized.intent,
-            current_range=normalized.time_range,
+            intent=cast(QueryIntent, compiled["intent"]),
+            current_range=time_range,
             today=base_today,
         )
 
         return QueryIR(
-            intent=normalized.intent,
-            query_operation=normalized.query_operation,
+            intent=cast(QueryIntent, compiled["intent"]),
+            query_operation=cast(QueryOperation | None, compiled["query_operation"]),
             raw_query=extraction.raw_query,
             language=language,
             timezone="Africa/Lagos",
-            time_range=normalized.time_range,
-            filters=normalized.filters,
-            aggregation=normalized.aggregation,
-            accounts_scope=normalized.accounts_scope,
-            account_name=normalized.account_name,
-            amount_check=normalized.amount_check,
-            item_name=normalized.item_name,
-            analysis_type=normalized.analysis_type,
-            result_limit=normalized.result_limit,
-            result_reference=normalized.result_reference,
-            answer_fact_field=normalized.answer_fact_field,
+            time_range=time_range,
+            filters=cast(Filters | None, compiled["filters"]),
+            aggregation=cast(Aggregation | None, compiled["aggregation"]),
+            accounts_scope=cast(Literal["single", "all"], compiled["accounts_scope"]),
+            account_name=cast(str | None, compiled["account_name"]),
+            amount_check=cast(float | None, compiled["amount_check"]),
+            item_name=cast(str | None, compiled["item_name"]),
+            analysis_type=cast(Literal["immediate", "relative", "simulated", "remainder"], compiled["analysis_type"]),
+            result_limit=cast(int | None, compiled["result_limit"]),
+            result_reference=cast(Literal["latest", "oldest"] | None, compiled["result_reference"]),
+            answer_fact_field=cast(Literal["date", "counterparty", "amount", "bank"] | None, compiled["answer_fact_field"]),
             comparison=comparison,
             continuation_type=continuation_type,
             continuation_delta_type=continuation_delta_type,
+            intent_spec=cast(Any, compiled["intent_spec"]),
         )
 
     @staticmethod
@@ -871,6 +876,64 @@ class QueryParser:
     def build_execution_contract_from_ir(self, query_ir: QueryIR) -> QueryExecutionContract:
         """Compile runtime contract from QueryIR."""
         return QueryExecutionContract.from_query_ir(query_ir)
+
+    def _compile_query_fields_from_extraction(
+        self,
+        extraction: "QueryExtractionResult",
+        *,
+        today: date,
+    ) -> dict[str, Any]:
+        """Compile extraction into canonical query fields before contract assembly."""
+        extraction = self._recover_known_fragile_query_shapes(extraction.model_copy(deep=True))
+        effective_intent = self._resolve_effective_intent(extraction)
+        query_operation = self._infer_query_operation(extraction, effective_intent=effective_intent)
+        result_limit = self._resolve_result_limit(extraction.result_limit, effective_intent=effective_intent)
+
+        time_range = self._build_time_range(extraction, today=today)
+        filters = self._build_filters(
+            extraction,
+            effective_intent=effective_intent,
+            query_operation=query_operation,
+        )
+        aggregation = self._build_aggregation(
+            extraction,
+            effective_intent=effective_intent,
+            query_operation=query_operation,
+        )
+        answer_fact_field = self._infer_answer_fact_field(
+            extraction,
+            effective_intent=effective_intent,
+            query_operation=query_operation,
+        )
+
+        result_reference = extraction.result_reference
+        if aggregation is not None and aggregation.type in {"largest", "smallest"}:
+            result_reference = None
+
+        intent = self._intent_from_query_operation(query_operation)
+        fallback_time_range = time_range or TimeRange(start=today - timedelta(days=30), end=today, granularity="day")
+        intent_spec = derive_query_intent_spec_from_fields(
+            intent=intent,
+            filters=filters,
+            aggregation=aggregation,
+            answer_fact_field=answer_fact_field,
+        )
+        return {
+            "intent": intent,
+            "query_operation": query_operation,
+            "time_range": fallback_time_range,
+            "filters": filters,
+            "aggregation": aggregation,
+            "accounts_scope": "all",
+            "account_name": None,
+            "amount_check": None,
+            "item_name": None,
+            "analysis_type": "immediate",
+            "result_limit": result_limit,
+            "result_reference": result_reference,
+            "answer_fact_field": answer_fact_field,
+            "intent_spec": intent_spec,
+        }
 
     def _resolve_effective_intent(self, extraction: "QueryExtractionResult") -> ExtractionIntent:
         raw_lower = (extraction.raw_query or "").strip().lower()
@@ -1300,44 +1363,21 @@ class QueryParser:
         today: date | None = None,
     ) -> NormalizedQuery:
         """Convert QueryExtractionResult to NormalizedQuery for handlers."""
-
         today = today or lagos_today()
-        extraction = self._recover_known_fragile_query_shapes(extraction.model_copy(deep=True))
-        effective_intent = self._resolve_effective_intent(extraction)
-        query_operation = self._infer_query_operation(extraction, effective_intent=effective_intent)
-        result_limit = self._resolve_result_limit(extraction.result_limit, effective_intent=effective_intent)
-
-        time_range = self._build_time_range(extraction, today=today)
-        filters = self._build_filters(
-            extraction,
-            effective_intent=effective_intent,
-            query_operation=query_operation,
+        compiled = self._compile_query_fields_from_extraction(extraction, today=today)
+        return build_normalized_query_snapshot(
+            intent=cast(QueryIntent, compiled["intent"]),
+            query_operation=cast(QueryOperation | None, compiled["query_operation"]),
+            time_range=cast(TimeRange | None, compiled["time_range"]),
+            filters=cast(Filters | None, compiled["filters"]),
+            aggregation=cast(Aggregation | None, compiled["aggregation"]),
+            accounts_scope=cast(Literal["single", "all"], compiled["accounts_scope"]),
+            account_name=cast(str | None, compiled["account_name"]),
+            amount_check=cast(float | None, compiled["amount_check"]),
+            item_name=cast(str | None, compiled["item_name"]),
+            analysis_type=cast(Literal["immediate", "relative", "simulated", "remainder"], compiled["analysis_type"]),
+            result_limit=cast(int | None, compiled["result_limit"]),
+            result_reference=cast(Literal["latest", "oldest"] | None, compiled["result_reference"]),
+            answer_fact_field=cast(Literal["date", "counterparty", "amount", "bank"] | None, compiled["answer_fact_field"]),
+            intent_spec=cast(Any, compiled["intent_spec"]),
         )
-        aggregation = self._build_aggregation(
-            extraction,
-            effective_intent=effective_intent,
-            query_operation=query_operation,
-        )
-        answer_fact_field = self._infer_answer_fact_field(
-            extraction,
-            effective_intent=effective_intent,
-            query_operation=query_operation,
-        )
-
-        result_reference = extraction.result_reference
-        if aggregation is not None and aggregation.type in {"largest", "smallest"}:
-            result_reference = None
-
-        normalized = NormalizedQuery(
-            intent=self._intent_from_query_operation(query_operation),
-            query_operation=query_operation,
-            time_range=time_range or TimeRange(start=today - timedelta(days=30), end=today, granularity="day"),
-            filters=filters,
-            aggregation=aggregation,
-            accounts_scope="all",
-            result_limit=result_limit,
-            result_reference=result_reference,
-            answer_fact_field=answer_fact_field,
-        )
-        normalized.intent_spec = derive_query_intent_spec(normalized)
-        return normalized

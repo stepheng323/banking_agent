@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 
-from apps.core.src.agent.graphs.query.models import NormalizedQuery
+from apps.core.src.agent.graphs.query.models import QueryExecutionContract
 from apps.core.src.agent.graphs.query.utils.timezone import lagos_today
 from shared.i18n import render_message
 
@@ -42,12 +42,12 @@ def period_label(time_range: object, locale: str = "en") -> str | None:
     )
 
 
-def build_amount_scope_label(query: NormalizedQuery | None, locale: str = "en") -> str | None:
-    if query is None or query.filters is None:
+def build_amount_scope_label(query_contract: QueryExecutionContract | None, locale: str = "en") -> str | None:
+    if query_contract is None or query_contract.filters is None:
         return None
 
-    min_amount = query.filters.min_amount
-    max_amount = query.filters.max_amount
+    min_amount = query_contract.filters.min_amount
+    max_amount = query_contract.filters.max_amount
     if min_amount is None and max_amount is None:
         return None
 
@@ -73,11 +73,11 @@ def build_amount_scope_label(query: NormalizedQuery | None, locale: str = "en") 
     return None
 
 
-def build_transaction_heading(query: NormalizedQuery | None, locale: str = "en") -> str | None:
-    if query is None:
+def build_transaction_heading(query_contract: QueryExecutionContract | None, locale: str = "en") -> str | None:
+    if query_contract is None:
         return None
 
-    filters = query.filters
+    filters = query_contract.filters
     tx_type = filters.transaction_type if filters else None
     categories = filters.category if filters and filters.category else []
     counterparties = filters.counterparty if filters and filters.counterparty else []
@@ -101,21 +101,21 @@ def build_transaction_heading(query: NormalizedQuery | None, locale: str = "en")
     else:
         heading = "*Transactions*"
 
-    qualifiers = _collect_scope_qualifiers(query, locale=locale, include_counterparty=False)
+    qualifiers = _collect_scope_qualifiers(query_contract, locale=locale, include_counterparty=False)
     return _join_heading(heading, qualifiers)
 
 
 def build_breakdown_heading(
-    query: NormalizedQuery | None,
+    query_contract: QueryExecutionContract | None,
     *,
     group_by: str | None,
     locale: str = "en",
     fallback_summary: str | None = None,
 ) -> str:
-    if query is None or locale != "en":
+    if query_contract is None or locale != "en":
         return fallback_summary or "Breakdown"
 
-    tx_type = query.filters.transaction_type if query.filters else None
+    tx_type = query_contract.filters.transaction_type if query_contract.filters else None
     group_label = {
         "account": "account",
         "category": "category",
@@ -131,33 +131,33 @@ def build_breakdown_heading(
     else:
         base = f"Breakdown by {group_label}"
 
-    qualifiers = _collect_scope_qualifiers(query, locale=locale, include_counterparty=True)
+    qualifiers = _collect_scope_qualifiers(query_contract, locale=locale, include_counterparty=True)
     return _join_heading(base, qualifiers)
 
 
 def build_beneficiary_summary_header(
-    query: NormalizedQuery | None,
+    query_contract: QueryExecutionContract | None,
     *,
     ranking_heading: str,
     timeframe: str,
     locale: str = "en",
 ) -> str:
-    if query is None:
+    if query_contract is None:
         return f"*{ranking_heading} Recipients* ({timeframe})"
 
-    amount_label = build_amount_scope_label(query, locale=locale)
+    amount_label = build_amount_scope_label(query_contract, locale=locale)
     if locale == "en" and amount_label:
-        if query.filters and query.filters.max_amount is not None and query.filters.min_amount is None:
-            heading = f"Recipients I sent under {format_naira(float(query.filters.max_amount))} to"
-        elif query.filters and query.filters.min_amount is not None and query.filters.max_amount is None:
-            heading = f"Recipients I sent over {format_naira(float(query.filters.min_amount))} to"
+        if query_contract.filters and query_contract.filters.max_amount is not None and query_contract.filters.min_amount is None:
+            heading = f"Recipients I sent under {format_naira(float(query_contract.filters.max_amount))} to"
+        elif query_contract.filters and query_contract.filters.min_amount is not None and query_contract.filters.max_amount is None:
+            heading = f"Recipients I sent over {format_naira(float(query_contract.filters.min_amount))} to"
         elif (
-            query.filters
-            and query.filters.min_amount is not None
-            and query.filters.max_amount is not None
-            and float(query.filters.min_amount) == float(query.filters.max_amount)
+            query_contract.filters
+            and query_contract.filters.min_amount is not None
+            and query_contract.filters.max_amount is not None
+            and float(query_contract.filters.min_amount) == float(query_contract.filters.max_amount)
         ):
-            heading = f"Recipients I sent {format_naira(float(query.filters.min_amount))} to"
+            heading = f"Recipients I sent {format_naira(float(query_contract.filters.min_amount))} to"
         else:
             heading = "Recipients I sent within that amount range to"
         base = f"*{heading}*"
@@ -165,7 +165,7 @@ def build_beneficiary_summary_header(
         base = f"*{ranking_heading} Recipients*"
 
     qualifiers: list[str] = []
-    account_filter = (query.filters.account_filter or "").strip() if query.filters else ""
+    account_filter = (query_contract.filters.account_filter or "").strip() if query_contract.filters else ""
     if account_filter:
         qualifiers.append(account_filter)
     qualifiers.append(timeframe)
@@ -173,20 +173,20 @@ def build_beneficiary_summary_header(
 
 
 def _collect_scope_qualifiers(
-    query: NormalizedQuery,
+    query_contract: QueryExecutionContract,
     *,
     locale: str,
     include_counterparty: bool,
 ) -> list[str]:
     qualifiers: list[str] = []
-    filters = query.filters
+    filters = query_contract.filters
 
     if include_counterparty and filters and filters.counterparty and locale == "en":
         counterparty = next((item.strip() for item in filters.counterparty if isinstance(item, str) and item.strip()), None)
         if counterparty:
             qualifiers.append(f"With {counterparty}")
 
-    amount_label = build_amount_scope_label(query, locale=locale)
+    amount_label = build_amount_scope_label(query_contract, locale=locale)
     if amount_label:
         qualifiers.append(amount_label)
 
@@ -194,7 +194,7 @@ def _collect_scope_qualifiers(
     if account_filter:
         qualifiers.append(account_filter)
 
-    label = period_label(query.time_range, locale=locale)
+    label = period_label(query_contract.time_range, locale=locale)
     if label:
         qualifiers.append(label)
 

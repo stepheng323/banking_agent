@@ -45,8 +45,8 @@ class ExecutionStep(QueryStep):
     ) -> dict[str, Any]:
         """Build compact debug metadata from the execution contract."""
         time_granularity = None
-        if query_contract.normalized_query.time_range:
-            time_granularity = query_contract.normalized_query.time_range.granularity
+        if query_contract.time_range:
+            time_granularity = query_contract.time_range.granularity
 
         time_window: dict[str, Any] = {
             "start": query_contract.time_start.isoformat(),
