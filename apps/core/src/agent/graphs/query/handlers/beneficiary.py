@@ -106,29 +106,18 @@ async def handle_beneficiary_summary(
     else:
         timeframe = render_message("query.beneficiary.timeframe_last_30_days", language)
 
-    # Build response
-    lines = [
-        build_beneficiary_summary_header(
-            contract,
-            timeframe=timeframe,
-            ranking_heading=heading_type,
-            locale=language,
-        ),
-        "",
-    ]
+    heading = build_beneficiary_summary_header(
+        contract,
+        timeframe=timeframe,
+        ranking_heading=heading_type,
+        locale=language,
+    )
     items = []
 
     for i, data in enumerate(sorted_cp[:limit]):
         name = str(data["display_name"])
         total = abs(data["total"])
         count = data["count"]
-        lines.append(
-            render_message(
-                "query.beneficiary.summary_line",
-                language,
-                {"name": name, "total": f"{total:,.0f}", "count": count},
-            )
-        )
 
         # Store transactions for drill-down
         items.append(
@@ -144,9 +133,7 @@ async def handle_beneficiary_summary(
     if not items:
         return QueryResult(summary_text=render_message("query.beneficiary.no_outgoing_transfers", language))
 
-    lines.extend(["", render_message("query.beneficiary.reply_name_hint", language)])
-
     return QueryResult(
-        summary_text="\n".join(lines),
+        summary_text=heading,
         items=items,
     )

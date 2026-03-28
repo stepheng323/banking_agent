@@ -2,12 +2,14 @@ from datetime import date
 
 from apps.core.src.agent.graphs.query.models import (
     ExtractionIntent,
+    FactQueryKind,
     QueryAggregation,
     QueryComparison,
     QueryExtractionResult,
     QueryFilters,
     QueryIntent,
     QueryOperation,
+    QueryRequestShape,
     QueryTimeRange,
     TimeReference,
 )
@@ -453,6 +455,46 @@ def test_recipient_queries_compile_to_counterparty_filter() -> None:
     assert query_ir.filters.counterparty == ["Mum"]
     assert query_ir.filters.merchant is None
     assert contract.answer_fact_field == "date"
+
+
+def test_beneficiary_summary_fact_shape_is_recovered_to_single_transaction_query() -> None:
+    parser = QueryParser(_DummyLLM())
+    today = date(2026, 3, 28)
+    extraction = QueryExtractionResult(
+        intent=ExtractionIntent.BENEFICIARY_SUMMARY,
+        filters=QueryFilters(recipient="Mum"),
+        time_range=QueryTimeRange(reference_type=TimeReference.UNSPECIFIED, days_back=30),
+        raw_query="when last did I send mum money",
+    )
+
+    query_ir = parser.build_query_ir_from_extraction(extraction, today=today, language="en")
+    contract = parser.build_execution_contract_from_ir(query_ir)
+
+    assert query_ir.intent == QueryIntent.TRANSACTION_SEARCH
+    assert query_ir.answer_fact_field == "date"
+    assert query_ir.filters is not None
+    assert query_ir.filters.counterparty == ["Mum"]
+    assert contract.intent == QueryIntent.TRANSACTION_SEARCH
+    assert contract.answer_fact_field == "date"
+
+
+def test_request_shape_fact_overrides_grouped_summary_without_keyword_recovery() -> None:
+    parser = QueryParser(_DummyLLM())
+    today = date(2026, 3, 28)
+    extraction = QueryExtractionResult(
+        intent=ExtractionIntent.BENEFICIARY_SUMMARY,
+        request_shape=QueryRequestShape.FACT,
+        fact_query_kind=FactQueryKind.DATE,
+        filters=QueryFilters(recipient="Mum"),
+        time_range=QueryTimeRange(reference_type=TimeReference.UNSPECIFIED, days_back=30),
+        raw_query="restated follow-up",
+    )
+
+    query_ir = parser.build_query_ir_from_extraction(extraction, today=today, language="en")
+
+    assert query_ir.intent == QueryIntent.TRANSACTION_SEARCH
+    assert query_ir.query_operation == QueryOperation.SEARCH_SINGLE_TRANSACTION
+    assert query_ir.answer_fact_field == "date"
 
 
 def test_who_sent_me_query_sets_counterparty_answer_fact() -> None:

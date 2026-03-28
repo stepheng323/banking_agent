@@ -65,7 +65,11 @@ QUERY SHAPE RULES
 - "How much did I spend today/this week" → fresh_query with explicit period, not continuation.
 
 EXTRACTION RULES (for fresh_query, reinterpret_query, new_query)
-Populate: intent, filters, time_range, comparison, aggregation, result_limit, result_reference, answer_fact_field.
+Populate: intent, filters, time_range, comparison, aggregation, request_shape, fact_query_kind, result_limit, result_reference, answer_fact_field.
+- request_shape:
+  fact | detail | list | grouped_summary | analytics | comparison | affordability
+- fact_query_kind:
+  date | counterparty | amount | bank
 - result_reference: "latest" for most recent, "oldest" for earliest.
 - answer_fact_field: use date|counterparty|amount|bank for singular fact-seeking transaction questions such as
   "when did I last...", "who sent me...", "how much was...", "which bank was..."
@@ -155,7 +159,7 @@ RESULT LIMIT & REFERENCE
 - result_reference: "latest" for most recent, "oldest" for earliest
 
 OUTPUT CONTRACT
-Return only these fields: intent, filters, time_range, comparison, aggregation, result_limit, result_reference, answer_fact_field.
+Return only these fields: intent, filters, time_range, comparison, aggregation, request_shape, fact_query_kind, result_limit, result_reference, answer_fact_field.
 If the user is vague, express that through the semantic fields:
 - vague time → reference_type=vague and estimate days_back when possible
 - missing/unclear fields → leave the field null instead of fabricating values

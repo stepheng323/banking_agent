@@ -535,6 +535,100 @@ async def test_account_breakdown_drilldown_converts_to_transaction_list_with_acc
 
 
 @pytest.mark.asyncio
+async def test_account_breakdown_drilldown_prefers_explicit_label_over_ordinal_index_hint() -> None:
+    step = ExtractionStep(_DummyLLM())
+    today = date(2026, 3, 28)
+    session_query = _query_ir(
+        intent=QueryIntent.ANALYTICS_SUMMARY,
+        query_operation=QueryOperation.BREAKDOWN_TRANSACTIONS,
+        time_range=TimeRange(start=date(2026, 2, 26), end=today),
+        filters=Filters(transaction_type="debit"),
+        aggregation=Aggregation(type="breakdown", group_by="account"),
+    )
+    session_contract = _contract(session_query)
+
+    async def _fake_reason(context: object) -> QuerySemanticDecision:
+        del context
+        return QuerySemanticDecision(
+            decision="continuation",
+            continuation_type="drill_down",
+            followup_intent="none",
+            drill_down_index=0,
+            confidence=0.99,
+            reason="account_breakdown_drill_down",
+        )
+
+    step.reasoner.reason = _fake_reason  # type: ignore[method-assign]
+
+    updates = await step._handle_continuation(
+        {"message": "show the first bank transactions", "today": today, "language": "en"},
+        {
+            "session_active": True,
+            "query_contract": session_contract.model_dump(),
+            "query_result": {
+                "summary_text": "Spending by account",
+                "items": [
+                    QueryResultItem(
+                        id="0",
+                        description="Zenith Bank",
+                        amount=-1099852,
+                        date=today,
+                        metadata={"key": "Zenith Bank", "count": 23},
+                    ).model_dump(mode="json"),
+                    QueryResultItem(
+                        id="1",
+                        description="First Bank",
+                        amount=-96200,
+                        date=today,
+                        metadata={"key": "First Bank", "count": 5},
+                    ).model_dump(mode="json"),
+                ],
+                "surface_view": {
+                    "mode": "grouped_summary",
+                    "context": {"group_by": "account"},
+                    "items": [
+                        {
+                            "id": "0",
+                            "label": "Zenith Bank",
+                            "amount": -1099852,
+                            "count": 23,
+                            "payload": {
+                                "selection_kind": "group_bucket",
+                                "entity_type": "group_bucket",
+                                "entity_id": "0",
+                                "label": "Zenith Bank",
+                                "group_by": "account",
+                                "group_key": "Zenith Bank",
+                                "filters_patch": {"account_filter": "Zenith Bank"},
+                            },
+                        },
+                        {
+                            "id": "1",
+                            "label": "First Bank",
+                            "amount": -96200,
+                            "count": 5,
+                            "payload": {
+                                "selection_kind": "group_bucket",
+                                "entity_type": "group_bucket",
+                                "entity_id": "1",
+                                "label": "First Bank",
+                                "group_by": "account",
+                                "group_key": "First Bank",
+                                "filters_patch": {"account_filter": "First Bank"},
+                            },
+                        },
+                    ],
+                },
+            },
+        },
+    )
+
+    query_contract = updates["query_contract"]
+    assert query_contract.filters is not None
+    assert query_contract.filters.account_filter == "First Bank"
+
+
+@pytest.mark.asyncio
 async def test_show_me_follow_up_does_not_convert_summary_on_pagination_intent() -> None:
     step = ExtractionStep(_DummyLLM())
     today = date(2026, 3, 6)

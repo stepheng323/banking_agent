@@ -23,6 +23,27 @@ class ExtractionIntent(str, Enum):
     AFFORDABILITY = "affordability"  # Can I afford X
 
 
+class QueryRequestShape(str, Enum):
+    """High-level answer shape the user is asking for."""
+
+    FACT = "fact"
+    DETAIL = "detail"
+    LIST = "list"
+    GROUPED_SUMMARY = "grouped_summary"
+    ANALYTICS = "analytics"
+    COMPARISON = "comparison"
+    AFFORDABILITY = "affordability"
+
+
+class FactQueryKind(str, Enum):
+    """Specific fact a singular transaction question is asking for."""
+
+    DATE = "date"
+    COUNTERPARTY = "counterparty"
+    AMOUNT = "amount"
+    BANK = "bank"
+
+
 class RequestedCapability(str, Enum):
     """Capabilities the user is requesting (LLM detects these)."""
 
@@ -114,6 +135,8 @@ class ParserQueryExtraction(BaseModel):
     time_range: QueryTimeRange = Field(default_factory=QueryTimeRange)
     comparison: QueryComparison | None = Field(default=None)
     aggregation: QueryAggregation | None = Field(default=None)
+    request_shape: QueryRequestShape | None = Field(default=None)
+    fact_query_kind: FactQueryKind | None = Field(default=None)
     result_limit: int | None = Field(default=None, ge=1, le=100, description="Max results to return")
     result_reference: Literal["latest", "oldest"] | None = Field(
         default=None,
@@ -134,6 +157,8 @@ class QueryExtractionResult(BaseModel):
     time_range: QueryTimeRange = Field(default_factory=QueryTimeRange)
     comparison: QueryComparison | None = Field(default=None)
     aggregation: QueryAggregation | None = Field(default=None)
+    request_shape: QueryRequestShape | None = Field(default=None)
+    fact_query_kind: FactQueryKind | None = Field(default=None)
     result_limit: int | None = Field(default=None, ge=1, le=100, description="Max results to return")
     result_reference: Literal["latest", "oldest"] | None = Field(
         default=None,
@@ -163,6 +188,8 @@ class ReasonerQueryExtraction(BaseModel):
     time_range: QueryTimeRange = Field(default_factory=QueryTimeRange)
     comparison: QueryComparison | None = Field(default=None)
     aggregation: QueryAggregation | None = Field(default=None)
+    request_shape: QueryRequestShape | None = Field(default=None)
+    fact_query_kind: FactQueryKind | None = Field(default=None)
     result_limit: int | None = Field(default=None, ge=1, le=100)
     result_reference: Literal["latest", "oldest"] | None = Field(default=None)
     answer_fact_field: Literal["date", "counterparty", "amount", "bank"] | None = Field(default=None)
@@ -177,6 +204,8 @@ class ReasonerQueryExtraction(BaseModel):
             time_range=self.time_range.model_copy(deep=True),
             comparison=self.comparison.model_copy(deep=True) if self.comparison is not None else None,
             aggregation=self.aggregation.model_copy(deep=True) if self.aggregation is not None else None,
+            request_shape=self.request_shape,
+            fact_query_kind=self.fact_query_kind,
             result_limit=self.result_limit,
             result_reference=self.result_reference,
             answer_fact_field=self.answer_fact_field,

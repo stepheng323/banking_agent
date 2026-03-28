@@ -76,8 +76,9 @@ async def test_beneficiary_summary_uses_full_currency_amount_without_dividing_by
         language="en",
     )
 
-    assert "Mum • ₦15,000 (2x)" in result.summary_text
+    assert result.summary_text == "*Top Recipients* — Mar 08 – Mar 10"
     assert result.items
+    assert result.items[0].description == "Mum"
     assert result.items[0].amount == 15000
 
 
@@ -171,10 +172,10 @@ async def test_beneficiary_summary_merges_trivial_recipient_name_variants() -> N
         language="en",
     )
 
-    assert "Gaines • ₦25,000 (2x)" in result.summary_text
-    assert "Gaines. • ₦" not in result.summary_text
+    assert result.summary_text == "*Most Frequent Recipients* — Mar 07 – Mar 10"
     assert result.items
     assert result.items[0].description == "Gaines"
+    assert result.items[0].amount == 25000
     assert result.items[0].metadata and result.items[0].metadata.get("recipient_name") == "Gaines"
 
 
@@ -198,6 +199,7 @@ async def test_beneficiary_summary_header_mentions_lower_bound_amount_scope() ->
     )
 
     assert "*Recipients I sent over ₦20,000 to* — Mar 14 – Mar 27" in result.summary_text
+    assert "Cowrywise •" not in result.summary_text
 
 
 @pytest.mark.asyncio

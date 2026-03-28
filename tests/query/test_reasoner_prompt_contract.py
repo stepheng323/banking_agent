@@ -115,6 +115,8 @@ def test_query_parser_prompt_covers_multilingual() -> None:
 def test_query_parser_prompt_uses_positive_output_contract() -> None:
     assert "OUTPUT CONTRACT" in QUERY_PARSER_PROMPT
     assert "Return only these fields" in QUERY_PARSER_PROMPT
+    assert "request_shape" in QUERY_PARSER_PROMPT
+    assert "fact_query_kind" in QUERY_PARSER_PROMPT
     assert "The runtime derives `query_operation`" in QUERY_PARSER_PROMPT
     assert "REQUESTED CAPABILITIES" not in QUERY_PARSER_PROMPT
     assert "AMBIGUITIES" not in QUERY_PARSER_PROMPT
