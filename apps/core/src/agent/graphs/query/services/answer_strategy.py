@@ -6,7 +6,6 @@ from apps.core.src.agent.graphs.query.models import (
     NormalizedQuery,
     QueryAnswerContext,
     QueryAnswerStrategy,
-    QueryFollowupReferent,
     QueryIntent,
     QueryResult,
     QueryResultItem,
@@ -120,7 +119,7 @@ def _apply_fact_answer_strategy(result: QueryResult, *, query: NormalizedQuery, 
     result.answer_context = build_direct_fact_answer(item, query=query, fact_field=fact_field, locale=locale)
     focus_referent = build_focus_referent(item, query=query)
     if focus_referent is not None:
-        result.followup_referent = QueryFollowupReferent.model_validate(focus_referent.model_dump(mode="json"))
+        result.followup_referent = focus_referent
     return result
 
 

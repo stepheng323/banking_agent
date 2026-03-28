@@ -21,6 +21,7 @@ from apps.core.src.agent.graphs.query.services.presentation_scope import (
     build_breakdown_heading,
     build_transaction_heading,
 )
+from apps.core.src.agent.graphs.query.utils.timezone import lagos_today
 from apps.core.src.agent.shared.query_contracts import (
     FocusedReferent,
     PresentationMode,
@@ -31,6 +32,7 @@ from apps.core.src.agent.shared.query_contracts import (
     SurfaceViewMode,
 )
 from shared.i18n import render_message
+from shared.i18n.message_keys import MessageKey
 
 
 def build_query_transfer_handoff_payload(item: QueryResultItem) -> dict[str, Any] | None:
@@ -165,24 +167,19 @@ def build_presentation_plan(
     has_more: bool = False,
 ) -> PresentationPlan | None:
     """Build a typed presentation plan from the execution result."""
-    if result.presentation_plan is not None:
-        return result.presentation_plan
+    if result.answer_strategy == QueryAnswerStrategy.DIRECT_ANSWER:
+        direct_plan = _build_direct_answer_presentation_plan(result, locale=locale)
+        if direct_plan is not None:
+            return direct_plan
+
+    if not result.items:
+        no_results_plan = _build_no_results_presentation_plan(result, locale=locale)
+        if no_results_plan is not None:
+            return no_results_plan
 
     surface_view = result.surface_view or build_surface_view(result)
     if surface_view is None:
         return None
-
-    if result.answer_strategy == QueryAnswerStrategy.DIRECT_ANSWER and result.answer_context is not None:
-        evidence_lines = []
-        if result.answer_context.secondary_text:
-            evidence_lines.append(result.answer_context.secondary_text)
-        return PresentationPlan(
-            mode=PresentationMode.DIRECT_ANSWER,
-            lead_text=result.answer_context.primary_text,
-            evidence_lines=evidence_lines,
-            hint_text=result.answer_context.hint_text,
-            selection_payloads=[],
-        )
 
     if result.answer_strategy == QueryAnswerStrategy.CLARIFY and result.answer_context is not None:
         return PresentationPlan(
@@ -242,6 +239,121 @@ def _build_transaction_list_presentation_plan(
         hint_text="\n".join(hint_lines) or None,
         selection_payloads=[item.payload for item in surface_view.items],
     )
+
+
+def _build_direct_answer_presentation_plan(result: QueryResult, *, locale: str) -> PresentationPlan | None:
+    if result.answer_context is not None:
+        evidence_lines = []
+        if result.answer_context.secondary_text:
+            evidence_lines.append(result.answer_context.secondary_text)
+        return PresentationPlan(
+            mode=PresentationMode.DIRECT_ANSWER,
+            lead_text=result.answer_context.primary_text,
+            evidence_lines=evidence_lines,
+            hint_text=result.answer_context.hint_text,
+            selection_payloads=[],
+        )
+
+    if not result.items:
+        from apps.core.src.agent.graphs.query.services.answer_strategy import build_fact_no_results_text
+
+        fact_no_results = build_fact_no_results_text(result.query_snapshot)
+        if fact_no_results:
+            return PresentationPlan(mode=PresentationMode.DIRECT_ANSWER, lead_text=fact_no_results)
+        if result.summary_text:
+            return PresentationPlan(mode=PresentationMode.DIRECT_ANSWER, lead_text=result.summary_text)
+        no_results_text = _build_no_results_text(result, locale=locale)
+        if no_results_text:
+            return PresentationPlan(mode=PresentationMode.DIRECT_ANSWER, lead_text=no_results_text)
+    return None
+
+
+def _build_no_results_presentation_plan(result: QueryResult, *, locale: str) -> PresentationPlan | None:
+    if result.summary_text:
+        return PresentationPlan(mode=PresentationMode.DIRECT_ANSWER, lead_text=result.summary_text)
+    no_results_text = _build_no_results_text(result, locale=locale)
+    if no_results_text is None:
+        return None
+    return PresentationPlan(mode=PresentationMode.DIRECT_ANSWER, lead_text=no_results_text)
+
+
+def _build_no_results_text(result: QueryResult, *, locale: str) -> str | None:
+    query_snapshot = result.query_snapshot
+    time_range = query_snapshot.time_range if query_snapshot else None
+    tx_type = query_snapshot.filters.transaction_type if query_snapshot and query_snapshot.filters else None
+    if (
+        query_snapshot
+        and query_snapshot.intent in {QueryIntent.TRANSACTION_LIST, QueryIntent.TRANSACTION_SEARCH}
+        and time_range is not None
+        and not _has_search_shaped_no_results_context(query_snapshot)
+    ):
+        return _format_factual_no_results(time_range, locale=locale, transaction_type=tx_type)
+
+    if tx_type not in ("credit", "debit"):
+        return render_message("query.format.no_matching_transactions", locale)
+
+    time_suffix = ""
+    if time_range:
+        if time_range.start == time_range.end == lagos_today():
+            time_suffix = render_message("query.format.no_results_time_suffix_today", locale)
+        else:
+            time_suffix = render_message("query.format.no_results_time_suffix_period", locale)
+
+    return render_message(
+        "query.format.no_results_with_type",
+        locale,
+        {"transaction_type": tx_type, "time_suffix": time_suffix},
+    )
+
+
+def _has_search_shaped_no_results_context(query_snapshot: NormalizedQuery | None) -> bool:
+    if not query_snapshot:
+        return False
+    if query_snapshot.aggregation is not None:
+        return True
+
+    filters = query_snapshot.filters
+    if not filters:
+        return False
+
+    return any(
+        (
+            bool(filters.category),
+            bool(filters.merchant),
+            bool(filters.counterparty),
+            filters.min_amount is not None,
+            filters.max_amount is not None,
+            bool(filters.exclude),
+            filters.account_filter is not None,
+            query_snapshot.account_name is not None,
+        )
+    )
+
+
+def _format_factual_no_results(
+    time_range: TimeRange,
+    *,
+    locale: str,
+    transaction_type: str | None,
+) -> str:
+    today = lagos_today()
+    yesterday = today.fromordinal(today.toordinal() - 1)
+
+    if time_range.start == time_range.end == today:
+        suffix = "today"
+    elif time_range.start == time_range.end == yesterday:
+        suffix = "yesterday"
+    else:
+        suffix = "period"
+
+    if transaction_type in ("credit", "debit"):
+        return render_message(
+            cast(MessageKey, f"query.format.no_transactions_with_type_{suffix}"),
+            locale,
+            {"transaction_type": transaction_type},
+        )
+
+    return render_message(cast(MessageKey, f"query.format.no_transactions_{suffix}"), locale)
 
 
 def find_selection_payload(

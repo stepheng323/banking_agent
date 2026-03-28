@@ -10,7 +10,7 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field
 
-from apps.core.src.agent.shared.query_contracts import FocusedReferent, PresentationPlan, SurfaceView, SurfaceViewMode
+from apps.core.src.agent.shared.query_contracts import FocusedReferent, SurfaceView, SurfaceViewMode
 
 
 class QueryIntent(str, Enum):
@@ -350,10 +350,6 @@ class QueryAnswerContext(BaseModel):
     hint_text: str | None = None
 
 
-class QueryFollowupReferent(FocusedReferent):
-    """Backward-compatible alias for query-origin referents."""
-
-
 class QueryFrame(BaseModel):
     """Compact session memory for recent query results."""
 
@@ -394,10 +390,7 @@ class QueryResult(BaseModel):
     surface_view: SurfaceView | None = None
     answer_strategy: QueryAnswerStrategy | None = None
     answer_context: QueryAnswerContext | None = None
-    followup_referent: QueryFollowupReferent | None = None
-    presentation_plan: PresentationPlan | None = None
-    intent_spec: QueryIntentSpec | None = None
-    execution_plan: QueryExecutionPlan | None = None
+    followup_referent: FocusedReferent | None = None
     cached_transactions: list[dict[str, Any]] | None = None
     cache_fetched_at: float | None = None
     cache_fingerprint: str | None = None

@@ -7,7 +7,7 @@ from apps.core.src.agent.graphs.query.executor import QueryExecutor
 from apps.core.src.agent.graphs.query.models import QueryExecutionContract
 from apps.core.src.agent.graphs.query.pipeline import QueryStep
 from apps.core.src.agent.graphs.query.services.answer_strategy import select_answer_strategy
-from apps.core.src.agent.graphs.query.services.contracts import build_presentation_plan, build_surface_view
+from apps.core.src.agent.graphs.query.services.contracts import build_surface_view
 from apps.core.src.agent.graphs.query.services.formatter import QueryFormatter
 from apps.core.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
 from apps.core.src.agent.shared.query_contracts import SurfaceViewMode
@@ -159,11 +159,8 @@ class ExecutionStep(QueryStep):
             continuation_type=state.get("continuation_type"),
             continuation_delta_type=state.get("continuation_delta_type"),
         )
-        result.intent_spec = query_contract.intent_spec
-        result.execution_plan = query_contract.execution_plan
         result = select_answer_strategy(result, locale=locale)
         result.surface_view = build_surface_view(result)
-        result.presentation_plan = build_presentation_plan(result, locale=locale)
 
         formatted_response = QueryFormatter.format(
             result,

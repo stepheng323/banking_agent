@@ -3,7 +3,7 @@ from typing import Any
 import pytest
 from langchain_core.runnables import RunnableConfig
 
-from apps.core.src.agent.graphs.query.models import QueryFollowupReferent, QueryResult
+from apps.core.src.agent.graphs.query.models import QueryResult
 from apps.core.src.agent.orchestrator.context.models import ContextFrameType
 from apps.core.src.agent.orchestrator.execution.handlers import (
     ExecutionAggregation,
@@ -12,6 +12,7 @@ from apps.core.src.agent.orchestrator.execution.handlers import (
 )
 from apps.core.src.agent.orchestrator.models.domain import TaskSpec, TaskStage, TransactionOutcome, TransactionResult
 from apps.core.src.agent.orchestrator.models.state import OrchestratorState
+from apps.core.src.agent.shared.query_contracts import FocusedReferent
 
 
 class _DummyQueryWorker:
@@ -42,7 +43,7 @@ class _DummyQueryReferentWorker:
             patch={
                 "query_result": QueryResult(
                     summary_text="accounts:1|showing:1-1|total:1",
-                    followup_referent=QueryFollowupReferent(
+                    followup_referent=FocusedReferent(
                         label="Mum",
                         recipient_name="Mum",
                         recipient_account="8162511023",

@@ -18,7 +18,6 @@ from .domain import (
     QueryAnswerStrategy,
     QueryExecutionContract,
     QueryExecutionPlan,
-    QueryFollowupReferent,
     QueryFrame,
     QueryFrameFacts,
     QueryIntent,
