@@ -2,8 +2,9 @@ from datetime import date
 
 import pytest
 
-from apps.core.src.agent.graphs.query.models import QueryResultItem, ResultSurface, SurfaceType
+from apps.core.src.agent.graphs.query.models import QueryResultItem
 from apps.core.src.agent.graphs.query.services.continuity import ContinuationClassifier
+from apps.core.src.agent.shared.query_contracts import SurfaceView, SurfaceViewMode
 
 
 def _classifier() -> ContinuationClassifier:
@@ -16,7 +17,7 @@ def test_end_session_phrase_still_hits_guardrail() -> None:
     guarded = classifier._guardrail_classify(
         message="thank you",
         items=None,
-        surface=None,
+        surface_view=None,
         language="en",
     )
 
@@ -32,7 +33,7 @@ def test_end_session_phrase_with_emoji_still_hits_guardrail() -> None:
     guarded = classifier._guardrail_classify(
         message="thank you 😊",
         items=None,
-        surface=None,
+        surface_view=None,
         language="en",
     )
 
@@ -48,7 +49,7 @@ def test_dismissive_turn_does_not_hit_deterministic_guardrail() -> None:
     guarded = classifier._guardrail_classify(
         message="get out",
         items=None,
-        surface=None,
+        surface_view=None,
         language="en",
     )
 
@@ -57,13 +58,13 @@ def test_dismissive_turn_does_not_hit_deterministic_guardrail() -> None:
 
 def test_beneficiary_summary_name_reply_maps_to_recipient_drilldown() -> None:
     classifier = _classifier()
-    surface = ResultSurface(type=SurfaceType.SUMMARY, items=[], context={"view": "beneficiary_summary"})
+    surface_view = SurfaceView(mode=SurfaceViewMode.GROUPED_SUMMARY, context={"view": "beneficiary_summary"})
     items = [QueryResultItem(description="Gaines", amount=25000, date=date(2026, 3, 10))]
 
     guarded = classifier._guardrail_classify(
         message="Gaines.",
         items=items,
-        surface=surface,
+        surface_view=surface_view,
         language="en",
     )
 
@@ -76,13 +77,13 @@ def test_beneficiary_summary_name_reply_maps_to_recipient_drilldown() -> None:
 
 def test_beneficiary_summary_fact_followup_maps_to_recipient_drilldown_with_fact_field() -> None:
     classifier = _classifier()
-    surface = ResultSurface(type=SurfaceType.SUMMARY, items=[], context={"view": "beneficiary_summary"})
+    surface_view = SurfaceView(mode=SurfaceViewMode.GROUPED_SUMMARY, context={"view": "beneficiary_summary"})
     items = [QueryResultItem(description="Adesanya Kunle", amount=50000, date=date(2026, 3, 27))]
 
     guarded = classifier._guardrail_classify(
         message="When was Kunle's transaction?",
         items=items,
-        surface=surface,
+        surface_view=surface_view,
         language="en",
     )
 
@@ -96,12 +97,12 @@ def test_beneficiary_summary_fact_followup_maps_to_recipient_drilldown_with_fact
 
 def test_retransfer_phrase_maps_to_drill_down_for_list_surface() -> None:
     classifier = _classifier()
-    surface = ResultSurface(type=SurfaceType.LIST, items=[], context={"type": "transaction_list"})
+    surface_view = SurfaceView(mode=SurfaceViewMode.TRANSACTION_LIST, context={"type": "transaction_list"})
 
     guarded = classifier._guardrail_classify(
         message="send again",
         items=None,
-        surface=surface,
+        surface_view=surface_view,
         language="en",
     )
 
@@ -123,12 +124,12 @@ def test_retransfer_phrase_maps_to_drill_down_for_list_surface() -> None:
 )
 def test_scope_and_pagination_phrases_no_longer_hit_guardrail(message: str) -> None:
     classifier = _classifier()
-    surface = ResultSurface(type=SurfaceType.SUMMARY, items=[], context={"view": "summary"})
+    surface_view = SurfaceView(mode=SurfaceViewMode.GROUPED_SUMMARY, context={"view": "summary"})
 
     guarded = classifier._guardrail_classify(
         message=message,
         items=None,
-        surface=surface,
+        surface_view=surface_view,
         language="en",
     )
 

@@ -9,7 +9,7 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from apps.core.src.agent.graphs.query.session import is_query_session_stale
+from apps.core.src.agent.graphs.query.session import _session_has_surface_view, is_query_session_stale
 from apps.core.src.agent.orchestrator.context.models import ContextFrameType
 from apps.core.src.agent.orchestrator.models.state import OrchestratorState
 from shared.utils.logging import get_logger
@@ -196,7 +196,7 @@ async def _load_query_session_snapshot(
         session_active=bool(snapshot.get("session_active")),
         has_query_contract=bool(snapshot.get("query_contract")),
         has_query_result=bool(snapshot.get("query_result")),
-        has_surface=bool(snapshot.get("surface")),
+        has_surface=_session_has_surface_view(snapshot),
         has_query_frames=bool(snapshot.get("query_frames")),
     )
 

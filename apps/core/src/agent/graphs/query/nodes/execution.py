@@ -10,6 +10,7 @@ from apps.core.src.agent.graphs.query.services.answer_strategy import select_ans
 from apps.core.src.agent.graphs.query.services.contracts import build_presentation_plan, build_surface_view
 from apps.core.src.agent.graphs.query.services.formatter import QueryFormatter
 from apps.core.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
+from apps.core.src.agent.shared.query_contracts import SurfaceViewMode
 from shared.i18n import LocaleManager, render_message
 from shared.utils.logging import get_logger
 
@@ -21,6 +22,19 @@ class ExecutionStep(QueryStep):
 
     def __init__(self) -> None:
         pass
+
+    @staticmethod
+    def _surface_type_name(result: Any) -> str | None:
+        surface_view = getattr(result, "surface_view", None)
+        if surface_view is None:
+            return None
+        mode_map = {
+            SurfaceViewMode.DIRECT_ANSWER: "single_item",
+            SurfaceViewMode.TRANSACTION_LIST: "list",
+            SurfaceViewMode.GROUPED_SUMMARY: "summary",
+            SurfaceViewMode.CLARIFICATION: "clarification",
+        }
+        return mode_map.get(surface_view.mode)
 
     @staticmethod
     def _build_interpretation(
@@ -165,7 +179,7 @@ class ExecutionStep(QueryStep):
         logger.info(
             "query_execution_response_summary",
             resolver_message_attached=bool(state.get("resolver_message")),
-            surface_type=result.surface.type.value if result.surface else None,
+            surface_type=self._surface_type_name(result),
             continuation_type=state.get("continuation_type"),
         )
 
@@ -175,7 +189,6 @@ class ExecutionStep(QueryStep):
             patch={
                 "query_result": result,
                 "query_contract": query_contract,
-                "surface": result.surface,  # Persist surface state
                 "resolver_message": None,
                 "session_active": True,
                 "flow_state": "complete",

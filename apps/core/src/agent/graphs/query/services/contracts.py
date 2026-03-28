@@ -13,7 +13,6 @@ from apps.core.src.agent.graphs.query.models import (
     QueryOperation,
     QueryResult,
     QueryResultItem,
-    SurfaceType,
     TimeRange,
 )
 from apps.core.src.agent.shared.query_contracts import (
@@ -107,11 +106,12 @@ def build_surface_view(result: QueryResult) -> SurfaceView | None:
     if not result.items:
         return None
 
-    surface_type = result.surface.type if result.surface is not None else None
-    if surface_type in {SurfaceType.SUMMARY, SurfaceType.BREAKDOWN}:
-        mode = SurfaceViewMode.GROUPED_SUMMARY
-    else:
-        mode = SurfaceViewMode.TRANSACTION_LIST
+    mode = (
+        SurfaceViewMode.GROUPED_SUMMARY
+        if result.answer_strategy == QueryAnswerStrategy.SUMMARY_LIST
+        else SurfaceViewMode.TRANSACTION_LIST
+    )
+    context = _build_surface_view_context(result=result, mode=mode)
 
     items = [
         SurfaceItemView(
@@ -119,17 +119,11 @@ def build_surface_view(result: QueryResult) -> SurfaceView | None:
             label=item.description,
             amount=item.amount,
             count=(item.metadata or {}).get("count") if isinstance(item.metadata, dict) else None,
-            payload=_build_selection_payload(result, item, surface_type=surface_type),
+            payload=_build_selection_payload(result, item, mode=mode, context=context),
             metadata=item.metadata or {},
         )
         for item in result.items
     ]
-
-    context = {}
-    if result.surface is not None:
-        context = dict(result.surface.context or {})
-        if result.surface.type is not None:
-            context["surface_type"] = result.surface.type.value
     return SurfaceView(mode=mode, items=items, context=context)
 
 
@@ -249,13 +243,14 @@ def _build_selection_payload(
     result: QueryResult,
     item: QueryResultItem,
     *,
-    surface_type: SurfaceType | None,
+    mode: SurfaceViewMode,
+    context: dict[str, Any],
 ) -> SelectionPayload:
     metadata = item.metadata if isinstance(item.metadata, dict) else {}
     handoff_payload = build_query_transfer_handoff_payload(item)
 
-    if surface_type == SurfaceType.BREAKDOWN:
-        group_by = str((result.surface.context or {}).get("group_by") or "").strip() if result.surface else ""
+    group_by = str(context.get("group_by") or "").strip()
+    if mode == SurfaceViewMode.GROUPED_SUMMARY and group_by:
         group_key = str(metadata.get("key") or item.description).strip()
         filters_patch: dict[str, Any] = {}
         time_patch: dict[str, Any] | None = None
@@ -287,12 +282,7 @@ def _build_selection_payload(
             fact_capabilities=["date", "amount"],
         )
 
-    is_beneficiary_summary = bool(
-        result.surface is not None
-        and result.surface.type == SurfaceType.SUMMARY
-        and isinstance(result.surface.context, dict)
-        and result.surface.context.get("view") == "beneficiary_summary"
-    )
+    is_beneficiary_summary = mode == SurfaceViewMode.GROUPED_SUMMARY and context.get("view") == "beneficiary_summary"
     if is_beneficiary_summary:
         recipient_name = str(metadata.get("recipient_name") or item.description).strip()
         return SelectionPayload(
@@ -330,3 +320,23 @@ def _normalize_label(value: str) -> str:
 
 def _tokenize_label(value: str) -> list[str]:
     return [token for token in re.findall(r"[a-z0-9]+", value.casefold()) if len(token) >= 3]
+
+
+def _build_surface_view_context(*, result: QueryResult, mode: SurfaceViewMode) -> dict[str, Any]:
+    query = result.query_snapshot
+    context: dict[str, Any] = {"mode": mode.value}
+    if mode == SurfaceViewMode.GROUPED_SUMMARY:
+        if query and query.intent == QueryIntent.BENEFICIARY_SUMMARY:
+            context["view"] = "beneficiary_summary"
+        elif query and query.aggregation and query.aggregation.group_by:
+            context["group_by"] = query.aggregation.group_by
+            context["surface_type"] = "breakdown"
+        elif query and query.intent in {
+            QueryIntent.ANALYTICS_SUMMARY,
+            QueryIntent.TIME_COMPARISON,
+            QueryIntent.AFFORDABILITY,
+        }:
+            context["view"] = "summary"
+    elif mode == SurfaceViewMode.TRANSACTION_LIST:
+        context["type"] = "transaction_list"
+    return context

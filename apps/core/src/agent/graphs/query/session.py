@@ -15,6 +15,16 @@ logger = get_logger(__name__)
 SESSION_TTL = 300
 
 
+def _session_has_surface_view(session: dict[str, Any]) -> bool:
+    """Return whether the snapshot carries typed surface state."""
+    query_result = session.get("query_result")
+    if isinstance(query_result, QueryResult):
+        return query_result.surface_view is not None
+    if isinstance(query_result, dict):
+        return bool(query_result.get("surface_view"))
+    return False
+
+
 def is_query_session_stale(session: dict[str, Any], *, now: float | None = None, ttl_seconds: int = SESSION_TTL) -> bool:
     """Return True when a session snapshot is outside configured TTL."""
     raw_timestamp = session.get("timestamp")
@@ -74,15 +84,6 @@ class QuerySessionManager:
                     logger.warning("pending_clarification_restore_error", error=str(e))
                     session["pending_clarification"] = None
 
-            if session.get("surface") and isinstance(session["surface"], dict):
-                try:
-                    from apps.core.src.agent.graphs.query.models import ResultSurface
-
-                    session["surface"] = ResultSurface.model_validate(session["surface"])
-                except Exception as e:
-                    logger.warning("surface_restore_error", error=str(e))
-                    session["surface"] = None
-
             if session.get("query_frames"):
                 session["query_frames"] = restore_query_frames(session["query_frames"])
 
@@ -139,7 +140,6 @@ class QuerySessionManager:
                 "clarification_attempts",
                 "recipient_name",
                 "filters",
-                "surface",
                 "pending_clarification",
                 "query_frames",
                 "timestamp",
@@ -147,7 +147,7 @@ class QuerySessionManager:
             for k, v in state.items():
                 if k not in allowed_keys:
                     continue
-                if k in ("query_contract", "query_result", "surface", "pending_clarification") and v and hasattr(
+                if k in ("query_contract", "query_result", "pending_clarification") and v and hasattr(
                     v, "model_dump"
                 ):
                     save_state[k] = v.model_dump()

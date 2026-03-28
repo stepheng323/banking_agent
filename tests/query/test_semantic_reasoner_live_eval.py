@@ -16,8 +16,6 @@ from apps.core.src.agent.graphs.query.models import (
     QueryExtractionResult,
     QueryIntent,
     QueryResultItem,
-    ResultSurface,
-    SurfaceType,
     TimeRange,
 )
 from apps.core.src.agent.graphs.query.services.reasoner import (
@@ -25,6 +23,7 @@ from apps.core.src.agent.graphs.query.services.reasoner import (
     QuerySemanticReasoner,
     SemanticReasonerContext,
 )
+from apps.core.src.agent.shared.query_contracts import SurfaceView, SurfaceViewMode
 
 
 def _live_chat_model() -> Any:
@@ -69,9 +68,8 @@ def _active_transaction_list_context(message: str, *, language: str = "en") -> S
                 metadata={"transaction_type": "debit", "recipient_name": "Mum", "bank_name": "Zenith Bank"},
             ),
         ],
-        surface=ResultSurface(
-            type=SurfaceType.LIST,
-            items=[],
+        surface_view=SurfaceView(
+            mode=SurfaceViewMode.TRANSACTION_LIST,
             context={"type": "transaction_list", "count": 5, "total_results": 5, "has_more": False},
         ),
     )
@@ -92,7 +90,7 @@ def _active_summary_context(message: str) -> SemanticReasonerContext:
                 filters=Filters(transaction_type="debit", merchant=["mum"]),
             ),
         ),
-        surface=ResultSurface(type=SurfaceType.SUMMARY, items=[], context={"type": "spending_total"}),
+        surface_view=SurfaceView(mode=SurfaceViewMode.GROUPED_SUMMARY, context={"type": "spending_total"}),
     )
 
 

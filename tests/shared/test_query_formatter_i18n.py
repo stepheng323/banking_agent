@@ -11,8 +11,6 @@ from apps.core.src.agent.graphs.query.models import (
     QueryIntent,
     QueryResult,
     QueryResultItem,
-    ResultSurface,
-    SurfaceType,
     TimeRange,
 )
 from apps.core.src.agent.graphs.query.services.formatter import QueryFormatter
@@ -39,7 +37,7 @@ def test_formatter_returns_summary_for_summary_surface() -> None:
                 metadata={"type": "debit"},
             )
         ],
-        surface=ResultSurface(type=SurfaceType.SUMMARY, items=[{"key": "total", "amount": 1000, "count": 1}]),
+        surface_view=SurfaceView(mode=SurfaceViewMode.GROUPED_SUMMARY, context={"view": "summary"}),
     )
 
     assert QueryFormatter.format(result, locale="yo") == "Akopọ inawo rẹ"
@@ -64,11 +62,6 @@ def test_formatter_renders_beneficiary_summary_from_presentation_plan() -> None:
                 metadata={"count": 1, "recipient_name": "Tolu"},
             ),
         ],
-        surface=ResultSurface(
-            type=SurfaceType.SUMMARY,
-            items=[],
-            context={"view": "beneficiary_summary"},
-        ),
         surface_view=SurfaceView(
             mode=SurfaceViewMode.GROUPED_SUMMARY,
             items=[
@@ -118,7 +111,7 @@ def test_formatter_returns_summary_when_no_items() -> None:
     assert QueryFormatter.format(result, locale="yo") == "Ko si transaction to baamu."
 
 
-def test_formatter_uses_breakdown_surface_without_english_prefix() -> None:
+def test_formatter_uses_typed_breakdown_heading_from_query_scope() -> None:
     result = QueryResult(
         summary_text="Ìtúpalẹ̀ nípasẹ̀ merchant",
         items=[
@@ -130,14 +123,35 @@ def test_formatter_uses_breakdown_surface_without_english_prefix() -> None:
                 metadata={"count": 2},
             )
         ],
-        surface=ResultSurface(
-            type=SurfaceType.BREAKDOWN,
-            items=[{"id": "1", "key": "food", "amount": 2000, "count": 2}],
+        query_snapshot=NormalizedQuery(
+            intent=QueryIntent.ANALYTICS_SUMMARY,
+            aggregation=Aggregation(type="breakdown", group_by="merchant"),
+        ),
+        surface_view=SurfaceView(
+            mode=SurfaceViewMode.GROUPED_SUMMARY,
+            items=[
+                SurfaceItemView(
+                    id="1",
+                    label="food",
+                    amount=2000,
+                    count=2,
+                    payload=SelectionPayload(
+                        selection_kind="group_bucket",
+                        entity_type="group_bucket",
+                        entity_id="1",
+                        label="food",
+                        group_by="merchant",
+                        group_key="food",
+                        filters_patch={"counterparty": ["food"]},
+                    ),
+                )
+            ],
+            context={"surface_type": "breakdown", "group_by": "merchant"},
         ),
     )
 
     response = QueryFormatter.format(result, locale="en")
-    assert "Ìtúpalẹ̀ nípasẹ̀ merchant" in response
+    assert response.splitlines()[0] == "Breakdown by merchant"
     assert "Food" in response
 
 
@@ -291,10 +305,9 @@ def test_formatter_preserves_paginated_credit_list_shape_for_single_remaining_it
             filters=Filters(transaction_type="credit"),
             time_range=TimeRange(start=today.replace(day=1), end=today),
         ),
-        surface=ResultSurface(
-            type=SurfaceType.LIST,
-            items=[{"id": "tx6", "key": "Transfer from JOHNSON MARY - Refund", "amount": 35000, "count": 1}],
-            context={"count": 1, "total_results": 6, "has_more": False},
+        surface_view=SurfaceView(
+            mode=SurfaceViewMode.TRANSACTION_LIST,
+            context={"type": "transaction_list", "count": 1, "total_results": 6, "has_more": False},
         ),
     )
 
@@ -433,9 +446,8 @@ def test_formatter_single_item_fact_query_leads_with_requested_date() -> None:
             result_reference="latest",
             answer_fact_field="date",
         ),
-        surface=ResultSurface(
-            type=SurfaceType.SINGLE_ITEM,
-            items=[{"id": "txn_b01", "key": "Netflix Monthly Subscription", "amount": 6500, "count": 1}],
+        surface_view=SurfaceView(
+            mode=SurfaceViewMode.DIRECT_ANSWER,
             context={"type": "single_transaction"},
         ),
     )
@@ -465,9 +477,8 @@ def test_formatter_single_item_fact_query_leads_with_counterparty() -> None:
             time_range=TimeRange(start=date(2026, 3, 15), end=date(2026, 3, 21)),
             answer_fact_field="counterparty",
         ),
-        surface=ResultSurface(
-            type=SurfaceType.SINGLE_ITEM,
-            items=[{"id": "txn_c01", "key": "Transfer from JOHNSON MARY - Refund", "amount": 35000, "count": 1}],
+        surface_view=SurfaceView(
+            mode=SurfaceViewMode.DIRECT_ANSWER,
             context={"type": "single_transaction"},
         ),
     )
@@ -496,13 +507,45 @@ def test_formatter_account_breakdown_preserves_account_labels_and_generic_total(
                 metadata={"count": 1},
             ),
         ],
-        surface=ResultSurface(
-            type=SurfaceType.BREAKDOWN,
+        query_snapshot=NormalizedQuery(
+            intent=QueryIntent.ANALYTICS_SUMMARY,
+            aggregation=Aggregation(type="breakdown", group_by="account"),
+        ),
+        surface_view=SurfaceView(
+            mode=SurfaceViewMode.GROUPED_SUMMARY,
             items=[
-                {"id": "1", "key": "Zenith Bank", "amount": -120000, "count": 2},
-                {"id": "2", "key": "First Bank", "amount": -80000, "count": 1},
+                SurfaceItemView(
+                    id="1",
+                    label="Zenith Bank",
+                    amount=-120000,
+                    count=2,
+                    payload=SelectionPayload(
+                        selection_kind="group_bucket",
+                        entity_type="group_bucket",
+                        entity_id="1",
+                        label="Zenith Bank",
+                        group_by="account",
+                        group_key="Zenith Bank",
+                        filters_patch={"account_filter": "Zenith Bank"},
+                    ),
+                ),
+                SurfaceItemView(
+                    id="2",
+                    label="First Bank",
+                    amount=-80000,
+                    count=1,
+                    payload=SelectionPayload(
+                        selection_kind="group_bucket",
+                        entity_type="group_bucket",
+                        entity_id="2",
+                        label="First Bank",
+                        group_by="account",
+                        group_key="First Bank",
+                        filters_patch={"account_filter": "First Bank"},
+                    ),
+                ),
             ],
-            context={"group_by": "account"},
+            context={"surface_type": "breakdown", "group_by": "account"},
         ),
     )
 
@@ -533,10 +576,26 @@ def test_formatter_breakdown_heading_includes_amount_scope_and_period() -> None:
             aggregation=Aggregation(type="breakdown", group_by="account"),
             time_range=TimeRange(start=today.replace(day=1), end=today),
         ),
-        surface=ResultSurface(
-            type=SurfaceType.BREAKDOWN,
-            items=[{"id": "1", "key": "Zenith Bank", "amount": -120000, "count": 2}],
-            context={"group_by": "account"},
+        surface_view=SurfaceView(
+            mode=SurfaceViewMode.GROUPED_SUMMARY,
+            items=[
+                SurfaceItemView(
+                    id="1",
+                    label="Zenith Bank",
+                    amount=-120000,
+                    count=2,
+                    payload=SelectionPayload(
+                        selection_kind="group_bucket",
+                        entity_type="group_bucket",
+                        entity_id="1",
+                        label="Zenith Bank",
+                        group_by="account",
+                        group_key="Zenith Bank",
+                        filters_patch={"account_filter": "Zenith Bank"},
+                    ),
+                )
+            ],
+            context={"surface_type": "breakdown", "group_by": "account"},
         ),
     )
 

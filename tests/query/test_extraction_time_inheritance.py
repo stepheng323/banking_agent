@@ -17,8 +17,6 @@ from apps.core.src.agent.graphs.query.models import (
     QueryResultItem,
     QueryTimeRange,
     ResolverOutcome,
-    ResultSurface,
-    SurfaceType,
     TimeRange,
     TimeReference,
 )
@@ -439,12 +437,8 @@ async def test_account_breakdown_drilldown_converts_to_transaction_list_with_acc
         {
             "session_active": True,
             "query_contract": session_contract.model_dump(),
-            "surface": ResultSurface(
-                type=SurfaceType.BREAKDOWN,
-                items=[],
-                context={"group_by": "account"},
-            ).model_dump(),
             "query_result": {
+                "summary_text": "Spending by account",
                 "items": [
                     QueryResultItem(
                         id="0",
@@ -461,6 +455,42 @@ async def test_account_breakdown_drilldown_converts_to_transaction_list_with_acc
                         metadata={"key": "First Bank", "count": 5},
                     ).model_dump(mode="json"),
                 ],
+                "surface_view": {
+                    "mode": "grouped_summary",
+                    "context": {"group_by": "account"},
+                    "items": [
+                        {
+                            "id": "0",
+                            "label": "Zenith Bank",
+                            "amount": -1099852,
+                            "count": 23,
+                            "payload": {
+                                "selection_kind": "group_bucket",
+                                "entity_type": "group_bucket",
+                                "entity_id": "0",
+                                "label": "Zenith Bank",
+                                "group_by": "account",
+                                "group_key": "Zenith Bank",
+                                "filters_patch": {"account_filter": "Zenith Bank"},
+                            },
+                        },
+                        {
+                            "id": "1",
+                            "label": "First Bank",
+                            "amount": -96200,
+                            "count": 5,
+                            "payload": {
+                                "selection_kind": "group_bucket",
+                                "entity_type": "group_bucket",
+                                "entity_id": "1",
+                                "label": "First Bank",
+                                "group_by": "account",
+                                "group_key": "First Bank",
+                                "filters_patch": {"account_filter": "First Bank"},
+                            },
+                        },
+                    ],
+                },
             },
         },
     )
@@ -1536,6 +1566,7 @@ async def test_single_item_contrastive_yesterday_preserves_latest_shape() -> Non
             "session_active": True,
             "query_contract": session_contract.model_dump(),
             "query_result": {
+                "summary_text": "You last received a credit on March 17, 2026.",
                 "items": [
                     QueryResultItem(
                         id="txn_last",
@@ -1544,9 +1575,12 @@ async def test_single_item_contrastive_yesterday_preserves_latest_shape() -> Non
                         date=date(2026, 3, 17),
                         metadata={"type": "credit", "bank_name": "First Bank"},
                     ).model_dump(mode="json")
-                ]
+                ],
+                "surface_view": {
+                    "mode": "direct_answer",
+                    "context": {"type": "single_transaction"},
+                },
             },
-            "surface": ResultSurface(type="single_item", items=[], context={"type": "single_transaction"}).model_dump(),
             "current_page": 0,
             "show_expanded": False,
         },
@@ -1598,6 +1632,7 @@ async def test_single_item_grounded_ask_clarify_recovers_to_yesterday_time_resco
             "session_active": True,
             "query_contract": session_contract.model_dump(),
             "query_result": {
+                "summary_text": "You last received a credit on March 17, 2026.",
                 "items": [
                     QueryResultItem(
                         id="txn_last",
@@ -1606,9 +1641,12 @@ async def test_single_item_grounded_ask_clarify_recovers_to_yesterday_time_resco
                         date=date(2026, 3, 17),
                         metadata={"type": "credit", "bank_name": "First Bank"},
                     ).model_dump(mode="json")
-                ]
+                ],
+                "surface_view": {
+                    "mode": "direct_answer",
+                    "context": {"type": "single_transaction"},
+                },
             },
-            "surface": ResultSurface(type="single_item", items=[], context={"type": "single_transaction"}).model_dump(),
             "current_page": 0,
             "show_expanded": False,
         },

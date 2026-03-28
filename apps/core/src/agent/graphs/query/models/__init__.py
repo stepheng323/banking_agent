@@ -29,8 +29,6 @@ from .domain import (
     QueryResult,
     QueryResultItem,
     QuerySubject,
-    ResultSurface,
-    SurfaceType,
     TimeRange,
     UserRequestShape,
     build_query_execution_plan,

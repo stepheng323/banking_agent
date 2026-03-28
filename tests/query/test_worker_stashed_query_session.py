@@ -13,14 +13,16 @@ from apps.core.src.agent.graphs.query.models import (
     QueryExtractionResult,
     QueryIntent,
     QueryResult,
+    QueryResultItem,
     QueryTimeRange,
     TimeRange,
     TimeReference,
 )
 from apps.core.src.agent.graphs.query.services.reasoner import QuerySemanticDecision
-from apps.core.src.agent.graphs.query.session import QuerySessionManager
+from apps.core.src.agent.graphs.query.session import QuerySessionManager, _session_has_surface_view
 from apps.core.src.agent.graphs.query.worker import QueryWorker
 from apps.core.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
+from apps.core.src.agent.shared.query_contracts import SurfaceView, SurfaceViewMode
 
 
 class _DummyStructured:
@@ -279,7 +281,21 @@ async def test_worker_appends_recent_query_frame_history_on_successful_query() -
     query_result = QueryResult(
         summary_text="You spent ₦60,000 this week.",
         interpretation={"intent": "analytics_summary"},
-        surface={"type": "summary", "items": [{"key": "total", "amount": 60000.0, "count": 2}], "context": {}},
+        items=[
+            QueryResultItem(
+                id="txn-1",
+                description="Transfer to Mum",
+                amount=50000.0,
+                date=date(2026, 3, 18),
+            ),
+            QueryResultItem(
+                id="txn-2",
+                description="Transfer to Dad",
+                amount=10000.0,
+                date=date(2026, 3, 17),
+            ),
+        ],
+        surface_view=SurfaceView(mode=SurfaceViewMode.GROUPED_SUMMARY, context={"type": "spending_total"}),
     )
 
     async def _fake_pipeline_run(state: dict[str, Any], worker_context: Any) -> TransactionResult:
@@ -314,6 +330,19 @@ async def test_worker_appends_recent_query_frame_history_on_successful_query() -
     assert len(frames) == 1
     assert frames[0].frame_id == "qf_1"
     assert frames[0].facts.amount == 60000.0
+    assert "surface" not in session_manager.saved_state
+
+
+def test_session_shape_detects_surface_view() -> None:
+    session = {
+        "session_active": True,
+        "query_result": QueryResult(
+            summary_text="You spent ₦60,000 this week.",
+            surface_view=SurfaceView(mode=SurfaceViewMode.GROUPED_SUMMARY),
+        ).model_dump(mode="json"),
+    }
+
+    assert _session_has_surface_view(session) is True
 
 
 @pytest.mark.asyncio
@@ -451,7 +480,13 @@ async def test_worker_logs_query_turn_summary_for_active_result_fact_followup(
             patch={
                 "session_active": True,
                 "flow_state": "executing",
-                "surface": {"type": "single_item", "items": [], "context": {"type": "single_transaction"}},
+                "query_result": QueryResult(
+                    summary_text="",
+                    surface_view=SurfaceView(
+                        mode=SurfaceViewMode.DIRECT_ANSWER,
+                        context={"type": "single_transaction"},
+                    ),
+                ),
                 "_query_semantic_decision": "continuation",
                 "_query_semantic_context_mode": "active_result",
                 "_query_semantic_llm_used": True,
@@ -490,9 +525,9 @@ async def test_worker_logs_query_turn_summary_for_active_result_fact_followup(
                             "date": "2026-03-13",
                             "metadata": {"status": "processing"},
                         }
-                    ]
+                    ],
+                    "surface_view": {"mode": "direct_answer", "context": {"type": "single_transaction"}},
                 },
-                "surface": {"type": "single_item", "items": [], "context": {"type": "single_transaction"}},
             },
         },
     )
@@ -531,7 +566,13 @@ async def test_worker_logs_query_turn_summary_for_conversational_active_result_r
             patch={
                 "session_active": False,
                 "flow_state": "complete",
-                "surface": {"type": "summary", "items": [], "context": {"type": "spending_total"}},
+                "query_result": QueryResult(
+                    summary_text="You spent ₦10,000 yesterday.",
+                    surface_view=SurfaceView(
+                        mode=SurfaceViewMode.GROUPED_SUMMARY,
+                        context={"type": "spending_total"},
+                    ),
+                ),
                 "_query_semantic_decision": "continuation",
                 "_query_semantic_context_mode": "active_result",
                 "_query_semantic_llm_used": True,
@@ -561,8 +602,10 @@ async def test_worker_logs_query_turn_summary_for_conversational_active_result_r
                         time_range=TimeRange(start=date(2026, 3, 9), end=date(2026, 3, 13)),
                     ),
                 ).model_dump(),
-                "query_result": {"summary_text": "You spent ₦10,000 yesterday."},
-                "surface": {"type": "summary", "items": [], "context": {"type": "spending_total"}},
+                "query_result": {
+                    "summary_text": "You spent ₦10,000 yesterday.",
+                    "surface_view": {"mode": "grouped_summary", "context": {"type": "spending_total"}},
+                },
             },
         },
     )
@@ -577,22 +620,70 @@ async def test_worker_logs_query_turn_summary_for_conversational_active_result_r
             "session_active": False,
         },
     ) in events
+
+
+@pytest.mark.asyncio
+async def test_worker_logs_query_turn_summary_from_surface_view(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session_manager = _SessionManager()
+    worker = QueryWorker(_DummyLLM(), _DummyProvider(), session_manager)  # type: ignore[arg-type]
+    events: list[tuple[str, dict[str, Any]]] = []
+
+    def _capture(event: str, **kwargs: Any) -> None:
+        events.append((event, kwargs))
+
+    monkeypatch.setattr("apps.core.src.agent.graphs.query.worker.logger.info", _capture)
+
+    async def _fake_pipeline_run(state: dict[str, Any], worker_context: Any) -> TransactionResult:
+        del state, worker_context
+        return TransactionResult(
+            outcome=TransactionOutcome.OK,
+            patch={
+                "session_active": True,
+                "flow_state": "complete",
+                "query_result": QueryResult(
+                    summary_text="You spent ₦10,000 this week.",
+                    surface_view=SurfaceView(mode=SurfaceViewMode.GROUPED_SUMMARY),
+                ),
+                "_query_semantic_decision": "fresh_query",
+                "_query_semantic_context_mode": "none",
+                "_query_semantic_llm_used": True,
+                "_query_deterministic_surface_action": None,
+                "_query_session_transition": None,
+            },
+        )
+
+    worker.pipeline.run = _fake_pipeline_run  # type: ignore[method-assign]
+
+    result = await worker.run(
+        payload={"message": "how much did i spend"},
+        context={
+            "phone_number": "2348000000305",
+            "user_id": "u6",
+            "accounts": [],
+            "language": "en",
+            "today": date(2026, 3, 13),
+        },
+    )
+
+    assert result.outcome == TransactionOutcome.OK
     assert (
         "query_turn_summary",
         {
-            "context_mode": "active_result",
-            "semantic_decision": "continuation",
-            "semantic_context_mode": "active_result",
+            "context_mode": "fresh",
+            "semantic_decision": "fresh_query",
+            "semantic_context_mode": "none",
             "semantic_llm_used": True,
             "deterministic_surface_action": None,
-            "session_transition": "exit_query_session_conversational",
+            "session_transition": None,
             "outcome": "ok",
             "flow_state": "complete",
             "surface_type": "summary",
-            "session_active": False,
+            "session_active": True,
             "has_pending_clarification": False,
-            "session_source": "stashed",
-            "restored_from_stashed_query_session": True,
+            "session_source": "none",
+            "restored_from_stashed_query_session": False,
         },
     ) in events
 
@@ -622,8 +713,11 @@ async def test_worker_logs_restored_stashed_query_session_shape(monkeypatch: pyt
                 time_range=TimeRange(start=date(2026, 3, 16), end=date(2026, 3, 19), granularity="week"),
             )
         ).model_dump(),
-        "query_result": {"summary_text": "You spent ₦60,000 this week.", "items": []},
-        "surface": {"type": "summary", "items": [], "context": {"type": "spending_total"}},
+        "query_result": {
+            "summary_text": "You spent ₦60,000 this week.",
+            "items": [],
+            "surface_view": {"mode": "grouped_summary", "context": {"type": "spending_total"}},
+        },
         "query_frames": [],
     }
 
@@ -661,8 +755,11 @@ async def test_worker_warns_when_loaded_active_session_is_missing_query_contract
     session_manager = _LoadedSessionManager(
         {
             "session_active": True,
-            "query_result": {"summary_text": "Earlier summary", "items": []},
-            "surface": {"type": "summary", "items": [], "context": {"type": "spending_total"}},
+            "query_result": {
+                "summary_text": "Earlier summary",
+                "items": [],
+                "surface_view": {"mode": "grouped_summary", "context": {"type": "spending_total"}},
+            },
             "query_frames": [],
         }
     )

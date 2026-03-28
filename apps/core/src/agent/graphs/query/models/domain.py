@@ -10,7 +10,7 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field
 
-from apps.core.src.agent.shared.query_contracts import FocusedReferent, PresentationPlan, SurfaceView
+from apps.core.src.agent.shared.query_contracts import FocusedReferent, PresentationPlan, SurfaceView, SurfaceViewMode
 
 
 class QueryIntent(str, Enum):
@@ -333,15 +333,6 @@ class QueryFrameFacts(BaseModel):
     label: str | None = None
 
 
-class SurfaceType(str, Enum):
-    """Type of result surface presented to the user."""
-
-    LIST = "list"
-    BREAKDOWN = "breakdown"
-    SUMMARY = "summary"
-    SINGLE_ITEM = "single_item"
-
-
 class QueryAnswerStrategy(str, Enum):
     """Explicit rendering strategy chosen after execution."""
 
@@ -363,17 +354,6 @@ class QueryFollowupReferent(FocusedReferent):
     """Backward-compatible alias for query-origin referents."""
 
 
-class ResultSurface(BaseModel):
-    """
-    Describes the current 'view' or 'surface' the user is looking at.
-    Used for deterministic continuation and drill-down.
-    """
-
-    type: SurfaceType
-    items: list[dict[str, Any]] = Field(default_factory=list, description="Simplified items context (id, key, amount)")
-    context: dict[str, Any] = Field(default_factory=dict, description="Context metadata (group_by, time_range, etc)")
-
-
 class QueryFrame(BaseModel):
     """Compact session memory for recent query results."""
 
@@ -382,7 +362,7 @@ class QueryFrame(BaseModel):
     query_contract: QueryExecutionContract
     summary_text: str
     interpretation: dict[str, Any] | None = None
-    surface_type: SurfaceType | None = None
+    surface_type: SurfaceViewMode | None = None
     surface_context: dict[str, Any] = Field(default_factory=dict)
     facts: QueryFrameFacts = Field(default_factory=QueryFrameFacts)
 
@@ -411,7 +391,6 @@ class QueryResult(BaseModel):
     query_snapshot: NormalizedQuery | None = None  # For follow-up deltas
     query_contract: QueryExecutionContract | None = None
     interpretation: dict[str, Any] | None = None
-    surface: ResultSurface | None = None  # UI/Interaction surface state
     surface_view: SurfaceView | None = None
     answer_strategy: QueryAnswerStrategy | None = None
     answer_context: QueryAnswerContext | None = None

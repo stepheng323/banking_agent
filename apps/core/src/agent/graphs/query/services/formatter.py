@@ -9,7 +9,6 @@ from apps.core.src.agent.graphs.query.models import (
     QueryIntent,
     QueryResult,
     QueryResultItem,
-    SurfaceType,
     TimeRange,
 )
 from apps.core.src.agent.graphs.query.services.answer_strategy import (
@@ -21,7 +20,7 @@ from apps.core.src.agent.graphs.query.services.presentation_scope import (
     build_transaction_heading,
 )
 from apps.core.src.agent.graphs.query.utils.timezone import lagos_today
-from apps.core.src.agent.shared.query_contracts import PresentationMode
+from apps.core.src.agent.shared.query_contracts import PresentationMode, SurfaceViewMode
 from shared.i18n import render_message
 from shared.i18n.message_keys import MessageKey
 from shared.utils.logging import get_logger
@@ -34,10 +33,10 @@ class QueryFormatter:
 
     @staticmethod
     def _breakdown_group_by(result: QueryResult) -> str | None:
-        surface = result.surface
-        if surface is None or surface.context is None:
+        surface_view = result.surface_view
+        if surface_view is None or surface_view.context is None:
             return None
-        return cast(str | None, surface.context.get("group_by"))
+        return cast(str | None, surface_view.context.get("group_by"))
 
     @staticmethod
     def _has_search_shaped_no_results_context(query_snapshot: NormalizedQuery | None) -> bool:
@@ -187,12 +186,9 @@ class QueryFormatter:
 
         surface_context = surface_view.context if isinstance(surface_view.context, dict) else {}
         surface_type = str(surface_context.get("surface_type") or "").strip()
-        legacy_context = result.surface.context if result.surface and isinstance(result.surface.context, dict) else {}
-        if not surface_type and result.surface is not None:
-            surface_type = result.surface.type.value
 
-        if surface_type == SurfaceType.BREAKDOWN.value:
-            breakdown_group_by = cast(str | None, surface_context.get("group_by") or legacy_context.get("group_by"))
+        if surface_type == "breakdown":
+            breakdown_group_by = cast(str | None, surface_context.get("group_by"))
             heading = build_breakdown_heading(
                 result.query_snapshot,
                 group_by=breakdown_group_by,
@@ -224,7 +220,7 @@ class QueryFormatter:
             lines.extend(["", render_message("query.format.total_line", locale, {"total": f"₦{total_abs:,.0f}"})])
             return "\n".join(lines)
 
-        if str(surface_context.get("view") or legacy_context.get("view") or "").strip() == "beneficiary_summary":
+        if str(surface_context.get("view") or "").strip() == "beneficiary_summary":
             heading = plan.heading or result.summary_text
             if not heading:
                 return None
@@ -351,7 +347,7 @@ class QueryFormatter:
             return rendered_plan
 
         summary_parts = QueryFormatter._parse_summary_parts(result.summary_text)
-        surface_type = result.surface.type if result.surface is not None else None
+        surface_mode = result.surface_view.mode if result.surface_view is not None else None
         answer_strategy = result.answer_strategy
 
         if answer_strategy == QueryAnswerStrategy.DIRECT_ANSWER:
@@ -383,8 +379,12 @@ class QueryFormatter:
             }:
                 return result.summary_text
 
-            if result.surface and result.surface.type == SurfaceType.SUMMARY:
-                return result.summary_text
+            if result.surface_view and result.surface_view.mode == SurfaceViewMode.GROUPED_SUMMARY:
+                surface_context = (
+                    result.surface_view.context if isinstance(result.surface_view.context, dict) else {}
+                )
+                if surface_context.get("surface_type") != "breakdown":
+                    return result.summary_text
 
             if QueryFormatter._has_balance_item(result):
                 return result.summary_text
@@ -413,7 +413,7 @@ class QueryFormatter:
 
             return "\n".join(lines)
 
-        if result.summary_text and result.surface and result.surface.type == SurfaceType.BREAKDOWN:
+        if result.summary_text and result.surface_view and result.surface_view.context.get("surface_type") == "breakdown":
             heading = build_breakdown_heading(
                 result.query_snapshot,
                 group_by=QueryFormatter._breakdown_group_by(result),
@@ -456,16 +456,16 @@ class QueryFormatter:
 
         # Trigger ranked list view via structured surface or explicit rank metadata.
         is_ranked_surface = (
-            result.surface
-            and result.surface.type == SurfaceType.LIST
-            and isinstance(result.surface.context, dict)
-            and result.surface.context.get("type") in ("largest", "smallest")
+            result.surface_view
+            and result.surface_view.mode == SurfaceViewMode.TRANSACTION_LIST
+            and isinstance(result.surface_view.context, dict)
+            and result.surface_view.context.get("type") in ("largest", "smallest")
         )
         has_rank_metadata = QueryFormatter._has_rank_metadata(result)
 
         if result.summary_text and (is_ranked_surface or has_rank_metadata):
             # Bypass list rendering if surface is explicitly SINGLE_ITEM (e.g. "Highest expense")
-            if result.surface and result.surface.type == SurfaceType.SINGLE_ITEM:
+            if result.surface_view and result.surface_view.mode == SurfaceViewMode.DIRECT_ANSWER:
                 pass
             else:
                 heading = (
@@ -522,7 +522,7 @@ class QueryFormatter:
             return QueryFormatter._format_no_results(result, locale)
 
         # Special handling for single transaction - show detailed view
-        if len(result.items) == 1 and surface_type == SurfaceType.SINGLE_ITEM:
+        if len(result.items) == 1 and surface_mode == SurfaceViewMode.DIRECT_ANSWER:
             item = result.items[0]
             title = render_message("query.format.transaction_details_title", locale)
             if result.query_snapshot and result.query_snapshot.result_reference == "latest":

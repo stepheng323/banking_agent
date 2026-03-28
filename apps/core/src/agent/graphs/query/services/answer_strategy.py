@@ -6,10 +6,10 @@ from apps.core.src.agent.graphs.query.models import (
     NormalizedQuery,
     QueryAnswerContext,
     QueryAnswerStrategy,
+    QueryFollowupReferent,
     QueryIntent,
     QueryResult,
     QueryResultItem,
-    SurfaceType,
 )
 from apps.core.src.agent.graphs.query.services.continuity import build_soft_clarification
 from apps.core.src.agent.graphs.query.services.contracts import build_focus_referent
@@ -25,10 +25,6 @@ def select_answer_strategy(result: QueryResult, *, locale: str = "en") -> QueryR
 
     if query and query.answer_fact_field in {"date", "counterparty", "amount", "bank"}:
         return _apply_fact_answer_strategy(result, query=query, locale=locale)
-
-    if result.surface and result.surface.type in {SurfaceType.SUMMARY, SurfaceType.BREAKDOWN}:
-        result.answer_strategy = QueryAnswerStrategy.SUMMARY_LIST
-        return result
 
     if query and query.intent in {
         QueryIntent.ANALYTICS_SUMMARY,
@@ -122,7 +118,9 @@ def _apply_fact_answer_strategy(result: QueryResult, *, query: NormalizedQuery, 
     item = result.items[0]
     result.answer_strategy = QueryAnswerStrategy.DIRECT_ANSWER
     result.answer_context = build_direct_fact_answer(item, query=query, fact_field=fact_field, locale=locale)
-    result.followup_referent = build_focus_referent(item, query=query)
+    focus_referent = build_focus_referent(item, query=query)
+    if focus_referent is not None:
+        result.followup_referent = QueryFollowupReferent.model_validate(focus_referent.model_dump(mode="json"))
     return result
 
 

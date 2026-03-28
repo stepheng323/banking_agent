@@ -15,12 +15,9 @@ from apps.core.src.agent.graphs.query.models import (
     QueryExtractionResult,
     QueryFrame,
     QueryIntent,
-    QueryOperation,
     QueryResult,
     QueryResultItem,
     ResolverOutcome,
-    ResultSurface,
-    SurfaceType,
     TimeRange,
     TimeReference,
 )
@@ -45,6 +42,7 @@ from apps.core.src.agent.graphs.query.services.reasoner import (
 )
 from apps.core.src.agent.graphs.query.utils.timezone import lagos_today
 from apps.core.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
+from apps.core.src.agent.shared.query_contracts import SurfaceView, SurfaceViewMode
 from shared.i18n import LocaleManager, render_message
 from shared.utils.logging import get_logger
 
@@ -866,23 +864,23 @@ class ExtractionStep(QueryStep):
         return bool(isinstance(narration_keyword, str) and narration_keyword.strip())
 
     @staticmethod
-    def _is_single_item_surface(surface: ResultSurface | None) -> bool:
+    def _is_single_item_surface(surface_view: SurfaceView | None = None) -> bool:
         return bool(
-            surface
-            and surface.type == SurfaceType.SINGLE_ITEM
-            and isinstance(surface.context, dict)
-            and surface.context.get("type") == "single_transaction"
+            surface_view
+            and surface_view.mode == SurfaceViewMode.DIRECT_ANSWER
+            and isinstance(surface_view.context, dict)
+            and surface_view.context.get("type") == "single_transaction"
         )
 
     def _log_single_item_followup(
         self,
         *,
-        surface: ResultSurface | None,
+        surface_view: SurfaceView | None = None,
         continuation_type: str | None,
         followup_outcome: str,
         decision: str | None = None,
     ) -> None:
-        if not self._is_single_item_surface(surface):
+        if not self._is_single_item_surface(surface_view):
             return
         logger.info(
             "query_single_item_followup",
@@ -1053,17 +1051,15 @@ class ExtractionStep(QueryStep):
             if raw_items:
                 items = [QueryResultItem.model_validate(i) if isinstance(i, dict) else i for i in raw_items]
 
-        raw_surface = session.get("surface")
-        surface = ResultSurface.model_validate(raw_surface) if isinstance(raw_surface, dict) else raw_surface
         surface_view = restored_query_result.surface_view if restored_query_result is not None else None
         logger.info(
             "query_continuation_entry",
             has_query_contract=original_query is not None,
-            has_surface=bool(session.get("surface")),
+            has_surface=bool(surface_view is not None),
             has_query_result=bool(session.get("query_result")),
             current_page=session.get("current_page", 0),
             show_expanded=bool(session.get("show_expanded", False)),
-            surface_type=surface.type.value if isinstance(surface, ResultSurface) else None,
+            surface_type=surface_view.mode.value if surface_view is not None else None,
         )
         locale = LocaleManager.normalize(state.get("language")).value
         query_frames = self._load_query_frames(session)
@@ -1075,7 +1071,7 @@ class ExtractionStep(QueryStep):
                 language=locale,
                 query_contract=session_query_contract,
                 items=items,
-                surface=surface,
+                surface_view=surface_view,
                 query_frames=query_frames,
                 turn_id=state.get("turn_id"),
                 inbound_message_id=state.get("inbound_message_id"),
@@ -1101,7 +1097,7 @@ class ExtractionStep(QueryStep):
 
         if decision.decision == "end_session":
             self._log_single_item_followup(
-                surface=surface,
+                surface_view=surface_view,
                 continuation_type=cont_type,
                 followup_outcome="end_session",
                 decision=decision.decision,
@@ -1119,7 +1115,7 @@ class ExtractionStep(QueryStep):
 
         if decision.decision in {"fresh_query", "new_query", "reinterpret_query"}:
             self._log_single_item_followup(
-                surface=surface,
+                surface_view=surface_view,
                 continuation_type=cont_type,
                 followup_outcome="reparse_query",
                 decision=decision.decision,
@@ -1141,7 +1137,7 @@ class ExtractionStep(QueryStep):
 
         if decision.decision != "continuation":
             self._log_single_item_followup(
-                surface=surface,
+                surface_view=surface_view,
                 continuation_type=cont_type,
                 followup_outcome="clarify",
                 decision=decision.decision,
@@ -1184,7 +1180,7 @@ class ExtractionStep(QueryStep):
                 )
                 if recovered_updates is not None:
                     self._log_single_item_followup(
-                        surface=surface,
+                        surface_view=surface_view,
                         continuation_type="time_delta",
                         followup_outcome="time_rescope_query",
                         decision=decision.decision,
@@ -1192,7 +1188,7 @@ class ExtractionStep(QueryStep):
                     recovered_updates.update(self._semantic_trace_updates(decision))
                     return recovered_updates
             self._log_single_item_followup(
-                surface=surface,
+                surface_view=surface_view,
                 continuation_type=cont_type,
                 followup_outcome="clarify" if decision.answer_mode == "ask_clarify" else "grounded_answer",
                 decision=decision.decision,
@@ -1229,7 +1225,7 @@ class ExtractionStep(QueryStep):
                 )
                 if recovered_updates is not None:
                     self._log_single_item_followup(
-                        surface=surface,
+                        surface_view=surface_view,
                         continuation_type="time_delta",
                         followup_outcome="time_rescope_query",
                         decision=decision.decision,
@@ -1237,7 +1233,7 @@ class ExtractionStep(QueryStep):
                     recovered_updates.update(self._semantic_trace_updates(decision))
                     return recovered_updates
                 self._log_single_item_followup(
-                    surface=surface,
+                    surface_view=surface_view,
                     continuation_type=cont_type,
                     followup_outcome="clarify",
                     decision=decision.decision,
@@ -1305,7 +1301,7 @@ class ExtractionStep(QueryStep):
                 )
                 if recovered_updates is not None:
                     self._log_single_item_followup(
-                        surface=surface,
+                        surface_view=surface_view,
                         continuation_type="time_delta",
                         followup_outcome="time_rescope_query",
                         decision=decision.decision,
@@ -1313,7 +1309,7 @@ class ExtractionStep(QueryStep):
                     recovered_updates.update(self._semantic_trace_updates(decision))
                     return recovered_updates
                 self._log_single_item_followup(
-                    surface=surface,
+                    surface_view=surface_view,
                     continuation_type=cont_type,
                     followup_outcome="clarify",
                     decision=decision.decision,
@@ -1334,7 +1330,7 @@ class ExtractionStep(QueryStep):
                 )
                 if recovered_updates is not None:
                     self._log_single_item_followup(
-                        surface=surface,
+                        surface_view=surface_view,
                         continuation_type="time_delta",
                         followup_outcome="time_rescope_query",
                         decision=decision.decision,
@@ -1342,7 +1338,7 @@ class ExtractionStep(QueryStep):
                     recovered_updates.update(self._semantic_trace_updates(decision))
                     return recovered_updates
                 self._log_single_item_followup(
-                    surface=surface,
+                    surface_view=surface_view,
                     continuation_type=cont_type,
                     followup_outcome="clarify",
                     decision=decision.decision,
@@ -1367,7 +1363,7 @@ class ExtractionStep(QueryStep):
             updates["current_page"] = 0
             updates["show_expanded"] = False
             self._log_single_item_followup(
-                surface=surface,
+                surface_view=surface_view,
                 continuation_type=cont_type,
                 followup_outcome="time_rescope_query",
                 decision=decision.decision,
@@ -1445,72 +1441,7 @@ class ExtractionStep(QueryStep):
                 updates["show_expanded"] = False
                 return updates
 
-            if surface and surface.type == SurfaceType.BREAKDOWN:
-                if items and 0 <= drill_idx < len(items):
-                    selected_item = items[drill_idx]
-                    selected_key = str(
-                        (selected_item.metadata or {}).get("key")
-                        or selected_item.description
-                        or ""
-                    ).strip()
-                    group_by = None
-                    if isinstance(surface.context, dict):
-                        context_group_by = surface.context.get("group_by")
-                        if isinstance(context_group_by, str):
-                            group_by = context_group_by
-
-                    from apps.core.src.agent.graphs.query.models import Filters
-
-                    if original_query and selected_key:
-                        new_query = original_query.model_copy(deep=True)
-                        new_query.intent = QueryIntent.TRANSACTION_LIST
-                        new_query.query_operation = QueryOperation.LIST_TRANSACTIONS
-                        new_query.aggregation = None
-                        new_query.result_limit = None
-                        new_query.result_reference = None
-                        new_query.answer_fact_field = None
-
-                        if group_by == "account":
-                            new_query = apply_filter_delta(new_query, Filters(account_filter=selected_key))
-                        elif group_by == "merchant":
-                            new_query = apply_filter_delta(new_query, Filters(counterparty=[selected_key]))
-                        elif group_by == "transaction_type":
-                            transaction_type = selected_key.lower()
-                            if transaction_type in {"credit", "debit"}:
-                                new_query = apply_filter_delta(
-                                    new_query,
-                                    Filters(
-                                        transaction_type=cast(
-                                            Literal["credit", "debit"],
-                                            transaction_type,
-                                        )
-                                    ),
-                                )
-                        elif group_by == "day":
-                            new_query = apply_time_delta(
-                                new_query,
-                                TimeRange(start=selected_item.date, end=selected_item.date, granularity="day"),
-                            )
-                        else:
-                            new_query = apply_filter_delta(new_query, Filters(category=[selected_key.lower()]))
-
-                        logger.info(
-                            "breakdown_drill_down_debug",
-                            original_description=selected_item.description,
-                            selected_key=selected_key,
-                            group_by=group_by or "category",
-                            item_index=drill_idx,
-                        )
-
-                        updates["query_contract"] = QueryExecutionContract.from_normalized_query(
-                            new_query,
-                            continuation_type=cont_type,
-                            continuation_delta_type=decision.delta_type,
-                        )
-                        updates["current_page"] = 0
-                        updates["show_expanded"] = False
-
-            elif items and 0 <= drill_idx < len(items):
+            if items and 0 <= drill_idx < len(items):
                 updates["selected_item_index"] = drill_idx
                 if selection_payload is not None:
                     updates["selected_payload"] = selection_payload

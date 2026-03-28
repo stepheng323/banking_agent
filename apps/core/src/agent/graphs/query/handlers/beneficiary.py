@@ -8,8 +8,6 @@ from apps.core.src.agent.graphs.query.models import (
     QueryExecutionContract,
     QueryResult,
     QueryResultItem,
-    ResultSurface,
-    SurfaceType,
 )
 from apps.core.src.agent.graphs.query.services.fetch import extract_counterparty, fetch_and_filter
 from apps.core.src.agent.graphs.query.services.presentation_scope import build_beneficiary_summary_header
@@ -152,5 +150,4 @@ async def handle_beneficiary_summary(
     return QueryResult(
         summary_text="\n".join(lines),
         items=items,
-        surface=ResultSurface(type=SurfaceType.SUMMARY, items=[], context={"view": "beneficiary_summary"}),
     )

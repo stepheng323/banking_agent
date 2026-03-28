@@ -7,10 +7,9 @@ from apps.core.src.agent.graphs.query.models import (
     Filters,
     NormalizedQuery,
     QueryResultItem,
-    ResultSurface,
-    SurfaceType,
     TimeRange,
 )
+from apps.core.src.agent.shared.query_contracts import SurfaceView, SurfaceViewMode
 from shared.i18n import render_message
 
 _END_SESSION_PATTERNS = (
@@ -58,6 +57,18 @@ class ContinuationClassifier:
     """Deterministic continuation helpers used by the query reasoner."""
 
     @staticmethod
+    def _surface_mode(surface_view: SurfaceView | None) -> SurfaceViewMode | None:
+        return surface_view.mode if surface_view is not None else None
+
+    @staticmethod
+    def _surface_view_name(surface_view: SurfaceView | None) -> str | None:
+        if surface_view is not None and isinstance(surface_view.context, dict):
+            view = surface_view.context.get("view")
+            if isinstance(view, str):
+                return view
+        return None
+
+    @staticmethod
     def _normalize_message(message: str) -> str:
         return " ".join(message.lower().strip().split())
 
@@ -87,11 +98,12 @@ class ContinuationClassifier:
         message: str,
         *,
         items: list[QueryResultItem] | None,
-        surface: ResultSurface | None,
+        surface_view: SurfaceView | None,
     ) -> str | None:
-        if not surface or surface.type != SurfaceType.SUMMARY:
+        surface_mode = self._surface_mode(surface_view)
+        if surface_mode != SurfaceViewMode.GROUPED_SUMMARY:
             return None
-        if not isinstance(surface.context, dict) or surface.context.get("view") != "beneficiary_summary":
+        if self._surface_view_name(surface_view) != "beneficiary_summary":
             return None
 
         candidate = self._strip_trailing_punctuation(" ".join(message.strip().split()))
@@ -128,7 +140,7 @@ class ContinuationClassifier:
         *,
         message: str,
         items: list[QueryResultItem] | None,
-        surface: ResultSurface | None,
+        surface_view: SurfaceView | None,
         language: str,
     ) -> tuple[str, dict[str, Any]] | None:
         normalized = self._strip_trailing_punctuation(self._normalize_message(message))
@@ -142,7 +154,11 @@ class ContinuationClassifier:
                 "end_session_response": render_message("query.session.you_are_welcome", language),
             }
 
-        recipient_name = self._resolve_beneficiary_summary_recipient_reply(message, items=items, surface=surface)
+        recipient_name = self._resolve_beneficiary_summary_recipient_reply(
+            message,
+            items=items,
+            surface_view=surface_view,
+        )
         if recipient_name:
             fact_field = self._resolve_beneficiary_summary_fact_field(message)
             return "recipient_drill_down", {
@@ -157,15 +173,11 @@ class ContinuationClassifier:
                 "fact_field": fact_field,
             }
 
-        if (
-            any(phrase in normalized for phrase in _RETRANSFER_PHRASES)
-            and surface
-            and surface.type
-            in {
-                SurfaceType.SINGLE_ITEM,
-                SurfaceType.LIST,
-            }
-        ):
+        surface_mode = self._surface_mode(surface_view)
+        if any(phrase in normalized for phrase in _RETRANSFER_PHRASES) and surface_mode in {
+            SurfaceViewMode.DIRECT_ANSWER,
+            SurfaceViewMode.TRANSACTION_LIST,
+        }:
             return "drill_down", {
                 "confidence": 0.98,
                 "reason": "deterministic_retransfer",
@@ -174,21 +186,21 @@ class ContinuationClassifier:
             }
 
         time_match = _TIME_DELTA_RE.match(normalized)
-        if time_match and surface is not None:
+        if time_match and surface_view is not None:
             return "time_delta", {
                 "confidence": 0.95,
                 "reason": "deterministic_time_delta",
                 "time_period": time_match.group(1).lower(),
             }
 
-        if normalized in _AGGREGATE_PATTERNS and surface is not None:
+        if normalized in _AGGREGATE_PATTERNS and surface_view is not None:
             return "aggregate", {
                 "confidence": 0.95,
                 "reason": "deterministic_aggregate",
             }
 
         filter_match = _FILTER_DELTA_RE.match(normalized)
-        if filter_match and surface is not None:
+        if filter_match and surface_view is not None:
             return "filter_delta", {
                 "confidence": 0.95,
                 "reason": "deterministic_filter_delta",

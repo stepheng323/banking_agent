@@ -10,12 +10,12 @@ from apps.core.src.agent.graphs.query.models import (
     QueryFrame,
     QueryFrameFacts,
     QueryIntent,
-    SurfaceType,
     TimeRange,
 )
 from apps.core.src.agent.graphs.query.nodes.extraction import ExtractionStep
 from apps.core.src.agent.graphs.query.services.reasoner import QuerySemanticDecision
 from apps.core.src.agent.orchestrator.models.domain import TransactionOutcome
+from apps.core.src.agent.shared.query_contracts import SurfaceViewMode
 from shared.i18n import render_message
 
 
@@ -53,7 +53,7 @@ def _analytics_frame(
         ),
         summary_text=f"You spent ₦{amount:,.0f} on mum.",
         interpretation={"intent": "analytics_summary"},
-        surface_type=SurfaceType.SUMMARY,
+        surface_type=SurfaceViewMode.GROUPED_SUMMARY,
         surface_context={"type": "spending_total"},
         facts=QueryFrameFacts(metric_kind="amount", amount=amount, count=count, direction="debit"),
     )
@@ -80,7 +80,7 @@ def _transaction_list_frame(
         ),
         summary_text="Transactions — Mar 01–Mar 19",
         interpretation={"intent": "transaction_list"},
-        surface_type=SurfaceType.LIST,
+        surface_type=SurfaceViewMode.TRANSACTION_LIST,
         surface_context={"type": "transactions"},
         facts=QueryFrameFacts(metric_kind="transactions", count=5, direction="debit"),
     )

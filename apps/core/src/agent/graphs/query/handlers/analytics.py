@@ -9,8 +9,6 @@ from apps.core.src.agent.graphs.query.models import (
     QueryExecutionContract,
     QueryResult,
     QueryResultItem,
-    ResultSurface,
-    SurfaceType,
     get_transaction_category,
 )
 from apps.core.src.agent.graphs.query.services.fetch import (
@@ -88,12 +86,6 @@ async def handle_analytics(
             for i, t in enumerate(transactions)
         ]
 
-        surface = ResultSurface(
-            type=SurfaceType.SUMMARY,
-            items=[{"key": "total", "amount": total, "count": count}],
-            context={"merchant": merchant, "timeframe": timeframe},
-        )
-
         return QueryResult(
             summary_text=render_message(
                 "query.analytics.summary_spent",
@@ -107,7 +99,6 @@ async def handle_analytics(
                 },
             ),
             items=items,
-            surface=surface,
         )
 
     elif agg_type == "average":
@@ -132,12 +123,6 @@ async def handle_analytics(
                 for i, t in enumerate(transactions)
             ]
 
-            surface = ResultSurface(
-                type=SurfaceType.SUMMARY,
-                items=[{"key": "average", "amount": avg, "count": count}],
-                context={"timeframe": timeframe},
-            )
-
             return QueryResult(
                 summary_text=render_message(
                     "query.analytics.summary_average",
@@ -149,7 +134,6 @@ async def handle_analytics(
                     },
                 ),
                 items=items,
-                surface=surface,
             )
         return QueryResult(summary_text=render_message("query.analytics.no_transactions", language))
 
@@ -157,19 +141,12 @@ async def handle_analytics(
         count = len(transactions)
         timeframe = _build_timeframe_suffix(contract, language)
 
-        surface = ResultSurface(
-            type=SurfaceType.SUMMARY,
-            items=[{"key": "count", "amount": 0, "count": count}],
-            context={"timeframe": timeframe},
-        )
-
         return QueryResult(
             summary_text=render_message(
                 "query.analytics.summary_count",
                 language,
                 {"count": count, "timeframe": timeframe},
             ),
-            surface=surface,
         )
 
     elif agg_type in ("largest", "smallest"):
@@ -210,18 +187,11 @@ async def handle_analytics(
 
         # Only return single item surface on FIRST page if limit=1
         if limit == 1 and current_page == 0 and items:
-            # Return single item surface views
-            surface_type = "largest_single" if agg_type == "largest" else "smallest_single"
             adjective = render_message(
                 "query.analytics.adjective_biggest" if agg_type == "largest" else "query.analytics.adjective_smallest",
                 language,
             )
 
-            surface = ResultSurface(
-                type=SurfaceType.SINGLE_ITEM,
-                items=[items[0].model_dump()],  # Pass full item context
-                context={"type": surface_type},
-            )
             return QueryResult(
                 summary_text=render_message(
                     "query.analytics.single_expense",
@@ -229,7 +199,6 @@ async def handle_analytics(
                     {"adjective": adjective, "timeframe": timeframe},
                 ),
                 items=items,
-                surface=surface,
             )
 
         label = render_message(
@@ -263,22 +232,7 @@ async def handle_analytics(
         total = len(sorted_txns)
         has_more = end_idx < total
 
-        surface = ResultSurface(
-            type=SurfaceType.LIST,
-            items=[
-                {
-                    "id": item.id,
-                    "key": item.description,
-                    "amount": item.amount,
-                    "count": 1,
-                    "rank": item.metadata.get("rank") if item.metadata else None,
-                }
-                for item in items
-            ],
-            context={"limit": limit, "type": agg_type, "total_results": total, "has_more": has_more},
-        )
-
-        return QueryResult(summary_text=summary_text, items=items, surface=surface, has_more=has_more)
+        return QueryResult(summary_text=summary_text, items=items, has_more=has_more)
 
     elif agg_type == "breakdown":
         return await _aggregate_breakdown(transactions, query, language)
@@ -377,27 +331,6 @@ async def _aggregate_breakdown(transactions: list[dict], query: NormalizedQuery,
         for i, (key, data) in enumerate(sorted_items)
     ]
 
-    # Construct Surface for interactive session
-
-    surface_items = [
-        {
-            "id": item.id,
-            "key": item.description,
-            "amount": item.amount,
-            "count": item.metadata.get("count", 0) if item.metadata else 0,
-        }
-        for item in items
-    ]
-
-    surface = ResultSurface(
-        type=SurfaceType.BREAKDOWN,
-        items=surface_items,
-        context={
-            "group_by": group_by,
-            "time_range": query.time_range.model_dump() if query.time_range else None,
-        },
-    )
-
     return QueryResult(
         summary_text=render_message(
             "query.analytics.breakdown_by",
@@ -405,7 +338,6 @@ async def _aggregate_breakdown(transactions: list[dict], query: NormalizedQuery,
             {"group_by": _breakdown_group_label(group_by, language)},
         ),
         items=items,
-        surface=surface,
     )
 
 

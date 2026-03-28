@@ -17,8 +17,6 @@ from apps.core.src.agent.graphs.query.models import (
     QueryResultItem,
     QueryTimeRange,
     ResolverOutcome,
-    ResultSurface,
-    SurfaceType,
     TimeRange,
     TimeReference,
 )
@@ -29,6 +27,7 @@ from apps.core.src.agent.graphs.query.services.reasoner import (
     SemanticReasonerContext,
 )
 from apps.core.src.agent.orchestrator.models.domain import TransactionOutcome
+from apps.core.src.agent.shared.query_contracts import SelectionPayload, SurfaceItemView, SurfaceView, SurfaceViewMode
 
 
 class _FailingStructured:
@@ -64,10 +63,22 @@ class _TrackingLLM:
         return self.structured
 
 
+def _direct_answer_surface_view(**context: object) -> SurfaceView:
+    return SurfaceView(mode=SurfaceViewMode.DIRECT_ANSWER, context=context)
+
+
+def _transaction_list_surface_view(**context: object) -> SurfaceView:
+    return SurfaceView(mode=SurfaceViewMode.TRANSACTION_LIST, context=context)
+
+
+def _grouped_summary_surface_view(**context: object) -> SurfaceView:
+    return SurfaceView(mode=SurfaceViewMode.GROUPED_SUMMARY, context=context)
+
+
 @pytest.mark.asyncio
 async def test_reasoner_uses_deterministic_receipt_action_without_llm() -> None:
     reasoner = QuerySemanticReasoner(_FailingLLM())
-    surface = ResultSurface(type=SurfaceType.SINGLE_ITEM, items=[], context={"type": "single_transaction"})
+    surface_view = _direct_answer_surface_view(type="single_transaction")
 
     decision = await reasoner.reason(
         SemanticReasonerContext(
@@ -83,7 +94,38 @@ async def test_reasoner_uses_deterministic_receipt_action_without_llm() -> None:
                     time_range=TimeRange(start=date(2026, 3, 13), end=date(2026, 3, 13)),
                 ),
             ),
-            surface=surface,
+            surface_view=surface_view,
+        )
+    )
+
+    assert decision.decision == "continuation"
+    assert decision.continuation_type == "drill_down"
+    assert decision.drill_down_action == "get_receipt"
+
+
+@pytest.mark.asyncio
+async def test_reasoner_uses_surface_view_for_deterministic_receipt_action_without_legacy_surface() -> None:
+    reasoner = QuerySemanticReasoner(_FailingLLM())
+    surface_view = SurfaceView(
+        mode=SurfaceViewMode.DIRECT_ANSWER,
+        context={"type": "single_transaction"},
+    )
+
+    decision = await reasoner.reason(
+        SemanticReasonerContext(
+            message="receipt",
+            today=date(2026, 3, 13),
+            language="en",
+            query_contract=QueryExecutionContract(
+                intent=QueryIntent.TRANSACTION_SEARCH,
+                time_start=date(2026, 3, 13),
+                time_end=date(2026, 3, 13),
+                normalized_query=NormalizedQuery(
+                    intent=QueryIntent.TRANSACTION_SEARCH,
+                    time_range=TimeRange(start=date(2026, 3, 13), end=date(2026, 3, 13)),
+                ),
+            ),
+            surface_view=surface_view,
         )
     )
 
@@ -106,7 +148,7 @@ async def test_reasoner_uses_llm_for_active_result_fact_answer() -> None:
         )
     )
     reasoner = QuerySemanticReasoner(llm)
-    surface = ResultSurface(type=SurfaceType.SINGLE_ITEM, items=[], context={"type": "single_transaction"})
+    surface_view = _direct_answer_surface_view(type="single_transaction")
     item = QueryResultItem(
         id="txn-1",
         description="Payment to Mum",
@@ -129,7 +171,7 @@ async def test_reasoner_uses_llm_for_active_result_fact_answer() -> None:
                     time_range=TimeRange(start=date(2026, 3, 13), end=date(2026, 3, 13)),
                 ),
             ),
-            surface=surface,
+            surface_view=surface_view,
             items=[item],
         )
     )
@@ -154,7 +196,7 @@ async def test_reasoner_uses_llm_for_active_result_conversational_reaction() -> 
         )
     )
     reasoner = QuerySemanticReasoner(llm)
-    surface = ResultSurface(type=SurfaceType.SUMMARY, items=[], context={"type": "spending_total"})
+    surface_view = _grouped_summary_surface_view(type="spending_total")
 
     decision = await reasoner.reason(
         SemanticReasonerContext(
@@ -170,7 +212,7 @@ async def test_reasoner_uses_llm_for_active_result_conversational_reaction() -> 
                 time_range=TimeRange(start=date(2026, 3, 9), end=date(2026, 3, 13)),
                 ),
             ),
-            surface=surface,
+            surface_view=surface_view,
         )
     )
 
@@ -193,7 +235,7 @@ async def test_reasoner_uses_llm_for_active_result_appreciation_reaction() -> No
         )
     )
     reasoner = QuerySemanticReasoner(llm)
-    surface = ResultSurface(type=SurfaceType.LIST, items=[], context={"type": "transaction_list"})
+    surface_view = _transaction_list_surface_view(type="transaction_list")
 
     decision = await reasoner.reason(
         SemanticReasonerContext(
@@ -209,7 +251,7 @@ async def test_reasoner_uses_llm_for_active_result_appreciation_reaction() -> No
                     time_range=TimeRange(start=date(2026, 3, 13), end=date(2026, 3, 13)),
                 ),
             ),
-            surface=surface,
+            surface_view=surface_view,
         )
     )
 
@@ -230,7 +272,7 @@ async def test_reasoner_ends_active_result_session_for_thank_you_with_emoji_with
         )
     )
     reasoner = QuerySemanticReasoner(llm)
-    surface = ResultSurface(type=SurfaceType.SUMMARY, items=[], context={"type": "spending_total"})
+    surface_view = _grouped_summary_surface_view(type="spending_total")
 
     decision = await reasoner.reason(
         SemanticReasonerContext(
@@ -246,13 +288,67 @@ async def test_reasoner_ends_active_result_session_for_thank_you_with_emoji_with
                     time_range=TimeRange(start=date(2026, 3, 9), end=date(2026, 3, 13)),
                 ),
             ),
-            surface=surface,
+            surface_view=surface_view,
         )
     )
 
     assert decision.decision == "end_session"
     assert decision.reason == "deterministic_end_session"
     assert llm.structured.calls == 0
+
+
+@pytest.mark.asyncio
+async def test_reasoner_uses_surface_view_for_beneficiary_summary_guardrail_without_legacy_surface() -> None:
+    reasoner = QuerySemanticReasoner(_FailingLLM())
+    item = QueryResultItem(
+        id="bene_1",
+        description="Adesanya Kunle",
+        amount=50000.0,
+        date=date(2026, 3, 27),
+        metadata={"recipient_name": "Adesanya Kunle"},
+    )
+    surface_view = SurfaceView(
+        mode=SurfaceViewMode.GROUPED_SUMMARY,
+        items=[
+            SurfaceItemView(
+                id="bene_1",
+                label="Adesanya Kunle",
+                amount=50000.0,
+                count=1,
+                payload=SelectionPayload(
+                    selection_kind="beneficiary",
+                    entity_type="beneficiary",
+                    entity_id="bene_1",
+                    label="Adesanya Kunle",
+                ),
+            )
+        ],
+        context={"view": "beneficiary_summary"},
+    )
+
+    decision = await reasoner.reason(
+        SemanticReasonerContext(
+            message="When was Kunle's transaction?",
+            today=date(2026, 3, 28),
+            language="en",
+            query_contract=QueryExecutionContract(
+                intent=QueryIntent.BENEFICIARY_SUMMARY,
+                time_start=date(2026, 3, 14),
+                time_end=date(2026, 3, 28),
+                normalized_query=NormalizedQuery(
+                    intent=QueryIntent.BENEFICIARY_SUMMARY,
+                    time_range=TimeRange(start=date(2026, 3, 14), end=date(2026, 3, 28)),
+                ),
+            ),
+            items=[item],
+            surface_view=surface_view,
+        )
+    )
+
+    assert decision.decision == "continuation"
+    assert decision.continuation_type == "recipient_drill_down"
+    assert decision.recipient_name == "Adesanya Kunle"
+    assert decision.fact_field == "date"
 
 
 @pytest.mark.asyncio
@@ -267,7 +363,7 @@ async def test_reasoner_logs_deterministic_surface_action_without_llm(
     monkeypatch.setattr("apps.core.src.agent.graphs.query.services.reasoner.logger.info", _capture)
 
     reasoner = QuerySemanticReasoner(_FailingLLM())
-    surface = ResultSurface(type=SurfaceType.SINGLE_ITEM, items=[], context={"type": "single_transaction"})
+    surface_view = _direct_answer_surface_view(type="single_transaction")
 
     decision = await reasoner.reason(
         SemanticReasonerContext(
@@ -283,7 +379,7 @@ async def test_reasoner_logs_deterministic_surface_action_without_llm(
                     time_range=TimeRange(start=date(2026, 3, 13), end=date(2026, 3, 13)),
                 ),
             ),
-            surface=surface,
+            surface_view=surface_view,
         )
     )
 
@@ -329,7 +425,7 @@ async def test_reasoner_logs_llm_fact_answer_decision(
         )
     )
     reasoner = QuerySemanticReasoner(llm)
-    surface = ResultSurface(type=SurfaceType.SINGLE_ITEM, items=[], context={"type": "single_transaction"})
+    surface_view = _direct_answer_surface_view(type="single_transaction")
     item = QueryResultItem(
         id="txn-1",
         description="Payment to Mum",
@@ -352,7 +448,7 @@ async def test_reasoner_logs_llm_fact_answer_decision(
                     time_range=TimeRange(start=date(2026, 3, 13), end=date(2026, 3, 13)),
                 ),
             ),
-            surface=surface,
+            surface_view=surface_view,
             items=[item],
         )
     )
@@ -493,7 +589,7 @@ async def test_reasoner_passes_through_replace_scope_followup_intent() -> None:
                     time_range=TimeRange(start=date(2026, 3, 1), end=date(2026, 3, 14)),
                 ),
             ),
-            surface=ResultSurface(type=SurfaceType.LIST, items=[], context={"type": "transaction_list"}),
+            surface_view=_transaction_list_surface_view(type="transaction_list"),
         )
     )
 
@@ -531,7 +627,7 @@ async def test_reasoner_passes_through_possessive_week_replace_scope_followup_in
                     filters=Filters(transaction_type="debit"),
                 ),
             ),
-            surface=ResultSurface(type=SurfaceType.LIST, items=[], context={"type": "transaction_list"}),
+            surface_view=_transaction_list_surface_view(type="transaction_list"),
         )
     )
 
@@ -571,7 +667,7 @@ async def test_reasoner_passes_through_contrastive_last_week_replace_scope_follo
                     filters=Filters(transaction_type="debit", merchant=["mum"]),
                 ),
             ),
-            surface=ResultSurface(type=SurfaceType.SUMMARY, items=[], context={"type": "spending_total"}),
+            surface_view=_grouped_summary_surface_view(type="spending_total"),
         )
     )
 
@@ -610,7 +706,7 @@ async def test_reasoner_passes_through_today_replace_scope_followup_intent() -> 
                     filters=Filters(transaction_type="debit"),
                 ),
             ),
-            surface=ResultSurface(type=SurfaceType.LIST, items=[], context={"type": "transaction_list"}),
+            surface_view=_transaction_list_surface_view(type="transaction_list"),
         )
     )
 
@@ -651,7 +747,7 @@ async def test_reasoner_passes_through_contrastive_yesterday_replace_scope_follo
                     filters=Filters(transaction_type="debit"),
                 ),
             ),
-            surface=ResultSurface(type=SurfaceType.LIST, items=[], context={"type": "transaction_list"}),
+            surface_view=_transaction_list_surface_view(type="transaction_list"),
         )
     )
 
@@ -698,7 +794,7 @@ async def test_reasoner_passes_through_single_item_contrastive_yesterday_replace
                 result_limit=1,
                 result_reference="latest",
             ),
-            surface=ResultSurface(type=SurfaceType.SINGLE_ITEM, items=[], context={"type": "single_transaction"}),
+            surface_view=_direct_answer_surface_view(type="single_transaction"),
         )
     )
 
@@ -742,7 +838,7 @@ async def test_reasoner_passes_through_contrastive_last_week_replace_scope_with_
                     filters=Filters(transaction_type="debit", merchant=["mum"]),
                 ),
             ),
-            surface=ResultSurface(type=SurfaceType.SUMMARY, items=[], context={"type": "spending_total"}),
+            surface_view=_grouped_summary_surface_view(type="spending_total"),
         )
     )
 
@@ -781,7 +877,7 @@ async def test_reasoner_passes_through_continue_pagination_followup_intent() -> 
                     time_range=TimeRange(start=date(2026, 3, 8), end=date(2026, 3, 14)),
                 ),
             ),
-            surface=ResultSurface(type=SurfaceType.LIST, items=[], context={"type": "transaction_list"}),
+            surface_view=_transaction_list_surface_view(type="transaction_list"),
         )
     )
 
@@ -817,7 +913,7 @@ async def test_reasoner_passes_through_unclear_followup_contract() -> None:
                     time_range=TimeRange(start=date(2026, 3, 1), end=date(2026, 3, 14)),
                 ),
             ),
-            surface=ResultSurface(type=SurfaceType.SUMMARY, items=[], context={"type": "spending_total"}),
+            surface_view=_grouped_summary_surface_view(type="spending_total"),
         )
     )
 
@@ -855,7 +951,7 @@ async def test_reasoner_passes_through_last_month_replace_scope_followup_intent(
                     filters=Filters(transaction_type="debit"),
                 ),
             ),
-            surface=ResultSurface(type=SurfaceType.LIST, items=[], context={"type": "transaction_list"}),
+            surface_view=_transaction_list_surface_view(type="transaction_list"),
         )
     )
 
@@ -902,7 +998,7 @@ async def test_reasoner_logs_single_llm_trace_metadata(monkeypatch: pytest.Monke
                     time_range=TimeRange(start=date(2026, 3, 1), end=date(2026, 3, 14)),
                 ),
             ),
-            surface=ResultSurface(type=SurfaceType.LIST, items=[], context={"type": "transaction_list"}),
+            surface_view=_transaction_list_surface_view(type="transaction_list"),
         )
     )
 
@@ -1022,7 +1118,7 @@ async def test_reasoner_bounds_prompt_items_and_frames() -> None:
                 ),
             ),
             items=items,
-            surface=ResultSurface(type=SurfaceType.LIST, items=[], context={"type": "transaction_list", "count": 5}),
+            surface_view=_transaction_list_surface_view(type="transaction_list", count=5),
             query_frames=query_frames,
         )
     )
@@ -1070,8 +1166,11 @@ async def test_extraction_step_preserves_session_for_conversational_reaction() -
             "query_session": {
                 "session_active": True,
                 "query_contract": session_contract,
-                "query_result": {"items": []},
-                "surface": ResultSurface(type=SurfaceType.SUMMARY, items=[], context={"type": "spending_total"}),
+                "query_result": {
+                    "summary_text": "You spent money in that period.",
+                    "items": [],
+                    "surface_view": _grouped_summary_surface_view(type="spending_total").model_dump(mode="json"),
+                },
             },
         }
     )
@@ -1202,8 +1301,11 @@ async def test_extraction_step_active_result_aggregate_can_reuse_reasoner_extrac
             "query_session": {
                 "session_active": True,
                 "query_contract": session_contract,
-                "query_result": {"items": [QueryResultItem(description="Txn", amount=1000, date=date(2026, 3, 13)).model_dump()]},
-                "surface": ResultSurface(type=SurfaceType.LIST, items=[], context={}),
+                "query_result": {
+                    "summary_text": "Transactions",
+                    "items": [QueryResultItem(description="Txn", amount=1000, date=date(2026, 3, 13)).model_dump()],
+                    "surface_view": _transaction_list_surface_view().model_dump(mode="json"),
+                },
             },
         }
     )
@@ -1251,8 +1353,11 @@ async def test_extraction_step_active_result_new_query_compiles_without_parser_p
             "query_session": {
                 "session_active": True,
                 "query_contract": session_contract,
-                "query_result": {"items": []},
-                "surface": ResultSurface(type=SurfaceType.SUMMARY, items=[], context={"type": "spending_total"}),
+                "query_result": {
+                    "summary_text": "You spent money in that period.",
+                    "items": [],
+                    "surface_view": _grouped_summary_surface_view(type="spending_total").model_dump(mode="json"),
+                },
             },
         }
     )

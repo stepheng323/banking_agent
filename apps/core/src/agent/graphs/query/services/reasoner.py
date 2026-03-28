@@ -21,8 +21,6 @@ from apps.core.src.agent.graphs.query.models import (
     QueryOperation,
     QueryResultItem,
     ReasonerQueryExtraction,
-    ResultSurface,
-    SurfaceType,
     TimeRange,
 )
 from apps.core.src.agent.graphs.query.prompts.main import (
@@ -31,6 +29,7 @@ from apps.core.src.agent.graphs.query.prompts.main import (
 )
 from apps.core.src.agent.graphs.query.services.continuity import ContinuationClassifier
 from apps.core.src.agent.graphs.query.services.query_shortcuts import resolve_query_shortcut
+from apps.core.src.agent.shared.query_contracts import SurfaceView, SurfaceViewMode
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -224,7 +223,7 @@ class SemanticReasonerContext:
     query_contract: QueryExecutionContract | None = None
     pending_clarification: PendingClarificationState | None = None
     items: list[QueryResultItem] | None = None
-    surface: ResultSurface | None = None
+    surface_view: SurfaceView | None = None
     query_frames: list[QueryFrame] | None = None
     turn_id: str | None = None
     inbound_message_id: str | None = None
@@ -347,11 +346,39 @@ class QuerySemanticReasoner:
             return str(value)
 
     @staticmethod
-    def _serialize_surface_context(surface: ResultSurface | None) -> str:
-        if surface is None or not isinstance(surface.context, dict):
+    def _serialize_surface_context(surface_view: SurfaceView | None) -> str:
+        if surface_view is None or not isinstance(surface_view.context, dict):
             return "none"
-        payload = {key: surface.context.get(key) for key in _SURFACE_CONTEXT_KEYS if key in surface.context}
+        payload = {
+            key: surface_view.context.get(key)
+            for key in _SURFACE_CONTEXT_KEYS
+            if key in surface_view.context
+        }
+        payload["mode"] = surface_view.mode.value
         return QuerySemanticReasoner._serialize(payload or None)
+
+    @staticmethod
+    def _surface_type_name(
+        *,
+        surface_view: SurfaceView | None,
+    ) -> str:
+        if surface_view is None:
+            return "none"
+        mode_map = {
+            SurfaceViewMode.DIRECT_ANSWER: "single_item",
+            SurfaceViewMode.TRANSACTION_LIST: "list",
+            SurfaceViewMode.GROUPED_SUMMARY: "summary",
+            SurfaceViewMode.CLARIFICATION: "clarification",
+        }
+        return mode_map.get(surface_view.mode, "none")
+
+    @classmethod
+    def _serialize_surface_snapshot(
+        cls,
+        *,
+        surface_view: SurfaceView | None,
+    ) -> str:
+        return cls._serialize_surface_context(surface_view)
 
     @classmethod
     def _serialize_query_anchor(cls, query_contract: QueryExecutionContract | None) -> str:
@@ -415,9 +442,10 @@ class QuerySemanticReasoner:
         *,
         message: str,
         language: str,
-        surface: ResultSurface | None,
+        surface_view: SurfaceView | None,
     ) -> QuerySemanticDecision | None:
-        if surface is None or surface.type not in {SurfaceType.SINGLE_ITEM, SurfaceType.LIST}:
+        surface_mode = cls._continuation_classifier_surface_type(surface_view=surface_view)
+        if surface_mode not in {SurfaceViewMode.DIRECT_ANSWER, SurfaceViewMode.TRANSACTION_LIST}:
             return None
         shortcut = resolve_query_shortcut(message, language)
         if shortcut is None or shortcut.kind not in {"actionable", "detail"}:
@@ -443,11 +471,18 @@ class QuerySemanticReasoner:
             ),
         )
 
+    @staticmethod
+    def _continuation_classifier_surface_type(
+        *,
+        surface_view: SurfaceView | None,
+    ) -> SurfaceViewMode | None:
+        return surface_view.mode if surface_view is not None else None
+
     def _guardrail_end_session(self, *, message: str, language: str) -> QuerySemanticDecision | None:
         guarded = self._continuation_classifier._guardrail_classify(
             message=message,
             items=None,
-            surface=None,
+            surface_view=None,
             language=language,
         )
         if guarded is None or guarded[0] != "end_session":
@@ -466,7 +501,7 @@ class QuerySemanticReasoner:
     ) -> QuerySemanticDecision:
         items_section, prompt_item_count = self._serialize_items(context.items)
         query_frames_section, prompt_frame_count = self._serialize_query_frames(context.query_frames)
-        prompt_surface_type = context.surface.type.value if context.surface is not None else "none"
+        prompt_surface_type = self._surface_type_name(surface_view=context.surface_view)
         dynamic_context = QUERY_SEMANTIC_REASONER_CONTEXT.format(
             today=context.today.isoformat(),
             language=context.language,
@@ -475,7 +510,7 @@ class QuerySemanticReasoner:
             current_query=self._serialize_query_anchor(context.query_contract),
             pending_clarification=self._serialize(context.pending_clarification),
             surface_type=prompt_surface_type,
-            surface_context=self._serialize_surface_context(context.surface),
+            surface_context=self._serialize_surface_snapshot(surface_view=context.surface_view),
             items_section=items_section,
             query_frames_section=query_frames_section,
         )
@@ -553,7 +588,7 @@ class QuerySemanticReasoner:
                 latency_ms=latency_ms,
                 llm_used=False,
                 decision=annotated,
-                prompt_surface_type=context.surface.type.value if context.surface is not None else "none",
+                prompt_surface_type=self._surface_type_name(surface_view=context.surface_view),
                 reasoner_schema=reasoner_schema,
                 context_bytes=0,
                 llm_calls_used=0,
@@ -592,7 +627,7 @@ class QuerySemanticReasoner:
             deterministic_surface = self._deterministic_surface_action(
                 message=context.message,
                 language=context.language,
-                surface=context.surface,
+                surface_view=context.surface_view,
             )
             if deterministic_surface is not None:
                 deterministic_surface = await self._return_annotated_decision(
@@ -615,7 +650,7 @@ class QuerySemanticReasoner:
             guarded = self._continuation_classifier._guardrail_classify(
                 message=context.message,
                 items=context.items,
-                surface=context.surface,
+                surface_view=context.surface_view,
                 language=context.language,
             )
             if guarded is not None:

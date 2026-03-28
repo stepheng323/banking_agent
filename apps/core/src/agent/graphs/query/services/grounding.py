@@ -12,10 +12,9 @@ from apps.core.src.agent.graphs.query.models import (
     QueryFrameFacts,
     QueryIntent,
     QueryResult,
-    ResultSurface,
-    SurfaceType,
     TimeRange,
 )
+from apps.core.src.agent.shared.query_contracts import SurfaceView, SurfaceViewMode
 from shared.i18n import render_message
 from shared.i18n.message_keys import MessageKey
 
@@ -61,8 +60,8 @@ def build_query_frame(
     turn_index: int,
 ) -> QueryFrame:
     """Build a compact query frame from a query execution result."""
-    surface = result.surface
-    facts = _derive_query_frame_facts(query_contract=query_contract, result=result, surface=surface)
+    surface_view = result.surface_view
+    facts = _derive_query_frame_facts(query_contract=query_contract, result=result, surface_view=surface_view)
 
     return QueryFrame(
         frame_id=f"qf_{turn_index}",
@@ -70,8 +69,8 @@ def build_query_frame(
         query_contract=query_contract,
         summary_text=result.summary_text,
         interpretation=result.interpretation,
-        surface_type=surface.type if surface else None,
-        surface_context=surface.context if surface else {},
+        surface_type=surface_view.mode if surface_view else None,
+        surface_context=surface_view.context if surface_view else {},
         facts=facts,
     )
 
@@ -184,7 +183,7 @@ def _derive_query_frame_facts(
     *,
     query_contract: QueryExecutionContract,
     result: QueryResult,
-    surface: ResultSurface | None,
+    surface_view: SurfaceView | None,
 ) -> QueryFrameFacts:
     facts = QueryFrameFacts(
         label=result.summary_text,
@@ -194,31 +193,31 @@ def _derive_query_frame_facts(
     aggregation_type = query.aggregation.type if query.aggregation else None
 
     if query_contract.intent == QueryIntent.ANALYTICS_SUMMARY and aggregation_type == "sum":
-        surface_item = _first_surface_item(surface)
         return facts.model_copy(
             update={
                 "metric_kind": "amount",
-                "amount": _coerce_float(surface_item.get("amount") if surface_item else None),
-                "count": _coerce_int(surface_item.get("count") if surface_item else None),
+                "amount": sum(item.amount for item in result.items or []),
+                "count": len(result.items or []),
             }
         )
 
     if query_contract.intent == QueryIntent.ANALYTICS_SUMMARY and aggregation_type == "average":
-        surface_item = _first_surface_item(surface)
+        average_amount = None
+        if result.items:
+            average_amount = sum(item.amount for item in result.items) / len(result.items)
         return facts.model_copy(
             update={
                 "metric_kind": "average",
-                "amount": _coerce_float(surface_item.get("amount") if surface_item else None),
-                "count": _coerce_int(surface_item.get("count") if surface_item else None),
+                "amount": average_amount,
+                "count": len(result.items or []),
             }
         )
 
     if query_contract.intent == QueryIntent.ANALYTICS_SUMMARY and aggregation_type == "count":
-        surface_item = _first_surface_item(surface)
         return facts.model_copy(
             update={
                 "metric_kind": "count",
-                "count": _coerce_int(surface_item.get("count") if surface_item else None),
+                "count": len(result.items or []),
             }
         )
 
@@ -239,7 +238,7 @@ def _derive_query_frame_facts(
     if query_contract.intent == QueryIntent.TRANSACTION_SEARCH:
         return facts.model_copy(update={"metric_kind": "single_item", "count": len(result.items or [])})
 
-    if surface and surface.type == SurfaceType.LIST:
+    if surface_view and surface_view.mode == SurfaceViewMode.TRANSACTION_LIST:
         return facts.model_copy(update={"metric_kind": "ranked", "count": len(result.items or [])})
 
     return facts
@@ -259,14 +258,6 @@ def _extract_time_comparison_facts(result: QueryResult) -> tuple[float | None, f
             count = _coerce_int(metadata.get("current"))
 
     return amount, comparison_amount, count
-
-
-def _first_surface_item(surface: ResultSurface | None) -> dict[str, Any] | None:
-    if surface and surface.items:
-        return surface.items[0]
-    return None
-
-
 def _coerce_float(value: object) -> float | None:
     if value is None:
         return None

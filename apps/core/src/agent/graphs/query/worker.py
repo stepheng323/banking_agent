@@ -16,7 +16,11 @@ from apps.core.src.agent.graphs.query.nodes.execution import ExecutionStep
 from apps.core.src.agent.graphs.query.nodes.extraction import ExtractionStep
 from apps.core.src.agent.graphs.query.pipeline import QueryPipeline
 from apps.core.src.agent.graphs.query.services.grounding import append_query_frame, restore_query_frames
-from apps.core.src.agent.graphs.query.session import QuerySessionManager, is_query_session_stale
+from apps.core.src.agent.graphs.query.session import (
+    QuerySessionManager,
+    _session_has_surface_view,
+    is_query_session_stale,
+)
 from apps.core.src.agent.graphs.query.utils.timezone import lagos_today
 from apps.core.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
 from shared.clients.abstractions.banking import BankDataProvider
@@ -63,15 +67,21 @@ class QueryWorker:
 
     @staticmethod
     def _surface_type_name(value: Any) -> str | None:
-        if value is None:
-            return None
-        if isinstance(value, dict):
-            raw_type = value.get("type")
-            return str(raw_type) if raw_type is not None else None
-        raw_type = getattr(value, "type", None)
-        if raw_type is None:
-            return None
-        return getattr(raw_type, "value", str(raw_type))
+        mode = value.get("mode") if isinstance(value, dict) else getattr(getattr(value, "mode", None), "value", None)
+        mode_map = {
+            "direct_answer": "single_item",
+            "transaction_list": "list",
+            "grouped_summary": "summary",
+            "clarification": "clarification",
+        }
+        return mode_map.get(mode) if isinstance(mode, str) else None
+
+    @classmethod
+    def _surface_type_name_from_state(cls, state: dict[str, Any]) -> str | None:
+        query_result = state.get("query_result")
+        if isinstance(query_result, dict):
+            return cls._surface_type_name(query_result.get("surface_view"))
+        return cls._surface_type_name(getattr(query_result, "surface_view", None))
 
     @classmethod
     def _log_session_shape(
@@ -88,7 +98,7 @@ class QueryWorker:
             session_active=bool(snapshot.get("session_active")),
             has_query_contract=bool(snapshot.get("query_contract")),
             has_query_result=bool(snapshot.get("query_result")),
-            has_surface=bool(snapshot.get("surface")),
+            has_surface=_session_has_surface_view(snapshot),
             has_query_frames=bool(snapshot.get("query_frames")),
             has_pending_clarification=bool(snapshot.get("pending_clarification")),
         )
@@ -122,7 +132,7 @@ class QueryWorker:
             session_transition=session_transition,
             outcome=result.outcome.value if hasattr(result.outcome, "value") else str(result.outcome),
             flow_state=final_state.get("flow_state"),
-            surface_type=self._surface_type_name(final_state.get("surface")),
+            surface_type=self._surface_type_name_from_state(final_state),
             session_active=final_state.get("session_active"),
             has_pending_clarification=bool(final_state.get("pending_clarification")),
             session_source=session_source,
@@ -345,7 +355,7 @@ class QueryWorker:
                 session_source=session_source,
                 session_active=bool(query_session.get("session_active")),
                 has_query_result=bool(query_session.get("query_result")),
-                has_surface=bool(query_session.get("surface")),
+                has_surface=_session_has_surface_view(query_session),
                 has_query_frames=bool(query_session.get("query_frames")),
             )
             await self.session_manager.clear(session_key)
@@ -440,7 +450,7 @@ class QueryWorker:
                 "query_active_session_missing_continuation_context",
                 session_source=session_source,
                 has_query_result=bool(query_session.get("query_result")),
-                has_surface=bool(query_session.get("surface")),
+                has_surface=_session_has_surface_view(query_session),
                 has_query_frames=bool(query_session.get("query_frames")),
             )
 

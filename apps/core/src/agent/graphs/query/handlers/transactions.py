@@ -5,11 +5,8 @@ from typing import Any, cast
 
 from apps.core.src.agent.graphs.query.models import (
     QueryExecutionContract,
-    QueryIntent,
     QueryResult,
     QueryResultItem,
-    ResultSurface,
-    SurfaceType,
 )
 from apps.core.src.agent.graphs.query.services.fetch import (
     apply_filters,
@@ -195,35 +192,6 @@ async def handle_transaction_list(
     result_summary = f"accounts:{account_count}|showing:{offset + 1}-{showing_end}|total:{total}"
     has_more = showing_end < total
 
-    surface = None
-    if transactions:
-        surface_items = [
-            {
-                "id": item.id,
-                "key": item.description,
-                "amount": item.amount,
-                "count": 1,
-            }
-            for item in items
-        ]
-
-        if total == 1 and (query.result_limit == 1 or query.intent == QueryIntent.TRANSACTION_SEARCH):
-            surface = ResultSurface(
-                type=SurfaceType.SINGLE_ITEM,
-                items=surface_items,
-                context={"type": "single_transaction"},
-            )
-        else:
-            surface = ResultSurface(
-                type=SurfaceType.LIST,
-                items=surface_items,
-                context={
-                    "count": len(items),
-                    "total_results": total,
-                    "has_more": has_more,
-                },
-            )
-
     _log_query_trace(
         trace_context=trace_context,
         latency_ms=(time.perf_counter() - started_at) * 1000.0,
@@ -235,7 +203,6 @@ async def handle_transaction_list(
         summary_text=result_summary,
         items=items,
         has_more=has_more,
-        surface=surface,
         cached_transactions=base_transactions,
         cache_fetched_at=cache_fetched_at_value,
         cache_fingerprint=cache_fingerprint,
