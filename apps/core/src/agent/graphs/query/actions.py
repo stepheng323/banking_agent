@@ -4,8 +4,10 @@ from typing import Any
 
 from apps.core.src.agent.graphs.query.models import NormalizedQuery, QueryResult
 from apps.core.src.agent.graphs.query.services.answer_strategy import build_direct_fact_answer
+from apps.core.src.agent.graphs.query.services.contracts import build_query_transfer_handoff_payload
 from apps.core.src.agent.graphs.query.services.formatter import QueryFormatter
 from apps.core.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
+from apps.core.src.agent.shared.query_contracts import SelectionPayload
 from shared.i18n import LocaleManager, render_message
 from shared.queue.factory import QueuePublisherFactory
 
@@ -18,29 +20,6 @@ def _resolve_transaction_type(item: Any, locale: str) -> tuple[str, str]:
         transaction_type.title() if transaction_type else render_message("query.common.transaction", locale)
     )
     return transaction_type, transaction_type_display
-
-
-def _build_query_transfer_handoff(item: Any) -> dict[str, Any]:
-    metadata = item.metadata if isinstance(getattr(item, "metadata", None), dict) else {}
-
-    recipient_name = str(metadata.get("recipient_name") or item.description or "").strip() or None
-    recipient_account = (
-        str(metadata.get("recipient_account_number") or metadata.get("recipient_account") or "").strip() or None
-    )
-    recipient_bank_name = str(metadata.get("recipient_bank_name") or metadata.get("bank_name") or "").strip() or None
-    recipient_bank_code = str(metadata.get("recipient_bank_code") or "").strip() or None
-
-    payload: dict[str, Any] = {
-        "action": "send_money",
-        "amount": item.amount,
-        "narration": item.description,
-        "recipient_name": recipient_name,
-        "recipient_account": recipient_account,
-        "recipient_bank_name": recipient_bank_name,
-        "recipient_bank_code": recipient_bank_code,
-        "skip_extraction": True,
-    }
-    return {k: v for k, v in payload.items() if v is not None and v != ""}
 
 
 def _query_snapshot_from_state(state: dict[str, Any]) -> NormalizedQuery | None:
@@ -62,16 +41,61 @@ def _query_snapshot_from_state(state: dict[str, Any]) -> NormalizedQuery | None:
     return None
 
 
+def _coerce_query_result(state: dict[str, Any]) -> QueryResult | None:
+    query_result = state.get("query_result")
+    if isinstance(query_result, QueryResult):
+        return query_result
+    if isinstance(query_result, dict):
+        try:
+            return QueryResult.model_validate(query_result)
+        except Exception:
+            return None
+    return None
+
+
+def _coerce_selection_payload(raw_payload: Any) -> SelectionPayload | None:
+    if isinstance(raw_payload, SelectionPayload):
+        return raw_payload
+    if isinstance(raw_payload, dict):
+        try:
+            return SelectionPayload.model_validate(raw_payload)
+        except Exception:
+            return None
+    return None
+
+
+def _resolve_selected_item(query_result: QueryResult, state: dict[str, Any]) -> Any | None:
+    items = query_result.items or []
+    if not items:
+        return None
+
+    selection_payload = _coerce_selection_payload(state.get("selected_payload"))
+    if selection_payload is not None:
+        if selection_payload.entity_id:
+            for item in items:
+                if item.id == selection_payload.entity_id:
+                    return item
+        normalized_label = selection_payload.label.strip().lower()
+        if normalized_label:
+            for item in items:
+                if item.description.strip().lower() == normalized_label:
+                    return item
+                metadata: dict[str, Any] = item.metadata if isinstance(item.metadata, dict) else {}
+                recipient_name = str(metadata.get("recipient_name") or "").strip().lower()
+                if recipient_name and recipient_name == normalized_label:
+                    return item
+
+    drill_down_index = state.get("selected_item_index", 0)
+    index = max(0, min(drill_down_index, len(items) - 1))
+    return items[index]
+
+
 async def handle_drill_down(state: dict[str, Any]) -> TransactionResult:
     """Handle drill-down using index and action from classifier."""
     locale = LocaleManager.normalize(state.get("language")).value
 
-    query_result = state.get("query_result")
+    query_result = _coerce_query_result(state)
 
-    if isinstance(query_result, dict):
-        query_result = QueryResult.model_validate(query_result)
-
-    drill_down_index = state.get("selected_item_index", 0)
     drill_down_action = state.get("drill_down_action", "view_details")
     fact_field = state.get("fact_field")
 
@@ -81,8 +105,12 @@ async def handle_drill_down(state: dict[str, Any]) -> TransactionResult:
             response=render_message("query.drill_down.no_items", locale),
         )
 
-    index = max(0, min(drill_down_index, len(query_result.items) - 1))
-    item = query_result.items[index]
+    item = _resolve_selected_item(query_result, state)
+    if item is None:
+        return TransactionResult(
+            outcome=TransactionOutcome.FAILED,
+            response=render_message("query.drill_down.no_items", locale),
+        )
 
     if drill_down_action == "answer_fact":
         metadata = item.metadata if isinstance(getattr(item, "metadata", None), dict) else {}
@@ -180,7 +208,7 @@ async def handle_drill_down(state: dict[str, Any]) -> TransactionResult:
 
     if drill_down_action == "re_transfer":
         transaction_type, transaction_type_display = _resolve_transaction_type(item, locale)
-        payload = _build_query_transfer_handoff(item)
+        payload = build_query_transfer_handoff_payload(item) or {}
         is_transfer_item = transaction_type == "transfer" or bool(
             payload.get("recipient_account") and (payload.get("recipient_bank_name") or payload.get("recipient_bank_code"))
         )

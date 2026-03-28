@@ -11,17 +11,21 @@ from apps.core.src.agent.graphs.query.models import (
     QueryExecutionContract,
     QueryExtractionResult,
     QueryIntent,
+    QueryOperation,
     QueryParseResult,
+    QueryResult,
     QueryResultItem,
     QueryTimeRange,
     ResolverOutcome,
     ResultSurface,
+    SurfaceType,
     TimeRange,
     TimeReference,
 )
 from apps.core.src.agent.graphs.query.nodes.extraction import ExtractionStep
 from apps.core.src.agent.graphs.query.services.reasoner import QuerySemanticDecision
 from apps.core.src.agent.orchestrator.models.domain import TransactionOutcome
+from apps.core.src.agent.shared.query_contracts import SelectionPayload, SurfaceItemView, SurfaceView, SurfaceViewMode
 from shared.i18n import render_message
 
 
@@ -322,6 +326,49 @@ async def test_recipient_drilldown_follow_up_applies_counterparty_filter() -> No
 
 
 @pytest.mark.asyncio
+async def test_recipient_fact_drilldown_follow_up_converts_summary_to_transaction_list_with_fact_answer() -> None:
+    step = ExtractionStep(_DummyLLM())
+    today = date(2026, 3, 27)
+    session_query = NormalizedQuery(
+        intent=QueryIntent.BENEFICIARY_SUMMARY,
+        time_range=TimeRange(start=date(2026, 3, 14), end=today),
+    )
+    session_contract = QueryExecutionContract.from_normalized_query(session_query)
+
+    async def _fake_reason(context: object) -> QuerySemanticDecision:
+        del context
+        return QuerySemanticDecision(
+            decision="continuation",
+            continuation_type="recipient_drill_down",
+            followup_intent="none",
+            recipient_name="Adesanya Kunle",
+            fact_field="date",
+            delta_type="filter",
+            confidence=0.99,
+            reason="deterministic_recipient_fact_drill_down",
+        )
+
+    step.reasoner.reason = _fake_reason  # type: ignore[method-assign]
+
+    updates = await step._handle_continuation(
+        {"message": "When was Kunle's transaction?", "today": today, "language": "en"},
+        {
+            "session_active": True,
+            "query_contract": session_contract.model_dump(),
+            "query_result": {"items": []},
+        },
+    )
+
+    query = updates["query_contract"].normalized_query
+    assert updates["flow_state"] == "executing"
+    assert query.intent == QueryIntent.TRANSACTION_LIST
+    assert query.aggregation is None
+    assert query.answer_fact_field == "date"
+    assert query.filters is not None
+    assert query.filters.counterparty == ["Adesanya Kunle"]
+
+
+@pytest.mark.asyncio
 async def test_show_me_follow_up_converts_summary_to_transactions_when_explicitly_requested() -> None:
     step = ExtractionStep(_DummyLLM())
     today = date(2026, 3, 6)
@@ -359,6 +406,74 @@ async def test_show_me_follow_up_converts_summary_to_transactions_when_explicitl
     assert updates["query_contract"].normalized_query.time_range.end == today
     assert updates["current_page"] == 0
     assert updates["resolver_message"] is None
+
+
+@pytest.mark.asyncio
+async def test_account_breakdown_drilldown_converts_to_transaction_list_with_account_filter() -> None:
+    step = ExtractionStep(_DummyLLM())
+    today = date(2026, 3, 28)
+    session_query = NormalizedQuery(
+        intent=QueryIntent.ANALYTICS_SUMMARY,
+        query_operation=QueryOperation.BREAKDOWN_TRANSACTIONS,
+        time_range=TimeRange(start=date(2026, 2, 26), end=today),
+        filters=Filters(transaction_type="debit"),
+        aggregation=Aggregation(type="breakdown", group_by="account"),
+    )
+    session_contract = QueryExecutionContract.from_normalized_query(session_query)
+
+    async def _fake_reason(context: object) -> QuerySemanticDecision:
+        del context
+        return QuerySemanticDecision(
+            decision="continuation",
+            continuation_type="drill_down",
+            followup_intent="none",
+            drill_down_index=1,
+            confidence=0.99,
+            reason="account_breakdown_drill_down",
+        )
+
+    step.reasoner.reason = _fake_reason  # type: ignore[method-assign]
+
+    updates = await step._handle_continuation(
+        {"message": "show all for first bank", "today": today, "language": "en"},
+        {
+            "session_active": True,
+            "query_contract": session_contract.model_dump(),
+            "surface": ResultSurface(
+                type=SurfaceType.BREAKDOWN,
+                items=[],
+                context={"group_by": "account"},
+            ).model_dump(),
+            "query_result": {
+                "items": [
+                    QueryResultItem(
+                        id="0",
+                        description="Zenith Bank",
+                        amount=-1099852,
+                        date=today,
+                        metadata={"key": "Zenith Bank", "count": 23},
+                    ).model_dump(mode="json"),
+                    QueryResultItem(
+                        id="1",
+                        description="First Bank",
+                        amount=-96200,
+                        date=today,
+                        metadata={"key": "First Bank", "count": 5},
+                    ).model_dump(mode="json"),
+                ],
+            },
+        },
+    )
+
+    query = updates["query_contract"].normalized_query
+    assert query.intent == QueryIntent.TRANSACTION_LIST
+    assert query.query_operation == QueryOperation.LIST_TRANSACTIONS
+    assert query.aggregation is None
+    assert query.filters is not None
+    assert query.filters.account_filter == "First Bank"
+    assert query.filters.transaction_type == "debit"
+    assert updates["current_page"] == 0
+    assert updates["show_expanded"] is False
 
 
 @pytest.mark.asyncio
@@ -1647,3 +1762,99 @@ async def test_low_confidence_unclear_followup_requests_clarification() -> None:
 
     assert updates["transaction_outcome"] == TransactionOutcome.NEEDS_INPUT
     assert updates["response"] == render_message("query.clarify.unsure_rephrase", "en")
+
+
+@pytest.mark.asyncio
+async def test_account_breakdown_followup_uses_selection_payload_without_legacy_surface() -> None:
+    step = ExtractionStep(_DummyLLM())
+    today = date(2026, 3, 28)
+    session_query = NormalizedQuery(
+        intent=QueryIntent.ANALYTICS_SUMMARY,
+        filters=Filters(transaction_type="debit"),
+        aggregation=Aggregation(type="breakdown", group_by="account"),
+        time_range=TimeRange(start=date(2026, 3, 1), end=today),
+    )
+    session_contract = QueryExecutionContract.from_normalized_query(session_query)
+
+    async def _fake_reason(_: object) -> QuerySemanticDecision:
+        return QuerySemanticDecision(
+            decision="continuation",
+            continuation_type="drill_down",
+            followup_intent="refine_existing",
+            drill_down_index=1,
+            confidence=0.97,
+            reason="payload_drill_down",
+        )
+
+    step.reasoner.reason = _fake_reason  # type: ignore[method-assign]
+
+    query_result = QueryResult(
+        summary_text="Spending by account — Mar 1 – Mar 28",
+        items=[
+            QueryResultItem(
+                id="acc_1",
+                description="Zenith Bank",
+                amount=-1099852,
+                date=today,
+                metadata={"count": 23, "key": "Zenith Bank"},
+            ),
+            QueryResultItem(
+                id="acc_2",
+                description="First Bank",
+                amount=-96200,
+                date=today,
+                metadata={"count": 5, "key": "First Bank"},
+            ),
+        ],
+        surface_view=SurfaceView(
+            mode=SurfaceViewMode.GROUPED_SUMMARY,
+            items=[
+                SurfaceItemView(
+                    id="acc_1",
+                    label="Zenith Bank",
+                    amount=-1099852,
+                    count=23,
+                    payload=SelectionPayload(
+                        selection_kind="group_bucket",
+                        entity_type="group_bucket",
+                        entity_id="acc_1",
+                        label="Zenith Bank",
+                        group_by="account",
+                        group_key="Zenith Bank",
+                        filters_patch={"account_filter": "Zenith Bank"},
+                    ),
+                ),
+                SurfaceItemView(
+                    id="acc_2",
+                    label="First Bank",
+                    amount=-96200,
+                    count=5,
+                    payload=SelectionPayload(
+                        selection_kind="group_bucket",
+                        entity_type="group_bucket",
+                        entity_id="acc_2",
+                        label="First Bank",
+                        group_by="account",
+                        group_key="First Bank",
+                        filters_patch={"account_filter": "First Bank"},
+                    ),
+                ),
+            ],
+        ),
+    )
+
+    updates = await step._handle_continuation(
+        {"message": "show all for first bank", "today": today, "language": "en"},
+        {
+            "session_active": True,
+            "query_contract": session_contract.model_dump(),
+            "query_result": query_result.model_dump(mode="json"),
+        },
+    )
+
+    new_query = updates["query_contract"].normalized_query
+    assert new_query.intent == QueryIntent.TRANSACTION_LIST
+    assert new_query.query_operation == QueryOperation.LIST_TRANSACTIONS
+    assert new_query.filters is not None
+    assert new_query.filters.account_filter == "First Bank"
+    assert new_query.aggregation is None

@@ -136,3 +136,7 @@ async def test_query_direct_answer_pushes_focused_beneficiary_context_frame() ->
     assert len(pushed_frame.items) == 1
     assert pushed_frame.items[0].label == "Mum"
     assert pushed_frame.items[0].data["account_number"] == "8162511023"
+    assert pushed_frame.items[0].focused_referent is not None
+    assert pushed_frame.items[0].focused_referent.recipient_resolved_name == "Mercy Johnson"
+    assert pushed_frame.items[0].selection_payload is not None
+    assert pushed_frame.items[0].selection_payload.selection_kind == "transaction"

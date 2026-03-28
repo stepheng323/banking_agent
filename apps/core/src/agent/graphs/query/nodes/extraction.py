@@ -2,7 +2,7 @@
 
 from datetime import date
 from time import perf_counter
-from typing import Any
+from typing import Any, Literal, cast
 
 from langchain_core.runnables import Runnable
 
@@ -15,6 +15,8 @@ from apps.core.src.agent.graphs.query.models import (
     QueryExtractionResult,
     QueryFrame,
     QueryIntent,
+    QueryOperation,
+    QueryResult,
     QueryResultItem,
     ResolverOutcome,
     ResultSurface,
@@ -26,6 +28,10 @@ from apps.core.src.agent.graphs.query.pipeline import QueryStep
 from apps.core.src.agent.graphs.query.services.continuity import (
     apply_filter_delta,
     apply_time_delta,
+)
+from apps.core.src.agent.graphs.query.services.contracts import (
+    apply_selection_payload_to_query,
+    find_selection_payload,
 )
 from apps.core.src.agent.graphs.query.services.grounding import (
     build_grounded_query_contract,
@@ -1023,22 +1029,33 @@ class ExtractionStep(QueryStep):
         locale = LocaleManager.normalize(state.get("language")).value
         original_query = session_query_contract.normalized_query if session_query_contract else None
 
-        # Reconstruct items for context if available
-        items = []
+        # Reconstruct items and typed surface context if available.
+        items: list[QueryResultItem] = []
+        restored_query_result: QueryResult | None = None
         possible_result = session.get("query_result")
 
-        if possible_result:
+        if isinstance(possible_result, QueryResult):
+            restored_query_result = possible_result
+        elif isinstance(possible_result, dict):
+            try:
+                restored_query_result = QueryResult.model_validate(possible_result)
+            except Exception:
+                restored_query_result = None
+
+        if restored_query_result is not None and restored_query_result.items:
+            items = restored_query_result.items
+        elif possible_result:
             raw_items = []
             if isinstance(possible_result, dict):
                 raw_items = possible_result.get("items", [])
             else:
                 raw_items = getattr(possible_result, "items", [])
-
             if raw_items:
                 items = [QueryResultItem.model_validate(i) if isinstance(i, dict) else i for i in raw_items]
 
         raw_surface = session.get("surface")
         surface = ResultSurface.model_validate(raw_surface) if isinstance(raw_surface, dict) else raw_surface
+        surface_view = restored_query_result.surface_view if restored_query_result is not None else None
         logger.info(
             "query_continuation_entry",
             has_query_contract=original_query is not None,
@@ -1400,28 +1417,90 @@ class ExtractionStep(QueryStep):
 
         elif cont_type == "drill_down":
             drill_idx = decision.drill_down_index if decision.drill_down_index is not None else 0
+            answer_fact_field: Literal["date", "counterparty", "amount", "bank"] | None = None
+            if decision.fact_field in {"date", "amount", "bank", "counterparty"}:
+                answer_fact_field = cast(Literal["date", "counterparty", "amount", "bank"], decision.fact_field)
 
-            surface = session.get("surface")
+            selection_payload = find_selection_payload(surface_view, index=drill_idx)
+            if (
+                original_query
+                and selection_payload is not None
+                and (
+                    selection_payload.selection_kind == "group_bucket"
+                    or bool(selection_payload.filters_patch)
+                    or selection_payload.time_patch is not None
+                )
+            ):
+                new_query = apply_selection_payload_to_query(
+                    original_query,
+                    selection_payload,
+                    fact_field=answer_fact_field if decision.drill_down_action == "answer_fact" else None,
+                )
+                updates["query_contract"] = QueryExecutionContract.from_normalized_query(
+                    new_query,
+                    continuation_type=cont_type,
+                    continuation_delta_type=decision.delta_type,
+                )
+                updates["current_page"] = 0
+                updates["show_expanded"] = False
+                return updates
+
             if surface and surface.type == SurfaceType.BREAKDOWN:
                 if items and 0 <= drill_idx < len(items):
                     selected_item = items[drill_idx]
-                    category_name = selected_item.description
+                    selected_key = str(
+                        (selected_item.metadata or {}).get("key")
+                        or selected_item.description
+                        or ""
+                    ).strip()
+                    group_by = None
+                    if isinstance(surface.context, dict):
+                        context_group_by = surface.context.get("group_by")
+                        if isinstance(context_group_by, str):
+                            group_by = context_group_by
 
                     from apps.core.src.agent.graphs.query.models import Filters
 
-                    if original_query:
-                        cat_filter = category_name.lower()
+                    if original_query and selected_key:
+                        new_query = original_query.model_copy(deep=True)
+                        new_query.intent = QueryIntent.TRANSACTION_LIST
+                        new_query.query_operation = QueryOperation.LIST_TRANSACTIONS
+                        new_query.aggregation = None
+                        new_query.result_limit = None
+                        new_query.result_reference = None
+                        new_query.answer_fact_field = None
+
+                        if group_by == "account":
+                            new_query = apply_filter_delta(new_query, Filters(account_filter=selected_key))
+                        elif group_by == "merchant":
+                            new_query = apply_filter_delta(new_query, Filters(counterparty=[selected_key]))
+                        elif group_by == "transaction_type":
+                            transaction_type = selected_key.lower()
+                            if transaction_type in {"credit", "debit"}:
+                                new_query = apply_filter_delta(
+                                    new_query,
+                                    Filters(
+                                        transaction_type=cast(
+                                            Literal["credit", "debit"],
+                                            transaction_type,
+                                        )
+                                    ),
+                                )
+                        elif group_by == "day":
+                            new_query = apply_time_delta(
+                                new_query,
+                                TimeRange(start=selected_item.date, end=selected_item.date, granularity="day"),
+                            )
+                        else:
+                            new_query = apply_filter_delta(new_query, Filters(category=[selected_key.lower()]))
 
                         logger.info(
                             "breakdown_drill_down_debug",
-                            original_description=category_name,
-                            applied_filter=cat_filter,
+                            original_description=selected_item.description,
+                            selected_key=selected_key,
+                            group_by=group_by or "category",
                             item_index=drill_idx,
                         )
-
-                        new_filters = Filters(category=[cat_filter])
-                        new_query = apply_filter_delta(original_query, new_filters)
-                        new_query.aggregation = None
 
                         updates["query_contract"] = QueryExecutionContract.from_normalized_query(
                             new_query,
@@ -1433,6 +1512,8 @@ class ExtractionStep(QueryStep):
 
             elif items and 0 <= drill_idx < len(items):
                 updates["selected_item_index"] = drill_idx
+                if selection_payload is not None:
+                    updates["selected_payload"] = selection_payload
                 updates["drill_down_action"] = decision.drill_down_action
                 if decision.fact_field:
                     updates["fact_field"] = decision.fact_field
@@ -1442,10 +1523,26 @@ class ExtractionStep(QueryStep):
         elif cont_type == "recipient_drill_down":
             recipient_name = decision.recipient_name
             if recipient_name and original_query:
-                from apps.core.src.agent.graphs.query.models import Filters
+                recipient_answer_fact_field: Literal["date", "counterparty", "amount", "bank"] | None = None
+                if decision.fact_field in {"date", "amount", "bank"}:
+                    recipient_answer_fact_field = cast(Literal["date", "amount", "bank"], decision.fact_field)
+                selection_payload = find_selection_payload(surface_view, label=recipient_name)
+                if selection_payload is not None:
+                    new_query = apply_selection_payload_to_query(
+                        original_query,
+                        selection_payload,
+                        fact_field=recipient_answer_fact_field,
+                    )
+                else:
+                    from apps.core.src.agent.graphs.query.models import Filters
 
-                new_filters = Filters(counterparty=[recipient_name])
-                new_query = apply_filter_delta(original_query, new_filters)
+                    new_filters = Filters(counterparty=[recipient_name])
+                    new_query = apply_filter_delta(original_query, new_filters)
+                    new_query.intent = QueryIntent.TRANSACTION_LIST
+                    new_query.aggregation = None
+                    new_query.result_limit = None
+                    new_query.result_reference = None
+                    new_query.answer_fact_field = recipient_answer_fact_field
                 updates["query_contract"] = QueryExecutionContract.from_normalized_query(
                     new_query,
                     continuation_type=cont_type,

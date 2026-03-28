@@ -3,6 +3,7 @@
 from datetime import date, timedelta
 
 from apps.core.src.agent.graphs.query.models import (
+    Aggregation,
     Filters,
     NormalizedQuery,
     QueryAnswerContext,
@@ -16,6 +17,14 @@ from apps.core.src.agent.graphs.query.models import (
 )
 from apps.core.src.agent.graphs.query.services.formatter import QueryFormatter
 from apps.core.src.agent.graphs.query.utils.timezone import lagos_today
+from apps.core.src.agent.shared.query_contracts import (
+    PresentationMode,
+    PresentationPlan,
+    SelectionPayload,
+    SurfaceItemView,
+    SurfaceView,
+    SurfaceViewMode,
+)
 
 
 def test_formatter_returns_summary_for_summary_surface() -> None:
@@ -34,6 +43,73 @@ def test_formatter_returns_summary_for_summary_surface() -> None:
     )
 
     assert QueryFormatter.format(result, locale="yo") == "Akopọ inawo rẹ"
+
+
+def test_formatter_renders_beneficiary_summary_from_presentation_plan() -> None:
+    result = QueryResult(
+        summary_text="*Recipients I sent over ₦20,000 to* — Mar 14 – Mar 27",
+        items=[
+            QueryResultItem(
+                id="bene_1",
+                description="Cowrywise",
+                amount=150000,
+                date=date(2026, 3, 27),
+                metadata={"count": 2, "recipient_name": "Cowrywise"},
+            ),
+            QueryResultItem(
+                id="bene_2",
+                description="Tolu",
+                amount=50000,
+                date=date(2026, 3, 24),
+                metadata={"count": 1, "recipient_name": "Tolu"},
+            ),
+        ],
+        surface=ResultSurface(
+            type=SurfaceType.SUMMARY,
+            items=[],
+            context={"view": "beneficiary_summary"},
+        ),
+        surface_view=SurfaceView(
+            mode=SurfaceViewMode.GROUPED_SUMMARY,
+            items=[
+                SurfaceItemView(
+                    id="bene_1",
+                    label="Cowrywise",
+                    amount=150000,
+                    count=2,
+                    payload=SelectionPayload(
+                        selection_kind="beneficiary",
+                        entity_type="beneficiary",
+                        entity_id="bene_1",
+                        label="Cowrywise",
+                    ),
+                ),
+                SurfaceItemView(
+                    id="bene_2",
+                    label="Tolu",
+                    amount=50000,
+                    count=1,
+                    payload=SelectionPayload(
+                        selection_kind="beneficiary",
+                        entity_type="beneficiary",
+                        entity_id="bene_2",
+                        label="Tolu",
+                    ),
+                ),
+            ],
+            context={"surface_type": "summary", "view": "beneficiary_summary"},
+        ),
+        presentation_plan=PresentationPlan(
+            mode=PresentationMode.SUMMARY_LIST,
+            heading="*Recipients I sent over ₦20,000 to* — Mar 14 – Mar 27",
+        ),
+    )
+
+    response = QueryFormatter.format(result, locale="en")
+
+    assert "Cowrywise • ₦150,000 (2x)" in response
+    assert "Tolu • ₦50,000 (1x)" in response
+    assert "Reply with a name to see those transactions" in response
 
 
 def test_formatter_returns_summary_when_no_items() -> None:
@@ -242,6 +318,21 @@ def test_formatter_heading_uses_category_spending_for_debit() -> None:
     assert response.splitlines()[0] == "*Food Spending*"
 
 
+def test_formatter_heading_includes_amount_scope_for_transaction_lists() -> None:
+    today = lagos_today()
+    result = _sample_list_result(
+        NormalizedQuery(
+            intent=QueryIntent.TRANSACTION_LIST,
+            filters=Filters(transaction_type="debit", min_amount=20000),
+            time_range=TimeRange(start=today.replace(day=1), end=today),
+        )
+    )
+
+    response = QueryFormatter.format(result, locale="en")
+
+    assert response.splitlines()[0] == "*Debit Transactions* — Over ₦20,000 — This Month"
+
+
 def test_formatter_direct_answer_uses_answer_strategy_without_transaction_card() -> None:
     result = QueryResult(
         summary_text="accounts:1|showing:1-1|total:1",
@@ -421,3 +512,34 @@ def test_formatter_account_breakdown_preserves_account_labels_and_generic_total(
     assert "First Bank" in response
     assert "*Total: ₦200,000*" in response
     assert "Total spent this month" not in response
+
+
+def test_formatter_breakdown_heading_includes_amount_scope_and_period() -> None:
+    today = lagos_today()
+    result = QueryResult(
+        summary_text="Breakdown by account",
+        items=[
+            QueryResultItem(
+                id="1",
+                description="Zenith Bank",
+                amount=-120000,
+                date=today,
+                metadata={"count": 2},
+            )
+        ],
+        query_snapshot=NormalizedQuery(
+            intent=QueryIntent.ANALYTICS_SUMMARY,
+            filters=Filters(transaction_type="debit", min_amount=20000),
+            aggregation=Aggregation(type="breakdown", group_by="account"),
+            time_range=TimeRange(start=today.replace(day=1), end=today),
+        ),
+        surface=ResultSurface(
+            type=SurfaceType.BREAKDOWN,
+            items=[{"id": "1", "key": "Zenith Bank", "amount": -120000, "count": 2}],
+            context={"group_by": "account"},
+        ),
+    )
+
+    response = QueryFormatter.format(result, locale="en")
+
+    assert response.splitlines()[0] == "Spending by account — Over ₦20,000 — This Month"

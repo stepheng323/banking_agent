@@ -1,12 +1,16 @@
 """Pydantic models for query service."""
 
+from __future__ import annotations
+
 import re
 from datetime import date
 from enum import Enum
-from typing import Any, Literal
+from typing import Any, Literal, cast
 from uuid import uuid4
 
 from pydantic import BaseModel, Field
+
+from apps.core.src.agent.shared.query_contracts import FocusedReferent, PresentationPlan, SurfaceView
 
 
 class QueryIntent(str, Enum):
@@ -68,6 +72,66 @@ class Aggregation(BaseModel):
     )
 
 
+class ComparisonDirective(BaseModel):
+    """Structured comparison behavior for time-comparison execution."""
+
+    mode: Literal["previous_equivalent", "year_ago", "explicit_range"] = Field(default="previous_equivalent")
+    explicit_range: TimeRange | None = None
+
+
+class QueryObjective(str, Enum):
+    """Semantic objective of a query before execution."""
+
+    FACT = "fact"
+    TRANSACTION_LIST = "transaction_list"
+    GROUPED_SUMMARY = "grouped_summary"
+    COMPARISON = "comparison"
+    AFFORDABILITY = "affordability"
+    ACTION_HANDOFF = "action_handoff"
+
+
+class QuerySubject(str, Enum):
+    """Primary subject a query is asking about."""
+
+    TRANSACTIONS = "transactions"
+    BENEFICIARIES = "beneficiaries"
+    ACCOUNTS = "accounts"
+
+
+class UserRequestShape(str, Enum):
+    """Requested answer shape before presentation planning."""
+
+    DIRECT_ANSWER = "direct_answer"
+    SUMMARY = "summary"
+    LIST = "list"
+    CLARIFY = "clarify"
+
+
+class QueryIntentSpec(BaseModel):
+    """Structured semantic query meaning before execution planning."""
+
+    objective: QueryObjective
+    subject: QuerySubject
+    filters: Filters | None = None
+    grouping: Literal["category", "merchant", "day", "account", "transaction_type", "none"] = "none"
+    fact_field: Literal["date", "counterparty", "amount", "bank", "none"] = "none"
+    ranking: Literal["none", "largest", "smallest", "count", "amount"] = "none"
+    user_request_shape: UserRequestShape = UserRequestShape.SUMMARY
+
+
+class QueryExecutionPlan(BaseModel):
+    """Canonical execution plan compiled from a query intent spec."""
+
+    intent_spec: QueryIntentSpec
+    time_range: TimeRange | None = None
+    filters: Filters | None = None
+    aggregation: Aggregation | None = None
+    result_limit: int | None = None
+    result_reference: Literal["latest", "oldest"] | None = None
+    comparison: ComparisonDirective | None = None
+    drill_down_template: dict[str, Any] = Field(default_factory=dict)
+
+
 class NormalizedQuery(BaseModel):
     """
     Legacy-compatible normalized query snapshot used by formatters/session continuity.
@@ -97,13 +161,7 @@ class NormalizedQuery(BaseModel):
         default=None,
         description="Fact to answer directly when a single matching transaction is found",
     )
-
-
-class ComparisonDirective(BaseModel):
-    """Structured comparison behavior for time-comparison execution."""
-
-    mode: Literal["previous_equivalent", "year_ago", "explicit_range"] = Field(default="previous_equivalent")
-    explicit_range: TimeRange | None = None
+    intent_spec: QueryIntentSpec | None = None
 
 
 class QueryIR(BaseModel):
@@ -128,6 +186,7 @@ class QueryIR(BaseModel):
     comparison: ComparisonDirective | None = None
     continuation_type: str | None = None
     continuation_delta_type: str | None = None
+    intent_spec: QueryIntentSpec | None = None
 
     def to_normalized_query(self) -> NormalizedQuery:
         """Build legacy-compatible NormalizedQuery view from IR."""
@@ -145,6 +204,7 @@ class QueryIR(BaseModel):
             result_limit=self.result_limit,
             result_reference=self.result_reference,
             answer_fact_field=self.answer_fact_field,
+            intent_spec=self.intent_spec,
         )
 
 
@@ -170,9 +230,11 @@ class QueryExecutionContract(BaseModel):
     continuation_type: str | None = None
     continuation_delta_type: str | None = None
     normalized_query: NormalizedQuery
+    intent_spec: QueryIntentSpec | None = None
+    execution_plan: QueryExecutionPlan | None = None
 
     @classmethod
-    def from_query_ir(cls, ir: QueryIR) -> "QueryExecutionContract":
+    def from_query_ir(cls, ir: QueryIR) -> QueryExecutionContract:
         """Compile runtime contract from QueryIR."""
         normalized = ir.to_normalized_query()
         return cls(
@@ -195,6 +257,13 @@ class QueryExecutionContract(BaseModel):
             continuation_type=ir.continuation_type,
             continuation_delta_type=ir.continuation_delta_type,
             normalized_query=normalized,
+            intent_spec=ir.intent_spec or derive_query_intent_spec(normalized),
+            execution_plan=build_query_execution_plan(
+                normalized,
+                comparison=ir.comparison,
+                continuation_type=ir.continuation_type,
+                continuation_delta_type=ir.continuation_delta_type,
+            ),
         )
 
     @classmethod
@@ -206,7 +275,7 @@ class QueryExecutionContract(BaseModel):
         comparison: ComparisonDirective | None = None,
         continuation_type: str | None = None,
         continuation_delta_type: str | None = None,
-    ) -> "QueryExecutionContract":
+    ) -> QueryExecutionContract:
         """Build runtime contract from legacy NormalizedQuery."""
         time_range = query.time_range
         if time_range is None:
@@ -234,6 +303,13 @@ class QueryExecutionContract(BaseModel):
         contract = cls.from_query_ir(ir)
         # Preserve the exact input query snapshot for formatter/session compatibility.
         contract.normalized_query = query
+        contract.intent_spec = query.intent_spec or derive_query_intent_spec(query)
+        contract.execution_plan = build_query_execution_plan(
+            query,
+            comparison=comparison,
+            continuation_type=continuation_type,
+            continuation_delta_type=continuation_delta_type,
+        )
         return contract
 
 
@@ -283,18 +359,8 @@ class QueryAnswerContext(BaseModel):
     hint_text: str | None = None
 
 
-class QueryFollowupReferent(BaseModel):
-    """Focused referent extracted from a query answer for later turns."""
-
-    entity_type: Literal["beneficiary"] = "beneficiary"
-    entity_id: str | None = None
-    label: str
-    recipient_name: str | None = None
-    recipient_account: str | None = None
-    recipient_bank_name: str | None = None
-    recipient_bank_code: str | None = None
-    recipient_resolved_name: str | None = None
-    source: Literal["query"] = "query"
+class QueryFollowupReferent(FocusedReferent):
+    """Backward-compatible alias for query-origin referents."""
 
 
 class ResultSurface(BaseModel):
@@ -346,9 +412,13 @@ class QueryResult(BaseModel):
     query_contract: QueryExecutionContract | None = None
     interpretation: dict[str, Any] | None = None
     surface: ResultSurface | None = None  # UI/Interaction surface state
+    surface_view: SurfaceView | None = None
     answer_strategy: QueryAnswerStrategy | None = None
     answer_context: QueryAnswerContext | None = None
     followup_referent: QueryFollowupReferent | None = None
+    presentation_plan: PresentationPlan | None = None
+    intent_spec: QueryIntentSpec | None = None
+    execution_plan: QueryExecutionPlan | None = None
     cached_transactions: list[dict[str, Any]] | None = None
     cache_fetched_at: float | None = None
     cache_fingerprint: str | None = None
@@ -356,6 +426,82 @@ class QueryResult(BaseModel):
     cache_window_start: str | None = None
     cache_window_end: str | None = None
     cache_reused: bool = False
+
+
+def derive_query_intent_spec(query: NormalizedQuery) -> QueryIntentSpec:
+    """Derive a semantic intent spec from the legacy normalized query."""
+    grouping: Literal["category", "merchant", "day", "account", "transaction_type", "none"] = "none"
+    ranking: Literal["none", "largest", "smallest", "count", "amount"] = "none"
+    objective = QueryObjective.TRANSACTION_LIST
+    subject = QuerySubject.TRANSACTIONS
+    user_request_shape = UserRequestShape.LIST
+    fact_field: Literal["date", "counterparty", "amount", "bank", "none"] = "none"
+
+    aggregation = query.aggregation
+    if aggregation and aggregation.group_by:
+        grouping = cast(Literal["category", "merchant", "day", "account", "transaction_type"], aggregation.group_by)
+    if aggregation and aggregation.type in {"largest", "smallest"}:
+        ranking = cast(Literal["largest", "smallest"], aggregation.type)
+    elif aggregation and aggregation.type == "count":
+        ranking = "count"
+    elif aggregation and aggregation.sort_by in {"count", "amount"}:
+        ranking = aggregation.sort_by
+
+    if query.answer_fact_field in {"date", "counterparty", "amount", "bank"}:
+        objective = QueryObjective.FACT
+        fact_field = query.answer_fact_field
+        user_request_shape = UserRequestShape.DIRECT_ANSWER
+    elif query.intent == QueryIntent.BENEFICIARY_SUMMARY:
+        objective = QueryObjective.GROUPED_SUMMARY
+        subject = QuerySubject.BENEFICIARIES
+        user_request_shape = UserRequestShape.SUMMARY
+    elif query.intent == QueryIntent.TIME_COMPARISON:
+        objective = QueryObjective.COMPARISON
+        user_request_shape = UserRequestShape.SUMMARY
+    elif query.intent == QueryIntent.AFFORDABILITY:
+        objective = QueryObjective.AFFORDABILITY
+        user_request_shape = UserRequestShape.DIRECT_ANSWER
+    elif aggregation is not None:
+        objective = QueryObjective.GROUPED_SUMMARY
+        user_request_shape = UserRequestShape.SUMMARY
+
+    if grouping == "account":
+        subject = QuerySubject.ACCOUNTS
+
+    return QueryIntentSpec(
+        objective=objective,
+        subject=subject,
+        filters=query.filters.model_copy(deep=True) if query.filters is not None else None,
+        grouping=grouping,
+        fact_field=fact_field,
+        ranking=ranking,
+        user_request_shape=user_request_shape,
+    )
+
+
+def build_query_execution_plan(
+    query: NormalizedQuery,
+    *,
+    comparison: ComparisonDirective | None = None,
+    continuation_type: str | None = None,
+    continuation_delta_type: str | None = None,
+) -> QueryExecutionPlan:
+    """Build canonical execution plan from the normalized query."""
+    drill_down_template: dict[str, Any] = {}
+    if continuation_type:
+        drill_down_template["continuation_type"] = continuation_type
+    if continuation_delta_type:
+        drill_down_template["continuation_delta_type"] = continuation_delta_type
+    return QueryExecutionPlan(
+        intent_spec=query.intent_spec or derive_query_intent_spec(query),
+        time_range=query.time_range.model_copy(deep=True) if query.time_range is not None else None,
+        filters=query.filters.model_copy(deep=True) if query.filters is not None else None,
+        aggregation=query.aggregation.model_copy(deep=True) if query.aggregation is not None else None,
+        result_limit=query.result_limit,
+        result_reference=query.result_reference,
+        comparison=comparison.model_copy(deep=True) if comparison is not None else None,
+        drill_down_template=drill_down_template,
+    )
 
 
 CATEGORY_KEYWORDS: dict[str, list[str]] = {

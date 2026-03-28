@@ -33,6 +33,7 @@ from apps.core.src.agent.graphs.query.models import (
     ResolverOutcome,
     TimeRange,
     TimeReference,
+    derive_query_intent_spec,
 )
 from apps.core.src.agent.graphs.query.models.extraction import AmbiguityCode
 from apps.core.src.agent.graphs.query.prompts import QUERY_PARSER_PROMPT
@@ -370,27 +371,55 @@ class QueryParser:
         return extraction
 
     @staticmethod
-    def _extract_beneficiary_query_amount(raw_query: str) -> float | None:
-        normalized = " ".join(raw_query.lower().strip().split())
-        match = re.search(
-            r"\b(?:sent|pay|paid|transfer(?:red)?)\s+(?:money\s+)?(?:of\s+)?(?:about\s+)?(?:for\s+)?"
-            r"(?:₦|ngn)?\s*(\d[\d,]*(?:\.\d+)?)\s*([kKhH]?)\s+to\b",
-            normalized,
-        )
-        if not match:
-            return None
-
+    def _parse_amount_token(amount_text: str, suffix: str) -> float | None:
         try:
-            amount = float(match.group(1).replace(",", ""))
+            amount = float(amount_text.replace(",", ""))
         except ValueError:
             return None
 
-        suffix = match.group(2).lower()
+        suffix = suffix.lower()
         if suffix == "k":
             amount *= 1000
         elif suffix == "h":
             amount *= 100
         return amount if amount > 0 else None
+
+    @classmethod
+    def _extract_beneficiary_query_amount_bounds(cls, raw_query: str) -> tuple[float | None, float | None] | None:
+        normalized = " ".join(raw_query.lower().strip().split())
+        exact_match = re.search(
+            r"\b(?:sent|pay|paid|transfer(?:red)?)\s+(?:money\s+)?(?:of\s+)?(?:about\s+)?(?:for\s+)?"
+            r"(?:₦|ngn)?\s*(\d[\d,]*(?:\.\d+)?)\s*([kKhH]?)\s+to\b",
+            normalized,
+        )
+        if exact_match:
+            amount = cls._parse_amount_token(exact_match.group(1), exact_match.group(2))
+            if amount is not None:
+                return amount, amount
+
+        lower_bound_match = re.search(
+            r"\b(?:sent|pay|paid|transfer(?:red)?)\s+(?:money\s+)?"
+            r"(?:(?:greater|more)\s+than|above|over|at\s+least|minimum(?:\s+of)?)\s+"
+            r"(?:₦|ngn)?\s*(\d[\d,]*(?:\.\d+)?)\s*([kKhH]?)\s+to\b",
+            normalized,
+        )
+        if lower_bound_match:
+            amount = cls._parse_amount_token(lower_bound_match.group(1), lower_bound_match.group(2))
+            if amount is not None:
+                return amount, None
+
+        upper_bound_match = re.search(
+            r"\b(?:sent|pay|paid|transfer(?:red)?)\s+(?:money\s+)?"
+            r"(?:(?:less|lower)\s+than|below|under|at\s+most|maximum(?:\s+of)?|up\s+to)\s+"
+            r"(?:₦|ngn)?\s*(\d[\d,]*(?:\.\d+)?)\s*([kKhH]?)\s+to\b",
+            normalized,
+        )
+        if upper_bound_match:
+            amount = cls._parse_amount_token(upper_bound_match.group(1), upper_bound_match.group(2))
+            if amount is not None:
+                return None, amount
+
+        return None
 
     @staticmethod
     def _extract_relative_time_range_from_query(raw_query: str) -> QueryTimeRange | None:
@@ -440,15 +469,16 @@ class QueryParser:
         if not people_query:
             return extraction
 
-        amount = self._extract_beneficiary_query_amount(raw_query)
-        if amount is None and extraction.filters.min_amount is None and extraction.filters.max_amount is None:
+        amount_bounds = self._extract_beneficiary_query_amount_bounds(raw_query)
+        if amount_bounds is None and extraction.filters.min_amount is None and extraction.filters.max_amount is None:
             return extraction
 
         extraction.intent = ExtractionIntent.BENEFICIARY_SUMMARY
         extraction.filters.transaction_type = "debit"
-        if amount is not None:
-            extraction.filters.min_amount = amount
-            extraction.filters.max_amount = amount
+        if amount_bounds is not None:
+            min_amount, max_amount = amount_bounds
+            extraction.filters.min_amount = min_amount
+            extraction.filters.max_amount = max_amount
         if extraction.aggregation is None:
             extraction.aggregation = QueryAggregation(type="sum", sort_by="count", limit=5)
         else:
@@ -1115,13 +1145,12 @@ class QueryParser:
     def _infer_breakdown_group_by(
         self, extraction: "QueryExtractionResult"
     ) -> Literal["category", "merchant", "day", "account", "transaction_type"] | None:
-        extracted_group_by = self._coerce_group_by(extraction.aggregation.group_by) if extraction.aggregation is not None else None
-        if extracted_group_by is not None:
-            return extracted_group_by
-
         raw_lower = f" {(extraction.raw_query or '').strip().lower()} "
         if any(hint in raw_lower for hint in (" by account ", " per account ", " by bank ", " per bank ", " across accounts ")):
             return "account"
+        extracted_group_by = self._coerce_group_by(extraction.aggregation.group_by) if extraction.aggregation is not None else None
+        if extracted_group_by is not None:
+            return extracted_group_by
         return None
 
     @staticmethod
@@ -1149,6 +1178,9 @@ class QueryParser:
             limit=extraction.aggregation.limit or 5,
             sort_by=self._coerce_sort_by(extraction.aggregation.sort_by),
         )
+        lexical_group_by = self._infer_breakdown_group_by(extraction)
+        if aggregation.type == "breakdown" and lexical_group_by is not None:
+            aggregation.group_by = lexical_group_by
         if agg_type == "breakdown" and not aggregation.group_by:
             aggregation.group_by = "category"
         if effective_intent == ExtractionIntent.BENEFICIARY_SUMMARY and aggregation.sort_by is None:
@@ -1296,7 +1328,7 @@ class QueryParser:
         if aggregation is not None and aggregation.type in {"largest", "smallest"}:
             result_reference = None
 
-        return NormalizedQuery(
+        normalized = NormalizedQuery(
             intent=self._intent_from_query_operation(query_operation),
             query_operation=query_operation,
             time_range=time_range or TimeRange(start=today - timedelta(days=30), end=today, granularity="day"),
@@ -1307,3 +1339,5 @@ class QueryParser:
             result_reference=result_reference,
             answer_fact_field=answer_fact_field,
         )
+        normalized.intent_spec = derive_query_intent_spec(normalized)
+        return normalized

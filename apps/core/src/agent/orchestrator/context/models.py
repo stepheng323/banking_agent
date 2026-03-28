@@ -3,6 +3,8 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from apps.core.src.agent.shared.query_contracts import FocusedReferent, SelectionPayload
+
 
 class EntityType(str, Enum):
     """Types of entities tracked in context."""
@@ -32,6 +34,8 @@ class ContextEntity(BaseModel):
     entity_type: EntityType
     entity_id: str | None = None
     label: str
+    selection_payload: SelectionPayload | None = None
+    focused_referent: FocusedReferent | None = None
     data: dict[str, Any] = Field(default_factory=dict)
 
 

@@ -16,6 +16,7 @@ from apps.core.src.agent.orchestrator.models.domain import (
 )
 from apps.core.src.agent.orchestrator.models.state import OrchestratorState
 from apps.core.src.agent.orchestrator.services.context_manager import OrchestratorContextManager
+from apps.core.src.agent.shared.query_contracts import FocusedReferent, SelectionPayload
 from shared.i18n import LocaleManager, render_message
 from shared.utils.logging import get_logger
 from shared.utils.serialization import sqlalchemy_to_dict
@@ -100,18 +101,28 @@ def _clear_resume_prompt_frames(frames: list[ContextFrame]) -> list[ContextFrame
 
 def _push_query_followup_referent_frame(
     ctx: ExecutionContext,
-    referent: dict[str, Any],
+    referent: FocusedReferent | dict[str, Any],
 ) -> None:
-    label = str(referent.get("label") or referent.get("recipient_name") or "").strip()
+    referent_data = referent.model_dump() if hasattr(referent, "model_dump") else referent
+    label = str(referent_data.get("label") or referent_data.get("recipient_name") or "").strip()
     if not label:
         return
 
-    entity_id = str(referent.get("entity_id") or "").strip() or None
-    recipient_name = str(referent.get("recipient_name") or label).strip()
-    account_number = str(referent.get("recipient_account") or "").strip() or None
-    bank_name = str(referent.get("recipient_bank_name") or "").strip() or None
-    bank_code = str(referent.get("recipient_bank_code") or "").strip() or None
-    resolved_name = str(referent.get("recipient_resolved_name") or recipient_name).strip()
+    entity_id = str(referent_data.get("entity_id") or "").strip() or None
+    recipient_name = str(referent_data.get("recipient_name") or label).strip()
+    account_number = str(referent_data.get("recipient_account") or "").strip() or None
+    bank_name = str(referent_data.get("recipient_bank_name") or "").strip() or None
+    bank_code = str(referent_data.get("recipient_bank_code") or "").strip() or None
+    resolved_name = str(referent_data.get("recipient_resolved_name") or recipient_name).strip()
+    selection_payload = referent.selection_payload if isinstance(referent, FocusedReferent) else None
+    if selection_payload is None:
+        selection_payload = SelectionPayload(
+            selection_kind="transaction",
+            entity_type="transaction",
+            entity_id=entity_id,
+            label=label,
+            fact_capabilities=["date", "amount", "bank", "counterparty"],
+        )
 
     entity = ContextEntity(
         entity_type=EntityType.BENEFICIARY,
@@ -128,6 +139,8 @@ def _push_query_followup_referent_frame(
             "bank": bank_name,
             "account": account_number,
         },
+        selection_payload=selection_payload,
+        focused_referent=referent if isinstance(referent, FocusedReferent) else None,
     )
     frame = ContextFrame(
         frame_id=f"query_beneficiary_{int(time.time())}",
@@ -316,6 +329,13 @@ async def handle_transfer_task(task: Any, task_id: str, ctx: ExecutionContext) -
 
     ctx_manager = OrchestratorContextManager()
     previous_beneficiary_entity = ctx_manager.latest_beneficiary_entity(ctx.state)
+    previous_beneficiary = None
+    if previous_beneficiary_entity is not None:
+        previous_beneficiary = dict(previous_beneficiary_entity.data)
+        if previous_beneficiary_entity.focused_referent is not None:
+            previous_beneficiary["focused_referent"] = previous_beneficiary_entity.focused_referent.model_dump()
+        if previous_beneficiary_entity.selection_payload is not None:
+            previous_beneficiary["selection_payload"] = previous_beneficiary_entity.selection_payload.model_dump()
     context_data = {
         "phone_number": ctx.state.phone_number,
         "channel": ctx.state.channel,
@@ -325,7 +345,7 @@ async def handle_transfer_task(task: Any, task_id: str, ctx: ExecutionContext) -
         "all_accounts": ctx.state.loaded_context.get("accounts", []),
         "beneficiaries": beneficiaries,
         "recent_beneficiary_context": ctx_manager.has_recent_beneficiary_context(ctx.state),
-        "previous_beneficiary": previous_beneficiary_entity.data if previous_beneficiary_entity is not None else None,
+        "previous_beneficiary": previous_beneficiary,
         "language": _state_locale(ctx.state),
         "required_fields": required_fields,
         "previous_response": previous_response,
@@ -657,16 +677,14 @@ async def handle_query_task(task: Any, task_id: str, ctx: ExecutionContext) -> N
     if ctx.state.stashed_query_session is not None:
         ctx.agg.updates["stashed_query_session"] = None
     handoff_payload = None
-    followup_referent = None
+    followup_referent: FocusedReferent | dict[str, Any] | None = None
     if result.patch and isinstance(result.patch, dict):
         candidate = result.patch.get("query_transfer_handoff")
         if isinstance(candidate, dict):
             handoff_payload = candidate
         query_result = result.patch.get("query_result")
         referent_candidate = getattr(query_result, "followup_referent", None)
-        if hasattr(referent_candidate, "model_dump"):
-            followup_referent = referent_candidate.model_dump()
-        elif isinstance(referent_candidate, dict):
+        if isinstance(referent_candidate, FocusedReferent | dict):
             followup_referent = referent_candidate
 
     if result.outcome == TransactionOutcome.OK:

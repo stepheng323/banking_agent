@@ -6,13 +6,13 @@ from apps.core.src.agent.graphs.query.models import (
     NormalizedQuery,
     QueryAnswerContext,
     QueryAnswerStrategy,
-    QueryFollowupReferent,
     QueryIntent,
     QueryResult,
     QueryResultItem,
     SurfaceType,
 )
 from apps.core.src.agent.graphs.query.services.continuity import build_soft_clarification
+from apps.core.src.agent.graphs.query.services.contracts import build_focus_referent
 from apps.core.src.agent.graphs.query.utils.timezone import lagos_today
 
 
@@ -105,51 +105,6 @@ def build_direct_fact_answer(
     return QueryAnswerContext(primary_text=primary, secondary_text=secondary)
 
 
-def build_followup_referent(
-    item: QueryResultItem,
-    *,
-    query: NormalizedQuery | None,
-) -> QueryFollowupReferent | None:
-    """Build a focused beneficiary-style referent from a transfer-like result item."""
-    metadata = item.metadata if isinstance(item.metadata, dict) else {}
-    tx_type = str(metadata.get("type") or "").strip().lower()
-    if tx_type != "debit":
-        return None
-
-    transaction_type = str(metadata.get("transaction_type") or "").strip().lower()
-    recipient_name = str(metadata.get("recipient_name") or metadata.get("counterparty") or "").strip() or None
-    recipient_account = (
-        str(metadata.get("recipient_account_number") or metadata.get("recipient_account") or "").strip() or None
-    )
-    recipient_bank_name = str(metadata.get("recipient_bank_name") or metadata.get("bank_name") or "").strip() or None
-    recipient_bank_code = str(metadata.get("recipient_bank_code") or "").strip() or None
-
-    is_transfer_like = bool(
-        recipient_name
-        and (
-            transaction_type == "transfer"
-            or recipient_account
-            or recipient_bank_name
-            or "transfer" in item.description.lower()
-        )
-    )
-    if not is_transfer_like:
-        return None
-
-    label = recipient_name or _counterparty_label(item, query=query)
-    if not label:
-        return None
-
-    return QueryFollowupReferent(
-        label=label,
-        recipient_name=recipient_name or label,
-        recipient_account=recipient_account,
-        recipient_bank_name=recipient_bank_name,
-        recipient_bank_code=recipient_bank_code,
-        recipient_resolved_name=recipient_name or label,
-    )
-
-
 def _apply_fact_answer_strategy(result: QueryResult, *, query: NormalizedQuery, locale: str) -> QueryResult:
     fact_field = query.answer_fact_field or "date"
 
@@ -167,7 +122,7 @@ def _apply_fact_answer_strategy(result: QueryResult, *, query: NormalizedQuery, 
     item = result.items[0]
     result.answer_strategy = QueryAnswerStrategy.DIRECT_ANSWER
     result.answer_context = build_direct_fact_answer(item, query=query, fact_field=fact_field, locale=locale)
-    result.followup_referent = build_followup_referent(item, query=query)
+    result.followup_referent = build_focus_referent(item, query=query)
     return result
 
 

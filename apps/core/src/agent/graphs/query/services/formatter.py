@@ -16,7 +16,12 @@ from apps.core.src.agent.graphs.query.services.answer_strategy import (
     build_direct_fact_answer,
     build_fact_no_results_text,
 )
+from apps.core.src.agent.graphs.query.services.presentation_scope import (
+    build_breakdown_heading,
+    build_transaction_heading,
+)
 from apps.core.src.agent.graphs.query.utils.timezone import lagos_today
+from apps.core.src.agent.shared.query_contracts import PresentationMode
 from shared.i18n import render_message
 from shared.i18n.message_keys import MessageKey
 from shared.utils.logging import get_logger
@@ -134,6 +139,106 @@ class QueryFormatter:
         return response
 
     @staticmethod
+    def _format_presentation_plan(result: QueryResult, *, locale: str) -> str | None:
+        plan = result.presentation_plan
+        if plan is None:
+            return None
+
+        if plan.mode == PresentationMode.SUMMARY_LIST:
+            summary_render = QueryFormatter._format_summary_list_plan(result, locale=locale)
+            if summary_render is not None:
+                return summary_render
+
+        lines: list[str] = []
+        if plan.heading:
+            lines.append(plan.heading)
+        if plan.lead_text:
+            if lines:
+                lines.append("")
+            lines.append(plan.lead_text)
+        if plan.evidence_lines:
+            if lines:
+                lines.append("")
+            lines.extend(plan.evidence_lines)
+        if plan.items:
+            if lines:
+                lines.append("")
+            lines.extend(plan.items)
+        if plan.hint_text:
+            if lines:
+                lines.append("")
+            lines.append(plan.hint_text)
+
+        if not lines:
+            return None
+
+        if plan.mode in {PresentationMode.DIRECT_ANSWER, PresentationMode.CLARIFY}:
+            return "\n".join(lines)
+        if not plan.items:
+            return None
+        return "\n".join(lines)
+
+    @staticmethod
+    def _format_summary_list_plan(result: QueryResult, *, locale: str) -> str | None:
+        plan = result.presentation_plan
+        surface_view = result.surface_view
+        if plan is None or surface_view is None or not surface_view.items:
+            return None
+
+        surface_context = surface_view.context if isinstance(surface_view.context, dict) else {}
+        surface_type = str(surface_context.get("surface_type") or "").strip()
+        legacy_context = result.surface.context if result.surface and isinstance(result.surface.context, dict) else {}
+        if not surface_type and result.surface is not None:
+            surface_type = result.surface.type.value
+
+        if surface_type == SurfaceType.BREAKDOWN.value:
+            breakdown_group_by = cast(str | None, surface_context.get("group_by") or legacy_context.get("group_by"))
+            heading = build_breakdown_heading(
+                result.query_snapshot,
+                group_by=breakdown_group_by,
+                locale=locale,
+                fallback_summary=plan.heading or result.summary_text,
+            )
+            lines = [heading, ""]
+            total_abs = float(sum(abs(item.amount or 0.0) for item in surface_view.items))
+            for item in surface_view.items:
+                name = item.label if breakdown_group_by == "account" else item.label.replace("_", " ").title()
+                amount = QueryFormatter._format_amount(item.amount or 0.0)
+                count = item.count or int(item.metadata.get("count", 0))
+                percentage_str = "0%"
+                if total_abs > 0:
+                    pct = (abs(item.amount or 0.0) / total_abs) * 100
+                    percentage_str = "<1%" if 0 < pct < 1 else f"{int(pct)}%"
+                lines.append(
+                    render_message(
+                        "query.format.breakdown_item",
+                        locale,
+                        {
+                            "amount": amount,
+                            "name": name,
+                            "percentage": percentage_str,
+                            "count": count,
+                        },
+                    )
+                )
+            lines.extend(["", render_message("query.format.total_line", locale, {"total": f"₦{total_abs:,.0f}"})])
+            return "\n".join(lines)
+
+        if str(surface_context.get("view") or legacy_context.get("view") or "").strip() == "beneficiary_summary":
+            heading = plan.heading or result.summary_text
+            if not heading:
+                return None
+            lines = [heading, ""]
+            for item in surface_view.items:
+                amount = QueryFormatter._format_amount(item.amount or 0.0)
+                count = item.count or int(item.metadata.get("count", 0))
+                lines.append(f"{item.label} • {amount} ({count}x)")
+            lines.extend(["", "Reply with a name to see those transactions"])
+            return "\n".join(lines)
+
+        return None
+
+    @staticmethod
     def _format_date(d: date | str, locale: str = "en") -> str:
         """Format date to 'Dec 28' style."""
         if isinstance(d, str):
@@ -226,94 +331,11 @@ class QueryFormatter:
         )
 
     @staticmethod
-    def _month_start_and_end(d: date) -> tuple[date, date]:
-        start = d.replace(day=1)
-        next_month_anchor = (start + timedelta(days=32)).replace(day=1)
-        end = next_month_anchor - timedelta(days=1)
-        return start, end
-
-    @staticmethod
-    def _period_label(time_range: TimeRange | None, locale: str) -> str | None:
-        if not time_range:
-            return None
-
-        today = lagos_today()
-        if time_range.start == time_range.end == today:
-            return render_message("query.format.heading_period_today", locale)
-
-        this_month_start, _ = QueryFormatter._month_start_and_end(today)
-        if time_range.start == this_month_start and time_range.end == today:
-            return render_message("query.format.heading_period_this_month", locale)
-
-        prev_month_end = this_month_start - timedelta(days=1)
-        prev_month_start, _ = QueryFormatter._month_start_and_end(prev_month_end)
-        if time_range.start == prev_month_start and time_range.end == prev_month_end:
-            return prev_month_start.strftime("%B")
-
-        return render_message(
-            "query.format.heading_period_range",
-            locale,
-            {
-                "start": QueryFormatter._format_date(time_range.start, locale),
-                "end": QueryFormatter._format_date(time_range.end, locale),
-            },
-        )
-
-    @staticmethod
     def _build_contextual_heading(query_snapshot: NormalizedQuery | None, locale: str) -> tuple[str, bool]:
-        base_heading = render_message("query.format.heading_transactions_default", locale)
-        if not query_snapshot or query_snapshot.intent not in {
-            QueryIntent.TRANSACTION_LIST,
-            QueryIntent.TRANSACTION_SEARCH,
-        }:
-            return base_heading, False
-
-        filters = query_snapshot.filters
-        heading = base_heading
-        is_contextual = False
-
-        tx_type = filters.transaction_type if filters else None
-        categories = filters.category if filters and filters.category else []
-        if len(categories) == 1 and tx_type == "debit":
-            category_name = categories[0].strip().title()
-            heading = render_message("query.format.heading_spending_category", locale, {"category": category_name})
-            is_contextual = True
-        elif tx_type in ("credit", "debit"):
-            heading = render_message(
-                "query.format.heading_transactions_type",
-                locale,
-                {
-                    "transaction_type": render_message(
-                        "query.format.heading_type_credit" if tx_type == "credit" else "query.format.heading_type_debit",
-                        locale,
-                    )
-                },
-            )
-            is_contextual = True
-        elif len(categories) == 1:
-            category_name = categories[0].strip().title()
-            heading = render_message("query.format.heading_transactions_category", locale, {"category": category_name})
-            is_contextual = True
-
-        account_filter = (filters.account_filter or "").strip() if filters else ""
-        if account_filter:
-            heading = render_message(
-                "query.format.heading_suffix_account",
-                locale,
-                {"heading": heading, "account": account_filter},
-            )
-            is_contextual = True
-
-        period_label = QueryFormatter._period_label(query_snapshot.time_range, locale)
-        if period_label:
-            heading = render_message(
-                "query.format.heading_suffix_period",
-                locale,
-                {"heading": heading, "period": period_label},
-            )
-            is_contextual = True
-
-        return heading, is_contextual
+        heading = build_transaction_heading(query_snapshot, locale=locale)
+        if heading is None:
+            return render_message("query.format.heading_transactions_default", locale), False
+        return heading, heading != render_message("query.format.heading_transactions_default", locale)
 
     @staticmethod
     def _format_query_result(
@@ -324,6 +346,10 @@ class QueryFormatter:
         locale: str = "en",
     ) -> str:
         """Format QueryResult to response string."""
+        rendered_plan = QueryFormatter._format_presentation_plan(result, locale=locale)
+        if rendered_plan is not None:
+            return rendered_plan
+
         summary_parts = QueryFormatter._parse_summary_parts(result.summary_text)
         surface_type = result.surface.type if result.surface is not None else None
         answer_strategy = result.answer_strategy
@@ -388,7 +414,13 @@ class QueryFormatter:
             return "\n".join(lines)
 
         if result.summary_text and result.surface and result.surface.type == SurfaceType.BREAKDOWN:
-            lines = [render_message("query.format.breakdown_heading", locale, {"summary": result.summary_text}), ""]
+            heading = build_breakdown_heading(
+                result.query_snapshot,
+                group_by=QueryFormatter._breakdown_group_by(result),
+                locale=locale,
+                fallback_summary=result.summary_text,
+            )
+            lines = [heading, ""]
             breakdown_group_by = QueryFormatter._breakdown_group_by(result)
 
             total_abs = 0.0
