@@ -160,6 +160,40 @@
     "report_issue": {
       "template": "I understand you have an issue with this transaction:\n\n*{description}* - ₦{amount}\n\nPlease describe the issue:\n1️⃣ Transaction failed but I was debited\n2️⃣ I don't recognize this transaction\n3️⃣ Wrong amount was charged\n4️⃣ Other issue\n\n_Reply with the number or describe your issue._"
     },
+    "reply": {
+      "date": {
+        "debit_named": "O san owo si {counterparty} ni {date}.",
+        "credit_named": "O gba owo lati ọdọ {counterparty} ni {date}.",
+        "generic": "O ṣẹlẹ ni {date}."
+      },
+      "counterparty": {
+        "debit_named": "O san {amount} si {counterparty} ni {date}.",
+        "credit_named": "O gba {amount} lati ọdọ {counterparty} ni {date}.",
+        "generic": "Ó jẹ́ pẹlu {counterparty}.",
+        "unavailable": "Mo ri transaction naa, ṣugbọn mi ò le jẹrisi ẹni to kan."
+      },
+      "amount": {
+        "debit_named": "O san {amount} si {counterparty}.",
+        "credit_named": "O gba {amount} lati ọdọ {counterparty}.",
+        "generic": "Ó jẹ́ {amount}."
+      },
+      "bank": {
+        "debit_named": "O lo {bank_name} lati fi san owo si {counterparty}.",
+        "credit_named": "O gba a lati ọdọ {counterparty} nipasẹ {bank_name}.",
+        "generic": "Ó kọja nipasẹ {bank_name}.",
+        "unavailable": "Mo ri transaction naa, ṣugbọn orukọ banki ko si."
+      },
+      "no_result": {
+        "debit_named": "Mi ò ri isanwo si {counterparty} {time_suffix}.",
+        "credit_named": "Mi ò ri credit lati ọdọ {counterparty} {time_suffix}.",
+        "debit_generic": "Mi ò ri debit to baamu {time_suffix}.",
+        "credit_generic": "Mi ò ri credit to baamu {time_suffix}.",
+        "time": {
+          "today": "loni",
+          "period": "ni akoko yẹn"
+        }
+      }
+    },
     "session": {
       "completed": "Query completed.",
       "dismissive_goodbye": "Okay. I'll step back now.",

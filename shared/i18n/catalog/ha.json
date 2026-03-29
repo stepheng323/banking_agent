@@ -160,6 +160,40 @@
     "report_issue": {
       "template": "I understand you have an issue with this transaction:\n\n*{description}* - ₦{amount}\n\nPlease describe the issue:\n1️⃣ Transaction failed but I was debited\n2️⃣ I don't recognize this transaction\n3️⃣ Wrong amount was charged\n4️⃣ Other issue\n\n_Reply with the number or describe your issue._"
     },
+    "reply": {
+      "date": {
+        "debit_named": "Ka biya {counterparty} a ranar {date}.",
+        "credit_named": "Ka karɓi kuɗi daga {counterparty} a ranar {date}.",
+        "generic": "Ya faru ne a ranar {date}."
+      },
+      "counterparty": {
+        "debit_named": "Ka biya {amount} zuwa {counterparty} a ranar {date}.",
+        "credit_named": "Ka karɓi {amount} daga {counterparty} a ranar {date}.",
+        "generic": "Ya kasance tare da {counterparty}.",
+        "unavailable": "Na gano transaction ɗin, amma ban iya tabbatar da wanda aka yi da shi ba."
+      },
+      "amount": {
+        "debit_named": "Ka biya {amount} zuwa {counterparty}.",
+        "credit_named": "Ka karɓi {amount} daga {counterparty}.",
+        "generic": "Ya kasance {amount}."
+      },
+      "bank": {
+        "debit_named": "Ka tura shi zuwa {counterparty} ta {bank_name}.",
+        "credit_named": "Ka karɓe shi daga {counterparty} ta {bank_name}.",
+        "generic": "Ya bi ta {bank_name}.",
+        "unavailable": "Na gano transaction ɗin, amma sunan banki bai samu ba."
+      },
+      "no_result": {
+        "debit_named": "Ban sami biyan kuɗi zuwa {counterparty} {time_suffix} ba.",
+        "credit_named": "Ban sami credit daga {counterparty} {time_suffix} ba.",
+        "debit_generic": "Ban sami debit da ya dace {time_suffix} ba.",
+        "credit_generic": "Ban sami credit da ya dace {time_suffix} ba.",
+        "time": {
+          "today": "yau",
+          "period": "a wannan lokacin"
+        }
+      }
+    },
     "session": {
       "completed": "Query completed.",
       "dismissive_goodbye": "Okay. I'll step back now.",

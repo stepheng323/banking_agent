@@ -1233,6 +1233,60 @@ async def test_aggregate_followup_without_extraction_preserves_active_query_scop
 
 
 @pytest.mark.asyncio
+async def test_explicit_aggregate_scope_drops_inherited_beneficiary_filter() -> None:
+    step = ExtractionStep(_DummyLLM())
+    today = date(2026, 3, 29)
+    session_query = _query_ir(
+        intent=QueryIntent.TRANSACTION_LIST,
+        time_range=TimeRange(start=date(2026, 2, 27), end=today, granularity="month"),
+        filters=Filters(transaction_type="debit", merchant=["mum"]),
+        result_limit=1,
+        result_reference="latest",
+    )
+    session_contract = _contract(session_query)
+
+    async def _fake_reason(_: object) -> QuerySemanticDecision:
+        return QuerySemanticDecision(
+            decision="continuation",
+            continuation_type="aggregate",
+            followup_intent="refine_existing",
+            extraction=QueryExtractionResult(
+                intent=ExtractionIntent.SPENDING_TOTAL,
+                time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="this_month"),
+                raw_query="How have I spent this month so far",
+            ),
+            confidence=0.95,
+            reason="llm_explicit_month_spending_scope",
+        )
+
+    step.reasoner.reason = _fake_reason  # type: ignore[method-assign]
+
+    updates = await step._handle_continuation(
+        {"message": "How have I spent this month so far", "today": today, "language": "en"},
+        {
+            "session_active": True,
+            "query_contract": session_contract.model_dump(),
+            "query_result": {"items": []},
+            "current_page": 1,
+            "show_expanded": True,
+        },
+    )
+
+    query_contract = updates["query_contract"]
+    assert query_contract.intent == QueryIntent.ANALYTICS_SUMMARY
+    assert query_contract.time_start == date(2026, 3, 1)
+    assert query_contract.time_end == today
+    assert query_contract.filters is not None
+    assert query_contract.filters.transaction_type == "debit"
+    assert query_contract.filters.merchant is None
+    assert query_contract.filters.counterparty is None
+    assert query_contract.aggregation is not None
+    assert query_contract.aggregation.type == "sum"
+    assert updates["current_page"] == 0
+    assert updates["show_expanded"] is False
+
+
+@pytest.mark.asyncio
 async def test_income_followup_after_credit_list_preserves_active_credit_scope() -> None:
     step = ExtractionStep(_DummyLLM())
     today = date(2026, 3, 20)

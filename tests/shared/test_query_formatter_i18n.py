@@ -579,14 +579,14 @@ def test_formatter_direct_answer_uses_answer_strategy_without_transaction_card()
         ),
         answer_strategy=QueryAnswerStrategy.DIRECT_ANSWER,
         answer_context=QueryAnswerContext(
-            primary_text="You last paid Mum on March 24, 2026.",
+            primary_text="You paid Mum on March 24, 2026.",
             secondary_text="₦50,000 • Zenith Bank",
         ),
     )
 
     response = QueryFormatter.format(result, locale="en")
 
-    assert response == "You last paid Mum on March 24, 2026.\n\n₦50,000 • Zenith Bank"
+    assert response == "You paid Mum on March 24, 2026.\n\n₦50,000 • Zenith Bank"
     assert "Transaction Details" not in response
 
 
@@ -607,7 +607,7 @@ def test_formatter_fact_no_results_prefers_natural_copy_under_direct_answer() ->
 
     response = QueryFormatter.format(result, locale="en")
 
-    assert response == "I couldn't find any payment to Mum in that period."
+    assert response == "I couldn't find a payment to Mum in that period."
 
 
 def test_formatter_heading_appends_account_and_today_suffix() -> None:
@@ -672,7 +672,7 @@ def test_formatter_single_item_fact_query_leads_with_requested_date() -> None:
     response = QueryFormatter.format(result, locale="en")
     lines = response.splitlines()
 
-    assert lines[0] == "You last paid Netflix on March 21, 2026."
+    assert lines[0] == "You paid Netflix on March 21, 2026."
     assert "Your last debit transaction was:" in response
 
 
@@ -758,6 +758,39 @@ def test_formatter_uses_shared_plan_for_single_transfer_detail_surface() -> None
     assert "*Amount:* ₦20,000.00" in response
     assert "*Bank:* Zenith Bank" in response
     assert render_message("query.format.transfer_reply_hint", "en") in response
+
+
+def test_formatter_direct_answer_uses_localized_reply_in_yoruba() -> None:
+    result = QueryResult(
+        summary_text="accounts:1|showing:1-1|total:1",
+        items=[
+            QueryResultItem(
+                id="tx1",
+                description="Transfer to Mum",
+                amount=50000,
+                date=date(2026, 3, 24),
+                metadata={"type": "debit", "bank_name": "Zenith Bank", "recipient_name": "Mum"},
+            )
+        ],
+        query_contract=_query_contract(
+            _query_ir(
+                intent=QueryIntent.TRANSACTION_SEARCH,
+                filters=Filters(transaction_type="debit", counterparty=["Mum"]),
+                time_range=TimeRange(start=date(2026, 3, 1), end=date(2026, 3, 27)),
+                answer_fact_field="date",
+            )
+        ),
+        answer_strategy=QueryAnswerStrategy.DIRECT_ANSWER,
+        answer_context=QueryAnswerContext(
+            primary_text="O san owo si Mum ni March 24, 2026.",
+            secondary_text="₦50,000 • Zenith Bank",
+        ),
+    )
+
+    response = QueryFormatter.format(result, locale="yo")
+
+    assert response == "O san owo si Mum ni March 24, 2026.\n\n₦50,000 • Zenith Bank"
+    assert "*Date:*" not in response
 
 
 def test_formatter_single_item_detail_suppresses_synthetic_reference() -> None:

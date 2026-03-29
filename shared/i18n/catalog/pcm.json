@@ -160,6 +160,40 @@
     "report_issue": {
       "template": "I understand you have an issue with this transaction:\n\n*{description}* - ₦{amount}\n\nPlease describe the issue:\n1️⃣ Transaction failed but I was debited\n2️⃣ I don't recognize this transaction\n3️⃣ Wrong amount was charged\n4️⃣ Other issue\n\n_Reply with the number or describe your issue._"
     },
+    "reply": {
+      "date": {
+        "debit_named": "You pay {counterparty} on {date}.",
+        "credit_named": "You receive money from {counterparty} on {date}.",
+        "generic": "E happen on {date}."
+      },
+      "counterparty": {
+        "debit_named": "You pay {amount} to {counterparty} on {date}.",
+        "credit_named": "You receive {amount} from {counterparty} on {date}.",
+        "generic": "Na with {counterparty}.",
+        "unavailable": "I see the transaction, but I no fit confirm the counterparty."
+      },
+      "amount": {
+        "debit_named": "You pay {amount} to {counterparty}.",
+        "credit_named": "You receive {amount} from {counterparty}.",
+        "generic": "Na {amount}."
+      },
+      "bank": {
+        "debit_named": "You send am to {counterparty} through {bank_name}.",
+        "credit_named": "You get am from {counterparty} through {bank_name}.",
+        "generic": "E pass through {bank_name}.",
+        "unavailable": "I see the transaction, but the bank name no dey."
+      },
+      "no_result": {
+        "debit_named": "I no find payment to {counterparty} {time_suffix}.",
+        "credit_named": "I no find credit from {counterparty} {time_suffix}.",
+        "debit_generic": "I no find matching debit {time_suffix}.",
+        "credit_generic": "I no find matching credit {time_suffix}.",
+        "time": {
+          "today": "today",
+          "period": "for that period"
+        }
+      }
+    },
     "session": {
       "completed": "Query completed.",
       "dismissive_goodbye": "Okay. I'll step back now.",

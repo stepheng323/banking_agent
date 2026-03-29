@@ -130,7 +130,7 @@ def _build_direct_answer_presentation_plan(result: QueryResult, *, locale: str) 
     if not result.items:
         from apps.core.src.agent.graphs.query.services.answer_strategy import build_fact_no_results_text
 
-        fact_no_results = build_fact_no_results_text(result_query_contract(result))
+        fact_no_results = build_fact_no_results_text(result_query_contract(result), locale=locale)
         if fact_no_results:
             return PresentationPlan(mode=PresentationMode.DIRECT_ANSWER, lead_text=fact_no_results)
         if result.summary_text:

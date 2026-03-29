@@ -46,6 +46,47 @@ def _looks_like_explicit_fresh_query_interrupt(message: str) -> bool:
     return bool(_FRESH_QUERY_INTERRUPT_HEAD_RE.match(normalized))
 
 
+def _has_specific_scope_filters(filters: Any | None) -> bool:
+    if filters is None:
+        return False
+    return any(
+        (
+            bool(getattr(filters, "merchant", None)),
+            bool(getattr(filters, "counterparty", None)),
+            bool(getattr(filters, "category", None)),
+            getattr(filters, "min_amount", None) is not None,
+            getattr(filters, "max_amount", None) is not None,
+            bool(getattr(filters, "exclude", None)),
+            bool(getattr(filters, "account_filter", None)),
+        )
+    )
+
+
+def _should_reset_inherited_aggregate_filters(
+    *,
+    extraction: QueryExtractionResult | None,
+    session_query_contract: QueryExecutionContract | None,
+    extracted_contract: QueryExecutionContract | None,
+) -> bool:
+    if extraction is None or session_query_contract is None or extracted_contract is None:
+        return False
+    if extraction.time_range.reference_type not in {TimeReference.EXPLICIT, TimeReference.ALL_TIME}:
+        return False
+    if not _has_specific_scope_filters(session_query_contract.filters):
+        return False
+    return not _has_specific_scope_filters(extracted_contract.filters)
+
+
+def _should_replace_aggregate_time_range(
+    *,
+    extraction: QueryExtractionResult | None,
+    extracted_contract: QueryExecutionContract | None,
+) -> bool:
+    if extraction is None or extracted_contract is None:
+        return False
+    return extraction.time_range.reference_type in {TimeReference.EXPLICIT, TimeReference.ALL_TIME}
+
+
 async def maybe_recover_supported_followup_query(
     step: Any,
     *,
@@ -188,6 +229,26 @@ async def compile_aggregate_continuation_updates(
             )
 
     updated_filters = extracted_contract.filters if extracted_contract is not None else None
+    reset_inherited_filters = _should_reset_inherited_aggregate_filters(
+        extraction=extraction,
+        session_query_contract=session_query_contract,
+        extracted_contract=extracted_contract,
+    )
+    replace_time_range = _should_replace_aggregate_time_range(
+        extraction=extraction,
+        extracted_contract=extracted_contract,
+    )
+    if reset_inherited_filters:
+        logger.info(
+            "query_aggregate_filter_reset",
+            reason="explicit_aggregate_scope_without_specific_filter",
+            previous_intent=session_query_contract.intent.value,
+            previous_has_specific_filters=_has_specific_scope_filters(session_query_contract.filters),
+            extracted_intent=extracted_contract.intent.value if extracted_contract is not None else None,
+            extracted_time_reference=(
+                extraction.time_range.reference_type.value if extraction is not None else None
+            ),
+        )
     if extracted_contract is not None and extracted_contract.aggregation is not None:
         aggregation = extracted_contract.aggregation.model_copy(deep=True)
     elif step._is_income_vs_spending_followup(message=state.get("message", ""), query_contract=session_query_contract):
@@ -205,8 +266,17 @@ async def compile_aggregate_continuation_updates(
 
     query_contract = rebuild_query_contract(
         session_query_contract,
-        filters=updated_filters if updated_filters is not None else session_query_contract.filters,
-        merge_filters=updated_filters is not None,
+        filters=(
+            updated_filters
+            if reset_inherited_filters or updated_filters is not None
+            else session_query_contract.filters
+        ),
+        merge_filters=updated_filters is not None and not reset_inherited_filters,
+        time_range=(
+            extracted_contract.to_query_ir().time_range
+            if replace_time_range and extracted_contract is not None
+            else session_query_contract.to_query_ir().time_range
+        ),
         intent=QueryIntent.ANALYTICS_SUMMARY,
         aggregation=aggregation,
         result_limit=extracted_contract.result_limit if extracted_contract is not None else None,

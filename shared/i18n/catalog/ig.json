@@ -160,6 +160,40 @@
     "report_issue": {
       "template": "I understand you have an issue with this transaction:\n\n*{description}* - ₦{amount}\n\nPlease describe the issue:\n1️⃣ Transaction failed but I was debited\n2️⃣ I don't recognize this transaction\n3️⃣ Wrong amount was charged\n4️⃣ Other issue\n\n_Reply with the number or describe your issue._"
     },
+    "reply": {
+      "date": {
+        "debit_named": "Ị kwụrụ {counterparty} na {date}.",
+        "credit_named": "Ị natara ego n'aka {counterparty} na {date}.",
+        "generic": "O mere na {date}."
+      },
+      "counterparty": {
+        "debit_named": "Ị kwụrụ {amount} nye {counterparty} na {date}.",
+        "credit_named": "Ị natara {amount} n'aka {counterparty} na {date}.",
+        "generic": "Ọ bụ na {counterparty}.",
+        "unavailable": "Achọpụtara m transaction ahụ, mana enweghị m ike ikwenye onye nke ọzọ."
+      },
+      "amount": {
+        "debit_named": "Ị kwụrụ {amount} nye {counterparty}.",
+        "credit_named": "Ị natara {amount} n'aka {counterparty}.",
+        "generic": "Ọ bụ {amount}."
+      },
+      "bank": {
+        "debit_named": "Ị zigara ya {counterparty} site na {bank_name}.",
+        "credit_named": "Ị natara ya n'aka {counterparty} site na {bank_name}.",
+        "generic": "O gara site na {bank_name}.",
+        "unavailable": "Achọpụtara m transaction ahụ, mana aha bank adịghị."
+      },
+      "no_result": {
+        "debit_named": "Achọtaghị m ụgwọ nye {counterparty} {time_suffix}.",
+        "credit_named": "Achọtaghị m credit sitere na {counterparty} {time_suffix}.",
+        "debit_generic": "Achọtaghị m debit kwekọrọ {time_suffix}.",
+        "credit_generic": "Achọtaghị m credit kwekọrọ {time_suffix}.",
+        "time": {
+          "today": "taa",
+          "period": "n'oge ahụ"
+        }
+      }
+    },
     "session": {
       "completed": "Query completed.",
       "dismissive_goodbye": "Okay. I'll step back now.",
