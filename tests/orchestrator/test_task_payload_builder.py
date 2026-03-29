@@ -377,6 +377,16 @@ def test_transfer_single_recipient_derivation_uses_first_candidate_from_list() -
     assert recipient == "mum"
 
 
+def test_transfer_single_recipient_derivation_prefers_best_matching_candidate() -> None:
+    recipient = _derive_recipient_from_user_text("Tolu Adebayo", "split 10k btw mum and tolu")
+    assert recipient == "tolu"
+
+
+def test_transfer_single_recipient_derivation_does_not_guess_first_candidate_in_multi_recipient_text() -> None:
+    recipient = _derive_recipient_from_user_text("David Johnson", "split 10k btw mum and tolu")
+    assert recipient is None
+
+
 def test_transfer_reference_is_mapped_to_recipient_reference() -> None:
     plan_item = PlannedTask(
         task_id="t1",
@@ -397,6 +407,64 @@ def test_transfer_reference_is_mapped_to_recipient_reference() -> None:
     )
 
     assert spec.payload.get("recipient_reference") == {"selector": "previous"}
+
+
+def test_transfer_payload_builder_preserves_authoritative_fanout_recipient_binding() -> None:
+    plan_item = PlannedTask(
+        task_id="t1_r2",
+        action="send_money",
+        executor="transfer",
+        instruction="Split 10k btw mum and tolu",
+        parameters=TaskParameters(
+            amount=5000,
+            recipient="Tolu Adebayo",
+            recipient_name="Tolu Adebayo",
+            recipient_binding_source="fanout",
+            recipient_binding_index=2,
+        ),
+        risk="MONEY_MOVE",
+    )
+
+    spec = build_task_spec_from_plan_item(
+        plan_item,
+        "split 10k btw mum and tolu",
+        preserve_existing_action_instruction=True,
+        include_skip_extraction=True,
+        strip_transfer_recipient_suffix=True,
+        format_narration_requires_recipient_field=False,
+    )
+
+    assert spec.payload.get("recipient_name") == "tolu"
+    assert spec.payload.get("recipient_binding_source") == "fanout"
+
+
+def test_transfer_payload_builder_keeps_percentage_and_transfer_all_fields() -> None:
+    plan_item = PlannedTask(
+        task_id="t1",
+        action="send_money",
+        executor="transfer",
+        instruction="Send half my zenith balance to Mum",
+        parameters=TaskParameters(
+            recipient="Mum",
+            source_bank_name="Zenith Bank",
+            transfer_percentage=50,
+            transfer_all=False,
+        ),
+    )
+
+    spec = build_task_spec_from_plan_item(
+        plan_item,
+        "Send half my zenith balance to Mum",
+        preserve_existing_action_instruction=False,
+        include_skip_extraction=False,
+        strip_transfer_recipient_suffix=True,
+        format_narration_requires_recipient_field=False,
+    )
+
+    assert spec.payload.get("recipient_name") == "Mum"
+    assert spec.payload.get("source_bank_name") == "Zenith Bank"
+    assert spec.payload.get("transfer_percentage") == 50
+    assert spec.payload.get("transfer_all") is False
 
 
 def test_transfer_possessive_command_verb_is_not_used_as_recipient_name() -> None:

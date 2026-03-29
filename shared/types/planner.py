@@ -24,6 +24,8 @@ class TaskParameters(BaseModel):
     """Common parameters for tasks."""
 
     amount: str | float | None = None
+    transfer_all: bool | None = None
+    transfer_percentage: float | None = None
     recipient: str | None = None
     recipient_name: str | None = None
     narration: str | None = None
@@ -50,6 +52,8 @@ class TaskParameters(BaseModel):
     source_accounts: list[str] | None = None
     explicit_split: dict[str, float] | None = None
     recipient_allocations: list[RecipientAllocation] | None = None
+    recipient_binding_source: Literal["fanout"] | None = None
+    recipient_binding_index: int | None = None
 
 
 class PlannedTask(BaseModel):

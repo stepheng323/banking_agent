@@ -29,10 +29,13 @@ def _apply_transfer_fanout_target(
     recipient_name: str,
     amount: float | None,
     clear_source_recipient_allocations: bool,
+    binding_index: int,
 ) -> None:
     task.parameters.recipient = recipient_name
     task.parameters.recipient_name = recipient_name
     task.parameters.recipient_allocations = None
+    task.parameters.recipient_binding_source = "fanout"
+    task.parameters.recipient_binding_index = binding_index
     if amount is not None:
         task.parameters.amount = amount
     if clear_source_recipient_allocations:
@@ -83,6 +86,7 @@ def _expand_underproduced_transfer_tasks(
             recipient_name=recipient_allocations[0][0],
             amount=recipient_allocations[0][1],
             clear_source_recipient_allocations=True,
+            binding_index=1,
         )
     else:
         _apply_transfer_fanout_target(
@@ -90,6 +94,7 @@ def _expand_underproduced_transfer_tasks(
             recipient_name=recipients[0],
             amount=None,
             clear_source_recipient_allocations=False,
+            binding_index=1,
         )
     expanded_source_tasks.append(first_task)
 
@@ -107,6 +112,7 @@ def _expand_underproduced_transfer_tasks(
             recipient_name=recipient,
             amount=allocated_amount,
             clear_source_recipient_allocations=allocated_amount is not None,
+            binding_index=idx,
         )
         expanded_source_tasks.append(clone)
         expanded_task_ids.append(clone.task_id)

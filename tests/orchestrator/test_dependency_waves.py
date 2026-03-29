@@ -324,6 +324,8 @@ async def test_planner_fans_out_single_transfer_when_text_has_multiple_recipient
     assert set(updates["tasks"].keys()) == {"t1", "t1_r2"}
     assert updates["tasks"]["t1"].payload.get("recipient_name") == "mum"
     assert updates["tasks"]["t1_r2"].payload.get("recipient_name") == "tolu"
+    assert updates["tasks"]["t1"].payload.get("recipient_binding_source") == "fanout"
+    assert updates["tasks"]["t1_r2"].payload.get("recipient_binding_source") == "fanout"
     assert updates["tasks"]["t1"].payload.get("amount") == 10000
     assert updates["tasks"]["t1_r2"].payload.get("amount") == 10000
     assert updates["waves"] == [["t1", "t1_r2"]]

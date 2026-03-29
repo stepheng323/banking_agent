@@ -151,7 +151,22 @@ def _derive_recipient_from_user_text(planned_recipient: str | None, user_text: s
 
     recipient_candidates = _derive_recipients_from_user_text(user_text)
     if recipient_candidates:
-        return recipient_candidates[0]
+        if len(recipient_candidates) == 1:
+            return recipient_candidates[0]
+        planned_tokens = {token for token in norm_planned.split() if token}
+        best_candidate: str | None = None
+        best_score = 0
+        for candidate in recipient_candidates:
+            candidate_tokens = {token for token in _normalize_text(candidate).split() if token}
+            if not candidate_tokens:
+                continue
+            overlap = len(planned_tokens & candidate_tokens)
+            if overlap > best_score:
+                best_score = overlap
+                best_candidate = candidate
+        if best_candidate is not None and best_score > 0:
+            return best_candidate
+        return None
 
     planned_tokens = [token for token in norm_planned.split() if token]
     text_tokens = {token for token in norm_text.split() if token}
@@ -174,6 +189,7 @@ def _apply_transfer_payload_fields(
         return
 
     action_name = str(payload.get("action") or "")
+    authoritative_fanout_binding = payload.get("recipient_binding_source") == "fanout"
 
     if plan_item.parameters and plan_item.parameters.reference:
         payload["recipient_reference"] = plan_item.parameters.reference.model_dump(exclude_none=True)
@@ -202,6 +218,8 @@ def _apply_transfer_payload_fields(
                 derived = _derive_recipient_from_user_text(recipient_val_str, fallback_message)
                 if derived:
                     payload["recipient_name"] = derived
+                elif authoritative_fanout_binding:
+                    payload["recipient_name"] = recipient_val
 
     # Guard against planner hallucinating a fully-resolved name not present in user text.
     recipient_name = payload.get("recipient_name")
@@ -216,7 +234,7 @@ def _apply_transfer_payload_fields(
         derived = _derive_recipient_from_user_text(recipient_name, fallback_message)
         if derived:
             payload["recipient_name"] = derived
-        else:
+        elif not authoritative_fanout_binding:
             payload.pop("recipient_name", None)
 
     # Guard destination fields against stale planner context leakage.
