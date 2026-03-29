@@ -27,3 +27,10 @@ def test_recipient_split_rules_are_separate_from_funding_split() -> None:
     assert "split 20k between mum and gaines" in TRANSFER_EXTRACTION_PROMPT.lower()
     assert "send 20k 70/30 btw mum and gaines" in TRANSFER_EXTRACTION_PROMPT.lower()
     assert "Do NOT use `explicit_split` for recipient names" in TRANSFER_EXTRACTION_PROMPT
+
+
+def test_prompt_includes_account_aware_percentage_and_transfer_all_examples() -> None:
+    """Prompt should guide account-aware amount extraction from selected source bank."""
+    normalized = TRANSFER_EXTRACTION_PROMPT.lower()
+    assert "send half my zenith to mum" in normalized
+    assert "send everything in my first bank to tolu" in normalized

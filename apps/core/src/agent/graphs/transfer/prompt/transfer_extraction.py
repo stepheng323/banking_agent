@@ -91,6 +91,8 @@ When user corrects mid-flow ("I meant 50k"):
 | "Send to my GTB" | bank_name="GTBank", is_self=true |
 | "From my Access send 14k to tolu" | amount=14000, source_bank_name="Access Bank", recipient_name="tolu" |
 | "Send 14k to tolu from my first bank" | amount=14000, recipient_name="tolu", source_bank_name="First Bank" |
+| "Send half my zenith to mum" | transfer_percentage=50, source_bank_name="Zenith Bank", recipient_name="mum" |
+| "Send everything in my first bank to tolu" | transfer_all=true, source_bank_name="First Bank", recipient_name="tolu" |
 | "use zenith bank instead" | source_bank_name="Zenith Bank" |
 | "Send 2k using my kuda" | amount=2000, source_bank_name="Kuda" |
 | "send 100k using access and gtb" | amount=100000, source_accounts=["Access Bank","GTBank"] |

@@ -443,9 +443,17 @@ async def _extract_transfer_update(
         if not extracted_data and not extraction.acknowledgment:
             return TransactionResult(outcome=TransactionOutcome.OK)
 
+        extracted_percentage = "transfer_percentage" in extracted_data
+        extracted_transfer_all = extracted_data.get("transfer_all") is True
+
         if extracted_data:
             extracted_data["confirmation"] = {"confirmed": False}
             if "amount" in extracted_data:
+                extracted_data["suggested_amount"] = None
+                extracted_data["transfer_percentage"] = None
+                extracted_data["transfer_all"] = False
+            if extracted_percentage or extracted_transfer_all:
+                extracted_data["amount"] = None
                 extracted_data["suggested_amount"] = None
 
         # [UX] Narration vs Description Split

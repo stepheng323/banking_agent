@@ -537,6 +537,67 @@ async def test_amount_update_does_not_clear_binding_for_combined_alias_and_resol
     assert "beneficiary_id" not in result.patch
 
 
+async def test_amount_update_clears_percentage_and_transfer_all_flags() -> None:
+    class _AmountCorrectionExtractor:
+        async def extract(self, text: str, smart_context: dict | None = None) -> TransferExtractionResult:
+            del text, smart_context
+            return TransferExtractionResult(
+                entities=TransferEntities(amount=10000),
+                correction=Correction(field=CorrectionField.AMOUNT, new_value=10000),
+                acknowledgment="Updated amount.",
+            )
+
+    step = ExtractionStep(user_message="Change amount to 10k")
+    payload = TransferPayload(
+        recipient_name="Mum",
+        transfer_percentage=50,
+        transfer_all=True,
+    )
+    context = TransferContext(phone_number="2348000000999", language="en", beneficiaries=[], accounts=[])
+    worker_context = SimpleNamespace(
+        extractor=_AmountCorrectionExtractor(),
+        required_fields=[],
+        previous_response=None,
+    )
+
+    result = await step.execute(payload, context, TransferGates(), worker_context)
+
+    assert result.outcome == TransactionOutcome.OK
+    assert result.patch["amount"] == 10000
+    assert result.patch["transfer_percentage"] is None
+    assert result.patch["transfer_all"] is False
+
+
+async def test_percentage_update_clears_stale_amount_for_account_aware_resolution() -> None:
+    class _PercentageExtractor:
+        async def extract(self, text: str, smart_context: dict | None = None) -> TransferExtractionResult:
+            del text, smart_context
+            return TransferExtractionResult(
+                entities=TransferEntities(transfer_percentage=50, source_bank_name="First Bank"),
+            )
+
+    step = ExtractionStep(user_message="Use half from my first bank")
+    payload = TransferPayload(
+        recipient_name="Mum",
+        amount=20000,
+        source_account_id="acc-1",
+        source_bank_name="Zenith Bank",
+    )
+    context = TransferContext(phone_number="2348000000999", language="en", beneficiaries=[], accounts=[])
+    worker_context = SimpleNamespace(
+        extractor=_PercentageExtractor(),
+        required_fields=[],
+        previous_response=None,
+    )
+
+    result = await step.execute(payload, context, TransferGates(), worker_context)
+
+    assert result.outcome == TransactionOutcome.OK
+    assert result.patch["transfer_percentage"] == 50
+    assert result.patch["source_bank_name"] == "First Bank"
+    assert result.patch["amount"] is None
+
+
 async def test_account_then_amount_turns_do_not_get_stuck_due_to_skip_extraction() -> None:
     """Regression: after account+bank deterministic parse, next amount turn should still extract."""
     extractor = _CaptureExtractor()
