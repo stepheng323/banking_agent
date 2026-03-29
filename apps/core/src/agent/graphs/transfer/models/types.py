@@ -5,7 +5,7 @@ Strict Pydantic contract for the Transfer Subgraph.
 
 from typing import Any, Literal, TypedDict
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class TransferGates(BaseModel):
@@ -84,6 +84,13 @@ class TransferPayload(BaseModel):
     schedule_id: str | None = None
     schedule_selector: str | None = None
     schedule_operation_note: str | None = None
+
+    @field_validator("transfer_all", mode="before")
+    @classmethod
+    def normalize_transfer_all(cls, value: Any) -> bool:
+        if value is None:
+            return False
+        return bool(value)
 
 
 class TransferContext(BaseModel):

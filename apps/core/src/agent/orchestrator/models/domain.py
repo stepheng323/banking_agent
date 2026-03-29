@@ -7,7 +7,7 @@ and the Domain Workers (Stateless Logic).
 from enum import Enum
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 # --- 1. Task Lifecycle ---
 
@@ -91,6 +91,13 @@ class TransferPayload(BaseModel):
 
     # Confirmation sub-state
     confirmation: TransferConfirmation = Field(default_factory=TransferConfirmation)
+
+    @field_validator("transfer_all", mode="before")
+    @classmethod
+    def normalize_transfer_all(cls, value: Any) -> bool:
+        if value is None:
+            return False
+        return bool(value)
 
 
 class TaskSpec(BaseModel):
