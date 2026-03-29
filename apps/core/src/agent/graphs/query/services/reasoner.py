@@ -51,10 +51,12 @@ DecisionType = Literal[
 
 ContinuationType = Literal[
     "show_more",
+    "show_evidence",
     "time_delta",
     "filter_delta",
     "expand",
     "conversational",
+    "explain_aggregate_scope",
     "drill_down",
     "recipient_drill_down",
     "aggregate",

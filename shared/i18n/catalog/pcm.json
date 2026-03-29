@@ -183,6 +183,11 @@
         "generic": "E pass through {bank_name}.",
         "unavailable": "I see the transaction, but the bank name no dey."
       },
+      "aggregate": {
+        "scope": "That total na only for {scope_label}{period_suffix}.{total_suffix}",
+        "scope_hint": "E add up {count} {transaction_label} for that scope.",
+        "total_suffix": " Total na {total}"
+      },
       "no_result": {
         "debit_named": "I no find payment to {counterparty} {time_suffix}.",
         "credit_named": "I no find credit from {counterparty} {time_suffix}.",

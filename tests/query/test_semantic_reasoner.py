@@ -3,6 +3,7 @@ from datetime import date
 import pytest
 
 from apps.core.src.agent.graphs.query.models import (
+    Aggregation,
     ExtractionIntent,
     Filters,
     PendingClarificationState,
@@ -938,6 +939,41 @@ async def test_reasoner_passes_through_continue_pagination_followup_intent() -> 
 
     assert decision.continuation_type == "show_more"
     assert decision.followup_intent == "continue_pagination"
+    assert llm.structured.calls == 1
+
+
+@pytest.mark.asyncio
+async def test_reasoner_passes_through_show_evidence_followup_intent() -> None:
+    llm = _TrackingLLM(
+        QuerySemanticDecision(
+            decision="continuation",
+            confidence=0.94,
+            reason="llm_show_aggregate_evidence",
+            continuation_type="show_evidence",
+            followup_intent="refine_existing",
+        )
+    )
+    reasoner = QuerySemanticReasoner(llm)
+
+    decision = await reasoner.reason(
+        SemanticReasonerContext(
+            message="Show me",
+            today=date(2026, 3, 14),
+            language="en",
+            query_contract=_contract(
+                _query_ir(
+                    intent=QueryIntent.ANALYTICS_SUMMARY,
+                    time_range=TimeRange(start=date(2026, 3, 1), end=date(2026, 3, 14)),
+                    filters=Filters(transaction_type="debit"),
+                    aggregation=Aggregation(type="sum"),
+                )
+            ),
+            surface_view=_grouped_summary_surface_view(view="summary"),
+        )
+    )
+
+    assert decision.continuation_type == "show_evidence"
+    assert decision.followup_intent == "refine_existing"
     assert llm.structured.calls == 1
 
 

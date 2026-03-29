@@ -664,8 +664,117 @@ async def test_show_me_follow_up_converts_summary_to_transactions_when_explicitl
     assert updates["query_contract"].intent == QueryIntent.TRANSACTION_LIST
     assert updates["query_contract"].time_start == date(2026, 3, 1)
     assert updates["query_contract"].time_end == today
+    assert updates["query_contract"].answer_fact_field is None
     assert updates["current_page"] == 0
     assert updates["resolver_message"] is None
+
+
+@pytest.mark.asyncio
+async def test_show_evidence_follow_up_converts_aggregate_summary_to_scoped_transactions_and_clears_fact_anchor() -> None:
+    step = ExtractionStep(_DummyLLM())
+    today = date(2026, 3, 29)
+    session_query = _query_ir(
+        intent=QueryIntent.ANALYTICS_SUMMARY,
+        time_range=TimeRange(start=date(2026, 3, 1), end=today),
+        filters=Filters(transaction_type="debit"),
+        aggregation=Aggregation(type="sum"),
+        answer_fact_field="date",
+        result_reference="latest",
+    )
+    session_contract = _contract(session_query)
+
+    async def _fake_reason(context: object) -> QuerySemanticDecision:
+        del context
+        return QuerySemanticDecision(
+            decision="continuation",
+            continuation_type="show_evidence",
+            followup_intent="refine_existing",
+            confidence=0.96,
+            reason="llm_show_aggregate_evidence",
+        )
+
+    step.reasoner.reason = _fake_reason  # type: ignore[method-assign]
+
+    updates = await step._handle_continuation(
+        {"message": "show me", "today": today, "language": "en"},
+        {
+            "session_active": True,
+            "query_contract": session_contract.model_dump(),
+            "query_result": {
+                "summary_text": "You spent ₦50,000 this month so far.",
+                "items": [
+                    QueryResultItem(
+                        id="txn_001",
+                        description="Transfer to Mum",
+                        amount=50000,
+                        date=date(2026, 3, 26),
+                        metadata={"type": "debit", "bank_name": "Zenith Bank"},
+                    ).model_dump(mode="json")
+                ],
+            },
+        },
+    )
+
+    query_contract = updates["query_contract"]
+    assert query_contract.intent == QueryIntent.TRANSACTION_LIST
+    assert query_contract.aggregation is None
+    assert query_contract.filters is not None
+    assert query_contract.filters.transaction_type == "debit"
+    assert query_contract.answer_fact_field is None
+    assert query_contract.result_reference is None
+    assert updates["current_page"] == 0
+    assert updates["show_expanded"] is False
+
+
+@pytest.mark.asyncio
+async def test_explain_aggregate_scope_follow_up_uses_scoped_reply_without_drill_down() -> None:
+    step = ExtractionStep(_DummyLLM())
+    today = date(2026, 3, 29)
+    session_query = _query_ir(
+        intent=QueryIntent.ANALYTICS_SUMMARY,
+        time_range=TimeRange(start=date(2026, 3, 1), end=today),
+        filters=Filters(transaction_type="debit"),
+        aggregation=Aggregation(type="sum"),
+    )
+    session_contract = _contract(session_query)
+
+    async def _fake_reason(context: object) -> QuerySemanticDecision:
+        del context
+        return QuerySemanticDecision(
+            decision="continuation",
+            continuation_type="explain_aggregate_scope",
+            followup_intent="none",
+            confidence=0.93,
+            reason="llm_explain_aggregate_scope",
+        )
+
+    step.reasoner.reason = _fake_reason  # type: ignore[method-assign]
+
+    updates = await step._handle_continuation(
+        {"message": "How all this take be 50k", "today": today, "language": "en"},
+        {
+            "session_active": True,
+            "query_contract": session_contract.model_dump(),
+            "query_result": {
+                "summary_text": "You spent ₦50,000 from Mar 01 to Mar 29, across 1 transaction.",
+                "items": [
+                    QueryResultItem(
+                        id="txn_001",
+                        description="Transfer to Mum",
+                        amount=50000,
+                        date=date(2026, 3, 26),
+                        metadata={"type": "debit", "bank_name": "Zenith Bank"},
+                    ).model_dump(mode="json")
+                ],
+            },
+        },
+    )
+
+    assert updates["transaction_outcome"] == TransactionOutcome.OK
+    assert "Debit Transactions" in updates["response"]
+    assert "₦50,000" in updates["response"]
+    assert updates["session_active"] is True
+    assert updates["flow_state"] == "complete"
 
 
 @pytest.mark.asyncio
@@ -1226,6 +1335,7 @@ async def test_aggregate_followup_without_extraction_preserves_active_query_scop
     assert query_contract.filters.merchant == ["mum"]
     assert query_contract.aggregation is not None
     assert query_contract.aggregation.type == "sum"
+    assert query_contract.answer_fact_field is None
     assert query_contract.result_limit is None
     assert query_contract.result_reference is None
     assert updates["current_page"] == 0
@@ -1282,8 +1392,79 @@ async def test_explicit_aggregate_scope_drops_inherited_beneficiary_filter() -> 
     assert query_contract.filters.counterparty is None
     assert query_contract.aggregation is not None
     assert query_contract.aggregation.type == "sum"
+    assert query_contract.answer_fact_field is None
     assert updates["current_page"] == 0
     assert updates["show_expanded"] is False
+
+
+@pytest.mark.asyncio
+async def test_aggregate_continuation_without_reasoner_extraction_uses_deterministic_fresh_parse_to_drop_inherited_filter() -> None:
+    step = ExtractionStep(_DummyLLM())
+    today = date(2026, 3, 29)
+    session_query = _query_ir(
+        intent=QueryIntent.TRANSACTION_LIST,
+        time_range=TimeRange(start=date(2026, 2, 27), end=today, granularity="month"),
+        filters=Filters(transaction_type="debit", merchant=["mum"]),
+        result_limit=1,
+        result_reference="latest",
+    )
+    session_contract = _contract(session_query)
+    parsed_extraction = QueryExtractionResult(
+        intent=ExtractionIntent.SPENDING_TOTAL,
+        time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="this_month"),
+        raw_query="How much have I spent this month so far",
+    )
+    parsed_query = _query_ir(
+        intent=QueryIntent.ANALYTICS_SUMMARY,
+        time_range=TimeRange(start=date(2026, 3, 1), end=today, granularity="month"),
+        filters=Filters(transaction_type="debit"),
+        aggregation=Aggregation(type="sum"),
+    )
+
+    async def _fake_reason(_: object) -> QuerySemanticDecision:
+        return QuerySemanticDecision(
+            decision="continuation",
+            continuation_type="aggregate",
+            followup_intent="refine_existing",
+            confidence=0.7,
+            reason="weak_aggregate_continuation_without_extraction",
+        )
+
+    def _fake_parse_deterministic(question: str, *, today: date, language: str = "en") -> QueryParseResult:
+        del today, language
+        assert question == "How much have I spent this month so far"
+        return _ok_result(parsed_extraction, parsed_query)
+
+    def _fail_parse(*args: object, **kwargs: object) -> object:
+        del args, kwargs
+        raise AssertionError("deterministic fresh parse recovery should not call parser.parse")
+
+    step.reasoner.reason = _fake_reason  # type: ignore[method-assign]
+    step.parser.parse_deterministic = _fake_parse_deterministic  # type: ignore[method-assign]
+    step.parser.parse = _fail_parse  # type: ignore[method-assign]
+
+    updates = await step._handle_continuation(
+        {"message": "How much have I spent this month so far", "today": today, "language": "en"},
+        {
+            "session_active": True,
+            "query_contract": session_contract.model_dump(),
+            "query_result": {"items": []},
+            "current_page": 1,
+            "show_expanded": True,
+        },
+    )
+
+    query_contract = updates["query_contract"]
+    assert query_contract.intent == QueryIntent.ANALYTICS_SUMMARY
+    assert query_contract.time_start == date(2026, 3, 1)
+    assert query_contract.time_end == today
+    assert query_contract.filters is not None
+    assert query_contract.filters.transaction_type == "debit"
+    assert query_contract.filters.merchant is None
+    assert query_contract.answer_fact_field is None
+    assert updates["current_page"] == 0
+    assert updates["show_expanded"] is False
+    assert updates["_query_session_transition"] == "replace_session_new_query"
 
 
 @pytest.mark.asyncio

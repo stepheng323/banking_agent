@@ -183,6 +183,11 @@
         "generic": "Ó kọja nipasẹ {bank_name}.",
         "unavailable": "Mo ri transaction naa, ṣugbọn orukọ banki ko si."
       },
+      "aggregate": {
+        "scope": "Apapọ yẹn jẹ́ fún {scope_label} nìkan{period_suffix}.{total_suffix}",
+        "scope_hint": "Ó jẹ́ apapọ {count} {transaction_label} nínú scope yẹn.",
+        "total_suffix": " Apapọ náà ni {total}"
+      },
       "no_result": {
         "debit_named": "Mi ò ri isanwo si {counterparty} {time_suffix}.",
         "credit_named": "Mi ò ri credit lati ọdọ {counterparty} {time_suffix}.",

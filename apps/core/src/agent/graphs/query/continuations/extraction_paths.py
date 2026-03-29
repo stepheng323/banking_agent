@@ -26,6 +26,11 @@ from apps.core.src.agent.graphs.query.services.grounding import (
     build_grounded_query_contract,
     build_memory_answer,
 )
+from apps.core.src.agent.graphs.query.services.presentation_scope import (
+    build_transaction_heading,
+    format_naira,
+    period_label,
+)
 from apps.core.src.agent.graphs.query.utils.timezone import lagos_today
 from apps.core.src.agent.orchestrator.models.domain import TransactionOutcome
 from shared.i18n import LocaleManager, render_message
@@ -85,6 +90,85 @@ def _should_replace_aggregate_time_range(
     if extraction is None or extracted_contract is None:
         return False
     return extraction.time_range.reference_type in {TimeReference.EXPLICIT, TimeReference.ALL_TIME}
+
+
+def _should_replace_aggregate_session_from_fresh_parse(
+    *,
+    session_query_contract: QueryExecutionContract,
+    parsed_extraction: QueryExtractionResult | None,
+    parsed_query_contract: QueryExecutionContract | None,
+) -> bool:
+    if parsed_extraction is None or parsed_query_contract is None:
+        return False
+    if parsed_extraction.time_range.reference_type not in {TimeReference.EXPLICIT, TimeReference.ALL_TIME}:
+        return False
+    if parsed_query_contract.intent != session_query_contract.intent:
+        return True
+    if _has_specific_scope_filters(session_query_contract.filters) and not _has_specific_scope_filters(
+        parsed_query_contract.filters
+    ):
+        return True
+    session_agg = session_query_contract.aggregation.type if session_query_contract.aggregation is not None else None
+    parsed_agg = parsed_query_contract.aggregation.type if parsed_query_contract.aggregation is not None else None
+    return session_agg != parsed_agg
+
+
+def _build_aggregate_scope_reply(
+    *,
+    session_query_contract: QueryExecutionContract | None,
+    query_result: QueryResult | None,
+    locale: str,
+) -> str:
+    if session_query_contract is None:
+        return render_message("query.clarify.unsure_rephrase", locale)
+
+    scope_heading = build_transaction_heading(session_query_contract, locale=locale)
+    if scope_heading:
+        scope_heading = scope_heading.strip("*")
+    else:
+        scope_heading = render_message("query.common.transaction", locale).title()
+
+    total_amount = None
+    total_count = None
+    if query_result is not None and query_result.items:
+        total_amount = sum(abs(float(item.amount or 0.0)) for item in query_result.items)
+        total_count = len(query_result.items)
+
+    total_text = format_naira(total_amount) if total_amount is not None else None
+    period_text = period_label(session_query_contract.time_range, locale=locale)
+    period_suffix = f" ({period_text})" if period_text else ""
+    total_suffix = (
+        render_message("query.reply.aggregate.total_suffix", locale, {"total": total_text})
+        if total_text is not None
+        else ""
+    )
+
+    primary = render_message(
+        "query.reply.aggregate.scope",
+        locale,
+        {
+            "scope_label": scope_heading,
+            "period_suffix": period_suffix,
+            "total_suffix": total_suffix,
+        },
+    ).strip()
+
+    if total_count is None:
+        return primary
+
+    hint = render_message(
+        "query.reply.aggregate.scope_hint",
+        locale,
+        {
+            "count": total_count,
+            "transaction_label": (
+                render_message("query.analytics.transaction_singular", locale)
+                if total_count == 1
+                else render_message("query.analytics.transaction_plural", locale)
+            ),
+        },
+    )
+    return f"{primary}\n\n{hint}"
 
 
 async def maybe_recover_supported_followup_query(
@@ -196,6 +280,33 @@ async def compile_aggregate_continuation_updates(
     if extraction is not None and not extraction.raw_query:
         extraction = extraction.model_copy(update={"raw_query": state.get("message", "")})
 
+    if extraction is None and session_query_contract is not None:
+        deterministic_result = step.parser.parse_deterministic(state.get("message", ""), today=today, language=language)
+        deterministic_contract = step._validated_query_contract(
+            deterministic_result.query_contract if deterministic_result is not None else None
+        )
+        if (
+            deterministic_result is not None
+            and deterministic_result.outcome == ResolverOutcome.OK
+            and _should_replace_aggregate_session_from_fresh_parse(
+                session_query_contract=session_query_contract,
+                parsed_extraction=deterministic_result.extraction,
+                parsed_query_contract=deterministic_contract,
+            )
+        ):
+            logger.info(
+                "query_aggregate_fresh_parse_reset",
+                previous_intent=session_query_contract.intent.value,
+                parsed_intent=deterministic_contract.intent.value if deterministic_contract is not None else None,
+                parsed_time_reference=(
+                    deterministic_result.extraction.time_range.reference_type.value
+                    if deterministic_result.extraction is not None
+                    else None
+                ),
+            )
+            updates = parse_result_to_updates(step, deterministic_result, state=state, today=today, language=language)
+            return step._append_query_session_transition(updates, "replace_session_new_query")
+
     if session_query_contract is None:
         if extraction is None:
             return None
@@ -281,6 +392,7 @@ async def compile_aggregate_continuation_updates(
         aggregation=aggregation,
         result_limit=extracted_contract.result_limit if extracted_contract is not None else None,
         result_reference=extracted_contract.result_reference if extracted_contract is not None else None,
+        answer_fact_field=None,
         continuation_type=getattr(decision, "continuation_type", None),
         continuation_delta_type=getattr(decision, "delta_type", None),
     )
@@ -949,6 +1061,9 @@ async def handle_continuation(step: Any, state: dict[str, Any], session: dict[st
                 session_query_contract,
                 intent=QueryIntent.TRANSACTION_LIST,
                 aggregation=None,
+                result_limit=None,
+                result_reference=None,
+                answer_fact_field=None,
                 continuation_type=cont_type,
                 continuation_delta_type=decision.delta_type,
             )
@@ -956,6 +1071,22 @@ async def handle_continuation(step: Any, state: dict[str, Any], session: dict[st
             updates["show_expanded"] = False
         else:
             return step._ambiguous_followup_updates(locale=locale, session=session)
+
+    elif cont_type == "show_evidence":
+        if session_query_contract is None or session_query_contract.intent != QueryIntent.ANALYTICS_SUMMARY:
+            return step._ambiguous_followup_updates(locale=locale, session=session)
+        updates["query_contract"] = rebuild_query_contract(
+            session_query_contract,
+            intent=QueryIntent.TRANSACTION_LIST,
+            aggregation=None,
+            result_limit=None,
+            result_reference=None,
+            answer_fact_field=None,
+            continuation_type=cont_type,
+            continuation_delta_type=decision.delta_type,
+        )
+        updates["current_page"] = 0
+        updates["show_expanded"] = False
 
     elif cont_type == "time_delta":
         resolved_time_range, clarification_message = await resolve_time_delta_range(
@@ -1093,6 +1224,27 @@ async def handle_continuation(step: Any, state: dict[str, Any], session: dict[st
             },
             "exit_query_session_conversational",
         )
+
+    elif cont_type == "explain_aggregate_scope":
+        response_text = (getattr(decision, "response_text", None) or "").strip()
+        contextual_hint = (getattr(decision, "contextual_hint", None) or "").strip()
+        response = response_text or _build_aggregate_scope_reply(
+            session_query_contract=session_query_contract,
+            query_result=restored_query_result,
+            locale=locale,
+        )
+        if contextual_hint:
+            response = f"{response}\n\n{contextual_hint}"
+        return {
+            "transaction_outcome": TransactionOutcome.OK,
+            "response": response,
+            "session_active": True,
+            "flow_state": "complete",
+            "resolver_message": None,
+            "show_expanded": bool(session.get("show_expanded", False)),
+            "current_page": session.get("current_page", 0),
+            **step._semantic_trace_updates(decision),
+        }
 
     elif cont_type == "drill_down":
         drill_idx = decision.drill_down_index if decision.drill_down_index is not None else 0

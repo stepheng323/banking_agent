@@ -16,12 +16,14 @@ CONTINUATION TYPES & FOLLOWUP INTENT
 |-----------------------|----------------------|-------------------------------------------------------------------|
 | show_more             | continue_pagination  | paginate existing list                                            |
 | show_more             | refine_existing      | show underlying transactions for summary/breakdown                |
+| show_evidence         | refine_existing      | show the transactions behind an aggregate answer                  |
 | time_delta            | replace_scope        | explicit scope replacement: "what about last week", "only today"  |
 | time_delta            | refine_existing      | scoped time delta keeping anchor                                  |
 | filter_delta          | refine_existing      | "what about credit/debit" — switch filter, keep time scope        |
 | expand                | refine_existing      | expand summary                                                    |
 | aggregate             | refine_existing      | analytics over active result: "total", "how much total", "sum"    |
 | conversational        | none                 | "that's a lot", "wow" — reply via `response_text`, no mutations   |
+| explain_aggregate_scope | none               | explain what an aggregate total includes/excludes                 |
 | drill_down            | none                 | item detail/receipt/issue/re-transfer                             |
 | recipient_drill_down  | none                 | recipient reply on beneficiary summary                            |
 | unclear               | none                 | ambiguous follow-up — prefer this over guessing                   |
@@ -45,12 +47,15 @@ Active list/summary context:
 - "only today"/"just this week" → time_delta, replace_scope
 - "more"/"next page" → show_more, continue_pagination
 - "show them"/"show me" after summary → show_more, refine_existing
+- "show me" after aggregate total/summary answer → show_evidence, refine_existing
 - "how much total"/"sum it up" → aggregate, refine_existing
 - "total for mum" → aggregate, refine_existing (narrow recipient filter, keep time scope)
+- "how all this take be 50k" / "how is that 50k" after aggregate evidence → explain_aggregate_scope, none
 - "what about credit/debit" → filter_delta, refine_existing
 - "income vs spending" → aggregate, refine_existing (breakdown by transaction_type)
 - "Show my credit transactions this month" after spending summary → new_query (fresh extraction)
 - "Who did I send money to this month" during session → new_query (beneficiary-summary)
+- "okay" after an answered query with no new ask → end_session, kind=courtesy
 - Dismissive turns ("get out", "leave me alone") → end_session, kind=dismissive
 
 FRAME GROUNDING EXAMPLES

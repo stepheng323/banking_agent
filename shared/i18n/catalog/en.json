@@ -183,6 +183,11 @@
         "generic": "It went through {bank_name}.",
         "unavailable": "I found the transaction, but the bank name isn't available."
       },
+      "aggregate": {
+        "scope": "That total only covers {scope_label}{period_suffix}.{total_suffix}",
+        "scope_hint": "It adds up {count} {transaction_label} in that scope.",
+        "total_suffix": " The total is {total}"
+      },
       "no_result": {
         "debit_named": "I couldn't find a payment to {counterparty} {time_suffix}.",
         "credit_named": "I couldn't find a credit from {counterparty} {time_suffix}.",

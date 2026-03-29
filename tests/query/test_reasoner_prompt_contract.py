@@ -17,10 +17,12 @@ def test_query_reasoner_prompt_includes_unified_decisions() -> None:
 def test_query_reasoner_prompt_covers_all_continuation_types() -> None:
     for ct in (
         "show_more",
+        "show_evidence",
         "time_delta",
         "filter_delta",
         "expand",
         "conversational",
+        "explain_aggregate_scope",
         "drill_down",
         "recipient_drill_down",
         "aggregate",

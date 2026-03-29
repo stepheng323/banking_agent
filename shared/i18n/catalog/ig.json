@@ -183,6 +183,11 @@
         "generic": "O gara site na {bank_name}.",
         "unavailable": "Achọpụtara m transaction ahụ, mana aha bank adịghị."
       },
+      "aggregate": {
+        "scope": "Ngụkọta ahụ bụ naanị maka {scope_label}{period_suffix}.{total_suffix}",
+        "scope_hint": "Ọ bụ mkpokọta nke {count} {transaction_label} n’ime scope ahụ.",
+        "total_suffix": " Ngụkọta ya bụ {total}"
+      },
       "no_result": {
         "debit_named": "Achọtaghị m ụgwọ nye {counterparty} {time_suffix}.",
         "credit_named": "Achọtaghị m credit sitere na {counterparty} {time_suffix}.",

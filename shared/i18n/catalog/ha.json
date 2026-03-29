@@ -183,6 +183,11 @@
         "generic": "Ya bi ta {bank_name}.",
         "unavailable": "Na gano transaction ɗin, amma sunan banki bai samu ba."
       },
+      "aggregate": {
+        "scope": "Wannan jimillar ta shafi {scope_label} kawai{period_suffix}.{total_suffix}",
+        "scope_hint": "Ta haɗa {count} {transaction_label} a cikin wannan scope.",
+        "total_suffix": " Jimillar ita ce {total}"
+      },
       "no_result": {
         "debit_named": "Ban sami biyan kuɗi zuwa {counterparty} {time_suffix} ba.",
         "credit_named": "Ban sami credit daga {counterparty} {time_suffix} ba.",
