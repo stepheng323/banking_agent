@@ -130,6 +130,40 @@ def test_fresh_recent_transaction_request_maps_to_new_query_reset() -> None:
     assert data["reason"] == "deterministic_fresh_list_reset"
 
 
+def test_recent_transaction_request_with_explicit_period_maps_to_new_query_reset() -> None:
+    classifier = _classifier()
+    surface_view = SurfaceView(mode=SurfaceViewMode.DIRECT_ANSWER, context={"type": "single_transaction"})
+
+    guarded = classifier._guardrail_classify(
+        message="show my recent transactions in the last 2 weeks",
+        items=None,
+        surface_view=surface_view,
+        language="en",
+    )
+
+    assert guarded is not None
+    continuation_type, data = guarded
+    assert continuation_type == "fresh_query_reset"
+    assert data["reason"] == "deterministic_fresh_list_reset"
+
+
+def test_day_scoped_singular_transaction_request_maps_to_new_query_reset() -> None:
+    classifier = _classifier()
+    surface_view = SurfaceView(mode=SurfaceViewMode.DIRECT_ANSWER, context={"type": "single_transaction"})
+
+    guarded = classifier._guardrail_classify(
+        message="show today's transaction",
+        items=None,
+        surface_view=surface_view,
+        language="en",
+    )
+
+    assert guarded is not None
+    continuation_type, data = guarded
+    assert continuation_type == "fresh_query_reset"
+    assert data["reason"] == "deterministic_fresh_list_reset"
+
+
 @pytest.mark.parametrize(
     "message",
     [

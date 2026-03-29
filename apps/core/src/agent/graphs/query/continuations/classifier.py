@@ -45,17 +45,31 @@ _FILTER_DELTA_RE = re.compile(
 )
 _FRESH_LIST_RESET_PATTERNS = (
     re.compile(
-        r"^(?:show|list|check|display|see)\s+(?:my\s+)?recent\s+(?:transactions?|debits?|credits?|payments?)(?:\?|!|\.)?$",
+        r"^(?:show|list|check|display|see|get|view)\s+.+\brecent\b.+\b(?:transactions?|debits?|credits?|payments?)\b(?:.*)?$",
         re.IGNORECASE,
     ),
     re.compile(
-        r"^(?:show|list|check|display|see)\s+all\s+my\s+(?:transactions?|debits?|credits?|payments?)(?:\?|!|\.)?$",
+        r"^(?:show|list|check|display|see|get|view)\s+all\s+my\s+(?:transactions?|debits?|credits?|payments?)(?:\?|!|\.)?$",
         re.IGNORECASE,
     ),
     re.compile(
-        r"^(?:show|list|check|display|see)\s+(?:all|latest|recent)\s+(?:transactions?|debits?|credits?|payments?)(?:\?|!|\.)?$",
+        r"^(?:show|list|check|display|see|get|view)\s+(?:all|latest|recent)\s+(?:transactions?|debits?|credits?|payments?)(?:\?|!|\.)?$",
         re.IGNORECASE,
     ),
+    re.compile(
+        r"^(?:show|list|check|display|see|get|view)\s+.+\b(?:today|today's|yesterday|yesterday's|"
+        r"this week|this week's|last week|last week's|this month|this month's|last month|last month's|"
+        r"this year|this year's|last year|last year's)\b.+\b(?:transactions?|transaction|debits?|credits?|payments?)\b(?:.*)?$",
+        re.IGNORECASE,
+    ),
+)
+_DAY_SCOPED_SINGULAR_LIST_RE = re.compile(
+    r"^(?:show|list|check|display|see|get|view)\s+"
+    r"(?:(?:my|all my|all)\s+)?"
+    r"(?:today(?:'s)?|yesterday(?:'s)?|this week(?:'s)?|last week(?:'s)?|"
+    r"this month(?:'s)?|last month(?:'s)?|this year(?:'s)?|last year(?:'s)?)\s+"
+    r"(?:transactions?|transaction|debits?|credits?|payments?)(?:\?|!|\.)?$",
+    re.IGNORECASE,
 )
 _BENEFICIARY_FACT_PATTERNS: tuple[tuple[str, str], ...] = (
     (r"\bwhen\b|\bwhat date\b", "date"),
@@ -121,6 +135,8 @@ class ContinuationClassifier:
 
     def _is_fresh_list_reset_request(self, message: str) -> bool:
         normalized = self._normalize_message(message)
+        if _DAY_SCOPED_SINGULAR_LIST_RE.match(normalized):
+            return True
         return any(pattern.match(normalized) for pattern in _FRESH_LIST_RESET_PATTERNS)
 
     def _resolve_beneficiary_summary_recipient_reply(

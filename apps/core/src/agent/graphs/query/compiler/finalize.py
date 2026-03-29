@@ -329,6 +329,60 @@ def parse_deterministic(
         QueryTimeRange,
     )
 
+    recent_list_match = re.fullmatch(
+        r"(?:(?:show|list|view|get|check|display|see)\s+)?"
+        r"(?:(?:my|all my|all)\s+)?recent\s+(transactions?|debits?|credits?|payments?)"
+        r"(?:\s+(?:in|for|during|over)\s+(.+))?",
+        normalized,
+    )
+    if recent_list_match:
+        noun, explicit_time_text = recent_list_match.groups()
+        tx_type: Literal["credit", "debit"] | None = None
+        if noun.startswith("debit") or noun.startswith("payment"):
+            tx_type = "debit"
+        elif noun.startswith("credit"):
+            tx_type = "credit"
+        time_range = (
+            parser._extract_relative_time_range_from_query(question)
+            if explicit_time_text
+            else QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="recent_30_days", days_back=30)
+        )
+        if time_range is None:
+            time_range = QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="recent_30_days", days_back=30)
+        extraction = QueryExtractionResult(
+            intent=ExtractionIntent.TRANSACTION_LIST,
+            query_operation=QueryOperation.LIST_TRANSACTIONS,
+            raw_query=question,
+            time_range=time_range,
+            filters=QueryFilters(transaction_type=tx_type),
+        )
+        return parser._finalize_extraction(extraction, today=today, language=language)
+
+    day_scoped_list_match = re.fullmatch(
+        r"(?:(?:show|list|view|get|check|display|see)\s+)?"
+        r"(?:(?:my|all my|all)\s+)?"
+        r"(today|today's|yesterday|yesterday's|this week|this week's|last week|last week's|"
+        r"this month|this month's|last month|last month's|this year|this year's|last year|last year's)\s+"
+        r"(transactions?|transaction|debits?|credits?|payments?)",
+        normalized,
+    )
+    if day_scoped_list_match:
+        period_phrase, noun = day_scoped_list_match.groups()
+        normalized_period = period_phrase.replace("'s", "").replace(" ", "_")
+        tx_type = None
+        if noun.startswith("debit") or noun.startswith("payment"):
+            tx_type = "debit"
+        elif noun.startswith("credit"):
+            tx_type = "credit"
+        extraction = QueryExtractionResult(
+            intent=ExtractionIntent.TRANSACTION_LIST,
+            query_operation=QueryOperation.LIST_TRANSACTIONS,
+            raw_query=question,
+            time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period=normalized_period),
+            filters=QueryFilters(transaction_type=tx_type),
+        )
+        return parser._finalize_extraction(extraction, today=today, language=language)
+
     if re.fullmatch(r"(?:(?:show|list|view|get)\s+)?(?:my\s+)?(?:transactions?|transaction\s+history|history|statement)", normalized):
         extraction = QueryExtractionResult(
             intent=ExtractionIntent.TRANSACTION_LIST,

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from datetime import date
 from time import perf_counter
 from typing import Any, Literal, cast
@@ -31,6 +32,18 @@ from shared.i18n import LocaleManager, render_message
 from shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
+
+_FRESH_QUERY_INTERRUPT_HEAD_RE = re.compile(
+    r"^(?:show|list|view|get|check|display|see)\b.*\b(?:transactions?|transaction|debits?|credits?|payments?)\b",
+    re.IGNORECASE,
+)
+
+
+def _looks_like_explicit_fresh_query_interrupt(message: str) -> bool:
+    normalized = " ".join((message or "").strip().lower().split())
+    if not normalized:
+        return False
+    return bool(_FRESH_QUERY_INTERRUPT_HEAD_RE.match(normalized))
 
 
 async def maybe_recover_supported_followup_query(
@@ -537,6 +550,16 @@ async def handle_pending_clarification(step: Any, state: dict[str, Any], session
     today_state = state.get("today")
     today = today_state if isinstance(today_state, date) else lagos_today()
     locale = LocaleManager.normalize(state.get("language")).value
+
+    deterministic_result = step.parser.parse_deterministic(message, today=today, language=locale)
+    if deterministic_result is not None:
+        updates = parse_result_to_updates(step, deterministic_result, state=state, today=today, language=locale)
+        return step._append_query_session_transition(updates, "replace_session_new_query")
+
+    clarification_time_range = step.parser.parse_clarification_time_range(message, today=today)
+    if clarification_time_range is None and _looks_like_explicit_fresh_query_interrupt(message):
+        updates = await parse_new_query(step, state)
+        return step._append_query_session_transition(updates, "replace_session_new_query")
 
     decision = await step.reasoner.reason(
         step._build_reasoner_context(

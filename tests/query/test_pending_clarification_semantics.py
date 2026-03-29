@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, timedelta
 
 import pytest
 
@@ -236,3 +236,99 @@ async def test_pending_clarification_new_query_compiles_without_parser_parse() -
 
     assert result.outcome == TransactionOutcome.OK
     assert result.patch["flow_state"] == "executing"
+
+
+@pytest.mark.asyncio
+async def test_pending_clarification_recent_list_interrupts_and_clears_old_scope() -> None:
+    step = ExtractionStep(_DummyLLM())
+    pending = _pending_state()
+
+    def _fake_parse_deterministic(question: str, *, today: date, language: str = "en") -> QueryParseResult:
+        del language
+        assert question == "show my recent transactions"
+        contract = _contract(
+            _query_ir(
+                intent=QueryIntent.TRANSACTION_LIST,
+                time_range=TimeRange(start=today - timedelta(days=30), end=today),
+            )
+        )
+        return QueryParseResult(
+            outcome=ResolverOutcome.OK,
+            extraction=QueryExtractionResult(
+                intent=ExtractionIntent.TRANSACTION_LIST,
+                raw_query=question,
+            ),
+            query_contract=contract.model_dump(),
+            patch={},
+        )
+
+    async def _fail_reason(*args: object, **kwargs: object) -> object:
+        del args, kwargs
+        raise AssertionError("fresh query interrupt should bypass pending-clarification reasoner")
+
+    step.parser.parse_deterministic = _fake_parse_deterministic  # type: ignore[method-assign]
+    step.reasoner.reason = _fail_reason  # type: ignore[method-assign]
+
+    result = await step.run(
+        {
+            "message": "show my recent transactions",
+            "language": "en",
+            "today": date(2026, 3, 28),
+            "query_session": {
+                "session_active": True,
+                "pending_clarification": pending,
+            },
+        }
+    )
+
+    assert result.outcome == TransactionOutcome.OK
+    assert result.patch["flow_state"] == "executing"
+    assert result.patch["pending_clarification"] is None
+
+
+@pytest.mark.asyncio
+async def test_pending_clarification_day_scoped_list_interrupts_and_executes_new_query() -> None:
+    step = ExtractionStep(_DummyLLM())
+    pending = _pending_state()
+
+    def _fake_parse_deterministic(question: str, *, today: date, language: str = "en") -> QueryParseResult:
+        del language
+        assert question == "show today's transaction"
+        contract = _contract(
+            _query_ir(
+                intent=QueryIntent.TRANSACTION_LIST,
+                time_range=TimeRange(start=today, end=today),
+            )
+        )
+        return QueryParseResult(
+            outcome=ResolverOutcome.OK,
+            extraction=QueryExtractionResult(
+                intent=ExtractionIntent.TRANSACTION_LIST,
+                raw_query=question,
+            ),
+            query_contract=contract.model_dump(),
+            patch={},
+        )
+
+    async def _fail_reason(*args: object, **kwargs: object) -> object:
+        del args, kwargs
+        raise AssertionError("day-scoped fresh query should bypass pending-clarification reasoner")
+
+    step.parser.parse_deterministic = _fake_parse_deterministic  # type: ignore[method-assign]
+    step.reasoner.reason = _fail_reason  # type: ignore[method-assign]
+
+    result = await step.run(
+        {
+            "message": "show today's transaction",
+            "language": "en",
+            "today": date(2026, 3, 28),
+            "query_session": {
+                "session_active": True,
+                "pending_clarification": pending,
+            },
+        }
+    )
+
+    assert result.outcome == TransactionOutcome.OK
+    assert result.patch["flow_state"] == "executing"
+    assert result.patch["pending_clarification"] is None

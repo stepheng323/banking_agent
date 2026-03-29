@@ -760,6 +760,67 @@ def test_formatter_uses_shared_plan_for_single_transfer_detail_surface() -> None
     assert render_message("query.format.transfer_reply_hint", "en") in response
 
 
+def test_formatter_single_item_detail_suppresses_synthetic_reference() -> None:
+    result = QueryResult(
+        summary_text="accounts:1|showing:1-1|total:1",
+        items=[
+            QueryResultItem(
+                id="0",
+                description="Mum",
+                amount=50000,
+                date=date(2026, 3, 28),
+                metadata={"type": "debit", "bank_name": "Zenith Bank"},
+            )
+        ],
+        query_contract=_query_contract(
+            _query_ir(
+                intent=QueryIntent.TRANSACTION_SEARCH,
+                filters=Filters(transaction_type="debit", counterparty=["Mum"]),
+                time_range=TimeRange(start=date(2026, 3, 1), end=date(2026, 3, 28)),
+            )
+        ),
+        surface_view=SurfaceView(
+            mode=SurfaceViewMode.DIRECT_ANSWER,
+            items=[
+                SurfaceItemView(
+                    id="0",
+                    label="Mum",
+                    amount=50000,
+                    payload=SelectionPayload(
+                        selection_kind="transaction",
+                        entity_type="transaction",
+                        entity_id="0",
+                        label="Mum",
+                    ),
+                )
+            ],
+            context={"type": "single_transaction", "selected_item_id": "0"},
+        ),
+    )
+
+    response = QueryFormatter.format(result, show_expanded=True, locale="en")
+
+    assert "*Ref:*" not in response
+
+
+def test_formatter_no_results_does_not_leak_structural_account_summary_for_transaction_list() -> None:
+    result = QueryResult(
+        summary_text="accounts:2|showing:1-0|total:0",
+        items=[],
+        query_contract=_query_contract(
+            _query_ir(
+                intent=QueryIntent.TRANSACTION_LIST,
+                time_range=TimeRange(start=date(2026, 3, 28), end=date(2026, 3, 28)),
+            )
+        ),
+    )
+
+    response = QueryFormatter.format(result, locale="en")
+
+    assert "accounts:2|showing:1-0|total:0" not in response
+    assert response == "You had no transactions today."
+
+
 def test_formatter_account_breakdown_preserves_account_labels_and_generic_total() -> None:
     result = QueryResult(
         summary_text="Breakdown by account",

@@ -248,3 +248,50 @@ async def test_vague_time_from_minimal_parser_output_derives_ambiguity_locally()
     assert result.extraction.ambiguities
     assert result.extraction.ambiguities[0].code == AmbiguityCode.TIME_VAGUE
     assert result.pending_clarification is not None
+
+
+@pytest.mark.asyncio
+async def test_recent_transaction_list_defaults_to_bounded_30_day_window() -> None:
+    extraction = QueryExtractionResult(
+        intent=ExtractionIntent.TRANSACTION_LIST,
+        time_range=QueryTimeRange(reference_type=TimeReference.VAGUE, days_back=30),
+    )
+    parser = QueryParser(_DummyLLM(extraction))
+
+    result = await parser.parse(
+        "show my recent transactions",
+        today=date(2026, 3, 28),
+        language="en",
+    )
+
+    assert result.outcome == ResolverOutcome.OK
+    assert result.pending_clarification is None
+    assert result.query_contract is not None
+    assert result.query_contract["intent"] == "transaction_list"
+    assert result.query_contract["time_start"] == date(2026, 2, 26)
+    assert result.query_contract["time_end"] == date(2026, 3, 28)
+
+
+@pytest.mark.asyncio
+async def test_day_scoped_singular_transaction_query_normalizes_to_list_query() -> None:
+    extraction = QueryExtractionResult(
+        intent=ExtractionIntent.SINGLE_TRANSACTION,
+        time_range=QueryTimeRange(reference_type=TimeReference.UNSPECIFIED),
+        result_limit=1,
+        result_reference="latest",
+    )
+    parser = QueryParser(_DummyLLM(extraction))
+
+    result = await parser.parse(
+        "show today's transaction",
+        today=date(2026, 3, 28),
+        language="en",
+    )
+
+    assert result.outcome == ResolverOutcome.OK
+    assert result.query_contract is not None
+    assert result.query_contract["intent"] == "transaction_list"
+    assert result.query_contract["time_start"] == date(2026, 3, 28)
+    assert result.query_contract["time_end"] == date(2026, 3, 28)
+    assert result.query_contract["result_limit"] is None
+    assert result.query_contract["result_reference"] is None

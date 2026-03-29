@@ -354,6 +354,80 @@ async def test_fresh_recent_transactions_followup_replaces_scope_instead_of_inhe
 
 
 @pytest.mark.asyncio
+async def test_fresh_recent_transactions_with_explicit_period_replaces_scope() -> None:
+    step = ExtractionStep(_DummyLLM())
+    today = date(2026, 3, 28)
+    session_query = _query_ir(
+        intent=QueryIntent.TRANSACTION_SEARCH,
+        time_range=TimeRange(start=date(2026, 3, 1), end=today),
+        filters=Filters(counterparty=["Mum"], transaction_type="debit"),
+        answer_fact_field="date",
+    )
+    session_contract = _contract(session_query)
+
+    async def _fake_reason(context: object) -> QuerySemanticDecision:
+        del context
+        return QuerySemanticDecision(
+            decision="new_query",
+            confidence=0.97,
+            reason="deterministic_fresh_list_reset",
+        )
+
+    def _fake_parse_deterministic(
+        question: str,
+        *,
+        today: date,
+        language: str = "en",
+    ) -> QueryParseResult | None:
+        del today, language
+        assert question == "show my recent transactions in the last 2 weeks"
+        return None
+
+    async def _fake_parse(
+        question: str,
+        *,
+        today: date,
+        language: str = "en",
+    ) -> QueryParseResult:
+        del language
+        assert question == "show my recent transactions in the last 2 weeks"
+        parsed_query = _query_ir(
+            intent=QueryIntent.TRANSACTION_LIST,
+            time_range=TimeRange(start=today - timedelta(days=14), end=today),
+        )
+        return _ok_result(
+            QueryExtractionResult(
+                intent=ExtractionIntent.TRANSACTION_LIST,
+                raw_query=question,
+            ),
+            parsed_query,
+        )
+
+    step.reasoner.reason = _fake_reason  # type: ignore[method-assign]
+    step.parser.parse_deterministic = _fake_parse_deterministic  # type: ignore[method-assign]
+    step.parser.parse = _fake_parse  # type: ignore[method-assign]
+
+    updates = await step._handle_continuation(
+        {"message": "show my recent transactions in the last 2 weeks", "today": today, "language": "en"},
+        {
+            "session_active": True,
+            "query_contract": session_contract.model_dump(),
+            "query_result": QueryResult(
+                summary_text="That transaction was on March 28, 2026.",
+                items=[],
+                query_contract=session_contract,
+                surface_view=SurfaceView(mode=SurfaceViewMode.DIRECT_ANSWER, context={"type": "single_transaction"}),
+            ).model_dump(mode="json"),
+        },
+    )
+
+    query_contract = updates["query_contract"]
+    assert query_contract.intent == QueryIntent.TRANSACTION_LIST
+    assert query_contract.filters is None or query_contract.filters.counterparty is None
+    assert updates["_query_session_transition"] == "replace_session_new_query"
+
+
+@pytest.mark.asyncio
 async def test_replace_scope_resets_pagination_and_preserves_filters() -> None:
     step = ExtractionStep(_DummyLLM())
     today = date(2026, 3, 14)

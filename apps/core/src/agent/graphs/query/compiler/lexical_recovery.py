@@ -43,6 +43,22 @@ MONTH_NAME_TO_NUMBER = {
 }
 THIS_YEAR_TOKENS = {"this_year", "current_year", "thisyear", "currentyear"}
 LAST_YEAR_TOKENS = {"last_year", "previous_year", "lastyear", "previousyear"}
+_LIST_TIME_SCOPED_SINGULAR_RE = re.compile(
+    r"\b(?:show|list|view|get|check|display|see)\b.*\b("
+    r"today(?:'s)?|yesterday(?:'s)?|this week(?:'s)?|last week(?:'s)?|"
+    r"this month(?:'s)?|last month(?:'s)?|this year(?:'s)?|last year(?:'s)?)\b.*\btransaction\b(?!s)",
+    re.IGNORECASE,
+)
+_RECENT_LIST_QUERY_RE = re.compile(
+    r"\brecent\b.*\b(transactions?|debits?|credits?|payments?)\b",
+    re.IGNORECASE,
+)
+_EXPLICIT_TIME_RANGE_RE = re.compile(
+    r"\b(today|yesterday|this week|last week|this month|last month|this year|last year|"
+    r"last\s+\d{1,3}\s+(?:day|days|week|weeks|month|months)|"
+    r"past\s+\d{1,3}\s+(?:day|days|week|weeks|month|months))\b",
+    re.IGNORECASE,
+)
 
 
 def month_token(period: str | None) -> int | None:
@@ -191,6 +207,9 @@ def recover_known_fragile_query_shapes(extraction: QueryExtractionResult) -> Que
     if not raw_query:
         return extraction
 
+    extraction = normalize_recent_list_time_range(extraction, raw_query=raw_query)
+    extraction = normalize_day_scoped_singular_list_query(extraction, raw_query=raw_query)
+
     people_query = any(
         cue in raw_query
         for cue in (
@@ -226,6 +245,66 @@ def recover_known_fragile_query_shapes(extraction: QueryExtractionResult) -> Que
         recovered_time = extract_relative_time_range_from_query(raw_query)
         if recovered_time is not None:
             extraction.time_range = recovered_time
+    return extraction
+
+
+def normalize_recent_list_time_range(extraction: QueryExtractionResult, *, raw_query: str) -> QueryExtractionResult:
+    list_shaped_intents = {
+        "transaction_list",
+        "single_transaction",
+    }
+    request_shape = extraction.request_shape.value if extraction.request_shape is not None else None
+    if extraction.intent.value not in list_shaped_intents and request_shape != "list":
+        return extraction
+    if not _RECENT_LIST_QUERY_RE.search(raw_query):
+        return extraction
+    if extraction.time_range.reference_type == TimeReference.EXPLICIT:
+        return extraction
+    if _EXPLICIT_TIME_RANGE_RE.search(raw_query):
+        recovered_time = extract_relative_time_range_from_query(raw_query)
+        if recovered_time is not None:
+            extraction.time_range = recovered_time
+            extraction.ambiguities = [
+                ambiguity
+                for ambiguity in extraction.ambiguities
+                if not (
+                    ambiguity.code == AmbiguityCode.TIME_VAGUE
+                    and (ambiguity.context or "").strip().lower() in {"recent", "recently", "that time"}
+                )
+            ]
+            return extraction
+
+    extraction.time_range = QueryTimeRange(
+        reference_type=TimeReference.EXPLICIT,
+        period="recent_30_days",
+        days_back=30,
+    )
+    extraction.ambiguities = [
+        ambiguity
+        for ambiguity in extraction.ambiguities
+        if not (
+            ambiguity.code == AmbiguityCode.TIME_VAGUE
+            and (ambiguity.context or "").strip().lower() in {"recent", "recently", "that time"}
+        )
+    ]
+    return extraction
+
+
+def normalize_day_scoped_singular_list_query(extraction: QueryExtractionResult, *, raw_query: str) -> QueryExtractionResult:
+    match = _LIST_TIME_SCOPED_SINGULAR_RE.search(raw_query)
+    if not match:
+        return extraction
+
+    period = match.group(1).replace("'s", "").replace(" ", "_")
+    from apps.core.src.agent.graphs.query.models import ExtractionIntent
+
+    extraction.intent = ExtractionIntent.TRANSACTION_LIST
+    extraction.request_shape = None
+    extraction.fact_query_kind = None
+    extraction.answer_fact_field = None
+    extraction.result_limit = None
+    extraction.result_reference = None
+    extraction.time_range = QueryTimeRange(reference_type=TimeReference.EXPLICIT, period=period)
     return extraction
 
 

@@ -142,7 +142,20 @@ def _build_direct_answer_presentation_plan(result: QueryResult, *, locale: str) 
 
 
 def _build_no_results_presentation_plan(result: QueryResult, *, locale: str) -> PresentationPlan | None:
-    if result.summary_text and not _parse_summary_parts(result.summary_text):
+    summary_parts = _parse_summary_parts(result.summary_text)
+    query_contract = result_query_contract(result)
+    if (
+        summary_parts
+        and summary_parts.get("showing") is not None
+        and str(summary_parts.get("total", "")).strip() == "0"
+        and query_contract is not None
+        and query_contract.intent in {QueryIntent.TRANSACTION_LIST, QueryIntent.TRANSACTION_SEARCH}
+    ):
+        no_results_text = _build_no_results_text(result, locale=locale)
+        if no_results_text is not None:
+            return PresentationPlan(mode=PresentationMode.DIRECT_ANSWER, lead_text=no_results_text)
+
+    if result.summary_text and not summary_parts:
         return PresentationPlan(mode=PresentationMode.DIRECT_ANSWER, lead_text=result.summary_text)
     no_results_text = _build_no_results_text(result, locale=locale)
     if no_results_text is None:
@@ -430,8 +443,9 @@ def _build_single_item_detail_presentation_plan(result: QueryResult, *, locale: 
         )
         items.append(render_message("query.format.field_status", locale, {"status": status_display}))
 
-    if item.id:
-        items.append(render_message("query.format.field_ref", locale, {"reference": item.id}))
+    reference = _display_reference(item)
+    if reference:
+        items.append(render_message("query.format.field_ref", locale, {"reference": reference}))
 
     hint_text = None
     if transaction_type == "transfer":
@@ -453,6 +467,19 @@ def _format_amount(amount: float) -> str:
     if amount >= 1000:
         return f"₦{amount:,.0f}"
     return f"₦{amount:.0f}"
+
+
+def _display_reference(item: QueryResultItem) -> str | None:
+    metadata = item.metadata if isinstance(item.metadata, dict) else {}
+    for key in ("transaction_id", "reference", "ref"):
+        value = str(metadata.get(key) or "").strip()
+        if value:
+            return value
+
+    item_id = str(item.id or "").strip()
+    if not item_id or re.fullmatch(r"\d+", item_id):
+        return None
+    return item_id
 
 
 def _format_percentage(amount: float, total_abs: float) -> str:
