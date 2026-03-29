@@ -30,7 +30,7 @@ from shared.i18n import render_message
 
 
 def _query_ir(**kwargs: object) -> QueryIR:
-    fallback_day = date(2026, 3, 28)
+    fallback_day = lagos_today()
     defaults: dict[str, object] = {
         "intent": QueryIntent.TRANSACTION_LIST,
         "time_range": TimeRange(start=fallback_day, end=fallback_day),
@@ -46,7 +46,7 @@ def _query_contract(query: QueryIR) -> QueryExecutionContract:
         aggregation=query.aggregation,
         answer_fact_field=query.answer_fact_field,
     )
-    fallback_day = date(2026, 3, 28)
+    fallback_day = lagos_today()
     execution_plan: QueryExecutionPlan = build_query_execution_plan_from_fields(
         intent_spec=intent_spec,
         time_range=query.time_range,
@@ -55,7 +55,7 @@ def _query_contract(query: QueryIR) -> QueryExecutionContract:
         result_limit=query.result_limit,
         result_reference=query.result_reference,
     )
-    fallback_day = date(2026, 3, 28)
+    fallback_day = lagos_today()
     return QueryExecutionContract(
         intent=query.intent,
         query_operation=query.query_operation,
@@ -82,7 +82,7 @@ def _contract_without_time(
     filters: Filters | None = None,
     aggregation: Aggregation | None = None,
 ) -> QueryExecutionContract:
-    fallback_day = date(2026, 3, 28)
+    fallback_day = lagos_today()
     return QueryExecutionContract(
         intent=intent,
         time_start=fallback_day,
@@ -804,13 +804,14 @@ def test_formatter_single_item_detail_suppresses_synthetic_reference() -> None:
 
 
 def test_formatter_no_results_does_not_leak_structural_account_summary_for_transaction_list() -> None:
+    today = lagos_today()
     result = QueryResult(
         summary_text="accounts:2|showing:1-0|total:0",
         items=[],
         query_contract=_query_contract(
             _query_ir(
                 intent=QueryIntent.TRANSACTION_LIST,
-                time_range=TimeRange(start=date(2026, 3, 28), end=date(2026, 3, 28)),
+                time_range=TimeRange(start=today, end=today),
             )
         ),
     )
