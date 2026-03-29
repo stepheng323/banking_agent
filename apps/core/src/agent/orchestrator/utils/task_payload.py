@@ -475,7 +475,7 @@ def build_task_spec_from_plan_item(
     strip_transfer_recipient_suffix: bool,
     format_narration_requires_recipient_field: bool,
 ) -> TaskSpec:
-    payload = plan_item.parameters.model_dump() if plan_item.parameters else {}
+    payload = plan_item.parameters.model_dump(exclude_none=True) if plan_item.parameters else {}
 
     if plan_item.action:
         if preserve_existing_action_instruction:

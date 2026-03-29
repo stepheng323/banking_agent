@@ -24,7 +24,7 @@ class TaskParameters(BaseModel):
     """Common parameters for tasks."""
 
     amount: str | float | None = None
-    transfer_all: bool | None = None
+    transfer_all: bool = False
     transfer_percentage: float | None = None
     recipient: str | None = None
     recipient_name: str | None = None
