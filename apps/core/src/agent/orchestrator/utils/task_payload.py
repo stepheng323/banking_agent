@@ -28,6 +28,26 @@ _WEEKDAY_NAME_TO_INDEX = {
 _AMOUNT_VALUE_PATTERN = re.compile(r"^\s*(?:₦|ngn)?\s*(\d[\d,]*(?:\.\d+)?)\s*([kKmMhH]?)\s*$")
 
 
+def _dump_plan_parameters(parameters: Any) -> dict[str, Any]:
+    if not parameters:
+        return {}
+
+    model_dump = getattr(parameters, "model_dump", None)
+    if callable(model_dump):
+        try:
+            dumped = model_dump(exclude_none=True)
+        except TypeError:
+            dumped = model_dump()
+        if isinstance(dumped, dict):
+            return {key: value for key, value in dumped.items() if value is not None}
+        return {}
+
+    if isinstance(parameters, dict):
+        return {key: value for key, value in parameters.items() if value is not None}
+
+    return {}
+
+
 def apply_source_account_fields(payload: dict[str, Any], plan_item: Any) -> None:
     if plan_item.executor not in ("transfer", "airtime", "data") or not plan_item.parameters:
         return
@@ -475,7 +495,7 @@ def build_task_spec_from_plan_item(
     strip_transfer_recipient_suffix: bool,
     format_narration_requires_recipient_field: bool,
 ) -> TaskSpec:
-    payload = plan_item.parameters.model_dump(exclude_none=True) if plan_item.parameters else {}
+    payload = _dump_plan_parameters(plan_item.parameters)
 
     if plan_item.action:
         if preserve_existing_action_instruction:
