@@ -40,7 +40,7 @@ def build_query_ir_from_extraction(
     continuation_delta_type: str | None = None,
 ) -> QueryIR:
     base_today = today or lagos_today()
-    compiled = parser._compile_query_fields_from_extraction(extraction, today=base_today)
+    compiled = parser._compile_query_fields_from_extraction(extraction, today=base_today, language=language)
     time_range = compiled["time_range"] or TimeRange(
         start=base_today - timedelta(days=30),
         end=base_today,
@@ -166,20 +166,35 @@ def build_execution_contract_from_ir(query_ir: QueryIR) -> QueryExecutionContrac
     return QueryExecutionContract.from_query_ir(query_ir)
 
 
-def compile_query_fields_from_extraction(parser: Any, extraction: QueryExtractionResult, *, today: date) -> dict[str, Any]:
-    extraction = recover_known_fragile_query_shapes(extraction.model_copy(deep=True))
+def compile_query_fields_from_extraction(
+    parser: Any,
+    extraction: QueryExtractionResult,
+    *,
+    today: date,
+    language: str = "en",
+) -> dict[str, Any]:
+    # The compiler keeps the same precedence as parser finalization:
+    # typed extraction, then derived shape, then locale-aware semantic repair.
+    extraction = recover_known_fragile_query_shapes(extraction.model_copy(deep=True), language=language)
     effective_intent = parser._resolve_effective_intent(extraction)
     query_operation = parser._infer_query_operation(extraction, effective_intent=effective_intent)
     result_limit = parser._resolve_result_limit(extraction.result_limit, effective_intent=effective_intent)
-    time_range = parser._build_time_range(extraction, today=today)
-    filters = parser._build_filters(extraction, effective_intent=effective_intent, query_operation=query_operation)
-    aggregation = parser._build_aggregation(extraction, effective_intent=effective_intent, query_operation=query_operation)
+    result_reference = parser._infer_result_reference(extraction, query_operation=query_operation)
     answer_fact_field = parser._infer_answer_fact_field(
         extraction,
         effective_intent=effective_intent,
         query_operation=query_operation,
     )
-    result_reference = extraction.result_reference
+    time_range = parser._build_time_range(
+        extraction,
+        today=today,
+        effective_intent=effective_intent,
+        query_operation=query_operation,
+        answer_fact_field=answer_fact_field,
+        result_reference=result_reference,
+    )
+    filters = parser._build_filters(extraction, effective_intent=effective_intent, query_operation=query_operation)
+    aggregation = parser._build_aggregation(extraction, effective_intent=effective_intent, query_operation=query_operation)
     if aggregation is not None and aggregation.type in {"largest", "smallest"}:
         result_reference = None
     intent = parser._intent_from_query_operation(query_operation)
@@ -372,7 +387,32 @@ def resolve_result_limit(raw_limit: int | None, *, effective_intent: ExtractionI
     return result_limit
 
 
-def build_time_range(extraction: QueryExtractionResult, *, today: date) -> TimeRange | None:
+def infer_result_reference(
+    extraction: QueryExtractionResult,
+    *,
+    query_operation: QueryOperation,
+) -> Literal["latest", "oldest"] | None:
+    if extraction.result_reference in {"latest", "oldest"}:
+        return cast(Literal["latest", "oldest"], extraction.result_reference)
+    if query_operation != QueryOperation.SEARCH_SINGLE_TRANSACTION:
+        return None
+    raw_query = f" {(extraction.raw_query or '').strip().lower()} "
+    if any(cue in raw_query for cue in (" last ", " latest ", " most recent ")):
+        return "latest"
+    if any(cue in raw_query for cue in (" first ", " earliest ", " oldest ")):
+        return "oldest"
+    return None
+
+
+def build_time_range(
+    extraction: QueryExtractionResult,
+    *,
+    today: date,
+    effective_intent: ExtractionIntent,
+    query_operation: QueryOperation,
+    answer_fact_field: Literal["date", "counterparty", "amount", "bank"] | None,
+    result_reference: Literal["latest", "oldest"] | None,
+) -> TimeRange | None:
     if not extraction.time_range:
         return None
     days_back = extraction.time_range.days_back
@@ -388,7 +428,13 @@ def build_time_range(extraction: QueryExtractionResult, *, today: date) -> TimeR
         days_back = 1
     if days_back is None:
         days_back = 30
-    if reference_type == TimeReference.ALL_TIME:
+    if reference_type == TimeReference.ALL_TIME or (
+        reference_type == TimeReference.UNSPECIFIED
+        and effective_intent == ExtractionIntent.SINGLE_TRANSACTION
+        and query_operation == QueryOperation.SEARCH_SINGLE_TRANSACTION
+        and result_reference == "latest"
+        and answer_fact_field == "date"
+    ):
         days_back = QUERY_LIMITS["max_lookback_days"]
     elif reference_type == TimeReference.UNSPECIFIED:
         days_back = 30

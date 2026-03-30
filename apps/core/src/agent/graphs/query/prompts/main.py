@@ -17,6 +17,7 @@ CONTINUATION TYPES & FOLLOWUP INTENT
 | show_more             | continue_pagination  | paginate existing list                                            |
 | show_more             | refine_existing      | show underlying transactions for summary/breakdown                |
 | show_evidence         | refine_existing      | show the transactions behind an aggregate answer                  |
+| grouped_total_followup | refine_existing     | grouped summary -> total over the same scope                      |
 | time_delta            | replace_scope        | explicit scope replacement: "what about last week", "only today"  |
 | time_delta            | refine_existing      | scoped time delta keeping anchor                                  |
 | filter_delta          | refine_existing      | "what about credit/debit" — switch filter, keep time scope        |
@@ -48,6 +49,7 @@ Active list/summary context:
 - "more"/"next page" → show_more, continue_pagination
 - "show them"/"show me" after summary → show_more, refine_existing
 - "show me" after aggregate total/summary answer → show_evidence, refine_existing
+- "so what the total?" after grouped recipient summary → grouped_total_followup, refine_existing
 - "how much total"/"sum it up" → aggregate, refine_existing
 - "total for mum" → aggregate, refine_existing (narrow recipient filter, keep time scope)
 - "how all this take be 50k" / "how is that 50k" after aggregate evidence → explain_aggregate_scope, none
@@ -66,6 +68,7 @@ Frames: qf_1=this week mum summary, qf_2=last week mum summary
 
 QUERY SHAPE RULES
 - Singular/detail query about specific recipient with "last/latest" → latest matching item, not time clarification.
+- Unscoped "when last did..." / "when did I last..." fact queries default to latest matching item across available history unless the user adds a time period.
 - "How much did I spend last" (no recipient) → likely time clarification.
 - "How much did I spend today/this week" → fresh_query with explicit period, not continuation.
 
@@ -168,6 +171,8 @@ Return only these fields: intent, filters, time_range, comparison, aggregation, 
 If the user is vague, express that through the semantic fields:
 - vague time → reference_type=vague and estimate days_back when possible
 - missing/unclear fields → leave the field null instead of fabricating values
+- For grouped recipient/ranking asks, set `intent=beneficiary_summary` and `request_shape=grouped_summary`.
+- For grouped recipient asks about sent/paid/transferred money, set `filters.transaction_type=debit`.
 
 MULTILINGUAL: Support English, Nigerian Pidgin, Yoruba, Igbo, Hausa, French, and mixed phrasing.
 
@@ -177,7 +182,13 @@ EXAMPLES
 "how much have I sent to mum this week" → spending_total, sum, explicit this_week, debit, recipient=mum
 "show my transactions" → transaction_list, unspecified
 "what was my last transaction status" → transaction_list, result_limit=1, result_reference=latest
-"who did I send money to this month" → beneficiary_summary, sum, sort_by=count, debit, explicit this_month
+"who did I send money to this month" → beneficiary_summary, grouped_summary, sum, sort_by=count, debit, explicit this_month
+"who I send money give this month" → beneficiary_summary, grouped_summary, sum, sort_by=count, debit, explicit this_month
+"tani mo ran owo si ni osu yi" → beneficiary_summary, grouped_summary, sum, sort_by=count, debit, explicit this_month
+"onye ka m zigara ego n'onwa a" → beneficiary_summary, grouped_summary, sum, sort_by=count, debit, explicit this_month
+"wa na tura wa kudi a wannan watan" → beneficiary_summary, grouped_summary, sum, sort_by=count, debit, explicit this_month
+"qui ai je envoye de l argent ce mois ci" → beneficiary_summary, grouped_summary, sum, sort_by=count, debit, explicit this_month
+"tani mo send money to this month" → beneficiary_summary, grouped_summary, sum, sort_by=count, debit, explicit this_month
 "what's my highest single transfer this month" → spending_total, largest, limit=1, debit, explicit this_month
 
 TODAY: {today}

@@ -136,6 +136,7 @@ def inflate_parser_extraction(
     extraction: QueryExtractionResult | ParserQueryExtraction,
     *,
     question: str,
+    language: str,
 ) -> QueryExtractionResult:
     if isinstance(extraction, QueryExtractionResult):
         inflated = extraction.model_copy(deep=True)
@@ -154,7 +155,9 @@ def inflate_parser_extraction(
         )
 
     inflated.raw_query = question
-    inflated = parser._recover_known_fragile_query_shapes(inflated)
+    # Precedence: typed model extraction first, derived shape next, then a
+    # narrow locale-aware recovery pass only for semantically inconsistent output.
+    inflated = parser._recover_known_fragile_query_shapes(inflated, language=language)
     if inflated.request_shape is None:
         inflated.request_shape = parser._derive_request_shape(inflated)
     if inflated.fact_query_kind is None:
@@ -436,7 +439,7 @@ async def parse(parser: Any, question: str, today: Any, language: str = "en") ->
 
     try:
         raw_extraction = await structured_llm.ainvoke(prompt)
-        extraction = parser._inflate_parser_extraction(raw_extraction, question=question)
+        extraction = parser._inflate_parser_extraction(raw_extraction, question=question, language=language)
         return parser._finalize_extraction(extraction, today=today, language=language)
     except Exception as e:
         logger.error("parse_error", error=str(e))

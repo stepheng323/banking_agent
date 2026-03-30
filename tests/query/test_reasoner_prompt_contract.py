@@ -18,6 +18,7 @@ def test_query_reasoner_prompt_covers_all_continuation_types() -> None:
     for ct in (
         "show_more",
         "show_evidence",
+        "grouped_total_followup",
         "time_delta",
         "filter_delta",
         "expand",
@@ -91,6 +92,12 @@ def test_query_parser_prompt_mentions_bounded_query_operations() -> None:
 def test_query_parser_prompt_covers_recipient_summary_and_ranking() -> None:
     assert "beneficiary_summary" in QUERY_PARSER_PROMPT
     assert "sort_by" in QUERY_PARSER_PROMPT
+    assert "grouped_summary" in QUERY_PARSER_PROMPT
+    assert "who I send money give this month" in QUERY_PARSER_PROMPT
+    assert "tani mo ran owo si ni osu yi" in QUERY_PARSER_PROMPT
+    assert "onye ka m zigara ego n'onwa a" in QUERY_PARSER_PROMPT
+    assert "wa na tura wa kudi a wannan watan" in QUERY_PARSER_PROMPT
+    assert "qui ai je envoye de l argent ce mois ci" in QUERY_PARSER_PROMPT
 
 
 def test_query_parser_prompt_covers_time_normalization() -> None:
@@ -100,6 +107,7 @@ def test_query_parser_prompt_covers_time_normalization() -> None:
     assert "this_month" in QUERY_PARSER_PROMPT
     assert "last_month" in QUERY_PARSER_PROMPT
     assert "days_back" in QUERY_PARSER_PROMPT
+    assert 'Unscoped "when last did' in QUERY_SEMANTIC_REASONER_SYSTEM
 
 
 def test_query_parser_prompt_covers_aggregation_rules() -> None:

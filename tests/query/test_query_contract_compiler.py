@@ -1,5 +1,7 @@
 from datetime import date
 
+import pytest
+
 from apps.core.src.agent.graphs.query.models import (
     ExtractionIntent,
     FactQueryKind,
@@ -163,7 +165,7 @@ def test_explicit_amount_ranked_beneficiary_summary_compiles_amount_sort() -> No
     assert contract.aggregation.sort_by == "amount"
 
 
-def test_parser_does_not_lexically_upgrade_plain_recipient_summary_text() -> None:
+def test_parser_lexically_recovers_plain_recipient_summary_text() -> None:
     parser = QueryParser(_DummyLLM())
     today = date(2026, 3, 21)
     extraction = QueryExtractionResult(
@@ -175,8 +177,12 @@ def test_parser_does_not_lexically_upgrade_plain_recipient_summary_text() -> Non
     query_ir = parser.build_query_ir_from_extraction(extraction, today=today, language="en")
     contract = parser.build_execution_contract_from_ir(query_ir)
 
-    assert query_ir.intent == QueryIntent.TRANSACTION_LIST
-    assert contract.intent == QueryIntent.TRANSACTION_LIST
+    assert query_ir.intent == QueryIntent.BENEFICIARY_SUMMARY
+    assert contract.intent == QueryIntent.BENEFICIARY_SUMMARY
+    assert query_ir.filters.counterparty is None
+    assert contract.filters.counterparty is None
+    assert query_ir.filters.transaction_type == "debit"
+    assert contract.filters.transaction_type == "debit"
 
 
 def test_parser_does_not_lexically_upgrade_comparison_text() -> None:
@@ -463,7 +469,7 @@ def test_beneficiary_summary_fact_shape_is_recovered_to_single_transaction_query
     extraction = QueryExtractionResult(
         intent=ExtractionIntent.BENEFICIARY_SUMMARY,
         filters=QueryFilters(recipient="Mum"),
-        time_range=QueryTimeRange(reference_type=TimeReference.UNSPECIFIED, days_back=30),
+        time_range=QueryTimeRange(reference_type=TimeReference.UNSPECIFIED),
         raw_query="when last did I send mum money",
     )
 
@@ -474,8 +480,31 @@ def test_beneficiary_summary_fact_shape_is_recovered_to_single_transaction_query
     assert query_ir.answer_fact_field == "date"
     assert query_ir.filters is not None
     assert query_ir.filters.counterparty == ["Mum"]
+    assert query_ir.time_range.start == date(2025, 9, 29)
+    assert query_ir.time_range.end == today
+    assert query_ir.result_reference == "latest"
     assert contract.intent == QueryIntent.TRANSACTION_SEARCH
     assert contract.answer_fact_field == "date"
+    assert contract.result_reference == "latest"
+
+
+def test_unscoped_fact_latest_query_defaults_to_latest_across_available_history() -> None:
+    parser = QueryParser(_DummyLLM())
+    today = date(2026, 3, 28)
+    extraction = QueryExtractionResult(
+        intent=ExtractionIntent.SINGLE_TRANSACTION,
+        filters=QueryFilters(recipient="Mum"),
+        time_range=QueryTimeRange(reference_type=TimeReference.UNSPECIFIED),
+        raw_query="when last did I send money to mum",
+    )
+
+    query_ir = parser.build_query_ir_from_extraction(extraction, today=today, language="en")
+
+    assert query_ir.intent == QueryIntent.TRANSACTION_SEARCH
+    assert query_ir.answer_fact_field == "date"
+    assert query_ir.result_reference == "latest"
+    assert query_ir.time_range.start == date(2025, 9, 29)
+    assert query_ir.time_range.end == today
 
 
 def test_request_shape_fact_overrides_grouped_summary_without_keyword_recovery() -> None:
@@ -609,3 +638,58 @@ def test_greater_than_amount_people_query_compiles_to_beneficiary_summary_with_m
     assert query_ir.filters.max_amount is None
     assert query_ir.time_range.start == date(2026, 3, 14)
     assert query_ir.time_range.end == today
+
+
+def test_plain_people_query_compiles_to_beneficiary_summary_without_literal_people_filter() -> None:
+    parser = QueryParser(_DummyLLM())
+    today = date(2026, 3, 30)
+    extraction = QueryExtractionResult(
+        intent=ExtractionIntent.TRANSACTION_LIST,
+        filters=QueryFilters(recipient="people"),
+        time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="this_month"),
+        raw_query="show people I sent money to this month",
+    )
+
+    query_ir = parser.build_query_ir_from_extraction(extraction, today=today, language="en")
+
+    assert query_ir.intent == QueryIntent.BENEFICIARY_SUMMARY
+    assert query_ir.filters is not None
+    assert query_ir.filters.transaction_type == "debit"
+    assert query_ir.filters.counterparty is None
+    assert query_ir.aggregation is not None
+    assert query_ir.aggregation.sort_by == "count"
+
+
+@pytest.mark.parametrize(
+    ("question", "language", "placeholder_recipient"),
+    [
+        ("who I send money give this month", "pcm", "pesin"),
+        ("tani mo ran owo si ni osu yi", "yo", "eniyan"),
+        ("onye ka m zigara ego n'onwa a", "ig", "nnata"),
+        ("wa na tura wa kudi a wannan watan", "ha", "mutanen"),
+        ("qui ai je envoye de l argent ce mois ci", "fr", "personnes"),
+        ("tani mo send money to this month", "yo", "eniyan"),
+    ],
+)
+def test_multilingual_recipient_summary_queries_compile_to_beneficiary_summary(
+    question: str,
+    language: str,
+    placeholder_recipient: str,
+) -> None:
+    parser = QueryParser(_DummyLLM())
+    today = date(2026, 3, 30)
+    extraction = QueryExtractionResult(
+        intent=ExtractionIntent.TRANSACTION_LIST,
+        filters=QueryFilters(recipient=placeholder_recipient),
+        time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="this_month"),
+        raw_query=question,
+    )
+
+    query_ir = parser.build_query_ir_from_extraction(extraction, today=today, language=language)
+
+    assert query_ir.intent == QueryIntent.BENEFICIARY_SUMMARY
+    assert query_ir.filters is not None
+    assert query_ir.filters.transaction_type == "debit"
+    assert query_ir.filters.counterparty is None
+    assert query_ir.aggregation is not None
+    assert query_ir.aggregation.sort_by == "count"

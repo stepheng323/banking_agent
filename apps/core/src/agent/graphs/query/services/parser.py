@@ -142,8 +142,9 @@ class QueryParser:
         extraction: QueryExtractionResult | ParserQueryExtraction,
         *,
         question: str,
+        language: str = "en",
     ) -> QueryExtractionResult:
-        return finalize_compiler.inflate_parser_extraction(self, extraction, question=question)
+        return finalize_compiler.inflate_parser_extraction(self, extraction, question=question, language=language)
 
     @staticmethod
     def _month_token(period: str | None) -> int | None:
@@ -168,8 +169,13 @@ class QueryParser:
     def _extract_relative_time_range_from_query(raw_query: str) -> QueryTimeRange | None:
         return lexical_recovery.extract_relative_time_range_from_query(raw_query)
 
-    def _recover_known_fragile_query_shapes(self, extraction: QueryExtractionResult) -> QueryExtractionResult:
-        return lexical_recovery.recover_known_fragile_query_shapes(extraction)
+    def _recover_known_fragile_query_shapes(
+        self,
+        extraction: QueryExtractionResult,
+        *,
+        language: str = "en",
+    ) -> QueryExtractionResult:
+        return lexical_recovery.recover_known_fragile_query_shapes(extraction, language=language)
 
     @staticmethod
     def parse_clarification_time_range(
@@ -284,8 +290,9 @@ class QueryParser:
         extraction: "QueryExtractionResult",
         *,
         today: date,
+        language: str = "en",
     ) -> dict[str, Any]:
-        return query_compiler.compile_query_fields_from_extraction(self, extraction, today=today)
+        return query_compiler.compile_query_fields_from_extraction(self, extraction, today=today, language=language)
 
     def _resolve_effective_intent(self, extraction: "QueryExtractionResult") -> ExtractionIntent:
         effective_intent = query_compiler.resolve_effective_intent(
@@ -324,8 +331,31 @@ class QueryParser:
         return query_compiler.resolve_result_limit(raw_limit, effective_intent=effective_intent)
 
     @staticmethod
-    def _build_time_range(extraction: "QueryExtractionResult", *, today: date) -> TimeRange | None:
-        return query_compiler.build_time_range(extraction, today=today)
+    def _build_time_range(
+        extraction: "QueryExtractionResult",
+        *,
+        today: date,
+        effective_intent: ExtractionIntent,
+        query_operation: QueryOperation,
+        answer_fact_field: Literal["date", "counterparty", "amount", "bank"] | None,
+        result_reference: Literal["latest", "oldest"] | None,
+    ) -> TimeRange | None:
+        return query_compiler.build_time_range(
+            extraction,
+            today=today,
+            effective_intent=effective_intent,
+            query_operation=query_operation,
+            answer_fact_field=answer_fact_field,
+            result_reference=result_reference,
+        )
+
+    @staticmethod
+    def _infer_result_reference(
+        extraction: "QueryExtractionResult",
+        *,
+        query_operation: QueryOperation,
+    ) -> Literal["latest", "oldest"] | None:
+        return query_compiler.infer_result_reference(extraction, query_operation=query_operation)
 
     @staticmethod
     def _infer_transaction_type(

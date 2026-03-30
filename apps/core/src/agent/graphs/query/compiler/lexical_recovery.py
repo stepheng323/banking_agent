@@ -3,12 +3,16 @@
 from __future__ import annotations
 
 import re
+import unicodedata
 from calendar import monthrange
 from datetime import date
 
 from apps.core.src.agent.graphs.query.models import (
+    ExtractionIntent,
+    FactQueryKind,
     QueryAggregation,
     QueryExtractionResult,
+    QueryRequestShape,
     QueryTimeRange,
     TimeRange,
     TimeReference,
@@ -59,6 +63,151 @@ _EXPLICIT_TIME_RANGE_RE = re.compile(
     r"past\s+\d{1,3}\s+(?:day|days|week|weeks|month|months))\b",
     re.IGNORECASE,
 )
+_LOCALE_ALIASES = {
+    "en": "en",
+    "eng": "en",
+    "english": "en",
+    "pcm": "pcm",
+    "pidgin": "pcm",
+    "nigerian_pidgin": "pcm",
+    "yo": "yo",
+    "yoruba": "yo",
+    "ig": "ig",
+    "ibo": "ig",
+    "igbo": "ig",
+    "ha": "ha",
+    "hau": "ha",
+    "hausa": "ha",
+    "fr": "fr",
+    "fra": "fr",
+    "fre": "fr",
+    "french": "fr",
+}
+_SEMANTIC_HINTS = {
+    "common": {
+        "group_nouns": {"peopl", "person", "recipient", "beneficiar", "destinatair", "pesin", "eniyan", "nnata", "mutan", "olugba"},
+        "question_cues": {"who", "qui", "tani", "onye", "wane", "wa"},
+        "ranking_cues": {"top", "most", "plus", "mafi", "kacha", "pupo", "pass"},
+        "list_cues": {"show", "list", "view", "get", "check", "display", "see", "montre", "affich", "liste", "nuna", "gosi", "han"},
+        "debit_verbs": {"send", "sent", "pay", "paid", "transfer", "give", "ran", "san", "ziga", "zipu", "nyere", "tura", "aika", "biya", "envoy", "payer", "transf"},
+    },
+    "en": {
+        "group_nouns": {"peopl", "person", "recipient", "beneficiar"},
+        "question_cues": {"who"},
+        "ranking_cues": {"top", "most"},
+        "list_cues": {"show", "list", "view", "get", "check", "display", "see"},
+        "debit_verbs": {"send", "sent", "pay", "paid", "transfer"},
+    },
+    "pcm": {
+        "group_nouns": {"peopl", "person", "pesin"},
+        "question_cues": {"who"},
+        "ranking_cues": {"top", "most", "pass"},
+        "list_cues": {"show", "list", "check", "see"},
+        "debit_verbs": {"send", "sent", "pay", "paid", "transfer", "give"},
+    },
+    "yo": {
+        "group_nouns": {"eniyan", "olugba"},
+        "question_cues": {"tani"},
+        "ranking_cues": {"pupo"},
+        "list_cues": {"fi", "han", "show"},
+        "debit_verbs": {"ran", "san"},
+    },
+    "ig": {
+        "group_nouns": {"nnata", "ndi"},
+        "question_cues": {"onye"},
+        "ranking_cues": {"kacha"},
+        "list_cues": {"show", "gosi"},
+        "debit_verbs": {"ziga", "zipu", "nyere"},
+    },
+    "ha": {
+        "group_nouns": {"mutan", "karba"},
+        "question_cues": {"wane", "wa"},
+        "ranking_cues": {"mafi"},
+        "list_cues": {"show", "nuna"},
+        "debit_verbs": {"tura", "aika", "biya"},
+    },
+    "fr": {
+        "group_nouns": {"personn", "beneficiar", "destinatair"},
+        "question_cues": {"qui"},
+        "ranking_cues": {"top", "plus"},
+        "list_cues": {"montre", "affich", "liste", "show", "list"},
+        "debit_verbs": {"envoy", "payer", "transf"},
+    },
+}
+
+
+def _normalize_language(language: str | None) -> str:
+    if not language:
+        return "en"
+    normalized = language.strip().lower().replace("-", "_")
+    base = normalized.split("_", 1)[0]
+    return _LOCALE_ALIASES.get(normalized, _LOCALE_ALIASES.get(base, "en"))
+
+
+def _normalize_match_text(text: str) -> str:
+    lowered = unicodedata.normalize("NFKD", text.casefold())
+    stripped = "".join(char for char in lowered if not unicodedata.combining(char))
+    return re.sub(r"[^a-z0-9']+", " ", stripped).strip()
+
+
+def _tokenize_match_text(text: str) -> list[str]:
+    normalized = _normalize_match_text(text).replace("'", " ")
+    return [token for token in normalized.split() if token]
+
+
+def _matches_stem(token: str, stem: str) -> bool:
+    if len(stem) <= 2:
+        return token == stem
+    return token.startswith(stem)
+
+
+def _contains_semantic_stem(tokens: list[str], stems: set[str]) -> bool:
+    return any(_matches_stem(token, stem) for token in tokens for stem in stems)
+
+
+def _active_semantic_profiles(language: str | None) -> list[dict[str, set[str]]]:
+    normalized = _normalize_language(language)
+    profiles = [_SEMANTIC_HINTS["common"]]
+    if normalized != "en":
+        profiles.append(_SEMANTIC_HINTS["en"])
+    profiles.append(_SEMANTIC_HINTS[normalized])
+    return profiles
+
+
+def _is_placeholder_group_noun(recipient: str | None, *, language: str | None) -> bool:
+    if not recipient:
+        return False
+    tokens = _tokenize_match_text(recipient)
+    if not tokens:
+        return False
+    profiles = _active_semantic_profiles(language)
+    return all(
+        any(_contains_semantic_stem([token], profile["group_nouns"]) for profile in profiles)
+        for token in tokens
+    )
+
+
+def _recipient_summary_candidate(
+    raw_query: str,
+    *,
+    extracted_recipient: str | None,
+    language: str | None,
+) -> bool:
+    tokens = _tokenize_match_text(raw_query)
+    if not tokens:
+        return False
+    profiles = _active_semantic_profiles(language)
+    has_group_noun = any(_contains_semantic_stem(tokens, profile["group_nouns"]) for profile in profiles)
+    has_question_cue = any(_contains_semantic_stem(tokens, profile["question_cues"]) for profile in profiles)
+    has_ranking_cue = any(_contains_semantic_stem(tokens, profile["ranking_cues"]) for profile in profiles)
+    has_list_cue = any(_contains_semantic_stem(tokens, profile["list_cues"]) for profile in profiles)
+    has_debit_verb = any(_contains_semantic_stem(tokens, profile["debit_verbs"]) for profile in profiles)
+    placeholder_recipient = _is_placeholder_group_noun(extracted_recipient, language=language)
+    return has_debit_verb and (
+        placeholder_recipient
+        or has_question_cue
+        or (has_group_noun and (has_list_cue or has_ranking_cue))
+    )
 
 
 def month_token(period: str | None) -> int | None:
@@ -202,7 +351,11 @@ def extract_relative_time_range_from_query(raw_query: str) -> QueryTimeRange | N
     return QueryTimeRange(reference_type=TimeReference.EXPLICIT, days_back=max(amount - 1, 0))
 
 
-def recover_known_fragile_query_shapes(extraction: QueryExtractionResult) -> QueryExtractionResult:
+def recover_known_fragile_query_shapes(
+    extraction: QueryExtractionResult,
+    *,
+    language: str | None = None,
+) -> QueryExtractionResult:
     raw_query = " ".join((extraction.raw_query or "").strip().lower().split())
     if not raw_query:
         return extraction
@@ -210,31 +363,35 @@ def recover_known_fragile_query_shapes(extraction: QueryExtractionResult) -> Que
     extraction = normalize_recent_list_time_range(extraction, raw_query=raw_query)
     extraction = normalize_day_scoped_singular_list_query(extraction, raw_query=raw_query)
 
-    people_query = any(
-        cue in raw_query
-        for cue in (
-            "show people i sent",
-            "show people i paid",
-            "who did i send",
-            "who have i sent",
-            "who i sent",
-        )
-    )
-    if not people_query:
+    # Parser precedence is typed extraction first, semantic hints second. This
+    # backstop only repairs weak grouped-recipient outputs; it should never be
+    # the primary intent router or override explicit fact/comparison shapes.
+    if extraction.request_shape == QueryRequestShape.FACT or extraction.fact_query_kind is not None:
         return extraction
-
     amount_bounds = extract_beneficiary_query_amount_bounds(raw_query)
-    if amount_bounds is None and extraction.filters.min_amount is None and extraction.filters.max_amount is None:
+    if extraction.answer_fact_field in {"date", "counterparty", "amount", "bank"}:
         return extraction
-
-    from apps.core.src.agent.graphs.query.models import ExtractionIntent
+    if extraction.intent not in {ExtractionIntent.TRANSACTION_LIST, ExtractionIntent.BENEFICIARY_SUMMARY}:
+        return extraction
+    if (
+        extraction.request_shape in {QueryRequestShape.ANALYTICS, QueryRequestShape.COMPARISON, QueryRequestShape.AFFORDABILITY}
+        or extraction.fact_query_kind in {FactQueryKind.DATE, FactQueryKind.COUNTERPARTY, FactQueryKind.AMOUNT, FactQueryKind.BANK}
+    ):
+        return extraction
+    if extraction.filters.recipient and not _is_placeholder_group_noun(extraction.filters.recipient, language=language):
+        return extraction
+    if not _recipient_summary_candidate(raw_query, extracted_recipient=extraction.filters.recipient, language=language):
+        return extraction
 
     extraction.intent = ExtractionIntent.BENEFICIARY_SUMMARY
+    if _is_placeholder_group_noun(extraction.filters.recipient, language=language):
+        extraction.filters.recipient = None
     extraction.filters.transaction_type = "debit"
     if amount_bounds is not None:
         min_amount, max_amount = amount_bounds
         extraction.filters.min_amount = min_amount
         extraction.filters.max_amount = max_amount
+    extraction.request_shape = QueryRequestShape.GROUPED_SUMMARY
     if extraction.aggregation is None:
         extraction.aggregation = QueryAggregation(type="sum", sort_by="count", limit=5)
     else:

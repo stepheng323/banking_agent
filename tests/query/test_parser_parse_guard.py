@@ -111,6 +111,91 @@ async def test_time_vague_clarify_renders_full_message_not_raw_context() -> None
 
 
 @pytest.mark.asyncio
+async def test_plain_people_query_is_recovered_to_beneficiary_summary_without_people_filter() -> None:
+    extraction = QueryExtractionResult(
+        intent=ExtractionIntent.TRANSACTION_LIST,
+        filters=QueryFilters(recipient="people"),
+        time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="this_month"),
+        raw_query="show people i sent money to this month",
+    )
+    parser = QueryParser(_DummyLLM(extraction))
+
+    result = await parser.parse(
+        "show people i sent money to this month",
+        today=date(2026, 3, 30),
+        language="en",
+    )
+
+    assert result.outcome == ResolverOutcome.OK
+    assert result.query_contract is not None
+    assert result.query_contract["intent"] == "beneficiary_summary"
+    assert result.query_contract["filters"]["counterparty"] is None
+    assert result.query_contract["filters"]["transaction_type"] == "debit"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("question", "language", "placeholder_recipient"),
+    [
+        ("who I send money give this month", "pcm", "pesin"),
+        ("tani mo ran owo si ni osu yi", "yo", "eniyan"),
+        ("onye ka m zigara ego n'onwa a", "ig", "nnata"),
+        ("wa na tura wa kudi a wannan watan", "ha", "mutanen"),
+        ("qui ai je envoye de l argent ce mois ci", "fr", "personnes"),
+        ("tani mo send money to this month", "yo", "eniyan"),
+    ],
+)
+async def test_multilingual_recipient_summary_recovery_stays_grouped_and_clears_placeholder_recipient(
+    question: str,
+    language: str,
+    placeholder_recipient: str,
+) -> None:
+    extraction = QueryExtractionResult(
+        intent=ExtractionIntent.TRANSACTION_LIST,
+        filters=QueryFilters(recipient=placeholder_recipient),
+        time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="this_month"),
+        raw_query=question,
+    )
+    parser = QueryParser(_DummyLLM(extraction))
+
+    result = await parser.parse(
+        question,
+        today=date(2026, 3, 30),
+        language=language,
+    )
+
+    assert result.outcome == ResolverOutcome.OK
+    assert result.query_contract is not None
+    assert result.query_contract["intent"] == "beneficiary_summary"
+    assert result.query_contract["filters"]["counterparty"] is None
+    assert result.query_contract["filters"]["transaction_type"] == "debit"
+
+
+@pytest.mark.asyncio
+async def test_fact_query_shape_does_not_get_upgraded_to_beneficiary_summary_by_locale_recovery() -> None:
+    extraction = QueryExtractionResult(
+        intent=ExtractionIntent.TRANSACTION_LIST,
+        filters=QueryFilters(recipient="mum"),
+        time_range=QueryTimeRange(reference_type=TimeReference.UNSPECIFIED),
+        raw_query="when last did I send mum money",
+        answer_fact_field="date",
+    )
+    parser = QueryParser(_DummyLLM(extraction))
+
+    result = await parser.parse(
+        "when last did I send mum money",
+        today=date(2026, 3, 30),
+        language="en",
+    )
+
+    assert result.outcome == ResolverOutcome.OK
+    assert result.query_contract is not None
+    assert result.query_contract["intent"] == "transaction_search"
+    assert result.query_contract["answer_fact_field"] == "date"
+    assert result.query_contract["filters"]["counterparty"] == ["mum"]
+
+
+@pytest.mark.asyncio
 async def test_time_vague_matching_transaction_shape_clarifies_without_llm_latest_item_shape() -> None:
     extraction = QueryExtractionResult(
         intent=ExtractionIntent.SPENDING_TOTAL,
