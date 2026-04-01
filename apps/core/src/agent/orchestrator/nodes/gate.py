@@ -37,6 +37,31 @@ logger = get_logger(__name__)
 
 TRANSACTION_EXECUTORS = {"transfer", "airtime", "data"}
 SEMANTIC_ROUTER_MULTI_CLAUSE_MARKERS = (" and ", " & ", " then ", ",")
+_TRANSFER_DIRECT_PREFIX_RE = re.compile(
+    r"^(?:(?:ok(?:ay)?|please|pls|abeg|oya|jowo|biko|kindly)\s+)*"
+    r"(?:send|transfer|pay|remit|split|fi|tura)\b",
+    re.IGNORECASE,
+)
+_TRANSFER_DIRECT_RECIPIENT_CUE_RE = re.compile(r"\b(?:to|for|between|btw|si|zuwa)\b", re.IGNORECASE)
+_TRANSFER_DIRECT_AMOUNT_RE = re.compile(r"(?:₦|ngn)?\s*\d[\d,]*(?:\.\d+)?\s*[kKmMhH]?\b")
+_TRANSFER_DIRECT_PERCENTAGE_RE = re.compile(
+    r"\b(?:half|quarter|tithe|\d{1,3}\s*%|all|everything|max amount|what(?:ever)? i have)\b",
+    re.IGNORECASE,
+)
+_TRANSFER_DIRECT_SOURCE_RE = re.compile(
+    r"\b(?:from|using|use|with)\s+(?:my\s+)?[a-z][\w\s]{0,24}\b",
+    re.IGNORECASE,
+)
+_TRANSFER_DIRECT_NON_TRANSFER_RE = re.compile(
+    r"\b(?:transaction|transactions|history|statement|income|inflow|expense|expenses|spending|"
+    r"balance|linked accounts?|beneficiar(?:y|ies)|save beneficiary|support|reversal|receipt|"
+    r"airtime|data|bundle|show|list|view|get)\b",
+    re.IGNORECASE,
+)
+_TRANSFER_DIRECT_QUERY_MARKER_RE = re.compile(
+    r"\b(?:how much|what(?:'s| is)?|when|who did i|show|list|view|get)\b",
+    re.IGNORECASE,
+)
 DETERMINISTIC_GREETING_EXACT = {
     "hi",
     "hello",
@@ -388,6 +413,36 @@ def _has_explicit_cancel(message_text: str) -> bool:
     if not normalized:
         return False
     return any(re.search(pattern, normalized) for pattern in EXPLICIT_CANCEL_PATTERNS)
+
+
+def _detect_deterministic_transfer_reason(message_text: str) -> str | None:
+    normalized = re.sub(r"\s+", " ", message_text.strip().lower()).rstrip("?.!,")
+    if not normalized or not _TRANSFER_DIRECT_PREFIX_RE.search(normalized):
+        return None
+    if _TRANSFER_DIRECT_QUERY_MARKER_RE.search(normalized) and not _TRANSFER_DIRECT_PREFIX_RE.match(normalized):
+        return None
+    has_multi_clause = any(marker in normalized for marker in SEMANTIC_ROUTER_MULTI_CLAUSE_MARKERS)
+    if has_multi_clause and _TRANSFER_DIRECT_NON_TRANSFER_RE.search(normalized):
+        return None
+    if _is_account_balance_request(normalized) or _is_query_domain_request(normalized):
+        return None
+    if _TRANSFER_DIRECT_NON_TRANSFER_RE.search(normalized) and not _TRANSFER_DIRECT_RECIPIENT_CUE_RE.search(normalized):
+        return None
+
+    has_amount_like = bool(
+        _TRANSFER_DIRECT_AMOUNT_RE.search(normalized) or _TRANSFER_DIRECT_PERCENTAGE_RE.search(normalized)
+    )
+    has_transfer_shape = bool(
+        _TRANSFER_DIRECT_RECIPIENT_CUE_RE.search(normalized) or _TRANSFER_DIRECT_SOURCE_RE.search(normalized)
+    )
+    if not has_amount_like and not has_transfer_shape:
+        return None
+
+    if "split" in normalized or " each " in f" {normalized} " or re.search(r"\b(?:between|btw)\b", normalized):
+        return "batch_transfer_command"
+    if _TRANSFER_DIRECT_PERCENTAGE_RE.search(normalized) or _TRANSFER_DIRECT_SOURCE_RE.search(normalized):
+        return "account_aware_transfer_command"
+    return "fresh_transfer_command"
 
 
 def _build_query_session_exit_updates(
@@ -899,6 +954,47 @@ async def session_gate_direct_path(state: OrchestratorState, config: RunnableCon
                 mode="new",
             ),
         }
+
+    if not live_pending_interrupt and not state.has_quote:
+        transfer_fast_path_reason = _detect_deterministic_transfer_reason(message_text)
+        if transfer_fast_path_reason is not None:
+            transfer_updates: dict[str, Any] = {}
+            if (
+                isinstance(query_session_snapshot, dict)
+                and query_session_snapshot.get("session_active")
+            ):
+                await clear_query_session(redis_client, state.phone_number)
+                transfer_updates.update(
+                    _build_query_session_exit_updates(
+                        state,
+                        query_session_snapshot=query_session_snapshot,
+                    )
+                )
+            task_id, spec = _build_direct_domain_task(state=state, domain="transfer", mode="new")
+            logger.info(
+                "gate_deterministic_transfer_domain",
+                task_id=task_id,
+                reason=transfer_fast_path_reason,
+                skipped_semantic_router=True,
+                skipped_planner=True,
+            )
+            return {
+                **gate_updates,
+                **summary_updates,
+                **transfer_updates,
+                "tasks": {task_id: spec},
+                "waves": [[task_id]],
+                "current_wave_index": 0,
+                "planner_output": None,
+                "direct_path_triggered": True,
+                "semantic_path_shape": "deterministic_transfer_domain",
+                **_route_observability_updates(
+                    owner="guardrail",
+                    decision=transfer_fast_path_reason,
+                    target_domain="transfer",
+                    mode="new",
+                ),
+            }
 
     if (
         not state.has_quote

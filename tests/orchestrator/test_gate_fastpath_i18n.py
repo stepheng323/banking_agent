@@ -2,11 +2,45 @@
 
 from langchain_core.runnables import RunnableConfig
 
-from apps.core.src.agent.orchestrator.models.domain import ActiveSession, PendingInterrupt, TaskSpec, TaskStage
+from apps.core.src.agent.orchestrator.models.domain import (
+    ActiveSession,
+    PendingInterrupt,
+    TaskSpec,
+    TaskStage,
+    TransactionOutcome,
+    TransactionResult,
+)
 from apps.core.src.agent.orchestrator.models.state import OrchestratorState
+from apps.core.src.agent.orchestrator.nodes.execution import advance_wave
 from apps.core.src.agent.orchestrator.nodes.gate import session_gate_direct_path
 from shared.i18n import render_cancelled_prompt, render_locale_switched, render_message
 from shared.types.planner import SemanticRouteDecision
+
+
+def _apply_updates(state: OrchestratorState, updates: dict[str, object]) -> OrchestratorState:
+    return state.model_copy(update=updates)
+
+
+class _MockTransferNeedsInputWorker:
+    def __init__(self) -> None:
+        self.call_count = 0
+        self.last_payload: dict | None = None
+
+    async def run(
+        self,
+        payload: dict,
+        context: dict,
+        user_message: str | None = None,
+        pin_verified: bool = False,
+    ) -> TransactionResult:
+        del context, user_message, pin_verified
+        self.call_count += 1
+        self.last_payload = dict(payload)
+        return TransactionResult(
+            outcome=TransactionOutcome.NEEDS_INPUT,
+            required_fields=["recipient_account", "recipient_bank_name"],
+            prompt="I need account details for this recipient.",
+        )
 
 
 async def test_gate_handles_greeting_meta_deterministically() -> None:
@@ -542,6 +576,78 @@ async def test_gate_mixed_query_and_transfer_turn_still_falls_through_to_planner
     assert updates["routing_decision"] == "planner_mixed"
 
 
+async def test_gate_transfer_fastpath_does_not_steal_active_transfer_correction() -> None:
+    planner = _RouteTurnPlanner(
+        SemanticRouteDecision(
+            decision="planner_ambiguous",
+            confidence=0.92,
+            detected_language="English",
+            response_key=None,
+            response=None,
+            expected_transaction_executors=[],
+            reason="active flow correction",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_gate_transfer_correction_1",
+        phone_number="2348999999905",
+        channel="whatsapp",
+        last_message_text="make it 20k",
+        pending_interrupt=PendingInterrupt(kind="input", task_ids=["t1"]),
+        tasks={
+            "t1": TaskSpec(
+                id="t1",
+                type="transfer",
+                stage=TaskStage.EXTRACTED,
+                payload={"recipient_name": "Mum", "amount": 10000},
+            )
+        },
+        waves=[["t1"]],
+        current_wave_index=0,
+        session_stack=[ActiveSession(domain="transfer", state="WAITING_FOR_INPUT", interrupt_policy="BLOCK")],
+        loaded_context={"language": "en"},
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert planner.route_calls == 1
+    assert updates.get("direct_path_triggered") is None
+    assert "tasks" not in updates
+
+
+async def test_gate_transfer_fastpath_does_not_run_for_quoted_replay_turn() -> None:
+    planner = _RouteTurnPlanner(
+        SemanticRouteDecision(
+            decision="domain_transfer",
+            mode="quoted_replay",
+            target_intent="transfer",
+            confidence=0.95,
+            detected_language="English",
+            response_key=None,
+            response=None,
+            expected_transaction_executors=["transfer"],
+            reason="quoted replay",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_gate_transfer_quote_1",
+        phone_number="2348999999906",
+        channel="whatsapp",
+        last_message_text="send it again",
+        has_quote=True,
+        loaded_context={"language": "en"},
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert planner.route_calls == 0
+    assert updates.get("direct_path_triggered") is None
+    assert "tasks" not in updates
+    assert updates["routing_owner"] == "planner"
+
+
 async def test_gate_mixed_query_and_airtime_turn_still_falls_through_to_planner() -> None:
     planner = _RouteTurnPlanner(
         SemanticRouteDecision(
@@ -641,7 +747,7 @@ async def test_gate_semantic_router_routes_account_list_direct_to_account_worker
     assert task.payload["message"] == "Show my linked accounts"
 
 
-async def test_gate_semantic_router_routes_transfer_direct_to_worker_without_planner() -> None:
+async def test_gate_deterministic_transfer_fastpath_bypasses_router_and_planner() -> None:
     planner = _RouteTurnPlanner(
         SemanticRouteDecision(
             decision="domain_transfer",
@@ -666,17 +772,20 @@ async def test_gate_semantic_router_routes_transfer_direct_to_worker_without_pla
 
     updates = await session_gate_direct_path(state, config)
 
-    assert planner.route_calls == 1
+    assert planner.route_calls == 0
     assert planner.plan_calls == 0
     assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "semantic_router_domain"
+    assert updates["semantic_path_shape"] == "deterministic_transfer_domain"
+    assert updates["routing_owner"] == "guardrail"
+    assert updates["routing_target_domain"] == "transfer"
+    assert updates["routing_decision"] == "fresh_transfer_command"
     task = updates["tasks"]["direct_transfer"]
     assert task.type == "transfer"
     assert task.payload["message"] == "Send 5k to Mum"
     assert "skip_extraction" not in task.payload
 
 
-async def test_gate_semantic_router_routes_same_domain_multi_transfer_to_planner() -> None:
+async def test_gate_deterministic_batch_transfer_fastpath_bypasses_router_and_planner() -> None:
     planner = _RouteTurnPlanner(
         SemanticRouteDecision(
             decision="planner_mixed",
@@ -692,17 +801,142 @@ async def test_gate_semantic_router_routes_same_domain_multi_transfer_to_planner
         user_id="u_gate_router_transfer_batch_1",
         phone_number="2348999999918",
         channel="whatsapp",
-        last_message_text="Send 10k to Mum and 5k to Gaines",
+        last_message_text="okay send 10k each to mum, tolu and doyin",
         loaded_context={"language": "en"},
     )
     config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
 
     updates = await session_gate_direct_path(state, config)
 
-    assert planner.route_calls == 1
+    assert planner.route_calls == 0
     assert planner.plan_calls == 0
-    assert updates.get("direct_path_triggered") is None
-    assert updates["preplanner_expected_transaction_executors"] == ["transfer"]
+    assert updates["direct_path_triggered"] is True
+    assert updates["semantic_path_shape"] == "deterministic_transfer_domain"
+    assert updates["routing_target_domain"] == "transfer"
+    assert updates["routing_decision"] == "batch_transfer_command"
+    task = updates["tasks"]["direct_transfer"]
+    assert task.type == "transfer"
+    assert task.payload["message"] == "okay send 10k each to mum, tolu and doyin"
+
+
+async def test_gate_deterministic_split_transfer_fastpath_bypasses_router_and_planner() -> None:
+    planner = _RouteTurnPlanner(
+        SemanticRouteDecision(
+            decision="planner_mixed",
+            confidence=0.93,
+            detected_language="English",
+            response_key=None,
+            response=None,
+            expected_transaction_executors=["transfer"],
+            reason="split transfer batch requires decomposition",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_gate_router_transfer_batch_2",
+        phone_number="2348999999919",
+        channel="whatsapp",
+        last_message_text="split 20k 70/30 btw mum and gaines",
+        loaded_context={"language": "en"},
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert planner.route_calls == 0
+    assert planner.plan_calls == 0
+    assert updates["direct_path_triggered"] is True
+    assert updates["semantic_path_shape"] == "deterministic_transfer_domain"
+    assert updates["routing_decision"] == "batch_transfer_command"
+    assert updates["tasks"]["direct_transfer"].payload["message"] == "split 20k 70/30 btw mum and gaines"
+
+
+async def test_gate_deterministic_account_aware_transfer_fastpath_bypasses_router_and_planner() -> None:
+    planner = _RouteTurnPlanner(
+        SemanticRouteDecision(
+            decision="domain_transfer",
+            mode="new",
+            target_intent="transfer",
+            confidence=0.93,
+            detected_language="English",
+            response_key=None,
+            response=None,
+            expected_transaction_executors=["transfer"],
+            reason="account-aware transfer request",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_gate_router_transfer_batch_3",
+        phone_number="2348999999920",
+        channel="whatsapp",
+        last_message_text="send half my zenith to mum",
+        loaded_context={"language": "en"},
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert planner.route_calls == 0
+    assert planner.plan_calls == 0
+    assert updates["direct_path_triggered"] is True
+    assert updates["semantic_path_shape"] == "deterministic_transfer_domain"
+    assert updates["routing_decision"] == "account_aware_transfer_command"
+    assert updates["tasks"]["direct_transfer"].payload["message"] == "send half my zenith to mum"
+
+
+async def test_gate_deterministic_transfer_fastpath_still_executes_through_transfer_worker() -> None:
+    planner = _RouteTurnPlanner(
+        SemanticRouteDecision(
+            decision="domain_transfer",
+            mode="new",
+            target_intent="transfer",
+            confidence=0.95,
+            detected_language="English",
+            response_key=None,
+            response=None,
+            expected_transaction_executors=["transfer"],
+            reason="single-domain transfer request",
+        )
+    )
+    worker = _MockTransferNeedsInputWorker()
+    state = OrchestratorState(
+        user_id="u_gate_router_transfer_exec_1",
+        phone_number="2348999999921",
+        channel="whatsapp",
+        last_message_text="Send 5k to Mum",
+        loaded_context={
+            "language": "en",
+            "accounts": [
+                {
+                    "bank_name": "Zenith Bank",
+                    "account_number": "00009384",
+                    "mandate_status": "ready",
+                },
+                {
+                    "bank_name": "First Bank",
+                    "account_number": "0334557890",
+                    "mandate_status": "pending",
+                },
+            ],
+        },
+    )
+    gate_config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    gate_updates = await session_gate_direct_path(state, gate_config)
+    routed_state = _apply_updates(state, gate_updates)
+    execution_config: RunnableConfig = {
+        "configurable": {"task_planner": planner, "services": {"transfer": worker}, "redis_client": None},
+        "recursion_limit": 50,
+    }
+
+    execution_updates = await advance_wave(routed_state, execution_config)
+
+    assert planner.route_calls == 0
+    assert worker.call_count == 1
+    assert worker.last_payload is not None
+    assert worker.last_payload["message"] == "Send 5k to Mum"
+    assert execution_updates["pending_interrupt"] is not None
+    assert execution_updates["pending_interrupt"].kind == "input"
+    assert execution_updates["outbox"]
 
 
 async def test_gate_semantic_router_can_switch_language_before_planner() -> None:
