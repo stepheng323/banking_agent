@@ -439,6 +439,65 @@ async def test_deterministic_amount_fastpath_parses_shorthand_reply() -> None:
     assert extractor.last_user_message is None
 
 
+async def test_deterministic_simple_transfer_fastpath_parses_name_without_extractor() -> None:
+    extractor = _CaptureExtractor()
+    step = ExtractionStep(user_message="Send 5k to Mum")
+    payload = TransferPayload()
+    context = TransferContext(phone_number="2348000000999", language="en", beneficiaries=[], accounts=[])
+    worker_context = SimpleNamespace(
+        extractor=extractor,
+        required_fields=[],
+        previous_response=None,
+    )
+
+    result = await step.execute(payload, context, TransferGates(), worker_context)
+
+    assert result.outcome == TransactionOutcome.OK
+    assert result.patch["amount"] == 5000
+    assert result.patch["recipient_name"] == "Mum"
+    assert result.patch["transfer_percentage"] is None
+    assert result.patch["transfer_all"] is False
+    assert extractor.last_user_message is None
+
+
+async def test_deterministic_simple_transfer_fastpath_parses_account_without_extractor() -> None:
+    extractor = _CaptureExtractor()
+    step = ExtractionStep(user_message="Send 5k to 8162511023")
+    payload = TransferPayload()
+    context = TransferContext(phone_number="2348000000999", language="en", beneficiaries=[], accounts=[])
+    worker_context = SimpleNamespace(
+        extractor=extractor,
+        required_fields=[],
+        previous_response=None,
+    )
+
+    result = await step.execute(payload, context, TransferGates(), worker_context)
+
+    assert result.outcome == TransactionOutcome.OK
+    assert result.patch["amount"] == 5000
+    assert result.patch["recipient_account"] == "8162511023"
+    assert "recipient_name" not in result.patch
+    assert extractor.last_user_message is None
+
+
+async def test_deterministic_simple_transfer_fastpath_skips_batch_turns() -> None:
+    extractor = _CaptureExtractor()
+    step = ExtractionStep(user_message="send 10k each to mum, tolu and doyin")
+    payload = TransferPayload()
+    context = TransferContext(phone_number="2348000000999", language="en", beneficiaries=[], accounts=[])
+    worker_context = SimpleNamespace(
+        extractor=extractor,
+        required_fields=[],
+        previous_response=None,
+    )
+
+    result = await step.execute(payload, context, TransferGates(), worker_context)
+
+    assert result.outcome == TransactionOutcome.OK
+    assert "amount" not in result.patch
+    assert extractor.last_user_message == "send 10k each to mum, tolu and doyin"
+
+
 async def test_narration_correction_updates_narration_and_user_note() -> None:
     class _NarrationCorrectionExtractor:
         async def extract(self, text: str, smart_context: dict | None = None) -> TransferExtractionResult:

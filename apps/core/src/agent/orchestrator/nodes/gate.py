@@ -429,19 +429,23 @@ def _detect_deterministic_transfer_reason(message_text: str) -> str | None:
     if _TRANSFER_DIRECT_NON_TRANSFER_RE.search(normalized) and not _TRANSFER_DIRECT_RECIPIENT_CUE_RE.search(normalized):
         return None
 
-    has_amount_like = bool(
-        _TRANSFER_DIRECT_AMOUNT_RE.search(normalized) or _TRANSFER_DIRECT_PERCENTAGE_RE.search(normalized)
-    )
-    has_transfer_shape = bool(
-        _TRANSFER_DIRECT_RECIPIENT_CUE_RE.search(normalized) or _TRANSFER_DIRECT_SOURCE_RE.search(normalized)
-    )
-    if not has_amount_like and not has_transfer_shape:
+    # Keep the fast path narrow: only explicit single-recipient sends.
+    # Batch/each/split/account-aware/source-qualified turns still need planner ownership
+    # until transfer extraction can reliably own those semantics from raw text.
+    if (
+        "split" in normalized
+        or " each " in f" {normalized} "
+        or re.search(r"\b(?:between|btw)\b", normalized)
+        or _TRANSFER_DIRECT_PERCENTAGE_RE.search(normalized)
+        or _TRANSFER_DIRECT_SOURCE_RE.search(normalized)
+    ):
         return None
 
-    if "split" in normalized or " each " in f" {normalized} " or re.search(r"\b(?:between|btw)\b", normalized):
-        return "batch_transfer_command"
-    if _TRANSFER_DIRECT_PERCENTAGE_RE.search(normalized) or _TRANSFER_DIRECT_SOURCE_RE.search(normalized):
-        return "account_aware_transfer_command"
+    has_amount_like = bool(_TRANSFER_DIRECT_AMOUNT_RE.search(normalized))
+    has_transfer_shape = bool(_TRANSFER_DIRECT_RECIPIENT_CUE_RE.search(normalized))
+    if not has_amount_like or not has_transfer_shape:
+        return None
+
     return "fresh_transfer_command"
 
 

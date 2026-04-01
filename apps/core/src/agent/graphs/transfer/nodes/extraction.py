@@ -26,6 +26,20 @@ _AMOUNT_REPLY_PATTERN = re.compile(
     r"^\s*(?:₦|ngn)?\s*(?P<amount>\d[\d,]*(?:\.\d+)?)\s*(?P<suffix>[kKhH]?)\s*$",
     re.IGNORECASE,
 )
+_SIMPLE_TRANSFER_PREFIX_RE = re.compile(
+    r"^\s*(?:(?:ok(?:ay)?|please|pls|abeg|oya|jowo|biko|kindly)\s+)*"
+    r"(?P<verb>send|transfer|pay|remit)\s+"
+    r"(?P<amount>(?:₦|ngn)?\s*\d[\d,]*(?:\.\d+)?\s*[kKhH]?)\s+"
+    r"(?:to|for)\s+"
+    r"(?P<target>.+?)\s*$",
+    re.IGNORECASE,
+)
+_SIMPLE_TRANSFER_COMPLEX_MARKERS_RE = re.compile(
+    r"\b(?:each|split|between|btw|half|quarter|tithe|all|everything|from|using|use|with|"
+    r"tomorrow|next week|weekly|monthly|every|abroad|international)\b",
+    re.IGNORECASE,
+)
+_SIMPLE_TRANSFER_MULTI_TARGET_RE = re.compile(r"\s(?:and|&)\s|,", re.IGNORECASE)
 
 
 def _canonical_beneficiary_id(value: str) -> str:
@@ -176,6 +190,86 @@ def _parse_amount_input(user_message: str) -> float | None:
     if amount <= 0:
         return None
     return amount
+
+
+def _parse_simple_transfer_command(
+    user_message: str,
+    current_payload: TransferPayload,
+) -> dict[str, Any] | None:
+    """Deterministically parse obvious single-recipient send commands.
+
+    This is intentionally narrow and only used to avoid an LLM hop on fresh,
+    simple transfers such as "send 5k to mum". Anything batch-like, scheduled,
+    account-aware, or source-qualified falls back to the extractor.
+    """
+    if any(
+        (
+            current_payload.amount is not None,
+            current_payload.transfer_percentage is not None,
+            current_payload.transfer_all,
+            current_payload.recipient_name,
+            current_payload.recipient_account,
+            current_payload.recipient_bank_name,
+            current_payload.source_bank_name,
+            current_payload.source_accounts,
+            current_payload.use_dual_accounts is not None,
+            current_payload.explicit_split,
+        )
+    ):
+        return None
+
+    normalized = re.sub(r"\s+", " ", user_message.strip())
+    if not normalized:
+        return None
+    if _SIMPLE_TRANSFER_COMPLEX_MARKERS_RE.search(normalized):
+        return None
+
+    match = _SIMPLE_TRANSFER_PREFIX_RE.match(normalized)
+    if not match:
+        return None
+
+    target = match.group("target").strip().strip(".!?")
+    if not target or _SIMPLE_TRANSFER_MULTI_TARGET_RE.search(target):
+        return None
+
+    amount = _parse_amount_input(match.group("amount"))
+    if amount is None or amount < 1000:
+        return None
+
+    patch: dict[str, Any] = {
+        "amount": float(amount),
+        "confirmation": {"confirmed": False},
+        "suggested_amount": None,
+        "transfer_percentage": None,
+        "transfer_all": False,
+    }
+
+    account_and_bank = _parse_account_and_bank_input(target)
+    if account_and_bank is not None:
+        recipient_account, recipient_bank_name = account_and_bank
+        patch.update(
+            {
+                "recipient_account": recipient_account,
+                "recipient_bank_name": recipient_bank_name,
+                "recipient_bank_code": None,
+                "recipient_resolved_name": None,
+                "name_mismatch": False,
+                "name_match_score": None,
+                "name_mismatch_warning": None,
+            }
+        )
+        return patch
+
+    normalized_account = normalize_bank_account_number(target)
+    if len(normalized_account) == 10:
+        patch["recipient_account"] = normalized_account
+        return patch
+
+    if target.isdigit():
+        return None
+
+    patch["recipient_name"] = target
+    return patch
 
 
 def _normalize_name_token(value: str | None) -> str:
@@ -385,6 +479,19 @@ class ExtractionStep(TransferStep):
                         }
                     ),
                 )
+
+        simple_transfer_patch = _parse_simple_transfer_command(self.user_message, data)
+        if simple_transfer_patch is not None:
+            logger.info(
+                "deterministic_simple_transfer_fastpath",
+                amount=simple_transfer_patch.get("amount"),
+                has_recipient_name=bool(simple_transfer_patch.get("recipient_name")),
+                has_recipient_account=bool(simple_transfer_patch.get("recipient_account")),
+            )
+            return TransactionResult(
+                outcome=TransactionOutcome.OK,
+                patch=_with_skip_patch(simple_transfer_patch),
+            )
 
         if not worker_context.extractor:
             logger.info("transfer_extraction_skipped", reason="extractor_unavailable")

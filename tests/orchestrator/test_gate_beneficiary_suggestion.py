@@ -185,7 +185,14 @@ async def test_gate_suggestion_transaction_turn_dismisses_and_falls_through() ->
     updates = await session_gate_direct_path(state, config)
 
     assert "turn_context_summary" in updates
-    assert updates.get("semantic_path_shape") is None
+    assert updates["direct_path_triggered"] is True
+    assert updates["semantic_path_shape"] == "deterministic_transfer_domain"
+    assert updates["routing_owner"] == "guardrail"
+    assert updates["routing_target_domain"] == "transfer"
+    assert updates["routing_decision"] == "fresh_transfer_command"
+    task = updates["tasks"]["direct_transfer"]
+    assert task.type == "transfer"
+    assert task.payload["message"] == "Send 10k to mum"
     assert redis_client.deleted_keys == ["user:2348011112203:beneficiary_suggestion"]
 
 

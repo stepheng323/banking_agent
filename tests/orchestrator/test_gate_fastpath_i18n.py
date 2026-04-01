@@ -785,7 +785,7 @@ async def test_gate_deterministic_transfer_fastpath_bypasses_router_and_planner(
     assert "skip_extraction" not in task.payload
 
 
-async def test_gate_deterministic_batch_transfer_fastpath_bypasses_router_and_planner() -> None:
+async def test_gate_batch_transfer_turn_falls_through_to_planner() -> None:
     planner = _RouteTurnPlanner(
         SemanticRouteDecision(
             decision="planner_mixed",
@@ -808,18 +808,17 @@ async def test_gate_deterministic_batch_transfer_fastpath_bypasses_router_and_pl
 
     updates = await session_gate_direct_path(state, config)
 
-    assert planner.route_calls == 0
+    assert planner.route_calls == 1
     assert planner.plan_calls == 0
-    assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "deterministic_transfer_domain"
-    assert updates["routing_target_domain"] == "transfer"
-    assert updates["routing_decision"] == "batch_transfer_command"
-    task = updates["tasks"]["direct_transfer"]
-    assert task.type == "transfer"
-    assert task.payload["message"] == "okay send 10k each to mum, tolu and doyin"
+    assert updates.get("direct_path_triggered") is None
+    assert "tasks" not in updates
+    assert "turn_context_summary" in updates
+    assert updates["preplanner_expected_transaction_executors"] == ["transfer"]
+    assert updates["routing_owner"] == "planner"
+    assert updates["routing_decision"] == "planner_mixed"
 
 
-async def test_gate_deterministic_split_transfer_fastpath_bypasses_router_and_planner() -> None:
+async def test_gate_split_transfer_turn_falls_through_to_planner() -> None:
     planner = _RouteTurnPlanner(
         SemanticRouteDecision(
             decision="planner_mixed",
@@ -842,26 +841,26 @@ async def test_gate_deterministic_split_transfer_fastpath_bypasses_router_and_pl
 
     updates = await session_gate_direct_path(state, config)
 
-    assert planner.route_calls == 0
+    assert planner.route_calls == 1
     assert planner.plan_calls == 0
-    assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "deterministic_transfer_domain"
-    assert updates["routing_decision"] == "batch_transfer_command"
-    assert updates["tasks"]["direct_transfer"].payload["message"] == "split 20k 70/30 btw mum and gaines"
+    assert updates.get("direct_path_triggered") is None
+    assert "tasks" not in updates
+    assert "turn_context_summary" in updates
+    assert updates["preplanner_expected_transaction_executors"] == ["transfer"]
+    assert updates["routing_owner"] == "planner"
+    assert updates["routing_decision"] == "planner_mixed"
 
 
-async def test_gate_deterministic_account_aware_transfer_fastpath_bypasses_router_and_planner() -> None:
+async def test_gate_account_aware_transfer_turn_falls_through_to_planner() -> None:
     planner = _RouteTurnPlanner(
         SemanticRouteDecision(
-            decision="domain_transfer",
-            mode="new",
-            target_intent="transfer",
+            decision="planner_mixed",
             confidence=0.93,
             detected_language="English",
             response_key=None,
             response=None,
             expected_transaction_executors=["transfer"],
-            reason="account-aware transfer request",
+            reason="account-aware transfer requires planning",
         )
     )
     state = OrchestratorState(
@@ -875,12 +874,14 @@ async def test_gate_deterministic_account_aware_transfer_fastpath_bypasses_route
 
     updates = await session_gate_direct_path(state, config)
 
-    assert planner.route_calls == 0
+    assert planner.route_calls == 1
     assert planner.plan_calls == 0
-    assert updates["direct_path_triggered"] is True
-    assert updates["semantic_path_shape"] == "deterministic_transfer_domain"
-    assert updates["routing_decision"] == "account_aware_transfer_command"
-    assert updates["tasks"]["direct_transfer"].payload["message"] == "send half my zenith to mum"
+    assert updates.get("direct_path_triggered") is None
+    assert "tasks" not in updates
+    assert "turn_context_summary" in updates
+    assert updates["preplanner_expected_transaction_executors"] == ["transfer"]
+    assert updates["routing_owner"] == "planner"
+    assert updates["routing_decision"] == "planner_mixed"
 
 
 async def test_gate_deterministic_transfer_fastpath_still_executes_through_transfer_worker() -> None:
