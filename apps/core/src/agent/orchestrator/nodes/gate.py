@@ -415,7 +415,7 @@ def _has_explicit_cancel(message_text: str) -> bool:
     return any(re.search(pattern, normalized) for pattern in EXPLICIT_CANCEL_PATTERNS)
 
 
-def _detect_deterministic_transfer_reason(message_text: str) -> str | None:
+def _classify_obvious_transfer_request(message_text: str) -> str | None:
     normalized = re.sub(r"\s+", " ", message_text.strip().lower()).rstrip("?.!,")
     if not normalized or not _TRANSFER_DIRECT_PREFIX_RE.search(normalized):
         return None
@@ -429,17 +429,10 @@ def _detect_deterministic_transfer_reason(message_text: str) -> str | None:
     if _TRANSFER_DIRECT_NON_TRANSFER_RE.search(normalized) and not _TRANSFER_DIRECT_RECIPIENT_CUE_RE.search(normalized):
         return None
 
-    # Keep the fast path narrow: only explicit single-recipient sends.
-    # Batch/each/split/account-aware/source-qualified turns still need planner ownership
-    # until transfer extraction can reliably own those semantics from raw text.
-    if (
-        "split" in normalized
-        or " each " in f" {normalized} "
-        or re.search(r"\b(?:between|btw)\b", normalized)
-        or _TRANSFER_DIRECT_PERCENTAGE_RE.search(normalized)
-        or _TRANSFER_DIRECT_SOURCE_RE.search(normalized)
-    ):
-        return None
+    if "split" in normalized or " each " in f" {normalized} " or re.search(r"\b(?:between|btw)\b", normalized):
+        return "batch_transfer_command"
+    if _TRANSFER_DIRECT_PERCENTAGE_RE.search(normalized) or _TRANSFER_DIRECT_SOURCE_RE.search(normalized):
+        return "account_aware_transfer_command"
 
     has_amount_like = bool(_TRANSFER_DIRECT_AMOUNT_RE.search(normalized))
     has_transfer_shape = bool(_TRANSFER_DIRECT_RECIPIENT_CUE_RE.search(normalized))
@@ -960,8 +953,8 @@ async def session_gate_direct_path(state: OrchestratorState, config: RunnableCon
         }
 
     if not live_pending_interrupt and not state.has_quote:
-        transfer_fast_path_reason = _detect_deterministic_transfer_reason(message_text)
-        if transfer_fast_path_reason is not None:
+        transfer_request_reason = _classify_obvious_transfer_request(message_text)
+        if transfer_request_reason == "fresh_transfer_command":
             transfer_updates: dict[str, Any] = {}
             if (
                 isinstance(query_session_snapshot, dict)
@@ -978,7 +971,7 @@ async def session_gate_direct_path(state: OrchestratorState, config: RunnableCon
             logger.info(
                 "gate_deterministic_transfer_domain",
                 task_id=task_id,
-                reason=transfer_fast_path_reason,
+                reason=transfer_request_reason,
                 skipped_semantic_router=True,
                 skipped_planner=True,
             )
@@ -994,7 +987,39 @@ async def session_gate_direct_path(state: OrchestratorState, config: RunnableCon
                 "semantic_path_shape": "deterministic_transfer_domain",
                 **_route_observability_updates(
                     owner="guardrail",
-                    decision=transfer_fast_path_reason,
+                    decision=transfer_request_reason,
+                    target_domain="transfer",
+                    mode="new",
+                ),
+            }
+        if transfer_request_reason in {"batch_transfer_command", "account_aware_transfer_command"}:
+            transfer_updates = {
+                "preplanner_expected_transaction_executors": ["transfer"],
+            }
+            if (
+                isinstance(query_session_snapshot, dict)
+                and query_session_snapshot.get("session_active")
+            ):
+                await clear_query_session(redis_client, state.phone_number)
+                transfer_updates.update(
+                    _build_query_session_exit_updates(
+                        state,
+                        query_session_snapshot=query_session_snapshot,
+                    )
+                )
+            logger.info(
+                "gate_transfer_planner_handoff",
+                reason=transfer_request_reason,
+                skipped_semantic_router=True,
+                target_domain="transfer",
+            )
+            return {
+                **gate_updates,
+                **summary_updates,
+                **transfer_updates,
+                **_route_observability_updates(
+                    owner="guardrail",
+                    decision=transfer_request_reason,
                     target_domain="transfer",
                     mode="new",
                 ),

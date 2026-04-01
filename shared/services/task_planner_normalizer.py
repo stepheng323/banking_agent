@@ -24,6 +24,7 @@ _TOKEN_PATTERN = re.compile(r"[A-Za-z0-9]+")
 _AMOUNT_TOKEN_PATTERN = re.compile(
     r"(?<!\d)(?:₦|ngn)?\s*(?P<number>\d[\d,]*(?:\.\d+)?)(?P<suffix>[kKmMhH]?)(?!\d)"
 )
+_BALANCE_SHARE_PERCENT_PATTERN = re.compile(r"\b(?P<pct>\d{1,3})\s*%\b", re.IGNORECASE)
 _DATA_PLAN_PATTERN = re.compile(r"(?<!\d)(\d{1,3}(?:\.\d+)?)\s*(gb|mb)(?!\w)", re.IGNORECASE)
 _SELF_AIRTIME_PATTERNS = (
     re.compile(r"\b(my line|my number|myself|for me|na me|for myself|pour moi)\b", re.IGNORECASE),
@@ -235,6 +236,43 @@ def _normalize_transfer_params(params: TaskParameters, text: str) -> tuple[list[
             patched.append("amount")
 
     return patched, ambiguous
+
+
+def _repair_account_aware_transfer_params(params: TaskParameters, text: str) -> list[str]:
+    patched: list[str] = []
+    lowered = (text or "").lower()
+
+    if params.transfer_percentage is None and not params.transfer_all and params.amount is None:
+        pct_match = _BALANCE_SHARE_PERCENT_PATTERN.search(lowered)
+        pct_value: float | None = None
+        if pct_match is not None:
+            raw_pct = float(pct_match.group("pct"))
+            if 0 < raw_pct <= 100:
+                pct_value = raw_pct
+        elif re.search(r"\bhalf\b", lowered):
+            pct_value = 50.0
+        elif re.search(r"\bquarter\b", lowered):
+            pct_value = 25.0
+        elif re.search(r"\btithe\b", lowered):
+            pct_value = 10.0
+
+        if pct_value is not None:
+            params.transfer_percentage = pct_value
+            params.amount = None
+            params.transfer_all = False
+            patched.append("transfer_percentage")
+
+    if (
+        not params.transfer_all
+        and params.transfer_percentage is None
+        and params.amount is None
+        and re.search(r"\b(?:all|everything|max amount|whatever i have)\b", lowered)
+    ):
+        params.transfer_all = True
+        params.amount = None
+        patched.append("transfer_all")
+
+    return patched
 
 
 def _normalize_airtime_params(params: TaskParameters, text: str) -> tuple[list[str], list[str]]:
@@ -522,6 +560,7 @@ def normalize_planner_transaction_output(planner_output: PlannerOutput, user_tex
 
         if task.executor == "transfer":
             patched_fields, ambiguous_fields = _normalize_transfer_params(params, source_text)
+            patched_fields.extend(_repair_account_aware_transfer_params(params, source_text))
         elif task.executor == "airtime":
             patched_fields, ambiguous_fields = _normalize_airtime_params(params, source_text)
         elif task.executor == "data":

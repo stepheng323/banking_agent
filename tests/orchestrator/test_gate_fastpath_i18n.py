@@ -808,14 +808,15 @@ async def test_gate_batch_transfer_turn_falls_through_to_planner() -> None:
 
     updates = await session_gate_direct_path(state, config)
 
-    assert planner.route_calls == 1
+    assert planner.route_calls == 0
     assert planner.plan_calls == 0
     assert updates.get("direct_path_triggered") is None
     assert "tasks" not in updates
     assert "turn_context_summary" in updates
     assert updates["preplanner_expected_transaction_executors"] == ["transfer"]
-    assert updates["routing_owner"] == "planner"
-    assert updates["routing_decision"] == "planner_mixed"
+    assert updates["routing_owner"] == "guardrail"
+    assert updates["routing_target_domain"] == "transfer"
+    assert updates["routing_decision"] == "batch_transfer_command"
 
 
 async def test_gate_split_transfer_turn_falls_through_to_planner() -> None:
@@ -841,14 +842,15 @@ async def test_gate_split_transfer_turn_falls_through_to_planner() -> None:
 
     updates = await session_gate_direct_path(state, config)
 
-    assert planner.route_calls == 1
+    assert planner.route_calls == 0
     assert planner.plan_calls == 0
     assert updates.get("direct_path_triggered") is None
     assert "tasks" not in updates
     assert "turn_context_summary" in updates
     assert updates["preplanner_expected_transaction_executors"] == ["transfer"]
-    assert updates["routing_owner"] == "planner"
-    assert updates["routing_decision"] == "planner_mixed"
+    assert updates["routing_owner"] == "guardrail"
+    assert updates["routing_target_domain"] == "transfer"
+    assert updates["routing_decision"] == "batch_transfer_command"
 
 
 async def test_gate_account_aware_transfer_turn_falls_through_to_planner() -> None:
@@ -874,14 +876,15 @@ async def test_gate_account_aware_transfer_turn_falls_through_to_planner() -> No
 
     updates = await session_gate_direct_path(state, config)
 
-    assert planner.route_calls == 1
+    assert planner.route_calls == 0
     assert planner.plan_calls == 0
     assert updates.get("direct_path_triggered") is None
     assert "tasks" not in updates
     assert "turn_context_summary" in updates
     assert updates["preplanner_expected_transaction_executors"] == ["transfer"]
-    assert updates["routing_owner"] == "planner"
-    assert updates["routing_decision"] == "planner_mixed"
+    assert updates["routing_owner"] == "guardrail"
+    assert updates["routing_target_domain"] == "transfer"
+    assert updates["routing_decision"] == "account_aware_transfer_command"
 
 
 async def test_gate_deterministic_transfer_fastpath_still_executes_through_transfer_worker() -> None:

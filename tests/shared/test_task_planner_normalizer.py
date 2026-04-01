@@ -80,6 +80,59 @@ def test_transfer_normalizer_skips_ambiguous_account_candidates() -> None:
     assert params.bank_name is None
 
 
+def test_transfer_normalizer_repairs_missing_percentage_for_account_aware_balance_share() -> None:
+    planner_output = _planner_output(
+        [
+            PlannedTask(
+                task_id="t1",
+                action="send_money",
+                executor="transfer",
+                instruction="Send half of the Zenith Bank balance to Mum",
+                parameters=TaskParameters(
+                    recipient_name="Mum",
+                    source_bank_name="Zenith Bank",
+                    source_account_index=0,
+                ),
+                risk="MONEY_MOVE",
+            )
+        ]
+    )
+
+    normalized = normalize_planner_transaction_output(planner_output, "send half my zenith to mum")
+    params = normalized.tasks[0].parameters
+    assert params.recipient_name == "Mum"
+    assert params.source_bank_name == "Zenith Bank"
+    assert params.transfer_percentage == 50
+    assert params.amount is None
+    assert params.transfer_all is False
+
+
+def test_transfer_normalizer_repairs_missing_transfer_all_for_account_aware_balance_share() -> None:
+    planner_output = _planner_output(
+        [
+            PlannedTask(
+                task_id="t1",
+                action="send_money",
+                executor="transfer",
+                instruction="Send everything in my First Bank to Mum",
+                parameters=TaskParameters(
+                    recipient_name="Mum",
+                    source_bank_name="First Bank",
+                ),
+                risk="MONEY_MOVE",
+            )
+        ]
+    )
+
+    normalized = normalize_planner_transaction_output(planner_output, "send everything in my first bank to mum")
+    params = normalized.tasks[0].parameters
+    assert params.recipient_name == "Mum"
+    assert params.source_bank_name == "First Bank"
+    assert params.transfer_all is True
+    assert params.transfer_percentage is None
+    assert params.amount is None
+
+
 def test_airtime_one_shot_normalizer_patches_amount_phone_and_network() -> None:
     planner_output = _planner_output(
         [
