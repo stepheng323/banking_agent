@@ -100,8 +100,6 @@ class OrchestratorGraphHandler:
         self._checkpointer_setup = False
         self._invoke_lock = asyncio.Lock()
         self._housekeeping_semaphore = asyncio.Semaphore(max(1, settings.async_housekeeping_max_concurrency))
-        self._ttl_maintenance_lock = asyncio.Lock()
-        self._next_ttl_maintenance_at = 0.0
         self._error_window: deque[int] = deque(maxlen=200)
 
         self.graph: CompiledStateGraph = build_orchestrator_graph(checkpointer=self.checkpointer)
@@ -639,23 +637,32 @@ class OrchestratorGraphHandler:
 
     async def _maybe_apply_session_ttl(self, thread_id: str) -> bool:
         chat_ok = await self._apply_chat_history_ttl(thread_id)
-        interval = max(0, settings.checkpoint_ttl_maintenance_interval_seconds)
-        if interval <= 0:
-            checkpoint_ok = await self._apply_session_ttl(thread_id)
-            return chat_ok and checkpoint_ok
+        logger.info(
+            "checkpoint_ttl_maintenance_skipped",
+            thread_id=thread_id,
+            reason="request_path_disabled",
+            configured_interval_seconds=max(0, settings.checkpoint_ttl_maintenance_interval_seconds),
+        )
+        return chat_ok
 
-        now = time.monotonic()
-        if now < self._next_ttl_maintenance_at:
-            return chat_ok
+    async def _expire_keys_with_ttl(self, keys: list[str], ttl: int) -> tuple[int, str]:
+        if not keys:
+            return 0, "no_keys"
 
-        async with self._ttl_maintenance_lock:
-            now = time.monotonic()
-            if now < self._next_ttl_maintenance_at:
-                return chat_ok
-            ok = await self._apply_session_ttl(thread_id)
-            if ok:
-                self._next_ttl_maintenance_at = now + interval
-            return chat_ok and ok
+        pipeline_factory = getattr(self.redis_client, "pipeline", None)
+        if callable(pipeline_factory):
+            pipe = pipeline_factory(transaction=False)
+            for key in keys:
+                pipe.expire(key, ttl)
+            results = await pipe.execute()
+            applied = sum(1 for result in results if result)
+            return applied, "pipeline"
+
+        applied = 0
+        for key in keys:
+            if await self.redis_client.expire(key, ttl):
+                applied += 1
+        return applied, "sequential"
 
     async def _apply_session_ttl(self, thread_id: str, ttl: int = 86400) -> bool:
         """Apply TTL to LangGraph checkpoint keys associated with a thread."""
@@ -668,9 +675,41 @@ class OrchestratorGraphHandler:
                 f"checkpoint_latest:{thread_id}:*",
             ]
 
+            total_start = time.perf_counter()
+            total_matched = 0
+            total_applied = 0
             for pattern in patterns:
+                scan_start = time.perf_counter()
+                keys: list[str] = []
                 async for key in self.redis_client.scan_iter(match=pattern):
-                    await self.redis_client.expire(key, ttl)
+                    keys.append(key)
+                scan_duration = (time.perf_counter() - scan_start) * 1000
+
+                expire_start = time.perf_counter()
+                applied_count, expire_mode = await self._expire_keys_with_ttl(keys, ttl)
+                expire_duration = (time.perf_counter() - expire_start) * 1000
+
+                total_matched += len(keys)
+                total_applied += applied_count
+                logger.info(
+                    "checkpoint_ttl_pattern_processed",
+                    thread_id=thread_id,
+                    pattern=pattern,
+                    matched_key_count=len(keys),
+                    expire_applied_count=applied_count,
+                    expire_mode=expire_mode,
+                    scan_duration_ms=round(scan_duration, 2),
+                    expire_duration_ms=round(expire_duration, 2),
+                )
+
+            logger.info(
+                "checkpoint_ttl_apply_summary",
+                thread_id=thread_id,
+                pattern_count=len(patterns),
+                matched_key_count=total_matched,
+                expire_applied_count=total_applied,
+                total_duration_ms=round((time.perf_counter() - total_start) * 1000, 2),
+            )
 
             return True
         except Exception as e:
@@ -679,7 +718,17 @@ class OrchestratorGraphHandler:
 
     async def _apply_chat_history_ttl(self, thread_id: str, ttl: int = 86400) -> bool:
         try:
-            await self.redis_client.expire(f"user:{thread_id.split(':')[-1]}:chat_history", ttl)
+            start = time.perf_counter()
+            key = f"user:{thread_id.split(':')[-1]}:chat_history"
+            ok = await self.redis_client.expire(key, ttl)
+            logger.info(
+                "chat_history_ttl_refreshed",
+                thread_id=thread_id,
+                key=key,
+                ttl=ttl,
+                refreshed=bool(ok),
+                duration_ms=round((time.perf_counter() - start) * 1000, 2),
+            )
             return True
         except Exception as e:
             logger.warning("apply_chat_history_ttl_error", thread_id=thread_id, error=str(e))
