@@ -4,10 +4,12 @@ from __future__ import annotations
 
 from shared.services.task_planner_prompt_atoms import (
     PLANNER_EXECUTOR_COVERAGE_GUARD_PROMPT,
+    PLANNER_MIXED_TX_PRECISION_PROMPT,
     PLANNER_RULE_ATOMS,
     PLANNER_RULE_SEMANTIC_GUARD_IDS,
     PLANNER_RUNTIME_COMMON_EXAMPLES,
     PLANNER_RUNTIME_CONTEXT_EXAMPLES,
+    PLANNER_RUNTIME_MIXED_TX_EXAMPLES,
     PLANNER_RUNTIME_MONEY_MOVE_EXAMPLES,
     PLANNER_RUNTIME_PROMPT_SUFFIX,
     PLANNER_RUNTIME_SCHEMA_PROMPT,
@@ -58,6 +60,10 @@ def build_planner_system_prompt(
         sections.append(PLANNER_TRANSFER_ONLY_PRECISION_PROMPT)
         sections.append(PLANNER_RUNTIME_TRANSFER_ONLY_EXAMPLES)
         profile_parts.extend(["precision_transfer_only", "ex_transfer_only"])
+    if "mixed_tx" in bundles:
+        sections.append(PLANNER_MIXED_TX_PRECISION_PROMPT)
+        sections.append(PLANNER_RUNTIME_MIXED_TX_EXAMPLES)
+        profile_parts.extend(["precision_mixed_tx", "ex_mixed_tx"])
     if "money_move" in bundles:
         sections.append(PLANNER_TRANSFER_PRECISION_PROMPT)
         sections.append(PLANNER_RUNTIME_MONEY_MOVE_EXAMPLES)

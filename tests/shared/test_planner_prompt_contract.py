@@ -124,29 +124,25 @@ def test_transfer_scheduling_rules_present() -> None:
     assert "cancel_scheduled_transfer" in runtime_prompt
 
 
-def test_money_move_one_shot_multilingual_examples_present() -> None:
-    """Prompt should include compact one-shot extraction examples across supported languages."""
+def test_money_move_fallback_examples_present() -> None:
+    """Fallback money-move prompt should focus on active-flow, corrections, and scheduling."""
     runtime_prompt, _, bundles = _build_prompt(
-        "Send 20k to 0760505261 First Bank",
-        "None",
-        PlannerPromptSignals(has_transaction_intent_hint=True),
+        "make it 20k tomorrow 9am",
+        "Active transfer flow",
+        PlannerPromptSignals(active_flow_type="transfer"),
     )
     assert "money_move" in bundles
-    assert "R26_ONE_SHOT_COMPLETENESS" in runtime_prompt
-    assert "R27_RECIPIENT_SPLIT" in runtime_prompt
-    assert "one transfer task" in runtime_prompt
-    assert "recipient_allocations" in runtime_prompt
-    assert "Send 20k to 0760505261 First Bank" in runtime_prompt
-    assert "Split 20k between Mum and Gaines" in runtime_prompt
-    assert "Send 10k each to Mum, Tolu and Doyin" in runtime_prompt
-    assert "Send 20k 70/30 btw Mum and Gaines" in runtime_prompt
+    assert "context" not in bundles
+    assert "R09_CONTEXT_OVERRIDE" in runtime_prompt
+    assert "R14_REFERENCE_BINDING" in runtime_prompt
+    assert "R21_TRANSFER_SCHEDULING" in runtime_prompt
+    assert 'Active transfer flow + "send it to her"' in runtime_prompt
+    assert 'Active transfer flow + "make it 20k"' in runtime_prompt
+    assert "Send 10k to Mum tomorrow 9am" in runtime_prompt
+    assert "Send it to her every Friday" in runtime_prompt
     assert "explicit_split={Access:10000,GTB:10000}" in runtime_prompt
-    assert "Abeg buy 2k airtime for 08031234567 mtn" in runtime_prompt
-    assert "Jowo ra data 1gb fun 08031234567 mtn" in runtime_prompt
-    assert "Don Allah tura 5k zuwa 0760505261 First Bank" in runtime_prompt
+    assert "TARGETED EXAMPLES (CONTEXT)" not in runtime_prompt
     assert "Biko buy 3k airtime for my line mtn" in runtime_prompt
-    assert "Buy 200 airtime for 08031234567, 08067892221, 08033038674" in runtime_prompt
-    assert "Envoie 5k a 0760505261 First Bank" in runtime_prompt
 
 
 def test_transfer_only_prompt_bundle_selected_for_guardrail_transfer_handoff() -> None:
@@ -174,10 +170,11 @@ def test_mixed_money_move_coverage_rules_present() -> None:
         "None",
         PlannerPromptSignals(expected_transaction_executors=("transfer", "airtime")),
     )
-    assert "money_move" in bundles
+    assert "mixed_tx" in bundles
+    assert "money_move" not in bundles
     assert "executor_coverage_guard" in bundles
     assert "R22_MIXED_MONEY_MOVE" in runtime_prompt
-    assert "TARGETED EXAMPLES (MONEY_MOVE)" in runtime_prompt
+    assert "TARGETED EXAMPLES (MIXED_TX)" in runtime_prompt
     assert "send_money" in runtime_prompt
     assert "buy_airtime" in runtime_prompt
     assert "EXECUTOR COVERAGE GUARD" in runtime_prompt
@@ -322,8 +319,8 @@ def test_runtime_planner_prompt_size_budget_targets() -> None:
 def test_runtime_planner_prompt_adds_money_move_examples_when_relevant() -> None:
     """Runtime prompt should include money-move examples for transaction turns."""
     runtime_prompt, profile, bundles = _build_prompt(
-        "Send 10k to mum and buy me 5k airtime",
-        "None",
+        "make it 20k tomorrow 9am",
+        "Active transfer flow",
         PlannerPromptSignals(active_flow_type="transfer"),
     )
     assert "money_move" in bundles

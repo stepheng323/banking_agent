@@ -16,12 +16,10 @@ PLANNER_RUNTIME_SCHEMA_PROMPT = """## OUTPUT JSON
 
 PLANNER_TRANSFER_PRECISION_PROMPT = """## MONEY_MOVE PRECISION
 - Keep recipient exactly as typed.
-- recipient_name must be plain text.
 - Selector refs: {"selector":"previous"} or {"selector":"index","index":N}.
-- Extract explicit amount/account/bank/phone/network/plan in one turn.
-- People split -> one transfer task + recipient_allocations, never explicit_split.
-- "each" + named recipient list -> one allocation per recipient, in order.
-- Funding-account split -> explicit_split or source_accounts.
+- Preserve transactional corrections and follow-up slot updates.
+- Preserve scheduling semantics for future/repeating transfer requests.
+- Keep explicit_split only for source-account funding splits, never recipient names.
 - Precision-first: never guess ambiguous fields."""
 
 PLANNER_TRANSFER_ONLY_PRECISION_PROMPT = """## TRANSFER_ONLY PRECISION
@@ -29,6 +27,13 @@ PLANNER_TRANSFER_ONLY_PRECISION_PROMPT = """## TRANSFER_ONLY PRECISION
 - Extract explicit amount/account/bank/source-bank in one turn.
 - People split -> recipient_allocations.
 - Balance-share transfer -> transfer_percentage or transfer_all.
+- Never guess ambiguous fields."""
+
+PLANNER_MIXED_TX_PRECISION_PROMPT = """## MIXED_TX PRECISION
+- Explicit multi-transaction asks must emit every requested transaction executor in user order.
+- Keep transfer recipient text exact.
+- Extract explicit transfer amount/account/bank and airtime/data amount/phone/network in one turn.
+- Preserve recipient_allocations for people splits.
 - Never guess ambiguous fields."""
 
 PLANNER_EXECUTOR_COVERAGE_GUARD_PROMPT = (
@@ -125,12 +130,17 @@ PLANNER_MONEY_MOVE_RULE_ATOMS = {
     "R20_TRANSFER_ACCOUNT_BANK",
     "R21_TRANSFER_SCHEDULING",
     "R22_MIXED_MONEY_MOVE",
-    "R26_ONE_SHOT_COMPLETENESS",
-    "R27_RECIPIENT_SPLIT",
 }
 PLANNER_TRANSFER_ONLY_RULE_ATOMS = {
     "R19_TRANSFER_FIDELITY",
     "R20_TRANSFER_ACCOUNT_BANK",
+    "R26_ONE_SHOT_COMPLETENESS",
+    "R27_RECIPIENT_SPLIT",
+}
+PLANNER_MIXED_TX_RULE_ATOMS = {
+    "R19_TRANSFER_FIDELITY",
+    "R20_TRANSFER_ACCOUNT_BANK",
+    "R22_MIXED_MONEY_MOVE",
     "R26_ONE_SHOT_COMPLETENESS",
     "R27_RECIPIENT_SPLIT",
 }
@@ -146,24 +156,12 @@ PLANNER_RUNTIME_COMMON_EXAMPLES = """## TARGETED EXAMPLES (COMMON)
 
 PLANNER_RUNTIME_MONEY_MOVE_EXAMPLES = (
     "## TARGETED EXAMPLES (MONEY_MOVE)\n"
-    "- Send 10k to Mum and buy 5k airtime -> send_money + buy_airtime.\n"
-    "- Send 20k to 0760505261 First Bank -> send_money amount=20000, "
-    "recipient_account=0760505261, bank_name=First Bank.\n"
-    "- Split 20k between Mum and Gaines -> recipient_allocations="
-    "[{recipient_name:Mum,amount:10000},{recipient_name:Gaines,amount:10000}].\n"
-    "- Send 10k each to Mum, Tolu and Doyin -> recipient_allocations="
-    "[{recipient_name:Mum,amount:10000},{recipient_name:Tolu,amount:10000},{recipient_name:Doyin,amount:10000}].\n"
-    "- Send 20k 70/30 btw Mum and Gaines -> recipient_allocations="
-    "[{recipient_name:Mum,amount:14000},{recipient_name:Gaines,amount:6000}].\n"
+    "- Active transfer flow + \"send it to her\" -> send_money with selector={\"selector\":\"previous\"}.\n"
+    "- Active transfer flow + \"make it 20k\" -> send_money amount=20000.\n"
+    "- Send 10k to Mum tomorrow 9am -> schedule_transfer amount=10000, recipient_name=Mum.\n"
+    "- Send it to her every Friday -> recurring_transfer with selector={\"selector\":\"previous\"}.\n"
     "- Split 20k from Access and GTB -> send_money amount=20000, explicit_split={Access:10000,GTB:10000}.\n"
-    "- Abeg buy 2k airtime for 08031234567 mtn -> buy_airtime amount=2000, recipient_phone=08031234567, network=MTN.\n"
-    "- Jowo ra data 1gb fun 08031234567 mtn -> buy_data plan=1GB, recipient_phone=08031234567, network=MTN.\n"
-    "- Don Allah tura 5k zuwa 0760505261 First Bank ->\n"
-    "  send_money amount=5000, recipient_account=0760505261, bank_name=First Bank.\n"
-    "- Biko buy 3k airtime for my line mtn -> buy_airtime amount=3000, is_self=true, network=MTN.\n"
-    "- Buy 200 airtime for 08031234567, 08067892221, 08033038674 ->\n"
-    "  3 x buy_airtime: each amount=200, recipient_phone per number.\n"
-    "- Envoie 5k a 0760505261 First Bank -> send_money amount=5000, recipient_account=0760505261, bank_name=First Bank."
+    "- Biko buy 3k airtime for my line mtn -> buy_airtime amount=3000, is_self=true, network=MTN."
 )
 
 PLANNER_RUNTIME_TRANSFER_ONLY_EXAMPLES = (
@@ -178,6 +176,20 @@ PLANNER_RUNTIME_TRANSFER_ONLY_EXAMPLES = (
     "- Send everything in my First Bank to Mum -> recipient_name=Mum, source_bank_name=First Bank, transfer_all=true."
 )
 
+PLANNER_RUNTIME_MIXED_TX_EXAMPLES = (
+    "## TARGETED EXAMPLES (MIXED_TX)\n"
+    "- Send 10k to Mum and buy 5k airtime -> send_money + buy_airtime.\n"
+    "- Send 20k to 0760505261 First Bank and buy 2k airtime for 08031234567 mtn ->\n"
+    "  send_money amount=20000, recipient_account=0760505261, bank_name=First Bank +\n"
+    "  buy_airtime amount=2000, recipient_phone=08031234567, network=MTN.\n"
+    "- Send 10k each to Mum and Tolu, then buy 2k airtime for me ->\n"
+    "  send_money recipient_allocations=[{recipient_name:Mum,amount:10000},{recipient_name:Tolu,amount:10000}] +\n"
+    "  buy_airtime amount=2000, is_self=true.\n"
+    "- Buy 1GB for 08031234567 mtn and send 5k to Mum -> buy_data + send_money.\n"
+    "- Buy 200 airtime for 08031234567 and 08067892221, then send 5k to Mum ->\n"
+    "  2 x buy_airtime + 1 x send_money."
+)
+
 PLANNER_RUNTIME_CONTEXT_EXAMPLES = """## TARGETED EXAMPLES (CONTEXT)
 - Save-beneficiary prompt + "Hi" -> conversational.
 - Active transfer flow + "send it to her" -> send_money with selector reference.
@@ -187,6 +199,7 @@ PLANNER_RUNTIME_PROMPT_SUFFIX = "Return schema JSON"
 
 PROMPT_BUNDLE_ORDER = (
     "transfer_only",
+    "mixed_tx",
     "money_move",
     "context",
     "executor_coverage_guard",

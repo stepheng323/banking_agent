@@ -30,6 +30,7 @@ _PROMPT_SIZE_BASELINE = {
     "generic": 8475,
     "transfer_only": 9457,
     "mixed_money_move": 9457,
+    "fallback_money_move": 9479,
     "query": 9141,
     "context_followup": 9479,
     "fully_expanded": 10859,
@@ -51,6 +52,11 @@ def _runtime_prompt_size_report() -> dict[str, int]:
             "Send 10k to mum and buy me 5k airtime",
             "None",
             PlannerPromptSignals(expected_transaction_executors=("transfer", "airtime")),
+        ),
+        "fallback_money_move": (
+            "make it 20k tomorrow 9am",
+            "Active transfer flow",
+            PlannerPromptSignals(active_flow_type="transfer"),
         ),
         "query": (
             "How much did I spend last week?",
@@ -99,6 +105,11 @@ def _runtime_prompt_token_report() -> dict[str, int]:
             "Send 10k to mum and buy me 5k airtime",
             "None",
             PlannerPromptSignals(expected_transaction_executors=("transfer", "airtime")),
+        ),
+        "fallback_money_move": (
+            "make it 20k tomorrow 9am",
+            "Active transfer flow",
+            PlannerPromptSignals(active_flow_type="transfer"),
         ),
         "query": (
             "How much did I spend last week?",
@@ -492,27 +503,44 @@ def test_runtime_prompt_size_report_and_budget_guard(capsys: pytest.CaptureFixtu
 
     with capsys.disabled():
         print("planner_runtime_prompt_sizes:")
-        for key in ("generic", "transfer_only", "mixed_money_move", "query", "context_followup", "fully_expanded"):
+        for key in (
+            "generic",
+            "transfer_only",
+            "mixed_money_move",
+            "fallback_money_move",
+            "query",
+            "context_followup",
+            "fully_expanded",
+        ):
             before = _PROMPT_SIZE_BASELINE[key]
             after = report[key]
             delta = before - after
             pct = (delta / before) * 100
             print(f"- {key}: before={before} after={after} delta={delta} ({pct:.1f}%)")
         print("planner_runtime_prompt_tokens:")
-        for key in ("generic", "transfer_only", "mixed_money_move", "query", "context_followup", "fully_expanded"):
+        for key in (
+            "generic",
+            "transfer_only",
+            "mixed_money_move",
+            "fallback_money_move",
+            "query",
+            "context_followup",
+            "fully_expanded",
+        ):
             print(f"- {key}: tokens={token_report[key]}")
 
     assert report["generic"] <= 1600
     assert report["transfer_only"] <= 2700
-    # Money-move one-shot multilingual + recipient-split coverage intentionally increases this bundle.
-    assert report["mixed_money_move"] <= 3900
+    assert report["mixed_money_move"] <= 3000
+    assert report["fallback_money_move"] <= 2800
     assert report["query"] <= 1850
     assert report["context_followup"] <= 2100
-    assert report["fully_expanded"] <= 4350
+    assert report["fully_expanded"] <= 3900
 
     assert token_report["generic"] <= 390
     assert token_report["transfer_only"] <= 650
-    assert token_report["mixed_money_move"] <= 1100
+    assert token_report["mixed_money_move"] <= 760
+    assert token_report["fallback_money_move"] <= 720
     assert token_report["query"] <= 450
     assert token_report["context_followup"] <= 510
-    assert token_report["fully_expanded"] <= 1130
+    assert token_report["fully_expanded"] <= 980
