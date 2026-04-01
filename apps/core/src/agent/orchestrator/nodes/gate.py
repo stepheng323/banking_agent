@@ -1025,16 +1025,21 @@ async def session_gate_direct_path(state: OrchestratorState, config: RunnableCon
                 ),
             }
 
-    if (
-        not state.has_quote
-        and callable(getattr(task_planner, "route_semantic_turn", None))
-        and (
-            live_pending_interrupt
-            or (
-                not live_pending_interrupt
-                and _should_invoke_semantic_router(message_text)
-            )
+    interrupt_kind = getattr(state.pending_interrupt, "kind", None)
+    skip_semantic_router_for_interrupt = live_pending_interrupt and interrupt_kind in {"confirmation", "auth"}
+
+    if skip_semantic_router_for_interrupt:
+        logger.info(
+            "gate_semantic_router_skipped_for_interrupt",
+            kind=interrupt_kind,
+            task_ids=getattr(state.pending_interrupt, "task_ids", None),
         )
+
+    if (
+        not skip_semantic_router_for_interrupt
+        and not state.has_quote
+        and callable(getattr(task_planner, "route_semantic_turn", None))
+        and (live_pending_interrupt or _should_invoke_semantic_router(message_text))
     ):
         try:
             route_context = _build_semantic_router_context(

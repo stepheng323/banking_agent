@@ -84,6 +84,15 @@ _CONFIRMATION_TRANSFER_CORRECTION_RE = re.compile(
     r"^(?:no[, ]+)?i mean\b.*\b(split|between|btw|amount|bank|account|recipient|beneficiary|narration|memo|note)\b"
     r"|^split\b.*\b(between|btw)\b"
 )
+_CONFIRMATION_SIMPLE_AMOUNT_EDIT_RE = re.compile(
+    r"^(?:(?:make|change|update)\s+(?:it|amount)\s*(?:to\s*)?|"
+    r"(?:make|change|update)\s+to\s+|"
+    r"send\s+)?"
+    r"(?:₦?\d[\d,]*(?:\.\d+)?k?|all|everything|half|50%)$"
+)
+_CONFIRMATION_BANK_SWITCH_RE = re.compile(
+    r"^(?:(?:use|switch(?:\s+to)?|change(?:\s+to)?)\s+)?[a-z0-9&' ]+ bank(?:\s+instead)?$"
+)
 
 
 def _normalize_text(text: str) -> str:
@@ -177,6 +186,24 @@ def _resolve_interrupt_shortcut(
                 locale=locale,
                 decision="continue_flow",
                 reason="shortcut_confirmation_correction",
+            ),
+            "matched",
+        )
+    if _CONFIRMATION_SIMPLE_AMOUNT_EDIT_RE.fullmatch(normalized):
+        return (
+            _build_decision(
+                locale=locale,
+                decision="continue_flow",
+                reason="shortcut_confirmation_amount_edit",
+            ),
+            "matched",
+        )
+    if _CONFIRMATION_BANK_SWITCH_RE.fullmatch(normalized):
+        return (
+            _build_decision(
+                locale=locale,
+                decision="continue_flow",
+                reason="shortcut_confirmation_bank_edit",
             ),
             "matched",
         )

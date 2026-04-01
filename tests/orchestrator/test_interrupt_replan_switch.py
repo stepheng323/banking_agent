@@ -671,6 +671,48 @@ async def test_confirmation_continue_flow_resets_task_to_extracted() -> None:
     assert "idempotency_key" not in updates["tasks"]["t1"].payload
 
 
+@pytest.mark.asyncio
+async def test_confirmation_amount_shortcut_skips_interrupt_router() -> None:
+    state = OrchestratorState(
+        user_id="u_interrupt_shortcut_1",
+        phone_number="2348066666677",
+        channel="whatsapp",
+        last_message_text="make it 20k",
+        pending_interrupt=PendingInterrupt(kind="confirmation", task_ids=["t1"]),
+        loaded_context={"language": "en"},
+        tasks={
+            "t1": TaskSpec(
+                id="t1",
+                type="transfer",
+                stage=TaskStage.AWAITING_CONFIRMATION,
+                payload={
+                    "idempotency_key": "idem-1",
+                    "confirmation": {
+                        "summary": "Confirm transfer to Mum",
+                        "snapshot": {"amount": 10000, "recipient_name": "Mum"},
+                    },
+                },
+            )
+        },
+    )
+    config: RunnableConfig = {
+        "configurable": {
+            "task_planner": _FailIfRouterCalledPlanner(),
+        },
+        "recursion_limit": 50,
+    }
+
+    updates = await handle_pending_interrupt(state, config)
+
+    assert updates["pending_interrupt"] is None
+    assert updates["tasks"]["t1"].stage == TaskStage.EXTRACTED
+    assert updates["tasks"]["t1"].payload["confirmation"] == {}
+    assert updates["tasks"]["t1"].payload["previous_confirmation_snapshot"] == {
+        "amount": 10000,
+        "recipient_name": "Mum",
+    }
+
+
 def _build_multi_transfer_confirmation_state(message_text: str) -> OrchestratorState:
     return OrchestratorState(
         user_id="u_interrupt_multi_confirm",

@@ -1575,6 +1575,43 @@ async def test_gate_semantic_router_passes_expected_executors_without_direct_pat
     assert updates["preplanner_expected_transaction_executors"] == ["transfer", "airtime"]
 
 
+async def test_gate_skips_semantic_router_for_live_pending_interrupt() -> None:
+    planner = _RouteTurnPlanner(
+        SemanticRouteDecision(
+            decision="planner_mixed",
+            confidence=0.91,
+            detected_language="English",
+            response_key=None,
+            response=None,
+            expected_transaction_executors=["transfer", "airtime"],
+            reason="unused for interrupt follow-up",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_gate_interrupt_1",
+        phone_number="2348000000006",
+        channel="whatsapp",
+        last_message_text="make it 20k",
+        loaded_context={"language": "en"},
+        pending_interrupt=PendingInterrupt(kind="confirmation", task_ids=["t1"]),
+        tasks={
+            "t1": TaskSpec(
+                id="t1",
+                type="transfer",
+                stage=TaskStage.AWAITING_CONFIRMATION,
+                payload={"amount": 10000, "recipient_name": "Mum"},
+            )
+        },
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert planner.route_calls == 0
+    assert updates.get("direct_path_triggered") is None
+    assert updates["routing_decision"] == "planner_handoff"
+
+
 async def test_gate_direct_path_routes_balance_request_without_turn_router() -> None:
     planner = _RouteTurnPlanner(
         SemanticRouteDecision(

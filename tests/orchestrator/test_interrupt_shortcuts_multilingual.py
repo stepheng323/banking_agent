@@ -65,7 +65,7 @@ def test_status_query_shortcuts(locale: LocaleCode, text: str, status_type: str)
 
 def test_confirmation_guardrails_block_long_or_structured_messages() -> None:
     long_text = "yes " * 20
-    structured_text = "change amount to 5000"
+    structured_text = "change memo to rent"
     assert resolve_interrupt_shortcut(text=long_text, interrupt_kind="confirmation", locale=LocaleCode.EN) is None
     assert resolve_interrupt_shortcut(text=structured_text, interrupt_kind="confirmation", locale=LocaleCode.EN) is None
 
@@ -90,6 +90,27 @@ def test_unknown_or_unsupported_locale_falls_back() -> None:
 def test_confirmation_correction_phrase_stays_in_flow() -> None:
     route = resolve_interrupt_shortcut(
         text="No, I mean split btw them",
+        interrupt_kind="confirmation",
+        locale=LocaleCode.EN,
+    )
+    assert route is not None
+    assert route.decision == "continue_flow"
+
+
+@pytest.mark.parametrize("text", ["make it 20k", "change amount to 5000", "send all", "half"])
+def test_confirmation_simple_amount_edits_stay_in_flow(text: str) -> None:
+    route = resolve_interrupt_shortcut(
+        text=text,
+        interrupt_kind="confirmation",
+        locale=LocaleCode.EN,
+    )
+    assert route is not None
+    assert route.decision == "continue_flow"
+
+
+def test_confirmation_bank_switch_stays_in_flow() -> None:
+    route = resolve_interrupt_shortcut(
+        text="use first bank instead",
         interrupt_kind="confirmation",
         locale=LocaleCode.EN,
     )
