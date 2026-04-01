@@ -472,6 +472,60 @@ def test_transfer_payload_builder_keeps_percentage_and_transfer_all_fields() -> 
     assert spec.payload.get("transfer_all") is False
 
 
+def test_transfer_payload_builder_coerces_symbolic_all_amount_to_transfer_all() -> None:
+    plan_item = PlannedTask(
+        task_id="t1",
+        action="send_money",
+        executor="transfer",
+        instruction="Send everything in my First Bank to Mum",
+        parameters=TaskParameters(
+            amount="all",
+            recipient="Mum",
+            source_bank_name="First Bank",
+        ),
+    )
+
+    spec = build_task_spec_from_plan_item(
+        plan_item,
+        "Send everything in my First Bank to Mum",
+        preserve_existing_action_instruction=False,
+        include_skip_extraction=False,
+        strip_transfer_recipient_suffix=True,
+        format_narration_requires_recipient_field=False,
+    )
+
+    assert spec.payload.get("amount") is None
+    assert spec.payload.get("transfer_all") is True
+    assert spec.payload.get("transfer_percentage") is None
+
+
+def test_transfer_payload_builder_coerces_symbolic_half_amount_to_percentage() -> None:
+    plan_item = PlannedTask(
+        task_id="t1",
+        action="send_money",
+        executor="transfer",
+        instruction="Send half my Zenith balance to Mum",
+        parameters=TaskParameters(
+            amount="half",
+            recipient="Mum",
+            source_bank_name="Zenith Bank",
+        ),
+    )
+
+    spec = build_task_spec_from_plan_item(
+        plan_item,
+        "Send half my Zenith balance to Mum",
+        preserve_existing_action_instruction=False,
+        include_skip_extraction=False,
+        strip_transfer_recipient_suffix=True,
+        format_narration_requires_recipient_field=False,
+    )
+
+    assert spec.payload.get("amount") is None
+    assert spec.payload.get("transfer_percentage") == 50
+    assert spec.payload.get("transfer_all") is False
+
+
 def test_transfer_possessive_command_verb_is_not_used_as_recipient_name() -> None:
     plan_item = PlannedTask(
         task_id="t1",

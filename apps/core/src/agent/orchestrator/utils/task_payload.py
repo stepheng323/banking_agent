@@ -27,6 +27,7 @@ _WEEKDAY_NAME_TO_INDEX = {
     "sunday": 6,
 }
 _AMOUNT_VALUE_PATTERN = re.compile(r"^\s*(?:₦|ngn)?\s*(\d[\d,]*(?:\.\d+)?)\s*([kKmMhH]?)\s*$")
+_BALANCE_SHARE_PERCENT_PATTERN = re.compile(r"\b(\d{1,3})\s*%\b", re.IGNORECASE)
 
 logger = get_logger(__name__)
 
@@ -219,6 +220,37 @@ def _apply_transfer_payload_fields(
 
     if plan_item.parameters and plan_item.parameters.reference:
         payload["recipient_reference"] = plan_item.parameters.reference.model_dump(exclude_none=True)
+
+    raw_amount = payload.get("amount")
+    if isinstance(raw_amount, str):
+        parsed_amount = _parse_amount_value(raw_amount)
+        lowered_amount = raw_amount.strip().lower()
+        if parsed_amount is not None:
+            payload["amount"] = parsed_amount
+        elif re.search(r"\b(?:all|everything|max amount|whatever i have)\b", lowered_amount):
+            payload["amount"] = None
+            payload["transfer_all"] = True
+            payload["transfer_percentage"] = None
+        else:
+            pct_match = _BALANCE_SHARE_PERCENT_PATTERN.search(lowered_amount)
+            pct_value: float | None = None
+            if pct_match is not None:
+                raw_pct = float(pct_match.group(1))
+                if 0 < raw_pct <= 100:
+                    pct_value = raw_pct
+            elif re.search(r"\bhalf\b", lowered_amount):
+                pct_value = 50.0
+            elif re.search(r"\bquarter\b", lowered_amount):
+                pct_value = 25.0
+            elif re.search(r"\btithe\b", lowered_amount):
+                pct_value = 10.0
+
+            if pct_value is not None:
+                payload["amount"] = None
+                payload["transfer_percentage"] = pct_value
+                payload["transfer_all"] = False
+            else:
+                payload["amount"] = None
 
     # Planner schema uses `bank_name`; transfer runtime expects `recipient_bank_name`.
     bank_name = payload.pop("bank_name", None)

@@ -205,6 +205,53 @@ def _parse_amount_value(value: str | float | None) -> float | None:
         return None
 
 
+def _normalize_transfer_amount_field(params: TaskParameters) -> list[str]:
+    patched: list[str] = []
+    raw_amount = params.amount
+    if not isinstance(raw_amount, str):
+        return patched
+
+    lowered = raw_amount.strip().lower()
+    if not lowered:
+        params.amount = None
+        patched.append("amount")
+        return patched
+
+    parsed_amount = _parse_amount_value(raw_amount)
+    if parsed_amount is not None:
+        params.amount = parsed_amount
+        patched.append("amount")
+        return patched
+
+    pct_match = _BALANCE_SHARE_PERCENT_PATTERN.search(lowered)
+    pct_value: float | None = None
+    if pct_match is not None:
+        raw_pct = float(pct_match.group("pct"))
+        if 0 < raw_pct <= 100:
+            pct_value = raw_pct
+    elif re.search(r"\bhalf\b", lowered):
+        pct_value = 50.0
+    elif re.search(r"\bquarter\b", lowered):
+        pct_value = 25.0
+    elif re.search(r"\btithe\b", lowered):
+        pct_value = 10.0
+
+    if pct_value is not None:
+        params.amount = None
+        params.transfer_percentage = pct_value
+        params.transfer_all = False
+        patched.extend(["amount", "transfer_percentage"])
+        return patched
+
+    if re.search(r"\b(?:all|everything|max amount|whatever i have)\b", lowered):
+        params.amount = None
+        params.transfer_all = True
+        params.transfer_percentage = None
+        patched.extend(["amount", "transfer_all"])
+
+    return patched
+
+
 def _normalize_transfer_params(params: TaskParameters, text: str) -> tuple[list[str], list[str]]:
     patched: list[str] = []
     ambiguous: list[str] = []
@@ -575,7 +622,9 @@ def normalize_planner_transaction_output(planner_output: PlannerOutput, user_tex
         ambiguous_fields: list[str] = []
 
         if task.executor == "transfer":
-            patched_fields, ambiguous_fields = _normalize_transfer_params(params, source_text)
+            patched_fields.extend(_normalize_transfer_amount_field(params))
+            transfer_patched, ambiguous_fields = _normalize_transfer_params(params, source_text)
+            patched_fields.extend(transfer_patched)
             patched_fields.extend(_repair_account_aware_transfer_params(params, source_text))
         elif task.executor == "airtime":
             patched_fields, ambiguous_fields = _normalize_airtime_params(params, source_text)
