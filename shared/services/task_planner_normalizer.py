@@ -350,6 +350,30 @@ def _has_batch_transfer_cue(user_text: str) -> bool:
     return any(cue in lowered for cue in (" each ", " split ", " between ", " btw "))
 
 
+def _single_recipient_allocation(params: TaskParameters) -> RecipientAllocation | None:
+    allocations = params.recipient_allocations or []
+    if len(allocations) != 1:
+        return None
+    allocation = allocations[0]
+    recipient_name = str(allocation.recipient_name or "").strip()
+    amount = float(allocation.amount or 0)
+    if not recipient_name or amount <= 0:
+        return None
+    return RecipientAllocation(recipient_name=recipient_name, amount=amount)
+
+
+def _collapse_transfer_target(params: TaskParameters) -> tuple[str, float] | None:
+    allocation = _single_recipient_allocation(params)
+    if allocation is not None:
+        return allocation.recipient_name, allocation.amount
+
+    recipient_name = str(params.recipient_name or params.recipient or "").strip()
+    amount = _parse_amount_value(params.amount)
+    if not recipient_name or amount is None or amount <= 0:
+        return None
+    return recipient_name, amount
+
+
 def _can_collapse_transfer_task(task: PlannedTask) -> bool:
     if task.executor != "transfer" or task.action != "send_money" or task.depends_on:
         return False
@@ -359,7 +383,11 @@ def _can_collapse_transfer_task(task: PlannedTask) -> bool:
         return False
     if params.reference is not None:
         return False
-    if params.recipient_allocations or params.explicit_split or params.source_accounts:
+    if (
+        params.explicit_split
+        or params.source_accounts
+        or (params.recipient_allocations and len(params.recipient_allocations) != 1)
+    ):
         return False
     if params.recipient_account or params.bank_name or params.recipient_phone or params.phone:
         return False
@@ -377,11 +405,7 @@ def _can_collapse_transfer_task(task: PlannedTask) -> bool:
     if params.source_bank_name or params.source_account_index is not None or params.use_dual_accounts is not None:
         return False
 
-    recipient_name = (params.recipient_name or params.recipient or "").strip()
-    if not recipient_name:
-        return False
-    amount = _parse_amount_value(params.amount)
-    return amount is not None and amount > 0
+    return _collapse_transfer_target(params) is not None
 
 
 def _collapse_transfer_batch_tasks(planner_output: PlannerOutput, user_text: str) -> PlannerOutput:
@@ -419,11 +443,11 @@ def _collapse_transfer_batch_tasks(planner_output: PlannerOutput, user_text: str
         total_amount = 0.0
         for child in run:
             params = child.parameters or TaskParameters()
-            recipient_name = str(params.recipient_name or params.recipient or "").strip()
-            amount = _parse_amount_value(params.amount)
-            if not recipient_name or amount is None or amount <= 0:
+            target = _collapse_transfer_target(params)
+            if target is None:
                 allocations = []
                 break
+            recipient_name, amount = target
             allocations.append(RecipientAllocation(recipient_name=recipient_name, amount=amount))
             total_amount += amount
 

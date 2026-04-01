@@ -206,3 +206,64 @@ async def test_task_planner_collapses_bulk_transfer_siblings_to_recipient_alloca
     assert result.tasks[0].parameters.amount == 30000
     assert [item.recipient_name for item in allocations] == ["Mum", "Tolu", "Doyin"]
     assert [item.amount for item in allocations] == [10000, 10000, 10000]
+
+
+@pytest.mark.asyncio
+async def test_task_planner_collapses_bulk_transfer_siblings_with_singleton_allocations() -> None:
+    planner_output = PlannerOutput(
+        primary_intent="mixed",
+        detected_language="English",
+        tasks=[
+            PlannedTask(
+                task_id="t1",
+                action="send_money",
+                executor="transfer",
+                instruction="Send 10k to Mum",
+                parameters=TaskParameters(
+                    amount=10000,
+                    recipient_name="Mum",
+                    recipient_allocations=[RecipientAllocation(recipient_name="Mum", amount=10000)],
+                ),
+                risk="MONEY_MOVE",
+            ),
+            PlannedTask(
+                task_id="t2",
+                action="send_money",
+                executor="transfer",
+                instruction="Send 10k to Tolu Adedayo",
+                parameters=TaskParameters(
+                    amount=10000,
+                    recipient_name="Tolu Adedayo",
+                    recipient_allocations=[RecipientAllocation(recipient_name="Tolu Adedayo", amount=10000)],
+                ),
+                risk="MONEY_MOVE",
+            ),
+            PlannedTask(
+                task_id="t3",
+                action="send_money",
+                executor="transfer",
+                instruction="Send 10k to Doyin",
+                parameters=TaskParameters(
+                    amount=10000,
+                    recipient_name="Doyin",
+                    recipient_allocations=[RecipientAllocation(recipient_name="Doyin", amount=10000)],
+                ),
+                risk="MONEY_MOVE",
+            ),
+        ],
+    )
+    planner = TaskPlanner(planner_llm=_FakeLLM(planner_output))
+
+    result = await planner.plan_tasks(
+        "2348000001005",
+        "okay send 10k each to mum, tolu and doyin",
+        context="None",
+        prompt_signals=PlannerPromptSignals(has_transaction_intent_hint=True),
+    )
+
+    assert len(result.tasks) == 1
+    allocations = result.tasks[0].parameters.recipient_allocations
+    assert allocations is not None
+    assert result.tasks[0].parameters.amount == 30000
+    assert [item.recipient_name for item in allocations] == ["Mum", "Tolu Adedayo", "Doyin"]
+    assert [item.amount for item in allocations] == [10000, 10000, 10000]
