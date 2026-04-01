@@ -57,6 +57,191 @@ async def test_gate_handles_capitalized_greeting_meta_before_query_routing() -> 
     assert "tasks" not in updates or "direct_query" not in updates["tasks"]
 
 
+async def test_gate_handles_capability_question_meta_deterministically() -> None:
+    planner = _RouteTurnPlanner(
+        SemanticRouteDecision(
+            decision="domain_query",
+            mode="new",
+            target_intent="query",
+            confidence=0.95,
+            detected_language="English",
+            response_key=None,
+            response=None,
+            expected_transaction_executors=[],
+            reason="should not be used for deterministic capability question",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_gate_cap_1",
+        phone_number="2348777777780",
+        channel="whatsapp",
+        last_message_text="what can you do",
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert planner.route_calls == 0
+    assert updates["direct_path_triggered"] is True
+    assert updates["semantic_path_shape"] == "meta_direct"
+    assert updates["final_response"] == render_message("conversational.capability_question", "en")
+
+
+async def test_gate_handles_identity_question_meta_deterministically() -> None:
+    planner = _RouteTurnPlanner(
+        SemanticRouteDecision(
+            decision="domain_query",
+            mode="new",
+            target_intent="query",
+            confidence=0.95,
+            detected_language="English",
+            response_key=None,
+            response=None,
+            expected_transaction_executors=[],
+            reason="should not be used for deterministic identity question",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_gate_ident_1",
+        phone_number="2348777777781",
+        channel="whatsapp",
+        last_message_text="who are you",
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert planner.route_calls == 0
+    assert updates["direct_path_triggered"] is True
+    assert updates["semantic_path_shape"] == "meta_direct"
+    assert updates["final_response"] == render_message("conversational.identity", "en")
+
+
+async def test_gate_handles_pidgin_capability_question_deterministically() -> None:
+    planner = _RouteTurnPlanner(
+        SemanticRouteDecision(
+            decision="domain_query",
+            mode="new",
+            target_intent="query",
+            confidence=0.95,
+            detected_language="English",
+            response_key=None,
+            response=None,
+            expected_transaction_executors=[],
+            reason="should not be used for deterministic pidgin capability question",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_gate_cap_pcm_1",
+        phone_number="2348777777782",
+        channel="whatsapp",
+        last_message_text="wetin you fit do",
+        loaded_context={"language": "en"},
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert planner.route_calls == 0
+    assert updates["direct_path_triggered"] is True
+    assert updates["semantic_path_shape"] == "meta_direct"
+    assert updates["loaded_context"]["language"] == "pcm"
+    assert updates["final_response"] == render_message("conversational.capability_question", "pcm")
+
+
+async def test_gate_handles_yoruba_greeting_deterministically() -> None:
+    planner = _RouteTurnPlanner(
+        SemanticRouteDecision(
+            decision="domain_query",
+            mode="new",
+            target_intent="query",
+            confidence=0.95,
+            detected_language="English",
+            response_key=None,
+            response=None,
+            expected_transaction_executors=[],
+            reason="should not be used for deterministic yoruba greeting",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_gate_greet_yo_1",
+        phone_number="2348777777783",
+        channel="whatsapp",
+        last_message_text="pele o",
+        loaded_context={"language": "en"},
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert planner.route_calls == 0
+    assert updates["direct_path_triggered"] is True
+    assert updates["loaded_context"]["language"] == "yo"
+    assert updates["final_response"] == render_message("conversational.greeting", "yo")
+
+
+async def test_gate_handles_hausa_identity_deterministically() -> None:
+    planner = _RouteTurnPlanner(
+        SemanticRouteDecision(
+            decision="domain_query",
+            mode="new",
+            target_intent="query",
+            confidence=0.95,
+            detected_language="English",
+            response_key=None,
+            response=None,
+            expected_transaction_executors=[],
+            reason="should not be used for deterministic hausa identity question",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_gate_ident_ha_1",
+        phone_number="2348777777784",
+        channel="whatsapp",
+        last_message_text="kai wa ne",
+        loaded_context={"language": "en"},
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert planner.route_calls == 0
+    assert updates["direct_path_triggered"] is True
+    assert updates["loaded_context"]["language"] == "ha"
+    assert updates["final_response"] == render_message("conversational.identity", "ha")
+
+
+async def test_gate_handles_igbo_appreciation_deterministically() -> None:
+    planner = _RouteTurnPlanner(
+        SemanticRouteDecision(
+            decision="domain_query",
+            mode="new",
+            target_intent="query",
+            confidence=0.95,
+            detected_language="English",
+            response_key=None,
+            response=None,
+            expected_transaction_executors=[],
+            reason="should not be used for deterministic igbo appreciation",
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_gate_app_ig_1",
+        phone_number="2348777777785",
+        channel="whatsapp",
+        last_message_text="dalu",
+        loaded_context={"language": "en"},
+    )
+    config: RunnableConfig = {"configurable": {"task_planner": planner}, "recursion_limit": 50}
+
+    updates = await session_gate_direct_path(state, config)
+
+    assert planner.route_calls == 0
+    assert updates["direct_path_triggered"] is True
+    assert updates["loaded_context"]["language"] == "ig"
+    assert updates["final_response"] == render_message("conversational.appreciation", "ig")
+
+
 async def test_gate_explicit_cancel_during_pending_interrupt_resets_immediately() -> None:
     state = OrchestratorState(
         user_id="u_gate_2",

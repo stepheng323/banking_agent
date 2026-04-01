@@ -46,6 +46,59 @@ DETERMINISTIC_GREETING_EXACT = {
     "good afternoon",
     "good evening",
 }
+DETERMINISTIC_APPRECIATION_EXACT = {
+    "thanks",
+    "thank you",
+    "thankyou",
+}
+DETERMINISTIC_CHECKIN_EXACT = {
+    "how are you",
+    "how you dey",
+    "how body",
+}
+DETERMINISTIC_IDENTITY_EXACT = {
+    "who are you",
+    "what is your name",
+    "what s your name",
+    "what's your name",
+}
+DETERMINISTIC_BRAND_ORIGIN_EXACT = {
+    "who created you",
+    "who built you",
+    "who made you",
+    "what does narya mean",
+    "what is narya",
+}
+DETERMINISTIC_CAPABILITY_EXACT = {
+    "what can you do",
+    "what do you do",
+    "what can you help me with",
+    "what do you handle",
+}
+DETERMINISTIC_LOCALE_META_EXACT: dict[str, tuple[str, str]] = {
+    # Pidgin
+    "wetin you fit do": ("conversational.capability_question", "pcm"),
+    "who you be": ("conversational.identity", "pcm"),
+    "who build you": ("conversational.brand_origin", "pcm"),
+    "abeg": ("conversational.checkin", "pcm"),
+    # Yoruba
+    "pele o": ("conversational.greeting", "yo"),
+    "e se": ("conversational.appreciation", "yo"),
+    "ese": ("conversational.appreciation", "yo"),
+    "ta lo je": ("conversational.identity", "yo"),
+    "kini o le se": ("conversational.capability_question", "yo"),
+    "kini o ma n se": ("conversational.capability_question", "yo"),
+    # Hausa
+    "sannu": ("conversational.greeting", "ha"),
+    "nagode": ("conversational.appreciation", "ha"),
+    "kai wa ne": ("conversational.identity", "ha"),
+    "me zaka iya yi": ("conversational.capability_question", "ha"),
+    # Igbo
+    "ndewo": ("conversational.greeting", "ig"),
+    "dalu": ("conversational.appreciation", "ig"),
+    "onye ka i bu": ("conversational.identity", "ig"),
+    "gini ka i nwere ike ime": ("conversational.capability_question", "ig"),
+}
 ACCOUNT_BALANCE_REQUEST_PATTERNS = (
     r"\bbalance\b",
     r"\baccount\s+balance\b",
@@ -287,10 +340,22 @@ def _should_invoke_semantic_router(message_text: str) -> bool:
     return bool(normalized)
 
 
-def _deterministic_meta_response_key(message_text: str) -> str | None:
+def _deterministic_meta_response_key(message_text: str) -> tuple[str, str | None] | None:
     normalized = re.sub(r"\s+", " ", message_text.strip().lower()).rstrip("?.!,")
+    if normalized in DETERMINISTIC_LOCALE_META_EXACT:
+        return DETERMINISTIC_LOCALE_META_EXACT[normalized]
     if normalized in DETERMINISTIC_GREETING_EXACT:
-        return "conversational.greeting"
+        return "conversational.greeting", None
+    if normalized in DETERMINISTIC_APPRECIATION_EXACT:
+        return "conversational.appreciation", None
+    if normalized in DETERMINISTIC_CHECKIN_EXACT:
+        return "conversational.checkin", None
+    if normalized in DETERMINISTIC_IDENTITY_EXACT:
+        return "conversational.identity", None
+    if normalized in DETERMINISTIC_BRAND_ORIGIN_EXACT:
+        return "conversational.brand_origin", None
+    if normalized in DETERMINISTIC_CAPABILITY_EXACT:
+        return "conversational.capability_question", None
     return None
 
 
@@ -717,9 +782,11 @@ async def session_gate_direct_path(state: OrchestratorState, config: RunnableCon
         }
 
     if not live_pending_interrupt and not state.has_quote:
-        response_key = _deterministic_meta_response_key(message_text)
-        if response_key:
-            locale = LocaleManager.normalize((state.loaded_context or {}).get("language")).value
+        deterministic_meta = _deterministic_meta_response_key(message_text)
+        if deterministic_meta:
+            response_key, response_locale = deterministic_meta
+            locale = response_locale or LocaleManager.normalize((state.loaded_context or {}).get("language")).value
+            locale_updates = _locale_update(state, locale) if response_locale else {}
             query_session_snapshot, _ = await _load_query_session_snapshot(state, redis_client)
             exit_updates = _build_query_session_exit_updates(
                 state,
@@ -736,6 +803,7 @@ async def session_gate_direct_path(state: OrchestratorState, config: RunnableCon
             return {
                 **gate_updates,
                 **exit_updates,
+                **locale_updates,
                 "direct_path_triggered": True,
                 "final_response": render_message(response_key, locale),
                 "semantic_path_shape": "meta_direct",

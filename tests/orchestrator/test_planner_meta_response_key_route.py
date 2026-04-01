@@ -1,4 +1,4 @@
-"""Tests for planner response_key based meta routing."""
+"""Tests for planner response_key deterministic routing."""
 
 from __future__ import annotations
 
@@ -45,7 +45,7 @@ def _apply(state: OrchestratorState, updates: dict[str, Any]) -> OrchestratorSta
 
 
 @pytest.mark.asyncio
-async def test_planner_meta_response_key_routes_without_classifier() -> None:
+async def test_planner_identity_response_key_renders_deterministically() -> None:
     planner_output = PlannerOutput(
         primary_intent="conversational",
         response="",
@@ -69,7 +69,7 @@ async def test_planner_meta_response_key_routes_without_classifier() -> None:
     state = _apply(state, await ingest_message(state))
     state = _apply(state, await plan_tasks(state, config))
 
-    assert state.final_response == "I am Narya AI."
+    assert state.final_response == render_message("conversational.identity", "en")
 
 
 @pytest.mark.asyncio

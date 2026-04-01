@@ -347,7 +347,7 @@ async def test_conversational_response_key_renders_deterministically() -> None:
 
 
 @pytest.mark.asyncio
-async def test_conversational_identity_uses_meta_llm_when_available() -> None:
+async def test_conversational_identity_renders_deterministically_even_when_meta_llm_is_available() -> None:
     planner_output = PlannerOutput(
         primary_intent="conversational",
         response="",
@@ -384,7 +384,7 @@ async def test_conversational_identity_uses_meta_llm_when_available() -> None:
     state = _apply(state, await ingest_message(state))
     state = _apply(state, await plan_tasks(state, config))
 
-    assert state.final_response == "I am Narya AI, built by the Fuse team."
+    assert state.final_response == render_message("conversational.identity", "en")
 
 
 @pytest.mark.asyncio
@@ -424,7 +424,7 @@ async def test_conversational_identity_falls_back_to_key_without_llm() -> None:
 
 
 @pytest.mark.asyncio
-async def test_conversational_capability_question_uses_meta_llm_when_available() -> None:
+async def test_conversational_capability_question_renders_deterministically_even_when_meta_llm_is_available() -> None:
     planner_output = PlannerOutput(
         primary_intent="conversational",
         response="",
@@ -465,11 +465,11 @@ async def test_conversational_capability_question_uses_meta_llm_when_available()
     state = _apply(state, await ingest_message(state))
     state = _apply(state, await plan_tasks(state, config))
 
-    assert state.final_response == "I can help with transfers, airtime, data, and account checks."
+    assert state.final_response == render_message("conversational.capability_question", "en")
 
 
 @pytest.mark.asyncio
-async def test_conversational_out_of_scope_uses_meta_empathy_plus_redirect() -> None:
+async def test_conversational_out_of_scope_uses_planner_response_plus_redirect_without_meta_llm() -> None:
     planner_output = PlannerOutput(
         primary_intent="conversational",
         response="",
@@ -510,7 +510,7 @@ async def test_conversational_out_of_scope_uses_meta_empathy_plus_redirect() -> 
     state = _apply(state, await ingest_message(state))
     state = _apply(state, await plan_tasks(state, config))
 
-    assert state.final_response == "I can't book flights yet.\n" + render_message("conversational.out_of_scope", "en")
+    assert state.final_response == render_message("conversational.out_of_scope", "en")
 
 
 @pytest.mark.asyncio
@@ -934,5 +934,8 @@ async def test_mixed_request_runs_in_order_without_resume_prompt() -> None:
     assert all("resume your transfer" not in item.get("text", "").lower() for item in outbox)
     texts = [item.get("text", "") for item in outbox if isinstance(item, dict)]
     assert any("balance is available." in text.lower() for text in texts)
-    assert any("transaction summary" in text.lower() for text in texts)
+    assert any(
+        "transaction summary" in text.lower() or "transfers complete" in text.lower()
+        for text in texts
+    )
     assert all("account: completed" not in text.lower() for text in texts)

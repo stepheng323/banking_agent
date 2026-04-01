@@ -3,7 +3,6 @@
 from typing import Any, cast
 
 from apps.core.src.agent.orchestrator.conversational_style import format_out_of_scope_reply
-from apps.core.src.agent.orchestrator.meta_reply import generate_meta_reply
 from apps.core.src.agent.orchestrator.models.state import OrchestratorState
 from apps.core.src.agent.orchestrator.nodes.cancellation import (
     build_cancellation_reset_updates,
@@ -15,7 +14,6 @@ from apps.core.src.agent.orchestrator.nodes.planner_policy import (
     _build_locale_update,
     _build_policy_aware_greeting,
     _detected_locale_value,
-    _meta_intent_from_response_key,
 )
 from shared.i18n import MessageKey, render_message, render_safe_capability_fallback, render_text
 from shared.utils.logging import get_logger
@@ -95,32 +93,6 @@ async def _build_non_task_response(
         response_key = planner_output.response_key
         if response_key == "conversational.out_of_scope":
             empathy_source = _localized_planner_response(planner_output.response) if planner_output.response else None
-            meta_intent = _meta_intent_from_response_key(response_key)
-            llm = getattr(task_planner, "planner_llm", None)
-            if meta_intent and llm is not None and hasattr(llm, "with_structured_output"):
-                meta_message, handoff = await generate_meta_reply(
-                    llm,
-                    user_message=text,
-                    user_language_hint=conversational_locale,
-                    meta_intent=meta_intent,
-                    redis_client=redis_client,
-                    path_label="planner_path",
-                )
-                if handoff == "meta" and meta_message:
-                    logger.info(
-                        "planner_meta_reply_used",
-                        response_key=response_key,
-                        locale=conversational_locale,
-                        intent=meta_intent.value,
-                    )
-                    empathy_source = meta_message
-                else:
-                    logger.info(
-                        "planner_meta_reply_fallback",
-                        response_key=response_key,
-                        locale=conversational_locale,
-                        handoff=handoff,
-                    )
             _log_unexpected_turn_route(
                 state=state,
                 planner_output=planner_output,
@@ -159,49 +131,6 @@ async def _build_non_task_response(
                     **conversational_locale_updates,
                     **context_read_updates,
                 }
-
-            meta_intent = _meta_intent_from_response_key(response_key)
-            llm = getattr(task_planner, "planner_llm", None)
-            if meta_intent and llm is not None and hasattr(llm, "with_structured_output"):
-                meta_message, handoff = await generate_meta_reply(
-                    llm,
-                    user_message=text,
-                    user_language_hint=conversational_locale,
-                    meta_intent=meta_intent,
-                    redis_client=redis_client,
-                    path_label="planner_path",
-                )
-                if handoff == "meta" and meta_message:
-                    logger.info(
-                        "meta_query_route_hit",
-                        source="response_key",
-                        meta_kind=meta_intent.value,
-                    )
-                    logger.info(
-                        "planner_meta_reply_used",
-                        response_key=response_key,
-                        locale=conversational_locale,
-                        intent=meta_intent.value,
-                    )
-                    _log_unexpected_turn_route(
-                        state=state,
-                        planner_output=planner_output,
-                        selected_route="meta_reply",
-                        route_reason=f"response_key:{response_key}",
-                        policy_blocked=False,
-                        fallback_path="planner_non_task",
-                    )
-                    return {
-                        "final_response": meta_message,
-                        **conversational_locale_updates,
-                        **context_read_updates,
-                    }
-                logger.info(
-                    "planner_meta_reply_fallback",
-                    response_key=response_key,
-                    locale=conversational_locale,
-                    handoff=handoff,
-                )
             _log_unexpected_turn_route(
                 state=state,
                 planner_output=planner_output,
