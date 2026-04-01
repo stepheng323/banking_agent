@@ -3,23 +3,13 @@
 from typing import Any
 
 from shared.formatters.recipient_display import format_summary_recipient_display_label
+from shared.formatters.transaction_copy import build_completion_frame, format_amount_compact
 from shared.i18n import render_message
 
 
 def format_amount(amount: float | int) -> str:
     """Format currency in Naira."""
     return f"₦{amount:,.2f}" if amount else "₦0.00"
-
-
-def format_amount_compact(amount: float | int) -> str:
-    """Format currency in Naira without forced trailing decimals."""
-    try:
-        value = float(amount)
-    except (TypeError, ValueError):
-        return "₦0"
-    if value.is_integer():
-        return f"₦{value:,.0f}"
-    return f"₦{value:,.2f}".rstrip("0").rstrip(".")
 
 
 def mask_account_number(account: str) -> str:
@@ -82,7 +72,12 @@ def format_multi_action_summary(completed_tasks: list, locale: str = "en") -> st
 
         _All transactions completed successfully_
     """
-    lines = [render_message("transaction_summary.multi.header", locale), ""]
+    header, footer = build_completion_frame(
+        task_types=[getattr(task, "type", "") for task in completed_tasks],
+        locale=locale,
+        task_count=len(completed_tasks),
+    )
+    lines = [header, ""]
     total_spent = 0.0
 
     # Group by task type
@@ -234,7 +229,7 @@ def format_multi_action_summary(completed_tasks: list, locale: str = "en") -> st
         )
         lines.append("")
 
-    lines.append(render_message("transaction_summary.multi.success_footer", locale))
+    lines.append(footer)
 
     return "\n".join(lines)
 

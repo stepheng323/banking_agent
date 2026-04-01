@@ -2,6 +2,8 @@
 
 from datetime import date, timedelta
 
+import pytest
+
 from apps.core.src.agent.graphs.query.models import (
     Aggregation,
     Filters,
@@ -492,8 +494,14 @@ def test_formatter_heading_uses_credit_context() -> None:
     assert response.splitlines()[0] == "*Credit Transactions*"
 
 
-def test_formatter_preserves_paginated_credit_list_shape_for_single_remaining_item() -> None:
-    today = lagos_today()
+def test_formatter_preserves_paginated_credit_list_shape_for_single_remaining_item(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    today = date(2026, 4, 15)
+    monkeypatch.setattr(
+        "apps.core.src.agent.graphs.query.services.presentation_scope.lagos_today",
+        lambda: today,
+    )
     result = QueryResult(
         summary_text="accounts:1|showing:6-6|total:6",
         items=[
@@ -542,8 +550,14 @@ def test_formatter_heading_uses_category_spending_for_debit() -> None:
     assert response.splitlines()[0] == "*Food Spending*"
 
 
-def test_formatter_heading_includes_amount_scope_for_transaction_lists() -> None:
-    today = lagos_today()
+def test_formatter_heading_includes_amount_scope_for_transaction_lists(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    today = date(2026, 4, 15)
+    monkeypatch.setattr(
+        "apps.core.src.agent.graphs.query.services.presentation_scope.lagos_today",
+        lambda: today,
+    )
     result = _sample_list_result(
         _query_ir(
             intent=QueryIntent.TRANSACTION_LIST,
@@ -608,6 +622,28 @@ def test_formatter_fact_no_results_prefers_natural_copy_under_direct_answer() ->
     response = QueryFormatter.format(result, locale="en")
 
     assert response == "I couldn't find a payment to Mum in that period."
+
+
+def test_formatter_unscoped_latest_fact_no_results_drops_bounded_period_copy() -> None:
+    today = lagos_today()
+    result = QueryResult(
+        summary_text="",
+        items=[],
+        query_contract=_query_contract(
+            _query_ir(
+                intent=QueryIntent.TRANSACTION_SEARCH,
+                filters=Filters(transaction_type="debit", counterparty=["Mum"]),
+                time_range=TimeRange(start=today - timedelta(days=180), end=today),
+                answer_fact_field="date",
+                result_reference="latest",
+            )
+        ),
+        answer_strategy=QueryAnswerStrategy.DIRECT_ANSWER,
+    )
+
+    response = QueryFormatter.format(result, locale="en")
+
+    assert response == "I couldn't find a payment to Mum."
 
 
 def test_formatter_heading_appends_account_and_today_suffix() -> None:
@@ -926,8 +962,14 @@ def test_formatter_account_breakdown_preserves_account_labels_and_generic_total(
     assert "Total spent this month" not in response
 
 
-def test_formatter_breakdown_heading_includes_amount_scope_and_period() -> None:
-    today = lagos_today()
+def test_formatter_breakdown_heading_includes_amount_scope_and_period(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    today = date(2026, 4, 15)
+    monkeypatch.setattr(
+        "apps.core.src.agent.graphs.query.services.presentation_scope.lagos_today",
+        lambda: today,
+    )
     result = QueryResult(
         summary_text="Breakdown by account",
         items=[

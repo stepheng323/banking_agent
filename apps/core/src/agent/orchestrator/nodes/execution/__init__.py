@@ -39,6 +39,7 @@ from shared.formatters.prompts import (
     format_source_repair_prompt,
 )
 from shared.formatters.recipient_display import format_recipient_display_label
+from shared.formatters.transaction_copy import build_confirmation_header
 from shared.formatters.transaction_summary import format_batch_transfer_summary, format_intent_line
 from shared.i18n import render_message
 from shared.services.funding.coordinator import BatchFundingCoordinator, SourceAffinity, TransferDemand
@@ -1074,6 +1075,11 @@ async def advance_wave(state: OrchestratorState, config: RunnableConfig) -> dict
             {
                 "type": "request_confirmation",
                 "task_ids": confirm_task_ids,
+                "header": build_confirmation_header(
+                    task_types=[state.tasks[task_id].type for task_id in confirm_task_ids if task_id in state.tasks],
+                    locale=locale,
+                    task_count=len(confirm_task_ids),
+                ),
                 "summary": summ,
                 "snapshot": snap,
                 "snapshots_by_task": snapshots_by_task,

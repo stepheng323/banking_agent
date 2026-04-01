@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Literal, cast
 
+from apps.core.src.agent.graphs.query.capabilities import QUERY_LIMITS
 from apps.core.src.agent.graphs.query.models import (
     QueryAnswerContext,
     QueryAnswerStrategy,
@@ -299,7 +301,9 @@ def build_fact_no_results_text(query_contract: QueryExecutionContract | None, *,
     counterparty = _first_filter_value(query_contract.filters.counterparty)
     time_range = query_contract.time_range
     today = lagos_today()
-    if time_range is None:
+    if _uses_unbounded_fact_latest_window(query_contract):
+        time_suffix = ""
+    elif time_range is None:
         time_suffix = render_message("query.reply.no_result.time.period", locale)
     elif time_range.start == time_range.end == today:
         time_suffix = render_message("query.reply.no_result.time.today", locale)
@@ -307,19 +311,42 @@ def build_fact_no_results_text(query_contract: QueryExecutionContract | None, *,
         time_suffix = render_message("query.reply.no_result.time.period", locale)
 
     if tx_type == "credit" and counterparty:
-        return render_message(
+        return _normalize_no_result_reply(
+            render_message(
             "query.reply.no_result.credit_named",
             locale,
             {"counterparty": counterparty, "time_suffix": time_suffix},
+            )
         )
     if tx_type == "debit" and counterparty:
-        return render_message(
+        return _normalize_no_result_reply(
+            render_message(
             "query.reply.no_result.debit_named",
             locale,
             {"counterparty": counterparty, "time_suffix": time_suffix},
+            )
         )
     if tx_type == "credit":
-        return render_message("query.reply.no_result.credit_generic", locale, {"time_suffix": time_suffix})
+        return _normalize_no_result_reply(
+            render_message("query.reply.no_result.credit_generic", locale, {"time_suffix": time_suffix})
+        )
     if tx_type == "debit":
-        return render_message("query.reply.no_result.debit_generic", locale, {"time_suffix": time_suffix})
+        return _normalize_no_result_reply(
+            render_message("query.reply.no_result.debit_generic", locale, {"time_suffix": time_suffix})
+        )
     return None
+
+
+def _uses_unbounded_fact_latest_window(query_contract: QueryExecutionContract) -> bool:
+    if query_contract.answer_fact_field is None or query_contract.result_reference != "latest":
+        return False
+    time_range = query_contract.time_range
+    if time_range is None:
+        return True
+    today = lagos_today()
+    return time_range.end == today and (today - time_range.start).days >= QUERY_LIMITS["max_lookback_days"] - 1
+
+
+def _normalize_no_result_reply(text: str) -> str:
+    normalized = " ".join(text.split())
+    return re.sub(r"\s+([.,!?])", r"\1", normalized)

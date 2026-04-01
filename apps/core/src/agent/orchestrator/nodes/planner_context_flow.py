@@ -9,12 +9,14 @@ from apps.core.src.agent.orchestrator.nodes.planner_context import (
     PLANNER_CONTEXT_MAX_CHARS,
     _assemble_planner_context,
     _clip_text,
+    _derive_recent_answer_focus,
     _load_query_session_snapshot,
     build_user_state_summary_from_summary,
     get_or_build_turn_context_summary,
 )
 from apps.core.src.agent.orchestrator.nodes.planner_context_read import (
     TRANSACTION_EXECUTORS,
+    _infer_recent_domain_focus,
 )
 from shared.services.task_planner_prompt_models import PlannerPromptSignals
 from shared.types.planner import TransactionExecutor
@@ -81,6 +83,35 @@ def _has_transaction_intent_hint(text: str) -> bool:
     return False
 
 
+def _should_use_minimal_planner_context(
+    *,
+    state: OrchestratorState,
+    active_intent: str | None,
+    query_session_active: bool,
+    recent_domain_focus: str | None,
+    recent_answer_focus: str | None,
+    has_transaction_intent_hint: bool,
+) -> bool:
+    """Skip full turn-context assembly when no live state needs preservation."""
+    if state.pending_interrupt is not None:
+        return False
+    if state.has_quote:
+        return False
+    if state.session_stack:
+        return False
+    if active_intent is not None:
+        return False
+    if query_session_active:
+        return False
+    if recent_domain_focus is not None:
+        return False
+    if recent_answer_focus is not None:
+        return False
+    if has_transaction_intent_hint:
+        return False
+    return True
+
+
 async def _build_planner_context(
     *,
     state: OrchestratorState,
@@ -122,6 +153,43 @@ async def _build_planner_context(
                     active_intent = active_task.type
         except Exception as e:
             logger.warning("active_flow_context_failed", error=str(e))
+
+    recent_domain_focus = _infer_recent_domain_focus(state)
+    recent_answer_focus = _derive_recent_answer_focus(state)
+    has_transaction_intent_hint = _has_transaction_intent_hint(text)
+    expected_executors = tuple(
+        cast(TransactionExecutor, item)
+        for item in state.preplanner_expected_transaction_executors
+        if item in TRANSACTION_EXECUTORS
+    )
+    if _should_use_minimal_planner_context(
+        state=state,
+        active_intent=active_intent,
+        query_session_active=query_session_active,
+        recent_domain_focus=recent_domain_focus,
+        recent_answer_focus=recent_answer_focus,
+        has_transaction_intent_hint=has_transaction_intent_hint,
+    ):
+        logger.info("planner_context_skipped", mode="minimal")
+        return PlannerContextBuildResult(
+            planner_context="None",
+            active_intent=active_intent,
+            query_session_snapshot=query_session_snapshot,
+            query_session_source=query_session_source,
+            prompt_signals=PlannerPromptSignals(
+                active_flow_type=active_intent,
+                pending_interrupt_kind=None,
+                query_session_active=False,
+                query_session_source=query_session_source,
+                recent_domain_focus=None,
+                has_beneficiary_suggestion=False,
+                has_user_state_summary=False,
+                has_short_term_memory=False,
+                has_quote=False,
+                has_transaction_intent_hint=has_transaction_intent_hint,
+                expected_transaction_executors=expected_executors,
+            ),
+        )
 
     turn_summary, _ = get_or_build_turn_context_summary(
         state,
@@ -209,11 +277,6 @@ async def _build_planner_context(
         sections=len(included_sections),
         clipped_sections=clipped_sections,
         dropped_sections=dropped_sections,
-    )
-    expected_executors = tuple(
-        cast(TransactionExecutor, item)
-        for item in state.preplanner_expected_transaction_executors
-        if item in TRANSACTION_EXECUTORS
     )
     prompt_signals = PlannerPromptSignals(
         active_flow_type=active_intent,

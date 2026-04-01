@@ -61,6 +61,7 @@ def test_multi_action_summary_uses_compact_transfer_line_with_alias_and_resolved
 
     summary = format_multi_action_summary(tasks, locale="en")
 
+    assert "*Transfer Complete*" in summary
     assert "✓ ₦10,000 → Mum (Mercy Johnson) • Opay • 8162511023" in summary
     assert "₦10,000.00" not in summary
 
@@ -87,6 +88,7 @@ def test_multi_action_summary_total_spent_is_compact_for_multiple_tasks() -> Non
 
     summary = format_multi_action_summary(tasks, locale="en")
 
+    assert "*Transfers Complete*" in summary
     assert "✓ ₦10,000 → Mum (Mercy Johnson) • Opay • 8162511023" in summary
     assert "✓ ₦10,000 → Tolu (Tolu Adedayo) • Access • 0760505261" in summary
     assert "*Total Spent:* ₦20,000" in summary
@@ -132,6 +134,7 @@ def test_multi_action_summary_airtime_line_uses_checkmark() -> None:
 
     summary = format_multi_action_summary(tasks, locale="en")
 
+    assert "*Airtime Purchase Complete*" in summary
     assert "\u2713 *Airtime:*" in summary
     assert "for 08162511023 (MTN)" in summary
 
@@ -142,6 +145,25 @@ def test_multi_action_summary_airtime_uses_recipient_phone_fallback() -> None:
     summary = format_multi_action_summary(tasks, locale="en")
 
     assert "for 08162511023 (MTN)" in summary
+
+
+def test_multi_action_summary_mixed_batch_keeps_neutral_wrapper_copy() -> None:
+    tasks = [
+        _transfer_task(
+            task_id="t1",
+            amount=5000,
+            recipient_name="Tolu",
+            recipient_resolved_name="TOLU ADEDAYO",
+            bank="First Bank",
+            account="0760505261",
+        ),
+        _airtime_task(task_id="a1", amount=1000, phone_number="08162511023", network="MTN"),
+    ]
+
+    summary = format_multi_action_summary(tasks, locale="en")
+
+    assert "*Transaction Summary*" in summary
+    assert "_All transactions completed successfully_" in summary
 
 def test_batch_confirmation_summary_uses_compact_total_amount() -> None:
     summary = format_batch_transfer_summary(

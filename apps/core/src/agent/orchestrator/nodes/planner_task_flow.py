@@ -6,6 +6,7 @@ from apps.core.src.agent.orchestrator.models.state import OrchestratorState
 from apps.core.src.agent.orchestrator.nodes.planner_context_read import TRANSACTION_EXECUTORS
 from apps.core.src.agent.orchestrator.nodes.planner_postprocess import (
     _expand_underproduced_transfer_tasks,
+    _reconcile_multi_transfer_recipient_tasks,
     _strip_transactional_depends_on_edges,
 )
 from apps.core.src.agent.orchestrator.utils.task_payload import build_task_specs_and_waves_from_plan_items
@@ -31,6 +32,16 @@ async def _build_planner_task_updates(
             source_task_id=fanout_meta["source_task_id"],
             recipient_count=fanout_meta["recipient_count"],
             recipient_names=fanout_meta["recipient_names"],
+        )
+
+    reconciled_tasks, reconcile_meta = _reconcile_multi_transfer_recipient_tasks(planner_output.tasks, text)
+    if reconcile_meta:
+        planner_output.tasks = reconciled_tasks
+        logger.info(
+            "planner_transfer_multi_recipient_reconcile_applied",
+            recipient_count=reconcile_meta["recipient_count"],
+            recipient_names=reconcile_meta["recipient_names"],
+            changed_tasks=reconcile_meta["changed_tasks"],
         )
 
     normalized_tasks, stripped_edges = _strip_transactional_depends_on_edges(planner_output.tasks)

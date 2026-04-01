@@ -24,6 +24,7 @@ from apps.core.src.agent.graphs.query.session import (
 from apps.core.src.agent.graphs.query.utils.timezone import lagos_today
 from apps.core.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
 from shared.clients.abstractions.banking import BankDataProvider
+from shared.formatters.transaction_copy import build_copy_context
 from shared.i18n import LocaleManager, render_message
 from shared.utils.logging import get_logger
 
@@ -273,10 +274,17 @@ class QueryWorker:
         elif tx_type == "credit":
             direction = "incoming"
 
-        metadata = {
-            "intent_family": query_contract.intent.value,
-            "direction": direction,
-        }
+        metadata = build_copy_context(
+            task_type="query",
+            payload={
+                "direction": direction,
+                "counterparty_label": merchant,
+                "recipient_name": merchant,
+                "time_label": time_phrase,
+                "scope_label": scope_label,
+            },
+        )
+        metadata["intent_family"] = query_contract.intent.value
         if merchant:
             metadata["counterparty_label"] = merchant
         if category:

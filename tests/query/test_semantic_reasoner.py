@@ -978,6 +978,41 @@ async def test_reasoner_passes_through_show_evidence_followup_intent() -> None:
 
 
 @pytest.mark.asyncio
+async def test_reasoner_passes_through_grouped_total_followup_intent() -> None:
+    llm = _TrackingLLM(
+        QuerySemanticDecision(
+            decision="continuation",
+            confidence=0.91,
+            reason="llm_grouped_total_followup",
+            continuation_type="grouped_total_followup",
+            followup_intent="refine_existing",
+        )
+    )
+    reasoner = QuerySemanticReasoner(llm)
+
+    decision = await reasoner.reason(
+        SemanticReasonerContext(
+            message="so what the total?",
+            today=date(2026, 3, 30),
+            language="en",
+            query_contract=_contract(
+                _query_ir(
+                    intent=QueryIntent.BENEFICIARY_SUMMARY,
+                    time_range=TimeRange(start=date(2026, 3, 1), end=date(2026, 3, 30)),
+                    filters=Filters(transaction_type="debit"),
+                    aggregation=Aggregation(type="sum", sort_by="count"),
+                )
+            ),
+            surface_view=_grouped_summary_surface_view(view="summary"),
+        )
+    )
+
+    assert decision.continuation_type == "grouped_total_followup"
+    assert decision.followup_intent == "refine_existing"
+    assert llm.structured.calls == 1
+
+
+@pytest.mark.asyncio
 async def test_reasoner_passes_through_unclear_followup_contract() -> None:
     llm = _TrackingLLM(
         QuerySemanticDecision(

@@ -17,7 +17,10 @@ from apps.core.src.agent.orchestrator.nodes.planner_context import (
     build_router_context_from_summary,
     get_or_build_turn_context_summary,
 )
-from apps.core.src.agent.orchestrator.nodes.planner_postprocess import _expand_underproduced_transfer_tasks
+from apps.core.src.agent.orchestrator.nodes.planner_postprocess import (
+    _expand_underproduced_transfer_tasks,
+    _reconcile_multi_transfer_recipient_tasks,
+)
 from apps.core.src.agent.orchestrator.services.interrupt_shortcuts import (
     is_explicit_confirmation_approval,
     resolve_interrupt_shortcut_with_reason,
@@ -29,6 +32,7 @@ from apps.core.src.agent.orchestrator.utils.task_state import reset_tasks_to_ext
 from shared.formatters.confirmation import build_confirmation_summary
 from shared.formatters.prompts import format_auth_reason, sanitize_recipient_display_name
 from shared.formatters.recipient_display import format_recipient_display_label
+from shared.formatters.transaction_copy import build_confirmation_header
 from shared.i18n import LocaleManager, render_message
 from shared.types.planner import (
     InterruptRouteDecision,
@@ -791,6 +795,14 @@ async def _build_enriched_transaction_switch_tasks(
 
     if target_intent == "transfer" and action == "send_money":
         planned_tasks, _ = _expand_underproduced_transfer_tasks(planned_tasks, text)
+        planned_tasks, reconcile_meta = _reconcile_multi_transfer_recipient_tasks(planned_tasks, text)
+        if reconcile_meta:
+            logger.info(
+                "interrupt_transfer_multi_recipient_reconcile_applied",
+                recipient_count=reconcile_meta["recipient_count"],
+                recipient_names=reconcile_meta["recipient_names"],
+                changed_tasks=reconcile_meta["changed_tasks"],
+            )
 
     payload_overrides_by_task_id: dict[str, dict[str, Any]] = {
         task.task_id: {"message": text} for task in planned_tasks
@@ -1126,6 +1138,11 @@ def _build_confirmation_reprompt_outbox(
         {
             "type": "request_confirmation",
             "task_ids": task_ids,
+            "header": build_confirmation_header(
+                task_types=[state.tasks[task_id].type for task_id in task_ids if task_id in state.tasks],
+                locale=locale,
+                task_count=len(task_ids),
+            ),
             "summary": summary,
             "snapshot": snapshot,
             "idempotency_key": first_task.payload.get("idempotency_key", "unknown"),

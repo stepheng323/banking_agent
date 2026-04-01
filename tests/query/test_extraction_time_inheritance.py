@@ -10,10 +10,12 @@ from apps.core.src.agent.graphs.query.models import (
     Filters,
     QueryExecutionContract,
     QueryExtractionResult,
+    QueryFilters,
     QueryIntent,
     QueryIR,
     QueryOperation,
     QueryParseResult,
+    QueryRequestShape,
     QueryResult,
     QueryResultItem,
     QueryTimeRange,
@@ -1465,6 +1467,200 @@ async def test_aggregate_continuation_without_reasoner_extraction_uses_determini
     assert updates["current_page"] == 0
     assert updates["show_expanded"] is False
     assert updates["_query_session_transition"] == "replace_session_new_query"
+
+
+@pytest.mark.asyncio
+async def test_aggregate_continuation_with_polluted_reasoner_extraction_prefers_clean_fresh_parse() -> None:
+    step = ExtractionStep(_DummyLLM())
+    today = date(2026, 3, 30)
+    session_query = _query_ir(
+        intent=QueryIntent.TRANSACTION_LIST,
+        time_range=TimeRange(start=date(2026, 3, 1), end=today, granularity="month"),
+        filters=Filters(transaction_type="debit", merchant=["mum"]),
+        result_limit=1,
+        result_reference="latest",
+        answer_fact_field="date",
+    )
+    session_contract = _contract(session_query)
+    parsed_extraction = QueryExtractionResult(
+        intent=ExtractionIntent.SPENDING_TOTAL,
+        time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="this_month"),
+        raw_query="How much have I spent this month so far",
+    )
+    parsed_query = _query_ir(
+        intent=QueryIntent.ANALYTICS_SUMMARY,
+        time_range=TimeRange(start=date(2026, 3, 1), end=today, granularity="month"),
+        filters=Filters(transaction_type="debit"),
+        aggregation=Aggregation(type="sum"),
+    )
+
+    async def _fake_reason(_: object) -> QuerySemanticDecision:
+        return QuerySemanticDecision(
+            decision="continuation",
+            continuation_type="aggregate",
+            followup_intent="refine_existing",
+            confidence=0.92,
+            reason="polluted_reasoner_aggregate_extraction",
+            extraction=QueryExtractionResult(
+                intent=ExtractionIntent.SPENDING_TOTAL,
+                filters=QueryFilters(recipient="mum", transaction_type="debit"),
+                time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="this_month"),
+                request_shape=QueryRequestShape.FACT,
+                answer_fact_field="amount",
+                result_reference="latest",
+                raw_query="How much have I spent this month so far",
+            ),
+        )
+
+    def _fake_parse_deterministic(question: str, *, today: date, language: str = "en") -> QueryParseResult:
+        del today, language
+        assert question == "How much have I spent this month so far"
+        return _ok_result(parsed_extraction, parsed_query)
+
+    step.reasoner.reason = _fake_reason  # type: ignore[method-assign]
+    step.parser.parse_deterministic = _fake_parse_deterministic  # type: ignore[method-assign]
+
+    updates = await step._handle_continuation(
+        {"message": "How much have I spent this month so far", "today": today, "language": "en"},
+        {
+            "session_active": True,
+            "query_contract": session_contract.model_dump(),
+            "query_result": {"items": []},
+            "current_page": 1,
+            "show_expanded": True,
+        },
+    )
+
+    query_contract = updates["query_contract"]
+    assert query_contract.intent == QueryIntent.ANALYTICS_SUMMARY
+    assert query_contract.time_start == date(2026, 3, 1)
+    assert query_contract.time_end == today
+    assert query_contract.filters is not None
+    assert query_contract.filters.transaction_type == "debit"
+    assert query_contract.filters.merchant is None
+    assert query_contract.answer_fact_field is None
+    assert query_contract.result_reference is None
+    assert updates["current_page"] == 0
+    assert updates["show_expanded"] is False
+    assert updates["_query_session_transition"] == "replace_session_new_query"
+
+
+@pytest.mark.asyncio
+async def test_beneficiary_summary_aggregate_followup_prefers_clean_total_parse() -> None:
+    step = ExtractionStep(_DummyLLM())
+    today = date(2026, 3, 30)
+    session_query = _query_ir(
+        intent=QueryIntent.BENEFICIARY_SUMMARY,
+        time_range=TimeRange(start=date(2026, 3, 1), end=today, granularity="month"),
+        filters=Filters(transaction_type="debit"),
+        aggregation=Aggregation(type="sum", sort_by="count"),
+    )
+    session_contract = _contract(session_query)
+    parsed_extraction = QueryExtractionResult(
+        intent=ExtractionIntent.SPENDING_TOTAL,
+        time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="this_month"),
+        raw_query="How much did I send in total this month",
+    )
+    parsed_query = _query_ir(
+        intent=QueryIntent.ANALYTICS_SUMMARY,
+        time_range=TimeRange(start=date(2026, 3, 1), end=today, granularity="month"),
+        filters=Filters(transaction_type="debit"),
+        aggregation=Aggregation(type="sum"),
+    )
+
+    async def _fake_reason(_: object) -> QuerySemanticDecision:
+        return QuerySemanticDecision(
+            decision="continuation",
+            continuation_type="aggregate",
+            followup_intent="refine_existing",
+            confidence=0.93,
+            reason="beneficiary_summary_total_followup",
+            extraction=QueryExtractionResult(
+                intent=ExtractionIntent.BENEFICIARY_SUMMARY,
+                filters=QueryFilters(transaction_type="debit"),
+                time_range=QueryTimeRange(reference_type=TimeReference.EXPLICIT, period="this_month"),
+                request_shape=QueryRequestShape.GROUPED_SUMMARY,
+                aggregation={"type": "sum", "sort_by": "count"},
+                raw_query="How much did I send in total this month",
+            ),
+        )
+
+    def _fake_parse_deterministic(question: str, *, today: date, language: str = "en") -> QueryParseResult:
+        del today, language
+        assert question == "How much did I send in total this month"
+        return _ok_result(parsed_extraction, parsed_query)
+
+    step.reasoner.reason = _fake_reason  # type: ignore[method-assign]
+    step.parser.parse_deterministic = _fake_parse_deterministic  # type: ignore[method-assign]
+
+    updates = await step._handle_continuation(
+        {"message": "How much did I send in total this month", "today": today, "language": "en"},
+        {
+            "session_active": True,
+            "query_contract": session_contract.model_dump(),
+            "query_result": {"items": []},
+            "current_page": 1,
+            "show_expanded": False,
+        },
+    )
+
+    query_contract = updates["query_contract"]
+    assert query_contract.intent == QueryIntent.ANALYTICS_SUMMARY
+    assert query_contract.filters is not None
+    assert query_contract.filters.transaction_type == "debit"
+    assert query_contract.aggregation is not None
+    assert query_contract.aggregation.type == "sum"
+    assert query_contract.aggregation.sort_by != "count"
+    assert updates["_query_session_transition"] == "replace_session_new_query"
+
+
+@pytest.mark.asyncio
+async def test_grouped_total_followup_rebuilds_scoped_sum_from_beneficiary_summary() -> None:
+    step = ExtractionStep(_DummyLLM())
+    today = date(2026, 3, 30)
+    session_query = _query_ir(
+        intent=QueryIntent.BENEFICIARY_SUMMARY,
+        time_range=TimeRange(start=date(2026, 3, 1), end=today, granularity="month"),
+        filters=Filters(transaction_type="debit"),
+        aggregation=Aggregation(type="sum", sort_by="count"),
+    )
+    session_contract = _contract(session_query)
+
+    async def _fake_reason(_: object) -> QuerySemanticDecision:
+        return QuerySemanticDecision(
+            decision="continuation",
+            continuation_type="grouped_total_followup",
+            followup_intent="refine_existing",
+            confidence=0.95,
+            reason="llm_grouped_total_followup",
+        )
+
+    step.reasoner.reason = _fake_reason  # type: ignore[method-assign]
+
+    updates = await step._handle_continuation(
+        {"message": "so what the total?", "today": today, "language": "en"},
+        {
+            "session_active": True,
+            "query_contract": session_contract.model_dump(),
+            "query_result": {"items": []},
+            "current_page": 1,
+            "show_expanded": True,
+        },
+    )
+
+    query_contract = updates["query_contract"]
+    assert query_contract.intent == QueryIntent.ANALYTICS_SUMMARY
+    assert query_contract.time_start == date(2026, 3, 1)
+    assert query_contract.time_end == today
+    assert query_contract.filters is not None
+    assert query_contract.filters.transaction_type == "debit"
+    assert query_contract.aggregation is not None
+    assert query_contract.aggregation.type == "sum"
+    assert query_contract.aggregation.sort_by != "count"
+    assert query_contract.result_reference is None
+    assert query_contract.answer_fact_field is None
+    assert updates["current_page"] == 0
+    assert updates["show_expanded"] is False
 
 
 @pytest.mark.asyncio

@@ -9,7 +9,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from shared.types.planner import PlannerOutput, TaskParameters
+from shared.types.planner import PlannedTask, PlannerOutput, RecipientAllocation, TaskParameters
 from shared.utils.bank_aliases import BANK_ALIASES, normalize_bank_name
 from shared.utils.logging import get_logger
 from shared.utils.network_utils import normalize_network_name, normalize_nigerian_phone, resolve_network_from_phone
@@ -345,6 +345,134 @@ def _normalize_data_params(params: TaskParameters, text: str) -> tuple[list[str]
     return patched, ambiguous
 
 
+def _has_batch_transfer_cue(user_text: str) -> bool:
+    lowered = (user_text or "").lower()
+    return any(cue in lowered for cue in (" each ", " split ", " between ", " btw "))
+
+
+def _can_collapse_transfer_task(task: PlannedTask) -> bool:
+    if task.executor != "transfer" or task.action != "send_money" or task.depends_on:
+        return False
+
+    params = task.parameters or TaskParameters()
+    if params.transfer_all or params.transfer_percentage is not None:
+        return False
+    if params.reference is not None:
+        return False
+    if params.recipient_allocations or params.explicit_split or params.source_accounts:
+        return False
+    if params.recipient_account or params.bank_name or params.recipient_phone or params.phone:
+        return False
+    if (
+        params.network
+        or params.plan
+        or params.schedule
+        or params.scheduled
+        or params.schedule_id
+        or params.schedule_selector
+    ):
+        return False
+    if params.recurring or params.international or params.alias or params.is_self:
+        return False
+    if params.source_bank_name or params.source_account_index is not None or params.use_dual_accounts is not None:
+        return False
+
+    recipient_name = (params.recipient_name or params.recipient or "").strip()
+    if not recipient_name:
+        return False
+    amount = _parse_amount_value(params.amount)
+    return amount is not None and amount > 0
+
+
+def _collapse_transfer_batch_tasks(planner_output: PlannerOutput, user_text: str) -> PlannerOutput:
+    if not _has_batch_transfer_cue(user_text):
+        return planner_output
+
+    tasks = planner_output.tasks
+    if len(tasks) < 2:
+        return planner_output
+
+    collapsed_tasks: list[PlannedTask] = []
+    id_rewrites: dict[str, str] = {}
+    applied_count = 0
+    idx = 0
+
+    while idx < len(tasks):
+        task = tasks[idx]
+        if not _can_collapse_transfer_task(task):
+            collapsed_tasks.append(task)
+            idx += 1
+            continue
+
+        run_end = idx + 1
+        while run_end < len(tasks) and _can_collapse_transfer_task(tasks[run_end]):
+            run_end += 1
+
+        run = tasks[idx:run_end]
+        if len(run) < 2:
+            collapsed_tasks.append(task)
+            idx = run_end
+            continue
+
+        base_task = run[0].model_copy(deep=True)
+        allocations: list[RecipientAllocation] = []
+        total_amount = 0.0
+        for child in run:
+            params = child.parameters or TaskParameters()
+            recipient_name = str(params.recipient_name or params.recipient or "").strip()
+            amount = _parse_amount_value(params.amount)
+            if not recipient_name or amount is None or amount <= 0:
+                allocations = []
+                break
+            allocations.append(RecipientAllocation(recipient_name=recipient_name, amount=amount))
+            total_amount += amount
+
+        if len(allocations) != len(run):
+            collapsed_tasks.extend(run)
+            idx = run_end
+            continue
+
+        base_params = base_task.parameters.model_copy(deep=True) if base_task.parameters else TaskParameters()
+        base_params.recipient = None
+        base_params.recipient_name = None
+        base_params.amount = total_amount
+        base_params.recipient_allocations = allocations
+        base_task.parameters = base_params
+        base_task.instruction = user_text
+
+        collapsed_tasks.append(base_task)
+        for child in run[1:]:
+            id_rewrites[child.task_id] = base_task.task_id
+        applied_count += 1
+        idx = run_end
+
+    if not applied_count:
+        return planner_output
+
+    rewritten_tasks: list[PlannedTask] = []
+    for task in collapsed_tasks:
+        if not task.depends_on:
+            rewritten_tasks.append(task)
+            continue
+        updated_depends_on: list[str] = []
+        seen: set[str] = set()
+        for dep in task.depends_on:
+            rewritten = id_rewrites.get(dep, dep)
+            if rewritten in seen:
+                continue
+            seen.add(rewritten)
+            updated_depends_on.append(rewritten)
+        rewritten_tasks.append(task.model_copy(update={"depends_on": updated_depends_on}))
+
+    logger.info(
+        "planner_transfer_batch_collapsed_to_allocations",
+        collapsed_run_count=applied_count,
+        collapsed_task_count=len(id_rewrites) + applied_count,
+        locale=planner_output.detected_language or "unknown",
+    )
+    return planner_output.model_copy(update={"tasks": rewritten_tasks})
+
+
 def normalize_planner_transaction_output(planner_output: PlannerOutput, user_text: str) -> PlannerOutput:
     """Patch missing transaction parameters with deterministic, precision-first parsing."""
     if not planner_output.tasks:
@@ -405,7 +533,8 @@ def normalize_planner_transaction_output(planner_output: PlannerOutput, user_tex
             total_tasks=len(planner_output.tasks),
         )
 
-    return planner_output.model_copy(update={"tasks": updated_tasks})
+    normalized_output = planner_output.model_copy(update={"tasks": updated_tasks})
+    return _collapse_transfer_batch_tasks(normalized_output, user_text)
 
 
 __all__ = ["normalize_planner_transaction_output"]

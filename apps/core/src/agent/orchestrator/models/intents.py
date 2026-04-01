@@ -84,12 +84,14 @@ class RequestConfirmation(UiIntent):
     summary: str
     token: str
     correlation_id: str
+    header: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "type": "request_confirmation",
             "task_ids": self.task_ids,
             "summary": self.summary,
+            "header": self.header,
             "idempotency_key": self.correlation_id,
             "actionable_payload": self.actionable_payload,
         }
@@ -184,6 +186,7 @@ def reconstruct_intent(data: dict[str, Any]) -> UiIntent | None:
             summary=data.get("summary", ""),
             correlation_id=data.get("idempotency_key", "unknown"),
             token=data.get("idempotency_key", "unknown"),
+            header=data.get("header"),
         )
         intent.actionable_payload = data.get("actionable_payload")
         return intent

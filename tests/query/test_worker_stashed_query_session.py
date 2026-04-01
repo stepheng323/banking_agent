@@ -377,9 +377,12 @@ async def test_worker_sets_followup_progress_stage_before_pipeline_run() -> None
             (
                 "query.resolving_followup",
                 {
+                    "task_type": "query",
+                    "task_mix": "generic",
                     "intent_family": "analytics_summary",
                     "direction": "sent",
                     "counterparty_label": "mum",
+                    "recipient_display": "Mum",
                     "scope_label": "what you sent to mum",
                 },
             )

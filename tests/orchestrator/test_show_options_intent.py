@@ -1,6 +1,11 @@
 """Show-options intent mapping tests."""
 
-from apps.core.src.agent.orchestrator.models.intents import ShowFlow, ShowOptions, reconstruct_intent
+from apps.core.src.agent.orchestrator.models.intents import (
+    RequestConfirmation,
+    ShowFlow,
+    ShowOptions,
+    reconstruct_intent,
+)
 from apps.core.src.agent.orchestrator.presentation.intents import map_outbox_to_intents
 
 
@@ -50,3 +55,19 @@ def test_map_outbox_to_intents_keeps_flow_without_extra_say() -> None:
 
     assert len(intents) == 1
     assert isinstance(intents[0], ShowFlow)
+
+
+def test_reconstruct_intent_round_trips_confirmation_header() -> None:
+    raw = {
+        "type": "request_confirmation",
+        "task_ids": ["t1"],
+        "summary": "*₦5,000 → Tolu*",
+        "header": "Confirm Transfer",
+        "idempotency_key": "idem-1",
+    }
+
+    intent = reconstruct_intent(raw)
+
+    assert isinstance(intent, RequestConfirmation)
+    assert intent.header == "Confirm Transfer"
+    assert intent.to_dict()["header"] == "Confirm Transfer"

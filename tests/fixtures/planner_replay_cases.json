@@ -48,6 +48,15 @@
     }
   },
   {
+    "id": "recipient_split_three_way",
+    "text": "Send 10k each to Mum, Tolu and Doyin",
+    "context": "None",
+    "signals": {
+      "has_transaction_intent_hint": true,
+      "expected_transaction_executors": ["transfer"]
+    }
+  },
+  {
     "id": "query_continuation_any_credits",
     "text": "any credits?",
     "context": "Active Query Session. Last summary: \"You spent 5000 yesterday.\"",

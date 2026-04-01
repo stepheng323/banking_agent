@@ -134,8 +134,11 @@ def test_money_move_one_shot_multilingual_examples_present() -> None:
     assert "money_move" in bundles
     assert "R26_ONE_SHOT_COMPLETENESS" in runtime_prompt
     assert "R27_RECIPIENT_SPLIT" in runtime_prompt
+    assert "one transfer task" in runtime_prompt
+    assert "recipient_allocations" in runtime_prompt
     assert "Send 20k to 0760505261 First Bank" in runtime_prompt
     assert "Split 20k between Mum and Gaines" in runtime_prompt
+    assert "Send 10k each to Mum, Tolu and Doyin" in runtime_prompt
     assert "Send 20k 70/30 btw Mum and Gaines" in runtime_prompt
     assert "explicit_split={Access:10000,GTB:10000}" in runtime_prompt
     assert "Abeg buy 2k airtime for 08031234567 mtn" in runtime_prompt

@@ -10,18 +10,18 @@ PLANNER_RUNTIME_SCHEMA_PROMPT = """## OUTPUT JSON
 - beneficiary_route:
   beneficiary_list=list/manage, recipient_ranking=query.beneficiary_summary, none=save/other.
 - save_beneficiary only with beneficiary suggestion context.
-- recipient split -> recipient_allocations[].
+- people transfer batch -> one task + recipient_allocations[].
 - funding split -> explicit_split.
 - Mixed/orchestration asks may include multiple tasks with depends_on preserving user order."""
 
 PLANNER_TRANSFER_PRECISION_PROMPT = """## MONEY_MOVE PRECISION
-- Keep recipient exactly as typed; no context expansion.
-- recipient_name must be plain text only.
+- Keep recipient exactly as typed.
+- recipient_name must be plain text.
 - Selector refs: {"selector":"previous"} or {"selector":"index","index":N}.
-- One-shot completeness: extract explicit amount/account/bank/phone/network/plan in same turn.
-- Split across people/beneficiaries -> recipient_allocations, not explicit_split.
-- "each" + multiple recipients -> recipient_allocations with per-recipient amounts.
-- Split across my funding accounts/banks -> explicit_split or source_accounts.
+- Extract explicit amount/account/bank/phone/network/plan in one turn.
+- People split -> one transfer task + recipient_allocations, never explicit_split.
+- "each" + named recipient list -> one allocation per recipient, in order.
+- Funding-account split -> explicit_split or source_accounts.
 - Precision-first: never guess ambiguous fields."""
 
 PLANNER_EXECUTOR_COVERAGE_GUARD_PROMPT = (
@@ -52,8 +52,9 @@ PLANNER_RULE_ATOMS: dict[str, str] = {
         "list_scheduled_transfers|cancel_scheduled_transfer"
     ),
     "R22_MIXED_MONEY_MOVE": (
-        "explicit transfer+airtime+data mix->emit all tasks in order;"
-        " multiple phones/recipients in same executor->one task per recipient"
+        "mix transfer+airtime+data->emit tasks in order;"
+        " people batch->one transfer task+recipient_allocations;"
+        " multiple airtime/data targets->one task per target"
     ),
     "R23_MULTILINGUAL_SAFETY": "rules_apply_semantically_across_supported_languages",
     "R24_BENEFICIARY_ROUTE": "mixed asks may use beneficiary_list or recipient_ranking hints when helpful",
@@ -130,25 +131,27 @@ PLANNER_CONTEXT_RULE_ATOMS = {
 PLANNER_RUNTIME_COMMON_EXAMPLES = """## TARGETED EXAMPLES (COMMON)
 - Send 8k -> send_money amount=8000, recipient omitted."""
 
-PLANNER_RUNTIME_MONEY_MOVE_EXAMPLES = """## TARGETED EXAMPLES (MONEY_MOVE)
-- Send 10k to Mum and buy 5k airtime -> send_money + buy_airtime.
-- Send 20k to 0760505261 First Bank -> send_money amount=20000, recipient_account=0760505261, bank_name=First Bank.
-- Split 20k between Mum and Gaines ->
-  send_money amount=20000,
-  recipient_allocations=[{recipient_name:Mum,amount:10000},{recipient_name:Gaines,amount:10000}].
-- Send 10k each to Mum and Tolu -> allocations.
-- Send 20k 70/30 btw Mum and Gaines ->
-  send_money amount=20000,
-  recipient_allocations=[{recipient_name:Mum,amount:14000},{recipient_name:Gaines,amount:6000}].
-- Split 20k from Access and GTB -> send_money amount=20000, explicit_split={Access:10000,GTB:10000}.
-- Abeg buy 2k airtime for 08031234567 mtn -> buy_airtime amount=2000, recipient_phone=08031234567, network=MTN.
-- Jowo ra data 1gb fun 08031234567 mtn -> buy_data plan=1GB, recipient_phone=08031234567, network=MTN.
-- Don Allah tura 5k zuwa 0760505261 First Bank ->
-  send_money amount=5000, recipient_account=0760505261, bank_name=First Bank.
-- Biko buy 3k airtime for my line mtn -> buy_airtime amount=3000, is_self=true, network=MTN.
-- Buy 200 airtime for 08031234567, 08067892221, 08033038674 ->
-  3 x buy_airtime: each amount=200, recipient_phone per number.
-- Envoie 5k a 0760505261 First Bank -> send_money amount=5000, recipient_account=0760505261, bank_name=First Bank."""
+PLANNER_RUNTIME_MONEY_MOVE_EXAMPLES = (
+    "## TARGETED EXAMPLES (MONEY_MOVE)\n"
+    "- Send 10k to Mum and buy 5k airtime -> send_money + buy_airtime.\n"
+    "- Send 20k to 0760505261 First Bank -> send_money amount=20000, "
+    "recipient_account=0760505261, bank_name=First Bank.\n"
+    "- Split 20k between Mum and Gaines -> recipient_allocations="
+    "[{recipient_name:Mum,amount:10000},{recipient_name:Gaines,amount:10000}].\n"
+    "- Send 10k each to Mum, Tolu and Doyin -> recipient_allocations="
+    "[{recipient_name:Mum,amount:10000},{recipient_name:Tolu,amount:10000},{recipient_name:Doyin,amount:10000}].\n"
+    "- Send 20k 70/30 btw Mum and Gaines -> recipient_allocations="
+    "[{recipient_name:Mum,amount:14000},{recipient_name:Gaines,amount:6000}].\n"
+    "- Split 20k from Access and GTB -> send_money amount=20000, explicit_split={Access:10000,GTB:10000}.\n"
+    "- Abeg buy 2k airtime for 08031234567 mtn -> buy_airtime amount=2000, recipient_phone=08031234567, network=MTN.\n"
+    "- Jowo ra data 1gb fun 08031234567 mtn -> buy_data plan=1GB, recipient_phone=08031234567, network=MTN.\n"
+    "- Don Allah tura 5k zuwa 0760505261 First Bank ->\n"
+    "  send_money amount=5000, recipient_account=0760505261, bank_name=First Bank.\n"
+    "- Biko buy 3k airtime for my line mtn -> buy_airtime amount=3000, is_self=true, network=MTN.\n"
+    "- Buy 200 airtime for 08031234567, 08067892221, 08033038674 ->\n"
+    "  3 x buy_airtime: each amount=200, recipient_phone per number.\n"
+    "- Envoie 5k a 0760505261 First Bank -> send_money amount=5000, recipient_account=0760505261, bank_name=First Bank."
+)
 
 PLANNER_RUNTIME_CONTEXT_EXAMPLES = """## TARGETED EXAMPLES (CONTEXT)
 - Save-beneficiary prompt + "Hi" -> conversational.

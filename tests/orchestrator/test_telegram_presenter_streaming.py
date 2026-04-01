@@ -99,6 +99,7 @@ async def test_telegram_presenter_confirmation_formats_double_asterisk_bold() ->
         summary="**Status:** Pending\n*Amount:* ₦10,000",
         token="tok-1",
         correlation_id="corr-1",
+        header="Confirm Transfer",
     )
     context = PresentationContext(channel="telegram", phone_number="123456789")
 
@@ -106,6 +107,7 @@ async def test_telegram_presenter_confirmation_formats_double_asterisk_bold() ->
 
     assert message_id == "flow-msg-1"
     assert len(client.flow_calls) == 1
+    assert client.flow_calls[0]["flow_config"]["header"] == "Confirm Transfer"
     assert client.flow_calls[0]["flow_config"]["text_body"] == "<b>Status:</b> Pending\n<b>Amount:</b> ₦10,000"
 
 

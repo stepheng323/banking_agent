@@ -77,6 +77,13 @@ def _critical_signature(output: PlannerOutput) -> dict[str, Any]:
             "recipient_account": task.parameters.recipient_account,
             "plan": task.parameters.plan,
             "schedule": task.parameters.schedule,
+            "recipient_allocations": [
+                {
+                    "recipient_name": _normalize_text(item.recipient_name),
+                    "amount": item.amount,
+                }
+                for item in (task.parameters.recipient_allocations or [])
+            ],
             "reference": (
                 None
                 if ref is None
@@ -206,6 +213,16 @@ def _assert_case_signature(case_id: str, signature: dict[str, Any]) -> None:
         assert "send_money" in actions and "buy_airtime" in actions, case_id
         return
 
+    if case_id == "recipient_split_three_way":
+        assert signature["primary_intent"] in {"transfer", "mixed"}, case_id
+        assert signature["task_count"] >= 1, case_id
+        assert first_task is not None and first_task["executor"] == "transfer", case_id
+        allocations = first_task["recipient_allocations"]
+        assert len(allocations) == 3, case_id
+        assert [item["recipient_name"] for item in allocations] == ["Mum", "Tolu", "Doyin"], case_id
+        assert all(_as_number(item["amount"]) == 10000 for item in allocations), case_id
+        return
+
     if case_id == "query_continuation_any_credits":
         assert signature["primary_intent"] == "query", case_id
         assert signature["task_count"] >= 1, case_id
@@ -245,6 +262,7 @@ def test_replay_case_set_covers_core_planner_shapes() -> None:
     assert cases, "Replay case set must not be empty"
     case_ids = {case["id"] for case in cases}
     assert "mixed_transfer_airtime" in case_ids
+    assert "recipient_split_three_way" in case_ids
     assert "query_continuation_any_credits" in case_ids
     assert "context_list_them_accounts" in case_ids
     assert "greeting_yoruba" in case_ids

@@ -379,6 +379,52 @@ async def test_planner_fans_out_recipient_split_between_recipients() -> None:
 
 
 @pytest.mark.asyncio
+async def test_planner_fans_out_three_way_recipient_allocations_batch() -> None:
+    planner_output = PlannerOutput(
+        primary_intent="transfer",
+        is_complex=False,
+        tasks=[
+            PlannedTask(
+                task_id="t1",
+                action="send_money",
+                executor="transfer",
+                instruction="Send 10k each to Mum, Tolu and Doyin",
+                parameters=TaskParameters(
+                    amount=30000,
+                    recipient_allocations=[
+                        RecipientAllocation(recipient_name="Mum", amount=10000.0),
+                        RecipientAllocation(recipient_name="Tolu", amount=10000.0),
+                        RecipientAllocation(recipient_name="Doyin", amount=10000.0),
+                    ],
+                ),
+                risk="MONEY_MOVE",
+            ),
+        ],
+    )
+    state = OrchestratorState(
+        user_id="u_dep_fanout_split_2",
+        phone_number="2348111111196",
+        channel="whatsapp",
+        last_message_text="send 10k each to mum, tolu and doyin",
+    )
+    config: RunnableConfig = {
+        "configurable": {"task_planner": _MockPlanner(planner_output), "redis_client": None},
+        "recursion_limit": 50,
+    }
+
+    updates = await plan_tasks(state, config)
+
+    assert set(updates["tasks"].keys()) == {"t1", "t1_r2", "t1_r3"}
+    assert updates["tasks"]["t1"].payload.get("recipient_name") == "Mum"
+    assert updates["tasks"]["t1"].payload.get("amount") == 10000.0
+    assert updates["tasks"]["t1_r2"].payload.get("recipient_name") == "Tolu"
+    assert updates["tasks"]["t1_r2"].payload.get("amount") == 10000.0
+    assert updates["tasks"]["t1_r3"].payload.get("recipient_name") == "Doyin"
+    assert updates["tasks"]["t1_r3"].payload.get("amount") == 10000.0
+    assert updates["waves"] == [["t1", "t1_r2", "t1_r3"]]
+
+
+@pytest.mark.asyncio
 async def test_planner_does_not_fanout_source_account_explicit_split_as_recipients() -> None:
     planner_output = PlannerOutput(
         primary_intent="transfer",
@@ -500,6 +546,58 @@ async def test_planner_does_not_fanout_when_planner_already_emits_multiple_trans
     assert updates["tasks"]["t1"].payload.get("recipient_name") == "Mum"
     assert updates["tasks"]["t2"].payload.get("recipient_name") == "Tolu"
     assert updates["waves"] == [["t1", "t2"]]
+
+
+@pytest.mark.asyncio
+async def test_planner_reconciles_obvious_multi_transfer_recipient_drift() -> None:
+    planner_output = PlannerOutput(
+        primary_intent="transfer",
+        is_complex=True,
+        tasks=[
+            PlannedTask(
+                task_id="t1",
+                action="send_money",
+                executor="transfer",
+                instruction="Send 10k each to mum, tolu and doyin",
+                parameters=TaskParameters(amount=10000, recipient="Mum"),
+                risk="MONEY_MOVE",
+            ),
+            PlannedTask(
+                task_id="t2",
+                action="send_money",
+                executor="transfer",
+                instruction="Send 10k each to mum, tolu and doyin",
+                parameters=TaskParameters(amount=10000, recipient="Mum Tolu"),
+                risk="MONEY_MOVE",
+            ),
+            PlannedTask(
+                task_id="t3",
+                action="send_money",
+                executor="transfer",
+                instruction="Send 10k each to mum, tolu and doyin",
+                parameters=TaskParameters(amount=10000, recipient="Doyin"),
+                risk="MONEY_MOVE",
+            ),
+        ],
+    )
+    state = OrchestratorState(
+        user_id="u_dep_reconcile_1",
+        phone_number="2348111111194",
+        channel="whatsapp",
+        last_message_text="send 10k each to mum, tolu and doyin",
+    )
+    config: RunnableConfig = {
+        "configurable": {"task_planner": _MockPlanner(planner_output), "redis_client": None},
+        "recursion_limit": 50,
+    }
+
+    updates = await plan_tasks(state, config)
+
+    assert set(updates["tasks"].keys()) == {"t1", "t2", "t3"}
+    assert updates["tasks"]["t1"].payload.get("recipient_name") == "Mum"
+    assert updates["tasks"]["t2"].payload.get("recipient_name") == "tolu"
+    assert updates["tasks"]["t3"].payload.get("recipient_name") == "Doyin"
+    assert updates["waves"] == [["t1", "t2", "t3"]]
 
 
 @pytest.mark.asyncio

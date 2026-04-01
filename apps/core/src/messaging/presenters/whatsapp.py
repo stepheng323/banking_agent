@@ -165,7 +165,7 @@ class WhatsAppPresenter(Presenter):
                 to=context.phone_number,
                 flow_id=settings.pin_confirmation_flow_id,
                 flow_config={
-                    "header": "Confirm Transaction",
+                    "header": intent.header or "Confirm Transaction",
                     "text_body": intent.summary,
                     "flow_cta": "Authorize",
                     "screen_name": "Pin",

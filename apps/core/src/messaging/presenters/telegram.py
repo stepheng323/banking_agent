@@ -204,7 +204,7 @@ class TelegramPresenter(Presenter):
             to=context.phone_number,
             flow_id="pin_entry",
             flow_config={
-                "header": "Confirm Transaction",
+                "header": intent.header or "Confirm Transaction",
                 "text_body": html_summary,
                 "flow_cta": "🔐 Authorize",
                 "flow_token": flow_token,

@@ -84,10 +84,15 @@ def test_progress_renders_context_aware_query_followup_message() -> None:
         stage_key="query.resolving_followup",
         progress_count=0,
         locale="en",
-        stage_metadata={"scope_label": "what you sent to mum"},
+        stage_metadata={
+            "task_type": "query",
+            "scope_label": "what you sent to mum",
+            "counterparty_label": "Mum",
+            "direction": "sent",
+        },
     )
 
-    assert text == "Let me check what you sent to mum."
+    assert text == "Checking recent payments to Mum."
 
 
 def test_progress_renders_context_aware_query_fetch_message() -> None:
@@ -96,14 +101,47 @@ def test_progress_renders_context_aware_query_fetch_message() -> None:
         progress_count=1,
         locale="en",
         stage_metadata={
+            "task_type": "query",
             "scope_label": "what you sent to mum from Mar 9 to Mar 15",
-            "counterparty_label": "mum",
+            "counterparty_label": "Mum",
             "direction": "sent",
             "time_label": "from Mar 9 to Mar 15",
         },
     )
 
-    assert text == "Still checking what you sent to mum."
+    assert text == "Still checking recent payments to Mum."
+
+
+def test_progress_renders_transfer_stage_with_recipient_and_amount() -> None:
+    text = render_progress_message(
+        stage_key="transfer.authorizing_transfer",
+        progress_count=0,
+        locale="en",
+        stage_metadata={
+            "task_type": "transfer",
+            "amount": 5000,
+            "recipient_name": "Tolu",
+        },
+    )
+
+    assert text == "Authorizing your ₦5,000 transfer to Tolu."
+
+
+def test_progress_renders_query_handoff_copy_without_transactions_with_phrase() -> None:
+    text = render_progress_message(
+        stage_key="query.fetching_transactions",
+        progress_count=0,
+        locale="en",
+        stage_metadata={
+            "task_type": "query",
+            "counterparty_label": "Tolu",
+            "direction": "sent",
+            "scope_label": "your transactions with Tolu",
+        },
+    )
+
+    assert text == "Checking recent payments to Tolu."
+    assert "transactions with Tolu" not in text
 
 
 def test_progress_falls_back_to_generic_when_scope_missing() -> None:
@@ -114,4 +152,4 @@ def test_progress_falls_back_to_generic_when_scope_missing() -> None:
         stage_metadata=None,
     )
 
-    assert text == "Let me check that."
+    assert text == "Checking that now."

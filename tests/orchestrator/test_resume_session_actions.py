@@ -417,6 +417,7 @@ async def test_confirmation_source_line_without_cached_balance_uses_default_temp
 
     request_confirmation = updates["outbox"][0]
     assert request_confirmation["type"] == "request_confirmation"
+    assert request_confirmation["header"] == "Confirm Transfer"
     assert request_confirmation["actionable_payload"]["idempotency_key"] == "idem-confirm-default-source-line"
     assert request_confirmation["actionable_payload"]["source_bank_name"] == "First Bank"
     assert "From: First Bank (···7890)" in request_confirmation["summary"]

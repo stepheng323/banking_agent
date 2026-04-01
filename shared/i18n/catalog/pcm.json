@@ -731,6 +731,35 @@
       "body": "Hi, I'm Fusepay an AI banking assistant that can help you with your banking needs. To get started, please complete the onboarding form below."
     }
   },
+  "transaction_copy": {
+    "confirmation": {
+      "transfer": "Confirm Transfer",
+      "airtime": "Confirm Airtime Purchase",
+      "data": "Confirm Data Purchase",
+      "mixed": "Confirm Transactions",
+      "generic": "Confirm Transaction"
+    },
+    "completion": {
+      "header": {
+        "transfer": "*Transfer Complete*",
+        "transfer_plural": "*Transfers Complete*",
+        "airtime": "*Airtime Purchase Complete*",
+        "airtime_plural": "*Airtime Purchases Complete*",
+        "data": "*Data Purchase Complete*",
+        "data_plural": "*Data Purchases Complete*",
+        "mixed": "*Transaction Summary*"
+      },
+      "footer": {
+        "transfer": "_Transfer completed successfully_",
+        "transfer_plural": "_Transfers completed successfully_",
+        "airtime": "_Airtime purchase completed successfully_",
+        "airtime_plural": "_Airtime purchases completed successfully_",
+        "data": "_Data purchase completed successfully_",
+        "data_plural": "_Data purchases completed successfully_",
+        "mixed": "_All transactions completed successfully_"
+      }
+    }
+  },
   "transaction_summary": {
     "batch": {
       "confirm_title": "*Confirm Transfers ({count})*",
@@ -837,40 +866,64 @@
       "resolving_followup": {
         "first_generic": "Let me check that.",
         "first_scoped": "Let me check {scope_label}.",
+        "first_sent_to": "Checking recent payments to {counterparty_label}.",
+        "first_received_from": "Checking recent payments from {counterparty_label}.",
+        "first_with_counterparty": "Checking recent transactions with {counterparty_label}.",
         "followup_generic": "Still checking that.",
-        "followup_scoped": "Still checking {scope_label}."
+        "followup_scoped": "Still checking {scope_label}.",
+        "followup_sent_to": "Still checking recent payments to {counterparty_label}.",
+        "followup_received_from": "Still checking recent payments from {counterparty_label}.",
+        "followup_with_counterparty": "Still checking recent transactions with {counterparty_label}."
       },
       "fetching_transactions": {
         "first_generic": "Let me check that.",
         "first_scoped": "Let me check {scope_label}.",
+        "first_sent_to": "Checking recent payments to {counterparty_label}.",
+        "first_received_from": "Checking recent payments from {counterparty_label}.",
+        "first_with_counterparty": "Checking recent transactions with {counterparty_label}.",
         "followup_generic": "Still checking that.",
-        "followup_scoped": "Still checking {scope_label}."
+        "followup_scoped": "Still checking {scope_label}.",
+        "followup_sent_to": "Still checking recent payments to {counterparty_label}.",
+        "followup_received_from": "Still checking recent payments from {counterparty_label}.",
+        "followup_with_counterparty": "Still checking recent transactions with {counterparty_label}."
       },
       "comparing_periods": {
         "first_generic": "Let me compare that.",
         "first_scoped": "Let me compare {scope_label}.",
+        "first_sent_to": "Comparing payments to {counterparty_label}.",
+        "first_received_from": "Comparing payments from {counterparty_label}.",
+        "first_with_counterparty": "Comparing transactions with {counterparty_label}.",
         "followup_generic": "Still comparing that.",
-        "followup_scoped": "Still comparing {scope_label}."
+        "followup_scoped": "Still comparing {scope_label}.",
+        "followup_sent_to": "Still comparing payments to {counterparty_label}.",
+        "followup_received_from": "Still comparing payments from {counterparty_label}.",
+        "followup_with_counterparty": "Still comparing transactions with {counterparty_label}."
       }
     },
     "transfer": {
       "resolving_recipient": {
         "first_generic": "Let me sort that out.",
-        "followup_generic": "Still working on that."
+        "first_scoped": "Looking up {recipient_display}.",
+        "followup_generic": "Still working on that.",
+        "followup_scoped": "Still looking up {recipient_display}."
       },
       "confirming_details": {
         "first_generic": "Let me sort that out.",
-        "followup_generic": "Still working on that."
+        "first_scoped": "Verifying {recipient_display}'s account details.",
+        "followup_generic": "Still working on that.",
+        "followup_scoped": "Still verifying {recipient_display}'s account details."
       },
       "authorizing_transfer": {
         "first_generic": "Let me sort that out.",
-        "followup_generic": "Still working on that."
+        "first_scoped": "Authorizing your {amount} transfer to {recipient_display}.",
+        "followup_generic": "Still working on that.",
+        "followup_scoped": "Still authorizing your {amount} transfer to {recipient_display}."
       },
       "processing_transfer": {
         "first_generic": "Processing your transfer now.",
         "followup_generic": "Still processing your transfer.",
-        "first_scoped": "We dey process your ₦{amount} transfer to {recipient_display} now.",
-        "followup_scoped": "We still dey process your ₦{amount} transfer to {recipient_display}."
+        "first_scoped": "We dey process your {amount} transfer to {recipient_display} now.",
+        "followup_scoped": "We still dey process your {amount} transfer to {recipient_display}."
       }
     },
     "scope": {

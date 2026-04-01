@@ -121,10 +121,12 @@ class _CapturingPlanner:
         self._output = output
         self.planner_llm = object()
         self.last_context: str | None = None
+        self.last_prompt_signals: object | None = None
 
     async def plan_tasks(self, phone_number: str, text: str, *, context: str = "None", prompt_signals: object | None = None) -> PlannerOutput:
         del phone_number, text
         self.last_context = context
+        self.last_prompt_signals = prompt_signals
         return self._output
 
 
@@ -193,6 +195,117 @@ async def test_plan_tasks_caps_large_context_before_planner_call() -> None:
     assert len(planner.last_context) <= PLANNER_CONTEXT_MAX_CHARS
     assert "Current Task Data:" in planner.last_context
     assert "...[truncated]" in planner.last_context
+
+
+@pytest.mark.asyncio
+async def test_plan_tasks_skips_full_context_for_lightweight_turns() -> None:
+    planner = _CapturingPlanner(
+        PlannerOutput(
+            primary_intent="beneficiary",
+            response="",
+            response_key=None,
+            confidence=0.9,
+            is_complex=False,
+            is_cancellation=False,
+            is_confirmation=False,
+            detected_language="English",
+            context_read_subtype=None,
+            normalized_instruction="show my beneficiaries",
+            tasks=[],
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_cap_min_1",
+        phone_number="2348044444444",
+        channel="whatsapp",
+        last_message_text="show my beneficiaries",
+        loaded_context={
+            "history": [
+                {"role": "user", "content": "random history " * 80},
+                {"role": "assistant", "content": "random reply " * 80},
+            ],
+            "accounts": [{"bank_name": "First Bank", "account_number": "0000000001", "mandate_status": "ready"}],
+            "beneficiaries": [{"alias": "Mum", "bank_name": "Opay", "account_number": "0123456789"}],
+        },
+    )
+    config: RunnableConfig = {
+        "configurable": {
+            "task_planner": planner,
+            "services": {},
+            "redis_client": None,
+        },
+        "recursion_limit": 50,
+    }
+
+    await plan_tasks(state, config)
+
+    assert planner.last_context == "None"
+    assert planner.last_prompt_signals is not None
+    assert getattr(planner.last_prompt_signals, "has_short_term_memory", False) is False
+    assert getattr(planner.last_prompt_signals, "has_user_state_summary", False) is False
+    assert getattr(planner.last_prompt_signals, "recent_domain_focus", None) is None
+
+
+@pytest.mark.asyncio
+async def test_plan_tasks_keeps_context_for_referential_followups() -> None:
+    planner = _CapturingPlanner(
+        PlannerOutput(
+            primary_intent="conversational",
+            response="Here are your linked accounts.",
+            response_key=None,
+            confidence=0.9,
+            is_complex=False,
+            is_cancellation=False,
+            is_confirmation=False,
+            detected_language="English",
+            context_read_subtype="linked_accounts_summary",
+            normalized_instruction="show them",
+            tasks=[],
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_cap_min_2",
+        phone_number="2348055555555",
+        channel="telegram",
+        last_message_text="show them",
+        loaded_context={
+            "accounts": [
+                {"bank_name": "First Bank", "account_number": "0001"},
+                {"bank_name": "GTBank", "account_number": "0002"},
+            ],
+            "history": [
+                {"role": "user", "content": "How many accounts do I have linked"},
+                {"role": "assistant", "content": "You have 2 linked accounts."},
+            ],
+        },
+        planner_output=PlannerOutput(
+            primary_intent="conversational",
+            response="You have 2 linked accounts.",
+            response_key=None,
+            confidence=0.93,
+            is_complex=False,
+            is_cancellation=False,
+            is_confirmation=False,
+            detected_language="English",
+            context_read_subtype="account_count",
+            normalized_instruction="how many accounts do i have linked",
+            tasks=[],
+        ),
+    )
+    config: RunnableConfig = {
+        "configurable": {
+            "task_planner": planner,
+            "services": {},
+            "redis_client": None,
+        },
+        "recursion_limit": 50,
+    }
+
+    await plan_tasks(state, config)
+
+    assert planner.last_context is not None
+    assert planner.last_context != "None"
+    assert "Recent Domain Focus: account" in planner.last_context
 
 
 def test_user_state_summary_caps_account_preview() -> None:

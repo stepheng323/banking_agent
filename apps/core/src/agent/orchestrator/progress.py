@@ -5,6 +5,7 @@ import time
 from dataclasses import dataclass
 from typing import Any
 
+from shared.formatters.transaction_copy import build_copy_context
 from shared.i18n import render_message
 
 FIRST_PROGRESS_DELAY_SECONDS = 5.0
@@ -217,26 +218,12 @@ def render_progress_message(
     stage_metadata: dict[str, Any] | None = None,
 ) -> str:
     """Render a chat-safe progress message for the active stage."""
+    copy_context = build_copy_context(
+        task_type=str((stage_metadata or {}).get("task_type") or ""),
+        payload=stage_metadata,
+    )
     scope_label = _render_progress_scope_label(locale=locale, stage_metadata=stage_metadata)
     variant = "first" if progress_count <= 0 else "followup"
-    scoped_key_by_stage = {
-        "query.resolving_followup": {
-            "first": "progress.query.resolving_followup.first_scoped",
-            "followup": "progress.query.resolving_followup.followup_scoped",
-        },
-        "query.fetching_transactions": {
-            "first": "progress.query.fetching_transactions.first_scoped",
-            "followup": "progress.query.fetching_transactions.followup_scoped",
-        },
-        "query.comparing_periods": {
-            "first": "progress.query.comparing_periods.first_scoped",
-            "followup": "progress.query.comparing_periods.followup_scoped",
-        },
-        "transfer.processing_transfer": {
-            "first": "progress.transfer.processing_transfer.first_scoped",
-            "followup": "progress.transfer.processing_transfer.followup_scoped",
-        },
-    }
     generic_key_by_stage = {
         "query.resolving_followup": {
             "first": "progress.query.resolving_followup.first_generic",
@@ -268,12 +255,100 @@ def render_progress_message(
         },
     }
 
-    scoped_key = scoped_key_by_stage.get(stage_key, {}).get(variant)
-    if scoped_key:
-        if stage_key.startswith("transfer.") and stage_metadata and "amount" in stage_metadata:
-            return render_message(scoped_key, locale, stage_metadata)
-        if scope_label:
+    if stage_key.startswith("query."):
+        direction = copy_context.get("direction")
+        counterparty = copy_context.get("counterparty_label")
+        if counterparty:
+            query_variant_key = {
+                ("query.resolving_followup", "sent"): {
+                    "first": "progress.query.resolving_followup.first_sent_to",
+                    "followup": "progress.query.resolving_followup.followup_sent_to",
+                },
+                ("query.resolving_followup", "received"): {
+                    "first": "progress.query.resolving_followup.first_received_from",
+                    "followup": "progress.query.resolving_followup.followup_received_from",
+                },
+                ("query.resolving_followup", "all"): {
+                    "first": "progress.query.resolving_followup.first_with_counterparty",
+                    "followup": "progress.query.resolving_followup.followup_with_counterparty",
+                },
+                ("query.fetching_transactions", "sent"): {
+                    "first": "progress.query.fetching_transactions.first_sent_to",
+                    "followup": "progress.query.fetching_transactions.followup_sent_to",
+                },
+                ("query.fetching_transactions", "received"): {
+                    "first": "progress.query.fetching_transactions.first_received_from",
+                    "followup": "progress.query.fetching_transactions.followup_received_from",
+                },
+                ("query.fetching_transactions", "all"): {
+                    "first": "progress.query.fetching_transactions.first_with_counterparty",
+                    "followup": "progress.query.fetching_transactions.followup_with_counterparty",
+                },
+                ("query.comparing_periods", "sent"): {
+                    "first": "progress.query.comparing_periods.first_sent_to",
+                    "followup": "progress.query.comparing_periods.followup_sent_to",
+                },
+                ("query.comparing_periods", "received"): {
+                    "first": "progress.query.comparing_periods.first_received_from",
+                    "followup": "progress.query.comparing_periods.followup_received_from",
+                },
+                ("query.comparing_periods", "all"): {
+                    "first": "progress.query.comparing_periods.first_with_counterparty",
+                    "followup": "progress.query.comparing_periods.followup_with_counterparty",
+                },
+            }
+            counterparty_variant = query_variant_key.get((stage_key, direction or "all")) or query_variant_key.get(
+                (stage_key, "all")
+            )
+            if counterparty_variant:
+                return render_message(counterparty_variant[variant], locale, {"counterparty_label": counterparty})
+        scoped_key = {
+            "query.resolving_followup": {
+                "first": "progress.query.resolving_followup.first_scoped",
+                "followup": "progress.query.resolving_followup.followup_scoped",
+            },
+            "query.fetching_transactions": {
+                "first": "progress.query.fetching_transactions.first_scoped",
+                "followup": "progress.query.fetching_transactions.followup_scoped",
+            },
+            "query.comparing_periods": {
+                "first": "progress.query.comparing_periods.first_scoped",
+                "followup": "progress.query.comparing_periods.followup_scoped",
+            },
+        }.get(stage_key, {}).get(variant)
+        if scoped_key and scope_label:
             return render_message(scoped_key, locale, {"scope_label": scope_label})
+
+    if stage_key.startswith("transfer."):
+        transfer_variant_key = {
+            "transfer.resolving_recipient": {
+                "first": "progress.transfer.resolving_recipient.first_scoped",
+                "followup": "progress.transfer.resolving_recipient.followup_scoped",
+            },
+            "transfer.confirming_details": {
+                "first": "progress.transfer.confirming_details.first_scoped",
+                "followup": "progress.transfer.confirming_details.followup_scoped",
+            },
+            "transfer.authorizing_transfer": {
+                "first": "progress.transfer.authorizing_transfer.first_scoped",
+                "followup": "progress.transfer.authorizing_transfer.followup_scoped",
+            },
+            "transfer.processing_transfer": {
+                "first": "progress.transfer.processing_transfer.first_scoped",
+                "followup": "progress.transfer.processing_transfer.followup_scoped",
+            },
+        }
+        scoped_key = transfer_variant_key.get(stage_key, {}).get(variant)
+        if scoped_key:
+            if stage_key in {"transfer.authorizing_transfer", "transfer.processing_transfer"} and {
+                "amount",
+                "recipient_display",
+            }.issubset(copy_context):
+                return render_message(scoped_key, locale, copy_context)
+            if stage_key in {"transfer.resolving_recipient", "transfer.confirming_details"} and copy_context.get(
+                "recipient_display"
+            ):
+                return render_message(scoped_key, locale, copy_context)
 
     generic_key = generic_key_by_stage.get(stage_key, {}).get(variant)
     if generic_key:

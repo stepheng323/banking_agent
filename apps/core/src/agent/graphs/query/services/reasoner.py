@@ -52,6 +52,7 @@ DecisionType = Literal[
 ContinuationType = Literal[
     "show_more",
     "show_evidence",
+    "grouped_total_followup",
     "time_delta",
     "filter_delta",
     "expand",
@@ -693,6 +694,14 @@ class QuerySemanticReasoner:
                         confidence=data.get("confidence"),
                         reason=data.get("reason"),
                         continuation_type="aggregate",
+                        followup_intent="refine_existing",
+                    )
+                elif continuation_type == "grouped_total_followup":
+                    guardrail_decision = QuerySemanticDecision(
+                        decision="continuation",
+                        confidence=data.get("confidence"),
+                        reason=data.get("reason"),
+                        continuation_type="grouped_total_followup",
                         followup_intent="refine_existing",
                     )
                 elif continuation_type == "filter_delta":

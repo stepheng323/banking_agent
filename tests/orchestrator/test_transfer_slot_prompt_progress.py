@@ -737,6 +737,7 @@ async def test_multi_transfer_confirmation_preserves_existing_waiting_task() -> 
 
     confirmation_entry = next(entry for entry in second_updates["outbox"] if entry["type"] == "request_confirmation")
     assert set(confirmation_entry["task_ids"]) == {"t1", "t2"}
+    assert confirmation_entry["header"] == "Confirm Transactions"
     assert "Confirm Mum" in confirmation_entry["summary"]
     assert "Confirm Tolu" in confirmation_entry["summary"]
 
@@ -796,6 +797,7 @@ async def test_multi_transfer_fanout_task_ids_keep_all_recipients_in_confirmatio
 
     confirmation_entry = next(entry for entry in second_updates["outbox"] if entry["type"] == "request_confirmation")
     assert set(confirmation_entry["task_ids"]) == {"t1", "t1_r2"}
+    assert confirmation_entry["header"] == "Confirm Transactions"
     assert "Confirm Mum" in confirmation_entry["summary"]
     assert "Confirm Tolu" in confirmation_entry["summary"]
 
@@ -907,6 +909,6 @@ async def test_finalize_multi_transfer_summary_uses_alias_resolved_with_title_ca
     updates = await finalize(state, config)
 
     say_entries = [entry for entry in updates["outbox"] if entry.get("type") == "say"]
-    summary = next(entry["text"] for entry in say_entries if "Transaction Summary" in entry["text"])
+    summary = next(entry["text"] for entry in say_entries if "Transfers Complete" in entry["text"])
     assert "✓ ₦10,000 → Mum (Mercy Johnson) • Opay • 8162511023" in summary
     assert "✓ ₦10,000 → Tolu (Grace Ngozi Adebayo) • Access Bank • 0762511023" in summary

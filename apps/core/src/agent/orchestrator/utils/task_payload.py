@@ -10,6 +10,7 @@ from shared.services.scheduling.recurrence import (
     normalize_time_local,
 )
 from shared.utils.bank_aliases import get_bank_search_terms
+from shared.utils.logging import get_logger
 from shared.utils.network_utils import normalize_nigerian_phone
 from shared.utils.sanitize import normalize_bank_account_number
 
@@ -26,6 +27,8 @@ _WEEKDAY_NAME_TO_INDEX = {
     "sunday": 6,
 }
 _AMOUNT_VALUE_PATTERN = re.compile(r"^\s*(?:₦|ngn)?\s*(\d[\d,]*(?:\.\d+)?)\s*([kKmMhH]?)\s*$")
+
+logger = get_logger(__name__)
 
 
 def _dump_plan_parameters(parameters: Any) -> dict[str, Any]:
@@ -130,13 +133,15 @@ def _recipient_grounded_in_user_text(recipient: str | None, user_text: str) -> b
 
 def _derive_recipients_from_user_text(user_text: str) -> list[str]:
     """Derive ordered recipient candidates from a transfer utterance."""
-    norm_text = _normalize_text(user_text)
-    if not norm_text:
+    lowered_text = re.sub(r"([a-z])['’]s\b", r"\1", user_text.lower())
+    simplified_text = re.sub(r"[^a-z0-9,\s]+", " ", lowered_text)
+    simplified_text = re.sub(r"\s+", " ", simplified_text).strip()
+    if not simplified_text:
         return []
 
-    match = re.search(r"\b(?:to|for|si|ga|zuwa)\b\s+(.+)", norm_text)
+    match = re.search(r"\b(?:to|for|si|ga|zuwa)\b\s+(.+)", simplified_text)
     if not match:
-        match = re.search(r"\b(?:between|btw)\b\s+(.+)", norm_text)
+        match = re.search(r"\b(?:between|btw)\b\s+(.+)", simplified_text)
     if not match:
         return []
 
@@ -151,14 +156,15 @@ def _derive_recipients_from_user_text(user_text: str) -> list[str]:
 
     candidates: list[str] = []
     seen: set[str] = set()
-    for raw_part in re.split(r"\s*(?:,|\band\b)\s*", segment):
+    for raw_part in re.split(r"\s*,\s*|\s+\band\b\s+", segment):
         part = re.sub(r"^(?:to|for|si|ga|zuwa)\s+", "", raw_part).strip()
-        if not _is_plausible_recipient_candidate(part):
+        normalized_part = _normalize_text(part)
+        if not _is_plausible_recipient_candidate(normalized_part):
             continue
-        key = _normalize_text(part)
+        key = normalized_part
         if key and key not in seen:
             seen.add(key)
-            candidates.append(part)
+            candidates.append(key)
     return candidates
 
 
@@ -238,6 +244,11 @@ def _apply_transfer_payload_fields(
                 derived = _derive_recipient_from_user_text(recipient_val_str, fallback_message)
                 if derived:
                     payload["recipient_name"] = derived
+                    logger.info(
+                        "transfer_recipient_alias_repair_applied",
+                        planner_recipient=recipient_val_str,
+                        repaired_recipient=derived,
+                    )
                 elif authoritative_fanout_binding:
                     payload["recipient_name"] = recipient_val
 
@@ -254,7 +265,17 @@ def _apply_transfer_payload_fields(
         derived = _derive_recipient_from_user_text(recipient_name, fallback_message)
         if derived:
             payload["recipient_name"] = derived
+            logger.info(
+                "transfer_recipient_grounding_repair_applied",
+                planner_recipient=recipient_name,
+                repaired_recipient=derived,
+                authoritative_binding=authoritative_fanout_binding,
+            )
         elif not authoritative_fanout_binding:
+            logger.info(
+                "transfer_recipient_dropped_as_ungrounded",
+                planner_recipient=recipient_name,
+            )
             payload.pop("recipient_name", None)
 
     # Guard destination fields against stale planner context leakage.

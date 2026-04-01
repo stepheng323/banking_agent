@@ -10,6 +10,7 @@ from apps.core.src.agent.graphs.transfer.models.types import (
     TransferPayload,
 )
 from apps.core.src.agent.orchestrator.models.domain import TransactionOutcome, TransactionResult
+from shared.formatters.transaction_copy import build_copy_context
 from shared.utils.logging import get_logger
 from shared.utils.sanitize import normalize_bank_account_number
 
@@ -76,6 +77,11 @@ class TransferPipeline:
             "ExecutionStep": "transfer.processing_transfer",
         }.get(step_name)
 
+    @staticmethod
+    def _build_stage_metadata(data: TransferPayload) -> dict[str, str] | None:
+        metadata = build_copy_context(task_type="transfer", payload=data)
+        return metadata or None
+
     async def run(
         self,
         data: TransferPayload,
@@ -91,23 +97,7 @@ class TransferPipeline:
             if progress_tracker is not None:
                 stage_key = self._stage_key_for_step(step_name)
                 if stage_key:
-                    if step_name == "ExecutionStep" and data:
-                        def _format_amt(val: float | None) -> str:
-                            if not val:
-                                return "0"
-                            if float(val).is_integer():
-                                return f"{int(val):,}"
-                            return f"{val:,.2f}"
-
-                        await progress_tracker.set_stage(
-                            stage_key,
-                            stage_metadata={
-                                "amount": _format_amt(data.amount),
-                                "recipient_display": data.recipient_resolved_name or data.recipient_name or "recipient"
-                            }
-                        )
-                    else:
-                        await progress_tracker.set_stage(stage_key)
+                    await progress_tracker.set_stage(stage_key, stage_metadata=self._build_stage_metadata(data))
             s_start = time.perf_counter()
             result = await step.execute(data, context, gates, worker_context)
             s_duration = (time.perf_counter() - s_start) * 1000
