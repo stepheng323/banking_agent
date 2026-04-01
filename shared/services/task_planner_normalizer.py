@@ -535,6 +535,22 @@ def _collapse_transfer_batch_tasks(planner_output: PlannerOutput, user_text: str
     return planner_output.model_copy(update={"tasks": rewritten_tasks})
 
 
+def _normalize_transfer_only_primary_intent(planner_output: PlannerOutput) -> PlannerOutput:
+    if planner_output.primary_intent != "mixed":
+        return planner_output
+    if not planner_output.tasks:
+        return planner_output
+    if any(task.executor != "transfer" for task in planner_output.tasks):
+        return planner_output
+    logger.info(
+        "planner_transfer_only_primary_intent_normalized",
+        task_count=len(planner_output.tasks),
+        previous_primary_intent="mixed",
+        normalized_primary_intent="transfer",
+    )
+    return planner_output.model_copy(update={"primary_intent": "transfer"})
+
+
 def normalize_planner_transaction_output(planner_output: PlannerOutput, user_text: str) -> PlannerOutput:
     """Patch missing transaction parameters with deterministic, precision-first parsing."""
     if not planner_output.tasks:
@@ -597,7 +613,8 @@ def normalize_planner_transaction_output(planner_output: PlannerOutput, user_tex
         )
 
     normalized_output = planner_output.model_copy(update={"tasks": updated_tasks})
-    return _collapse_transfer_batch_tasks(normalized_output, user_text)
+    normalized_output = _collapse_transfer_batch_tasks(normalized_output, user_text)
+    return _normalize_transfer_only_primary_intent(normalized_output)
 
 
 __all__ = ["normalize_planner_transaction_output"]

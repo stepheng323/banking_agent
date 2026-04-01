@@ -11,6 +11,7 @@ from shared.services.task_planner_prompt_atoms import (
     PLANNER_RUNTIME_MONEY_MOVE_EXAMPLES,
     PLANNER_RUNTIME_PROMPT_SUFFIX,
     PLANNER_RUNTIME_SCHEMA_PROMPT,
+    PLANNER_RUNTIME_TRANSFER_ONLY_EXAMPLES,
     PLANNER_TRANSFER_PRECISION_PROMPT,
 )
 from shared.services.task_planner_prompt_models import (
@@ -52,6 +53,10 @@ def build_planner_system_prompt(
     ]
     profile_parts = ["schema", f"rules_{len(rule_ids)}", "ex_common"]
 
+    if "transfer_only" in bundles:
+        sections.append(PLANNER_TRANSFER_PRECISION_PROMPT)
+        sections.append(PLANNER_RUNTIME_TRANSFER_ONLY_EXAMPLES)
+        profile_parts.extend(["precision_transfer_only", "ex_transfer_only"])
     if "money_move" in bundles:
         sections.append(PLANNER_TRANSFER_PRECISION_PROMPT)
         sections.append(PLANNER_RUNTIME_MONEY_MOVE_EXAMPLES)

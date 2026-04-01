@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from shared.types.planner import TransactionExecutor
+from shared.types.planner import RouterDomainIntent, TransactionExecutor
 
 
 @dataclass(frozen=True, slots=True)
@@ -21,6 +21,7 @@ class PlannerPromptSignals:
     has_short_term_memory: bool = False
     has_quote: bool = False
     has_transaction_intent_hint: bool = False
+    forced_domain_owner: RouterDomainIntent | None = None
     expected_transaction_executors: tuple[TransactionExecutor, ...] = field(default_factory=tuple)
 
 

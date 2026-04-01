@@ -28,6 +28,7 @@ from shared.types.planner import PlannerOutput
 
 _PROMPT_SIZE_BASELINE = {
     "generic": 8475,
+    "transfer_only": 9457,
     "mixed_money_move": 9457,
     "query": 9141,
     "context_followup": 9479,
@@ -38,6 +39,14 @@ _PROMPT_SIZE_BASELINE = {
 def _runtime_prompt_size_report() -> dict[str, int]:
     profiles = {
         "generic": ("hello", "None", PlannerPromptSignals()),
+        "transfer_only": (
+            "okay send 10k each to mum, tolu and doyin",
+            "Recent user state summary",
+            PlannerPromptSignals(
+                forced_domain_owner="transfer",
+                expected_transaction_executors=("transfer",),
+            ),
+        ),
         "mixed_money_move": (
             "Send 10k to mum and buy me 5k airtime",
             "None",
@@ -78,6 +87,14 @@ def _runtime_prompt_token_report() -> dict[str, int]:
     encoding = tiktoken.get_encoding("o200k_base")
     profiles = {
         "generic": ("hello", "None", PlannerPromptSignals()),
+        "transfer_only": (
+            "okay send 10k each to mum, tolu and doyin",
+            "Recent user state summary",
+            PlannerPromptSignals(
+                forced_domain_owner="transfer",
+                expected_transaction_executors=("transfer",),
+            ),
+        ),
         "mixed_money_move": (
             "Send 10k to mum and buy me 5k airtime",
             "None",
@@ -247,6 +264,92 @@ async def test_plan_tasks_skips_full_context_for_lightweight_turns() -> None:
 
 
 @pytest.mark.asyncio
+async def test_plan_tasks_marks_guardrail_transfer_handoff_for_transfer_only_prompt() -> None:
+    planner = _CapturingPlanner(
+        PlannerOutput(
+            primary_intent="transfer",
+            response="",
+            response_key=None,
+            confidence=0.9,
+            is_complex=False,
+            is_cancellation=False,
+            is_confirmation=False,
+            detected_language="English",
+            context_read_subtype=None,
+            normalized_instruction="send 10k each to mum, tolu and doyin",
+            tasks=[],
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_transfer_prompt_1",
+        phone_number="2348044444455",
+        channel="whatsapp",
+        last_message_text="okay send 10k each to mum, tolu and doyin",
+        routing_owner="guardrail",
+        routing_decision="batch_transfer_command",
+        routing_target_domain="transfer",
+        preplanner_expected_transaction_executors=["transfer"],
+    )
+    config: RunnableConfig = {
+        "configurable": {
+            "task_planner": planner,
+            "services": {},
+            "redis_client": None,
+        },
+        "recursion_limit": 50,
+    }
+
+    await plan_tasks(state, config)
+
+    assert planner.last_prompt_signals is not None
+    assert getattr(planner.last_prompt_signals, "forced_domain_owner", None) == "transfer"
+    assert getattr(planner.last_prompt_signals, "expected_transaction_executors", ()) == ("transfer",)
+
+
+@pytest.mark.asyncio
+async def test_plan_tasks_does_not_mark_interrupt_turn_for_transfer_only_prompt() -> None:
+    planner = _CapturingPlanner(
+        PlannerOutput(
+            primary_intent="transfer",
+            response="",
+            response_key=None,
+            confidence=0.9,
+            is_complex=False,
+            is_cancellation=False,
+            is_confirmation=False,
+            detected_language="English",
+            context_read_subtype=None,
+            normalized_instruction="8967855634, First bank",
+            tasks=[],
+        )
+    )
+    state = OrchestratorState(
+        user_id="u_transfer_prompt_2",
+        phone_number="2348044444466",
+        channel="whatsapp",
+        last_message_text="8967855634, First bank",
+        routing_owner="guardrail",
+        routing_decision="account_aware_transfer_command",
+        routing_target_domain="transfer",
+        preplanner_expected_transaction_executors=["transfer"],
+        pending_interrupt=PendingInterrupt(kind="input", task_ids=["t1"], fields_by_task={"t1": ["recipient_account"]}),
+    )
+    config: RunnableConfig = {
+        "configurable": {
+            "task_planner": planner,
+            "services": {},
+            "redis_client": None,
+        },
+        "recursion_limit": 50,
+    }
+
+    await plan_tasks(state, config)
+
+    assert planner.last_prompt_signals is not None
+    assert getattr(planner.last_prompt_signals, "forced_domain_owner", None) is None
+
+
+@pytest.mark.asyncio
 async def test_plan_tasks_keeps_context_for_referential_followups() -> None:
     planner = _CapturingPlanner(
         PlannerOutput(
@@ -389,17 +492,18 @@ def test_runtime_prompt_size_report_and_budget_guard(capsys: pytest.CaptureFixtu
 
     with capsys.disabled():
         print("planner_runtime_prompt_sizes:")
-        for key in ("generic", "mixed_money_move", "query", "context_followup", "fully_expanded"):
+        for key in ("generic", "transfer_only", "mixed_money_move", "query", "context_followup", "fully_expanded"):
             before = _PROMPT_SIZE_BASELINE[key]
             after = report[key]
             delta = before - after
             pct = (delta / before) * 100
             print(f"- {key}: before={before} after={after} delta={delta} ({pct:.1f}%)")
         print("planner_runtime_prompt_tokens:")
-        for key in ("generic", "mixed_money_move", "query", "context_followup", "fully_expanded"):
+        for key in ("generic", "transfer_only", "mixed_money_move", "query", "context_followup", "fully_expanded"):
             print(f"- {key}: tokens={token_report[key]}")
 
     assert report["generic"] <= 1600
+    assert report["transfer_only"] <= 3200
     # Money-move one-shot multilingual + recipient-split coverage intentionally increases this bundle.
     assert report["mixed_money_move"] <= 3900
     assert report["query"] <= 1850
@@ -407,6 +511,7 @@ def test_runtime_prompt_size_report_and_budget_guard(capsys: pytest.CaptureFixtu
     assert report["fully_expanded"] <= 4350
 
     assert token_report["generic"] <= 390
+    assert token_report["transfer_only"] <= 900
     assert token_report["mixed_money_move"] <= 1100
     assert token_report["query"] <= 450
     assert token_report["context_followup"] <= 510

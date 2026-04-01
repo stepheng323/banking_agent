@@ -133,6 +133,66 @@ def test_transfer_normalizer_repairs_missing_transfer_all_for_account_aware_bala
     assert params.amount is None
 
 
+def test_transfer_normalizer_rewrites_mixed_primary_intent_for_transfer_only_batch() -> None:
+    planner_output = PlannerOutput(
+        primary_intent="mixed",
+        tasks=[
+            PlannedTask(
+                task_id="t1",
+                action="send_money",
+                executor="transfer",
+                instruction="Send 10k to Mum",
+                parameters=TaskParameters(amount=10000, recipient_name="Mum"),
+                risk="MONEY_MOVE",
+            ),
+            PlannedTask(
+                task_id="t2",
+                action="send_money",
+                executor="transfer",
+                instruction="Send 10k to Tolu",
+                parameters=TaskParameters(amount=10000, recipient_name="Tolu"),
+                risk="MONEY_MOVE",
+            ),
+        ],
+        confidence=0.9,
+        detected_language="English",
+    )
+
+    normalized = normalize_planner_transaction_output(planner_output, "send 10k each to mum and tolu")
+
+    assert normalized.primary_intent == "transfer"
+
+
+def test_transfer_normalizer_keeps_mixed_primary_intent_when_non_transfer_task_remains() -> None:
+    planner_output = PlannerOutput(
+        primary_intent="mixed",
+        tasks=[
+            PlannedTask(
+                task_id="t1",
+                action="send_money",
+                executor="transfer",
+                instruction="Send 10k to Mum",
+                parameters=TaskParameters(amount=10000, recipient_name="Mum"),
+                risk="MONEY_MOVE",
+            ),
+            PlannedTask(
+                task_id="a1",
+                action="buy_airtime",
+                executor="airtime",
+                instruction="Buy 2k airtime",
+                parameters=TaskParameters(amount=2000, is_self=True),
+                risk="MONEY_MOVE",
+            ),
+        ],
+        confidence=0.9,
+        detected_language="English",
+    )
+
+    normalized = normalize_planner_transaction_output(planner_output, "send 10k to mum and buy 2k airtime")
+
+    assert normalized.primary_intent == "mixed"
+
+
 def test_airtime_one_shot_normalizer_patches_amount_phone_and_network() -> None:
     planner_output = _planner_output(
         [

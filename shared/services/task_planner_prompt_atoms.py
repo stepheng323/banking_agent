@@ -121,6 +121,15 @@ PLANNER_MONEY_MOVE_RULE_ATOMS = {
     "R26_ONE_SHOT_COMPLETENESS",
     "R27_RECIPIENT_SPLIT",
 }
+PLANNER_TRANSFER_ONLY_RULE_ATOMS = {
+    "R09_CONTEXT_OVERRIDE",
+    "R14_REFERENCE_BINDING",
+    "R19_TRANSFER_FIDELITY",
+    "R20_TRANSFER_ACCOUNT_BANK",
+    "R21_TRANSFER_SCHEDULING",
+    "R26_ONE_SHOT_COMPLETENESS",
+    "R27_RECIPIENT_SPLIT",
+}
 PLANNER_CONTEXT_RULE_ATOMS = {
     "R09_CONTEXT_OVERRIDE",
     "R12_BENEFICIARY_HANDLING",
@@ -153,6 +162,20 @@ PLANNER_RUNTIME_MONEY_MOVE_EXAMPLES = (
     "- Envoie 5k a 0760505261 First Bank -> send_money amount=5000, recipient_account=0760505261, bank_name=First Bank."
 )
 
+PLANNER_RUNTIME_TRANSFER_ONLY_EXAMPLES = (
+    "## TARGETED EXAMPLES (TRANSFER_ONLY)\n"
+    "- Send 20k to 0760505261 First Bank -> send_money amount=20000, "
+    "recipient_account=0760505261, bank_name=First Bank.\n"
+    "- Send 10k each to Mum, Tolu and Doyin -> recipient_allocations="
+    "[{recipient_name:Mum,amount:10000},{recipient_name:Tolu,amount:10000},{recipient_name:Doyin,amount:10000}].\n"
+    "- Split 20k 70/30 btw Mum and Gaines -> recipient_allocations="
+    "[{recipient_name:Mum,amount:14000},{recipient_name:Gaines,amount:6000}].\n"
+    "- Send half my Zenith to Mum -> send_money recipient_name=Mum, source_bank_name=Zenith Bank, "
+    "transfer_percentage=50.\n"
+    "- Send everything in my First Bank to Mum -> send_money recipient_name=Mum, source_bank_name=First Bank, "
+    "transfer_all=true."
+)
+
 PLANNER_RUNTIME_CONTEXT_EXAMPLES = """## TARGETED EXAMPLES (CONTEXT)
 - Save-beneficiary prompt + "Hi" -> conversational.
 - Active transfer flow + "send it to her" -> send_money with selector reference.
@@ -161,6 +184,7 @@ PLANNER_RUNTIME_CONTEXT_EXAMPLES = """## TARGETED EXAMPLES (CONTEXT)
 PLANNER_RUNTIME_PROMPT_SUFFIX = "Return schema JSON"
 
 PROMPT_BUNDLE_ORDER = (
+    "transfer_only",
     "money_move",
     "context",
     "executor_coverage_guard",

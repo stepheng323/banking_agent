@@ -19,7 +19,7 @@ from apps.core.src.agent.orchestrator.nodes.planner_context_read import (
     _infer_recent_domain_focus,
 )
 from shared.services.task_planner_prompt_models import PlannerPromptSignals
-from shared.types.planner import TransactionExecutor
+from shared.types.planner import RouterDomainIntent, TransactionExecutor
 from shared.utils.logging import get_logger
 from shared.utils.network_utils import normalize_network_name, normalize_nigerian_phone
 
@@ -112,6 +112,24 @@ def _should_use_minimal_planner_context(
     return True
 
 
+def _forced_domain_owner(state: OrchestratorState) -> RouterDomainIntent | None:
+    if state.pending_interrupt is not None:
+        return None
+    if state.has_quote:
+        return None
+    if state.direct_path_triggered:
+        return None
+    if state.routing_owner != "guardrail":
+        return None
+    if state.routing_target_domain != "transfer":
+        return None
+    if tuple(state.preplanner_expected_transaction_executors) != ("transfer",):
+        return None
+    if state.routing_decision not in {"batch_transfer_command", "account_aware_transfer_command"}:
+        return None
+    return "transfer"
+
+
 async def _build_planner_context(
     *,
     state: OrchestratorState,
@@ -162,6 +180,7 @@ async def _build_planner_context(
         for item in state.preplanner_expected_transaction_executors
         if item in TRANSACTION_EXECUTORS
     )
+    forced_domain_owner = _forced_domain_owner(state)
     if _should_use_minimal_planner_context(
         state=state,
         active_intent=active_intent,
@@ -187,6 +206,7 @@ async def _build_planner_context(
                 has_short_term_memory=False,
                 has_quote=False,
                 has_transaction_intent_hint=has_transaction_intent_hint,
+                forced_domain_owner=forced_domain_owner,
                 expected_transaction_executors=expected_executors,
             ),
         )
@@ -289,6 +309,7 @@ async def _build_planner_context(
         has_short_term_memory=has_short_term_memory,
         has_quote=state.has_quote and bool(state.quoted_message_id),
         has_transaction_intent_hint=_has_transaction_intent_hint(text),
+        forced_domain_owner=forced_domain_owner,
         expected_transaction_executors=expected_executors,
     )
 

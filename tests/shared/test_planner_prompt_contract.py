@@ -149,6 +149,24 @@ def test_money_move_one_shot_multilingual_examples_present() -> None:
     assert "Envoie 5k a 0760505261 First Bank" in runtime_prompt
 
 
+def test_transfer_only_prompt_bundle_selected_for_guardrail_transfer_handoff() -> None:
+    runtime_prompt, profile, bundles = _build_prompt(
+        "okay send 10k each to mum, tolu and doyin",
+        "Recent user state summary",
+        PlannerPromptSignals(
+            forced_domain_owner="transfer",
+            expected_transaction_executors=("transfer",),
+        ),
+    )
+    assert "transfer_only" in bundles
+    assert "money_move" not in bundles
+    assert "executor_coverage_guard" not in bundles
+    assert "TARGETED EXAMPLES (TRANSFER_ONLY)" in runtime_prompt
+    assert "TARGETED EXAMPLES (MONEY_MOVE)" not in runtime_prompt
+    assert "EXECUTOR COVERAGE GUARD" not in runtime_prompt
+    assert "ex_transfer_only" in profile
+
+
 def test_mixed_money_move_coverage_rules_present() -> None:
     """Prompt should force full task coverage for explicit mixed money-move requests."""
     runtime_prompt, _, bundles = _build_prompt(
@@ -163,6 +181,20 @@ def test_mixed_money_move_coverage_rules_present() -> None:
     assert "send_money" in runtime_prompt
     assert "buy_airtime" in runtime_prompt
     assert "EXECUTOR COVERAGE GUARD" in runtime_prompt
+
+
+def test_transfer_only_prompt_bundle_excludes_executor_coverage_guard() -> None:
+    runtime_prompt, _, bundles = _build_prompt(
+        "send half my zenith to mum",
+        "None",
+        PlannerPromptSignals(
+            forced_domain_owner="transfer",
+            expected_transaction_executors=("transfer",),
+        ),
+    )
+    assert "transfer_only" in bundles
+    assert "executor_coverage_guard" not in bundles
+    assert "EXECUTOR COVERAGE GUARD" not in runtime_prompt
 
 
 def test_semantic_router_expected_executor_coverage_rules_present() -> None:

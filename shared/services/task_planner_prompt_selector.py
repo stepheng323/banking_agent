@@ -7,6 +7,7 @@ from shared.services.task_planner_prompt_atoms import (
     PLANNER_CONTEXT_RULE_ATOMS,
     PLANNER_MONEY_MOVE_RULE_ATOMS,
     PLANNER_RULE_ATOM_ORDER,
+    PLANNER_TRANSFER_ONLY_RULE_ATOMS,
 )
 from shared.services.task_planner_prompt_models import PlannerPromptSignals
 
@@ -18,6 +19,8 @@ def _has_transactional_active_flow(signals: PlannerPromptSignals) -> bool:
 
 
 def _include_money_move_bundle(signals: PlannerPromptSignals) -> bool:
+    if _include_transfer_only_bundle(signals):
+        return False
     if signals.expected_transaction_executors:
         return True
     if signals.has_transaction_intent_hint:
@@ -38,12 +41,30 @@ def _include_context_bundle(signals: PlannerPromptSignals) -> bool:
     return False
 
 
+def _include_transfer_only_bundle(signals: PlannerPromptSignals) -> bool:
+    if signals.forced_domain_owner != "transfer":
+        return False
+    if signals.expected_transaction_executors != ("transfer",):
+        return False
+    if signals.has_quote:
+        return False
+    if signals.pending_interrupt_kind is not None:
+        return False
+    if _has_transactional_active_flow(signals):
+        return False
+    return True
+
+
 def _include_executor_coverage_guard(signals: PlannerPromptSignals) -> bool:
+    if _include_transfer_only_bundle(signals):
+        return False
     return bool(signals.expected_transaction_executors)
 
 
 def select_prompt_bundles(signals: PlannerPromptSignals) -> tuple[str, ...]:
     selected: list[str] = []
+    if _include_transfer_only_bundle(signals):
+        selected.append("transfer_only")
     if _include_money_move_bundle(signals):
         selected.append("money_move")
     if _include_context_bundle(signals):
@@ -59,6 +80,8 @@ def select_rule_ids(signals: PlannerPromptSignals) -> tuple[str, ...]:
 
     if "money_move" in bundles:
         selected.update(PLANNER_MONEY_MOVE_RULE_ATOMS)
+    if "transfer_only" in bundles:
+        selected.update(PLANNER_TRANSFER_ONLY_RULE_ATOMS)
     if "context" in bundles:
         selected.update(PLANNER_CONTEXT_RULE_ATOMS)
 
