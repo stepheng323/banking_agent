@@ -24,6 +24,13 @@ PLANNER_TRANSFER_PRECISION_PROMPT = """## MONEY_MOVE PRECISION
 - Funding-account split -> explicit_split or source_accounts.
 - Precision-first: never guess ambiguous fields."""
 
+PLANNER_TRANSFER_ONLY_PRECISION_PROMPT = """## TRANSFER_ONLY PRECISION
+- Keep recipient text exact.
+- Extract explicit amount/account/bank/source-bank in one turn.
+- People split -> recipient_allocations.
+- Balance-share transfer -> transfer_percentage or transfer_all.
+- Never guess ambiguous fields."""
+
 PLANNER_EXECUTOR_COVERAGE_GUARD_PROMPT = (
     "## EXECUTOR COVERAGE GUARD\n"
     "- expected_transaction_executors: {expected_executors}.\n"
@@ -122,11 +129,8 @@ PLANNER_MONEY_MOVE_RULE_ATOMS = {
     "R27_RECIPIENT_SPLIT",
 }
 PLANNER_TRANSFER_ONLY_RULE_ATOMS = {
-    "R09_CONTEXT_OVERRIDE",
-    "R14_REFERENCE_BINDING",
     "R19_TRANSFER_FIDELITY",
     "R20_TRANSFER_ACCOUNT_BANK",
-    "R21_TRANSFER_SCHEDULING",
     "R26_ONE_SHOT_COMPLETENESS",
     "R27_RECIPIENT_SPLIT",
 }
@@ -164,16 +168,14 @@ PLANNER_RUNTIME_MONEY_MOVE_EXAMPLES = (
 
 PLANNER_RUNTIME_TRANSFER_ONLY_EXAMPLES = (
     "## TARGETED EXAMPLES (TRANSFER_ONLY)\n"
-    "- Send 20k to 0760505261 First Bank -> send_money amount=20000, "
-    "recipient_account=0760505261, bank_name=First Bank.\n"
+    "- Send 20k to 0760505261 First Bank -> amount=20000, recipient_account=0760505261, bank_name=First Bank.\n"
     "- Send 10k each to Mum, Tolu and Doyin -> recipient_allocations="
-    "[{recipient_name:Mum,amount:10000},{recipient_name:Tolu,amount:10000},{recipient_name:Doyin,amount:10000}].\n"
+    "[{recipient_name:Mum,amount:10000},{recipient_name:Tolu,amount:10000},"
+    "{recipient_name:Doyin,amount:10000}].\n"
     "- Split 20k 70/30 btw Mum and Gaines -> recipient_allocations="
     "[{recipient_name:Mum,amount:14000},{recipient_name:Gaines,amount:6000}].\n"
-    "- Send half my Zenith to Mum -> send_money recipient_name=Mum, source_bank_name=Zenith Bank, "
-    "transfer_percentage=50.\n"
-    "- Send everything in my First Bank to Mum -> send_money recipient_name=Mum, source_bank_name=First Bank, "
-    "transfer_all=true."
+    "- Send half my Zenith to Mum -> recipient_name=Mum, source_bank_name=Zenith Bank, transfer_percentage=50.\n"
+    "- Send everything in my First Bank to Mum -> recipient_name=Mum, source_bank_name=First Bank, transfer_all=true."
 )
 
 PLANNER_RUNTIME_CONTEXT_EXAMPLES = """## TARGETED EXAMPLES (CONTEXT)

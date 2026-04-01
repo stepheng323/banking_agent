@@ -503,7 +503,7 @@ def test_runtime_prompt_size_report_and_budget_guard(capsys: pytest.CaptureFixtu
             print(f"- {key}: tokens={token_report[key]}")
 
     assert report["generic"] <= 1600
-    assert report["transfer_only"] <= 3200
+    assert report["transfer_only"] <= 2700
     # Money-move one-shot multilingual + recipient-split coverage intentionally increases this bundle.
     assert report["mixed_money_move"] <= 3900
     assert report["query"] <= 1850
@@ -511,7 +511,7 @@ def test_runtime_prompt_size_report_and_budget_guard(capsys: pytest.CaptureFixtu
     assert report["fully_expanded"] <= 4350
 
     assert token_report["generic"] <= 390
-    assert token_report["transfer_only"] <= 900
+    assert token_report["transfer_only"] <= 650
     assert token_report["mixed_money_move"] <= 1100
     assert token_report["query"] <= 450
     assert token_report["context_followup"] <= 510
