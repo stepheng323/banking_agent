@@ -187,6 +187,68 @@ def test_transfer_normalizer_coerces_symbolic_balance_share_amount_to_percentage
     assert params.amount is None
 
 
+def test_transfer_normalizer_drops_malformed_explicit_split_when_recipient_allocations_exist() -> None:
+    planner_output = _planner_output(
+        [
+            PlannedTask(
+                task_id="t1",
+                action="send_money",
+                executor="transfer",
+                instruction="Split 20k 70/30 between Mum and Gaines",
+                parameters=TaskParameters(
+                    amount=20000,
+                    recipient_allocations=[
+                        {"recipient_name": "Mum", "amount": 14000},
+                        {"recipient_name": "Gaines", "amount": 6000},
+                    ],
+                    explicit_split={
+                        "recipient_allocations':[{": 14000.0,
+                        "recipient_name": 0.0,
+                        "amount": 6000.0,
+                    },
+                ),
+                risk="MONEY_MOVE",
+            )
+        ]
+    )
+
+    normalized = normalize_planner_transaction_output(planner_output, "split 20k 70/30 btw mum and gaines")
+    params = normalized.tasks[0].parameters
+    assert params.recipient_allocations is not None
+    assert [item.recipient_name for item in params.recipient_allocations] == ["Mum", "Gaines"]
+    assert [item.amount for item in params.recipient_allocations] == [14000, 6000]
+    assert params.explicit_split is None
+
+
+def test_transfer_normalizer_keeps_valid_source_explicit_split_with_recipient_allocations() -> None:
+    planner_output = _planner_output(
+        [
+            PlannedTask(
+                task_id="t1",
+                action="send_money",
+                executor="transfer",
+                instruction="Split 20k between Mum and Gaines from Access and GTB",
+                parameters=TaskParameters(
+                    amount=20000,
+                    recipient_allocations=[
+                        {"recipient_name": "Mum", "amount": 14000},
+                        {"recipient_name": "Gaines", "amount": 6000},
+                    ],
+                    explicit_split={"Access": 10000.0, "GTB": 10000.0},
+                ),
+                risk="MONEY_MOVE",
+            )
+        ]
+    )
+
+    normalized = normalize_planner_transaction_output(
+        planner_output,
+        "split 20k 70/30 btw mum and gaines from access and gtb",
+    )
+    params = normalized.tasks[0].parameters
+    assert params.explicit_split == {"Access": 10000.0, "GTB": 10000.0}
+
+
 def test_transfer_normalizer_rewrites_mixed_primary_intent_for_transfer_only_batch() -> None:
     planner_output = PlannerOutput(
         primary_intent="mixed",

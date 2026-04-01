@@ -322,6 +322,41 @@ def _repair_account_aware_transfer_params(params: TaskParameters, text: str) -> 
     return patched
 
 
+def _sanitize_transfer_explicit_split(params: TaskParameters) -> list[str]:
+    explicit_split = params.explicit_split
+    if not isinstance(explicit_split, dict):
+        return []
+
+    allocations = params.recipient_allocations or []
+    if len(allocations) < 2:
+        return []
+
+    cleaned_split: dict[str, float] = {}
+    for raw_key, raw_value in explicit_split.items():
+        key = str(raw_key or "").strip()
+        if not key:
+            continue
+        if re.search(r"[\[\]\{\}:\"']", key):
+            continue
+        normalized_key = re.sub(r"[^a-z0-9]+", " ", key.lower()).strip()
+        if not normalized_key:
+            continue
+        if normalized_key in {"amount", "recipient", "recipient name", "recipient allocations", "allocations"}:
+            continue
+        if "recipient" in normalized_key.split():
+            continue
+        amount = _parse_amount_value(raw_value)
+        if amount is None or amount <= 0:
+            continue
+        cleaned_split[key] = amount
+
+    if cleaned_split == explicit_split:
+        return []
+
+    params.explicit_split = cleaned_split or None
+    return ["explicit_split"]
+
+
 def _normalize_airtime_params(params: TaskParameters, text: str) -> tuple[list[str], list[str]]:
     patched: list[str] = []
     ambiguous: list[str] = []
@@ -626,6 +661,7 @@ def normalize_planner_transaction_output(planner_output: PlannerOutput, user_tex
             transfer_patched, ambiguous_fields = _normalize_transfer_params(params, source_text)
             patched_fields.extend(transfer_patched)
             patched_fields.extend(_repair_account_aware_transfer_params(params, source_text))
+            patched_fields.extend(_sanitize_transfer_explicit_split(params))
         elif task.executor == "airtime":
             patched_fields, ambiguous_fields = _normalize_airtime_params(params, source_text)
         elif task.executor == "data":
