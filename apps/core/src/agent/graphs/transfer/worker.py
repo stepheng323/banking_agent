@@ -64,6 +64,7 @@ class TransferWorkerContext:
     validation_service: Any
     required_fields: list[str]
     previous_response: str | None
+    confirmation_task_count: int | None = None
     progress_tracker: Any | None = None
 
 
@@ -119,6 +120,7 @@ class TransferWorker:
     def _build_worker_context(self, context: dict[str, Any]) -> TransferWorkerContext:
         required_fields = context.get("required_fields")
         previous_response = context.get("previous_response")
+        confirmation_task_count = context.get("confirmation_task_count")
         return TransferWorkerContext(
             extractor=self.extractor,
             resolver_provider=self.resolver_provider,
@@ -131,6 +133,7 @@ class TransferWorker:
             validation_service=self.validation_service,
             required_fields=required_fields if isinstance(required_fields, list) else [],
             previous_response=previous_response if isinstance(previous_response, str) else None,
+            confirmation_task_count=confirmation_task_count if isinstance(confirmation_task_count, int) else None,
             progress_tracker=context.get("progress_tracker"),
         )
 

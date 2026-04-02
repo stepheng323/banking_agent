@@ -5,6 +5,7 @@ from typing import Any
 
 from apps.core.src.agent.graphs.__shared__.beneficiary.matcher import BeneficiaryMatcher
 from apps.core.src.agent.graphs.__shared__.extraction_utils import try_extract_numeric_index
+from apps.core.src.agent.graphs.__shared__.source_account_guard import find_account_by_bank_name
 from apps.core.src.agent.graphs.transfer.models.types import (
     TransferContext,
     TransferGates,
@@ -40,6 +41,17 @@ _SIMPLE_TRANSFER_COMPLEX_MARKERS_RE = re.compile(
     re.IGNORECASE,
 )
 _SIMPLE_TRANSFER_MULTI_TARGET_RE = re.compile(r"\s(?:and|&)\s|,", re.IGNORECASE)
+_CONFIRMATION_EDIT_PREFIX_RE = re.compile(
+    r"^(?:(?:make|change|update)\s+(?:it|amount)\s*(?:to\s*)?|"
+    r"(?:make|change|update)\s+to\s+|"
+    r"send\s+)?",
+    re.IGNORECASE,
+)
+_CONFIRMATION_PERCENTAGE_RE = re.compile(r"^(?P<pct>\d{1,3}(?:\.\d+)?)\s*%$", re.IGNORECASE)
+_CONFIRMATION_BANK_SWITCH_RE = re.compile(
+    r"^(?:(?:use|switch(?:\s+to)?|change(?:\s+to)?)\s+)?[a-z0-9&' ]+(?:\s+bank)?(?:\s+instead)?$",
+    re.IGNORECASE,
+)
 
 
 def _canonical_beneficiary_id(value: str) -> str:
@@ -308,6 +320,156 @@ def _recipient_name_matches_existing_binding(new_name: str | None, current_paylo
     return False
 
 
+def _normalize_user_message(value: str) -> str:
+    compact = re.sub(r"\s+", " ", value.strip().lower())
+    return compact.strip('.,!?;:"`~()[]{}')
+
+
+def _format_amount_ack(amount: float) -> str:
+    rounded = float(amount)
+    if rounded.is_integer():
+        integer_amount = int(rounded)
+        if integer_amount >= 1000 and integer_amount % 1000 == 0:
+            return f"Changing amount to {integer_amount // 1000}k."
+        return f"Changing amount to ₦{integer_amount:,}."
+    return f"Changing amount to ₦{rounded:,.2f}."
+
+
+def _build_confirmation_edit_description(current_payload: TransferPayload) -> str | None:
+    name = current_payload.recipient_name or current_payload.recipient_resolved_name
+    if not name:
+        return None
+    return f"Transfer to {str(name).title()}"
+
+
+def _parse_single_confirmation_amount_edit(
+    user_message: str,
+    current_payload: TransferPayload,
+) -> dict[str, Any] | None:
+    normalized = _normalize_user_message(user_message)
+    if not normalized:
+        return None
+
+    candidate = _CONFIRMATION_EDIT_PREFIX_RE.sub("", normalized, count=1).strip() or normalized
+    patch: dict[str, Any] | None = None
+
+    parsed_amount = _parse_amount_input(candidate)
+    if parsed_amount is not None:
+        patch = {
+            "amount": parsed_amount,
+            "transfer_percentage": None,
+            "transfer_all": False,
+            "funding_plan": None,
+            "suggested_amount": None,
+            "confirmation": {"confirmed": False},
+            "transition_acknowledgment": _format_amount_ack(parsed_amount),
+        }
+    elif candidate in {"all", "everything"}:
+        patch = {
+            "amount": None,
+            "transfer_percentage": None,
+            "transfer_all": True,
+            "funding_plan": None,
+            "suggested_amount": None,
+            "confirmation": {"confirmed": False},
+            "transition_acknowledgment": "Sending all available funds.",
+        }
+    elif candidate == "half":
+        patch = {
+            "amount": None,
+            "transfer_percentage": 50.0,
+            "transfer_all": False,
+            "funding_plan": None,
+            "suggested_amount": None,
+            "confirmation": {"confirmed": False},
+            "transition_acknowledgment": "Changing transfer to half of the available balance.",
+        }
+    else:
+        pct_match = _CONFIRMATION_PERCENTAGE_RE.fullmatch(candidate)
+        if pct_match:
+            pct_value = float(pct_match.group("pct"))
+            if 0 < pct_value <= 100:
+                patch = {
+                    "amount": None,
+                    "transfer_percentage": pct_value,
+                    "transfer_all": False,
+                    "funding_plan": None,
+                    "suggested_amount": None,
+                    "confirmation": {"confirmed": False},
+                    "transition_acknowledgment": f"Changing transfer to {pct_value:g}% of the available balance.",
+                }
+
+    if patch is None:
+        return None
+
+    description = _build_confirmation_edit_description(current_payload)
+    if description:
+        patch["description"] = description
+    return patch
+
+
+def _parse_single_confirmation_source_bank_edit(
+    user_message: str,
+    current_payload: TransferPayload,
+    accounts: list[dict[str, Any]],
+) -> dict[str, Any] | None:
+    normalized = _normalize_user_message(user_message)
+    if not normalized or not _CONFIRMATION_BANK_SWITCH_RE.fullmatch(normalized):
+        return None
+
+    candidate = re.sub(r"^(?:use|switch(?:\s+to)?|change(?:\s+to)?)\s+", "", normalized, flags=re.IGNORECASE)
+    candidate = re.sub(r"\s+instead$", "", candidate, flags=re.IGNORECASE).strip()
+    if not candidate:
+        return None
+
+    matched_account = find_account_by_bank_name(accounts, candidate)
+    if not matched_account:
+        return None
+
+    bank_name = str(matched_account.get("bank_name") or "").strip()
+    if not bank_name:
+        return None
+    if current_payload.source_bank_name and bank_name.lower() == current_payload.source_bank_name.lower():
+        return None
+
+    patch: dict[str, Any] = {
+        "source_bank_name": bank_name,
+        "source_account_id": None,
+        "source_account_name": None,
+        "source_account_number": None,
+        "source_account_index": None,
+        "source_affinity_mode": "explicit",
+        "funding_plan": None,
+        "suggested_amount": None,
+        "confirmation": {"confirmed": False},
+        "transition_acknowledgment": f"Using {bank_name} instead.",
+    }
+    description = _build_confirmation_edit_description(current_payload)
+    if description:
+        patch["description"] = description
+    return patch
+
+
+def _parse_single_confirmation_transfer_edit(
+    user_message: str,
+    current_payload: TransferPayload,
+    context: TransferContext,
+    worker_context: Any,
+) -> dict[str, Any] | None:
+    confirmation_task_count = getattr(worker_context, "confirmation_task_count", None)
+    if confirmation_task_count != 1:
+        return None
+    if not current_payload.previous_confirmation_snapshot:
+        return None
+
+    amount_patch = _parse_single_confirmation_amount_edit(user_message, current_payload)
+    if amount_patch is not None:
+        return amount_patch
+
+    accounts = context.accounts if isinstance(context.accounts, list) else []
+    return _parse_single_confirmation_source_bank_edit(user_message, current_payload, accounts)
+
+
 class ExtractionStep(TransferStep):
     """Refines transfer data from user message."""
 
@@ -393,6 +555,22 @@ class ExtractionStep(TransferStep):
                         }
                     ),
                 )
+
+        confirmation_edit_patch = _parse_single_confirmation_transfer_edit(
+            self.user_message,
+            data,
+            context,
+            worker_context,
+        )
+        if confirmation_edit_patch is not None:
+            logger.info(
+                "deterministic_confirmation_transfer_edit_fastpath",
+                fields=sorted(confirmation_edit_patch.keys()),
+            )
+            return TransactionResult(
+                outcome=TransactionOutcome.OK,
+                patch=_with_skip_patch(confirmation_edit_patch),
+            )
 
         # Optimization: Phase 4 (Planner-as-Extractor)
         # Skip extraction if Planner already did it (signaled by flag)

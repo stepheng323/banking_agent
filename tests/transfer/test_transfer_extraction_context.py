@@ -741,3 +741,182 @@ async def test_deterministic_fastpath_does_not_trigger_for_pure_digits() -> None
     result = await step.execute(payload, context, TransferGates(), worker_context)
     assert result.outcome == TransactionOutcome.OK
     assert extractor.last_user_message == "8067892221"
+
+
+async def test_single_confirmation_amount_edit_fastpath_skips_extractor() -> None:
+    class _NeverCalledExtractor:
+        def __init__(self) -> None:
+            self.called = False
+
+        async def extract(self, text: str, smart_context: dict | None = None) -> TransferExtractionResult:
+            self.called = True
+            return TransferExtractionResult()
+
+    extractor = _NeverCalledExtractor()
+    step = ExtractionStep(user_message="make it 20k")
+    payload = TransferPayload(
+        amount=10000,
+        recipient_name="mum",
+        recipient_resolved_name="Mercy Johnson",
+        recipient_account="8162511023",
+        recipient_bank_name="Opay",
+        previous_confirmation_snapshot={
+            "amount": 10000,
+            "recipient_name": "mum (Mercy Johnson)",
+            "recipient_bank": "Opay",
+            "recipient_account": "8162511023",
+        },
+    )
+    context = TransferContext(phone_number="2348000000999", language="en", beneficiaries=[], accounts=[])
+    worker_context = SimpleNamespace(
+        extractor=extractor,
+        required_fields=[],
+        previous_response=None,
+        confirmation_task_count=1,
+    )
+
+    result = await step.execute(payload, context, TransferGates(), worker_context)
+
+    assert result.outcome == TransactionOutcome.OK
+    assert result.patch["amount"] == 20000
+    assert result.patch["funding_plan"] is None
+    assert result.patch["transfer_percentage"] is None
+    assert result.patch["transfer_all"] is False
+    assert result.patch["transition_acknowledgment"] == "Changing amount to 20k."
+    assert extractor.called is False
+
+
+async def test_single_confirmation_transfer_all_fastpath_skips_extractor() -> None:
+    class _NeverCalledExtractor:
+        def __init__(self) -> None:
+            self.called = False
+
+        async def extract(self, text: str, smart_context: dict | None = None) -> TransferExtractionResult:
+            self.called = True
+            return TransferExtractionResult()
+
+    extractor = _NeverCalledExtractor()
+    step = ExtractionStep(user_message="send all")
+    payload = TransferPayload(
+        amount=10000,
+        recipient_name="mum",
+        previous_confirmation_snapshot={"amount": 10000, "recipient_name": "mum"},
+    )
+    context = TransferContext(phone_number="2348000000999", language="en", beneficiaries=[], accounts=[])
+    worker_context = SimpleNamespace(
+        extractor=extractor,
+        required_fields=[],
+        previous_response=None,
+        confirmation_task_count=1,
+    )
+
+    result = await step.execute(payload, context, TransferGates(), worker_context)
+
+    assert result.outcome == TransactionOutcome.OK
+    assert result.patch["amount"] is None
+    assert result.patch["transfer_all"] is True
+    assert result.patch["transfer_percentage"] is None
+    assert extractor.called is False
+
+
+async def test_single_confirmation_percentage_fastpath_skips_extractor() -> None:
+    class _NeverCalledExtractor:
+        def __init__(self) -> None:
+            self.called = False
+
+        async def extract(self, text: str, smart_context: dict | None = None) -> TransferExtractionResult:
+            self.called = True
+            return TransferExtractionResult()
+
+    extractor = _NeverCalledExtractor()
+    step = ExtractionStep(user_message="half")
+    payload = TransferPayload(
+        amount=10000,
+        recipient_name="mum",
+        previous_confirmation_snapshot={"amount": 10000, "recipient_name": "mum"},
+    )
+    context = TransferContext(phone_number="2348000000999", language="en", beneficiaries=[], accounts=[])
+    worker_context = SimpleNamespace(
+        extractor=extractor,
+        required_fields=[],
+        previous_response=None,
+        confirmation_task_count=1,
+    )
+
+    result = await step.execute(payload, context, TransferGates(), worker_context)
+
+    assert result.outcome == TransactionOutcome.OK
+    assert result.patch["amount"] is None
+    assert result.patch["transfer_percentage"] == 50.0
+    assert result.patch["transfer_all"] is False
+    assert extractor.called is False
+
+
+async def test_single_confirmation_source_bank_switch_fastpath_skips_extractor() -> None:
+    class _NeverCalledExtractor:
+        def __init__(self) -> None:
+            self.called = False
+
+        async def extract(self, text: str, smart_context: dict | None = None) -> TransferExtractionResult:
+            self.called = True
+            return TransferExtractionResult()
+
+    extractor = _NeverCalledExtractor()
+    step = ExtractionStep(user_message="use first bank instead")
+    payload = TransferPayload(
+        amount=10000,
+        recipient_name="mum",
+        source_bank_name="Zenith Bank",
+        source_account_id="acc-zenith",
+        source_account_name="Olamide Samuel",
+        source_account_number="1234509384",
+        previous_confirmation_snapshot={"amount": 10000, "recipient_name": "mum"},
+    )
+    context = TransferContext(
+        phone_number="2348000000999",
+        language="en",
+        beneficiaries=[],
+        accounts=[
+            {"id": "acc-zenith", "bank_name": "Zenith Bank", "account_number": "1234509384"},
+            {"id": "acc-first", "bank_name": "First Bank", "account_number": "2222333344"},
+        ],
+    )
+    worker_context = SimpleNamespace(
+        extractor=extractor,
+        required_fields=[],
+        previous_response=None,
+        confirmation_task_count=1,
+    )
+
+    result = await step.execute(payload, context, TransferGates(), worker_context)
+
+    assert result.outcome == TransactionOutcome.OK
+    assert result.patch["source_bank_name"] == "First Bank"
+    assert result.patch["source_account_id"] is None
+    assert result.patch["source_account_name"] is None
+    assert result.patch["source_account_number"] is None
+    assert result.patch["source_affinity_mode"] == "explicit"
+    assert extractor.called is False
+
+
+async def test_confirmation_edit_fastpath_does_not_trigger_for_multi_task_confirmation() -> None:
+    extractor = _CaptureExtractor()
+    step = ExtractionStep(user_message="make it 20k")
+    payload = TransferPayload(
+        amount=10000,
+        recipient_name="mum",
+        previous_confirmation_snapshot={"amount": 10000, "recipient_name": "mum"},
+    )
+    context = TransferContext(phone_number="2348000000999", language="en", beneficiaries=[], accounts=[])
+    worker_context = SimpleNamespace(
+        extractor=extractor,
+        required_fields=[],
+        previous_response=None,
+        confirmation_task_count=2,
+    )
+
+    result = await step.execute(payload, context, TransferGates(), worker_context)
+
+    assert result.outcome == TransactionOutcome.OK
+    assert "amount" not in result.patch
+    assert extractor.last_user_message == "make it 20k"

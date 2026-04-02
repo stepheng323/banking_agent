@@ -92,6 +92,17 @@ class TransferPayload(BaseModel):
             return False
         return bool(value)
 
+    @field_validator("confirmation", mode="before")
+    @classmethod
+    def normalize_confirmation(cls, value: Any) -> TransferConfirmation:
+        if isinstance(value, TransferConfirmation):
+            return value
+        if isinstance(value, dict):
+            return TransferConfirmation(**value)
+        if value is None:
+            return TransferConfirmation()
+        return value
+
 
 class TransferContext(BaseModel):
     """Read-only context injected into pure nodes."""

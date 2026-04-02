@@ -275,10 +275,13 @@ async def handle_transfer_task(task: Any, task_id: str, ctx: ExecutionContext) -
 
     required_fields: list[str] = []
     previous_response: str | None = None
+    confirmation_task_count: int | None = None
     if ctx.state.last_interrupt and task_id in ctx.state.last_interrupt.task_ids:
         raw_required_fields = ctx.state.last_interrupt.fields_by_task.get(task_id, [])
         required_fields = [field for field in raw_required_fields if isinstance(field, str)]
         previous_response = ctx.state.last_interrupt.prompt
+        if ctx.state.last_interrupt.kind == "confirmation":
+            confirmation_task_count = len(ctx.state.last_interrupt.task_ids)
 
     user_msg = _maybe_user_message(task, ctx.state)
 
@@ -349,6 +352,7 @@ async def handle_transfer_task(task: Any, task_id: str, ctx: ExecutionContext) -
         "language": _state_locale(ctx.state),
         "required_fields": required_fields,
         "previous_response": previous_response,
+        "confirmation_task_count": confirmation_task_count,
         "progress_tracker": ctx.config["configurable"].get("progress_tracker"),
     }
 

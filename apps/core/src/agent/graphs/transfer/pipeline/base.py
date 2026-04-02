@@ -5,6 +5,7 @@ from abc import ABC, abstractmethod
 from typing import Any, TypeVar
 
 from apps.core.src.agent.graphs.transfer.models.types import (
+    TransferConfirmation,
     TransferContext,
     TransferGates,
     TransferPayload,
@@ -62,6 +63,8 @@ class TransferPipeline:
             normalized_account = normalize_bank_account_number(normalized_patch.get("recipient_account"))
             if normalized_account:
                 normalized_patch["recipient_account"] = normalized_account
+        if "confirmation" in normalized_patch and isinstance(normalized_patch["confirmation"], dict):
+            normalized_patch["confirmation"] = TransferConfirmation(**normalized_patch["confirmation"])
         return normalized_patch
 
     @staticmethod
